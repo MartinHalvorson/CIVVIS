@@ -59,6 +59,30 @@
       "entry": "near_future_governance",
       "field": "count",
       "reason": "The shipped trigger is BOOST_TRIGGER_HAVE_GOVERNMENT_TIER with GovernmentTierType Tier4 and no NumItems, so the projection reads 0. CIVVIS spells the same condition as ten Government policy slots, which is exactly equivalent: Government_SlotCounts totals 2/4/6/8/10 for Chiefdom/Tier1/Tier2/Tier3/Tier4, so ten slots is reached by the Tier 4 governments and by nothing else. The 90% boost matches."
+    },
+    {
+      "table": "Improvements",
+      "entry": "vampire_castle",
+      "field": "terrain",
+      "reason": "The Vampire Castle is Secret Societies content, a game mode CPL's lobby disables. CIVVIS carries the improvement as unbuildable scenario-only content, so the shipped terrain list has nothing to govern."
+    },
+    {
+      "table": "Difficulties",
+      "entry": "prince",
+      "field": "ai_combat_strength",
+      "reason": "HIGH_DIFFICULTY_COMBAT_SCALING is Value -1 scaled +1 per rung off Prince and applies to AI seats at Prince and above, so read literally the Prince AI fights at -1. CIVVIS keeps Prince as the rung that hands out nothing (src/lib.rs the_difficulty_ladder_is_ordered_and_neutral_at_prince) until a live Prince game reads an AI unit's strength back; King through Deity match the same formula exactly."
+    },
+    {
+      "table": "Difficulties",
+      "entry": "warlord",
+      "field": "human_combat_strength",
+      "reason": "REQUIRES_LOW_DIFFICULTY is the Inverse of HANDICAP_AT_OR_ABOVE Warlord, which read literally is Settler and Chieftain only; LOW_DIFFICULTY_COMBAT_SCALING would give Warlord +1 if it applied. The Civilopedia ladder and data/difficulties.json say +1. Unverified in a live Warlord game either way; the DLL owns the comparison."
+    },
+    {
+      "table": "Difficulties",
+      "entry": "warlord",
+      "field": "human_xp_pct",
+      "reason": "Same requirement set as human_combat_strength: LOW_DIFFICULTY_UNIT_XP_SCALING would give Warlord +15% if the inverse at-or-above-Warlord requirement admitted Warlord. Unverified in a live game; the DLL owns the comparison."
     }
   ]
 }

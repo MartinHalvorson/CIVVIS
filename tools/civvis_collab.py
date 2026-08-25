@@ -788,6 +788,7 @@ def validate_pr(
             errors.append(f"mutating autosync commit is forbidden: {subject}")
 
     errors.extend(unevidenced_effect_sizes(added_lines or {}))
+    notes.extend(missing_live_game_citation(files, body, added_lines or {}))
 
     coordinated = split_coordination(claims.get("coordinated", ""))
     mine = as_range_map(files, ranges)
@@ -1028,6 +1029,53 @@ def pr_added_lines(repository: str, number: int, token: str) -> Dict[str, List[s
 def pr_commit_subjects(repository: str, number: int, token: str) -> List[str]:
     rows = github_json(f"/repos/{repository}/pulls/{number}/commits?per_page=100", token)
     return [str(row["commit"]["message"]).splitlines()[0] for row in rows]
+
+
+# A PR that models or drives a live-game interaction quotes what it is
+# modelled on (AGENTS.md, "A claim is not a check"). Two things make a PR one
+# of those: a path under the control mod, or added lines in `src/game.rs`
+# that touch the deal, diplomacy, barbarian or religion code. Two things count
+# as a citation: a shipped script path or line under the app bundle, or a
+# gameplay-database table. This is a notice on every run and a block on none:
+# the rule is new, the detector is a heuristic, and a false refusal on a
+# fidelity PR would cost more than a missed reminder.
+LIVE_GAME_PATH_PREFIX = "tools/civ6_control/mod/"
+LIVE_GAME_CODE = re.compile(
+    r"(?<![a-z])(deal|diplom|barbarian|religio|pressure|condemn|heresy|inquisit|missionar|apostle)",
+    re.IGNORECASE,
+)
+LIVE_GAME_CITATION = re.compile(
+    r"Civ6\.app|\.lua:\d+|GameplayDB\.|DebugGameplay\.sqlite|(?:Base|DLC)/[A-Za-z0-9_./-]+\.(?:lua|xml)",
+)
+LIVE_GAME_CITATION_NOTICE = (
+    "this PR {why} and its body quotes no shipped source: cite the script "
+    "line (`Base/Assets/UI/File.lua:123`) or the gameplay-database table "
+    "(`GameplayDB.Table`) the change is modelled on. `python3 "
+    "tools/civ6_scripts.py grep <regex>` finds it on a machine with the game. "
+    "A notice, not a block — see AGENTS.md, \"A claim is not a check\"."
+)
+
+
+def models_a_live_game_interaction(
+    files: Sequence[str], added_lines: Dict[str, Sequence[str]]
+) -> Optional[str]:
+    """Why this PR is one that should quote its source, or None."""
+    mod = [path for path in files if path.startswith(LIVE_GAME_PATH_PREFIX)]
+    if mod:
+        return f"touches the control mod ({mod[0]})"
+    for line in added_lines.get("src/game.rs", ()):
+        if LIVE_GAME_CODE.search(line):
+            return "adds to the deal/diplomacy/barbarian/religion code in src/game.rs"
+    return None
+
+
+def missing_live_game_citation(
+    files: Sequence[str], body: str, added_lines: Dict[str, Sequence[str]]
+) -> List[str]:
+    why = models_a_live_game_interaction(files, added_lines)
+    if why is None or LIVE_GAME_CITATION.search(body):
+        return []
+    return [LIVE_GAME_CITATION_NOTICE.format(why=why)]
 
 
 def check_pr_action(event_path: Path, token: str, repository: str) -> int:
@@ -2377,6 +2425,42 @@ def atomic_write(path: Path, data: bytes, *, executable: bool = False) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def lock_holder_is_gone(path: Path) -> bool:
+    """True when the lock names a process that is no longer running.
+
+    The lock has always recorded its holder's PID and never read it back, so a
+    worker that died holding it kept every `start` on the machine waiting out
+    `FRESHNESS_LOCK_STALE_SECONDS`. Checking the PID turns that half hour into
+    one syscall.
+
+    Deliberately conservative — every uncertain answer is *False*, i.e. "assume
+    the holder is alive and keep waiting", so the age-based expiry stays the
+    backstop and this can only ever release a lock it is sure about:
+
+    - an unreadable or malformed lock: another process is mid-write, since the
+      file is created `O_EXCL` and written immediately after;
+    - a PID from a different boot that has since been recycled onto a live
+      process: indistinguishable from the real holder, and the age check
+      already covers it;
+    - `PermissionError` from `kill(pid, 0)`: the PID exists but belongs to
+      another user, so something is running.
+    """
+    try:
+        holder = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(holder["pid"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except (PermissionError, OSError):
+        return False
+    return False
+
+
 class FreshnessLock:
     """A tiny cross-platform exclusion lock for overlapping timer runs."""
 
@@ -2399,7 +2483,9 @@ class FreshnessLock:
                     age = time.time() - self.path.stat().st_mtime
                 except FileNotFoundError:
                     continue
-                if age > FRESHNESS_LOCK_STALE_SECONDS:
+                if age > FRESHNESS_LOCK_STALE_SECONDS or lock_holder_is_gone(
+                    self.path
+                ):
                     self.path.unlink(missing_ok=True)
                     continue
                 if time.monotonic() >= self.deadline:

@@ -297,6 +297,105 @@ p=0.6271, terminal score 49.4% with 54/0/66 and p=0.3153 on all 120 maps
 resolving. The registered prediction was 48–54%, most likely null; it landed on
 48.3%.
 
+### ⚠⚠ And then nothing could reach it for the next month
+
+That null was measured through `advanced_early_score_alarm` and
+`advanced_early_score_build`, which were **evaluator arms**, and the evaluator
+was deleted. `src/ai/advanced/genes.rs` records what happened to its vocabulary:
+"The `treatment` vocabulary went with them: a treatment was a gene seen from the
+evaluator's side, and the evaluator is gone." No registry row replaced these
+two. From that commit until 2026-08-25, `early_score_alarm` was `false` in every
+configuration this repository could produce, and the branch behind it was dead
+code.
+
+That matters because the null above is **not a reading from the instrument the
+ledger now uses.** It is 120 deployment-profile pairs from a tool that no longer
+exists; `tools/genes.py` takes its sources by name from `docs/gene_screens/`,
+and there has never been a screen row for this behaviour.
+
+**So it was registered, probed on the screen, and taken back out.** Two disjoint
+twelve-game blocks: seeds 107000000 read **−12.6 pp wins (z −1.54)** with score
+share +0.07, and seeds 108000000 read **−7.4 pp (z −0.76)** with share −0.42.
+Neither resolves, both lean the same way, and they agree with the null above and
+with its stated mechanism — an earlier alarm feeds the Conquest counter and
+takes plan mix from 25% to 35% conquest, "the direction that costs seats".
+
+The row was withdrawn rather than shipped, because a registered gene is drawn at
+`P_ON` in every screen afterwards and this one has no case to spend those games
+on. `early_score_alarm_is_deliberately_still_unregistered` holds that decision
+with its numbers so it is not re-derived, and two behaviour tests beside it keep
+the blind spot itself on the record: a rival fifty percent ahead of the field at
+turn 120 reads **zero** score threat, and the shipped clock reads the *identical*
+number for a runaway board and a level one.
+
+### The inventory this belongs to
+
+It was not alone. A sweep of the controller on the day that row was added:
+
+| | |
+|---|---:|
+| boolean behaviours declared on `AdvancedAi` | **152** |
+| registered in the gene table | **108** |
+| not registered | 44 |
+| **of those, default `false` with no toggle, no row, and nothing in `src/`, `tools/`, `beta/` or `mods/` that sets them true outside a test** | **14** |
+
+The fourteen: `defensible_sites`, `garrison_loyalty_policy`,
+`expansion_pays_back`, `late_expansion`, `city_strategy`,
+`city_strategy_halt_growth`, `reactor_marginal`, `civ_blind`, `early_rush`,
+`route_connected_rush`, `counter_stand_down`, `early_score_alarm`,
+`congress_counter_leader`, `diplomatic_opening`.
+
+Each is an implemented code path that **cannot execute**. `diplomatic_opening`
+was one of them, and `diplomatic-lane-forecast` (#2436) exists because finding
+it made the question "why is the Diplomacy lane never chosen" answerable.
+`docs/EVAL_STATUS.md`'s genome-coverage block counts what is unreachable *by a
+screen*; this is the stronger set — unreachable by anything at all — and it is
+not counted anywhere.
+
+⚠ Registering all fourteen at once would be the wrong answer: each is then drawn
+at `P_ON` in every screen, so an unmeasured or broken path costs real games.
+They want taking one at a time, each with its own reason and its own probe.
+
+**Two were triaged the day the list was made.** `early_score_alarm` was probed
+and rejected, above. `congress_counter_leader` was probed and **registered** as
+`congress-counter-leader`, on this reasoning:
+
+- It is a **response that follows the threat model**, and the threat model was
+  sharpened the same day — `conversion-majority-alarm` (#2449) replaced the
+  religious clock's five-step staircase with a count of the cities the victory
+  actually requires, and `science-chain-alarm` (#2455) gave the Science race a
+  reading before its first launch. `victory_denial` reads
+  `rival_victory_pressure`, so the empire this ballot points at is now chosen by
+  a better instrument than the one the flag was built against.
+- It is **free**. `Game::resolve_congress` refunds a losing vote in full and a
+  right-outcome/wrong-target vote at half. Every war-shaped counter in this
+  document measured null *with its cost showing up as terminal score*; a ballot
+  has no such cost, which is the one thing the null results here could never say
+  about the axis they tested.
+- It **completes a deliberately-split pair.** `congress-counter-votes` — how
+  hard to vote — has been screenable all along; `congress_counter_leader` — who
+  the three targeted penalties point at — was not, and the note on
+  `congress_counter_target` records that this left one half unmeasurable alone,
+  "the same failure from the other side".
+
+Its own two probe blocks are a **high-variance null and disagree violently**:
+seeds 109000000 read −21.1 pp wins (z −1.59, and the treated arm has no wins at
+all, so that figure is the widened one #2452 produces) with score share −3.90 pp
+(z −2.16); seeds 110000000 read **+24.4 pp wins (z +1.90)** with share +2.04 pp
+(z +0.99). Forty-five points of disagreement on wins across twenty-four games.
+
+That is why it is registered rather than rejected, and the distinction from
+`early_score_alarm` above is the whole point of triaging one at a time:
+
+| | prior | block A | block B | verdict |
+|---|---|---|---|---|
+| `early_score_alarm` | measured null, with a named mechanism that costs seats | −12.6 pp | −7.4 pp | **consistently negative → left out** |
+| `congress_counter_leader` | a free counter the null axis could never test | −21.1 pp | +24.4 pp | **no consistency → registered, off, unpriced** |
+
+A registered gene costs games in every screen afterwards. That price is worth
+paying for a behaviour with a mechanism and no consistent signal, and not worth
+paying for one that leans the wrong way twice.
+
 ## Where this leaves the question
 
 Every measured way of stopping a leader in this engine is null or negative:

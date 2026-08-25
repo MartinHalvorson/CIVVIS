@@ -63,6 +63,7 @@ OPERATOR_HALT_POLL_SECONDS = 5.0
 
 MAP_TYPES = (
     "land_only",
+    # The stock opening world's own map, and so the default below.
     "lakes",
     "inland_sea",
     "pangaea",
@@ -71,9 +72,8 @@ MAP_TYPES = (
     "islands",
     "water_world",
     "true_start_earth",
-    # The stock opening world's own map, and so the default below. Leaving it
-    # out meant the exhibition could never roll the one world the product
-    # actually opens on.
+    # Listed so the exhibition can roll it at all: leaving a world out of this
+    # tuple is the one way it becomes unreachable from here.
     "tenins_ball",
 )
 MAP_SHAPES = ("flat", "planet")
@@ -1675,10 +1675,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--map",
         choices=MAP_TYPES,
-        default="tenins_ball",
+        default="lakes",
     )
     parser.add_argument("--shape", choices=MAP_SHAPES, default="planet")
-    parser.add_argument("--poles", choices=MAP_POLES, default="poles")
+    # These defaults are not free choices: `verify_default_contract` in
+    # `civvis_desktop_apps.py` reads `stock_opening_params` out of
+    # `src/server.rs` and fails when `--players`, `--map`, `--shape`, `--poles`
+    # or `--speed` here name a different world. A supervisor started with no
+    # world arguments therefore serves the world the product itself opens on
+    # rather than a third description of it.
+    parser.add_argument("--poles", choices=MAP_POLES, default="randomized")
     parser.add_argument(
         "--speed",
         choices=("online", "quick", "standard", "epic", "marathon"),

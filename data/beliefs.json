@@ -10,7 +10,19 @@
     "stone_circles": {"note":"+2 Faith from Quarries","effects":{"quarry_faith":2}},
     "goddess_of_festivals": {"note":"+1 Culture from Plantations","effects":{"plantation_culture":1}},
     "religious_idols": {"note":"+2 Faith from Mines over Bonus and Luxury resources","effects":{"resource_mine_faith":2}},
-    "god_of_craftsmen": {"note":"+1 Production and +1 Faith from improved Strategic resources","effects":{"strategic_improved_production":1,"strategic_improved_faith":1}}
+    "god_of_craftsmen": {"note":"+1 Production and +1 Faith from improved Strategic resources","effects":{"strategic_improved_production":1,"strategic_improved_faith":1}},
+    "desert_folklore": {"note":"Holy Sites get +1 Faith from adjacent Desert tiles","effects":{"holy_site_desert_faith":1}},
+    "dance_of_the_aurora": {"note":"Holy Sites get +1 Faith from adjacent Tundra tiles","effects":{"holy_site_tundra_faith":1}},
+    "sacred_path": {"note":"Holy Sites get +1 Faith from adjacent Rainforest tiles","effects":{"holy_site_jungle_faith":1}},
+    "god_of_war": {"note":"Faith equal to 50% of the strength of each combat unit killed within 8 tiles of a Holy Site","effects":{"faith_on_kill_near_holy_site_pct":50}},
+    "god_of_healing": {"note":"+30 healing in your Holy Site and every tile adjacent to it","effects":{"holy_site_heal":30}},
+    "river_goddess": {"note":"+2 Amenities and +2 Housing from a Holy Site adjacent to a River","effects":{"river_holy_site_amenities":2,"river_holy_site_housing":2}},
+    "city_patron_goddess": {"note":"+25% Production toward districts in cities with no specialty district","effects":{"first_district_production_pct":25}},
+    "monument_to_the_gods": {"note":"+15% Production toward Ancient and Classical era wonders","effects":{"ancient_classical_wonder_production_pct":15}},
+    "initiation_rites": {"note":"+50 Faith for each barbarian camp cleared, and the unit that cleared it heals 100 HP","effects":{"camp_cleared_faith":50,"camp_cleared_heal":100}},
+    "lady_of_the_reeds_and_marshes": {"note":"+2 Production from Marsh, Oasis and Desert Floodplains","effects":{"reeds_production":2}},
+    "goddess_of_fire": {"note":"+2 Faith from Geothermal Fissures and Volcanic Soil","effects":{"volcanic_geothermal_faith":2}},
+    "earth_goddess": {"note":"+1 Faith from tiles with Breathtaking Appeal","effects":{"breathtaking_appeal_faith":1}}
   },
   "founder": {
     "tithe": {"note":"+3 Gold for each city following this religion","effects":{"gold_per_city":3}},

@@ -32,6 +32,7 @@
 
 use crate::rng::Rng;
 use crate::rules::CityStateSpec;
+use crate::sphere::trig;
 
 /// The six Suzerain types, in the order the roster declares them.
 const TYPES: [&str; 6] = [
@@ -47,7 +48,11 @@ const TYPES: [&str; 6] = [
 /// rather than a great-circle formula with a pole special case.
 fn direction(latitude: f64, longitude: f64) -> [f64; 3] {
     let (lat, lon) = (latitude.to_radians(), longitude.to_radians());
-    [lat.cos() * lon.cos(), lat.cos() * lon.sin(), lat.sin()]
+    [
+        trig::cos(lat) * trig::cos(lon),
+        trig::cos(lat) * trig::sin(lon),
+        trig::sin(lat),
+    ]
 }
 
 /// How far apart two sites are, as `1 - cos(angle)`: 0 for the same place and

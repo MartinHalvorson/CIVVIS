@@ -181,9 +181,9 @@ lane's cities natively, loses heavily to the scripted cascade it replaces.
 So the "structural hole" reading — that the missing piece was reach — is
 refuted on the native profile: the cascade is not an inferior stand-in for
 the valuations, it is the stronger controller for those lanes. (The live
-bridge keeps `governor_every_lane` on its own evidence in its own regime —
-`docs/FIDELITY.md`'s headless≠live applies; this number says nothing about
-the bridge bundle.)
+bridge once carried `governor_every_lane` on its own evidence in its own
+regime; the 2026-08-24 cull removed it after the 38,160-seat screen met the
+explicit negative-Diff threshold.)
 
 **Where this leaves the axis.** Four pre-registered gates, four RETAINs, two
 of them significant against extending the valuation system's reach or

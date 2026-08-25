@@ -447,6 +447,8 @@ const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
 const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden-map-monsters.png");
 const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
 const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
+const EMBEDDED_CIV6_UNIT_FLAG_PLATES: &[u8] =
+    include_bytes!("../web/assets/civ6-unit-flag-plates.png");
 
 /// The agents that exist in every build, with a friendly handle each.
 /// `crate::elo::builtin_send_ai` resolves the id, and the auto-play control
@@ -3033,6 +3035,11 @@ fn civ6_yield_icons() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_CIV6_YIELD_ICONS.to_vec())
 }
 
+fn civ6_unit_flag_plates() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-unit-flag-plates.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAG_PLATES.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -3299,7 +3306,8 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 }
 
 /// The stock opening world: four majors playing themselves out on the Tiny
-/// Tennis Ball globe, under simultaneous turns.
+/// Lakes globe, its heat scattered rather than banded by latitude, one seat
+/// at a time.
 ///
 /// This is the one description of "the game nobody has decided anything
 /// about yet". The browser build opens every civvis.ai visit on it (see
@@ -3327,9 +3335,12 @@ fn stock_opening_params(seed: u64) -> Params {
         // `--turn-structure simultaneous`; it is simply not selectable
         // from here.
         turn_structure: TurnStructure::Sequential,
-        map_script: MapScript::TeninsBall,
+        map_script: MapScript::Lakes,
         map_topology,
-        map_poles: MapPoles::Poles,
+        // Heat by noise instead of latitude: the world a first visit opens
+        // on has no ice cap at either end, and its snow, desert and jungle
+        // turn up wherever their own patch of noise puts them.
+        map_poles: MapPoles::Randomized,
         game_speed: GameSpeed::Online,
         max_turns: GameSpeed::Online.turn_limit(),
         victory_conditions: VictoryConditions {
@@ -3504,8 +3515,10 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.map_poles = v;
     }
     // Heat was a boolean once — poles on or off. Only its `true` still names a
-    // world that exists, and that world is the default anyway, so a client
-    // sending the old boolean is left where it already was rather than being
+    // world that exists, and it names it plainly, so an old client sending it
+    // gets the banded world it asked for. Its `false` asked for the retired
+    // no-cold-end world, which nothing can build now, so that one falls
+    // through to whatever the request otherwise settled on rather than being
     // pushed into the one remaining alternative it never asked for.
     if request["map_poles"].as_bool() == Some(true) {
         p.map_poles = MapPoles::Poles;
@@ -4130,6 +4143,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/civ6-yield-icons.png") => {
             respond(stream, "200 OK", "image/png", &civ6_yield_icons());
         }
+        ("GET", "/assets/civ6-unit-flag-plates.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_unit_flag_plates());
+        }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
         // could queue behind an AI step for its entire three-second timeout.
@@ -4750,8 +4766,9 @@ mod tests {
         tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState,
         FrameDelivery, Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
         DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
-        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
+        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR,
+        STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
     use crate::server::{
@@ -10492,7 +10509,6 @@ fetchpriority=\"high\""
         // Heat is a setting about climate, not about whether two ice caps
         // exist, so it is named for what it decides.
         assert!(EMBEDDED_INDEX.contains("Thermal distribution<select id=\"mappoles\""));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"randomized\">Randomized</option>"));
         assert!(!EMBEDDED_INDEX.contains("Poles<select id=\"mappoles\""));
         // And it offers two worlds, not three: heat either follows latitude or
         // it doesn't. The world with no cold end at all is retired, so it is
@@ -10516,6 +10532,18 @@ fetchpriority=\"high\""
                 thermal_options.contains(&format!("value=\"{}\"", spec.id)),
                 "the lobby is missing {}",
                 spec.id
+            );
+            // The label as well as the id, so a world cannot be offered under
+            // the wrong name. Which of the two carries `selected` is the stock
+            // world's business and belongs to
+            // `the_lobby_markup_agrees_with_the_stock_opening_setup`; matching
+            // a whole option element here instead would fail this test every
+            // time that default moved, which is exactly what it did.
+            assert!(
+                thermal_options.contains(&format!(">{}</option>", spec.name)),
+                "the lobby does not name {} as {:?}",
+                spec.id,
+                spec.name
             );
         }
 
@@ -12009,19 +12037,21 @@ fetchpriority=\"high\""
     }
 
     /// The first world a civvis.ai visitor ever waits on is the smallest
-    /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-    /// shipped table, spectated, at Online speed, under simultaneous turns.
-    /// The browser build's `wasm::opening_params` is this function with the
-    /// page's seed, so the contract is tested here, where the suite actually
-    /// runs.
+    /// stock one: four majors on the Tiny Lakes globe, sized by the shipped
+    /// table, its heat scattered rather than banded by latitude, spectated,
+    /// at Online speed, one seat at a time. The browser build's
+    /// `wasm::opening_params` is this function with the page's seed, so the
+    /// contract is tested here, where the suite actually runs.
     #[test]
-    fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
+    fn the_stock_opening_world_is_the_tiny_lakes_exhibition() {
         let params = stock_opening_params(7);
         let size = MapSize::for_players(params.num_players);
 
         assert_eq!(params.num_players, 4);
-        assert_eq!(params.map_script, MapScript::TeninsBall);
+        assert_eq!(params.map_script, MapScript::Lakes);
         assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(params.map_poles, MapPoles::Randomized);
+        assert!(!params.map_poles.has_poles());
         assert_eq!(
             (params.width, params.height),
             size.dimensions(MapTopology::Planet)
@@ -12483,6 +12513,53 @@ fetchpriority=\"high\""
                 "unit {unit} has no Civilization VI icon cell"
             );
         }
+        // Naming every unit is not enough: `nihang` was named here, and its
+        // cell held a duplicate of `warrior_monk`'s picture because the cutter
+        // never learned about it. What follows is the rest of that contract --
+        // the sheet is the ruleset's roster, in the ruleset's order, and every
+        // cell of it has ink.
+        let manifest = civ6_unit_glyph_manifest();
+        let cut: Vec<&str> = manifest["units"]
+            .as_array()
+            .expect("the glyph manifest's unit rows")
+            .iter()
+            .map(|row| row["type"].as_str().expect("a unit id"))
+            .collect();
+        let roster: Vec<&str> = rules.units.keys().map(|name| name.as_str()).collect();
+        assert_eq!(
+            cut, roster,
+            "the cut sheet is the ruleset's units in the ruleset's order"
+        );
+        let named: Vec<&str> = ids
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .collect();
+        assert_eq!(
+            named, roster,
+            "the renderer's roster is the same list in the same order, so a \
+             cell index is a unit's place in it"
+        );
+        for (seat, row) in manifest["units"].as_array().unwrap().iter().enumerate() {
+            let unit = row["type"].as_str().unwrap();
+            assert_eq!(
+                row["index"].as_u64(),
+                Some(seat as u64),
+                "{unit} does not sit in its own cell"
+            );
+            assert!(
+                row["ink"].as_u64().unwrap_or(0) > 0,
+                "{unit} was cut from a blank cell"
+            );
+            let cell = manifest["cell_size"].as_u64().unwrap();
+            let box_ = row["box"].as_array().expect("a measured silhouette");
+            let (x, y) = (box_[0].as_u64().unwrap(), box_[1].as_u64().unwrap());
+            let (w, h) = (box_[2].as_u64().unwrap(), box_[3].as_u64().unwrap());
+            assert!(
+                w > 0 && h > 0 && x + w <= cell && y + h <= cell,
+                "{unit}'s silhouette does not fit its own cell"
+            );
+        }
 
         let renderer = EMBEDDED_INDEX
             .split("function drawUnitPictogram")
@@ -12513,8 +12590,10 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
         assert_eq!(
             EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
-            3,
-            "the one share is declared once and spent only by the seat routine"
+            4,
+            "the one share is declared once and spent only by the seat \
+             routine -- once for the cut flag and once for each retired \
+             fallback shape"
         );
         assert_eq!(
             EMBEDDED_INDEX.matches("strategicUnitGlyphSeat(").count(),
@@ -12551,60 +12630,261 @@ fetchpriority=\"high\""
         }
     }
 
-    /// Two counter shapes, and they are the base game's two: a circle for a
-    /// unit that can fight and Civilization VI's rounded triangle, point down,
-    /// for one that cannot. The retired civilian capsule was a shape of the
-    /// viewer's own invention, which is why it read as a second marker set
-    /// instead of as the same set saying "this one is not an army".
+    /// A repository file, read at test time rather than embedded in the binary.
+    fn repository_file(path: &str) -> String {
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path))
+            .unwrap_or_else(|error| panic!("{path}: {error}"))
+    }
+
+    /// What `tools/civ6_unit_glyphs.py` recorded about the sheet it cut.
+    fn civ6_unit_glyph_manifest() -> serde_json::Value {
+        serde_json::from_str(&repository_file("web/assets/civ6-unit-flags.json"))
+            .expect("the unit glyph manifest is JSON")
+    }
+
+    /// FNV-1a, the change detector `rules.rs` already uses for the ruleset.
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+        })
+    }
+
+    /// The unit glyphs are cut off the installed game, not scraped from an
+    /// archive of it.
+    ///
+    /// They were the last CIVVIS art that was not. `tools/civ6_unit_flags.swift`
+    /// downloaded 89 Civilopedia cards from the Civilization Wiki and recovered
+    /// the white symbols by subtracting a per-pixel percentile of the set --
+    /// which worked, and which meant the spectator's unit markers depended on a
+    /// third party's copy of a file sitting on the same disk. The cards are
+    /// gone; `tools/civ6_unit_glyphs.py` reads
+    /// `Base/Platforms/Windows/BLPs/UI/Icons.blp` and its DLC siblings.
+    ///
+    /// The point of this test is the *chain*: which Civilization VI unit a
+    /// CIVVIS unit is, which icon that unit's flag asks for, and which cell of
+    /// which atlas that icon is. A roster written down beside the renderer
+    /// instead is what put a Warrior Monk's picture on every Nihang.
     #[test]
-    fn a_civilian_counter_is_the_base_games_rounded_triangle() {
-        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
-        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
-        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;"));
-        let token = EMBEDDED_INDEX
-            .split("function strategicUnitTokenPath(x, y, r, civilian = false) {")
-            .nth(1)
-            .and_then(|tail| tail.split("function strategicUnitCounterHalfWidth").next())
-            .expect("strategic unit counter outline");
-        assert!(token.contains("if (!civilian) { cx.arc(x, y, r, 0, 7); return; }"));
-        // The corners are three discs and `cx.arc` draws the side into each,
-        // which is how the three-count yield plate already makes the base
-        // game's rounded triangle. The first vertex points straight down.
-        assert!(token.contains("const out = Math.PI / 2 + at * 2 * Math.PI / 3;"));
-        assert!(token.contains(
-            "cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,\n           out - Math.PI / 3, out + Math.PI / 3);"
+    fn the_unit_glyphs_are_cut_from_the_installed_game() {
+        let cutter = repository_file("tools/civ6_unit_glyphs.py");
+        assert!(
+            cutter.contains("import civ6_env as env"),
+            "the install is resolved by the one module allowed to look for it"
+        );
+        assert!(
+            cutter.contains("import civ6_unit_flag_plates as blp"),
+            "one parser reads the package format, not two"
+        );
+        assert!(cutter.contains("assets.rglob(\"Icons.blp\")"));
+        assert!(cutter.contains("ICON_ATLAS_UNITS"));
+        // The scrape is retired, not merely unused: a fallback nothing runs is
+        // a fallback nobody notices has rotted.
+        assert!(
+            !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tools/civ6_unit_flags.swift")
+                .exists(),
+            "the Civilization Wiki scraper is gone"
+        );
+        assert!(!EMBEDDED_INDEX.contains("civ6_unit_flags.swift"));
+
+        // The manifest describes the sheet committed beside it and no other.
+        let manifest = civ6_unit_glyph_manifest();
+        assert_eq!(
+            manifest["png_bytes"].as_u64(),
+            Some(EMBEDDED_CIV6_UNIT_FLAGS.len() as u64)
+        );
+        assert_eq!(
+            manifest["png_fnv1a64"].as_str(),
+            Some(format!("{:#018x}", fnv1a64(EMBEDDED_CIV6_UNIT_FLAGS)).as_str()),
+            "the manifest was written for a different atlas than the one here"
+        );
+        let cell = manifest["cell_size"].as_u64().unwrap();
+        let columns = manifest["columns"].as_u64().unwrap();
+        let width = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[16..20].try_into().unwrap());
+        let height = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[20..24].try_into().unwrap());
+        assert_eq!(u64::from(width), columns * cell);
+        assert_eq!(u64::from(height), manifest["rows"].as_u64().unwrap() * cell);
+        assert!(EMBEDDED_INDEX.contains(&format!(
+            "const CIV6_UNIT_ICON_CELL = {cell}, CIV6_UNIT_ICON_COLUMNS = {columns};"
+        )));
+
+        // Every Civilization VI name the cut resolved is a name Civilization VI
+        // actually ships. `tools/civ6_type_names.py` harvests that list off the
+        // install for the live order channel, which learned the hard way that a
+        // name the game does not have is discarded in silence.
+        let shipped: std::collections::BTreeSet<String> =
+            serde_json::from_str(&repository_file("data/civ6_type_names.json"))
+                .expect("the harvested Civilization VI type names");
+        let rules = crate::rules::Rules::embedded();
+        let mut borrowed = 0;
+        for row in manifest["units"].as_array().unwrap() {
+            let unit = row["type"].as_str().unwrap();
+            let kind = row["civ6_type"].as_str().expect("a Civilization VI type");
+            assert!(
+                shipped.contains(kind),
+                "{unit} is cut as {kind}, which Civilization VI does not ship"
+            );
+            assert!(row["icon"].as_str().unwrap().starts_with("ICON_UNIT_"));
+            assert!(row["package"].as_str().unwrap().ends_with("Icons.blp"));
+            // A unit with no symbol icon of its own borrows one, and only from
+            // the unit the ruleset says it replaces -- never from a default.
+            if let Some(stand_in) = row["via"].as_str() {
+                borrowed += 1;
+                assert_eq!(
+                    rules.units[unit].replaces.as_deref(),
+                    Some(stand_in),
+                    "{unit} borrows {stand_in}'s glyph without replacing it"
+                );
+            }
+        }
+        assert_eq!(
+            borrowed, 1,
+            "Civilization VI defines a symbol icon for every unit of this \
+             ruleset but the Oromo Cavalry, which stands on the Courser's"
+        );
+    }
+
+    /// The command counter is Civilization VI's own unit flag, not a shape of
+    /// this viewer's. Both retired shapes -- the circle and the rounded
+    /// triangle, point *down* -- were invented here; the base game authors
+    /// eight silhouettes, points its civilian triangle *up*, stands a
+    /// fortified soldier on a shield and an embarked one on a boat cut. This
+    /// is the same contract the yield signs already keep: the sheet is cut off
+    /// the installed game, and every question the counter answers is measured
+    /// from that one sheet rather than restated beside it.
+    #[test]
+    fn a_unit_counter_is_the_base_games_own_flag() {
+        assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.len() > 5_000);
+        // Cut, not imitated, and the cutter says where from.
+        let cutter = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/civ6_unit_flag_plates.py"),
+        )
+        .expect("the flag-plate cutter");
+        assert!(cutter.contains("Base/Platforms/Windows/BLPs/UI/InWorld.blp"));
+        assert!(
+            cutter.contains("import civ6_env as env"),
+            "the install is resolved by the one module allowed to look for it"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/civ6-unit-flag-plates.png\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "const CIV6_FLAG_PLATE_STYLES = [\"base\", \"civilian\", \"naval\", \"support\",\n                                \"trade\", \"religion\", \"fortify\", \"embark\"];"
         ));
 
-        // The triangle stands inside the circle its seat was measured for, so
-        // a civilian can no more crowd its hex than a soldier can.
-        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(ux, uy, r, civilian);"));
-        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, rr, civilian);"));
-        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(d.x, d.y, r, civilian);"));
-        // And the selection ring is the counter's own outline, not a circle
-        // drawn over a triangle.
+        // The sheet really carries those eight styles, in that order, as
+        // square cells -- the one fact a re-cut could break silently.
+        let cell = usize::from(u32::from_be_bytes(
+            EMBEDDED_CIV6_UNIT_FLAG_PLATES[20..24].try_into().unwrap(),
+        ) as u16);
+        let width =
+            u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAG_PLATES[16..20].try_into().unwrap()) as usize;
+        assert!(cell > 0, "the plate sheet has a height");
+        assert_eq!(
+            width,
+            cell * 8,
+            "eight square style cells in one row, {cell}px each"
+        );
+
+        // The silhouette is measured off the sheet, once, and everything the
+        // counter has to answer comes from that measurement. A hand-kept table
+        // of shapes beside it is exactly what this replaces.
+        assert!(EMBEDDED_INDEX.contains("function measureCiv6FlagPlates() {"));
+        assert!(EMBEDDED_INDEX.contains("CIV6_FLAG_PLATE_ATLAS.onload = () => {"));
+        let token = EMBEDDED_INDEX
+            .split("function strategicUnitTokenPath(x, y, r, style = null) {")
+            .nth(1)
+            .and_then(|tail| tail.split("// Paint one whole counter").next())
+            .expect("strategic unit counter outline");
+        assert!(token.contains("const shape = civ6FlagPlateShape(style);"));
+        assert!(token.contains("for (let at = 0; at < shape.outline.length; at++) {"));
+
+        // The tint keeps the flag's authored shading instead of flattening it
+        // to the owner's colour, and puts the silhouette's alpha back after.
+        let plate = EMBEDDED_INDEX
+            .split("function civ6UnitFlagPlate(style, color) {")
+            .nth(1)
+            .and_then(|tail| tail.split("// The counter's outline").next())
+            .expect("flag plate tint");
+        assert!(plate.contains("g.globalCompositeOperation = \"multiply\";"));
+        assert!(plate.contains("g.globalCompositeOperation = \"destination-in\";"));
+
+        // One counter routine paints the flat map, the globe and the casualty,
+        // so no surface can quietly keep drawing a circle.
         assert!(EMBEDDED_INDEX
-            .contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), civilian);"));
+            .contains("function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawStrategicUnitCounter(").count(),
+            4,
+            "the flat map, the globe and the casualty all paint the one counter"
+        );
+        // And the selection ring is still the counter's own outline, not a
+        // circle drawn over a flag.
+        assert!(
+            EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), style);")
+        );
         assert_eq!(
             EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
-            6,
-            "the flat map fill, outline and selection ring, the globe and the \
-             casualty all take the one token path"
+            4,
+            "the counter routine's fill and outline, the selection ring, and \
+             the one declaration"
         );
 
-        // Which unit gets which counter is the viewer's one answer to "can
-        // this fight", not a second list kept beside it.
-        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(u.type);"));
-        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(unit.type);"));
-        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(d.type);"));
+        // Which flag a unit stands on is the ruleset's own answer, so a mod's
+        // unit takes the right silhouette without a second roster kept here.
+        let style = EMBEDDED_INDEX
+            .split("function civ6UnitFlagStyle(unit) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function measureCiv6FlagPlates").next())
+            .expect("unit flag style");
+        assert!(style.contains("if (unit.embarked) return \"embark\";"));
+        assert!(style.contains("if (unit.fortified) return \"fortify\";"));
+        assert!(style.contains("if (spec.class === \"religious\") return \"religion\";"));
+        assert!(style.contains("if (spec.class === \"support\") return \"support\";"));
+        assert!(style.contains("if (spec.domain === \"sea\") return \"naval\";"));
+        assert!(style.contains(
+            "if (spec.class === \"civilian\" || spec.class === \"espionage\") return \"civilian\";"
+        ));
+        assert!(style.contains("return CIVILIAN_UNITS.has(unit.type) ? \"civilian\" : \"base\";"));
+        // Those class names have to be the ones the ruleset actually ships, or
+        // every unit would silently fall through to the military flag.
+        let rules = crate::rules::Rules::embedded();
+        for (unit, class) in [
+            ("missionary", "religious"),
+            ("battering_ram", "support"),
+            ("settler", "civilian"),
+        ] {
+            assert_eq!(
+                rules.units.get(unit).map(|spec| spec.class.as_str()),
+                Some(class),
+                "{unit} must still be class {class} for the flag it stands on"
+            );
+        }
+        assert_eq!(
+            rules
+                .units
+                .get("galley")
+                .and_then(|spec| spec.domain.clone()),
+            Some("sea".into()),
+            "a Galley must still be a sea unit for the naval flag"
+        );
+        assert!(
+            rules.units.contains_key("trader"),
+            "the Trade flag is named for a real unit"
+        );
+
+        // The retired shapes stay as the pre-load fallback, and only as that.
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
+        assert!(token.contains("if (style !== \"civilian\") { cx.arc(x, y, r, 0, 7); return; }"));
+        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
+        assert!(!EMBEDDED_INDEX.contains("CIVILIAN_UNITS.has(u.type);"));
 
         // A health bar is only ever as wide as the counter is where it sits,
-        // so a plundered Trader's bar tightens into the point instead of
-        // hanging out over the tile.
-        assert!(
-            EMBEDDED_INDEX.contains("function strategicUnitCounterHalfWidth(r, dy, civilian) {")
-        );
+        // so a plundered Trader's bar tightens into the flag's point instead
+        // of hanging out over the tile -- now read off the real silhouette.
+        assert!(EMBEDDED_INDEX.contains("function strategicUnitCounterHalfWidth(r, dy, style) {"));
         assert!(EMBEDDED_INDEX.contains(
-            "const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, civilian);"
+            "const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, style);"
         ));
         assert!(EMBEDDED_INDEX
             .contains("const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);"));
@@ -14559,6 +14839,7 @@ fetchpriority=\"high\""
             desired_cities: 4,
             assessed_turn: 37,
             peace_offers: Vec::new(),
+            peace_routed: Vec::new(),
             forces: Vec::new(),
             war: Some(crate::ai::WarPlanReport {
                 enabled: true,
@@ -16047,21 +16328,23 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
-    /// The played game wears Civilization VI's own arrangement, so that a
-    /// person who has played that game can drive this one without being told
-    /// where anything is. The geometry below is read off the installed game's
+    /// A world wearing Civilization VI's own arrangement, so that a person who
+    /// has played that game can read this one without being told where
+    /// anything is. The geometry below is read off the installed game's
     /// interface definitions (`Base/Assets/UI`), not remembered:
     /// `TopPanel.xml` for the yield strip, `LaunchBar.xml` for the two ringed
     /// tree hooks that lead the bar, `WorldTracker.xml` for the research and
     /// civic panels under it, `MinimapPanel.xml` (`Anchor="L,B"`) for the
     /// chart, and `ActionPanel.xml` / `NotificationPanel.xml` (`Anchor="R,B"`)
-    /// for the corner End Turn owns and the rail that climbs out of it.
+    /// for the corner the turn control owns and the rail that climbs out of
+    /// it. One class carries all of it — `body.civ6-frame` — and the two ways
+    /// in keep a class each: `playing-solo` for a seat somebody is holding,
+    /// `watching-world` for a simulation being watched.
     #[test]
     fn browser_seats_a_person_in_the_civ_six_arrangement() {
         for piece in [
             "id=\"civtop\"",
             "id=\"worldtracker\"",
-            "id=\"actionpanel\"",
             "id=\"rankingsbtn\"",
             "function playingSolo() { return !!state && !SPEC; }",
             "function drawSoloHud()",
@@ -16069,6 +16352,7 @@ fetchpriority=\"high\""
             "function drawWorldTracker()",
             "function launchTreeHook(kind)",
             "document.body.classList.toggle(\"playing-solo\", solo);",
+            "document.body.classList.toggle(\"civ6-frame\", solo);",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(piece),
@@ -16128,28 +16412,36 @@ fetchpriority=\"high\""
         ));
         assert!(EMBEDDED_INDEX.contains("style=\"--ring:${pct}%\""));
 
-        // The corners. End Turn owns the lower right, the notification rail
-        // climbs out of it, the selected unit sits inboard of it, and the
-        // chart takes the lower left the standings masthead used to make
-        // unusable.
-        assert!(EMBEDDED_INDEX.contains(
-            "body.playing-solo #actionpanel {\n    position: absolute; z-index: 9; \
-             right: var(--panel-edge); bottom: var(--panel-edge);"
-        ));
+        // The corners. The selected unit owns the lower right, the
+        // notification rail climbs out of it, and the chart takes the lower
+        // left the standings masthead used to make unusable. There is no
+        // action corner: End Turn, the auto-play controls and the transport
+        // all stay in the command deck, which stays open.
+        assert!(!EMBEDDED_INDEX.contains("id=\"actionpanel\""));
+        assert!(!EMBEDDED_INDEX.contains("panel.appendChild(footer);"));
         assert!(EMBEDDED_INDEX.contains(
             "top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
         ));
         assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
-        assert!(EMBEDDED_INDEX.contains("body.playing-solo .minimap-frame {"));
+        assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
         assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
+        // The deck is the seat's own panel and it opens with the world. Only
+        // an explicit fold is remembered, so a first visit cannot inherit one.
+        assert!(EMBEDDED_INDEX.contains("togglePanel(chosen === \"closed\", false);"));
 
-        // A played game does not carry the laboratory's Elo table across its
-        // sky; Civ 6 keeps the standings behind a report and so does this.
+        // The standings masthead and the arena rail are this client's own
+        // instrument, so a played game opens with them on screen — #2275 put
+        // them behind ☗ and that is reverted. The report can still be folded
+        // away, and that answer is kept under a key that is not the shared
+        // map-overlay one.
         assert!(EMBEDDED_INDEX.contains(
-            "body.playing-solo:not(.solo-rankings) #playerhud,\n  \
-             body.playing-solo:not(.solo-rankings) #victoryhud { display: none; }"
+            "body.civ6-frame:not(.rankings-open) #playerhud,\n  \
+             body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }"
         ));
-        assert!(EMBEDDED_INDEX.contains("function toggleSoloRankings(open)"));
+        assert!(EMBEDDED_INDEX.contains("function toggleRankingsReport(open)"));
+        assert!(EMBEDDED_INDEX.contains("toggleRankingsReport(chosen !== \"0\");"));
+        assert!(EMBEDDED_INDEX.contains("const SOLO_RANKINGS_KEY = \"civvis-solo-rankings-v1\";"));
+        assert!(!EMBEDDED_INDEX.contains("civvis-map-overlays-v1\", rankings"));
 
         // The button says what is blocking it in that game's own words —
         // `LOC_ACTION_PANEL_*` from `Base/Assets/Text/en_US/InGameText.xml`.
@@ -16171,7 +16463,7 @@ fetchpriority=\"high\""
         // `--panel-edge` is, or every `calc()` naming both is invalid at
         // computed-value time and the panel silently falls back to `auto`.
         let vars = EMBEDDED_INDEX
-            .find("  body.playing-solo #maparea {")
+            .find("  body.civ6-frame #maparea {")
             .expect("the arrangement's own custom properties");
         let edge = EMBEDDED_INDEX
             .find("--panel-edge: clamp(")
@@ -16185,12 +16477,13 @@ fetchpriority=\"high\""
         // A battlefield has no empire behind it, so the strip keeps the turn
         // and the era and drops the rest, and neither the world tracker nor
         // the two tree hooks are painted at all.
-        assert!(EMBEDDED_INDEX.contains("const empire = worldStandingsInPlay();"));
+        assert!(
+            EMBEDDED_INDEX.contains("const empire = watched !== null && worldStandingsInPlay();")
+        );
         assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
         assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
-        assert!(
-            EMBEDDED_INDEX.contains("if (!playingSolo() || !RULES || !worldStandingsInPlay()) {")
-        );
+        assert!(EMBEDDED_INDEX
+            .contains("if (arrangementSeat() === null || !RULES || !worldStandingsInPlay()) {"));
 
         // Civ 6 prints the eureka on every tree node, and the inspiration on
         // the civic panel. Showing the bolt only once the boost has landed
@@ -16276,6 +16569,98 @@ fetchpriority=\"high\""
             "the plot market comes after the production list"
         );
         assert!(build.contains("<details class=\"city-group city-plots\""));
+    }
+
+    /// A watched simulation wears the laboratory, not Civilization VI's
+    /// arrangement.
+    ///
+    /// #2382 gave the spectator the same frame a played seat wears and put the
+    /// standings masthead and the arena rail behind ☗ with it. Over a
+    /// simulation those two *are* the instrument — the thing an operator opened
+    /// the page to read — so hiding them by default hid the experiment. The
+    /// frame is a played seat's again, and this is the test that says so: not
+    /// that the watcher's pieces are placed correctly, but that the watcher has
+    /// none of them.
+    #[test]
+    fn a_watched_simulation_keeps_the_laboratory() {
+        // The frame answers to one predicate, and that predicate is the seat.
+        assert!(EMBEDDED_INDEX.contains("function civ6Frame() { return playingSolo(); }"));
+        assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"civ6-frame\", solo);"));
+
+        // Every piece #2382 added for the watcher is gone, markup, style and
+        // pass alike. A spectator-only element that nothing paints is worse
+        // than no element: it reads as a feature to whoever finds it next.
+        for gone in [
+            "diploribbon",
+            "watching-world",
+            "RIBBON_FIGURES",
+            "arrangeWatchHud",
+            "civvis-watch-rankings-v1",
+            "civvis-watch-deck-v1",
+            "deckChoiceKey",
+            "watchingWorld",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "a watched world keeps the laboratory, so {gone} has nothing left to do"
+            );
+        }
+
+        // The transport stays in the deck it is written in. #2382 moved it out
+        // to the action corner by the same node move #2275 used for End Turn;
+        // both are reverted, so neither node is re-parented at all.
+        assert!(!EMBEDDED_INDEX.contains("panel.appendChild(bar);"));
+        assert!(EMBEDDED_INDEX.contains("<div id=\"specbar\" style=\"display:none\">"));
+        let deck = EMBEDDED_INDEX
+            .split_once("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
+            .expect("the deck's action area")
+            .1;
+        let footer = deck
+            .find("id=\"humanfooter\"")
+            .expect("End Turn in the deck");
+        let transport = deck
+            .find("id=\"specbar\"")
+            .expect("the transport in the deck");
+        let close = deck.find("</div>\n  </div>").unwrap_or(deck.len());
+        assert!(
+            footer < close && transport < close,
+            "End Turn and the transport are the deck's, and nothing moves them out of it"
+        );
+
+        // The report's own class still exists — ☗ folds the masthead and the
+        // rail away for a look at the map — but only a played seat ever wears
+        // the frame those rules hang off, so a watched world simply shows them.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.civ6-frame:not(.rankings-open) #playerhud,\n  \
+             body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }"
+        ));
+        let rankings = EMBEDDED_INDEX
+            .split_once("function toggleRankingsReport(open) {")
+            .expect("the rankings report")
+            .1
+            .split_once("\n}")
+            .expect("the end of the rankings report")
+            .0;
+        assert!(
+            !rankings.contains("civvis-map-overlays-v1") && !rankings.contains("OVERLAY_"),
+            "the rankings report must never write the shared overlay preferences"
+        );
+        assert!(rankings.contains("if (playingSolo()) {"));
+
+        // A compact map area stacks the report into one band with rules
+        // carrying two ids (`#maparea.player-hud-compact #playerhud`), which
+        // outrank the arrangement's own one-id selectors however far down
+        // they are written. The report is placed again at that weight, or it
+        // opens over the yield strip.
+        for piece in [
+            "body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud {",
+            "body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the compact report must be placed at the compact HUD's own weight: {piece}"
+            );
+        }
     }
 
     #[test]

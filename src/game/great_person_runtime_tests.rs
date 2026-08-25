@@ -150,6 +150,31 @@ fn recruit_current_merchant(game: &mut Game) -> String {
     expected
 }
 
+/// Move the global market on to a named individual by retiring everyone their
+/// class offers first.
+///
+/// ⚠ THESE TESTS USED TO WALK THE QUEUE BY POSITION, and #2377 took the roster
+/// from 65 individuals to 147. `Game::current_great_person` offers the lowest
+/// era first and breaks ties alphabetically by id, so filling in Gathering
+/// Storm's Classical Scientists put `aryabhata` in front of `hypatia` and every
+/// "the third Scientist is Newton" assertion below became a statement about the
+/// roster's length rather than about the person it names. Naming the person is
+/// the assertion each of these tests was always making.
+fn skip_to_great_person(game: &mut Game, id: &str) {
+    let kind = game.rules.great_people[id].kind.clone();
+    loop {
+        let current = game
+            .current_great_person(&kind)
+            .expect("the class still offers somebody")
+            .0
+            .to_string();
+        if current == id {
+            return;
+        }
+        game.retired_great_people.insert(current);
+    }
+}
+
 fn recruit_current_military_person(game: &mut Game, kind: &str) -> String {
     let expected = game.current_great_person(kind).unwrap().0.to_string();
     let cost = game.gp_cost(0, kind);
@@ -165,6 +190,7 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
     let initial_science = game.city_yields(city).science;
     let initial_boosts = game.players[0].boosted_techs.clone();
 
+    skip_to_great_person(&mut game, "hypatia");
     assert_eq!(recruit_current_scientist(&mut game), "hypatia");
     assert!(game.cities[&city]
         .buildings
@@ -181,11 +207,13 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
     // free Library is a no-op in a city that already has one -- exactly
     // Hypatia's case above -- while his +1 Science to Libraries still pays.
     let before_khayyam = game.city_yields(city).science;
+    skip_to_great_person(&mut game, "omar_khayyam");
     assert_eq!(recruit_current_scientist(&mut game), "omar_khayyam");
     assert_eq!(game.players[0].boosted_techs, initial_boosts);
     assert!((game.city_yields(city).science - before_khayyam - 1.0).abs() < 1e-9);
 
     let before_newton = game.city_yields(city).science;
+    skip_to_great_person(&mut game, "isaac_newton");
     assert_eq!(recruit_current_scientist(&mut game), "isaac_newton");
     assert!(game.cities[&city]
         .buildings
@@ -212,12 +240,14 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
     // and grants what Newton does: the University is already standing, so only
     // the permanent +2 Science to Universities lands.
     let before_darwin = game.city_yields(city).science;
+    skip_to_great_person(&mut game, "charles_darwin");
     assert_eq!(recruit_current_scientist(&mut game), "charles_darwin");
     assert!((game.city_yields(city).science - before_darwin - 2.0).abs() < 1e-9);
 
     let before_einstein = game.city_yields(city).science;
     let boosts_before_einstein = game.players[0].boosted_techs.clone();
 
+    skip_to_great_person(&mut game, "albert_einstein");
     assert_eq!(recruit_current_scientist(&mut game), "albert_einstein");
     assert!((game.city_yields(city).science - before_einstein - 4.0).abs() < 1e-9);
     let new_boosts: Vec<&Name> = game.players[0]
@@ -311,12 +341,14 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
         wonder: crate::name!("pyramids"),
         pos: wonder_site,
     }];
+    skip_to_great_person(&mut game, "imhotep");
     assert_eq!(recruit_current_engineer(&mut game), "imhotep");
     assert_eq!(game.cities[&city].production, 700.0);
 
     game.cities.get_mut(&city).unwrap().queue.clear();
     let culture_before = game.city_yields(city).culture;
     let boosts_before = game.players[0].boosted_techs.clone();
+    skip_to_great_person(&mut game, "leonardo_da_vinci");
     assert_eq!(recruit_current_engineer(&mut game), "leonardo_da_vinci");
     assert!((game.city_yields(city).culture - culture_before - 3.0).abs() < 1e-9);
     let new_boosts: Vec<&Name> = game.players[0]
@@ -332,6 +364,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
         pos: wonder_site,
     }];
     assert_eq!(game.current_great_person("engineer").unwrap().1.era, 4);
+    skip_to_great_person(&mut game, "gustave_eiffel");
     assert_eq!(recruit_current_engineer(&mut game), "gustave_eiffel");
     assert_eq!(game.cities[&city].production, 960.0);
 
@@ -390,6 +423,10 @@ fn immediate_great_people_require_stock_activation_sites_and_complete_work_capac
         .insert("engineer".to_string(), engineer_cost);
     game.claim_great_person(0, "engineer", None).unwrap();
     game.cities.get_mut(&city).unwrap().queue.clear();
+    // Isidore of Miletus and Filippo Brunelleschi are wonder-gated like
+    // Imhotep. Leonardo is the first Engineer whose gate is the Industrial
+    // Zone, which is the gate this block is about.
+    skip_to_great_person(&mut game, "leonardo_da_vinci");
     let leonardo_cost = game.gp_cost(0, "engineer");
     game.players[0]
         .gpp
@@ -472,6 +509,7 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
     let gold_before_crassus = game.players[0].gold;
     let envoys_before_crassus = game.players[0].envoys_free;
     let tiles_before_crassus = game.cities[&merchant_city].owned_tiles.len();
+    skip_to_great_person(&mut game, "marcus_licinius_crassus");
     assert_eq!(
         recruit_current_merchant(&mut game),
         "marcus_licinius_crassus"
@@ -498,6 +536,7 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
         .count();
     let capacity_before = game.trade_capacity(0);
     let gold_before_marco = game.players[0].gold;
+    skip_to_great_person(&mut game, "marco_polo");
     assert_eq!(recruit_current_merchant(&mut game), "marco_polo");
     assert_eq!(game.trade_capacity(0) - capacity_before, 1);
     assert_eq!(game.players[0].gold, gold_before_marco);
@@ -560,16 +599,19 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
     // `gold` pays once per charge, as Crassus' 60 x 3 shows above, and these
     // two carry one charge each.
     let gold_before_fugger = game.players[0].gold;
+    skip_to_great_person(&mut game, "jakob_fugger");
     assert_eq!(recruit_current_merchant(&mut game), "jakob_fugger");
     assert_eq!(game.players[0].gold - gold_before_fugger, 240.0);
 
     let gold_before_smith = game.players[0].gold;
+    skip_to_great_person(&mut game, "adam_smith");
     assert_eq!(recruit_current_merchant(&mut game), "adam_smith");
     assert_eq!(game.players[0].gold - gold_before_smith, 420.0);
 
     let rockefeller_route_gold = game.city_yields(merchant_city).gold;
     let capacity_before_rockefeller = game.trade_capacity(0);
     let gold_before_rockefeller = game.players[0].gold;
+    skip_to_great_person(&mut game, "john_rockefeller");
     assert_eq!(recruit_current_merchant(&mut game), "john_rockefeller");
     assert_eq!(game.trade_capacity(0), capacity_before_rockefeller);
     assert_eq!(game.players[0].gold, gold_before_rockefeller);
@@ -606,6 +648,7 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
     let target = game.spawn_unit("swordsman", 0, position);
     let untouched = game.spawn_unit("warrior", 0, position);
 
+    skip_to_great_person(&mut game, "hannibal_barca");
     assert_eq!(
         recruit_current_military_person(&mut game, "general"),
         "hannibal_barca"
@@ -613,6 +656,7 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
     assert!(game.promotion_pending(target));
     assert_eq!(game.units[&untouched].xp, 0);
 
+    skip_to_great_person(&mut game, "el_cid");
     assert_eq!(
         recruit_current_military_person(&mut game, "general"),
         "el_cid"
@@ -624,6 +668,7 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
     // the chain no longer jumps an era from Classical to Industrial. She
     // promotes rather than forms: `land_unit_formation` names the level to
     // reach, not a step, so a second level-one General is a no-op.
+    skip_to_great_person(&mut game, "joan_of_arc");
     assert_eq!(
         recruit_current_military_person(&mut game, "general"),
         "joan_of_arc"
@@ -631,6 +676,7 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
     assert!(game.promotion_pending(target));
     assert_eq!(game.units[&target].formation, 1);
 
+    skip_to_great_person(&mut game, "napoleon_bonaparte");
     assert_eq!(
         recruit_current_military_person(&mut game, "general"),
         "napoleon_bonaparte"
@@ -663,6 +709,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     ]);
 
     let formation_ship = game.spawn_unit("galley", 0, harbor);
+    skip_to_great_person(&mut game, "gaius_duilius");
     assert_eq!(
         recruit_current_military_person(&mut game, "admiral"),
         "gaius_duilius"
@@ -678,6 +725,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
         .filter(|unit| unit.owner == 0 && unit.kind == "quadrireme")
         .count();
     let naval_ranged_production = game.item_prod_mult(0, admiral_city, Some(&quadrireme));
+    skip_to_great_person(&mut game, "themistocles");
     assert_eq!(
         recruit_current_military_person(&mut game, "admiral"),
         "themistocles"
@@ -710,6 +758,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
         .values()
         .filter(|unit| unit.owner == 0 && unit.kind == "trader")
         .count();
+    skip_to_great_person(&mut game, "zheng_he");
     assert_eq!(
         recruit_current_military_person(&mut game, "admiral"),
         "zheng_he"
@@ -726,6 +775,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     assert!((game.city_yields(foreign_city).gold - origin_gold - 2.0).abs() < 1e-9);
     assert!((game.city_yields(admiral_city).gold - destination_gold - 2.0).abs() < 1e-9);
 
+    skip_to_great_person(&mut game, "santa_cruz");
     assert_eq!(
         recruit_current_military_person(&mut game, "admiral"),
         "santa_cruz"
@@ -749,6 +799,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     game.spawn_unit("galley", 0, ring[1]);
     game.spawn_unit("galley", 1, target);
     assert_eq!(game.flanking_bonus(attacker, target), 2.0);
+    skip_to_great_person(&mut game, "horatio_nelson");
     assert_eq!(
         recruit_current_military_person(&mut game, "admiral"),
         "horatio_nelson"
@@ -805,18 +856,27 @@ fn great_person_eras_offer_prices_and_patronage_follow_stock_rules() {
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(restored.gp_cost(0, "engineer"), locked_engineer_cost);
 
-    // A newly exposed person is priced in the world era at reveal time.
+    // A newly exposed person is priced in the world era at reveal time. Retire
+    // the rest of the Classical bench so the next reveal crosses an era.
     game.world_era = 3;
+    let classical_bench: Vec<String> = game
+        .rules
+        .great_people
+        .iter()
+        .filter(|(id, spec)| spec.kind == "scientist" && spec.era == 1 && id.as_str() != "hypatia")
+        .map(|(id, _)| id.to_string())
+        .collect();
+    game.retired_great_people.extend(classical_bench);
     let hypatia_cost = game.gp_cost(0, "scientist");
     game.players[0]
         .gpp
         .insert("scientist".to_string(), hypatia_cost);
     game.claim_great_person(0, "scientist", None).unwrap();
-    // The Medieval Scientist the roster gained when the era chain was filled
-    // in; the market used to skip straight from Hypatia to Newton.
+    // The first Medieval Scientist the shipped game offers; the market used to
+    // skip straight from Hypatia to Newton.
     assert_eq!(
         game.current_great_person("scientist").unwrap().0,
-        "omar_khayyam"
+        "abu_al_qasim_al_zahrawi"
     );
     assert_eq!(game.gp_cost(0, "scientist"), 120.0);
 
@@ -838,4 +898,359 @@ fn great_person_eras_offer_prices_and_patronage_follow_stock_rules() {
         .claim_great_person(0, "scientist", Some("gold"))
         .unwrap();
     assert_eq!(patronage.players[0].gold, 0.0);
+}
+
+/// Every effect key the roster spells is one the engine actually reads.
+///
+/// ★★★★ A GREAT PERSON WHOSE EFFECT NEVER FIRES IS WORSE THAN AN ABSENT ONE.
+/// `Game::current_great_person` offers one individual per class at a time, so a
+/// name with a misspelt or unimplemented effect key does not merely grant
+/// nothing — it *holds the class* until its price is paid, and the whole era's
+/// Campus, Harbour and Theatre Square output goes through it. The roster is
+/// hand-written JSON keyed by strings that `named_great_person_effect` reads by
+/// string, and nothing else in the type system connects the two.
+///
+/// This is the guard for that: the union of every key in the shipped roster,
+/// against the list this test states, which is the list the engine branches on.
+/// Adding a person with a new key fails here until the branch exists.
+#[test]
+fn every_effect_key_in_the_roster_is_read_by_the_engine() {
+    // Read off `Game::named_great_person_effect`, `great_person_effect` and
+    // `validate_great_person_activation` -- the three places a key is spent.
+    const READ_BY_THE_ENGINE: [&str; 34] = [
+        "ancient_classical_wonder_multiplier",
+        "annex_tile",
+        "city_production",
+        "destination_foreign_trade_gold",
+        "envoys",
+        "found_religion",
+        "free_library",
+        "free_lighthouse",
+        "free_quadrireme",
+        "free_shipyard",
+        "free_trader",
+        "free_university",
+        "gold",
+        "great_work_art",
+        "great_work_music",
+        "great_work_writing",
+        "land_unit_formation",
+        "land_unit_promotion_level",
+        "libraries_science",
+        "military_promotion",
+        "modern_atomic_tech_boosts",
+        "modern_tech_boosts",
+        "naval_flanking_bonus_pct",
+        "naval_promotion",
+        "naval_ranged_production_pct",
+        "naval_unit_formation",
+        "oil_per_turn",
+        "research_labs_science",
+        "strategic_destination_trade_gold",
+        "tech_boosts",
+        "trade_capacity",
+        "universities_science",
+        "wonder_production",
+        "workshops_culture",
+    ];
+    let rules = crate::rules::Rules::shipped();
+    for (id, spec) in rules.great_people.iter() {
+        assert!(
+            !spec.effects.is_empty(),
+            "{id} would consume a recruitment slot and grant nothing"
+        );
+        // `ancient_classical_wonder_multiplier` only scales `wonder_production`.
+        assert!(
+            !spec
+                .effects
+                .contains_key("ancient_classical_wonder_multiplier")
+                || spec.effects.contains_key("wonder_production"),
+            "{id} scales a wonder grant it does not make"
+        );
+        for key in spec.effects.keys() {
+            assert!(
+                READ_BY_THE_ENGINE.contains(&key.as_str()),
+                "{id} carries effect {key:?}, which no engine branch spends"
+            );
+        }
+    }
+}
+
+/// Every Writer, Artist and Musician signs the number of works Firaxis ships.
+///
+/// The three great-work classes are complete against Gathering Storm -- 29, 23
+/// and 18 individuals -- and their whole shipped effect is the works they
+/// create, taken per individual from the `GreatWorks` table. Two Musicians
+/// (Dimitrie Cantemir, Scott Joplin) leave three where the other sixteen leave
+/// two, so a class-wide constant would be wrong.
+#[test]
+fn every_great_work_person_signs_the_works_the_game_ships() {
+    let mut game = Game::new_full(1, 24, 16, 95_011, 300, 0, false);
+    let mut expected: std::collections::BTreeMap<&str, i64> = std::collections::BTreeMap::new();
+    let people: Vec<(String, crate::rules::GreatPersonSpec)> = game
+        .rules
+        .great_people
+        .iter()
+        .map(|(id, spec)| (id.to_string(), spec.clone()))
+        .collect();
+    let mut seen = std::collections::BTreeMap::new();
+    for (id, spec) in &people {
+        for (effect, kind) in [
+            ("great_work_writing", "writing"),
+            ("great_work_art", "art"),
+            ("great_work_music", "music"),
+        ] {
+            let Some(count) = spec.effects.get(effect).copied() else {
+                continue;
+            };
+            assert!(count >= 1.0, "{id} creates {count} works of {kind}");
+            *expected.entry(kind).or_default() += count as i64;
+            *seen.entry(spec.kind.clone()).or_insert(0usize) += 1;
+        }
+        game.named_great_person_effect(0, spec);
+    }
+    for (kind, works) in &expected {
+        assert_eq!(
+            game.players[0]
+                .counters
+                .get(&format!("great_work:{kind}"))
+                .copied()
+                .unwrap_or(0),
+            *works,
+            "the roster's {kind} works did not all reach the player"
+        );
+        assert_eq!(
+            game.players[0]
+                .great_work_pieces
+                .iter()
+                .filter(|piece| piece.kind == *kind)
+                .count() as i64,
+            *works
+        );
+    }
+    // Sun Tzu is a General who leaves one work of writing -- The Art of War --
+    // which is why the sweep is over effects rather than over classes.
+    assert_eq!(seen.get("writer").copied(), Some(29));
+    assert_eq!(seen.get("artist").copied(), Some(23));
+    assert_eq!(seen.get("musician").copied(), Some(18));
+    assert_eq!(seen.get("general").copied(), Some(1));
+    assert_eq!(
+        game.rules.great_people["dimitrie_cantemir"]
+            .effects
+            .get("great_work_music"),
+        Some(&3.0)
+    );
+    assert_eq!(
+        game.rules.great_people["scott_joplin"]
+            .effects
+            .get("great_work_music"),
+        Some(&3.0)
+    );
+}
+
+/// The Scientists and Engineers added from the shipped roster fire.
+#[test]
+fn added_scientists_and_engineers_grant_eurekas_and_wonder_production() {
+    let (mut game, city, _) = scientist_game(95_012);
+
+    // Aryabhata's three Eurekas, then Alfred Nobel's single Modern/Atomic one.
+    skip_to_great_person(&mut game, "aryabhata");
+    let before = game.players[0].boosted_techs.clone();
+    assert_eq!(recruit_current_scientist(&mut game), "aryabhata");
+    assert_eq!(
+        game.players[0].boosted_techs.difference(&before).count(),
+        3,
+        "Aryabhata triggers three Eurekas"
+    );
+
+    skip_to_great_person(&mut game, "alfred_nobel");
+    let before_nobel = game.players[0].boosted_techs.clone();
+    assert_eq!(recruit_current_scientist(&mut game), "alfred_nobel");
+    let nobel: Vec<&Name> = game.players[0]
+        .boosted_techs
+        .difference(&before_nobel)
+        .collect();
+    assert_eq!(nobel.len(), 1);
+    assert!((5..=6).contains(&game.rules.techs[nobel[0]].era));
+
+    // Isidore of Miletus pays 215 per charge into the wonder under
+    // construction, twice, and is refused when nothing is being built.
+    install_test_district(&mut game, city, "industrial_zone");
+    let wonder_site = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            *position != game.cities[&city].pos && game.map.tiles[position].district.is_none()
+        })
+        .unwrap();
+    skip_to_great_person(&mut game, "isidore_of_miletus");
+    let engineer_cost = game.gp_cost(0, "engineer");
+    game.players[0]
+        .gpp
+        .insert("engineer".to_string(), engineer_cost);
+    assert!(game.claim_great_person(0, "engineer", None).is_err());
+    game.cities.get_mut(&city).unwrap().production = 0.0;
+    game.cities.get_mut(&city).unwrap().queue = vec![Item::Wonder {
+        wonder: crate::name!("pyramids"),
+        pos: wonder_site,
+    }];
+    assert_eq!(recruit_current_engineer(&mut game), "isidore_of_miletus");
+    assert_eq!(game.cities[&city].production, 430.0);
+
+    game.cities.get_mut(&city).unwrap().production = 0.0;
+    skip_to_great_person(&mut game, "filippo_brunelleschi");
+    assert_eq!(recruit_current_engineer(&mut game), "filippo_brunelleschi");
+    assert_eq!(game.cities[&city].production, 630.0);
+}
+
+/// The Merchants, Generals and Admirals added from the shipped roster fire.
+#[test]
+fn added_merchants_generals_and_admirals_fire_their_exact_effects() {
+    let mut game = Game::new_full(2, 28, 18, 95_013, 300, 0, false);
+    let mut cities = Vec::new();
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        cities.push(game.found_city_for(pid, game.units[&settler].pos, None));
+    }
+    let (home, foreign) = (cities[0], cities[1]);
+    install_test_district(&mut game, home, "commercial_hub");
+    let harbor = install_test_district(&mut game, home, "harbor");
+    game.map.tiles.get_mut(&harbor).unwrap().terrain = crate::name!("coast");
+    game.players[0].civics.insert(crate::name!("foreign_trade"));
+
+    // Zhang Qian: +1 Trade Route capacity and +2 Gold on both ends of a
+    // foreign route into the activation city.
+    game.routes.push(TradeRoute {
+        origin: foreign,
+        dest: home,
+        owner: 1,
+        ends: game.turn + 30,
+    });
+    let origin_gold = game.city_yields(foreign).gold;
+    let destination_gold = game.city_yields(home).gold;
+    let capacity = game.trade_capacity(0);
+    skip_to_great_person(&mut game, "zhang_qian");
+    assert_eq!(recruit_current_merchant(&mut game), "zhang_qian");
+    assert_eq!(game.trade_capacity(0) - capacity, 1);
+    assert!((game.city_yields(foreign).gold - origin_gold - 2.0).abs() < 1e-9);
+    assert!((game.city_yields(home).gold - destination_gold - 2.0).abs() < 1e-9);
+
+    // Zhou Daguan: three envoys and no Gold.
+    let gold = game.players[0].gold;
+    let envoys = game.players[0].envoys_free;
+    skip_to_great_person(&mut game, "zhou_daguan");
+    assert_eq!(recruit_current_merchant(&mut game), "zhou_daguan");
+    assert_eq!(game.players[0].envoys_free - envoys, 3);
+    assert_eq!(game.players[0].gold, gold);
+
+    // John Jacob Astor: 500 Gold and two envoys, both at once.
+    let gold = game.players[0].gold;
+    let envoys = game.players[0].envoys_free;
+    skip_to_great_person(&mut game, "john_jacob_astor");
+    assert_eq!(recruit_current_merchant(&mut game), "john_jacob_astor");
+    assert_eq!(game.players[0].gold - gold, 500.0);
+    assert_eq!(game.players[0].envoys_free - envoys, 2);
+
+    // Sun Tzu is a General gated on a writing slot, not on a unit: the Art of
+    // War is a Great Work.
+    let works = game.players[0]
+        .counters
+        .get("great_work:writing")
+        .copied()
+        .unwrap_or(0);
+    skip_to_great_person(&mut game, "sun_tzu");
+    assert_eq!(
+        recruit_current_military_person(&mut game, "general"),
+        "sun_tzu"
+    );
+    assert_eq!(
+        game.players[0]
+            .counters
+            .get("great_work:writing")
+            .copied()
+            .unwrap_or(0)
+            - works,
+        1
+    );
+
+    // Timur promotes exactly one land unit, the strongest.
+    //
+    // This exercised Genghis Khan until 2026-08-24. Civilization VI ships no
+    // Great General of that name — he is Mongolia's *leader* — so the entry was
+    // a CIVVIS invention and a duplicate of this one, which is the real
+    // Classical-era `land_unit_promotion_level` general and carries the same
+    // era, cost and effect. The coverage is unchanged; only the name is.
+    let position = game.cities[&home].pos;
+    let target = game.spawn_unit("swordsman", 0, position);
+    let untouched = game.spawn_unit("warrior", 0, position);
+    skip_to_great_person(&mut game, "timur");
+    assert_eq!(
+        recruit_current_military_person(&mut game, "general"),
+        "timur"
+    );
+    assert!(game.promotion_pending(target));
+    assert_eq!(game.units[&untouched].xp, 0);
+
+    // Amina's single envoy, and Douglas MacArthur's Oil per turn.
+    let envoys = game.players[0].envoys_free;
+    skip_to_great_person(&mut game, "ana_nzinga");
+    assert_eq!(
+        recruit_current_military_person(&mut game, "general"),
+        "ana_nzinga"
+    );
+    assert_eq!(game.players[0].envoys_free - envoys, 1);
+
+    // Oil has to be visible before its rate is anything but zero.
+    game.players[0].techs.insert(crate::name!("refining"));
+    let oil = game.strategic_resource_rate(0, "oil");
+    skip_to_great_person(&mut game, "douglas_macarthur");
+    assert_eq!(
+        recruit_current_military_person(&mut game, "general"),
+        "douglas_macarthur"
+    );
+    assert_eq!(game.strategic_resource_rate(0, "oil") - oil, 1.0);
+
+    // Ferdinand Magellan's 300 Gold and Ching Shih's 500.
+    for (id, gold) in [("ferdinand_magellan", 300.0), ("ching_shih", 500.0)] {
+        let before = game.players[0].gold;
+        skip_to_great_person(&mut game, id);
+        assert_eq!(recruit_current_military_person(&mut game, "admiral"), id);
+        assert_eq!(game.players[0].gold - before, gold);
+    }
+}
+
+/// The person each class opens with, pinned.
+///
+/// ⚠ `current_great_person` orders by era and then **alphabetically by id**,
+/// which means a roster addition can take the opening pick. #2377 moved exactly
+/// two of the nine: Aryabhata now opens the Scientist queue ahead of Hypatia
+/// (all four Classical Scientists start with a letter below hers except Zhang
+/// Heng), and Andrei Rublev opens the Artist queue ahead of Donatello. This
+/// test exists so the next roster change reports the same thing rather than
+/// discovering it in a recorded game.
+#[test]
+fn the_opening_offer_of_every_class_is_pinned() {
+    let game = Game::new_full(1, 24, 16, 95_014, 300, 0, false);
+    for (kind, id) in [
+        ("admiral", "gaius_duilius"),
+        ("artist", "andrey_rublev"),
+        ("engineer", "imhotep"),
+        ("general", "hannibal_barca"),
+        ("merchant", "marcus_licinius_crassus"),
+        ("musician", "antonio_vivaldi"),
+        ("prophet", "confucius"),
+        ("scientist", "aryabhata"),
+        ("writer", "bhasa"),
+    ] {
+        assert_eq!(
+            game.current_great_person(kind).map(|(id, _)| id),
+            Some(id),
+            "the {kind} queue opens somewhere else"
+        );
+    }
 }

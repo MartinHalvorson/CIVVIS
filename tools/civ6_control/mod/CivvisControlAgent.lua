@@ -200,6 +200,18 @@ local function resolveActions()
 		"UNITOPERATION_EVANGELIZE_BELIEF",
 		-- These entries have no InterfaceMode in Firaxis' UnitOperations table,
 		-- so UnitPanel requests each directly with no parameters, like spreading.
+		--
+		-- Read off the installed game, not recalled. In
+		-- `Base/Assets/Gameplay/Data/UnitOperations.xml`:
+		--   :24 / :83   UNITOPERATION_LAUNCH_INQUISITION
+		--   :36 / :95   UNITOPERATION_REMOVE_HERESY
+		--   :62 / :121  UNITOPERATION_RELIGIOUS_HEAL
+		--   :12 / :71   UNITOPERATION_CONVERT_BARBARIANS
+		-- none of which carries an `InterfaceMode` attribute; the shipped
+		-- `Base/Assets/UI/Panels/UnitPanel.lua:2518-2535` then takes its
+		-- "No mode needed, just do the operation" branch and calls
+		-- `UnitManager.RequestOperation(pSelectedUnit, actionHash)` with no
+		-- parameter table at all. That is why `{}` below is the whole request.
 		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
 		"UNITOPERATION_RELIGIOUS_HEAL", "UNITOPERATION_CONVERT_BARBARIANS",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
@@ -224,6 +236,15 @@ local function resolveActions()
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
 		"UNITCOMMAND_ACTIVATE_GREAT_PERSON", "UNITCOMMAND_ENTER_FORMATION",
 		"UNITCOMMAND_EXIT_FORMATION",
+		-- ★★★ CORPS AND ARMY, THE OTHER CONSOLIDATION AND THE ONLY ONE NEVER
+		-- WIRED. `ENTER_FORMATION` above links an ESCORT (a support unit riding
+		-- with a combat unit); merging two identical units into one stronger one
+		-- is a different pair of commands entirely, and CIVVIS decided it 10,015
+		-- times across the live archive without a verb to send. Read off the
+		-- installed game at `Base/Assets/Gameplay/Data/UnitCommands.xml`:
+		--   :20 / :44  UNITCOMMAND_FORM_CORPS (PrereqCivic CIVIC_NATIONALISM)
+		--   :21 / :45  UNITCOMMAND_FORM_ARMY  (PrereqCivic CIVIC_MOBILIZATION)
+		"UNITCOMMAND_FORM_CORPS", "UNITCOMMAND_FORM_ARMY",
 		-- ★★★ THE ONLY WAY A SOLDIER TOUCHES A MISSIONARY. Religious units are
 		-- excluded from ordinary combat by design -- they cannot be attacked,
 		-- captured, or run over -- so an enemy Apostle standing in our land was
@@ -486,16 +507,8 @@ local function survey()
 		-- Mid-turn replan frames: after the opening orders settle, a board
 		-- with newly revealed ground and movement left to spend on it (or a
 		-- strike) is exported again and the same turn re-planned, up to
-		-- `ReplanFrames` times. The brain cuts a walk at its first unrevealed
-		-- hex (`step_and_reassess`) only when this is true: against a mod
-		-- without frames that cut would strand the rest of the movement.
+		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
-		-- ...and how many such frames a turn may open, so the brain can tell
-		-- the last frame it will be asked on: a walk cut at the edge of the
-		-- known on that frame would strand the rest of the unit's movement,
-		-- because nobody re-plans what the cut uncovered. On the last frame
-		-- the brain sends the whole walk instead.
-		replan_frames_max = tonumber(cfg.ReplanFrames) or 0,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
 		-- deltas, not only with the periodic sweep. See CivvisTiles.
 		tile_delta = cfg.TileDelta ~= false,
@@ -723,6 +736,111 @@ local function unitClass(name)
 	if row == nil then return nil; end
 	return try(function() return row.PromotionClass; end);
 end
+
+-- ★★★ THE MILITARY FORMATION TIER, WITHOUT WHICH ARMY IS UNREACHABLE LIVE.
+--
+-- #2373 wired `Action::CombineUnits` to Firaxis' TWO merge commands --
+-- `UNITCOMMAND_FORM_CORPS` and `UNITCOMMAND_FORM_ARMY` -- and `civvis_orders`
+-- picks which one to send from the MIRROR's `Unit::formation`. But the live seat
+-- runs `--fresh-board`: the mirror is rebuilt from this export every turn, this
+-- export carried no tier at all, so every unit read back as STANDARD and the
+-- seat could only ever ask for FORM_CORPS. The Army half of the whole
+-- unit-consolidation layer was unreachable live for exactly that reason.
+--
+-- ⚠ NOT `GetFormationUnitCount`, which this file also exports as
+-- `formation_count`. That is Firaxis' ESCORT stack size -- a Settler riding with
+-- a Warrior reports 2 -- and it is what `LinkUnits` reconstructs. A Corps is ONE
+-- unit and reports a count of 1. Two different mechanisms, both exported.
+--
+-- Read off the installed game, not recalled. The accessor is
+-- `Unit:GetMilitaryFormation()`, which the shipped UI calls at
+-- `Base/Assets/UI/WorldTracker.lua:507`,
+-- `Base/Assets/UI/Panels/UnitPanel.lua:2259` and `:4018`, and
+-- `Base/Assets/UI/Screens/ReportScreen.lua:314`. It is a real binding on this
+-- build, not just a Windows one: the name is present in
+-- `Civ6.app/Contents/MacOS/GameCore_Base.dll`, and the Win64 map for the same
+-- build names its Lua binding at
+-- `Assets/DLC/Expansion2/Binaries/Win64/GameCore_XP2_FinalRelease.map:50977`
+-- (`?lGetMilitaryFormation@IUnit@Lua@GameCore@@`).
+--
+-- ⚠⚠⚠ THE ENUM IS REGISTERED TWICE, UNDER ONE NAME, WITH DIFFERENT MEMBERS.
+-- Civilization VI builds two Lua virtual machines and each contributes globals
+-- to this script. Both register a table called `MilitaryFormationTypes`, and the
+-- member names DO NOT MATCH. Read straight off the installed binaries, as
+-- `strings -a -t d` byte offsets:
+--
+--   Civ6.app/Contents/MacOS/GameCore_Base.dll   (gameplay bindings: Unit,
+--   Players, UnitManager, DefenseTypes, UnitCommandTypes -- the 75 gameplay
+--   enum reads in this file)
+--     12606080  MilitaryFormationTypes
+--     12606103  STANDARD_FORMATION
+--     12606122  CORPS_FORMATION
+--     12606138  ARMY_FORMATION
+--
+--   Civ6.app/Contents/MacOS/Civ6_Exe_Child     (the UI framework: ContextPtr,
+--   LuaEvents, UIManager -- this script is an `AddUserInterfaces` context)
+--     26900226  MilitaryFormationTypes
+--     26900271  STANDARD_MILITARY_FORMATION
+--     26900299  CORPS_MILITARY_FORMATION
+--     26900324  ARMY_MILITARY_FORMATION
+--
+-- Neither binary contains the other's spelling, and Firaxis' own shipped UI uses
+-- BOTH: `WorldTracker.lua:512-520`, `ReportScreen.lua:317-321`,
+-- `UnitPanel.lua:4022-4030` and `CitySupport.lua:248-259` compare against the
+-- SHORT names, while `CitySupport.lua:87-89`, `ToolTipHelper.lua:585-593` and
+-- `ProductionPanel.lua:314-456` write the LONG ones. At least one of those two
+-- families is comparing against `nil` in any given context and is dead code.
+--
+-- ⚠ So this asks for BOTH and does not bet on either. Picking one and being
+-- wrong would classify every Corps as "not one of the three" forever, silently
+-- -- the same nil-literal failure family as the guessed operation name #2373
+-- avoided, and unresolvable from here because the ladder is halted and no live
+-- game can be asked which VM wins.
+--
+-- ⚠ THE FAILURE MUST NOT READ AS STANDARD. `try(..., 0)` would hand back
+-- "standard" on a build where the accessor is missing or renamed -- which is
+-- exactly the sentinel trap `GetDefenseStrength` fell into for the whole
+-- project's life (see `cityDefence`), where the fallback was indistinguishable
+-- from an answer. Here it would be worse, because 0 is a LEGAL tier: the board
+-- would assert that every unit is a plain unit and keep asking for a Corps with
+-- nothing anywhere to show it was guessing. An unreadable tier is exported as
+-- -1, and the mirror leaves the board's own value alone. That is the same
+-- three-valued convention `envoys_free` uses: a real reading, or an explicit
+-- "asked, could not answer".
+--
+-- ⚠ HUNG OFF A GLOBAL, NOT DECLARED AS A FILE-SCOPE `local`. The main chunk is
+-- one Lua function and it sits within single digits of Lua's 200-local ceiling;
+-- crossing it is a parse error, and a mod script that fails to parse writes
+-- NOTHING to any log -- the run looks exactly like one where CIVVIS never
+-- decided anything. `test_main_chunk_locals_stay_under_the_limit` refuses the
+-- next file-scope local, and this is the shape it asks for. It doubles as the
+-- offline test's entry point; ⚠ a bare global, never `_G.`, which the UI sandbox
+-- does not expose.
+CivvisMilitaryFormation = function(unit)
+	return try(function()
+		local tier = unit:GetMilitaryFormation();
+		if tier == nil or MilitaryFormationTypes == nil then return -1; end
+		local tiers = MilitaryFormationTypes;
+		-- ⚠ Both spellings, most-specific tier first. A missing member is nil and
+		-- `tier` is a number, so an absent spelling simply never matches.
+		if tier == tiers.ARMY_FORMATION
+				or tier == tiers.ARMY_MILITARY_FORMATION then
+			return 2;
+		end
+		if tier == tiers.CORPS_FORMATION
+				or tier == tiers.CORPS_MILITARY_FORMATION then
+			return 1;
+		end
+		if tier == tiers.STANDARD_FORMATION
+				or tier == tiers.STANDARD_MILITARY_FORMATION then
+			return 0;
+		end
+		-- A tier this build names and CIVVIS does not model, or a table with
+		-- neither spelling. Unknown, not standard: a value we cannot place must
+		-- never become a claim.
+		return -1;
+	end, -1);
+end;
 
 -- Facts that decide what a unit may do next. Reconstructing every live unit from
 -- its type defaults reset Apostles to full charges with no promotion and military
@@ -6230,6 +6348,16 @@ local function exportState(player, pid, turn, frame)
 				return (unit:GetFortifyTurns() or 0) > 0;
 			end, false),
 			fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+			-- ★★★ CORPS AND ARMY. 0 standard, 1 Corps/Fleet, 2 Army/Armada, and
+			-- -1 for "asked, could not answer" -- see `CivvisMilitaryFormation` for the
+			-- accessor's citations, for which spelling of the enum actually
+			-- exists on this build, and for why the sentinel is -1 rather than 0.
+			--
+			-- ⚠ This and `formation_count` below are DIFFERENT MECHANISMS with
+			-- confusingly similar names. This one is the merge tier that
+			-- `FORM_CORPS`/`FORM_ARMY` raise; the count below is the escort stack
+			-- that `ENTER_FORMATION` builds. A Corps reports a count of 1.
+			formation = CivvisMilitaryFormation(unit),
 			-- The count is the public formation state used by the stock Unit Panel.
 			-- Without it, a successfully escorted Settler is reconstructed as two
 			-- loose units and CIVVIS asks to link them again on every turn.
@@ -8591,7 +8719,134 @@ end
 --
 -- Bare globals, both: the main chunk sits at Lua's 200-register ceiling, and
 -- the offline regression (`deal_sale_test.lua`) reads them.
-CivvisTrade = { pending = {}, asked = {} };
+CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disabled = false };
+
+-- ★★★★★ THE ANSWER ONLY EVER COMES INSIDE A SESSION. Over 42 live runs this
+-- lane sent 636 EQUALIZE asks and the peace arm 253 proposals, and not ONE
+-- `DiplomacyIncomingDeal` arrived — the handler above never ran. The shipped
+-- screens show why: a rival evaluates a working deal as a diplomacy
+-- STATEMENT inside a `MAKE_DEAL` session (DiplomacyActionView.lua
+-- `MakeDeal_ApplyStatement`: "The AI will send, ACCEPT, REJECT, etc. as the
+-- automatic evaluation of the deal occurs" — it arrives through
+-- `Events.DiplomacyStatement` with a `DealAction`, and the view relays it as
+-- `DiploPopup_DealUpdated`). A `SendWorkingDeal` with no session open is
+-- never evaluated. Firaxis's own peace flow builds the locked working deal
+-- FIRST and then `RequestSession(..., "MAKE_DEAL")` — the session does not
+-- clear it — so every arm here now builds its deal as before and then asks
+-- through `CivvisTrade.ask`: the session opens, our own opening statement
+-- says it is live, the question goes out, the rival's statement carries the
+-- verdict, the existing closer accepts or walks away, and the session is
+-- closed by us. `CivvisControlAutoClose` is told to hold its hand for
+-- `DealSessionHoldSeconds` through `LuaEvents.CivvisDealSession`; a session
+-- the rival never answers is closed by that ladder as before and counted,
+-- and after `DealSessionStandDown` of those the lane stands down for the
+-- run rather than opening a screen a fourth time. `DealSessions = false`
+-- restores the direct send.
+CivvisTrade.ask = function(pid, subject, action, kind, turn)
+	local trade = CivvisTrade;
+	if cfg.DealSessions == false or trade.disabled then
+		DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);
+		return "direct";
+	end
+	trade.sessions[subject] = { kind = kind, action = action, turn = turn, sent = false };
+	pcall(function() LuaEvents.CivvisDealSession(subject, true, cfg.DealSessionHoldSeconds or 4); end);
+	DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
+	emit("deal_session", { turn = turn, target = subject, kind = kind, action = action, phase = "opening" });
+	return "session";
+end;
+
+CivvisTrade.close = function(pid, subject, why)
+	local trade = CivvisTrade;
+	local session = trade.sessions[subject];
+	trade.sessions[subject] = nil;
+	if session ~= nil and session.sessionID ~= nil then
+		pcall(function() DiplomacyManager.CloseSession(session.sessionID); end);
+	end
+	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
+	emit("deal_session", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		target = subject, phase = "closed", why = why,
+		kind = session and session.kind or nil,
+	});
+end;
+
+-- A session the rival never answered: the ask is dead, and a third such
+-- session in a run stands the lane down. Called from the closed-session
+-- event and from the arms' own response-window expiry.
+CivvisTrade.abandon = function(subject, why)
+	local trade = CivvisTrade;
+	local session = trade.sessions[subject];
+	if session == nil then return false; end
+	trade.sessions[subject] = nil;
+	trade.pending[subject] = nil;
+	trade.unanswered = trade.unanswered + 1;
+	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	emit("deal_session", { turn = turn, target = subject, phase = "unanswered", why = why,
+		kind = session.kind, unanswered = trade.unanswered });
+	if not trade.disabled and trade.unanswered >= (cfg.DealSessionStandDown or 3) then
+		trade.disabled = true;
+		emit("deal_sessions_stood_down", { turn = turn, unanswered = trade.unanswered });
+	end
+	return true;
+end;
+
+-- Every diplomacy statement that touches the local seat. Ours opens the
+-- question; the rival's carries the verdict. Bare global for the offline
+-- regression (`deal_session_test.lua`).
+CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 or (fromPlayer ~= pid and toPlayer ~= pid) then return; end
+	local other = (fromPlayer == pid) and toPlayer or fromPlayer;
+	local trade = CivvisTrade;
+	local session = trade.sessions[other];
+	if session == nil then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local sessionID = type(kVariants) == "table" and kVariants.SessionID or nil;
+	if session.sessionID == nil and sessionID ~= nil then session.sessionID = sessionID; end
+	if not session.sent then
+		-- The session is live: put the question. `sent` goes first so an
+		-- answer delivered from inside the send is read as the answer.
+		session.sent = true;
+		local ok = pcall(function()
+			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
+		end);
+		emit("deal_session", { turn = turn, target = other, kind = session.kind,
+			action = session.action, session = sessionID or -1, phase = "asked", sent = ok });
+		if not ok then CivvisTrade.close(pid, other, "send_threw"); end
+		return;
+	end
+	if fromPlayer ~= other then return; end
+	local dealAction = type(kVariants) == "table" and kVariants.DealAction or nil;
+	trade.unanswered = 0;
+	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
+		session = session.sessionID or -1, deal_action = tostring(dealAction) });
+	if session.kind == "peace" then
+		-- The rival's ACCEPTED is its verdict; the send back is what enacts
+		-- the peace, exactly as the shipped screen's accept button does.
+		local accepted = dealAction == DealProposalAction.ACCEPTED;
+		local enacted = false;
+		if accepted then
+			enacted = pcall(function()
+				DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, other);
+			end);
+		end
+		emit("peace_response", { turn = turn, target = other, accepted = accepted,
+			enacted = enacted and true or false, deal_action = tostring(dealAction) });
+	else
+		CivvisOnIncomingDeal(other, pid, dealAction);
+	end
+	CivvisTrade.close(pid, other, "answered");
+end;
+
+CivvisOnDealSessionClosed = function(sessionID)
+	for subject, session in pairs(CivvisTrade.sessions) do
+		if session.sessionID == sessionID or (session.sessionID == nil and sessionID == nil) then
+			CivvisTrade.abandon(subject, "session_closed");
+			return;
+		end
+	end
+end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
@@ -8851,7 +9106,20 @@ end;
 -- empire lost EIGHT Settlers, two Builders, two Warriors, a Slinger, a Scout
 -- and an Archer to raiders it could not hit back.
 --
+-- ★★★ AND IT IS ALSO THE ONLY ROUTE TO THEOLOGICAL COMBAT. There is no
+-- `UNITOPERATION_THEOLOGICAL_ATTACK` on this build and no `UNITCOMMAND_` for
+-- one: `Base/Assets/Gameplay/Data/UnitOperations.xml` lists 57 operations and
+-- none of them is a religious strike. The shipped Civilopedia says why, at
+-- `Base/Assets/Text/en_US/Civilopedia_Concepts_Text.xml:636` — "Theological
+-- combat works just like combat with military units, just attack one Religious
+-- unit with another." An Apostle or Inquisitor therefore attacks through this
+-- same branch, and `Action::TheologicalAttack` translates to the ordinary
+-- `ATTACK` verb for exactly that reason. Religious units have no ranged
+-- combat, so `RequestMoveOperation`'s `GetRangedCombat() > GetCombat()` test
+-- below is false for them and they take the melee path unchanged.
+--
 -- The reason is one parameter. Firaxis's own `Civ6Common.lua:RequestMoveOperation`
+-- (`Base/Assets/UI/Civ6Common.lua:137-169`, the melee branch at :152-163)
 -- — the shipped path behind every melee attack a human ever makes — sets
 --
 --   tParameters[UnitOperationTypes.PARAM_MODIFIERS] =
@@ -9010,6 +9278,67 @@ CivvisLedger.onCityOccupationChanged = function(player, cityId)
 	});
 end;
 
+-- ★★★★★ THE RECEIVING SIDE OF THE BRIDGE. `applied = true` below means an arm's
+-- request did not throw, and that has never meant the host did anything: a
+-- Settler was requested on 83 consecutive turns with `applied = true` and
+-- nothing built, a purchase whose `pcall` did not throw bought nothing, and a
+-- `MOVE_TO (14,11)` ended at (12,9). `civvis_orders` now checks every order it
+-- issued against the NEXT `state` frame and sends the verdicts back through the
+-- orders channel as rows of kind `order_verified` / `order_failed` /
+-- `turn_verified`. This file is the ledger's only writer, so it re-emits them
+-- as events. They are not orders: `applyOrders` keeps them out of
+-- `orders_seen` and `orders_applied`, and `turn_verified` lays this file's own
+-- return-code count for the verified turn (`orders_reported`) beside the
+-- decider's verified count (`orders_applied`) on one line of the ledger.
+--
+-- Hung on a global table, not file-scope locals: the main chunk sits at Lua's
+-- 200-register ceiling.
+CivvisVerify = { reported = {} };
+CivvisVerify.isVerdict = function(kind)
+	return kind == "order_verified" or kind == "order_failed" or kind == "turn_verified";
+end;
+-- What this file counted for a turn, kept until the decider's verdict for that
+-- turn arrives with the next turn's orders.
+CivvisVerify.remember = function(turn, seen, applied)
+	CivvisVerify.reported[tostring(turn)] = { seen = seen, applied = applied };
+end;
+-- Re-emit one verdict row as a ledger event. The order row has no spare
+-- column, so the verified turn rides in `x` for a per-order verdict and in
+-- `subject` for the tally; the tally's counts ride in `verb` as `name=N`.
+CivvisVerify.record = function(kind, subject, verb, x, turn)
+	if kind == "turn_verified" then
+		local counted = CivvisVerify.reported[tostring(subject)] or {};
+		CivvisVerify.reported[tostring(subject)] = nil;
+		local function count(name)
+			return tonumber(string.match(verb, name .. "=(%d+)")) or 0;
+		end
+		emit("turn_verified", {
+			turn = subject, checked_on = turn,
+			orders_issued = count("issued"),
+			orders_applied = count("verified"),
+			orders_failed = count("failed"),
+			orders_unverifiable = count("unverifiable"),
+			orders_seen = counted.seen,
+			orders_reported = counted.applied,
+		});
+		return true, "verdict";
+	end
+	local label, reason = string.match(verb, "^(%S+)%s*(.*)$");
+	local orderKind, orderVerb = string.match(label or verb, "^([^:]*):?(.*)$");
+	-- `kind` is the event's own name in every ledger record, so the order's
+	-- kind travels as `order_kind`.
+	local payload = {
+		turn = x, checked_on = turn, order_kind = orderKind,
+		verb = (orderVerb ~= nil and orderVerb ~= "") and orderVerb or nil,
+		subject = (subject ~= nil and subject >= 0) and subject or nil,
+	};
+	if kind == "order_failed" then
+		payload.reason = (reason ~= nil and reason ~= "") and reason or "unknown";
+	end
+	emit(kind, payload);
+	return true, "verdict";
+end;
+
 local function applyOrder(player, pid, row, turn)
 	-- Build and submit a major-civilization peace proposal without opening a
 	-- diplomacy session.  A session displays `DiplomacyDealView`, whose only safe
@@ -9021,7 +9350,7 @@ local function applyOrder(player, pid, row, turn)
 	-- 200-register main-chunk ceiling and make the entire mod fail to compile.
 	-- Returns `(submitted, concession, reason)`.  `submitted` names an actual
 	-- `SendWorkingDeal` call, deliberately not merely a `pcall` that did not throw.
-	local function submitMajorPeaceDeal(subject, asked)
+	local function submitMajorPeaceDeal(subject, asked, cap)
 		if DealManager.HasPendingDeal(pid, subject) then
 			return false, 0, "pending";
 		end
@@ -9041,17 +9370,22 @@ local function applyOrder(player, pid, row, turn)
 		local concession = 0;
 		-- A free peace offer is the right first question.  Once the same rival
 		-- remains at war through the host's retry window, it has already declined
-		-- that exact white deal.  Preserve a quarter of the treasury for emergency
-		-- purchases and offer the rest only on the retry; a rejected deal transfers
-		-- nothing.
-		if asked ~= nil then
+		-- that exact white deal.  A tribute rides the retry only when the planner
+		-- said the front is lost: the order's `x` is the most Gold it may carry
+		-- (Rust: `peace_tribute_cap`, a quarter of the treasury at most), and a
+		-- white offer carries 0.  Until 2026-08-24 every retry put three quarters
+		-- of the treasury on the table whatever the reason for the offer; the
+		-- ledger counted 142 such tributes at a median 116 Gold, and Civilization
+		-- VI prices a gift at nothing.  A rejected deal transfers nothing.
+		cap = math.max(0, math.floor(tonumber(cap) or 0));
+		if asked ~= nil and cap > 0 then
 			local tribute = deal:AddItemOfType(DealItemTypes.GOLD, pid);
 			if tribute ~= nil then
 				tribute:SetDuration(0);
 				local balance = try(function()
 					return player:GetTreasury():GetGoldBalance();
 				end, 0) or 0;
-				local amount = math.min(math.floor(balance * 0.75),
+				local amount = math.min(cap, math.floor(balance * 0.75),
 					tribute:GetMaxAmount() or 0);
 				if amount > 0 then
 					tribute:SetAmount(amount);
@@ -9070,10 +9404,12 @@ local function applyOrder(player, pid, row, turn)
 		deal:Validate();
 		if not deal:IsValid() then return false, 0, "invalid_deal"; end
 
-		-- This is the exact normal-offer call in shipped DiplomacyDealView.lua.
-		-- Unlike `RequestSession(..., "MAKE_DEAL")`, it does not route through the
-		-- anti-stall closer that must refuse every on-screen deal.
-		DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
+		-- `CivvisTrade.ask`: the offer goes out inside a MAKE_DEAL session, the
+		-- way the shipped CHOICE_MAKE_PEACE does (locked deal first, then the
+		-- session), because a session-less PROPOSED is never evaluated — 253 of
+		-- them were submitted over 42 runs without one answer. With
+		-- `DealSessions = false` this is the direct send it used to be.
+		CivvisTrade.ask(pid, subject, "PROPOSED", "peace", turn);
 		return true, concession, "submitted";
 	end
 
@@ -9263,6 +9599,11 @@ local function applyOrder(player, pid, row, turn)
 	local verb = tostring(row.verb or "");
 	local subject = tonumber(row.subject) or -1;
 	local x, y = tonumber(row.x), tonumber(row.y);
+
+	-- A verdict on an earlier turn's order, for the ledger. See CivvisVerify.
+	if CivvisVerify.isVerdict(kind) then
+		return CivvisVerify.record(kind, subject, verb, x, turn);
+	end
 
 	if kind == "governor_appoint" or kind == "governor_assign" then
 		local governor, resolved = resolveType(GameInfo.Governors, verb);
@@ -9548,7 +9889,7 @@ local function applyOrder(player, pid, row, turn)
 		local ok, submitted, reason;
 		if major then
 			local ran;
-			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked);
+			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked, x);
 			if not ran then
 				submitted, concession, reason = false, 0, "throw";
 			end
@@ -9714,6 +10055,7 @@ local function applyOrder(player, pid, row, turn)
 				return false, "sell_pending";
 			end
 			trade.pending[subject] = nil;
+			CivvisTrade.abandon(subject, "expired");
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
 		end
@@ -9845,7 +10187,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, floor = floor, gave = gave, verb = table.concat(text, ","),
 			};
-			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			CivvisTrade.ask(pid, subject, "EQUALIZE", "sell", turn);
 			return true, "asked", gave, table.concat(text, ",");
 		end);
 		if not ran then
@@ -9910,6 +10252,7 @@ local function applyOrder(player, pid, row, turn)
 				return false, "buy_pending";
 			end
 			trade.pending[subject] = nil;
+			CivvisTrade.abandon(subject, "expired");
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
 		end
@@ -9945,7 +10288,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = "OPEN_BORDERS",
 			};
-			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked";
 		end);
 		if not ran then
@@ -10706,8 +11049,21 @@ local function applyOrder(player, pid, row, turn)
 			-- military command parameter for civilian units. Civilization VI rejects
 			-- Settlers and Builders carrying it even when the city and treasury are
 			-- otherwise valid. Corps and Armies are the only explicit formations.
+			--
+			-- ⚠ BOTH ENUM SPELLINGS, because the same table name is registered by
+			-- two binaries with different members and this script sees globals
+			-- from both -- see `CivvisMilitaryFormation` for the byte offsets.
+			-- These three reads asked only for the LONG spelling, which is the
+			-- one `Civ6_Exe_Child` registers; if the gameplay VM's table wins
+			-- here instead, every one of them is `nil`, the parameter is simply
+			-- never set (assigning nil to a Lua table key is not an assignment),
+			-- and CIVVIS could never buy a Corps or an Army with no error
+			-- anywhere. `or` is free when the first spelling resolves -- the
+			-- values are 0/1/2 and 0 is TRUTHY in Lua, so a real STANDARD is
+			-- never mistaken for a missing member.
 			local formation = tonumber(x) or 0;
-			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION
+				or MilitaryFormationTypes.STANDARD_FORMATION;
 			local unitRow = try(function() return GameInfo.Units[resolved]; end);
 			local militaryFormation = unitRow ~= nil
 				and ((unitRow.Combat or 0) > 0
@@ -10719,10 +11075,12 @@ local function applyOrder(player, pid, row, turn)
 				-- civilian and support units deliberately take the parameter-free path.
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			elseif formation == 1 then
-				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
+				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION
+					or MilitaryFormationTypes.CORPS_FORMATION;
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			elseif formation == 2 then
-				formationForCost = MilitaryFormationTypes.ARMY_MILITARY_FORMATION;
+				formationForCost = MilitaryFormationTypes.ARMY_MILITARY_FORMATION
+					or MilitaryFormationTypes.ARMY_FORMATION;
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			end
 		elseif row2.Kind == "KIND_BUILDING" then
@@ -10940,6 +11298,56 @@ local function applyOrder(player, pid, row, turn)
 		end
 		if verb == "EXIT_FORMATION" then
 			return commandUnit(unit, CMD["UNITCOMMAND_EXIT_FORMATION"]), verb;
+		end
+		-- ★★★ FORM A CORPS OR AN ARMY. Two commands, not one, and the tier is
+		-- the caller's choice: `civvis_orders::translate` picks it from
+		-- `Game::can_combine_units`'s own rule and names it in the verb, so this
+		-- side never guesses which merge was decided.
+		--
+		-- Request shape read off the installed game, not recalled. The shipped
+		-- `Base/Assets/UI/WorldInput.lua` builds both from the OTHER unit's
+		-- owner and id -- `FormCorps` at 2879-2882, `FormArmy` at 2949-2952:
+		--
+		--   tParameters[UnitCommandTypes.PARAM_UNIT_PLAYER] = pUnit:GetOwner();
+		--   tParameters[UnitCommandTypes.PARAM_UNIT_ID]     = pUnit:GetID();
+		--   if (UnitManager.CanStartCommand(pSelectedUnit,
+		--         UnitCommandTypes.FORM_CORPS, tParameters)) then
+		--     UnitManager.RequestCommand(pSelectedUnit,
+		--         UnitCommandTypes.FORM_CORPS, tParameters);
+		--
+		-- which is the identical non-positional owner/id pair ENTER_FORMATION
+		-- already carries in `x`/`y`, so the order shape needs nothing new.
+		--
+		-- ⚠ Both rows DO carry an `InterfaceMode` (INTERFACEMODE_FORM_CORPS /
+		-- _FORM_ARMY, UnitCommands.xml:44-45), unlike CONDEMN_HERETIC. That mode
+		-- exists only so a human can CLICK the partner: the handler above is
+		-- what the mode's click lands in, and it requests the command outright
+		-- once it holds the pair. CIVVIS has already chosen the partner, so
+		-- entering the mode would be asking the UI a question we answered.
+		--
+		-- A refusal is named per tier. `cannot_form_army` against a unit CIVVIS
+		-- believes is already a Corps is precisely the signal that the mirror's
+		-- formation tier and the host's have diverged -- the export carries no
+		-- military formation today, so that divergence has to be observable.
+		if verb == "FORM_CORPS" or verb == "FORM_ARMY" then
+			-- `x`/`y` carry the partner's owner and id, as for ENTER_FORMATION.
+			if x == nil or y == nil then return false, "no_formation_target"; end
+			if liveUnit(x, y) == nil then return false, "formation_target_gone"; end
+			local hash = CMD["UNITCOMMAND_" .. verb];
+			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			local params = {};
+			params[UnitCommandTypes.PARAM_UNIT_PLAYER] = x;
+			params[UnitCommandTypes.PARAM_UNIT_ID] = y;
+			local okCan, can = pcall(function()
+				return UnitManager.CanStartCommand(unit, hash, params);
+			end);
+			if not (okCan and can == true) then
+				return false, "cannot_" .. string.lower(verb);
+			end
+			local ok = pcall(function()
+				UnitManager.RequestCommand(unit, hash, params);
+			end);
+			return ok, ok and verb or "throw";
 		end
 		-- FOUND_CITY, MOVE_TO and RANGE_ATTACK are the three that decide a game.
 		-- ⚠ There is NO attack operation on this build — the resolved list is only
@@ -11690,9 +12098,24 @@ local function applyOrder(player, pid, row, turn)
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
-		-- SPREAD_RELIGION.
+		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
+		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- see the citation on
+		-- the `resolveActions` list for why `{}` is the whole request.
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
+		-- ⚠ NAME THE REFUSAL, NOT THE VERB. This tail returned `verb` for BOTH
+		-- outcomes, so a REMOVE_HERESY the engine declined and a REMOVE_HERESY
+		-- it accepted reached the queue's `refusals` table under the same key --
+		-- the anonymous-count trap this file names everywhere else, one level
+		-- in. The ledger reads only `why` when `ok` is false, so the two are
+		-- worth telling apart: `cannot_REMOVE_HERESY` is the host declining
+		-- outright (wrong tile, no rival religion present, charges spent), and
+		-- it is a completely different repair from the request raising.
+		--
+		-- `operate` asks `canOperate` again on the line below; that is a cheap
+		-- repeat and deliberately not inlined, so the parameterless request
+		-- stays the single shape every other operation on this tail uses.
+		if not canOperate(unit, hash, {}) then return false, "cannot_" .. verb; end
 		return operate(unit, hash, {}), verb;
 	end
 
@@ -12147,9 +12570,8 @@ CivvisQueue.pendingCount = function() return CivvisQueue.count + CivvisQueue.wat
 -- first time the queue is empty — and a unit whose whole order was one
 -- MOVE_TO never entered the queue, so that decision was taken while the
 -- unit was still walking: nothing revealed yet, no frame, the turn latched
--- settled, and the movement the brain had deliberately left for the frame
--- (`step_and_reassess` cuts the walk at the edge of the known) was never
--- spent. A watch is a rows-less entry: it settles like any queued order
+-- settled, and the host could open no replan frame from the landed board.
+-- A watch is a rows-less entry: it settles like any queued order
 -- (arrival, no movement left, the host's own event, or the grace period)
 -- and is dropped; it never issues anything and names no refusal.
 CivvisQueue.watch = function(subject, expect)
@@ -12552,10 +12974,7 @@ end;
 -- something new to say and somebody left to say it to: plots were revealed
 -- since the board went out (`CivvisTiles.sweep`, which also sends them as a
 -- `tiles` delta so the re-plan SEES them) and at least one unit still has
--- movement, or a strike went out. The brain's half is `step_and_reassess`:
--- it cuts a walk at its first unrevealed hex when the seat advertises
--- `replan_frames`, so the unit steps to the edge of the known, the frame
--- shows what it found, and the remaining movement is spent on that.
+-- movement, or a strike went out.
 --
 -- ⚠ `CombatFrames` keeps its old meaning (strike-opened frames only, default
 -- 0). `ReplanFrames` opens on strikes OR revealed ground. Each frame waits
@@ -12657,8 +13076,24 @@ CivvisFrames.begin = function(player, pid, turn)
 end;
 
 local function applyOrders(player, pid, turn, rows)
-	local applied, refused, deferred = 0, 0, 0;
+	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
+	-- Per kind, beside the per-turn totals: how many orders of each kind were
+	-- counted, and each kind's refusal reasons. `by` is applied-only and
+	-- `refusals` is reason-only, so "which kind is being refused, and why" could
+	-- not be read off the event; `civ6_ladder.orders_by_kind` sums these into
+	-- `summary.orders` and `tools/live_actuation.py` floors them. `seen_by`
+	-- counts accepted `produce_next` leases too (they are deferred out of `seen`),
+	-- so its sum is `seen + deferred`.
+	local seenByKind, refusedByKind = {}, {};
+	local function countRefusal(kind, why)
+		refused = refused + 1;
+		whyNot[why] = (whyNot[why] or 0) + 1;
+		seenByKind[kind] = (seenByKind[kind] or 0) + 1;
+		local perKind = refusedByKind[kind];
+		if perKind == nil then perKind = {}; refusedByKind[kind] = perKind; end
+		perKind[why] = (perKind[why] or 0) + 1;
+	end
 	-- Match the guard to the host-capped settler leg before either row is applied.
 	-- The gate is default-off; with it absent every row remains byte-for-byte on
 	-- the pre-existing path through this function.
@@ -12737,10 +13172,17 @@ local function applyOrders(player, pid, turn, rows)
 				-- mutated the host. Keep it out of the host applied-rate numerator
 				-- and denominator; the later `build` event is the actuation proof.
 				deferred = deferred + 1;
+			elseif CivvisVerify.isVerdict(kind) then
+				-- A verdict on an earlier turn is the ledger's, not the host's:
+				-- neither seen nor applied.
+				verdicts = verdicts + 1;
 			else
 				applied = applied + 1;
 			end
-			byKind[kind] = (byKind[kind] or 0) + 1;
+			if not CivvisVerify.isVerdict(kind) then
+				byKind[kind] = (byKind[kind] or 0) + 1;
+				seenByKind[kind] = (seenByKind[kind] or 0) + 1;
+			end
 			if watched and fromX ~= nil then
 				local unit = liveUnit(pid, subject);
 				-- A unit that no longer exists was consumed or lost, which is not a
@@ -12764,8 +13206,7 @@ local function applyOrders(player, pid, turn, rows)
 				end
 			end
 		else
-			refused = refused + 1;
-			whyNot[tostring(why)] = (whyNot[tostring(why)] or 0) + 1;
+			countRefusal(kind, tostring(why));
 		end
 		ordered[index] = true;
 		return ok, why;
@@ -12827,8 +13268,7 @@ local function applyOrders(player, pid, turn, rows)
 			if queueOn and isUnit and firstRun[subject] then
 				ordered[index] = true;
 				if firstRefused[subject] then
-					refused = refused + 1;
-					whyNot.queue_prior_refused = (whyNot.queue_prior_refused or 0) + 1;
+					countRefusal("unit", "queue_prior_refused");
 				else
 					CivvisQueue.push(subject, row, firstRun[subject].expect);
 				end
@@ -12919,9 +13359,14 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, frame = awaiting.frame or 0, source = "civvis", seen = #rows - deferred,
+		turn = turn, frame = awaiting.frame or 0, source = "civvis",
+		seen = #rows - deferred - verdicts,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
+		seen_by = seenByKind, refused_by = refusedByKind,
 		deferred = deferred,
+		-- Verdict rows on an earlier turn's orders, re-emitted as events; see
+		-- CivvisVerify. Not orders, so not in `seen`.
+		verdicts = verdicts,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
 		-- Unmentioned combat units kept off the explore automation because a
@@ -12980,6 +13425,9 @@ local function applyOrders(player, pid, turn, rows)
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	local cityCount = 0;
 	eachCity(player, function() cityCount = cityCount + 1; end);
+	-- Kept for the decider's verdict on this turn, which arrives with the next
+	-- turn's orders and is emitted as `turn_verified`; see CivvisVerify.
+	CivvisVerify.remember(turn, #rows - deferred - verdicts, applied);
 	emit("turn", {
 		turn = turn,
 		score = ourScore,
@@ -12991,8 +13439,15 @@ local function applyOrders(player, pid, turn, rows)
 		army = counts.military,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		orders_source = awaiting.source,
-		orders_seen = #rows - deferred,
+		orders_seen = #rows - deferred - verdicts,
+		-- ⚠ `orders_applied` here is the RETURN-CODE count — arms whose request
+		-- did not throw — kept under its old name for the readers that clock on
+		-- this record. `orders_reported` is the same number under its honest
+		-- name; the verified count for this turn lands in the next turn's
+		-- `turn_verified` event, and `civ6_ladder.orders_totals` sums that one
+		-- as the summary's `orders_applied`.
 		orders_applied = applied,
+		orders_reported = applied,
 		orders_refused = refused,
 		orders_deferred = deferred,
 		orders_polls = awaiting.polls,
@@ -14844,6 +15299,8 @@ function Initialize()
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
 		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
+		DiplomacyStatement = CivvisOnDiplomacyStatement,
+		DiplomacySessionClosed = CivvisOnDealSessionClosed,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,

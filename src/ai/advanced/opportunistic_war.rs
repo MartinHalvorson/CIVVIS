@@ -343,12 +343,6 @@ impl AdvancedAi {
         {
             return None;
         }
-        if self.endgame_war_runway {
-            let reserve = g.standard_duration(super::TIMED_WAR_ENDGAME_RESERVE);
-            if g.turn.saturating_add(reserve) >= g.max_turns {
-                return None;
-            }
-        }
         // One war at a time: a raid is an opening, not a second front.
         if g.players.iter().any(|other| {
             other.id != pid && !other.is_minor && !other.is_barbarian && g.is_at_war(pid, other.id)

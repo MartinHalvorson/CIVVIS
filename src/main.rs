@@ -70,14 +70,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0xf78a_2b10_c0e3_5945;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0x0b7b_b89a_2d86_c831;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 18_596;
+const ANCHOR_DECISIONS: usize = 18_796;
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -411,6 +411,20 @@ fn game_options(
         );
         std::process::exit(2);
     }
+    // The barbarian seat's own rung, Immortal by default whatever the majors
+    // play at; see `default_barbarian_difficulty`.
+    let barbarian_difficulty = arg_text(
+        args,
+        "--barbarian-difficulty",
+        &civvis::game::default_barbarian_difficulty(),
+    );
+    if !rules.difficulties.contains_key(&barbarian_difficulty) {
+        eprintln!(
+            "unknown barbarian difficulty {barbarian_difficulty:?}; choose one of {:?}",
+            ladder(&rules)
+        );
+        std::process::exit(2);
+    }
     let speed = arg_text(args, "--speed", &default_speed());
     let Some(speed_spec) = rules.speeds.get(&speed) else {
         eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
@@ -490,6 +504,7 @@ fn game_options(
         map_topology: map_topology(args),
         map_poles: map_poles(args),
         difficulty,
+        barbarian_difficulty,
         speed,
         // A headless game has nobody at the keyboard, so the difficulty only
         // reaches the AI side of the ladder unless a seat is named human.
@@ -843,6 +858,11 @@ fn main() {
                         }
                     }
                     let mut g = Game::new_with(options);
+                    // ⚠ Set here rather than carried in `GameOptions`, for the
+                    // reason `simulate` gives above: this is a staged rules
+                    // mechanism, and a soak is how its effect on the victory
+                    // mix is measured before it is promoted.
+                    g.native_competitions = args.iter().any(|a| a == "--native-competitions");
                     let mut ais = AdvancedAi::fleet(&g);
                     let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
                         // Spread a non-divisible budget across the first live
@@ -1036,18 +1056,27 @@ fn main() {
                             g.siege.depleted_with_a_taker_ready,
                             g.siege.reduced_with_melee_adjacent,
                         ));
+                        // ⚠ The diplomatic lane is the one that steals most
+                        // live games and the one a native game has never been
+                        // able to finish, and the victory column alone cannot
+                        // say whether it came close or was nowhere near.
+                        // `DIPLOMATIC_VICTORY_POINTS` is 20; this is how far
+                        // the best empire actually got.
+                        let best_dvp = majors.iter().map(|p| p.dvp).max().unwrap_or(0);
+                        flags.push_str(&format!(
+                            " DVP best={best_dvp}/{} reached={}",
+                            civvis::game::DIPLOMATIC_VICTORY_POINTS,
+                            majors
+                                .iter()
+                                .filter(|p| p.dvp >= civvis::game::DIPLOMATIC_VICTORY_POINTS)
+                                .count(),
+                        ));
                         let held = (census.hold_threatened + census.hold_weak).max(1);
                         flags.push_str(&format!(
                             " HELD_BY threatened_city={}% locally_weak={}%",
                             100 * census.hold_threatened / held,
                             100 * census.hold_weak / held,
                         ));
-                        if census.step_reassessed > 0 {
-                            flags.push_str(&format!(
-                                " REASSESS blind_cuts={}",
-                                census.step_reassessed,
-                            ));
-                        }
                         Some((w.map(|w| w.civ.clone()), format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
@@ -1771,6 +1800,7 @@ fn main() {
                       [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
+                      [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, immortal by default>] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--turn-structure sequential|simultaneous (everything defaults to \
@@ -2263,15 +2293,12 @@ mod tests {
             for (flag, on) in [
                 ("war_economy", ai.war_economy),
                 ("war_reinforcement", ai.war_reinforcement),
-                ("war_patience", ai.war_patience),
                 ("deny_while_targeted", ai.deny_while_targeted),
                 ("stock_denial_lead_time", ai.stock_denial_lead_time),
-                ("endgame_war_runway", ai.endgame_war_runway),
                 ("siege_commitment", ai.siege_commitment),
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),
                 ("blind_objective_units", ai.blind_objective_units),
                 ("blind_objective_strength", ai.blind_objective_strength),
-                ("siege_tracks_the_wall", ai.siege_tracks_the_wall),
                 ("army_target_weighs_the_enemy", ai.army_target_weighs_the_enemy),
                 ("peacetime_deterrence", ai.peacetime_deterrence),
                 ("strike_opening", ai.strike_opening),
@@ -2282,7 +2309,6 @@ mod tests {
                     "settler_founds_when_stalled",
                     ai.settler_founds_when_stalled,
                 ),
-                ("fortify_idle_units", ai.fortify_idle_units()),
                 ("amenity_project_preemption", ai.amenity_project_preemption),
             ] {
                 assert!(

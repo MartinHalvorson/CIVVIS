@@ -16,29 +16,66 @@ construction: a row in `Modifiers` naming a `ModifierType`, which
 ```sh
 python tools/civ6_modifiers.py                       # ranked report
 python tools/civ6_modifiers.py --effect ADJUST_PLOT_YIELD   # every row using one effect
-python tools/civ6_modifiers.py --max-unmodelled N    # CI ratchet
+python tools/civ6_modifiers.py --max-unmodelled N    # ratchet
+python tools/civ6_modifiers.py --emit-catalog        # import into data/modifiers.json
+python tools/civ6_modifiers.py --check-catalog       # the committed catalog still matches
 ```
 
 It shares the rules audit's install detection and load order, and applies the
-same baseline exclusions, so the two tools describe the same ruleset.
+same baseline exclusions, so the two tools describe the same ruleset — and the
+importer below is in the same file for the same reason.
 
 ## What the census says
 
-3,405 modifier rows across **698 distinct effects**, in the Gathering Storm
-baseline with optional game modes excluded.
+2,908 modifier rows across **637 distinct effects**, in the Gathering Storm
+baseline with optional game modes excluded, read from the installed load order.
 
 | Status | Effects | Rows |
 |---|---:|---:|
-| implemented | 25 | 825 |
-| partial | 3 | 340 |
-| unmodelled | 669 | 2,085 |
-| out-of-scope | 1 | 155 |
+| implemented | 76 | 1,599 |
+| partial | 2 | 21 |
+| unmodelled | 558 | 1,139 |
+| out-of-scope | 1 | 149 |
+
+### The two routes now agree on every imported value
+
+⚠ **The expansions rebalance by `<Update>`, not by shipping a new row**, and
+this census ignored `<Update>` until 2026-08-24. Gathering Storm leaves the base
+`COMPUTERS_BOOST_ALL_TOURISM` row in place and updates its `Amount` from 100 to
+25; it does the same to `AIRPORT_BONUS_AIR_SLOTS` and `HANGAR_BONUS_AIR_SLOTS`,
+from 2 to 1. The install walk therefore reported base-game numbers while the
+compiled cache — which the game built for itself — reported the shipped ones,
+and CIVVIS had transcribed the base-game +100% Tourism for Computers.
+
+`tools/civ6_fidelity.py` has always applied `<Update>`; this file had the same
+`<Delete>` handling and not the `<Update>` half, which is why the rules-data
+audit reported zero divergence on tables the modifier census was reading wrong.
+Both routes now emit a byte-identical catalog, which is the strongest available
+check that the import reads the ruleset the game runs. Where the two still
+disagree — the cache is a smaller ruleset overall — the disagreement is a
+finding, not a default.
+
+The compiled `Cache/DebugGameplay.sqlite` is a smaller ruleset than the install
+walk — 2,626 rows across 581 effects, of which 1,021 are unmodelled and 21
+partial — because it is whatever the game last compiled for itself rather than
+a chosen content set in a chosen order. Both are real readings of the same
+tool; a run states which one it took. The ratchet therefore has two values:
+
+```sh
+python tools/civ6_modifiers.py --max-unmodelled 1160            # installed load order
+python tools/civ6_modifiers.py --cache --max-unmodelled 1042    # compiled database
+```
+
+Neither runs on a CI runner, which has no install and no cache — the reason
+`tools/test_ci_wiring.py` lists this tool as one the fleet checks by hand. What
+*does* run in CI is `tools/test_civ6_modifiers.py`, whose hermetic fixtures pin
+the importer's translation and, more importantly, its refusals.
 
 `tools/modifier_coverage.json` holds those judgements with a reason each.
 They are seeded by reading the engine for each effect family. **Every covered
-row is now verified row by row** — all 1,250 of them, against the shipped
-`Modifiers` tables read from the compiled gameplay database. Each entry's note
-records what was checked and what it found. Anything absent from the file
+row is verified row by row** — all 1,620 of them, against the shipped
+`Modifiers` tables. Each entry's note records what was checked and what it
+found. Anything absent from the file
 counts as unmodelled, so newly shipped content raises the backlog rather than
 hiding.
 
@@ -48,20 +85,20 @@ The work is not concentrated:
 
 | Share of rows | Effects needed |
 |---|---:|
-| 50% | 32 |
-| 80% | 181 |
-| 95% | 528 |
-| 100% | 698 |
+| 50% | 29 |
+| 80% | 178 |
+| 95% | 492 |
+| 100% | 637 |
 
-Thirty-two effects get you half the rows. The remaining half needs another
-666, most of which appear two or three times each. That shape is the argument
+Twenty-nine effects get you half the rows. The remaining half needs another
+608, most of which appear two or three times each. That shape is the argument
 for phase 2 stated numerically: hardcoding is efficient right up until it
 isn't, and the crossover is around the 50% mark, which CIVVIS is already
 approaching. Past it, each additional effect buys roughly three rows, and
 there is no batch large enough to be worth a bespoke implementation.
 
 The single largest entry says the same thing from the other direction:
-`ATTACH_MODIFIER` (336 rows) is the primitive that lets one modifier attach
+`ATTACH_MODIFIER` is the primitive that lets one modifier attach
 another to a collection. It is not a game rule at all — it is the
 interpreter's own composition operator, and nothing built out of it can be
 expressed without building the interpreter.
@@ -178,9 +215,83 @@ changing one of those facts changes the effect without reattaching the bundle.
 Static rules-object attachments reject contextual bundles instead of applying
 them unconditionally, and nested bundles must be unconditional and stay in the
 parent collection. This keeps the existing flattening fast while making the
-new conditional path safe to extend. The shipped `modifiers.json` remains
-empty until a database import supplies real rows — no synthetic effects are
-being counted as fidelity.
+new conditional path safe to extend.
+
+## The import (shipped)
+
+`data/modifiers.json` is no longer empty, and it is no longer written by hand.
+`tools/civ6_modifiers.py --emit-catalog` reads `Modifiers`, `DynamicModifiers`,
+`ModifierArguments`, `RequirementSets`, `Requirements` and
+`RequirementArguments` through the same loader and the same baseline exclusions
+the census uses, translates every row of a **declared** effect into a named
+`ModifierSpec` bundle, and prints the wiring that follows: for each bundle, the
+CIVVIS ruleset objects the shipped owner tables say grant it. Those objects
+carry a `modifiers: ["<bundle>"]` reference, and `Rules::from_values` folds the
+bundle into their ordinary effect map, so an imported row executes through the
+consumer a hand-written number used to — with the difference that the number is
+the game's own. `--check-catalog` re-derives both halves and fails on any drift,
+in either direction: a bundle nothing attaches, and an attachment no shipped row
+grants, are both errors.
+
+Three refusals keep the import from inventing rules, and they are the part worth
+reading:
+
+1. **An effect is imported only when the tool declares a translation for it.**
+   Everything else stays in the census as unmodelled. A row emitted under a key
+   no consumer reads would be inert data counted as fidelity.
+2. **A row carrying a requirement set is refused.** `ModifierRequirement` covers
+   player facts only. The Diplomatic Quarter's Envoy is conditional on plot
+   adjacency and Phoenicia's Settler sight on being embarked; emitting either
+   unconditionally would be silently wrong in every game that touched it.
+3. **Only `COLLECTION_OWNER` and `COLLECTION_PLAYER` are folded.** Those are the
+   rows whose scope is the owning object's own. A `PLAYER_CITIES` or
+   `PLAYER_UNITS` row means something the static fold cannot say, and the engine
+   rejects it rather than guessing.
+
+The first slice is ten effects and 46 rows, chosen by frequency among the rows
+whose owners CIVVIS models: `GRANT_INFLUENCE_TOKEN`,
+`ADJUST_PLAYER_DIPLOMATIC_VICTORY_POINTS`,
+`ADJUST_PLAYER_EMBARKED_UNIT_MOVEMENT`, `ADJUST_PLAYER_TOURISM`,
+`ADJUST_PLAYER_SPY_BONUS`, `ADJUST_PLAYER_DISTRICT_AIR_SLOTS`,
+`GRANT_AIR_SLOTS`, `ADJUST_UNIT_ATTACK_RANGE`, `ADJUST_UNIT_NUM_ATTACKS` and
+`ADJUST_UNIT_ATTACK_AND_MOVE`, plus `ADJUST_UNIT_SIGHT` demoted honestly to
+`partial` for the one row a unit-state predicate would be needed to express.
+`src/game/modifier_tests.rs` proves each one lands in a running game rather than
+only in the ruleset.
+
+**Most of the fold restores what CIVVIS already carried; four rows did not.**
+Eleven of the thirteen civics `GRANT_INFLUENCE_TOKEN` pays now award their
+Envoys — CIVVIS handed out four of twenty-five — Jakob Fugger awards his two,
+Sweeping Wind gains the `MOD_MOVE_AFTER_ATTACKING` it shares with Elite Guard
+and Breakthrough, and Computers multiplies Tourism by the +25% its row states
+instead of +100%. That is the argument for the import in one paragraph: the
+amounts CIVVIS transcribed were mostly right, and the rows it never noticed were
+invisible to any amount-checking pass.
+
+### What the next slice should be
+
+The remaining backlog is genuinely long-tailed and its head is content CIVVIS
+does not model — Great Person individuals, Rock Band promotions and unique
+civilization traits. Two things are worth more than another lap of the ranking:
+
+- **A unit predicate in `ModifierRequirement`** — unit state (embarked,
+  wounded) and unit tag (`UNIT_TAG_MATCHES`). It is what refusal 2 costs today:
+  it holds back `ADJUST_UNIT_SIGHT`'s last row and all five `GRANT_PROMOTION`
+  rows, every one of which is gated on `UNIT_TAG_MATCHES(CLASS_GIANT_DEATH_ROBOT)`.
+- **The Rock Band promotion family.**
+  `ADJUST_UNIT_ROCK_BAND_LEVEL_DISTRICT` (15 rows) and
+  `ADJUST_UNIT_TOURISM_BOMB_DISTRICT` (7) are the largest unmodelled effects
+  whose owners CIVVIS already has: every one of the 22 rows hangs off a
+  promotion that is already in `data/promotions.json`, so they need no new
+  content — only a district-keyed selector of the kind `building_yields`
+  already is.
+
+Checked and rejected as a next slice:
+`ADJUST_PLAYER_TRADE_ROUTE_YIELD_MODIFIER` looks ideal at 12 rows on
+`PolicyModifiers` alone, and **none** of its owning cards are in the CIVVIS deck
+(all twelve are Letters of Marque and its siblings). Owner tables say what
+grants a row, not whether this engine has the grantor; ask the ruleset before
+ranking.
 
 Content scope — the civilizations, units and buildings CIVVIS does not model
 at all — is measured separately by the "Only in Civ VI" columns of

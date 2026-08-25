@@ -1,0 +1,204 @@
+{
+ "policy": "threshold = max MAE of the first three runs measured per subsystem, then frozen; raise a threshold only with a note saying which engine change moved it",
+ "seed_runs": 3,
+ "thresholds": {
+  "city_culture": {
+   "frozen": true,
+   "mae": 0.9738552623066106,
+   "seeds": [
+    {
+     "mae": 0.9738552623066106,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.2526576546003017,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 0.3595832799999999,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "city_faith": {
+   "frozen": true,
+   "mae": 0.11712642475386773,
+   "seeds": [
+    {
+     "mae": 0.11712642475386773,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.028651877828054294,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 0.009499527428571427,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "city_food": {
+   "frozen": true,
+   "mae": 0.3790436005625879,
+   "seeds": [
+    {
+     "mae": 0.3790436005625879,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.24547511312217193,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 0.228,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "city_gold": {
+   "frozen": true,
+   "mae": 1.1392449595639942,
+   "seeds": [
+    {
+     "mae": 1.1392449595639942,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.557797286199095,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 0.6727205551428571,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "city_loyalty": {
+   "frozen": true,
+   "mae": 1.3454298698128353,
+   "seeds": [
+    {
+     "mae": 0.32308219043879133,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.015082956259426848,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 1.3454298698128353,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "city_production": {
+   "frozen": true,
+   "mae": 1.4946229289732769,
+   "seeds": [
+    {
+     "mae": 1.4946229289732769,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.6317106093514328,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 1.4495995657142857,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "city_religion": {
+   "frozen": true,
+   "mae": 0.033964728935336384,
+   "seeds": [
+    {
+     "mae": 0.02459016393442623,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.01956400223588597,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 0.033964728935336384,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "city_science": {
+   "frozen": true,
+   "mae": 0.9948789574542897,
+   "seeds": [
+    {
+     "mae": 0.9948789574542897,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.4677694087481147,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 0.9275886422857139,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "empire_faith_delta": {
+   "frozen": true,
+   "mae": 43.13503550200803,
+   "seeds": [
+    {
+     "mae": 43.13503550200803,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 11.156405831325301,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 3.132382694779115,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "empire_favor_delta": {
+   "frozen": true,
+   "mae": 2.357429718875502,
+   "seeds": [
+    {
+     "mae": 0.9959839357429718,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 0.5823293172690763,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 2.357429718875502,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  },
+  "empire_gold_delta": {
+   "frozen": true,
+   "mae": 133.99027807228916,
+   "seeds": [
+    {
+     "mae": 133.99027807228916,
+     "run": "civvis-20260818T155500Z"
+    },
+    {
+     "mae": 65.57780251004016,
+     "run": "civvis-20260819T081800Z"
+    },
+    {
+     "mae": 28.165108524096382,
+     "run": "civvis-20260819T035349Z"
+    }
+   ]
+  }
+ }
+}

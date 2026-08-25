@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -464,6 +465,82 @@ class FreshnessTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mtime_ns, modified)
 
 
+class FreshnessLockLivenessTests(unittest.TestCase):
+    """A lock whose holder died must not outlive it by half an hour.
+
+    Measured on 2026-08-23: a `refresh --scheduled` worker hung holding the
+    lock, and every `civvis_collab.py start` on that machine failed with
+    "another refresh is already running" until `FRESHNESS_LOCK_STALE_SECONDS`
+    expired. The lock recorded the holder's PID the whole time.
+    """
+
+    def repo(self, base):
+        """`freshness_dir` resolves through the repository's common git dir."""
+        root = base / "clone"
+        subprocess.run(
+            ("git", "init", "--initial-branch=main", str(root)),
+            check=True,
+            capture_output=True,
+        )
+        return root
+
+    def lock_written_by(self, root, pid):
+        path = collab.freshness_dir(root) / "refresh.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"pid": pid}), encoding="utf-8")
+        return path
+
+    def dead_pid(self):
+        """A PID that is reliably not running: our own child, waited on.
+
+        Spawning and reaping is the only portable way to name a PID that
+        certainly existed and certainly does not now — an arbitrary large
+        integer could belong to a live process on a busy machine.
+        """
+        child = subprocess.Popen(("true",))
+        child.wait()
+        return child.pid
+
+    def test_a_lock_naming_a_dead_process_is_released(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, self.dead_pid())
+            self.assertTrue(collab.lock_holder_is_gone(path))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertTrue(acquired)
+
+    def test_a_lock_naming_a_live_process_is_respected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, os.getpid())
+            self.assertFalse(collab.lock_holder_is_gone(path))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertFalse(acquired)
+
+    def test_an_unreadable_lock_is_assumed_live(self):
+        """The file is created O_EXCL and written after, so an empty or
+        malformed one is a holder mid-write, not an orphan. Releasing it would
+        hand two workers the same lock; the age check is the backstop."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            for content in ("", "{", '{"pid": "not a number"}', "{}", '{"pid": 0}'):
+                path = collab.freshness_dir(root) / "refresh.lock"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                self.assertFalse(collab.lock_holder_is_gone(path), content)
+            path.unlink()
+            self.assertFalse(collab.lock_holder_is_gone(path))
+
+    def test_the_age_backstop_still_releases_a_lock_it_cannot_judge(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, os.getpid())
+            stale = time.time() - collab.FRESHNESS_LOCK_STALE_SECONDS - 1
+            os.utime(path, (stale, stale))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertTrue(acquired)
+
+
 class ClaimTests(unittest.TestCase):
     def test_claims_are_parsed_from_the_pr_contract(self):
         parsed = collab.parse_claims(body())
@@ -739,6 +816,51 @@ class PolicyTests(unittest.TestCase):
             },
         )
         self.assertTrue(any("collide with PR #5" in error for error in errors), errors)
+
+    def test_a_live_game_pr_without_a_citation_gets_a_notice_not_an_error(self):
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body(paths="`tools/civ6_control/mod/**`"), draft=False),
+            files=["tools/civ6_control/mod/CivvisControl.lua"],
+            commit_subjects=[],
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(any("quotes no shipped source" in note for note in advisories), advisories)
+
+    def test_a_citation_in_the_body_satisfies_the_live_game_rule(self):
+        for citation in (
+            "modelled on `Base/Assets/UI/DiplomacyActionView.lua:2545`",
+            "bands from `GameplayDB.BarbarianAttackForces`",
+            "read from Civ6.app/Contents/Assets",
+        ):
+            with self.subTest(citation=citation):
+                advisories = []
+                collab.validate_pr(
+                    pr(self.branch, body(paths="`tools/civ6_control/mod/**`") + "\n" + citation),
+                    files=["tools/civ6_control/mod/CivvisControl.lua"],
+                    commit_subjects=[],
+                    advisories=advisories,
+                )
+                self.assertFalse(any("quotes no shipped source" in note for note in advisories))
+
+    def test_game_rs_counts_only_when_the_added_lines_touch_the_live_game_code(self):
+        for line, expected in (
+            ("    fn barbarian_raid_force_size(&self) -> usize {", True),
+            ("    let offer = self.quick_deal_value(pid, other);", True),
+            ("    let yields = self.city_yields(city);", False),
+        ):
+            with self.subTest(line=line):
+                advisories = []
+                collab.validate_pr(
+                    pr(self.branch, body()),
+                    files=["src/game.rs"],
+                    commit_subjects=[],
+                    advisories=advisories,
+                    added_lines={"src/game.rs": [line]},
+                )
+                self.assertEqual(
+                    any("quotes no shipped source" in note for note in advisories), expected)
 
     def test_a_draft_reports_collisions_without_failing(self):
         advisories = []
