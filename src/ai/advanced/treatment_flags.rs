@@ -2471,6 +2471,36 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
+    /// Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival.
+    /// A camp is the rival's when a major we are not allied with has a
+    /// city strictly nearer it than any of ours and it sits outside our
+    /// worked ring; the envoy scorer, the alliance partner score and the
+    /// joint-war answer read the far side of every rival. Opt-in gene
+    /// `enemy-of-my-enemy`; see `advanced/enemy_of_my_enemy.rs`. Operator
+    /// request, 2026-08-25.
+    pub fn enable_enemy_of_my_enemy(&mut self) {
+        self.base.enemy_of_my_enemy = true;
+    }
+    /// The twin of `enable_enemy_of_my_enemy`.
+    pub fn disable_enemy_of_my_enemy(&mut self) {
+        self.base.enemy_of_my_enemy = false;
+    }
+
+    /// Buy the plot a Barbarian Outpost stands on for the city inside whose
+    /// three rings it sits, when being rid of the outpost is worth more than
+    /// the plot's quote. The outpost must be one we can see and one a soldier
+    /// of ours can reach and disperse — Civilization VI removes an outpost on
+    /// entry, never because the ground changed hands. See
+    /// [`AdvancedAi::camp_buyout_plot_score`]. Opt-in gene `camp-tile-buyout`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_camp_tile_buyout(&mut self) {
+        self.camp_tile_buyout = true;
+    }
+
+    /// The twin of `enable_camp_tile_buyout`.
+    pub fn disable_camp_tile_buyout(&mut self) {
+        self.camp_tile_buyout = false;
     /// Price a Gold purchase at the build's card-boosted rate, so items a
     /// slotted card discounts lose purchase priority to items no card touches.
     /// Opt-in gene `buy-what-cards-cannot-boost`; see
@@ -2531,6 +2561,49 @@ impl AdvancedAi {
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
     // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    /// Price a settle site the way the engine pays it beside a natural
+    /// wonder: the wonder's projected yields on every neighbouring work tile
+    /// and a capped credit for the amenity, appeal, Holy Site adjacency and
+    /// era score no yield table shows. Opt-in gene `wonder-adjacent-sites`;
+    /// see `advanced/wonder_sites.rs`.
+    pub fn enable_wonder_adjacent_sites(&mut self) {
+        self.wonder_adjacent_sites = true;
+    }
+
+    /// The twin of `enable_wonder_adjacent_sites`.
+    pub fn disable_wonder_adjacent_sites(&mut self) {
+        self.wonder_adjacent_sites = false;
+    }
+
+    /// The projection plus a small flat credit per wonder tile in the
+    /// footprint, capped at a river's worth.
+    ///
+    /// Version 2 of `wonder_adjacent_sites`; one version of a family plays, so
+    /// this turns version 1 off. Opt-in gene `wonder-adjacent-sites-2`. See
+    /// `AdvancedAi::wonder_adjacent_sites_2`.
+    pub fn enable_wonder_adjacent_sites_2(&mut self) {
+        self.wonder_adjacent_sites = false;
+        self.wonder_adjacent_sites_2 = true;
+    }
+
+    pub fn disable_wonder_adjacent_sites_2(&mut self) {
+        self.wonder_adjacent_sites_2 = false;
+    }
+
+    /// Send an explorer to the unseen ring of a natural wonder within
+    /// settling range of an own city before it picks a frontier, so a site
+    /// beside the wonder exists to be priced. Opt-in gene
+    /// `wonder-ring-recon`; see `advanced/wonder_sites.rs` and
+    /// `BasicAi::wonder_ring_recon`.
+    pub fn enable_wonder_ring_recon(&mut self) {
+        self.base.wonder_ring_recon = true;
+    }
+
+    /// The twin of `enable_wonder_ring_recon`.
+    pub fn disable_wonder_ring_recon(&mut self) {
+        self.base.wonder_ring_recon = false;
+    }
 
     /// Keep one Builder per city while there is still land to improve, priced
     /// where it can win the queue. See `AdvancedAi::builder_supply_floor`;

@@ -1326,6 +1326,41 @@ pub const GENES: &[Gene] = &[
     // that has already paid for the Campus. 91% of standard Emperor games end
     // on a science victory, so this is the win condition itself.
     Gene { tag: "first-research-building-reserve", field: "first_research_building_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_research_building_reserve, disable: AdvancedAi::disable_first_research_building_reserve },
+    // A camp's Scout reports the nearest major settlement it sees and the
+    // camp raises its party against that report, so a camp nearer a rival's
+    // city than ours raids the rival -- and five deliberate clears (the
+    // adjacent clear, the camp errand, the home-defence threat list, the
+    // near-home chase, the presence alarm) took it down anyway, each
+    // measuring distance from OUR cities only. The envoy scorer and the
+    // alliance partner score likewise read a city-state's or a major's place
+    // against our own cities, so the one ACROSS a rival -- the front that
+    // rival cannot cover while facing us -- scored nothing for being there.
+    // The gene leaves the neighbours' camps standing, pays envoys and
+    // alliance partners on the far side of every rival, and refuses a
+    // rival's joint war against the major on its far side. Operator
+    // request, 2026-08-25.
+    Gene { tag: "enemy-of-my-enemy", field: "enemy_of_my_enemy", kind: Kind::OptIn, enable: AdvancedAi::enable_enemy_of_my_enemy, disable: AdvancedAi::disable_enemy_of_my_enemy },
+    // A Barbarian Outpost inside a city's own three rings is bought out. The
+    // shipped plot appraisal prices a camp hex as its bare terrain, so the
+    // one plot in the empire whose ownership is about a threat is the one
+    // plot Gold never reaches; and Culture will not reach it either, because
+    // `border_influence_cost` charges a camp the shipped +100, a whole ring
+    // of distance, and the city grows around the hole instead. The gene buys
+    // it when being rid of the outpost is worth more than the quote — the
+    // outpost visible, and a soldier of ours in reach to walk in and
+    // disperse it, since Civilization VI removes an outpost on entry and
+    // never because the deed changed hands. Operator request, 2026-08-25.
+    Gene { tag: "camp-tile-buyout", field: "camp_tile_buyout", kind: Kind::OptIn, enable: AdvancedAi::enable_camp_tile_buyout, disable: AdvancedAi::disable_camp_tile_buyout },
+    // 2026-08-25, run civvis-20260825T162542Z: Mount Roraima three tiles from
+    // Rome, every Settler walked the other way. The site model read the
+    // wonder as lost jobs and the ground beside it was never scouted. See
+    // `advanced/wonder_sites.rs`.
+    Gene { tag: "wonder-adjacent-sites", field: "wonder_adjacent_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_adjacent_sites, disable: AdvancedAi::disable_wonder_adjacent_sites },
+    // Version 2 adds a small flat footprint credit on top of the projection;
+    // kept a separate version because #1419's flat wonder credit lost at
+    // scale (#2464), so the batch prices the credit apart from the repair.
+    Gene { tag: "wonder-adjacent-sites-2", field: "wonder_adjacent_sites_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_adjacent_sites_2, disable: AdvancedAi::disable_wonder_adjacent_sites_2 },
+    Gene { tag: "wonder-ring-recon", field: "wonder_ring_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_ring_recon, disable: AdvancedAi::disable_wonder_ring_recon },
     // Operator heuristic, 2026-08-25: Production is spent best on what a
     // slotted card boosts; Gold is flexible and immediate, so it belongs on
     // what no card boosts, on the young city that cannot yet build, and on

@@ -4578,6 +4578,12 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// The plot a Barbarian Outpost stands on is bought for the city inside
+    /// whose three rings it sits, when being rid of the outpost is worth more
+    /// than the plot's quote. Opt-in gene `camp-tile-buyout`; see
+    /// `advanced/camp_buyout.rs`.
+    camp_tile_buyout: bool,
+
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
     /// or a wonder at the front of the owning city's queue. Opt-in gene
     /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
@@ -5071,6 +5077,23 @@ pub struct AdvancedAi {
     /// happens. This gene asks the plainer question: are we at war with a
     /// major right now. Opt-in gene `upgrade-the-garrison`.
     upgrade_the_garrison: bool,
+    /// A settle site beside a natural wonder is priced the way the engine
+    /// pays it: the wonder's projected yields on every neighbouring work tile
+    /// (`Game::player_tile_yields`' rule, which every site score skipped) and
+    /// a capped footprint credit for the +1 Amenity, +2 Appeal, Holy Site
+    /// adjacency and era score no yield table shows. Off it, the impassable
+    /// wonder tiles are merely lost jobs and the site reads no better than
+    /// bare ground. Opt-in gene `wonder-adjacent-sites`; see
+    /// `advanced/wonder_sites.rs`.
+    wonder_adjacent_sites: bool,
+    /// Version 2 of `wonder_adjacent_sites`: the projection, plus a small
+    /// flat credit per natural-wonder tile in the footprint (capped at a
+    /// river's worth) for the +1 Amenity, appeal, Holy Site adjacency and
+    /// era score the yields never show. Kept apart from version 1 because
+    /// #1419's flat wonder credit lost −0.553 pp at scale (#2464); the batch
+    /// prices the two. Implies version 1; its enable turns version 1 off.
+    /// Opt-in gene `wonder-adjacent-sites-2`.
+    wonder_adjacent_sites_2: bool,
     /// A melee unit with nothing to hit stands where its zone of control
     /// takes the most enemy reaches off our shooters and wounded. Opt-in gene
     /// `zoc-screen`; see `advanced/field_craft.rs`.
@@ -5362,6 +5385,12 @@ use district_planning::DistrictPlanCache;
 mod coalition;
 use coalition::Coalition;
 
+/// Opt-in gene `enemy-of-my-enemy`: the neighbours' barbarian camps stand,
+/// envoys and alliances go to the far side of every rival, a rival's joint
+/// war against its own far side is refused. The flag lives on `BasicAi`,
+/// which owns the camp clears.
+pub(crate) mod enemy_of_my_enemy;
+
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
@@ -5436,6 +5465,12 @@ mod gold_and_cards;
 /// `advanced/opening_settlement.rs`.
 mod opening_settlement;
 
+/// `wonder-adjacent-sites` prices a settle site beside a natural wonder the
+/// way the engine pays it; `wonder-ring-recon` sends an explorer to the
+/// unseen ring of a natural wonder near home before it picks a frontier. Two
+/// opt-in genes; see `advanced/wonder_sites.rs`.
+mod wonder_sites;
+
 mod science_victory_drive;
 pub use science_victory_drive::ScienceDrive;
 
@@ -5453,6 +5488,12 @@ pub use gene_ledger::{
     deployment_treatments, gene_ledger as gene_ledger_rows, ledger_default_on, ledger_verdict,
     GeneLedgerApplied, GeneVerdict, Measure, Verdict,
 };
+
+/// `camp-tile-buyout`: the plot a Barbarian Outpost stands on is bought for
+/// the city that has to live beside it when being rid of the outpost is worth
+/// more than the plot's quote. One opt-in gene; see
+/// `advanced/camp_buyout.rs`.
+mod camp_buyout;
 
 
 impl AdvancedAi {
@@ -6092,6 +6133,8 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            camp_tile_buyout: false,
+
             chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
             campus_adjacency_threshold_2: false,
@@ -6160,6 +6203,8 @@ impl AdvancedAi {
 
             // ---- append: t-z ----------------------------------------
             upgrade_the_garrison: false,
+            wonder_adjacent_sites: false,
+            wonder_adjacent_sites_2: false,
             zoc_screen: false,
         }
     }
@@ -13176,6 +13221,16 @@ impl AdvancedAi {
                 // plan off its own objective.
                 -300.0
             };
+            // `enemy_of_my_enemy`: a rival's war on its own far side is the
+            // war we least want to join. See `advanced/enemy_of_my_enemy.rs`.
+            value += self.enemy_of_my_enemy_joint_war_penalty(
+                g,
+                pid,
+                deal,
+                (plan.strategy == GrandStrategy::Conquest)
+                    .then_some(plan.target_player)
+                    .flatten(),
+            );
         }
         if let Some(promise) = deal.promise.as_deref() {
             let conflicts_with_plan = matches!(
@@ -13396,7 +13451,17 @@ impl AdvancedAi {
                         "religious" => g.players[other].religion.is_some() as usize as f64 * 45.0,
                         _ => 0.0,
                     };
-                    friendship + connected + complement
+                    // `enemy_of_my_enemy`: a partner with a city on a
+                    // rival's far side. See `advanced/enemy_of_my_enemy.rs`.
+                    let across = self.enemy_of_my_enemy_partner_bonus(
+                        g,
+                        pid,
+                        other,
+                        (plan.strategy == GrandStrategy::Conquest)
+                            .then_some(plan.target_player)
+                            .flatten(),
+                    );
+                    friendship + connected + complement + across
                         - g.players[pid]
                             .grievances
                             .get(&other)
@@ -13410,22 +13475,38 @@ impl AdvancedAi {
             })
             .map(|other| other.id);
         if let Some(partner) = partner {
-            let _ = g.apply(
+            let proposed = g
+                .apply(
+                    pid,
+                    &Action::ProposeDeal {
+                        player: partner,
+                        give_gold: 0.0,
+                        request_gold: 0.0,
+                        // `no_free_passage`: passage is sold, not bundled.
+                        open_borders: !self.base.no_free_passage
+                            && g.players[pid]
+                                .civics
+                                .contains(&crate::name!("early_empire")),
+                        friendship: true,
+                        peace: false,
+                        alliance: Some(kind.to_string()),
+                    },
+                )
+                .is_ok();
+            let across = self.enemy_of_my_enemy_partner_bonus(
+                g,
                 pid,
-                &Action::ProposeDeal {
-                    player: partner,
-                    give_gold: 0.0,
-                    request_gold: 0.0,
-                    // `no_free_passage`: passage is sold, not bundled.
-                    open_borders: !self.base.no_free_passage
-                        && g.players[pid]
-                            .civics
-                            .contains(&crate::name!("early_empire")),
-                    friendship: true,
-                    peace: false,
-                    alliance: Some(kind.to_string()),
-                },
+                partner,
+                (plan.strategy == GrandStrategy::Conquest)
+                    .then_some(plan.target_player)
+                    .flatten(),
             );
+            if proposed && across > 0.0 {
+                *g.players[pid]
+                    .counters
+                    .entry("eoe:partners".to_string())
+                    .or_insert(0) += 1;
+            }
         }
     }
 
@@ -15614,6 +15695,9 @@ impl AdvancedAi {
                     // `coalition_before_war`: the city-state's place next to
                     // the war desk's target. See `advanced/coalition.rs`.
                     let coalition = self.coalition_city_state_bonus(g, pid, minor.id, needed);
+                    // `enemy_of_my_enemy`: the city-state's place ACROSS a
+                    // rival. See `advanced/enemy_of_my_enemy.rs`.
+                    let across = self.enemy_of_my_enemy_city_state_bonus(g, pid, minor.id, needed);
                     let score = (alignment + unique_alignment) * 10
                         + type_bonus_value
                         + denial
@@ -15621,6 +15705,7 @@ impl AdvancedAi {
                         + nobel_peace_suzerain_prize
                         + place
                         + coalition
+                        + across
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
@@ -15681,6 +15766,12 @@ impl AdvancedAi {
                 *g.players[pid]
                     .counters
                     .entry("coalition:envoys".to_string())
+                    .or_insert(0) += 1;
+            }
+            if self.enemy_of_my_enemy_city_state_bonus(g, pid, target, 1) > 0 {
+                *g.players[pid]
+                    .counters
+                    .entry("eoe:envoys".to_string())
                     .or_insert(0) += 1;
             }
         }
@@ -16045,13 +16136,24 @@ impl AdvancedAi {
         } else {
             reserve
         };
+        // `camp_tile_buyout`: an outpost inside a city's own rings costs
+        // that city something no yield in the ranking below can express, and
+        // every plot there is a surplus purchase that a unit or a building
+        // outbids by an order of magnitude. The operator's rule is a
+        // threshold, so it is answered before the shopping and out of the
+        // same reserve. It does NOT end the turn's spending the way an
+        // emergency defence does: a hex bought out of the surplus above the
+        // reserve should not also cost the city the Settler it was saving
+        // for. See `advanced/camp_buyout.rs`.
+        let bought_out_an_outpost =
+            self.camp_tile_buyout && self.camp_tile_buyout_purchase(g, pid, reserve);
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
         } else {
             1
         };
-        let mut purchased = false;
+        let mut purchased = bought_out_an_outpost;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;
@@ -22572,7 +22674,7 @@ impl AdvancedAi {
         pos: Pos,
         positions: &[Pos],
     ) -> SettlementGrowthForecast {
-        let mut center = g.rules.tile_yields(&g.map.tiles[&pos]);
+        let mut center = self.site_work_yields(g, pos, &g.map.tiles[&pos]);
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
 
@@ -22610,7 +22712,7 @@ impl AdvancedAi {
             candidates.push(SettlementWorkTile {
                 pos: work,
                 ring: g.wdist(pos, work),
-                yields: g.rules.tile_yields(tile),
+                yields: self.site_work_yields(g, work, tile),
                 resource_value,
             });
         }
@@ -22910,6 +23012,7 @@ impl AdvancedAi {
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.wonder_footprint_value(g, &positions);
         let enemy_distance = g
             .cities
             .values()
@@ -23985,7 +24088,7 @@ impl AdvancedAi {
                     return None;
                 }
                 let prefilter_score = prefilter_limit
-                    .map(|_| Self::settlement_prefilter_score(g, pos))
+                    .map(|_| self.settlement_prefilter_score_for(g, pos))
                     .unwrap_or(0.0);
                 Some((pos, prefilter_score))
             })
