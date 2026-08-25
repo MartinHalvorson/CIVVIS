@@ -212,6 +212,8 @@ const GATE_POSTS_MAX: usize = 2;
 const GATE_MIN_GARRISON: usize = 2;
 /// A unit further than this from a gate is somebody else's business.
 const GATE_UNIT_RANGE: i32 = 8;
+/// Gate candidates kept per post, so an unmannable one does not spend a post.
+const GATE_CANDIDATE_SLACK: usize = 3;
 
 /// What one tile is worth as a gate, in each of the three senses. Every field
 /// is extra steps, capped at [`CUT_DETOUR`], and zero when the tile is not a
@@ -666,7 +668,12 @@ impl AdvancedAi {
                 .then(left_reach.cmp(right_reach))
                 .then(left.at.cmp(&right.at))
         });
-        ordered.truncate(GATE_POSTS_MAX);
+        // ⚠ Keep more candidates than posts. A strait ranks by its own
+        // detour and an empire with no hull in reach cannot hold one, so
+        // truncating to the post count here would let an unmannable gate
+        // spend a post a land gate could have used. `man_the_gates` stops at
+        // the post count instead, once it has bodies for them.
+        ordered.truncate(GATE_POSTS_MAX * GATE_CANDIDATE_SLACK);
         plan.gates = ordered.into_iter().map(|(gate, _)| gate).collect();
     }
 
@@ -681,10 +688,15 @@ impl AdvancedAi {
             })
     }
 
-    /// Send the nearest unit nothing else has claimed to each gate.
+    /// Send the nearest unit nothing else has claimed to each gate, best gate
+    /// first, and stop once [`GATE_POSTS_MAX`] of them are manned.
     fn man_the_gates(&self, g: &Game, pid: usize, plan: &mut GatePlan) {
         let mut taken: BTreeSet<u32> = BTreeSet::new();
+        let mut manned: Vec<Gate> = Vec::new();
         for gate in plan.gates.clone() {
+            if manned.len() >= GATE_POSTS_MAX {
+                break;
+            }
             let best = g
                 .player_unit_ids(pid)
                 .into_iter()
@@ -695,7 +707,13 @@ impl AdvancedAi {
             if let Some((_, uid)) = best {
                 taken.insert(uid);
                 plan.posts.insert(uid, gate.at);
+                manned.push(gate);
             }
+        }
+        // The plan keeps the gates it can actually hold: a candidate nothing
+        // could reach is not this turn's business.
+        if !manned.is_empty() {
+            plan.gates = manned;
         }
     }
 
@@ -763,6 +781,7 @@ impl AdvancedAi {
             // the picket's own hold does.
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
+        let kind = g.units[&uid].kind;
         let next = g
             .route_step(uid, post, 0)
             .filter(|next| g.can_move(uid, *next))?;
@@ -770,7 +789,7 @@ impl AdvancedAi {
             return None;
         }
         think!(self.journal(), Military, Detail,
-               "{} {uid} walks to the gate at {post:?}", g.units[&uid].kind;
+               "{kind} {uid} walks to the gate at {post:?}";
                "closing that tile costs whoever comes through it {:.0} extra steps, and \
                 nothing foreign may enter a tile one of our military units holds",
                self.chokepoint_gates
@@ -1196,6 +1215,39 @@ mod tests {
                     .iter()
                     .any(|uid| ai.chokepoint_gates.post(*uid) == Some(gap)),
             "with a garrison to spare one body walks out to the gate"
+        );
+    }
+
+    #[test]
+    fn a_gate_no_body_can_reach_does_not_spend_a_post() {
+        // Two gaps in the same wall, and one soldier who can reach only the
+        // southern one. The northern gate sorts FIRST — it is nearer its own
+        // city — so a plan that spent a post on every candidate in order
+        // would leave the gate we can actually hold unheld.
+        let (mut game, south) = mountain_wall(717_012, 14, 9);
+        let north = at(&game, 14, 2);
+        paint(&mut game, north, "grassland");
+        game.found_city_for(0, at(&game, 17, 9), None);
+        game.found_city_for(0, at(&game, 16, 2), None);
+        game.found_city_for(1, at(&game, 8, 9), None);
+        let uid = game.spawn_unit("warrior", 0, at(&game, 18, 12));
+        assert!(
+            game.wdist(game.units[&uid].pos, north) > GATE_UNIT_RANGE
+                && game.wdist(game.units[&uid].pos, south) <= GATE_UNIT_RANGE,
+            "the fixture puts exactly one of the two gates in reach"
+        );
+        let mut ai = AdvancedAi::new();
+        ai.enable_chokepoint_garrison();
+        ai.chokepoint_gate_plan(&game, 0);
+        assert_eq!(ai.chokepoint_gates.post(uid), Some(south));
+        assert_eq!(
+            ai.chokepoint_gates.gates(),
+            &[Gate {
+                at: south,
+                detour: CUT_DETOUR,
+                sea: false,
+            }],
+            "the plan keeps the gates it can hold and no others"
         );
     }
 
