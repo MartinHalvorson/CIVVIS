@@ -2234,6 +2234,34 @@ impl AdvancedAi {
         self.order_retry = false;
     }
 
+    /// Before the first city, move a nearby Warrior before the Settler and
+    /// choose the city site from the terrain the Warrior has now revealed.
+    /// Opt-in gene `opening-warrior-recon`; see
+    /// `advanced/opening_settlement.rs`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_opening_warrior_recon(&mut self) {
+        self.opening_warrior_recon = true;
+    }
+
+    /// The twin of `enable_opening_warrior_recon`.
+    pub fn disable_opening_warrior_recon(&mut self) {
+        self.opening_warrior_recon = false;
+    }
+
+    /// After a Settler's first move, discard only its disposable cached site
+    /// while movement remains, so the next leg can use its new sight. Opt-in
+    /// gene `settler-second-look`; see `advanced/opening_settlement.rs`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_settler_second_look(&mut self) {
+        self.settler_second_look = true;
+    }
+
+    /// The twin of `enable_settler_second_look`.
+    pub fn disable_settler_second_look(&mut self) {
+        self.settler_second_look = false;
+    }
+
     /// When the empire leads the field in science, beeline the space-race chain,
     /// build launch-city production and race two pads early.
     /// Opt-in gene `science-victory-drive`; see `advanced/science_victory_drive.rs`
