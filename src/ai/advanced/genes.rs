@@ -789,6 +789,13 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ Eighteen of 32 screened games today ended on a Science Victory, and
+    // the threat model reads that race as a five-step ladder off launches
+    // already made: a rival one tech from Rocketry with a Spaceport standing
+    // reads ZERO. `rocketry_readiness` is the same chain this planner uses to
+    // judge itself, off public tech-screen information. See
+    // `science_chain_alarm`.
+    Gene { tag: "science-chain-alarm", field: "science_chain_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_science_chain_alarm, disable: AdvancedAi::disable_science_chain_alarm },
     // ⚠ Two thirds of native games end by religious conversion, and the alarm
     // for it has five values twenty points apart: `religious_conversion_tally`
     // counts whole civilizations already lost, so a rival holding 45% of every

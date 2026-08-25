@@ -34633,3 +34633,112 @@ fn the_culture_forecast_never_lowers_the_shipped_ratio() {
         );
     }
 }
+
+// ═══ The Science threat nobody sees coming (`science_chain_alarm`) ═══
+
+#[test]
+fn science_chain_alarm_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "science_chain_alarm"
+            && gene.tag == "science-chain-alarm"),
+        "science-chain-alarm must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("science-chain-alarm"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("science-chain-alarm"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.science_chain_alarm, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().science_chain_alarm,
+        "off in the legacy agent"
+    );
+    ai.enable_science_chain_alarm();
+    assert!(ai.science_chain_alarm);
+    ai.disable_science_chain_alarm();
+    assert!(!ai.science_chain_alarm, "reversible");
+}
+
+/// The blind spot: a rival that has researched the whole chain to Rocketry and
+/// launched nothing reads zero on the shipped ladder.
+#[test]
+fn a_rival_at_the_end_of_the_chain_reads_no_science_threat_at_all() {
+    let mut game = Game::new(3, 30, 20, 9_101, 250, 0);
+    game.found_city_for(1, (12, 10), None);
+    let chain: Vec<Name> = game
+        .rules
+        .techs
+        .keys()
+        .filter(|tech| AdvancedAi::new().tech_leads_to(&game, tech, "rocketry"))
+        .map(|tech| Name::new(tech.as_str()))
+        .collect();
+    assert!(!chain.is_empty(), "fixture: the chain exists");
+    for tech in &chain {
+        game.players[1].techs.insert(*tech);
+    }
+    assert!(
+        !game.players[1]
+            .science_projects
+            .contains("launch_earth_satellite"),
+        "fixture: nothing launched"
+    );
+
+    let shipped = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
+    ai.enable_science_chain_alarm();
+
+    // The shipped ladder scores the whole chain as nothing, so Science is not
+    // even this rival's named race.
+    assert_ne!(
+        shipped.rival_pressure(&game, 1).0,
+        GrandStrategy::Science,
+        "the shipped model does not see it"
+    );
+    let (lane, progress) = ai.rival_pressure(&game, 1);
+    assert_eq!(lane, GrandStrategy::Science, "the gene does");
+    assert!(
+        progress >= 40,
+        "the whole chain is worth the whole ramp ({progress})"
+    );
+}
+
+/// The unearned base is dropped, so a rival racing nothing still reads
+/// nothing, and the launch ladder still governs above the ramp.
+#[test]
+fn the_chain_ramp_starts_at_zero_and_yields_to_the_launch_ladder() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_science_chain_alarm();
+    let shipped = AdvancedAi::new();
+
+    // A rival with no techs at all: the ramp must not invent a floor.
+    let mut bare = Game::new(3, 30, 20, 9_102, 250, 0);
+    bare.found_city_for(1, (12, 10), None);
+    bare.players[1].techs.clear();
+    assert_eq!(
+        ai.rival_pressure(&bare, 1).1,
+        shipped.rival_pressure(&bare, 1).1,
+        "a rival racing nothing reads exactly what it read before"
+    );
+
+    // A rival that has launched reads the ladder, which is above the ramp.
+    let mut launched = bare.clone();
+    launched.players[1]
+        .science_projects
+        .insert("launch_moon_landing".to_string());
+    launched.players[1]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    let (_, with) = ai.rival_pressure(&launched, 1);
+    let (_, without) = shipped.rival_pressure(&launched, 1);
+    assert!(
+        with >= without,
+        "the ramp never lowers the ladder ({with} < {without})"
+    );
+    assert!(with >= 45, "two launches still read the ladder ({with})");
+}
