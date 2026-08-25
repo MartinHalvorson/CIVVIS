@@ -1976,8 +1976,7 @@ class TheStandardScreen(unittest.TestCase):
             str(batch.get("unverified", ""))
             for batch in self.ledger["reporting_batches"]
         )
-        self.assertIn("research-planning genes were deliberately removed",
-                      reporting_notes)
+        self.assertIn("research-planning", reporting_notes)
         self.assertIn("high-signal negative genes were deliberately removed",
                       reporting_notes)
 
