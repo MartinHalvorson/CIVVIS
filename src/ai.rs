@@ -2183,12 +2183,6 @@ pub struct BasicAi {
     /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
     /// by name before any promotion question is asked.
     pub(crate) apostle_promotion_by_role: bool,
-    /// The advanced controller's `priced_tile_purchase` has taken over plot
-    /// purchases for this seat: its pass prices every border plot against
-    /// its Gold, so the baseline `buy_gold_plot` fallthrough must not buy
-    /// the same plots on a flat score behind it. Set only by
-    /// `AdvancedAi::enable_priced_tile_purchase`.
-    pub(crate) plot_purchase_delegated: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -2591,18 +2585,6 @@ pub struct BasicAi {
     /// half-army recall cap all still apply — so this widens WHO may be shot
     /// at, never how recklessly.
     ///
-    /// ⚠ Barbarian Scouts count here, and they are excluded from
-    /// `is_barbarian_raider` on purpose (`barbarian_scouts_are_scouts`: a
-    /// scout must not pin the opening). Both are right. A scout is not a
-    /// reason to mobilise the empire, but in Civilization VI it captures a
-    /// civilian by walking onto it exactly like a Warrior does, and it is the
-    /// unit that carries the target home and turns a camp into a raiding
-    /// party. Next to one of our Settlers it is a threat; six tiles from a
-    /// walled city it is still just a scout.
-    ///
-    /// Entrant `advanced_barbarian_hunt`; withheld by the `barbarian-hunt`
-    /// treatment.
-    pub(crate) barbarian_hunt: bool,
     /// ★★★ THE TRADE OBJECTIVE WAS FAIRNESS, NOT PROFIT. `bilateral_trade`
     /// and its Culture-lane twin chose the quote that maximised
     /// `min(our gain, their gain)` — the most *balanced* exchange on the
@@ -4321,7 +4303,6 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
-            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -4364,7 +4345,6 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             barbarian_heretic_hunt: true,
-            barbarian_hunt: false,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
             no_free_passage: false,
@@ -4492,16 +4472,6 @@ impl BasicAi {
 
     pub fn disable_barbarian_bargain(&mut self) {
         self.barbarian_bargain = false;
-    }
-
-    /// Count a barbarian unit beside one of our civilians in the field as a
-    /// reason to fight it. See `barbarian_hunt`.
-    pub fn enable_barbarian_hunt(&mut self) {
-        self.barbarian_hunt = true;
-    }
-
-    pub fn disable_barbarian_hunt(&mut self) {
-        self.barbarian_hunt = false;
     }
 
     /// The whole peacetime field army answers home threats and a camp in
@@ -4655,7 +4625,6 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
-            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -4698,7 +4667,6 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             barbarian_heretic_hunt: true,
-            barbarian_hunt: false,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
             no_free_passage: false,
@@ -9386,7 +9354,7 @@ impl BasicAi {
         // Plots are a surplus investment after concrete unit and building
         // gaps are filled. Keep another 200 Gold above the ordinary reserve
         // so border appetite cannot crowd out next turn's Builder or upgrade.
-        if !self.plot_purchase_delegated && self.buy_gold_plot(g, pid, reserve + 200.0) {
+        if self.buy_gold_plot(g, pid, reserve + 200.0) {
             return true;
         }
 
@@ -12784,242 +12752,6 @@ impl BasicAi {
         }
     }
 
-    /// ★★★★★ THE ESCORT THAT GUARDED THE SETTLER AND NEVER SWUNG.
-    ///
-    /// `settler_escort_step` returns `Some(..)` for every unit on escort duty
-    /// and it runs BEFORE the attack scan, so a guard standing shoulder to
-    /// shoulder with the barbarian Scout about to take its charge spends the
-    /// turn re-forming on the Settler instead of killing it. That is the
-    /// second half of the eight-Settler run: the admission test never let the
-    /// raider into the enemy list, and even when it did the escort was not
-    /// asking.
-    ///
-    /// This is deliberately the narrowest possible answer, not a licence to
-    /// hunt: only a barbarian ADJACENT to this unit, only when the exchange
-    /// the ordinary attack scan would price is already positive, and only
-    /// while `barbarian_hunt` is on. The unit does not move, so it is still
-    /// beside its charge when the swing lands; recon keeps its own job.
-    ///
-    /// See `barbarian_hunt`.
-    pub(crate) fn barbarian_kill_beside_this_unit(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        uid: u32,
-    ) -> bool {
-        if !self.barbarian_hunt || self.minor || self.barb {
-            return false;
-        }
-        let Some(barb) = g.barb_pid else {
-            return false;
-        };
-        let Some(unit) = g.units.get(&uid) else {
-            return false;
-        };
-        let spec = &g.rules.units[unit.kind];
-        if !spec.is_melee_capable() || spec.class != "military" {
-            return false;
-        }
-        let from = unit.pos;
-        // ★★★★★ THE FIRST VERSION OF THIS RULE ANSWERED A SITUATION THAT
-        // BARELY HAPPENS, AND THE SCREEN SAID SO ON THIRTY MAPS.
-        //
-        // "A barbarian adjacent to the guard" is not the shape the live seat
-        // dies in. Counted over run civvis-20260821T153531Z: **"Guard stands
-        // with its settler" 33 times**, against "Settler falls back toward its
-        // guard" 38, "waits for its guard" 14, "HELD short" 18 and "walking in
-        // circles" 10 — eighty turns of a Settler not advancing while its guard
-        // sits ON its tile. The raider is not next to the guard; it is
-        // loitering two or three tiles off, pinning the walk by its presence
-        // until it closes and takes the Settler. Ten Settlers went that way in
-        // one game.
-        //
-        // So the firing position is the thing to widen, not the leash. This
-        // unit may strike from where it stands OR from any tile it can reach
-        // this turn that is STILL beside its charge — which puts a raider two
-        // tiles out inside reach without the guard ever leaving the civilian's
-        // side. A stacked civilian cannot be captured, and a guard one tile
-        // away is one step from restacking; both invariants survive because
-        // every firing position considered is within one tile of the charge.
-        let charge = Self::escorted_civilian(g, pid, uid);
-        let mut positions: Vec<Pos> = vec![from];
-        if let Some(charge) = charge {
-            for step in crate::hex::neighbors(from) {
-                if g.wdist(step, charge) <= 1 && g.can_move(uid, step) {
-                    positions.push(step);
-                }
-            }
-        }
-        let mut best: Option<(bool, f64, Pos, Pos)> = None;
-        for stand in positions {
-            for target in crate::hex::neighbors(stand) {
-                let hostile = g.units_at(target).into_iter().any(|oid| {
-                    g.units[&oid].owner == barb
-                        && g.rules.units[g.units[&oid].kind].class == "military"
-                });
-                if !hostile {
-                    continue;
-                }
-                if stand == from
-                    && self.legal_tactical_candidates
-                    && !g.melee_order_is_legal(pid, uid, target)
-                {
-                    continue;
-                }
-                let score = self.exchange_score(g, uid, target, false)
-                    - self.attack_threshold(g, uid, target);
-                if score <= 0.0 {
-                    continue;
-                }
-                // ★★★★★ KILL THE ONE THAT IS ACTUALLY HOLDING THE WALKER,
-                // NOT THE ONE THAT PRICES BEST.
-                //
-                // A Civilization VI Warrior and a Slinger both carry
-                // `zone_of_control`, so a raider standing beside our Settler
-                // does not merely threaten it — it makes `Game::can_move`
-                // REFUSE the next step. Run civvis-20260821T153531Z journals
-                // **"Settler HELD short … the next tile refuses it and nothing
-                // is standing there" 86 times in 226 turns**, and fourteen of
-                // fourteen sampled had barbarians on the board. The Settler
-                // then falls back (38), waits for its guard (14) and walks in
-                // circles (10) — trying to walk out of a lock that has no walk
-                // out of it. Killing the unit is the ONLY exit, which is also
-                // why every threat-AVOIDANCE gene in this family reads
-                // neutral-to-harmful in `docs/gene_ledger.json`.
-                //
-                // So a target beside the charge outranks a better-priced one
-                // that is not: clearing a fat target two tiles off the walker
-                // leaves the lock exactly where it was. The exchange gate still
-                // has the final say — this only reorders candidates that have
-                // already passed it.
-                let pins = charge.is_some_and(|held| g.wdist(target, held) <= 1);
-                let rank = (pins, score, stand == from);
-                let better = best
-                    .as_ref()
-                    .is_none_or(|(old_pins, old, old_stand, old_target)| {
-                        rank > (*old_pins, *old, *old_stand == from)
-                            || (rank == (*old_pins, *old, *old_stand == from)
-                                && (stand, target) < (*old_stand, *old_target))
-                    });
-                if better {
-                    best = Some((pins, score, stand, target));
-                }
-            }
-        }
-        let Some((pins, score, stand, target)) = best else {
-            return false;
-        };
-        if stand != from {
-            // Step onto the firing position; the unit loop's next pass finds
-            // the raider adjacent and this same rule takes the swing.
-            think!(self.journal, Military, Detail,
-                   "{} steps up to the raider pinning its charge", plain(&g.units[&uid].kind);
-                   "worth {score:.0} on the ordinary exchange{}, and the new tile \
-                    is still beside the civilian",
-                   if pins { " and its zone of control is what is holding the walker" } else { "" };
-                   target);
-            return g
-                .apply(
-                    pid,
-                    &Action::Move {
-                        unit: uid,
-                        to: stand,
-                    },
-                )
-                .is_ok();
-        }
-        think!(self.journal, Military, Detail,
-               "{} cuts down the raider beside it", plain(&g.units[&uid].kind);
-               "worth {score:.0} on the ordinary exchange{}, and the guard never \
-                leaves its charge to do it",
-               if pins { " and its zone of control is what is holding the walker" } else { "" };
-               target);
-        g.apply(pid, &Action::Attack { unit: uid, target }).is_ok()
-    }
-
-    /// The civilian this unit is standing guard over: one of ours sharing its
-    /// tile or beside it. That is the escort shape the live seat actually
-    /// forms — "a guard joins the settler; it will share the settler's tile"
-    /// and "the guard is 1 tiles away" — rather than the formation link, which
-    /// the deployment genome does not always carry.
-    fn escorted_civilian(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
-        let from = g.units.get(&uid)?.pos;
-        crate::hex::neighbors(from)
-            .into_iter()
-            .chain([from])
-            .find(|position| {
-                g.units_at(*position).into_iter().any(|oid| {
-                    oid != uid
-                        && g.units[&oid].owner == pid
-                        && matches!(g.units[&oid].kind.as_str(), "settler" | "builder")
-                })
-            })
-    }
-
-    /// Whether a barbarian stands close enough to one of our civilians in the
-    /// FIELD to take it. See `barbarian_hunt`.
-    ///
-    /// "In the field" means a civilian that is not standing on one of our own
-    /// cities: a Settler on the road, a Builder improving a frontier tile, a
-    /// Trader on a route. A civilian inside a city is already covered by the
-    /// city reading above, and counting it here would re-admit the seat for
-    /// every camp the empire ever walks past.
-    ///
-    /// Every barbarian MILITARY unit counts, Scouts included — see the
-    /// `barbarian_hunt` note on why that does not contradict
-    /// `barbarian_scouts_are_scouts`.
-    #[cfg(test)]
-    pub(crate) fn barbarian_threatens_our_field_civilians(g: &Game, pid: usize) -> bool {
-        Self::barbarian_threatens_field_civilians_inner(g, pid, false)
-    }
-
-    fn barbarian_threatens_field_civilians_inner(
-        g: &Game,
-        pid: usize,
-        naval_threat_triage: bool,
-    ) -> bool {
-        let Some(barb) = g.barb_pid else {
-            return false;
-        };
-        let my_cities: Vec<Pos> = g
-            .cities
-            .values()
-            .filter(|city| city.owner == pid)
-            .map(|city| city.pos)
-            .collect();
-        let exposed: Vec<Pos> = g
-            .units
-            .values()
-            .filter(|unit| unit.owner == pid)
-            .filter(|unit| g.rules.units[unit.kind].class != "military")
-            .map(|unit| unit.pos)
-            .filter(|pos| !my_cities.contains(pos))
-            .collect();
-        if exposed.is_empty() {
-            return false;
-        }
-        g.units
-            .values()
-            .filter(|unit| unit.owner == barb)
-            .filter(|unit| g.rules.units[unit.kind].class == "military")
-            .filter(|unit| {
-                !naval_threat_triage || Self::naval_raider_can_deal_serious_damage(g, pid, unit)
-            })
-            .any(|raider| {
-                exposed
-                    .iter()
-                    .any(|civilian| g.wdist(raider.pos, *civilian) <= HOME_THREAT_RADIUS)
-            })
-    }
-
-    pub(crate) fn barbarian_threatens_our_field_civilians_for_controller(
-        &self,
-        g: &Game,
-        pid: usize,
-    ) -> bool {
-        Self::barbarian_threatens_field_civilians_inner(g, pid, self.naval_threat_triage)
-    }
-
     /// measured threat *to our own cities*. This does, and answers the worst
     /// threats with the nearest sufficient units before the offensive claims them.
     ///
@@ -14510,15 +14242,9 @@ impl BasicAi {
         // claim.
         if !self.minor && !self.barb {
             if let Some(barb) = g.barb_pid {
-                // `barbarian_hunt` adds the second reading: a raider standing
-                // over one of our Settlers ten tiles from the nearest city is
-                // outside every ring the presence test measures, and eight
-                // Settlers were taken in one 104-turn run inside that gap.
                 if self.barbarian_tactics
                     && (self.barbarian_presence_at_home_for_controller(g, pid, HOME_CAMP_RADIUS)
-                        || self.has_harmless_naval_xp_shot(g, pid, uid)
-                        || (self.barbarian_hunt
-                            && self.barbarian_threatens_our_field_civilians_for_controller(g, pid)))
+                        || self.has_harmless_naval_xp_shot(g, pid, uid))
                     && !enemy_ids.contains(&barb)
                 {
                     enemy_ids.push(barb);
