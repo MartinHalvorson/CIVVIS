@@ -1,21 +1,21 @@
 {
   "coverage": {
-    "named": 48,
+    "named": 45,
     "never_named": 0,
     "never_named_treatments": [],
-    "withholdable": 48
+    "withholdable": 45
   },
   "derived": {
     "firaxis_only_count": 30,
-    "live_bridge_count": 78,
-    "native_engine_repair_count": 48,
-    "withholdable_live_count": 48
+    "live_bridge_count": 75,
+    "native_engine_repair_count": 45,
+    "withholdable_live_count": 45
   },
   "genome_coverage": {
-    "capability_toggles": 189,
-    "measured_by_a_screen": 106,
-    "reachable_as_a_gene": 137,
-    "resolved_by_a_screen": 18,
+    "capability_toggles": 185,
+    "measured_by_a_screen": 102,
+    "reachable_as_a_gene": 133,
+    "resolved_by_a_screen": 17,
     "unreachable_by_any_screen": 52,
     "unreachable_toggles": [
       "adjacent_camp_clear",
@@ -137,11 +137,10 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 20,
+      "declared_count": 18,
       "items": [
         "escort-unstick",
         "buildings-before-projects",
-        "wonder-ring-settle-value",
         "settler-site-agreement",
         "settler-guard-holds",
         "stranded-settler-discount",
@@ -157,12 +156,11 @@
         "one-launch-pad",
         "settler-target-hysteresis",
         "culture-building-debt",
-        "culture-coverage",
-        "district-building-chain"
+        "culture-coverage"
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 48,
+      "declared_count": 45,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -175,7 +173,6 @@
         "peacetime-deterrence",
         "war-economy",
         "bounded-recovery",
-        "siege-tracks-wall",
         "siege-commitment",
         "war-patience",
         "siege-is-progress",
@@ -194,7 +191,6 @@
         "religion-sues-peace",
         "escort-unstick",
         "buildings-before-projects",
-        "wonder-ring-settle-value",
         "settler-site-agreement",
         "settler-guard-holds",
         "stranded-settler-discount",
@@ -210,12 +206,11 @@
         "one-launch-pad",
         "settler-target-hysteresis",
         "culture-building-debt",
-        "culture-coverage",
-        "district-building-chain"
+        "culture-coverage"
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 28,
+      "declared_count": 27,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -228,7 +223,6 @@
         "peacetime-deterrence",
         "war-economy",
         "bounded-recovery",
-        "siege-tracks-wall",
         "siege-commitment",
         "war-patience",
         "siege-is-progress",
@@ -283,7 +277,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 78,
+      "declared_count": 75,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -296,7 +290,6 @@
         "peacetime-deterrence",
         "war-economy",
         "bounded-recovery",
-        "siege-tracks-wall",
         "siege-commitment",
         "war-patience",
         "siege-is-progress",
@@ -315,7 +308,6 @@
         "religion-sues-peace",
         "escort-unstick",
         "buildings-before-projects",
-        "wonder-ring-settle-value",
         "settler-site-agreement",
         "settler-guard-holds",
         "stranded-settler-discount",
@@ -332,7 +324,6 @@
         "settler-target-hysteresis",
         "culture-building-debt",
         "culture-coverage",
-        "district-building-chain",
         "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
