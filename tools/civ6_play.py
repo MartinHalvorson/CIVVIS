@@ -3652,6 +3652,12 @@ def _play(args: argparse.Namespace) -> int:
         totals = civ6_ladder.orders_totals(run_dir / "events.jsonl")
         if totals:
             summary["orders_seen"], summary["orders_applied"] = totals
+        # And the same per order kind, with each kind's refusal reasons, so
+        # "which kind is refused and why" is a column `live_actuation.py`
+        # can floor instead of an excavation over events.jsonl.
+        by_kind = civ6_ladder.orders_by_kind(run_dir / "events.jsonl")
+        if by_kind:
+            summary["orders"] = by_kind
         # The score gap to the best rival is the climb's primary progress
         # metric: our own score doubling means nothing while rival_best
         # holds a four-hundred-point lead at the cap.

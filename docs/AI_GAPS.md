@@ -1410,3 +1410,13 @@ have resolved ±6.7 pp, and ~440 games are needed for ±5 pp before clustering.
 3. **Do not build the recon-steering gene against `beyond_loyalty_reach`
    without first moving `frontier-loyalty` out of `Kind::HostOnly`**, for the
    reason two sections up. It cannot fire on the board the screen plays.
+
+## Actuation is counted per order kind (2026-08-25)
+
+Every live run's `summary["orders"]` now carries seen, applied and the refusal
+reasons **per order kind** (`civ6_ladder.orders_by_kind`, from the mod's
+`seen_by`/`refused_by` on the `orders` event). `tools/live_actuation.py
+table|check|floors` prints kind × applied % × top reasons over the last runs
+and ratchets a per-kind applied-rate floor in `tools/actuation_floors.json`
+(floors only rise) — read it before calling a lane "decided badly" when it was
+in fact refused.

@@ -259,6 +259,91 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
     return (seen, applied) if counted else None
 
 
+def open_events(events_path: Path):
+    """Text handle over `events.jsonl`, or its gzipped copy off the ledger branch."""
+    if events_path.suffix == ".gz":
+        import gzip
+        return gzip.open(events_path, "rt")
+    return events_path.open()
+
+
+#: Where refusals land when the run's mod predates `refused_by` on the
+#: `orders` event: the count is on the ledger, the kind is not.
+UNATTRIBUTED = "unattributed"
+
+
+def orders_by_kind(events_path: Path) -> dict | None:
+    """Actuation per order kind, summed from the run's own `orders` events:
+    ``{kind: {"seen": n, "applied": n, "refused": {reason: n}}}``, with a
+    ``"*"`` row for the whole run.
+
+    `orders_totals` answers "how much of what CIVVIS said did the engine do";
+    this answers WHICH kind is being refused and WHY, so that a refusal
+    reason above a few percent of its kind is a row a tool can floor
+    (`tools/live_actuation.py check`) instead of an excavation. The mod emits
+    `by` (applied per kind) and `refusals` (count per reason) and, since
+    this landed, `seen_by` and `refused_by` (reason per kind). Events from an
+    older mod carry no per-kind seen count: their kinds read `seen == applied`
+    and every refusal sits under `UNATTRIBUTED`, so a rate computed from them
+    is a floor for the named kinds, not a measurement.
+
+    `produce_next` is a lease the control channel accepts before the host
+    acts; the mod keeps it out of `applied`/`seen` but counts it in `by`, so
+    its row here is accepted leases + refusals. Tolerant of a truncated tail.
+    `None` when the run wrote no `orders` event.
+    """
+    if not events_path.is_file():
+        return None
+    kinds: dict[str, dict] = {}
+
+    def row(kind: str) -> dict:
+        return kinds.setdefault(kind, {"seen": 0, "applied": 0, "refused": {}})
+
+    counted = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("kind") != "orders" or event.get("ctx") != "agent":
+                continue
+            counted = True
+            total = row("*")
+            total["seen"] += int(event.get("seen") or 0)
+            total["applied"] += int(event.get("applied") or 0)
+            by = event.get("by") if isinstance(event.get("by"), dict) else {}
+            seen_by = event.get("seen_by")
+            refused_by = event.get("refused_by")
+            for kind, n in by.items():
+                row(str(kind))["applied"] += int(n or 0)
+            if isinstance(seen_by, dict):
+                for kind, n in seen_by.items():
+                    row(str(kind))["seen"] += int(n or 0)
+            else:
+                for kind, n in by.items():
+                    row(str(kind))["seen"] += int(n or 0)
+            refusals = event.get("refusals")
+            if isinstance(refusals, dict):
+                for reason, n in refusals.items():
+                    reasons = total["refused"]
+                    reasons[str(reason)] = reasons.get(str(reason), 0) + int(n or 0)
+            if isinstance(refused_by, dict):
+                for kind, per_kind in refused_by.items():
+                    if not isinstance(per_kind, dict):
+                        continue
+                    reasons = row(str(kind))["refused"]
+                    for reason, n in per_kind.items():
+                        reasons[str(reason)] = reasons.get(str(reason), 0) + int(n or 0)
+            elif isinstance(refusals, dict):
+                orphan = row(UNATTRIBUTED)
+                for reason, n in refusals.items():
+                    orphan["seen"] += int(n or 0)
+                    orphan["refused"][str(reason)] = (
+                        orphan["refused"].get(str(reason), 0) + int(n or 0))
+    return kinds if counted else None
+
+
 DEAL_KINDS = ("deal_session", "deal_closed", "deal_declined", "deal_expired",
               "peace_response", "deal_sessions_stood_down")
 

@@ -1,0 +1,14 @@
+{
+  "note": "Applied-rate floors per order kind, in percent, over the last `window` live runs. Written only by `live_actuation.py floors --write`; a floor may rise and never falls. `*` is every order.",
+  "window": 5,
+  "runs": [
+    "civvis-20260819T073218Z",
+    "civvis-20260819T081800Z",
+    "civvis-20260819T090732Z",
+    "civvis-20260819T094946Z",
+    "civvis-20260819T102855Z"
+  ],
+  "floors": {
+    "*": 87.9
+  }
+}
