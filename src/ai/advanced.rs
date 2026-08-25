@@ -4638,6 +4638,14 @@ pub struct AdvancedAi {
     /// expected steps to its likeliest walks, and hold them. Opt-in gene
     /// `settler-screen`; see `advanced/recon_disruption.rs`.
     settler_screen: bool,
+    /// An empire that dominates science drives the space race: the chain
+    /// beeline, the launch city's production, a horizon priced as the engine
+    /// runs the race, two pads by the Earth Satellite. Opt-in gene
+    /// `science-victory-drive`; see `advanced/science_victory_drive.rs`.
+    science_victory_drive: bool,
+    /// `science_victory_drive`'s state while the seat is driving: since
+    /// when, the last reading of the field, and the launch city.
+    science_drive: Option<ScienceDrive>,
 
     // ---- append: t-z ------------------------------------------------
     /// A melee unit with nothing to hit stands where its zone of control
@@ -4979,6 +4987,13 @@ mod victory_lane;
 /// which lane the empire plays for read the commitment too. One opt-in
 /// gene; see `advanced/lane_commit.rs`.
 mod lane_commit;
+
+/// `science-victory-drive`: an empire that dominates science drives the
+/// space race — the chain beeline, the launch city's production, a horizon
+/// priced as the engine runs the race, two pads by the Earth Satellite. One
+/// opt-in gene; see `advanced/science_victory_drive.rs`.
+mod science_victory_drive;
+pub use science_victory_drive::ScienceDrive;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -5695,6 +5710,8 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             shoot_and_scoot: false,
             settler_screen: false,
+            science_victory_drive: false,
+            science_drive: None,
 
             // ---- append: t-z ----------------------------------------
             zoc_screen: false,
@@ -10845,8 +10862,9 @@ impl AdvancedAi {
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
-            let science_commitment =
-                objective == GrandStrategy::Science || self.diplomatic_science_backup(g, pid, plan);
+            let science_commitment = objective == GrandStrategy::Science
+                || self.diplomatic_science_backup(g, pid, plan)
+                || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
             let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let forced_goal = match objective {
@@ -12104,31 +12122,38 @@ impl AdvancedAi {
                 };
             }
         }
-        if strategy == GrandStrategy::Science {
-            let milestone = if !g.players[pid]
+        if strategy == GrandStrategy::Science || self.science_drive_active() {
+            // `science_victory_drive`: a driving seat keys the beeline on
+            // the next UNKNOWN chain tech, whatever its plan, so research
+            // holds the chain while a project is being built; stock keys it
+            // on the next unbuilt project, and while the Earth Satellite is
+            // building nothing leads to the known Rocketry any more.
+            let milestone = if self.science_drive_active() {
+                Self::science_drive_milestone(g, pid)
+            } else if !g.players[pid]
                 .science_projects
                 .contains("launch_earth_satellite")
             {
-                "rocketry"
+                Some("rocketry")
             } else if !g.players[pid]
                 .science_projects
                 .contains("launch_moon_landing")
             {
-                "satellites"
+                Some("satellites")
             } else if !g.players[pid]
                 .science_projects
                 .contains("launch_mars_colony")
             {
-                "nanotechnology"
+                Some("nanotechnology")
             } else if !g.players[pid]
                 .science_projects
                 .contains("exoplanet_expedition")
             {
-                "smart_materials"
+                Some("smart_materials")
             } else {
-                "offworld_mission"
+                Some("offworld_mission")
             };
-            if self.tech_leads_to(g, tech, milestone) {
+            if milestone.is_some_and(|milestone| self.tech_leads_to(g, tech, milestone)) {
                 value += if self.raced_target() == Some(VictoryTarget::Science) {
                     900.0
                 } else {
@@ -12136,6 +12161,7 @@ impl AdvancedAi {
                 };
             }
         }
+        value += self.science_drive_tech_bonus(g, pid, tech);
         // The nuclear lane used to carry a terminal reward and no
         // instrumental one: a Conquest empire prices a finished device at
         // 2,600 but the technology that permits one at barely two points, so
@@ -15487,6 +15513,14 @@ impl AdvancedAi {
             }
         }
         .max(self.war_treasury_floor(g, pid));
+        // `science_victory_drive`: with Rocketry known the race's pad and
+        // its buildings are what the Gold is for.
+        let reserve = if self.science_drive_spends(g, pid) {
+            let (flat, per_city) = science_victory_drive::SCIENCE_DRIVE_GOLD_RESERVE;
+            reserve.min(flat + per_city * city_count as f64)
+        } else {
+            reserve
+        };
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
@@ -16748,7 +16782,10 @@ impl AdvancedAi {
                 };
                 base + match governor {
                     "pingala" => {
-                        city.pop as f64 * 14.0 + yields.science * 9.0 + yields.culture * 9.0
+                        city.pop as f64 * 14.0
+                            + yields.science * 9.0
+                            + yields.culture * 9.0
+                            + self.science_drive_governor_bonus(g, governor, city_id)
                     }
                     "magnus" => {
                         city.pop as f64 * 5.0
@@ -17193,6 +17230,13 @@ impl AdvancedAi {
         if g.max_turns == 0 {
             return true;
         }
+        // `science_victory_drive`: a driving seat prices the race as the
+        // engine runs it (the project multiplier, the zone chain it is about
+        // to build, a flight with laser stations) and attempts it inside a
+        // stretch of the turns left. See `science_drive_race_fits`.
+        if self.science_drive_active() {
+            return self.science_drive_race_fits(g, pid);
+        }
         let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
         let player = &g.players[pid];
         let completed = &player.science_projects;
@@ -17432,19 +17476,22 @@ impl AdvancedAi {
         // second can prepare Mars while the first launches, and up to three
         // let the post-Exoplanet laser race run in parallel. Separate cities
         // matter; duplicate Spaceports in one production queue do not.
-        let desired_spaceports =
-            if races_science || self.raced_target() == Some(VictoryTarget::Science) {
-                if completed.contains("launch_mars_colony") {
-                    3
-                } else if completed.contains("launch_moon_landing") {
-                    2
-                } else {
-                    1
-                }
+        let desired_spaceports = if self.science_drive_active() {
+            // `science_victory_drive`: the second pad by the Earth
+            // Satellite, so it stands when the expedition launches.
+            Self::science_drive_desired_pads(&completed)
+        } else if races_science || self.raced_target() == Some(VictoryTarget::Science) {
+            if completed.contains("launch_mars_colony") {
+                3
+            } else if completed.contains("launch_moon_landing") {
+                2
             } else {
                 1
             }
-            .min(city_ids.len());
+        } else {
+            1
+        }
+        .min(city_ids.len());
         if built_spaceports + queued_spaceports >= desired_spaceports {
             return;
         }
@@ -21065,6 +21112,7 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
+                        + self.science_drive_production_bonus(g, pid, cid, item)
                 }
             }
             Item::District { district, pos } => {
@@ -21433,6 +21481,7 @@ impl AdvancedAi {
                     + development_penalty
                     + research_coverage
                     + culture_coverage
+                    + self.science_drive_production_bonus(g, pid, cid, item)
             }
             Item::Repair { repair, .. } => {
                 if repair == "district" {
@@ -31755,6 +31804,10 @@ impl AdvancedAi {
         // `lane_commit`: from the midpoint, commit to the lane the seat leads
         // the field in. Exact no-op while off. See `advanced/lane_commit.rs`.
         self.maintain_lane_commit(g, pid);
+        // `science_victory_drive`: read the field and decide whether the
+        // seat drives the space race this turn. Exact no-op while off. See
+        // `advanced/science_victory_drive.rs`.
+        self.maintain_science_drive(g, pid);
         let disposition_strategy = active_victory_target
             .or_else(|| self.committed_lane())
             .map(VictoryTarget::strategy)
@@ -31968,7 +32021,8 @@ impl AdvancedAi {
             if self.victory_planning
                 && (plan.strategy == GrandStrategy::Science
                     || self.diplomatic_science_backup(g, pid, &plan)
-                    || self.space_race_lane_opens(g, pid, &plan))
+                    || self.space_race_lane_opens(g, pid, &plan)
+                    || self.science_drive_opens(plan.strategy))
             {
                 self.space_race_production(g, pid);
             }

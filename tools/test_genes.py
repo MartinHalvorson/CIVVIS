@@ -51,7 +51,7 @@ DEPLOYED_GENOME_20260824 = (
     "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
     "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
     "religious-defence-scales", "religious-units-heal-first", "science-multiplier-payoff",
-    "score-horizon", "settle-sooner", "settlement-gap-target", "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
+    "science-victory-drive", "score-horizon", "settle-sooner", "settlement-gap-target", "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
     "theology-for-founders", "unit-cost-efficiency", "unit-objective-memory",
     "war-economy", "war-reinforcement",
     "wide-map-capacity",
@@ -305,6 +305,20 @@ class OneShape(unittest.TestCase):
         # A restricted batch-level set is still a probe, mask or no mask.
         probe = analysis([{"tag": "a"}], victories="domination,score", victory_mask="rotate:1")
         self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
+
+    def test_the_majors_rung_is_recorded_and_stays_the_standard_shape(self):
+        """`--difficulty emperor` and `--difficulty-rotate` are provenance on
+        the source, not a leg: the ladder plays Emperor and above and the
+        screen may follow it without the ledger holding two worlds."""
+        fixed = gene_ledger.profile_of(analysis([{"tag": "a"}], difficulty="emperor"))
+        self.assertEqual(fixed["difficulty"], "emperor")
+        self.assertEqual(gene_ledger.shape_of(fixed), "standard")
+        rotated = gene_ledger.profile_of(
+            analysis([{"tag": "a"}], difficulty="", difficulty_rotate="king:1,emperor:2,immortal:1"))
+        self.assertNotIn("difficulty", rotated, "an empty rung is not recorded")
+        self.assertEqual(rotated["difficulty_rotate"], "king:1,emperor:2,immortal:1")
+        self.assertEqual(gene_ledger.shape_of(rotated), "standard")
+        self.assertNotIn("difficulty", gene_ledger.profile_of(analysis([{"tag": "a"}])))
 
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
@@ -577,7 +591,7 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
             {g["tag"] for g in ledger["genes"] if g["default_on"]},
             selected & measured,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 52)
+        self.assertEqual(ledger["counts"]["default_on"], 53)
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
                          gene_ledger.OPERATOR_PROMOTIONS_20260824)
 
@@ -1255,7 +1269,11 @@ class TheTableIsDerived(unittest.TestCase):
                 self.assertIn(f"`{tag}`", text, tag)
             else:
                 self.assertIn("## Awaiting measurement", text)
-                self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
+                # An operator-pinned gene is on before its first screen
+                # (`science-victory-drive`, 2026-08-24); every other
+                # unmeasured gene is off.
+                default = "**on**" if tag in ranking.OPERATOR_DEFAULT_ON else "off"
+                self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
         self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked")
 
     def test_descriptions_come_from_the_toggle_docs(self):
