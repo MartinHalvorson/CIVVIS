@@ -1361,7 +1361,7 @@ alternatives per decision, and byte-identical when off.
 
 ★★★★ **The screen is recorded as an artifact and deliberately NOT entered as
 a ledger source, because entering it exposed a defect in the ranking's own
-arithmetic.** `HEURISTIC_GENE_RANKING.md` builds each gene's column as
+arithmetic.** `GENE_HEURISTIC_RANKING.md` builds each gene's column as
 `(win_on − chance) × PER` and its error as `column_se`, and
 `tools/test_genes.py::test_the_band_is_the_columns_own_scale_not_the_differences`
 proves the two are on the same scale by requiring `column / column_se` to

@@ -493,7 +493,7 @@ it belongs to a family.
    `docs/gene_ledger.json` keeps every family's pin, head and each version's
    tracked wins under `rules.family_heads`; `genes.py check` reads the pinned
    list *as families*, so a head that moved is not drift. Every version keeps
-   being priced on its own row. `HEURISTIC_GENE_RANKING.md` names the head in
+   being priced on its own row. `GENE_HEURISTIC_RANKING.md` names the head in
    its *Best version* column (`1` is the original, so a gene with no
    versions reads `1`) on every row of the family, and a versioned row's *Total (on)* / *Total (off)* cells show the
    best two versions' rates side by side — each version's *on* is the seats
@@ -772,7 +772,7 @@ current rule.
   stand on that instrument until the first standard screen re-prices them.
 
 - **Ten more genes left the code (2026-08-21).** A second application of the
-  directive behind the #2235 cull — the bottom of `HEURISTIC_GENE_RANKING.md`
+  directive behind the #2235 cull — the bottom of `GENE_HEURISTIC_RANKING.md`
   leaves the repository — removed `holy-lane-parity`, `camp-reach`,
   `wonder-prereq-reach`, `ranged-line-of-sight`, `housing-buildings`,
   `muster-at-command-radius`, `barbarian-walls-one-tier`,
@@ -866,7 +866,7 @@ current rule.
   flag and **+58 without** — no detectable regression, at a resolution
   (±102) far too coarse to call it a gain.
 
-- **The operator's view of the same seat-pair data** is `HEURISTIC_GENE_RANKING.md`
+- **The operator's view of the same seat-pair data** is `GENE_HEURISTIC_RANKING.md`
   at the repository root — every screenable gene ranked by wins added per
   10,000 six-player on-arm seats, each from the latest native screen that measured
   it, with the war figure and the ledger's default beside it. It is generated
@@ -1146,7 +1146,7 @@ A threshold in column units is not a threshold in evidence. The retired
 deployment rule exposed three things about the repository's own numbers:
 
 1. **The bars are not derived from the errors.** Each screen's 80%-power band
-   is in the table at the foot of `HEURISTIC_GENE_RANKING.md` and they differ by
+   is in the table at the foot of `GENE_HEURISTIC_RANKING.md` and they differ by
    more than three to one — p10 ±51, p7 ±56, p4 ±60, s6 ±64, h1 ±68, s7 ±29,
    s2 ±101. A fixed +15 / −10 / +20 bar therefore decides the same reading
    differently depending only on which screen happened to price the gene, and
@@ -1189,7 +1189,7 @@ within their errors it is zero and the pool is the ordinary inverse-variance
 one. When they do not — a `legacy` Pangaea reading against a `standard`
 continents one — it widens the interval instead of averaging two worlds into a
 confident wrong answer. `POSTERIOR_SHAPES` says which shapes the published pool
-admits, and `HEURISTIC_GENE_RANKING.md` prints legacy, standard and pooled side
+admits, and `GENE_HEURISTIC_RANKING.md` prints legacy, standard and pooled side
 by side so the choice is made on the numbers.
 
 ### Historical switch analysis (retired)
@@ -1290,7 +1290,7 @@ it falls as 1/√games, so a **600-game arm resolves ±3.5 pp** and even the
 a gene reading +0.119 pp that is **29× the effect**, and it is **4.0× wider**
 (600 games) or **2.8× wider** (1,200 games) than the 23,622-pair screen already
 in the ledger, whose own band is **±44 in column units** — the figure the band
-table at the foot of `HEURISTIC_GENE_RANKING.md` prints — i.e. ±0.88 pp on the
+table at the foot of `GENE_HEURISTIC_RANKING.md` prints — i.e. ±0.88 pp on the
 on−off difference. ⚠ Both figures above are quoted on the **difference** scale,
 which is what `gene_screen` prints; a column is half of it (#2300), so the arm
 comparison is ±175 against ±44 in column units and the ratio is the same either
@@ -1415,7 +1415,7 @@ in the artefacts:
 
 ### The ranking already prints the resolved answer
 
-`HEURISTIC_GENE_RANKING.md`'s main table pools **every** screen that priced a
+`GENE_HEURISTIC_RANKING.md`'s main table pools **every** screen that priced a
 gene, reporting batches included. Its row for this gene reads on 16.91%
 (n = 108,278 on-arm seats) against off 16.35% (n = 82,636), *Diff* +0.55%,
 posterior **+28 [+7, +49]** wins per 10,000 on-arm seats, **P(>0) = 99.6%** —
@@ -1563,7 +1563,7 @@ The two-line check for any gene, costing no games:
 
 ```sh
 python3 tools/genes.py boundary | grep '<tag>'      # read `buys`, then `needs`
-grep '`<tag>`' HEURISTIC_GENE_RANKING.md      # all-screen posterior, P(>0)
+grep '`<tag>`' GENE_HEURISTIC_RANKING.md      # all-screen posterior, P(>0)
 ```
 
 ⚠ Applied to #2385's other two rows: `war-economy` and `air-surge` both
@@ -1598,7 +1598,7 @@ written.
    happened the one time selection ran on a correlate, and
    `docs/eval/README.md`'s rule stands: a screen's `*` is where to point an arm.
 2. **The secondary axis is score share**, printed as *Share Δpp (z)* in
-   `HEURISTIC_GENE_RANKING.md`'s lane table (the main ranking table keeps only
+   `GENE_HEURISTIC_RANKING.md`'s lane table (the main ranking table keeps only
    `P(>0)` of the pooled columns). Its verdict is the screen's own `*`
    convention on that axis:
    `helps *` at share z ≥ 2, `hurts *` at ≤ −2, `~` otherwise.
@@ -1718,7 +1718,7 @@ cosmetic version of this feature, so `--contested` turns the flag on.
 This needed no engine change: `native_competitions` is a field on `Game` that
 `civvis simulate --native-competitions` already sets, and the screen sets it the
 same way. It also gives `competition-victory-points` the first regime it can
-fire in — see the debt recorded at the bottom of `HEURISTIC_GENE_RANKING.md`.
+fire in — see the debt recorded at the bottom of `GENE_HEURISTIC_RANKING.md`.
 `--native-competitions` without a field is available on its own, and the census
 below is the reason to reach for it.
 

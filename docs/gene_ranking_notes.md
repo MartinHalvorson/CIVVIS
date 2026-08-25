@@ -1,4 +1,4 @@
-<!-- Notes the heuristic gene ranking carries verbatim, under its table. Edit here, not in HEURISTIC_GENE_RANKING.md (generated). -->
+<!-- Notes the heuristic gene ranking carries verbatim, under its table. Edit here, not in GENE_HEURISTIC_RANKING.md (generated). -->
 
 ## Historical screen evidence and current selection
 
