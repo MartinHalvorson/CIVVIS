@@ -47,25 +47,11 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-<<<<<<< HEAD
-- Capability toggles on the controller: **168**
-- Reachable as a gene `gene_screen` can vary: **116**
-- Measured by at least one screen: **100**
-- Resolved by the ledger (helps or hurts): **31**
-- **Unreachable by any screen: 52**
-||||||| 6bf9b16c
-- Capability toggles on the controller: **167**
-- Reachable as a gene `gene_screen` can vary: **115**
-- Measured by at least one screen: **100**
-- Resolved by the ledger (helps or hurts): **31**
-- **Unreachable by any screen: 52**
-=======
-- Capability toggles on the controller: **172**
-- Reachable as a gene `gene_screen` can vary: **121**
+- Capability toggles on the controller: **173**
+- Reachable as a gene `gene_screen` can vary: **122**
 - Measured by at least one screen: **81**
 - Resolved by the ledger (helps or hurts): **17**
 - **Unreachable by any screen: 51**
->>>>>>> origin/main
 
 ⚠ This is the mirror of the section above and it errs the other way.
 `Never named` under-counts the live-bundle debt; this OVER-counts the

@@ -12,25 +12,11 @@
     "withholdable_live_count": 39
   },
   "genome_coverage": {
-<<<<<<< HEAD
-    "capability_toggles": 168,
-    "measured_by_a_screen": 100,
-    "reachable_as_a_gene": 116,
-    "resolved_by_a_screen": 31,
-    "unreachable_by_any_screen": 52,
-||||||| 6bf9b16c
-    "capability_toggles": 167,
-    "measured_by_a_screen": 100,
-    "reachable_as_a_gene": 115,
-    "resolved_by_a_screen": 31,
-    "unreachable_by_any_screen": 52,
-=======
-    "capability_toggles": 172,
+    "capability_toggles": 173,
     "measured_by_a_screen": 81,
-    "reachable_as_a_gene": 121,
+    "reachable_as_a_gene": 122,
     "resolved_by_a_screen": 17,
     "unreachable_by_any_screen": 51,
->>>>>>> origin/main
     "unreachable_toggles": [
       "adjacent_camp_clear",
       "amenity_districts",

@@ -305,47 +305,10 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 
 These screenable genes have no on/off result, so they receive no rank or promotion from this table. Their deployment state remains explicit while a screen is pending.
 
-<<<<<<< HEAD
-| Gene | Default | Description |
-|---|---|---|
-| `builder-reward-survey` | off (unmeasured) | Price Builder production by a survey of the work it would do. |
-| `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. |
-| `coordinated-finish` | off (unmeasured) | Admit the friendly-volley extension without the rest of the closed war-half bundle. |
-| `coupled-expansion` | off (unmeasured) | Enable the evaluator-only paid expansion treatment. |
-| `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. |
-| `engine-faith-price` | off (unmeasured) | THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE. |
-| `fortify-idle-units` | off (unmeasured) | Fortify units the planner gave nothing to do. |
-| `maintenance-aware-deck` | off (unmeasured) | Let the deck counterfactual see the unit-maintenance bill. |
-| `naval-production-policy` | off (unmeasured) | Reach for the naval-production discount while hulls are wanted. |
-| `pantheon-board` | off (unmeasured) | Choose the pantheon from the land the empire holds rather than from a fixed order. |
-| `price-the-suzerainty` | off (unmeasured) | Let the envoy scorer see the suzerainty it is walking toward. |
-| `promote-when-wounded` | off (unmeasured) |  |
-| `settlement-gap-target` | off (unmeasured) | Make the settlement-gap redirect and the Settler ranking honour the same city target the cascade settles toward. |
-| `tactical-strategy` | off (unmeasured) | Enable explicit battlefield roles: the land-unit counter cycle, safe ranged standoff, wall-focused siege/support, and cavalry job priority. |
-| `unit-cost-efficiency` | off (unmeasured) | Credit strength-per-production and the civ's own unique unit in the military production arm. |
-| `unit-objective-memory` | off (unmeasured) | Let a unit retain its campaign objective and a short, threat-driven retreat across turns. |
-||||||| 6bf9b16c
-| Gene | Default | Description |
-|---|---|---|
-| `builder-reward-survey` | off (unmeasured) | Price Builder production by a survey of the work it would do. |
-| `coordinated-finish` | off (unmeasured) | Admit the friendly-volley extension without the rest of the closed war-half bundle. |
-| `coupled-expansion` | off (unmeasured) | Enable the evaluator-only paid expansion treatment. |
-| `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. |
-| `engine-faith-price` | off (unmeasured) | THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE. |
-| `fortify-idle-units` | off (unmeasured) | Fortify units the planner gave nothing to do. |
-| `maintenance-aware-deck` | off (unmeasured) | Let the deck counterfactual see the unit-maintenance bill. |
-| `naval-production-policy` | off (unmeasured) | Reach for the naval-production discount while hulls are wanted. |
-| `pantheon-board` | off (unmeasured) | Choose the pantheon from the land the empire holds rather than from a fixed order. |
-| `price-the-suzerainty` | off (unmeasured) | Let the envoy scorer see the suzerainty it is walking toward. |
-| `promote-when-wounded` | off (unmeasured) |  |
-| `settlement-gap-target` | off (unmeasured) | Make the settlement-gap redirect and the Settler ranking honour the same city target the cascade settles toward. |
-| `tactical-strategy` | off (unmeasured) | Enable explicit battlefield roles: the land-unit counter cycle, safe ranged standoff, wall-focused siege/support, and cavalry job priority. |
-| `unit-cost-efficiency` | off (unmeasured) | Credit strength-per-production and the civ's own unique unit in the military production arm. |
-| `unit-objective-memory` | off (unmeasured) | Let a unit retain its campaign objective and a short, threat-driven retreat across turns. |
-=======
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `builder-tries-the-next-tile` | off (unmeasured) | Let a Builder whose nearest improvable tile cannot be routed to try the next-nearest instead of standing still for the rest of the game. | — |
+| `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | — |
 | `congress-counter-leader` | off (unmeasured) | Point the three targeted World Congress penalties at the empire the denial layer names. | — |
 | `conversion-majority-alarm` | off (unmeasured) | Read a rival's religious clock from the cities it has converted rather than from whole civilizations already lost. | — |
 | `culture-lane-forecast` | off (unmeasured) | Score the Culture lane by where the two tourist curves are when the clock stops. | — |
@@ -360,7 +323,6 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `rival-suzerainty-alarm` | off (unmeasured) | Count a rival's city-state suzerainties toward the Diplomatic threat it presents. | — |
 | `science-chain-alarm` | off (unmeasured) | Read a rival's Science clock from the prerequisite chain it has climbed, not only from the launches it has made. | — |
 | `unchosen-war-keeps-the-lane` | off (unmeasured) | Stop a war we did not declare from taking the grand strategy while our own victory lane is live. | — |
->>>>>>> origin/main
 
 ## Removed from the code
 
