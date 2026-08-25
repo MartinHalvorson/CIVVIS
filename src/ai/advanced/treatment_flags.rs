@@ -479,6 +479,156 @@ impl AdvancedAi {
     pub fn disable_escort_unstick(&mut self) {
         self.escort_unstick = false;
     }
+
+    /// An amenity crisis repair is bought with Gold when the treasury covers
+    /// it, so the Science plan's repeatable project keeps its queue; only a
+    /// district or an unaffordable building still pauses the project.
+    ///
+    /// Version 2 of `amenity_project_preemption`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `amenity-project-preemption-2`. See `AdvancedAi::amenity_project_preemption_2`.
+    pub fn enable_amenity_project_preemption_2(&mut self) {
+        self.amenity_project_preemption = false;
+        self.amenity_project_preemption_2 = true;
+    }
+
+    pub fn disable_amenity_project_preemption_2(&mut self) {
+        self.amenity_project_preemption_2 = false;
+    }
+
+    /// A settle site with a plot in its first three rings that could host a
+    /// Campus at raw Science adjacency 4 is worth 15% more, so the
+    /// multiplier's threshold is bought where it is decided — at city siting
+    /// — and not only priced at the district.
+    ///
+    /// Version 2 of `campus_adjacency_threshold`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `campus-adjacency-threshold-2`. See `AdvancedAi::campus_adjacency_threshold_2`.
+    pub fn enable_campus_adjacency_threshold_2(&mut self) {
+        self.campus_adjacency_threshold = false;
+        self.campus_adjacency_threshold_2 = true;
+    }
+
+    pub fn disable_campus_adjacency_threshold_2(&mut self) {
+        self.campus_adjacency_threshold_2 = false;
+    }
+
+    /// The district coverage term falls to a quarter of the bred weight for a
+    /// family every city already holds, not half, pushing the lever further
+    /// in the direction that paid score share.
+    ///
+    /// Version 2 of `district_coverage`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `district-coverage-2`. See `BasicAi::district_coverage_2`.
+    pub fn enable_district_coverage_2(&mut self) {
+        self.base.district_coverage = false;
+        self.base.district_coverage_2 = true;
+    }
+
+    pub fn disable_district_coverage_2(&mut self) {
+        self.base.district_coverage_2 = false;
+    }
+
+    /// A founder may hold one Guru whenever any of its religious units is
+    /// damaged, not only while the home is under conversion pressure, so the
+    /// corps out spreading gets the heal too.
+    ///
+    /// Version 2 of `guru_heals_the_corps`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `guru-heals-the-corps-2`. See `AdvancedAi::guru_heals_the_corps_2`.
+    pub fn enable_guru_heals_the_corps_2(&mut self) {
+        self.guru_heals_the_corps = false;
+        self.guru_heals_the_corps_2 = true;
+    }
+
+    pub fn disable_guru_heals_the_corps_2(&mut self) {
+        self.guru_heals_the_corps_2 = false;
+    }
+
+    /// A slipping city with no Holy Site claims one only when Gold can buy
+    /// it; the district is never put at the front of the city's own queue.
+    ///
+    /// Version 2 of `holy_site_where_the_threat_is`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `holy-site-where-the-threat-is-2`. See `AdvancedAi::holy_site_where_the_threat_is_2`.
+    pub fn enable_holy_site_where_the_threat_is_2(&mut self) {
+        self.holy_site_where_the_threat_is = false;
+        self.holy_site_where_the_threat_is_2 = true;
+    }
+
+    pub fn disable_holy_site_where_the_threat_is_2(&mut self) {
+        self.holy_site_where_the_threat_is_2 = false;
+    }
+
+    /// Two peacetime naval eyes instead of one while unseen water remains, so
+    /// the second coast is charted while the first Galley is still out.
+    ///
+    /// Version 2 of `naval_recon`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `naval-recon-2`. See `BasicAi::naval_recon_2`.
+    pub fn enable_naval_recon_2(&mut self) {
+        self.base.naval_recon = false;
+        self.base.naval_recon_2 = true;
+    }
+
+    pub fn disable_naval_recon_2(&mut self) {
+        self.base.naval_recon_2 = false;
+    }
+
+    /// A building whose powered half would be switched on the day it stands —
+    /// the city is powered and stays powered with the building's own demand —
+    /// is priced with that half, so the Lab, Stock Exchange and Factory in
+    /// already-powered cities stop being bought without it.
+    ///
+    /// Version 2 of `power_the_laboratory`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `power-the-laboratory-2`. See `AdvancedAi::power_the_laboratory_2`.
+    pub fn enable_power_the_laboratory_2(&mut self) {
+        self.power_the_laboratory = false;
+        self.power_the_laboratory_2 = true;
+    }
+
+    pub fn disable_power_the_laboratory_2(&mut self) {
+        self.power_the_laboratory_2 = false;
+    }
+
+    /// A settler's bound guard is no protection when two visible hostiles
+    /// that can reach the tile each match its strength, not only when one is
+    /// 1.5× it.
+    ///
+    /// Version 2 of `settler_guard_holds`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `settler-guard-holds-2`. See `AdvancedAi::settler_guard_holds_2`.
+    pub fn enable_settler_guard_holds_2(&mut self) {
+        self.settler_guard_holds = false;
+        self.settler_guard_holds_2 = true;
+    }
+
+    pub fn disable_settler_guard_holds_2(&mut self) {
+        self.settler_guard_holds_2 = false;
+    }
+
+    /// A settle site one settler drops for danger is set aside for every own
+    /// settler for the same window, so a second settler does not march to the
+    /// tile the first just fled.
+    ///
+    /// Version 2 of `settler_target_hysteresis`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `settler-target-hysteresis-2`. See `AdvancedAi::settler_target_hysteresis_2`.
+    pub fn enable_settler_target_hysteresis_2(&mut self) {
+        self.settler_target_hysteresis = false;
+        self.settler_target_hysteresis_2 = true;
+    }
+
+    pub fn disable_settler_target_hysteresis_2(&mut self) {
+        self.settler_target_hysteresis_2 = false;
+    }
+
+    /// The first turn an own land unit stands within two tiles of an at-war
+    /// city resets the war-fatigue clock once for that city, so a campaign
+    /// still walking to its target is not offered away as stalled.
+    ///
+    /// Version 2 of `siege_is_progress`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `siege-is-progress-2`. See `AdvancedAi::siege_is_progress_2`.
+    pub fn enable_siege_is_progress_2(&mut self) {
+        self.siege_is_progress = false;
+        self.siege_is_progress_2 = true;
+    }
+
+    pub fn disable_siege_is_progress_2(&mut self) {
+        self.siege_is_progress_2 = false;
+    }
     /// Escort live settlers by shadowing with ordinary moves instead of
     /// Civilization VI's formation channel, which stalls.
     ///
