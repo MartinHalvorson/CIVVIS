@@ -48,7 +48,7 @@
 //! (DerSimonian–Laird) inverse-variance pool of every screen's on−off
 //! difference on the win column's scale, with the between-screen
 //! disagreement carried in the interval. They are observational evidence,
-//! not a deployment rule; `HEURISTIC_GENE_RANKING.md` prints the evidence for
+//! not a deployment rule; `GENE_HEURISTIC_RANKING.md` prints the evidence for
 //! future explicit selections.
 //!
 //! Verdicts still say what screens proved, but neither verdicts, win columns,
@@ -123,17 +123,17 @@ pub struct GeneVerdict {
     /// genome, checked here against `DEPLOYMENT_GENOME`.
     pub default_on: bool,
     /// ± wins per 10,000 on-arm seats at the gene's measured on-rate in the latest
-    /// screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
+    /// screen that priced it: `GENE_HEURISTIC_RANKING.md`'s
     /// *± Wins / 10k seats*. `None` when no screen has priced it.
     pub wins_last_10k: Option<i32>,
     /// The same figure from the screen before that — *± Wins / 10k seats prior*.
     /// `None` when the gene has only one reading.
     ///
-    /// The JSON and `HEURISTIC_GENE_RANKING.md` also carry `wins_third_10k`,
+    /// The JSON and `GENE_HEURISTIC_RANKING.md` also carry `wins_third_10k`,
     /// the screen before this one, so a reader can assess trends. All windows
     /// are evidence only; none selects a deployment default automatically.
     pub wins_prior_10k: Option<i32>,
-    /// `HEURISTIC_GENE_RANKING.md`'s *Diff*: the pooled on win rate minus the
+    /// `GENE_HEURISTIC_RANKING.md`'s *Diff*: the pooled on win rate minus the
     /// pooled off win rate in percentage points, over **every** screen that
     /// priced the gene, each weighted by its on-arm seats. It is evidence only.
     /// `None` when no screen has priced it.

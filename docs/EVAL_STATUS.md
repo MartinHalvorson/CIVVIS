@@ -33,7 +33,7 @@ mechanical. So the middle number over-counts coverage and the last one
 under-counts the debt — act on the last one, which cannot be flattered.
 
 The native half of this bundle is priced by the gene screen
-(`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`); the host-only
+(`docs/GENE_SCREEN.md`, `GENE_HEURISTIC_RANKING.md`); the host-only
 half can only be priced on the live seat, by `civvis_orders --without`
 over ladder games. This list is the debt neither has touched.
 
@@ -47,8 +47,8 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **189**
-- Reachable as a gene `gene_screen` can vary: **139**
+- Capability toggles on the controller: **200**
+- Reachable as a gene `gene_screen` can vary: **150**
 - Measured by at least one screen: **80**
 - Resolved by the ledger (helps or hurts): **16**
 - **Unreachable by any screen: 50**

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import itertools
 import json
 import math
 import re
@@ -1095,7 +1096,7 @@ class TheHeaderFieldsMatch(unittest.TestCase):
 
 class GeneratedFiles(unittest.TestCase):
     """`docs/gene_ledger.json`, the verdict block at the end of
-    `src/ai/advanced/genes.rs` and `HEURISTIC_GENE_RANKING.md` are all derived
+    `src/ai/advanced/genes.rs` and `GENE_HEURISTIC_RANKING.md` are all derived
     from the sources the JSON records; none may drift."""
 
     def test_the_checked_in_ledger_reproduces_from_its_recorded_sources(self):
@@ -1107,7 +1108,9 @@ class GeneratedFiles(unittest.TestCase):
                          genes.rust_block_of(genes.REGISTRY_PATH.read_text()),
                          "the verdict block in genes.rs is stale: run tools/genes.py write")
         self.assertEqual(genes.render(ledger), genes.RANKING_MD.read_text(),
-                         "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write")
+                         "GENE_HEURISTIC_RANKING.md is stale: run tools/genes.py write")
+        self.assertEqual(genes.render_evidence(ledger), genes.EVIDENCE_MD.read_text(),
+                         "docs/GENE_RANKING_EVIDENCE.md is stale: run tools/genes.py write")
 
     def test_display_batches_do_not_change_the_pinned_deployment_selection(self):
         """A display-only screen refreshes evidence but never rewrites defaults."""
@@ -1437,17 +1440,24 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertEqual(
             ranking.render(ledger),
             ranking.RANKING_MD.read_text(),
-            "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write",
+            "GENE_HEURISTIC_RANKING.md is stale: run tools/genes.py write",
+        )
+        self.assertEqual(
+            ranking.render_evidence(ledger),
+            ranking.EVIDENCE_MD.read_text(),
+            "docs/GENE_RANKING_EVIDENCE.md is stale: run tools/genes.py write",
         )
 
     def test_every_screenable_gene_is_visible(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         measured, _ = ranking.load_display_sources(ledger)
-        text = ranking.RANKING_MD.read_text()
+        table = ranking.RANKING_MD.read_text()
+        evidence = ranking.EVIDENCE_MD.read_text()
         for tag in ranking.screenable_tags():
             if tag in measured:
-                self.assertIn(f"`{tag}`", text, tag)
+                self.assertIn(f"`{tag}`", table, tag)
             else:
+                text = evidence
                 self.assertIn("## Awaiting measurement", text)
                 # An operator-pinned gene is on before its first screen
                 # (`science-victory-drive`, 2026-08-24); every other
@@ -1691,7 +1701,7 @@ class TheTableIsDerived(unittest.TestCase):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         rows = ranking.resolutions(ledger)
         self.assertEqual(len(rows), len(ledger["sources"]))
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         for row in rows:
             # ⭐ The shape is printed beside the band because a `legacy` row is
             # a reading from the retired Pangaea instrument, not from the
@@ -1727,27 +1737,27 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertGreater(h1[1], s6[1], "h1 must carry more pairs")
         self.assertGreater(h1[2], s6[2], "yet h1 must resolve WIDER — the whole point")
         self.assertLess(h1[3], s6[3], "and at a lower pairing gain")
-        self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
+        self.assertIn("Pairing gain", ranking.EVIDENCE_MD.read_text())
 
 
-    def test_the_pinned_default_summary_is_the_only_text_ahead_of_the_table(self):
-        """The title gets one concise, generated policy before the table.
-
-        The long reference remains below the tables; this is the operator's
-        requested at-a-glance explanation of the *Default* column.
+    def test_the_operators_heading_is_the_only_text_ahead_of_the_table(self):
+        """The operator wrote the title and the column legend by hand on
+        2026-08-25 and renamed the file; the generator reproduces that text
+        verbatim so a regeneration never overwrites it. The long reference
+        remains below the tables.
         """
-        ledger = json.loads(ranking.LEDGER_JSON.read_text())
         lines = ranking.RANKING_MD.read_text().splitlines()
-        self.assertEqual(lines[0], "# The heuristic gene ranking")
-        self.assertEqual(lines[1], "")
+        heading = ranking.RANKING_HEADING
+        self.assertEqual(lines[: len(heading)], heading)
         self.assertEqual(
-            lines[2], ranking.default_on_summary(ledger),
-            "the heading summary must derive from the pinned deployment genome",
+            lines[0],
+            "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
         )
-        self.assertEqual(lines[3], "")
-        self.assertTrue(lines[4].startswith("| Rank | Gene |"), lines[4])
-        self.assertTrue(lines[5].startswith("|---:|"), lines[5])
-        self.assertTrue(lines[6].startswith("| 1 | `"), lines[6])
+        self.assertNotIn("Deployment default", "\n".join(lines[: len(heading)]))
+        table = len(heading)
+        self.assertTrue(lines[table].startswith("| Rank | Gene |"), lines[table])
+        self.assertTrue(lines[table + 1].startswith("|---:|"), lines[table + 1])
+        self.assertTrue(lines[table + 2].startswith("| 1 | `"), lines[table + 2])
 
     def test_the_reference_is_carried_under_the_tables_not_deleted(self):
         """Moving the preamble must not become dropping it.
@@ -1757,7 +1767,7 @@ class TheTableIsDerived(unittest.TestCase):
         each is asserted present, and after the last table rather than before
         the first.
         """
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         self.assertIn("## How to read this", text)
         for phrase in (
             "Reading the table",
@@ -1768,10 +1778,10 @@ class TheTableIsDerived(unittest.TestCase):
             "Regenerate with",
         ):
             self.assertIn(phrase, text, phrase)
-        self.assertLess(
-            text.index("| Rank | Gene |"),
-            text.index("## How to read this"),
-            "the reference must sit under the table, not over it",
+        self.assertNotIn(
+            "## How to read this",
+            ranking.RANKING_MD.read_text(),
+            "the ranking is the operator's heading and the table alone",
         )
         for heading in ("## Awaiting measurement", "## Removed from the code"):
             if heading in text:
@@ -1787,6 +1797,7 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         self.authoritative, _ = ranking.load_sources(self.ledger)
         self.measured, _ = ranking.load_display_sources(self.ledger)
         self.text = ranking.RANKING_MD.read_text()
+        self.evidence = ranking.EVIDENCE_MD.read_text()
 
     def _rows(self):
         lines = self.text.splitlines()
@@ -1860,8 +1871,8 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
             self.assertRegex(list_rows, rf"(?m)^{re.escape(tag)}\s+.+\s+on\s+unmeasured$")
 
     def test_the_evidence_section_marks_pinned_state_without_a_counterfactual_rule(self):
-        self.assertIn("## Evidence for future operator selections", self.text)
-        self.assertNotIn("## What the posterior would change", self.text)
+        self.assertIn("## Evidence for future operator selections", self.evidence)
+        self.assertNotIn("## What the posterior would change", self.evidence)
         rows = ranking.evidence_table(self.ledger, self.authoritative)
         selected = set(self.ledger["rules"]["deployment_genome"])
         self.assertTrue(rows)
@@ -1875,15 +1886,15 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         self.assertEqual(len(rows), len(calls))
         self.assertGreater(calls.count("on"), 0)
         self.assertGreater(calls.count("unresolved"), calls.count("on"))
-        self.assertIn("### What the posterior resolves", self.text)
+        self.assertIn("### What the posterior resolves", self.evidence)
         for row in rows:
             if row["call"] != "unresolved":
                 self.assertIn(f"| `{row['tag']}` |", self.text, row["tag"])
 
     def test_the_shapes_are_published_apart(self):
-        self.assertIn("## The two shapes, apart", self.text)
-        self.assertIn("| standard |", self.text)
-        self.assertIn("| legacy |", self.text)
+        self.assertIn("## The two shapes, apart", self.evidence)
+        self.assertIn("| standard |", self.evidence)
+        self.assertIn("| legacy |", self.evidence)
         # Today every source is legacy; the file must say so rather than let a
         # reader take a Pangaea column for the deployment shape.
         shapes = {s["shape"] for s in self.ledger["sources"]}
@@ -1955,12 +1966,12 @@ class TheBoundarySet(unittest.TestCase):
                  for r in ranking.boundary_table(self.ledger, self.measured)[0]}
         for tag in tags:
             self.assertLessEqual(needs[tag], ranking.FEASIBLE_ARM_PAIRS, tag)
-        self.assertIn("gene_screen --genes ", ranking.RANKING_MD.read_text())
+        self.assertIn("gene_screen --genes ", ranking.EVIDENCE_MD.read_text())
 
     def test_the_two_stage_arithmetic_is_recorded_where_it_will_be_read(self):
         """⚠ The efficient plan is two stage and NOT a partial foldover. The
         ranking says so; `docs/GENE_SCREEN.md` carries the arithmetic."""
-        self.assertIn("two stage", ranking.RANKING_MD.read_text())
+        self.assertIn("two stage", ranking.EVIDENCE_MD.read_text())
         screen = (ranking.ROOT / "docs" / "GENE_SCREEN.md").read_text()
         for phrase in ("two-stage", "±145", "partial", "blocked", "8× the games"):
             self.assertIn(phrase, screen, phrase)
@@ -2014,7 +2025,7 @@ class TheLaneGenes(unittest.TestCase):
         self.assertNotIn("wide-map-capacity", tags)
 
     def test_every_lane_gene_appears_with_its_axis(self):
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         self.assertIn("## Lane genes and the share axis", text)
         for tag in ranking.lane_tags():
             self.assertIn(f"| `{tag}` |", text, tag)
@@ -2139,7 +2150,7 @@ class TheStandardScreen(unittest.TestCase):
         window."""
         live_tags = {g["tag"] for g in self.ledger["genes"]}
         self.assertNotIn("governor-victory-lanes", live_tags)
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         self.assertIn("## Removed from the code", ranked)
         self.assertIn("| `governor-victory-lanes` |", ranked)
         cutoff = self.screen_row(
@@ -2181,7 +2192,7 @@ class TheStandardScreen(unittest.TestCase):
             "settle-plan-ahead",
         )
         live_tags = {gene["tag"] for gene in self.ledger["genes"]}
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         cutoff = json.loads(
             (gene_ledger.ROOT / "docs" / "gene_screens"
              / "2026-08-24-standard-continuous-38160-total-seats.json").read_text())
@@ -2228,7 +2239,7 @@ class TheStandardScreen(unittest.TestCase):
         # The harmful half was the only one that shipped, until g1 resolved
         # it off on 2026-08-23. The 2026-08-24 cull removes all three genes.
         live_tags = {g["tag"] for g in self.ledger["genes"]}
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         for tag in ("governor-victory-lanes", "governor-every-lane",
                     "governor-expansion-lane"):
             self.assertNotIn(tag, live_tags)
@@ -2263,7 +2274,7 @@ class TheStandardScreen(unittest.TestCase):
         self.assertIn("not a fallback policy", self.notes)
 
     def test_the_note_is_carried_into_the_published_ranking(self):
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         self.assertIn("23,622", text)
         self.assertIn("governor-victory-lanes", text)
         self.assertIn("## Removed from the code", text)
