@@ -135,6 +135,60 @@ class MirrorFreshnessTests(unittest.TestCase):
         )
 
 
+class PopupClearOwnershipTests(unittest.TestCase):
+    """One interactive host owns one popup clearer for the visible Civ VI seat."""
+
+    def test_keeper_lock_requires_a_live_popup_keeper_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = Path(temporary) / "popup.lock"
+            lock.mkdir()
+            (lock / "pid").write_text("401")
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(
+                     climb, "run",
+                     return_value="/bin/zsh /tmp/civvis-popup-keeper.sh\n"):
+                self.assertEqual(climb.interactive_popup_keeper_pid(), 401)
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(climb, "run", return_value="/bin/zsh /tmp/other.sh\n"):
+                self.assertIsNone(climb.interactive_popup_keeper_pid())
+
+    def test_interactive_keeper_preserves_its_child_and_retires_the_batch_copy(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value={402}), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[402, 403]), \
+             mock.patch.object(climb, "process_running", return_value=False), \
+             mock.patch.object(climb.os, "kill") as kill, \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        kill.assert_called_once_with(403, climb.signal.SIGTERM)
+        detach.assert_not_called()
+
+    def test_interactive_keeper_prevents_a_new_batch_clearer_when_no_child_is_ready(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value=set()), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_not_called()
+
+    def test_missing_interactive_keeper_keeps_the_batch_fallback(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=None), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_called_once_with(
+            [climb.sys.executable, "-u", str(climb.HERE / "civ6_control" / "popup_clear.py"),
+             "--interval", "2.5", "--runs", str(climb.RUN_ROOT), "--log",
+             str(climb.RUN_ROOT.parent / "popup_clear.log")],
+            climb.RUN_ROOT.parent / "popup_clear.log", "popups",
+        )
+
+
 class TeardownOwnershipTests(unittest.TestCase):
     """The ladder must never clean up a run whose ownership it cannot prove."""
 
