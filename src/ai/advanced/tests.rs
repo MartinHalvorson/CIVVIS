@@ -33429,7 +33429,6 @@ fn both_war_genes_ask_the_same_question_of_the_lane() {
     );
 }
 
-
 // ═══ A site that cannot be held (`defensible_sites`) ═══
 
 #[test]
