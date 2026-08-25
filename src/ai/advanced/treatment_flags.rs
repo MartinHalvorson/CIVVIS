@@ -958,6 +958,16 @@ impl AdvancedAi {
         self.congress_counter_leader = false;
     }
 
+    /// Read a rival's conquests from the cities it has taken rather than only
+    /// from the capitals. See [`Self::domination_city_count`].
+    pub fn enable_domination_city_count(&mut self) {
+        self.domination_city_count = true;
+    }
+
+    pub fn disable_domination_city_count(&mut self) {
+        self.domination_city_count = false;
+    }
+
     /// Stop a war we did not declare from taking the grand strategy while our
     /// own victory lane is live. See [`Self::unchosen_war_keeps_the_lane`].
     pub fn enable_unchosen_war_keeps_the_lane(&mut self) {
