@@ -766,6 +766,14 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ The largest branch in the grand-strategy cascade and it has no exit:
+    // any war at all pins the plan on Conquest for its whole duration, and
+    // `war-patience`, the one release, ships off. Conquest takes 40% of the
+    // planner-turns while domination finishes 2/16 and is 1 of 107 recorded
+    // rival victories. Withdrawn once on a -22.2 pp reading that #2452 proved
+    // was a degenerate-block artifact; measured here on the repaired
+    // instrument. See `unchosen_war_keeps_the_lane`.
+    Gene { tag: "unchosen-war-keeps-the-lane", field: "unchosen_war_keeps_the_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_keeps_the_lane, disable: AdvancedAi::disable_unchosen_war_keeps_the_lane },
     // ⚠ The planner judges its OWN diplomatic position by `dvp * 5 +
     // suzerain * 6` and a RIVAL's by `dvp * 5`. A rival holding every
     // city-state -- the whole Favor engine that manufactures the points --

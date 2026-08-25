@@ -833,8 +833,39 @@ Congress or any objective routing — §10's four probes priced every form of
 that reach at −1 to −2 pp of share.
 
 **Fires probe:** `docs/gene_screens/fires/science-victory-drive.json`
-(`gene_screen --games 24 --genes science-victory-drive --start-seed 26082500`).
-Read the science-ending share and the score share on the next standard
-screen; on the live seat, read the journal's *"Driving for a science
+(`gene_screen --games 24 --genes science-victory-drive --start-seed 26082500`)
+read **+13.8 pp on wins (z +2.69)**.
+
+### ⭐⭐⭐ The screen that priced it, and what the probe got wrong (2026-08-25)
+
+600 games / 3,600 seats at the documented Emperor rung —
+`docs/gene_screens/2026-08-25-emperor-600-games-3600-seats.json`, 25 times the
+probe, resolving ±4.0 pp at 80% power:
+
+| axis | on (2,733) | off (867) | Δ | z | read |
+|---|---:|---:|---:|---:|---|
+| wins | 17.5% | 14.0% | **+3.6 pp** [+1.0, +6.2] | +2.69 | `helps *` |
+| score share | | | **−0.60 pp** | −2.48 | `share hurts *` |
+| compute | | | +2.44 ± 1.12% per enabled seat | | |
+
+**The probe's +13.8 pp was noise** — a 24-game batch with 111 on and 33 off
+seats resolves nothing, and the honest effect is about a quarter of it. This
+is the decay `docs/GENE_SCREEN.md` warns about, and the worked example for it.
+Neither flag clears the family-wise bar (|z| ≥ 3.57 at 139 genes).
+
+The two flags point opposite ways and that is the gene's actual shape: it
+converts seats into science victories (wins up) and the seats whose race does
+not land finish a little lower on the tally (share down). It spends on the
+race, and the race now pays — at this rung **88% of games end on a science
+victory** and none reaches the clock.
+
+⚠ The gene remains **on** because the deployment genome is operator-pinned,
+not because a rule promoted it; this batch is evidence for the operator's next
+selection, not a promotion. Its cost column is quotable only loosely — the
+batch shared the box with four `victory_eval` arms for its first minutes.
+
+**Still to read on the live seat:** the journal's *"Driving for a science
 victory"* line and the turn of the first `PROJECT_LAUNCH_*` build in
-`events.jsonl`.
+`events.jsonl` — `tools/civ6_run_report.py` prints both in its `science race`
+section, against a corpus baseline of **13 of 237 endgame runs that ever
+launched anything and none that completed the chain**.
