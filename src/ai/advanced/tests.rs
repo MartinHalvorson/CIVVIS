@@ -1019,7 +1019,6 @@ fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
     assert!(!bridged.base.garrison_under_fire);
 }
 
-
 /// ★★★★ One barbarian scout pinned a whole opening (civvis-20260816T151716Z
 /// t15–t35: the settler held fourteen turns, our scout fled every frame,
 /// warrior and builder went nowhere). See `barbarian_scouts_are_scouts`.
@@ -1113,7 +1112,6 @@ fn a_barbarian_scout_is_not_a_threat_the_settler_prices() {
     assert!(AdvancedAi::new().barbarian_scouts_are_scouts);
     assert!(!AdvancedAi::legacy().barbarian_scouts_are_scouts);
 }
-
 
 #[test]
 fn live_siege_response_replaces_a_queued_siege_with_a_local_defender() {
@@ -1230,7 +1228,6 @@ fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
     live.advanced_production(&mut game, 0, &plan, false);
     assert_eq!(game.cities[&city].queue.first(), Some(&defender));
 }
-
 
 #[test]
 fn the_settler_build_is_never_paid_for_ground_the_march_refuses() {
@@ -2539,7 +2536,6 @@ fn advanced_formations_link_breach_support_to_a_compatible_escort() {
     assert_eq!(game.units[&spear].linked_to, Some(ram));
     assert_eq!(game.units[&cavalry].linked_to, None);
 }
-
 
 /// The same separation applies on land, where the current live game was
 /// repeatedly issuing `ENTER_FORMATION`, `EXIT_FORMATION`, then a delayed
@@ -4022,7 +4018,6 @@ fn a_religion_empire_can_reach_the_campus_policy_multipliers() {
         "a Religion empire holding a Campus must be able to multiply it: {treated:?}"
     );
 }
-
 
 /// The multipliers are Campus cards. A seat with no Campus must not spend a
 /// slot on one, or the treatment buys a religion empire nothing and costs
@@ -20510,12 +20505,6 @@ fn quietest_first(g: &Game, mut candidates: Vec<Pos>) -> Vec<Pos> {
     candidates
 }
 
-
-
-
-
-
-
 #[test]
 fn armies_and_fleets_receive_domain_specific_shared_orders() {
     let mut g = Game::new_full(2, 24, 16, 78, 80, 0, false);
@@ -34767,8 +34756,6 @@ fn the_shipped_score_prefers_a_site_it_cannot_support() {
          holdability and not a leash"
     );
 }
-
-
 
 /// The other half: a site with no friendly city within reach. The shipped
 /// score treats an isolated site exactly like one inside the empire.
