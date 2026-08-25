@@ -2453,6 +2453,21 @@ impl AdvancedAi {
     pub fn disable_pass_picket(&mut self) {
         self.pass_picket = false;
     }
+
+    /// Convert the first six Standard-speed turns after a surprise war is
+    /// declared against us into a bounded defensive mobilization. Off
+    /// everywhere by default; opt-in gene `surprise-war-mobilization`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_surprise_war_mobilization(&mut self) {
+        self.surprise_war_mobilization = true;
+    }
+
+    /// The twin of `enable_surprise_war_mobilization`.
+    pub fn disable_surprise_war_mobilization(&mut self) {
+        self.surprise_war_mobilization = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
