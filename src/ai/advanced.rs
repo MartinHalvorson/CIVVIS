@@ -9545,7 +9545,8 @@ impl AdvancedAi {
         let rapid_frontier_exhausted = self.rapid_city_expansion
             && cities.len() >= RAPID_EXPANSION_SETTLE_FLOOR
             && !has_site
-            && !g.player_unit_ids(pid)
+            && !g
+                .player_unit_ids(pid)
                 .into_iter()
                 .any(|uid| g.units[&uid].kind == "settler")
             && major_rivals
@@ -19010,14 +19011,12 @@ impl AdvancedAi {
     /// recovery, a named threatened city, a full pipeline, and an exhausted
     /// site search all retain their normal owners. Replaced progress stays in
     /// the city's normal bank and resumes after the settlement wave fills.
-    fn rapid_expansion_settler_wave(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) {
+    fn rapid_expansion_settler_wave(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         if !self.rapid_city_expansion
-            || matches!(plan.strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+            || matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
         {
             return;
         }
@@ -19078,15 +19077,14 @@ impl AdvancedAi {
 
         for city in candidates.into_iter().take(open_seats) {
             let city_name = g.cities[&city].name.clone();
-            if g
-                .apply(
-                    pid,
-                    &Action::Produce {
-                        city,
-                        item: settler.clone(),
-                    },
-                )
-                .is_ok()
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: settler.clone(),
+                },
+            )
+            .is_ok()
                 && self.journal().wants(crate::reasoning::Level::Decision)
             {
                 think!(self.journal(), Economy, Decision,
@@ -21099,7 +21097,8 @@ impl AdvancedAi {
         // one per Settler in flight, so a wider pipeline never marches alone
         // and the ground it claims is held. Wartime targets are already
         // larger and untouched.
-        let desired_military = if (self.land_grab || self.rapid_city_expansion) && !active_major_war {
+        let desired_military = if (self.land_grab || self.rapid_city_expansion) && !active_major_war
+        {
             desired_military.max(city_count + counts.settlers)
         } else {
             desired_military

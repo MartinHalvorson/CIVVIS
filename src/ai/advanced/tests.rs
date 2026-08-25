@@ -1765,7 +1765,10 @@ fn rapid_city_expansion_tempo_census() {
     }
 
     for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
-        assert_eq!(observed[slot], MAPS as usize, "every fixed map must reach the t{checkpoint} checkpoint");
+        assert_eq!(
+            observed[slot], MAPS as usize,
+            "every fixed map must reach the t{checkpoint} checkpoint"
+        );
         let count = observed[slot];
         let minimum_total = MINIMUMS[slot] * count;
         let maximum_total = MAXIMUMS[slot].saturating_mul(count);

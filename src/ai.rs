@@ -8200,8 +8200,7 @@ impl BasicAi {
                     // fifth build. Frozen controllers retain their genes.
                     let missing_opening_recon =
                         self.book_pos == 0 && self.recon_is_the_missing_arm(g, pid);
-                    let rapid_opening_settler =
-                        self.rapid_city_expansion && self.book_pos == 0;
+                    let rapid_opening_settler = self.rapid_city_expansion && self.book_pos == 0;
                     let gene = if rapid_opening_settler {
                         3.0 // OPENING_MENU[3] is Settler.
                     } else if missing_opening_recon {
@@ -10461,8 +10460,7 @@ impl BasicAi {
             let seats_short =
                 (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
             let pipeline = if self.rapid_city_expansion && seats_short > 0 {
-                (RAPID_EXPANSION_PIPELINE_BASE
-                    + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
+                (RAPID_EXPANSION_PIPELINE_BASE + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
                     .min(seats_short)
             } else if self.land_grab && seats_short > 0 {
                 (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
@@ -11811,12 +11809,7 @@ impl BasicAi {
             // itself rejects disconnected islands; tying the wider search to
             // Shipbuilding stranded settlers whose only site was farther than
             // the local radius on the same landmass.
-            let global = self.best_reachable_settle_site(
-                g,
-                pid,
-                uid,
-                g.map.width + g.map.height,
-            );
+            let global = self.best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height);
             if self.rapid_city_expansion {
                 // Settle the closest easy ring completely before spending a
                 // wave walking toward a harder site.  `global` is only a
