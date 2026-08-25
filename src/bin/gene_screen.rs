@@ -2786,19 +2786,67 @@ fn family_wise_z(k: usize) -> f64 {
     normal_quantile_upper(0.025 / k.max(1) as f64)
 }
 
+/// The |z| a reading needs before the run that produced it was powered to
+/// find an effect that size.
+///
+/// [`POWER_FACTOR`] is 2.8 standard errors, so "the smallest Δ this run
+/// resolves at 80% power" and "|z| = 2.8" are the same statement about the
+/// same row. Anything below it is a difference the run could have missed.
+const POWERED_Z: f64 = 2.8;
+
+/// ⚠⚠ A VERDICT MUST NOT OUTRUN THE POWER THAT PRODUCED IT.
+///
+/// The bars below are significance bars: |z| ≥ 2 for a flag, the family-wise
+/// bar for a starred one, both at α = 0.05. The run's own resolving power is a
+/// different quantity — [`POWERED_Z`] standard errors — and it is the LARGER
+/// of the two whenever a single gene is screened, because the family-wise bar
+/// for one gene is 1.96.
+///
+/// So a row could read `HELPS **` while sitting below the smallest effect its
+/// run was powered to detect, which is the regime where a significant estimate
+/// is most likely to be an overestimate. That is not hypothetical:
+/// `docs/gene_screens/fires/defensible-sites.json` was written on 2026-08-25
+/// reading
+///
+/// ```text
+/// win_delta_pp +42.9   win_resolves_pp 57.1   read "HELPS **"
+/// ```
+///
+/// a forty-three point reading, a family-wise verdict, and a run that cannot
+/// resolve anything under fifty-seven. #2465 taught the artifact to carry its
+/// resolving power; this teaches the verdict to consult it.
+///
+/// Underpowered readings keep their flag and gain a word: `helps * (thin)`.
+/// Nothing is suppressed — the difference is still real and still reported —
+/// but no row can now assert a starred verdict the run could not support, and
+/// `**` is reserved for readings that clear both bars.
 fn read_column(win_z: f64, share_z: f64, family_z: f64) -> String {
-    let word = |z: f64| -> Option<&'static str> {
-        if z.abs() >= family_z {
-            Some(if z > 0.0 { "HELPS **" } else { "HURTS **" })
+    let word = |z: f64| -> Option<String> {
+        let thin = z.abs() < POWERED_Z;
+        let verdict = if z.abs() >= family_z && !thin {
+            if z > 0.0 {
+                "HELPS **"
+            } else {
+                "HURTS **"
+            }
         } else if z.abs() >= 2.0 {
-            Some(if z > 0.0 { "helps *" } else { "hurts *" })
+            if z > 0.0 {
+                "helps *"
+            } else {
+                "hurts *"
+            }
         } else {
-            None
-        }
+            return None;
+        };
+        Some(if thin {
+            format!("{verdict} (thin)")
+        } else {
+            verdict.to_string()
+        })
     };
     match (word(win_z), word(share_z)) {
         (None, None) => "~".to_string(),
-        (Some(win), None) => win.to_string(),
+        (Some(win), None) => win,
         (None, Some(share)) => format!("share {share}"),
         (Some(win), Some(share)) => format!("{win} · share {share}"),
     }
@@ -5939,10 +5987,40 @@ mod tests {
     #[test]
     fn the_read_column_names_both_axes() {
         assert_eq!(read_column(0.5, -0.3, 3.33), "~");
-        assert_eq!(read_column(2.4, 0.1, 3.33), "helps *");
         assert_eq!(read_column(-0.8, -7.2, 3.33), "share HURTS **");
-        assert_eq!(read_column(2.1, 4.9, 3.33), "helps * · share HELPS **");
         assert_eq!(read_column(-3.5, -1.0, 3.33), "HURTS **");
+        // ⚠ 2.0 <= |z| < 2.8 is a reading the run was not powered to find.
+        // It keeps its flag and says so; see `POWERED_Z`.
+        assert_eq!(read_column(2.4, 0.1, 3.33), "helps * (thin)");
+        assert_eq!(
+            read_column(2.1, 4.9, 3.33),
+            "helps * (thin) · share HELPS **"
+        );
+    }
+
+    /// ⚠⚠ THE ROW THAT PROMPTED THIS. `defensible-sites`' fires artifact was
+    /// written on 2026-08-25 reading `win_delta_pp +42.9` beside
+    /// `win_resolves_pp 57.1` — a forty-three point difference from a run that
+    /// cannot resolve anything under fifty-seven — and the verdict column
+    /// printed `HELPS **` on it, because the family-wise bar for a single gene
+    /// is 1.96 while the run's own 80%-power threshold is `POWERED_Z`.
+    #[test]
+    fn a_starred_verdict_needs_the_power_to_back_it() {
+        // The artifact's own numbers: Δ 42.9 pp against a 57.1 pp resolution
+        // is z = 42.9 / (57.1 / 2.8) ≈ 2.10, and one gene bars at 1.96.
+        let z = 42.9 / (57.1 / POWERED_Z);
+        assert!((2.0..POWERED_Z).contains(&z), "the artifact's z is {z}");
+        assert_eq!(
+            read_column(z, 0.0, 1.96),
+            "helps * (thin)",
+            "a run that cannot resolve the difference must not star it"
+        );
+
+        // Clear of the power bar, the same single-gene screen stars it.
+        assert_eq!(read_column(3.0, 0.0, 1.96), "HELPS **");
+        // And the thin band still reports the difference — nothing is hidden.
+        assert!(read_column(-2.5, 0.0, 1.96).starts_with("hurts *"));
+        assert!(read_column(-2.5, 0.0, 1.96).ends_with("(thin)"));
     }
 
     #[test]
