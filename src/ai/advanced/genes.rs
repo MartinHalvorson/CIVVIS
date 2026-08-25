@@ -690,13 +690,11 @@ pub const GENES: &[Gene] = &[
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     Gene { tag: "idle-faith-patronage", field: "idle_faith_patronage", kind: Kind::OptIn, enable: AdvancedAi::enable_idle_faith_patronage, disable: AdvancedAi::disable_idle_faith_patronage },
     // The rest of the same chain: the founder's corps cannot answer more than
-    // two cities, cannot heal when it is defending, spends charges at a
-    // fraction of their strength, and never uses the World Congress licence to
-    // remove a carrier at peace. See `advanced/religion.rs`.
+    // two cities, cannot heal when it is defending, and spends charges at a
+    // fraction of their strength. See `advanced/religion.rs`.
     Gene { tag: "religious-defence-scales", field: "religious_defence_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_defence_scales, disable: AdvancedAi::disable_religious_defence_scales },
     Gene { tag: "guru-heals-the-corps", field: "guru_heals_the_corps", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_heals_the_corps, disable: AdvancedAi::disable_guru_heals_the_corps },
     Gene { tag: "religious-units-heal-first", field: "religious_units_heal_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_units_heal_first, disable: AdvancedAi::disable_religious_units_heal_first },
-    Gene { tag: "condemn-under-congress", field: "condemn_under_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_condemn_under_congress, disable: AdvancedAi::disable_condemn_under_congress },
     Gene { tag: "spread-campaign-persists", field: "spread_campaign_persists", kind: Kind::OptIn, enable: AdvancedAi::enable_spread_campaign_persists, disable: AdvancedAi::disable_spread_campaign_persists },
     Gene { tag: "holy-site-where-the-threat-is", field: "holy_site_where_the_threat_is", kind: Kind::OptIn, enable: AdvancedAi::enable_holy_site_where_the_threat_is, disable: AdvancedAi::disable_holy_site_where_the_threat_is },
     Gene { tag: "enhancer-for-the-corps", field: "enhancer_for_the_corps", kind: Kind::OptIn, enable: AdvancedAi::enable_enhancer_for_the_corps, disable: AdvancedAi::disable_enhancer_for_the_corps },
@@ -744,21 +742,19 @@ pub const GENES: &[Gene] = &[
     // hit points say, and healing ground that comes under a shooter's reach
     // is left. See `BasicAi::one_shot_recovery`.
     Gene { tag: "one-shot-recovery", field: "one_shot_recovery", kind: Kind::OptIn, enable: AdvancedAi::enable_one_shot_recovery, disable: AdvancedAi::disable_one_shot_recovery },
-    // The six victory-lane genes (`advanced/victory_lane.rs`,
-    // `docs/VICTORY_GENES.md`). A targeted seat spends about a fifth of the
-    // game — and an adaptive one 15% — with `Expansion` in its plan, and
-    // `take_turn_inner` hands that to every lane-shaped decider. Each of the
-    // first five substitutes the victory the empire is actually racing at ONE
-    // of them; the sixth prices the Diplomatic Victory Points a scored
-    // competition pays, which nothing priced.
-    Gene { tag: "lane-congress-ballot", field: "lane_congress_ballot", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_congress_ballot, disable: AdvancedAi::disable_lane_congress_ballot },
-    Gene { tag: "lane-congress-favor", field: "lane_congress_favor", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_congress_favor, disable: AdvancedAi::disable_lane_congress_favor },
+    // The four victory-lane genes (`advanced/victory_lane.rs`,
+    // `docs/VICTORY_GENES.md`) and the competition value they enable. A
+    // targeted seat spends about a fifth of the game — and an adaptive one
+    // 15% — with `Expansion` in its plan, and `take_turn_inner` hands that
+    // to every lane-shaped decider. The first two substitute the victory the
+    // empire is actually racing at one decider; the next two enable the
+    // Culture and Science passes, and the last prices the Diplomatic Victory
+    // Points a scored competition pays, which nothing priced.
     Gene { tag: "lane-great-people", field: "lane_great_people", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_great_people, disable: AdvancedAi::disable_lane_great_people },
     Gene { tag: "lane-policy-deck", field: "lane_policy_deck", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_policy_deck, disable: AdvancedAi::disable_lane_policy_deck },
     Gene { tag: "lane-culture-spending", field: "lane_culture_spending", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_culture_spending, disable: AdvancedAi::disable_lane_culture_spending },
     Gene { tag: "lane-space-race", field: "lane_space_race", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_space_race, disable: AdvancedAi::disable_lane_space_race },
     Gene { tag: "competition-victory-points", field: "competition_victory_points", kind: Kind::OptIn, enable: AdvancedAi::enable_competition_victory_points, disable: AdvancedAi::disable_competition_victory_points },
-    Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
     // ⚠ Barbarians take 7.0 major cities a game -- 65% of everything a major
     // loses -- at a median city age of TEN TURNS, and `settle_value`
     // explicitly filters barbarians out of its proximity penalty, so a site
@@ -777,6 +773,15 @@ pub const GENES: &[Gene] = &[
     // declaration's `close_enough` already asks for") and branch nine uses
     // it. See `elective_war_in_reach`.
     Gene { tag: "elective-war-in-reach", field: "elective_war_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_elective_war_in_reach, disable: AdvancedAi::disable_elective_war_in_reach },
+    // ⚠⚠ THE BIGGEST NUMBER IN THIS REPOSITORY SITS BEHIND A FLAG NOTHING
+    // COULD SET. #554: a free settler while short of the city target more than
+    // DOUBLES the win rate, 23.0% -> 52.3% at p=0.0000 over 300 games. #559:
+    // the shut expansion window is the SOLE blocker on 31.2% of the city-turns
+    // an empire spends short of its own target. `settler_expansion_window_open`
+    // takes the payback branch only under `land_grab` (HostOnly) or this flag
+    // (an orphaned evaluator arm), so the native board has only ever shut the
+    // window on a clock. See `expansion_pays_back`.
+    Gene { tag: "expansion-pays-back", field: "expansion_pays_back", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_pays_back, disable: AdvancedAi::disable_expansion_pays_back },
     // ⚠ The last blind lane in the threat model: Domination is read as
     // `100 * foreign CAPITALS held / foreign capitals`, five values twenty
     // points apart, and ZERO for a rival that has taken any number of ordinary
@@ -801,9 +806,7 @@ pub const GENES: &[Gene] = &[
     // missing term is the one the file already has. See
     // `rival_suzerainty_alarm`.
     Gene { tag: "rival-suzerainty-alarm", field: "rival_suzerainty_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_suzerainty_alarm, disable: AdvancedAi::disable_rival_suzerainty_alarm },
-    // ⚠ The other half of a deliberately-split pair, and the half nothing can
-    // reach. `congress-counter-votes` above decides how hard to vote; this
-    // decides WHO the three targeted penalties are pointed at -- the empire
+    // ⚠ This decides WHO the three targeted penalties are pointed at -- the empire
     // `victory_denial` names, instead of the diplomatic leader. The Congress
     // is the only counter in this game not paid for in development
     // (`resolve_congress` refunds a losing vote in full), which is exactly
@@ -1271,8 +1274,6 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "civilian-rescue", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(0), wins_prior_10k: Some(-1), win_diff_pp: Some(-0.064622), posterior_pp: Some(-3.321054), posterior_se_pp: Some(8.314957), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.007, win_z: -0.018, share_delta_pp: 0.04, share_z: 0.503, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "come-ashore", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-3), wins_prior_10k: Some(5), win_diff_pp: Some(0.124668), posterior_pp: Some(7.026062), posterior_se_pp: Some(8.597676), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.102, win_z: -0.232, share_delta_pp: -0.035, share_z: -0.381, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "competition-victory-points", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(35), wins_prior_10k: Some(0), win_diff_pp: Some(0.309119), posterior_pp: Some(15.760591), posterior_se_pp: Some(17.698531), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.702, win_z: 1.841, share_delta_pp: 0.037, share_z: 0.463, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "condemn-under-congress", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-11), wins_prior_10k: Some(-8), win_diff_pp: Some(-0.185786), posterior_pp: Some(-9.116664), posterior_se_pp: Some(12.026145), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.227, win_z: -0.598, share_delta_pp: -0.027, share_z: -0.347, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "congress-counter-votes", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-22), wins_prior_10k: Some(-13), win_diff_pp: Some(-0.338782), posterior_pp: Some(-16.428664), posterior_se_pp: Some(11.983307), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.444, win_z: -1.161, share_delta_pp: -0.031, share_z: -0.397, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "coordinated-finish", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(0), wins_prior_10k: None, win_diff_pp: Some(-0.008735), posterior_pp: Some(-0.436761), posterior_se_pp: Some(19.047677), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.009, win_z: -0.023, share_delta_pp: 0.074, share_z: 0.943, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "coupled-expansion", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-12), wins_prior_10k: None, win_diff_pp: Some(-0.23586), posterior_pp: Some(-11.792992), posterior_se_pp: Some(19.130991), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.236, win_z: -0.616, share_delta_pp: 0.038, share_z: 0.482, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "culture-building-debt", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(15), wins_prior_10k: Some(24), win_diff_pp: Some(0.486116), posterior_pp: Some(25.813208), posterior_se_pp: Some(12.82409), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.58, win_z: 1.328, share_delta_pp: 0.087, share_z: 0.957, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
@@ -1299,8 +1300,6 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "idle-faith-patronage", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-1), wins_prior_10k: Some(39), win_diff_pp: Some(0.505304), posterior_pp: Some(25.778142), posterior_se_pp: Some(7.31643), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.056, win_z: -0.127, share_delta_pp: 0.148, share_z: 1.622, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "inquisition-on-threat", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(4), wins_prior_10k: Some(3), win_diff_pp: Some(0.132531), posterior_pp: Some(9.194169), posterior_se_pp: Some(9.536619), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.168, win_z: 0.381, share_delta_pp: -0.001, share_z: -0.01, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "joint-tactics", verdict: Verdict::Helps, default_on: false, wins_last_10k: Some(3), wins_prior_10k: Some(-4), win_diff_pp: Some(-0.104302), posterior_pp: Some(-5.145492), posterior_se_pp: Some(11.41702), family_wise: true, screen: Some(Measure { pairs: 17574, win_delta_pp: 0.068, win_z: 0.186, share_delta_pp: 0.248, share_z: 3.838, source: "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json" }) },
-    GeneVerdict { tag: "lane-congress-ballot", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-29), wins_prior_10k: Some(8), win_diff_pp: Some(-0.170954), posterior_pp: Some(-8.913638), posterior_se_pp: Some(18.496425), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.582, win_z: -1.523, share_delta_pp: -0.093, share_z: -1.167, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "lane-congress-favor", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-10), wins_prior_10k: Some(-14), win_diff_pp: Some(-0.24199), posterior_pp: Some(-12.279537), posterior_se_pp: Some(12.005479), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.196, win_z: -0.518, share_delta_pp: 0.08, share_z: 1.016, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-culture-spending", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(9), wins_prior_10k: Some(8), win_diff_pp: Some(0.172513), posterior_pp: Some(8.564803), posterior_se_pp: Some(12.159394), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.187, win_z: 0.486, share_delta_pp: -0.01, share_z: -0.13, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-great-people", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(33), wins_prior_10k: Some(-3), win_diff_pp: Some(0.262286), posterior_pp: Some(13.24308), posterior_se_pp: Some(17.90329), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.66, win_z: 1.717, share_delta_pp: 0.1, share_z: 1.261, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-policy-deck", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(29), wins_prior_10k: Some(0), win_diff_pp: Some(0.264627), posterior_pp: Some(12.799771), posterior_se_pp: Some(14.670107), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.592, win_z: 1.554, share_delta_pp: 0.083, share_z: 1.067, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },

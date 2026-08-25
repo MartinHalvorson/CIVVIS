@@ -2273,7 +2273,31 @@ pub struct AdvancedAi {
     /// city's actual production rate, so a strong city may still expand late
     /// and a weak one stops earlier than the flat rule allowed.
     ///
-    /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
+    /// ⚠⚠ AND NOTHING COULD REACH IT. `advanced_expansion_payback` was an
+    /// evaluator arm and the evaluator is gone; `genes.rs` records that "the
+    /// `treatment` vocabulary went with them". No registry row replaced it, so
+    /// from that deletion until 2026-08-25 this flag was `false` in every
+    /// configuration this repository could produce.
+    ///
+    /// The consequence is not that the payback rule was untested — it is that
+    /// **the native board never ran it at all.**
+    /// [`Self::settler_expansion_window_open`] takes the payback branch only
+    /// under [`Self::land_grab`] or this flag, and `land_grab` is
+    /// `Kind::HostOnly`, so a headless game falls through to
+    /// `adaptive_expansion_window_open` — a deadline — every single time. The
+    /// board the ledger prices genes on has only ever shut its settler window
+    /// on a clock.
+    ///
+    /// That matters because of the two numbers above, which are the largest
+    /// this file records anywhere: a free settler while short of the city
+    /// target more than **doubles** the win rate, 23.0% to 52.3% at p=0.0000
+    /// over 300 games, and the shut window is the **sole** blocker on 31.2% of
+    /// the city-turns an empire spends short of its own target. A third of the
+    /// time this agent is below the city count it has itself decided it wants,
+    /// the only thing stopping it is a deadline.
+    ///
+    /// `expansion-pays-back` is now a registered `Kind::OptIn` gene so a screen
+    /// can price it. It ships off, like every entrant.
     pub expansion_pays_back: bool,
     /// Price a Settler as a coupled investment instead of a free city target.
     ///
@@ -3592,17 +3616,6 @@ pub struct AdvancedAi {
     /// finds that veto already lands 95–98.5% of the time with no diplomatic
     /// victory in 40 games. There is no headroom there to take.
     ///
-    /// ⚠⚠ `advanced_congress_counter` WAS AN EVALUATOR ARM AND THE EVALUATOR IS
-    /// GONE, so from that deletion until 2026-08-25 nothing in this repository
-    /// could set this flag: the ballot aimed at the diplomatic leader in every
-    /// configuration, and the note above about `migration_treaty` scoring 0.0
-    /// against any rival described a penalty that could never be aimed at
-    /// anybody. `congress-counter-leader` is now a registered `Kind::OptIn`
-    /// gene, which also completes the deliberately-split pair: its other half,
-    /// `congress-counter-votes`, has been screenable all along, and the note
-    /// below on `congress_counter_votes` records that splitting them left this
-    /// half unmeasurable alone — "the same failure from the other side".
-    ///
     /// It is also better aimed than when it was written. `victory_denial`
     /// reads `rival_victory_pressure`, and two genes merged the same day
     /// sharpened exactly that: `conversion-majority-alarm` replaced the
@@ -3611,30 +3624,6 @@ pub struct AdvancedAi {
     /// reading before its first launch. The empire this ballot points at is
     /// chosen by a better instrument than the one the flag was built against.
     pub congress_counter_leader: bool,
-
-    /// Whether the ballot the counter actually cast is backed with bought
-    /// votes.
-    ///
-    /// ⚠ *The ballot the counter cast* — not "the ballot against the empire
-    /// closest to a victory", which is what this said until 2026-08-18 and
-    /// which was the bug rather than the design. Where the counter points is
-    /// [`Self::congress_counter_leader`]'s job; this flag only changes how hard
-    /// it pushes on whatever that is. See [`Self::congress_counter_target`].
-    ///
-    /// `take_turn` weights every ballot by the voter's *own* plan — three votes
-    /// on the Diplomacy plan holding 30 Favor, otherwise one — and never by
-    /// what is at stake. Favor has no sink but votes and deals, and the census
-    /// finds rivals holding enough for a third vote on 289 of 326 ballots at
-    /// the exhibition profile while buying one **zero** times.
-    ///
-    /// Kept apart from [`Self::congress_counter_leader`] because that flag
-    /// changes *where* the counter points and this one changes *how hard* it
-    /// pushes; a combined arm cannot say which half did the work, and this repo
-    /// has had to retract four mechanism stories told off combined arms.
-    ///
-    /// Reachable as `advanced_congress_votes`, and as
-    /// `advanced_congress_counter_hard` with both flags set.
-    pub congress_counter_votes: bool,
 
     /// Value the infrastructure that produces city-state influence.
     ///
@@ -3769,18 +3758,6 @@ pub struct AdvancedAi {
     /// convert this turn, holds instead. Off everywhere by default; opt-in
     /// gene `religious-units-heal-first`.
     pub religious_units_heal_first: bool,
-
-    /// ★★ THE CONGRESS LICENCE NOTHING HAS EVER USED. `do_condemn_heretic`
-    /// accepts a military unit's blow against an enemy religious unit when
-    /// `is_at_war(pid, target.owner)` **or** the World Congress has condemned
-    /// the target's religion (`world_religion`, option B) — and `condemn_step`
-    /// asks only the first, so a resolution this seat may itself have voted
-    /// for removes nothing. Interdiction is the cheap half of the counter:
-    /// measured 08-17 over 39 live games we field 590 religious units against
-    /// rivals' 12,708, and 41% of rival sightings already have one of our
-    /// military units within two tiles. Off everywhere by default; opt-in gene
-    /// `condemn-under-congress`.
-    pub condemn_under_congress: bool,
 
     /// ★★★ THE CAMPAIGN CANNOT SURVIVE ITS OWN LAST CHARGE.
     /// `religious_offensive_posture` asks `active_campaign || faith >=
@@ -4162,7 +4139,7 @@ pub struct AdvancedAi {
     /// Off everywhere by default; opt-in gene `campus-adjacency-threshold`.
     pub campus_adjacency_threshold: bool,
 
-    /// The six victory-lane genes. Each substitutes the victory the empire is
+    /// The four victory-lane genes. Each substitutes the victory the empire is
     /// actually racing (`victory_focus`) for the plan's own strategy at ONE
     /// decider, and only while the plan is `Expansion` — a posture that
     /// carries no victory content, and which a targeted seat holds for about
@@ -4170,15 +4147,6 @@ pub struct AdvancedAi {
     /// default. See `advanced/victory_lane.rs` for the census that motivates
     /// them and `docs/VICTORY_GENES.md` for the lane-by-lane coverage table.
     ///
-    /// `lane-congress-ballot`: the World Congress ballot is **scored** for the
-    /// raced lane — which outcome and target this seat names.
-    pub lane_congress_ballot: bool,
-    /// `lane-congress-favor`: the **stake** behind that ballot is decided by
-    /// the raced lane. Split from the row above after the lane's own regime
-    /// flagged the composite at −0.61 pp of score share (z −2.33): naming the
-    /// right outcome is free, buying it empties a treasury that a winning
-    /// ballot does not refund. See `advanced/victory_lane.rs`.
-    pub lane_congress_favor: bool,
     /// `lane-great-people`: Great Person patronage ranks classes by the
     /// raced lane.
     pub lane_great_people: bool,
@@ -5891,7 +5859,6 @@ impl AdvancedAi {
             price_the_suzerainty: false,
             early_score_alarm: false,
             congress_counter_leader: false,
-            congress_counter_votes: false,
             envoy_infrastructure: false,
             holy_lane_parity: false,
             inquisition_on_threat: false,
@@ -5904,8 +5871,6 @@ impl AdvancedAi {
             campus_finishes_first: false,
             power_the_laboratory: false,
             campus_adjacency_threshold: false,
-            lane_congress_ballot: false,
-            lane_congress_favor: false,
             lane_great_people: false,
             lane_policy_deck: false,
             lane_culture_spending: false,
@@ -5915,7 +5880,6 @@ impl AdvancedAi {
             religious_defence_scales: false,
             guru_heals_the_corps: false,
             religious_units_heal_first: false,
-            condemn_under_congress: false,
             spread_campaign_persists: false,
             holy_site_where_the_threat_is: false,
             enhancer_for_the_corps: false,
@@ -13338,66 +13302,9 @@ impl AdvancedAi {
     }
 
     /// The empire a targeted congress penalty is actually pointed at.
-    ///
-    /// ★★★★★ ONE DEFINITION, BECAUSE TWO DISAGREED AND A TREATMENT COULD NOT
-    /// FIRE. `congress_choice` aimed the penalty here, while `take_turn` decided
-    /// whether to buy votes behind it by asking [`Self::victory_denial`]
-    /// directly. Those are the same empire only when
-    /// [`Self::congress_counter_leader`] is on; with it off the ballot aims at
-    /// the diplomatic leader and the weight test looked for whoever was closest
-    /// to *any* victory — a different empire nearly always, because the
-    /// evaluator's board is decided by religion about three quarters of the
-    /// time.
-    ///
-    /// Measured on the contested profile at 60 pairs, before this was one
-    /// function (`docs/eval/`, seed 33000000): `advanced_congress_counter`
-    /// (target only) broke 3 maps, `advanced_congress_counter_hard` (both
-    /// flags) broke 7, and `advanced_congress_votes` (votes only) broke
-    /// **zero** — it never changed a decision in 120 games. A treatment cannot
-    /// be superadditive with a flag that does nothing, which is how the
-    /// mismatch was found.
-    ///
-    /// ⚠ The two flags were split so a combined arm could not hide which half
-    /// did the work, which is the right instinct and has saved this repository
-    /// four retracted mechanism stories. Splitting them this way made one half
-    /// unmeasurable *alone*, which is the same failure from the other side.
     fn congress_counter_target(&self, g: &Game, pid: usize) -> Option<usize> {
         self.congress_denial_target(g, pid)
             .or_else(|| Self::congress_diplomatic_leader(g))
-    }
-
-    /// Whether `choice` is the penalty ballot this empire's counter would cast
-    /// against [`Self::congress_counter_target`].
-    ///
-    /// ★★★★★ EXTRACTED BECAUSE BEING INLINE IS WHY IT WAS WRONG FOR SO LONG.
-    /// This predicate lived in the middle of `take_turn`, asked
-    /// [`Self::victory_denial`] instead of the function that aimed the ballot,
-    /// and no test could reach it. `congress_counter_votes` consequently never
-    /// fired with [`Self::congress_counter_leader`] off, and every reading of
-    /// `advanced_congress_votes` — including the standing "no headroom on the
-    /// `world_leader` veto" — measured nothing.
-    ///
-    /// ⚠ Naming the empire is not opposing it. Outcome A on most entries of the
-    /// scoring table is the ballot that *helps* its target, so only the shapes
-    /// carrying a penalty are worth paying for; `public_relations` is the one
-    /// resolution whose penalty is outcome A.
-    fn congress_ballot_opposes_the_counter_target(
-        &self,
-        g: &Game,
-        pid: usize,
-        resolution: &str,
-        choice: &str,
-    ) -> bool {
-        let Some(opposed) = self.congress_counter_target(g, pid) else {
-            return false;
-        };
-        let (outcome, target) = Game::congress_choice_parts(choice);
-        target == opposed.to_string()
-            && target != pid.to_string()
-            && match resolution {
-                "public_relations" => outcome == "A",
-                _ => outcome == "B",
-            }
     }
 
     /// The living major holding the most Diplomatic Victory Points.
@@ -14975,13 +14882,6 @@ impl AdvancedAi {
             }
         }
         if let Some(session) = g.congress.clone() {
-            // See `lane_congress_ballot`: an empire still settling hands this
-            // ballot `Expansion`, so the lane branches — the Diplomacy seat's
-            // own `world_leader` nomination, the Culture seat's `world_fair` —
-            // cannot be reached in the opening, and the Favor behind a vote is
-            // never staked. One answer for the whole session.
-            let congress_lane = self.congress_lane(g, pid, plan);
-            let congress_favor_lane = self.congress_favor_lane(g, pid, plan);
             for resolution in session.resolutions {
                 if resolution.ballots.contains_key(&pid) {
                     continue;
@@ -14999,30 +14899,16 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                if let Some(choice) = self.congress_choice(g, pid, &resolution, congress_lane) {
-                    // A ballot aimed at the empire closest to a victory is
-                    // backed with everything the treasury can spare, because a
-                    // losing vote is refunded in full and a right-outcome,
-                    // wrong-target one at half -- an opposition that fails
-                    // costs no Favor. Shipped, weight keys off the voter's own
-                    // plan and never off the stakes.
-                    let counters_the_leader = self.congress_counter_votes
-                        && self.congress_ballot_opposes_the_counter_target(
-                            g,
-                            pid,
-                            &resolution.id,
-                            &choice,
-                        );
-                    let votes =
-                        if congress_favor_lane == GrandStrategy::Diplomacy || counters_the_leader {
-                            g.congress_affordable_votes(pid)
-                        } else {
-                            1
-                        };
+                if let Some(choice) = self.congress_choice(g, pid, &resolution, plan.strategy) {
+                    let votes = if plan.strategy == GrandStrategy::Diplomacy {
+                        g.congress_affordable_votes(pid)
+                    } else {
+                        1
+                    };
                     think!(self.journal(), Diplomacy, Decision,
                            "Voting {} on {}", plain(&choice), plain(&resolution.id);
                            "{votes} vote{} behind it, on the {} plan",
-                           if votes == 1 { "" } else { "s" }, congress_lane.as_str());
+                           if votes == 1 { "" } else { "s" }, plan.strategy.as_str());
                     let _ = g.apply(
                         pid,
                         &Action::CongressVote {
@@ -29057,10 +28943,14 @@ impl AdvancedAi {
     /// the counter was effectively dead. Now a military unit will step onto
     /// an adjacent one and condemn it.
     fn condemn_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        // `condemn_under_congress` owns this predicate now: war alone with the
-        // gene off, war or a World Congress condemnation with it on.
-        let condemnable =
-            |game: &Game, at: Pos| -> Option<u32> { self.condemnable_heretic(game, pid, at) };
+        let condemnable = |game: &Game, at: Pos| -> Option<u32> {
+            game.units_at(at).into_iter().find(|target| {
+                let target = &game.units[target];
+                target.owner != pid
+                    && game.is_at_war(pid, target.owner)
+                    && game.rules.units[target.kind].class == "religious"
+            })
+        };
         let here = g.units[&uid].pos;
         if let Some(target_unit) = condemnable(g, here) {
             if g.apply(pid, &Action::CondemnHeretic { unit: uid, target_unit }).is_ok() {
