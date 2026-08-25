@@ -183,10 +183,16 @@ class PopupClearOwnershipTests(unittest.TestCase):
 
         detach.assert_called_once_with(
             [climb.sys.executable, "-u", str(climb.HERE / "civ6_control" / "popup_clear.py"),
-             "--interval", "2.5", "--runs", str(climb.RUN_ROOT), "--log",
+             "--interval", climb.POPUP_CLEAR_INTERVAL, "--runs", str(climb.RUN_ROOT), "--log",
              str(climb.RUN_ROOT.parent / "popup_clear.log")],
             climb.RUN_ROOT.parent / "popup_clear.log", "popups",
         )
+
+class PopupBackstopWiringTests(unittest.TestCase):
+    def test_climb_starts_the_popup_backstop_on_a_quarter_second_cadence(self):
+        self.assertEqual(climb.POPUP_CLEAR_INTERVAL, "0.25")
+        source = Path(climb.__file__).read_text()
+        self.assertIn('"--interval", POPUP_CLEAR_INTERVAL', source)
 
 
 class TeardownOwnershipTests(unittest.TestCase):
@@ -1794,6 +1800,12 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         cmd = climb.play_command(self._play_args(), "t",
                                  Path("orders.sqlite"), Path("civvis_orders"))
         self.assertNotIn("--no-peace-deterrence", cmd)
+
+    def test_every_attempt_bakes_the_fast_dialogue_timer(self):
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--dialogue-seconds")
+        self.assertEqual(cmd[at + 1], "0.25")
 
     def test_a_congress_control_batch_reaches_the_play_command(self):
         cmd = climb.play_command(

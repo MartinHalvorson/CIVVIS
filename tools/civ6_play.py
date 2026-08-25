@@ -519,6 +519,9 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
 
 
 def build_config(args: argparse.Namespace) -> dict:
+    dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
+    if dialogue_seconds is None:
+        dialogue_seconds = 0.25
     config = {
         "RunTag": args.tag,
         "AutoStart": True,
@@ -757,6 +760,9 @@ def build_config(args: argparse.Namespace) -> dict:
         "TileExportEvery": args.tile_export_every,
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
+        # A diplomacy screen is a blocker. Keep its in-game timer explicit and
+        # bounded so old launchers cannot silently restore a multi-second close.
+        "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -4067,6 +4073,8 @@ def main(argv: list[str] | None = None) -> int:
                          "it in a quadrant so CIVVIS can own the other half")
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
+    ap.add_argument("--dialogue-seconds", type=float, default=0.25,
+                    help="maximum in-game diplomacy close delay (capped at 2s)")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
     # fast because something is waiting behind it; nothing is waiting behind this
     # one, because the game is over. The operator's standing brief asks for ten

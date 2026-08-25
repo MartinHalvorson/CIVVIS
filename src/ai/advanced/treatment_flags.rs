@@ -2471,6 +2471,21 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
+    /// Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival.
+    /// A camp is the rival's when a major we are not allied with has a
+    /// city strictly nearer it than any of ours and it sits outside our
+    /// worked ring; the envoy scorer, the alliance partner score and the
+    /// joint-war answer read the far side of every rival. Opt-in gene
+    /// `enemy-of-my-enemy`; see `advanced/enemy_of_my_enemy.rs`. Operator
+    /// request, 2026-08-25.
+    pub fn enable_enemy_of_my_enemy(&mut self) {
+        self.base.enemy_of_my_enemy = true;
+    }
+    /// The twin of `enable_enemy_of_my_enemy`.
+    pub fn disable_enemy_of_my_enemy(&mut self) {
+        self.base.enemy_of_my_enemy = false;
+    }
+
     /// Buy the plot a Barbarian Outpost stands on for the city inside whose
     /// three rings it sits, when being rid of the outpost is worth more than
     /// the plot's quote. The outpost must be one we can see and one a soldier
