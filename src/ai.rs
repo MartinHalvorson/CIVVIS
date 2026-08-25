@@ -325,13 +325,6 @@ const CIVIC_PRIORITY: [&str; 8] = [
 ];
 const DISTRICT_PRIORITY: [&str; 4] = ["campus", "commercial_hub", "holy_site", "theater_square"];
 
-/// The two district families that raise a city's housing ceiling, cheapest
-/// first. Deliberately NOT in `DISTRICT_PRIORITY`: those four are ranked by a
-/// bred genome weight that expresses a lane preference, while these two are
-/// ranked by the housing they would actually deliver into a measured shortfall,
-/// and they disappear entirely from the ranking once the city has headroom.
-const HOUSING_DISTRICTS: [&str; 2] = ["aqueduct", "neighborhood"];
-
 /// The Amenity deficit from which the repair district outranks a city's lane
 /// whatever the city holds: the ×0.80 band, not the ×0.90 one. See the
 /// `amenity_districts` push in `pick_item`.
@@ -349,11 +342,6 @@ const HOST_SETTLER_MIN_POP: f64 = 2.0;
 /// grab's `pick_item` window closes this far before the turn limit instead of
 /// at the genome's `settler_stop_turn`. See `BasicAi::land_grab`.
 const LAND_GRAB_SETTLE_HORIZON: u32 = 18;
-
-/// The headroom a city is steered to keep. `Game::housing_growth_mult` pays
-/// full growth at 2 and half at 1, so 2 is the first value that is not a
-/// penalty — not a margin of comfort, the break-even point.
-const HOUSING_HEADROOM_TARGET: f64 = 2.0;
 
 /// One coordinated force as an observer sees it: what it is, where it is
 /// going, and how ready it is to fight when it gets there.
@@ -2094,46 +2082,6 @@ pub struct BasicAi {
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them.
     pub(crate) amenity_districts: bool,
-    /// Let this governor build the districts that raise the housing ceiling —
-    /// the Aqueduct and the Neighborhood.
-    ///
-    /// ⚠⚠ Amenities are not the only band on growth, and they are not the
-    /// tighter one. `Game::housing_growth_mult` **halves** growth the moment
-    /// headroom falls below 2 and **quarters** it below 1, where the Amenity
-    /// cliff needs a −5 surplus to bite that hard. Population is what science
-    /// is — roughly 1.16 science per citizen, measured across three live games
-    /// at 7/5/6 cities — so the housing ceiling is the science ceiling.
-    ///
-    /// Measured over **12,969 host-exported city-turns** (`GetHousing()`, not
-    /// CIVVIS's model) across **every one of the 18 live runs that carries the
-    /// export**:
-    ///
-    /// | headroom | growth | share of city-turns |
-    /// |---|---|---|
-    /// | ≥ 2 | 1.00x | 28.8% |
-    /// | 1..2 | **0.50x** | 22.5% |
-    /// | −4..1 | **0.25x** | **45.8%** |
-    /// | ≤ −4 | **0.00x** | 2.9% |
-    ///
-    /// **71.2% of city-turns are throttled**, the median headroom is **1** —
-    /// already inside the half-growth band — and the mean growth multiplier is
-    /// **0.515**. At pop ≥ 8 (n = 6,122) it is **87.9%** throttled on a mean
-    /// headroom of −0.52.
-    ///
-    /// And the repair is not merely out-ranked, it is barely reached at all.
-    /// Over the same 18 runs, of **485 district orders**: Aqueduct **4**, its
-    /// Roman unique Bath **4**, Neighborhood **0** — **1.65%** together,
-    /// against 92 Commercial Hubs, 79 Campuses and 76 Entertainment Complexes.
-    /// The empire builds the districts that produce science and not the one
-    /// that raises the population the science is computed from.
-    ///
-    /// It is also **late**: the Aqueduct's median order turn is **164** and the
-    /// Bath's **214**, against a Campus at 131 — the repair arrives long after
-    /// the growth it was meant to unlock was needed.
-    ///
-    /// Off for the frozen native controllers, whose recorded ladders would
-    /// otherwise shift underneath them.
-    pub(crate) housing_districts: bool,
     /// Treat a city that is LOSING HITPOINTS as besieged even when fog hides
     /// every attacker. Measured on live run civvis-20260807T181839Z, t115:
     /// Rome at damage 35/200 with the export's hostile list EMPTY -- ranged
@@ -4569,7 +4517,6 @@ impl BasicAi {
             barb: false,
             barbarian_tactics: true,
             amenity_districts: false,
-            housing_districts: false,
             garrison_under_fire: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
@@ -4905,7 +4852,6 @@ impl BasicAi {
             barb: false,
             barbarian_tactics: true,
             amenity_districts: false,
-            housing_districts: false,
             garrison_under_fire: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
@@ -10857,36 +10803,6 @@ impl BasicAi {
                 dpri.push(("entertainment_complex", lane_top + deficit));
             }
         }
-        // And a city that has run out of HOUSING asks for the districts that
-        // raise the ceiling, for the same reason and on a tighter band: below
-        // headroom 2 `Game::housing_growth_mult` halves growth and below 1 it
-        // quarters it, and population is what science is. See
-        // `BasicAi::housing_districts` for the corpus — 78.4% of live
-        // city-turns sit under that ceiling while the two districts that lift
-        // it take 1.6% of district orders.
-        //
-        // Weighted by the housing each family would ACTUALLY add rather than by
-        // the shortfall alone: an Aqueduct is +4 to a dry inland city and only
-        // +2 to one already on a river, and a flat weight cannot tell those
-        // apart. Capped by the shortfall so a city one short of the target does
-        // not outrank its whole lane to over-build by three.
-        //
-        // Against the Amenity repair this then reads the way it should: a city
-        // at surplus −6 scores that repair 6 and this one at most 3, and the
-        // −6 city has growth 0.00 so housing genuinely cannot help it yet. A
-        // city merely displeased at −1 scores the Amenity repair 1 and a real
-        // housing block 2, and housing correctly goes first.
-        if self.housing_districts && !self.minor {
-            let shortfall = HOUSING_HEADROOM_TARGET - g.city_housing_headroom(&g.cities[&cid]);
-            if shortfall > 0.0 {
-                for family in HOUSING_DISTRICTS {
-                    let gain = Self::housing_gain(g, pid, cid, family);
-                    if gain > 0.0 {
-                        dpri.push((family, lane_top + shortfall.min(gain)));
-                    }
-                }
-            }
-        }
         if self.minor {
             dpri.clear();
         }
@@ -12330,32 +12246,6 @@ impl BasicAi {
     /// replacement where it has one, otherwise the stock district. The engine
     /// blocks the base district for civilizations with a replacement, exactly
     /// as it does for unique units.
-    /// The housing a not-yet-built member of `family` would add to this city.
-    /// Zero when the city already has one, or when there is nowhere legal to
-    /// put it — a district with no site buys nothing however short the city is.
-    ///
-    /// The two families answer differently on purpose. An Aqueduct's worth is
-    /// fixed by the city centre's own water (+2 fresh, +3 coastal, +4 dry) and
-    /// `Game::aqueduct_housing_gain` states it beside the model that pays it. A
-    /// Neighborhood's is its site's Appeal, anywhere from 2 to 6, so the map is
-    /// asked instead of assumed: on a poor site it is 2 housing for 54
-    /// production and should lose to the lane, and on a good one it is 6 and
-    /// should not.
-    fn housing_gain(g: &Game, pid: usize, cid: u32, family: &str) -> f64 {
-        let city = &g.cities[&cid];
-        if g.city_has_district_family(city, Name::new(family)) {
-            return 0.0;
-        }
-        if family == "aqueduct" {
-            return g.aqueduct_housing_gain(city);
-        }
-        let dname = Self::civ_district(g, pid, family);
-        g.district_sites(cid, dname)
-            .into_iter()
-            .map(|pos| g.district_housing(dname.as_str(), pos))
-            .fold(0.0_f64, f64::max)
-    }
-
     pub(crate) fn civ_district(g: &Game, pid: usize, family: &str) -> Name {
         let civ = g.players[pid].civ.as_str();
         g.rules
@@ -24115,159 +24005,6 @@ mod amenity_district_tests {
         assert!(!BasicAi::amenity_repair_outranks_lane(0.0, 5), "neutral asks for nothing");
     }
 
-    /// The omission this repairs: neither district that raises the housing
-    /// ceiling is in the baseline list, so the governor making most of a
-    /// deployed empire's builds could not ask for one.
-    #[test]
-    fn the_baseline_district_list_has_no_housing_district() {
-        for family in HOUSING_DISTRICTS {
-            assert!(
-                !DISTRICT_PRIORITY.contains(&family),
-                "if {family} ever joins the lane list, this treatment is redundant"
-            );
-        }
-        assert_eq!(HOUSING_DISTRICTS, ["aqueduct", "neighborhood"]);
-    }
-
-    /// Off in both constructors, so every frozen native controller and every
-    /// recorded tournament ladder keeps building what it always built. The
-    /// live bridge is the only thing that turns it on — asserted in
-    /// `ai::advanced`, where the field is visible.
-    #[test]
-    fn the_housing_treatment_is_off_for_the_frozen_controllers() {
-        assert!(!BasicAi::new().housing_districts);
-        assert!(!BasicAi::with_weights(Weights::default()).housing_districts);
-    }
-
-    /// The target is the break-even of the engine's own growth band, not a
-    /// comfort margin: `housing_growth_mult` pays 1.0 at 2 and 0.5 at 1.
-    #[test]
-    fn the_headroom_target_is_where_the_growth_penalty_stops() {
-        assert_eq!(HOUSING_HEADROOM_TARGET, 2.0);
-    }
-
-    /// ⚠ The two repairs are ranked against the LANE, not stacked on each
-    /// other. A city deep in the Amenity band is not growing AT ALL —
-    /// `amenity_growth_mult` is 0.0 below −4 — so an Aqueduct there buys
-    /// nothing and must not outrank the repair that restores growth. A merely
-    /// displeased city with a real housing block is the other way round.
-    ///
-    /// This reproduces the weights `pick_item` assigns rather than reaching
-    /// into it, because the ordering is the whole claim.
-    #[test]
-    fn the_amenity_repair_outranks_housing_exactly_when_growth_is_already_zero() {
-        let lane_top = 4.0_f64;
-        let weigh = |amenity_surplus: i64, headroom: f64, gain: f64| {
-            let deficit = (-amenity_surplus).max(0) as f64;
-            let shortfall = HOUSING_HEADROOM_TARGET - headroom;
-            (lane_top + deficit, lane_top + shortfall.min(gain))
-        };
-
-        // Unrest at −6: growth is 0.00, so the Amenity repair must go first.
-        let (amenity, housing) = weigh(-6, -1.0, 4.0);
-        assert!(
-            amenity > housing,
-            "at surplus −6 growth is zero and an Aqueduct cannot help: {amenity} vs {housing}"
-        );
-
-        // Displeased at −1 with the housing ceiling genuinely reached: growth
-        // is still 0.85 from amenities but only 0.25 from housing.
-        let (amenity, housing) = weigh(-1, 0.0, 4.0);
-        assert!(
-            housing > amenity,
-            "a real housing block beats mild unhappiness: {housing} vs {amenity}"
-        );
-
-        // And both stay above the lane whenever they fire at all.
-        assert!(amenity > lane_top && housing > lane_top);
-    }
-
-    /// An Aqueduct is worth twice as much to a dry city as to a river one, and
-    /// nothing at all once it is standing. That spread is the whole reason the
-    /// chooser is handed the gain instead of a flat weight.
-    #[test]
-    fn an_aqueduct_is_worth_most_to_the_city_that_has_no_water() {
-        let mut game = Game::new(2, 32, 24, 9_101, 250, 0);
-        let settler = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .expect("starting settler");
-        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
-            .expect("found city");
-        let cid = game.player_city_ids(0)[0];
-        let city = &game.cities[&cid];
-
-        // Whatever water this start happens to have, the gain must be the
-        // difference between the two housing floors — never negative, never
-        // more than the dry city's +4.
-        let gain = game.aqueduct_housing_gain(city);
-        assert!(
-            (2.0..=4.0).contains(&gain),
-            "an Aqueduct raises the floor by 2 (fresh), 3 (coastal) or 4 (dry): got {gain}"
-        );
-
-        // And it is exactly the housing the city would gain, which is the
-        // claim the chooser actually relies on.
-        let before = game.city_housing(city);
-        let with = crate::game::Game::city_housing_floor(true, true, true)
-            - crate::game::Game::city_housing_floor(true, true, false);
-        assert_eq!(with, 2.0, "a fresh-water city gains 2");
-        assert_eq!(
-            crate::game::Game::city_housing_floor(false, true, true)
-                - crate::game::Game::city_housing_floor(false, true, false),
-            3.0,
-            "a coastal city gains 3"
-        );
-        assert_eq!(
-            crate::game::Game::city_housing_floor(false, false, true)
-                - crate::game::Game::city_housing_floor(false, false, false),
-            4.0,
-            "a dry inland city gains 4 — the largest early housing step there is"
-        );
-        assert!(before > 0.0);
-    }
-
-    /// The treatment is inert while the city still has room to grow, and asks
-    /// only once population has reached the band that throttles it. A city with
-    /// headroom is not paying anything, so an Aqueduct there buys no growth.
-    #[test]
-    fn the_housing_repair_is_asked_for_only_once_growth_is_throttled() {
-        let mut game = Game::new(2, 32, 24, 9_101, 250, 0);
-        let settler = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .expect("starting settler");
-        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
-            .expect("found city");
-        let cid = game.player_city_ids(0)[0];
-
-        game.cities.get_mut(&cid).unwrap().pop = 1;
-        assert!(
-            game.city_housing_headroom(&game.cities[&cid]) >= HOUSING_HEADROOM_TARGET,
-            "a size-1 city has room to grow and must not be steered at housing"
-        );
-
-        // Grow it until the engine's own band bites, then confirm the headroom
-        // the chooser reads agrees that it is being throttled.
-        let throttled_pop = (2..40)
-            .find(|pop| {
-                game.cities.get_mut(&cid).unwrap().pop = *pop;
-                game.city_housing_headroom(&game.cities[&cid]) < HOUSING_HEADROOM_TARGET
-            })
-            .expect("some population overruns this city's housing");
-        game.cities.get_mut(&cid).unwrap().pop = throttled_pop;
-        let headroom = game.city_housing_headroom(&game.cities[&cid]);
-        assert!(
-            headroom < HOUSING_HEADROOM_TARGET,
-            "below {HOUSING_HEADROOM_TARGET} the engine halves this city's growth: got {headroom}"
-        );
-        assert!(
-            game.aqueduct_housing_gain(&game.cities[&cid]) > 0.0,
-            "and the repair is available to it"
-        );
-    }
 }
 
 /// The Apostle promotion treatment: see

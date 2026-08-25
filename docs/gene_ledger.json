@@ -459,7 +459,7 @@
   "counts": {
     "helps": 17,
     "hurts": 1,
-    "unresolved": 77,
+    "unresolved": 73,
     "default_on": 57
   },
   "genes": [
@@ -1184,51 +1184,6 @@
       }
     },
     {
-      "tag": "campus-finishes-first",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -13,
-      "wins_prior_10k": 4,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.069474,
-      "posterior_pp": -2.728464,
-      "posterior_se_pp": 12.034231,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19031,
-        "n_off": 19129,
-        "win_delta_pp": -0.25,
-        "win_z": -0.657,
-        "share_delta_pp": 0.028,
-        "share_z": 0.351,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.2,
-            "win_z": -0.38,
-            "win_se_pp": 0.527
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.305,
-            "win_z": -0.555,
-            "win_se_pp": 0.549
-          }
-        ]
-      }
-    },
-    {
       "tag": "civilian-rescue",
       "verdict": "unresolved",
       "default_on": true,
@@ -1494,51 +1449,6 @@
             "win_delta_pp": -0.064,
             "win_z": -0.1,
             "win_se_pp": 0.635
-          }
-        ]
-      }
-    },
-    {
-      "tag": "culture-coverage",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 1,
-      "wins_prior_10k": -14,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.149876,
-      "posterior_pp": -8.305595,
-      "posterior_se_pp": 12.027574,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19032,
-        "n_off": 19128,
-        "win_delta_pp": 0.01,
-        "win_z": 0.027,
-        "share_delta_pp": -0.013,
-        "share_z": -0.169,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.247,
-            "win_z": 0.458,
-            "win_se_pp": 0.538
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.25,
-            "win_z": -0.454,
-            "win_se_pp": 0.55
           }
         ]
       }
@@ -1854,51 +1764,6 @@
             "win_delta_pp": -0.268,
             "win_z": -0.487,
             "win_se_pp": 0.551
-          }
-        ]
-      }
-    },
-    {
-      "tag": "envoy-infrastructure",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -1,
-      "wins_prior_10k": -6,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.074157,
-      "posterior_pp": -3.924523,
-      "posterior_se_pp": 12.132732,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19067,
-        "n_off": 19093,
-        "win_delta_pp": -0.019,
-        "win_z": -0.05,
-        "share_delta_pp": -0.078,
-        "share_z": -0.999,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.073,
-            "win_z": -0.138,
-            "win_se_pp": 0.53
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.04,
-            "win_z": 0.073,
-            "win_se_pp": 0.552
           }
         ]
       }
@@ -2308,51 +2173,6 @@
             "win_delta_pp": 0.969,
             "win_z": 1.745,
             "win_se_pp": 0.556
-          }
-        ]
-      }
-    },
-    {
-      "tag": "housing-districts",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 7,
-      "wins_prior_10k": -37,
-      "wins_third_10k": 5,
-      "win_diff_pp": -0.2397,
-      "posterior_pp": -12.519106,
-      "posterior_se_pp": 8.731411,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 5.668817,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19040,
-        "n_off": 19120,
-        "win_delta_pp": 0.133,
-        "win_z": 0.344,
-        "share_delta_pp": 0.053,
-        "share_z": 0.672,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.217,
-            "win_z": 0.406,
-            "win_se_pp": 0.534
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.04,
-            "win_z": 0.072,
-            "win_se_pp": 0.558
           }
         ]
       }

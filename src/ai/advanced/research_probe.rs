@@ -78,25 +78,6 @@ fn research_economy_ab_at_deployment_scale() {
             "TOTALS n={n} science {ts:.1} vs {cs:.1} | techs {tt} vs {tc} | campuses {tcp} vs {ccp} | score {tsc} vs {csc}"
         );
 }
-/// Off by default and set only by the live bridge, so the control arm can
-/// hold exactly this one mechanism off — which is what makes
-/// `live_without_housing_districts` a controlled comparison rather than a
-/// second implementation.
-#[test]
-fn only_the_live_bridge_raises_the_housing_ceiling() {
-    assert!(
-        !AdvancedAi::new().base.housing_districts,
-        "the frozen tournament controller must keep its recorded ladders"
-    );
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.base.housing_districts, "the deployment turns it on");
-    live.disable_housing_districts();
-    assert!(
-        !live.base.housing_districts,
-        "and the control arm holds it off"
-    );
-}
 /// Off by default, set only by the live bridge, and holdable off on its own
 /// so the arm is a controlled comparison — which is what makes the repair
 /// measurable rather than merely deployed.
@@ -170,46 +151,6 @@ fn the_campus_horizon_measures_payback_not_the_fraction_of_the_game_left() {
         "and it never goes negative past the budget"
     );
 }
-
-/// The `balanced_core` cliff is exempted for the two research/civic trees
-/// ONLY, and each exemption must be gated on its own named treatment. The
-/// Commercial Hub, Harbor and Industrial Zone keep the half-empire cap they
-/// were written with: their effects are empire-wide, so half the empire
-/// really is enough. The Campus and the Theater Square each carry their own
-/// building chain and a tree that cascades out of them, and the empire
-/// stopping at half is what measured 50 of 100 cities for the Campus and 27%
-/// for the Theater Square. See `campus_every_city` and `culture_coverage`.
-#[test]
-fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
-    let src = include_str!("../advanced.rs");
-    let block = src
-        .split("let core_capped = district_count * 2 >= city_count;")
-        .nth(1)
-        .expect("the cliff is computed once")
-        .split("};")
-        .next()
-        .expect("the balanced_core block ends");
-    // The Campus gene was REMOVED 2026-08-21 (ranking row −90/10k) with the
-    // bottom of the table; the campus rejoined the half-empire cliff and only
-    // the Theater Square exemption remains.
-    assert!(
-        block.contains("let campus_keeps_asking = false;"),
-        "the campus exemption stays removed"
-    );
-    assert!(
-        block.contains("self.culture_coverage && family == \"theater_square\""),
-        "the theater_square exemption must be gated on self.culture_coverage"
-    );
-    for family in ["commercial_hub", "harbor", "industrial_zone"] {
-        assert!(
-            !block.contains(&format!("family == \"{family}\"")),
-            "{family} must keep the half-empire cap"
-        );
-    }
-    let stock = AdvancedAi::new();
-    assert!(!stock.culture_coverage);
-}
-
 
 /// Off by default, set only by the live bridge, holdable off on its own.
 #[test]
