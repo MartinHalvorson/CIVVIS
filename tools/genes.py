@@ -8,7 +8,7 @@ genes, a subset of the pool; the deployment genome is the ledger's defaults.
     python3 tools/genes.py list                 every gene: kind, default, verdict
     python3 tools/genes.py source FILE [...]    enter a `gene_screen --analyze --json` file as a ledger source
     python3 tools/genes.py write                regenerate docs/gene_ledger.json, the verdict block in
-                                                src/ai/advanced/genes.rs, and HEURISTIC_GENE_RANKING.md
+                                                src/ai/advanced/genes.rs, and GENE_HEURISTIC_RANKING.md
     python3 tools/genes.py check                fail if any of the three is stale (the CI gate)
     python3 tools/genes.py boundary [--arm-pairs N] [--max-arm-pairs N]
                                                 the genes one single-gene run would resolve
@@ -21,7 +21,7 @@ together by tests. They are one module now (operator, 2026-08-23: *"is it
 possible to combine this all into one file?"*), and the generated Rust
 verdicts live in `genes.rs` itself, under the rows they judge, so a gene's
 declaration and its standing are one file: `src/ai/advanced/genes.rs` for the
-code, `HEURISTIC_GENE_RANKING.md` for the table, `docs/gene_ledger.json` for
+code, `GENE_HEURISTIC_RANKING.md` for the table, `docs/gene_ledger.json` for
 the machine record of the screens behind them.
 
 The sections below keep the three tools' own doctrine, verbatim where it still
@@ -49,7 +49,6 @@ The kinds are the registry's own (`Kind` in `genes.rs`):
 |-----------------|------|-----------|--------|------------|--------|------------|
 | `Repair(axis)`  | yes  | no        | yes    | no         | no     | yes        |
 | `HostOnly`      | yes  | yes       | no     | no         | no     | no         |
-| `HostOnlyOptIn` | yes  | yes       | no     | no         | yes    | yes        |
 | `Production`    | no   | no        | no     | yes        | no     | yes        |
 | `OptIn`         | no   | no        | no     | no         | yes    | yes        |
 
@@ -190,7 +189,7 @@ their baselines and shapes vary, and a pooled record must carry uncertainty.
 on the win column's own scale, each weighted by that screen's own standard
 error, with the between-screen disagreement carried in `tau` and therefore in
 the interval. Every gene gets `posterior_pp`, `posterior_se_pp` and, in
-`HEURISTIC_GENE_RANKING.md`, a 95% interval and `P(effect > 0)`.
+`GENE_HEURISTIC_RANKING.md`, a 95% interval and `P(effect > 0)`.
 
 It is **published, not in force**. The deployment policy is explicitly
 `operator-pinned`: `OPERATOR_DEFAULT_ON` is the whole selection, and the
@@ -204,7 +203,7 @@ alternative authority or a switch for automatic promotion or demotion.
 ──────────────────────────────────────────────────────────────────────────────
 THE RANKING (formerly tools/genes.py)
 ──────────────────────────────────────────────────────────────────────────────
-Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene,
+Regenerate `GENE_HEURISTIC_RANKING.md` — every screenable heuristic gene,
 with a measurement, ranked by wins added per 10,000 six-player on-arm seats, plus the
 screenable genes still awaiting one.
 
@@ -241,6 +240,7 @@ keeps the current selection stable.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import math
@@ -285,11 +285,11 @@ class Gene:
 
     @property
     def live(self) -> bool:
-        return self.kind.startswith("Kind::Repair") or self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind.startswith("Kind::Repair") or self.kind == "Kind::HostOnly"
 
     @property
     def host_only(self) -> bool:
-        return self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::HostOnly"
 
     @property
     def repair(self) -> bool:
@@ -301,7 +301,7 @@ class Gene:
 
     @property
     def opt_in(self) -> bool:
-        return self.kind in ("Kind::OptIn", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::OptIn"
 
     @property
     def universe_on(self) -> bool:
@@ -629,7 +629,7 @@ OPERATOR_DEFAULT_ON = (
 #: Which source shapes the published posterior pools. Both today, because every
 #: source is `legacy`; the moment a `standard` source lands this is the dial
 #: that says whether the deployment shape is pooled with the retired one or
-#: reads alone. `HEURISTIC_GENE_RANKING.md` prints all three scopes side by
+#: reads alone. `GENE_HEURISTIC_RANKING.md` prints all three scopes side by
 #: side so the choice is made on the numbers.
 POSTERIOR_SHAPES = ("standard", "legacy")
 #: A two-sided 95% interval, and the standard normal's own constant.
@@ -666,7 +666,7 @@ def wins_per_10k(win_rate: float, players: int) -> int:
 
 def pooled_win_rates(history: list[dict]) -> tuple[float, float]:
     """The on-arm-seat-weighted on and off win rates across every screen that priced
-    the gene — `HEURISTIC_GENE_RANKING.md`'s two *Total* columns. Each entry
+    the gene — `GENE_HEURISTIC_RANKING.md`'s two *Total* columns. Each entry
     carries `win_on`/`win_off` and the seat observations behind each arm.
     `tools/genes.py` imports this, so the printed totals and
     the ledger's published *Diff* are one arithmetic."""
@@ -949,20 +949,29 @@ def arm_information_value(effect: float, se: float, arm_se: float,
     return best - (effect if deployed else 0.0)
 
 
-def default_on_summary(ledger: dict) -> str:
-    """The operator-pinned deployment policy, short enough for the ranking's
-    heading. Measurements remain visible in the table but are not a rewrite
-    trigger for this selection."""
-    genome = ledger["rules"]["deployment_genome"]
-    promotions = ledger["rules"]["operator_promotions"]
-    if ledger["rules"]["deployment_policy"] != DEPLOYMENT_POLICY:
-        raise ValueError("the ranking only renders the operator-pinned deployment policy")
-    return (
-        f"**Deployment default:** operator-pinned ({len(genome)} genes): retains the prior "
-        f"36 selections and explicitly promotes {', '.join(f'`{tag}`' for tag in promotions)}. "
-        "Screen columns, *Diff*, and posterior values are evidence only; new batches do not "
-        "automatically change defaults."
-    )
+#: The operator wrote this heading and column legend by hand on 2026-08-25
+#: (GitHub commits 9ad09f7d, 128cabad, 76f50229, fb64960c), renaming the file
+#: to `GENE_HEURISTIC_RANKING.md` in the same stroke. The generator reproduces
+#: it verbatim so that `write` never overwrites the operator's text and
+#: `check` is comparing like with like. Edit here, not in the rendered file.
+RANKING_HEADING = [
+    "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
+    "- Ranking",
+    "- Gene Name",
+    "- A short Gene Description",
+    "- The highest performing version of the gene, which is also the default "
+    "version if the gene defaults \"on\"",
+    "- Default \"on\" of \"off\". Default \"on\" genes are a part of our best genome.",
+    "- Estimated probability that this gene is beneficial to our performance",
+    "- (3 cols) win rate from the last tournament / prior tournament / tournament "
+    "prior to that, scaled to n=10k total seats (n=actual number of seats listed too)",
+    "- Total recorded win rate when gene is on",
+    "- Total recorded win rate when gene is off",
+    "- [Sort key] Difference between the previous 2 cols",
+    "- Estimated change to compute cost when gene is \"on\"",
+    "- Estimated change to time cost when gene is \"off\"",
+    "",
+]
 
 
 def profile_of(data: dict) -> dict:
@@ -1194,6 +1203,66 @@ def load_source(path: Path) -> dict:
 
 
 REPORTING_BATCH_LABELS = ("Last Batch", "Prior Batch", "Third Batch")
+CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
+
+
+def continuous_batch_timing_of(data: dict) -> dict | None:
+    """Validate scheduler-owned whole-batch timing on a report artifact.
+
+    Analyzer artifacts are intentionally silent about wall-clock duration: a
+    continuous batch can contain resumed, non-overlapping segments.  The
+    scheduler stamps the *published copy* with the one interval the table
+    needs.  Historical reports predate that stamp and remain honest rather
+    than receiving a reconstructed rate from rows or file timestamps.
+    """
+    raw = data.get("continuous_batch_timing")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise SystemExit("continuous_batch_timing must be an object")
+    if raw.get("schema") != CONTINUOUS_BATCH_TIMING_SCHEMA:
+        raise SystemExit(
+            "continuous_batch_timing has unknown schema "
+            f"{raw.get('schema')!r}; expected {CONTINUOUS_BATCH_TIMING_SCHEMA}")
+
+    def timestamp(key: str) -> dt.datetime:
+        value = raw.get(key)
+        if not isinstance(value, str) or not value:
+            raise SystemExit(f"continuous_batch_timing.{key} must be a UTC timestamp")
+        try:
+            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise SystemExit(
+                f"continuous_batch_timing.{key} is not ISO-8601: {value!r}") from error
+        if parsed.tzinfo is None:
+            raise SystemExit(
+                f"continuous_batch_timing.{key} must name its timezone: {value!r}")
+        return parsed.astimezone(dt.timezone.utc)
+
+    completed_games = raw.get("completed_games")
+    elapsed_seconds = raw.get("elapsed_seconds")
+    if (isinstance(completed_games, bool) or not isinstance(completed_games, int)
+            or completed_games < 1):
+        raise SystemExit("continuous_batch_timing.completed_games must be a positive integer")
+    if (isinstance(elapsed_seconds, bool) or not isinstance(elapsed_seconds, int)
+            or elapsed_seconds < 1):
+        raise SystemExit("continuous_batch_timing.elapsed_seconds must be a positive integer")
+    games = data.get("games")
+    if isinstance(games, bool) or not isinstance(games, int) or games != completed_games:
+        raise SystemExit(
+            "continuous_batch_timing.completed_games must exactly match analysis games")
+    started = timestamp("started_at")
+    completed = timestamp("completed_at")
+    if int((completed - started).total_seconds()) != elapsed_seconds:
+        raise SystemExit(
+            "continuous_batch_timing.elapsed_seconds does not match its start/end interval")
+    return {
+        "schema": CONTINUOUS_BATCH_TIMING_SCHEMA,
+        "started_at": raw["started_at"],
+        "completed_at": raw["completed_at"],
+        "elapsed_seconds": elapsed_seconds,
+        "completed_games": completed_games,
+    }
 
 
 def source_record(path: Path, data: dict) -> dict:
@@ -1215,6 +1284,9 @@ def source_record(path: Path, data: dict) -> dict:
     }
     if data.get("games") is not None:
         entry["games"] = int(data["games"])
+    timing = continuous_batch_timing_of(data)
+    if timing is not None:
+        entry["continuous_batch_timing"] = timing
     build = build_of(data)
     if build:
         entry["build"] = build
@@ -2007,7 +2079,14 @@ def sources_from_ledger(ledger: dict) -> list[Path]:
 #: The ranking's short name for the win column.
 wins_per = wins_per_10k
 
-RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
+RANKING_MD = ROOT / "GENE_HEURISTIC_RANKING.md"
+#: Everything the ranking used to carry under its table. The operator cut the
+#: ranking down to its heading and the ranked table by hand on 2026-08-25
+#: (GitHub commit 2487e88d); the evidence, the shapes, the boundary set, the
+#: lane table, the unmeasured and removed genes, the reference and the
+#: follow-ups are generated here instead, so nothing that was published is
+#: lost and `check` still holds every line to its ledger.
+EVIDENCE_MD = ROOT / "docs" / "GENE_RANKING_EVIDENCE.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 
 #: How much of a gene's sentence the Description column carries. Widened
@@ -2252,9 +2331,16 @@ def reporting_batch_cell(batch: dict | None, tag: str) -> str:
 
 def reporting_batch_header(label: str, batch: dict | None) -> str:
     if batch is None:
-        return f"Wins ± /10k total seats — {label} (n=not recorded)"
+        return (f"Wins ± /10k total seats — {label} "
+                "(n=not recorded; games/min=not recorded)")
+    timing = batch["meta"].get("continuous_batch_timing")
+    if not isinstance(timing, dict):
+        rate = "games/min=not recorded"
+    else:
+        rate = (f"{timing['completed_games'] * 60 / timing['elapsed_seconds']:.1f} "
+                "games/min")
     return (f"Wins ± /10k total seats — {label} "
-            f"(n={fmt_int(batch['meta']['seats'])} total seats)")
+            f"(n={fmt_int(batch['meta']['seats'])} total seats; {rate})")
 
 
 def diff_cell(history: list[dict]) -> str:
@@ -2673,6 +2759,16 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
 
 
 def render(ledger: dict) -> str:
+    """`GENE_HEURISTIC_RANKING.md`: the operator's heading and the ranked table."""
+    return render_parts(ledger)[0]
+
+
+def render_evidence(ledger: dict) -> str:
+    """`docs/GENE_RANKING_EVIDENCE.md`: everything under the table."""
+    return render_parts(ledger)[1]
+
+
+def render_parts(ledger: dict) -> tuple[str, str]:
     authoritative_measured, _ = load_sources(ledger)
     measured, newest_src = load_display_sources(ledger)
     reporting = load_reporting_batches(ledger)
@@ -2712,8 +2808,9 @@ def render(ledger: dict) -> str:
     reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked by the displayed "
         "pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch "
-        "header carries its actual player-seat "
-        "count once; cells show the enabled arm's excess projected to 10,000 **total** player "
+        "header carries its actual player-seat count and whole-batch average games/minute "
+        "once; a historical artifact without scheduler timing says `not recorded` rather "
+        "than guessing from its rows. Cells show the enabled arm's excess projected to 10,000 **total** player "
         "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
         "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
         "and retain their real per-gene on/off seat counts in every row. *Diff* is that display "
@@ -2803,11 +2900,14 @@ def render(ledger: dict) -> str:
         "file is older than the ledger's sources.",
     ]
 
+    # ⚠ THE TITLE AND THE COLUMN LEGEND ARE THE OPERATOR'S, AND THIS FILE IS
+    # GENERATED — so they have to live HERE or every `genes.py write` erases
+    # them. They were hand-written straight into `GENE_HEURISTIC_RANKING.md` on
+    # 2026-08-25 (fb64960c, 76f50229) and the next regeneration would have
+    # thrown them away silently, which is how a generated file quietly loses an
+    # edit nobody notices is missing.
     lines = [
-        "# The heuristic gene ranking",
-        "",
-        default_on_summary(ledger),
-        "",
+        *RANKING_HEADING,
         "| Rank | Gene | Description | Best version | Default | P(>0) | "
         + " | ".join(
             reporting_batch_header(label, batch)
@@ -2846,6 +2946,18 @@ def render(ledger: dict) -> str:
             f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )
 
+    ranking = "\n".join(lines) + "\n"
+
+    lines = [
+        "# Gene ranking evidence",
+        "",
+        "Generated by `python3 tools/genes.py write` beside `GENE_HEURISTIC_RANKING.md`, "
+        "which carries the operator's heading and the ranked table alone (operator edit, "
+        "2026-08-25). Everything the ranking used to print under its table is here: the "
+        "posterior evidence, the two shapes, the boundary set, the lane genes, the genes "
+        "awaiting measurement, the genes removed from the code, the reference and the "
+        "follow-ups. `tools/genes.py check` holds every line to the ledger's sources.",
+    ]
     # Evidence analysis stays tied to authoritative ledger sources. A display
     # batch cannot silently change a runtime default.
     lines += evidence_sections(ledger, authoritative_measured, desc)
@@ -2915,7 +3027,7 @@ def render(ledger: dict) -> str:
         "are the operator's wins-per-ten-thousand-total-seat reporting view._",
         "",
     ]
-    return "\n".join(lines)
+    return ranking, "\n".join(lines)
 
 
 def print_boundary(ledger: dict, arm_pairs: int, max_arm_pairs: int) -> None:
@@ -3048,8 +3160,11 @@ def main(argv=None) -> int:
             drift.append(str(LEDGER_JSON.relative_to(ROOT)))
         if rust_block_of(REGISTRY_PATH.read_text(encoding="utf-8")) != render_rust(ledger):
             drift.append(f"{REGISTRY} (generated block)")
-        if render(ledger) != RANKING_MD.read_text():
+        ranking, evidence = render_parts(ledger)
+        if ranking != RANKING_MD.read_text():
             drift.append(str(RANKING_MD.relative_to(ROOT)))
+        if not EVIDENCE_MD.exists() or evidence != EVIDENCE_MD.read_text():
+            drift.append(str(EVIDENCE_MD.relative_to(ROOT)))
         if drift:
             print("genes: out of date — " + ", ".join(drift) + "; run `python3 tools/genes.py write`")
             return 1
@@ -3087,9 +3202,12 @@ def main(argv=None) -> int:
                               reporting_build_notes=reporting_notes)
     LEDGER_JSON.write_text(render_json(ledger))
     REGISTRY_PATH.write_text(registry_with_block(render_rust(ledger)), encoding="utf-8")
-    RANKING_MD.write_text(render(ledger))
+    ranking, evidence = render_parts(ledger)
+    RANKING_MD.write_text(ranking)
+    EVIDENCE_MD.write_text(evidence)
     print_table(ledger)
-    print(f"wrote {LEDGER_JSON.relative_to(ROOT)}, the verdict block in {REGISTRY} and {RANKING_MD.relative_to(ROOT)}")
+    print(f"wrote {LEDGER_JSON.relative_to(ROOT)}, the verdict block in {REGISTRY}, "
+          f"{RANKING_MD.relative_to(ROOT)} and {EVIDENCE_MD.relative_to(ROOT)}")
     return 0
 
 

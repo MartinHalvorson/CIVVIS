@@ -37,7 +37,6 @@
 //! hotspot; it does not claim to have removed the others.
 
 use super::AdvancedAi;
-use crate::game::Game;
 
 impl AdvancedAi {
     /// Size the defensive Missionary corps by cities actually under conversion
@@ -1148,7 +1147,6 @@ impl AdvancedAi {
     /// | `live_trader_route_adapter` | adapts a live Trader's zero walking movement to a distinct route-start action; no native game has that action |
     /// | `live_religious_purchase_guard` | enforces Firaxis' city-majority purchase rule, which is not a CIVVIS rule |
     /// | `solvent_faith_army` | prices a faith-bought soldier's GOLD upkeep under Firaxis' economy |
-    /// | `joint_tactics` | not a semantics adapter but an evidence exclusion: the whole-game gate is inconclusive, and the deployment-profile run split **every** map at +0 Elo (95% −148..+148) while evaluating 28 branches against the sequential policy's 11 (`docs/AI_GAPS.md` §7) |
     ///
     /// `enable_live_bridge` is therefore this function plus the host-only
     /// genes (`Kind::HostOnly` in `genes.rs`). Both bundles are loops over the
@@ -1192,46 +1190,11 @@ impl AdvancedAi {
         }
     }
 
-    /// Plan an engagement's attacks jointly across all units by search instead
-    /// of one unit at a time in class order. Measured on `battle_bench` (1000
-    /// paired fresh seeds a cell, seats swapped): combined arms +275,
-    /// ranged-heavy +363, siege +206, melee-only within noise, all against the
-    /// production controller the bridge extends. The whole-game gate stays
-    /// inconclusive (`docs/TACTICS.md` §6), so the tournament `advanced`
-    /// entrant keeps the greedy commitment rule and the deployed bridge — where
-    /// the operator asked for the strongest battlefield play, not a rating —
-    /// takes the search.
-    pub fn enable_joint_tactics(&mut self) {
-        self.joint_tactics = true;
-        self.joint_tactics_forced_off = false;
-        self.joint_reach_lines = true;
-    }
-
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
     /// `live_without_*` in `builtin_ai` and nothing else — the deployment never
     /// turns a repair back off.
     pub fn disable_home_defense(&mut self) {
         self.base.home_defense = false;
-    }
-
-    pub fn disable_joint_tactics(&mut self) {
-        self.joint_tactics = false;
-        self.joint_tactics_forced_off = true;
-    }
-
-    /// Give the joint tactics search approach lines from the engine's exact
-    /// reach flood, not only adjacent steps. On by default wherever the joint
-    /// search runs; this pair exists so the live bridge can price the lines by
-    /// taking them out (`live_without_joint_reach_lines`) and the bench can
-    /// seat the geometric portfolio by name
-    /// (`advanced_joint_tactics_geometric`).
-    pub fn enable_joint_reach_lines(&mut self) {
-        self.joint_reach_lines = true;
-    }
-
-    /// See [`AdvancedAi::enable_joint_reach_lines`].
-    pub fn disable_joint_reach_lines(&mut self) {
-        self.joint_reach_lines = false;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {
@@ -1893,20 +1856,6 @@ impl AdvancedAi {
         self.solvent_faith_army = true;
     }
 
-    // `pub(super)` rather than private, the one line of this file that is not
-    // code motion: this is the only toggle `advanced.rs` itself calls, and a
-    // child module's private item is not visible to its parent. Widened by
-    // exactly one module, not to the crate.
-    /// The Battlefield map is a bounded combat controller, not a Civ-world
-    /// deployment profile. Route the already-measured portfolio search there
-    /// for promoted controllers, while preserving the frozen anchor and any
-    /// explicit evaluator withholding. The flag is set on the controller so
-    /// telemetry and `Ai::joint_tactics_census` describe what actually ran.
-    pub(super) fn enable_arena_joint_tactics(&mut self, g: &Game) {
-        if self.victory_planning && g.is_arena() && !self.joint_tactics_forced_off {
-            self.joint_tactics = true;
-        }
-    }
     /// Choose the pantheon by what it would pay on the tiles the empire owns,
     /// not from a fixed order. Reachable as `advanced_pantheon_board`; see
     /// `BasicAi::pantheon_reads_the_board`.
@@ -2582,6 +2531,148 @@ impl AdvancedAi {
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
     // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    /// Keep one Builder per city while there is still land to improve, priced
+    /// where it can win the queue. See `AdvancedAi::builder_supply_floor`;
+    /// opt-in gene `builder-supply-floor`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_builder_supply_floor(&mut self) {
+        self.builder_supply_floor = true;
+    }
+
+    /// The twin of `enable_builder_supply_floor`.
+    pub fn disable_builder_supply_floor(&mut self) {
+        self.builder_supply_floor = false;
+    }
+    /// Price the cheap rung of a district chain by payback and leave the whole
+    /// district on the clock. See `AdvancedAi::chain_payback_window_2`; opt-in
+    /// gene `chain-payback-window-2`, version two of `chain-payback-window`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_chain_payback_window_2(&mut self) {
+        self.chain_payback_window_2 = true;
+    }
+
+    /// The twin of `enable_chain_payback_window_2`.
+    pub fn disable_chain_payback_window_2(&mut self) {
+        self.chain_payback_window_2 = false;
+    }
+    /// Price the science and culture chain debts by whether the building can
+    /// still repay, not by how much of the clock is left. See
+    /// `AdvancedAi::chain_payback_window`; opt-in gene `chain-payback-window`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_chain_payback_window(&mut self) {
+        self.chain_payback_window = true;
+    }
+
+    /// The twin of `enable_chain_payback_window`.
+    pub fn disable_chain_payback_window(&mut self) {
+        self.chain_payback_window = false;
+    }
+    /// Reserve the first Builder ahead of ordinary production, the way
+    /// `solvency-first-trade-slot` reserves the first trade slot. See
+    /// `AdvancedAi::first_builder_reserve`; opt-in gene `first-builder-reserve`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_first_builder_reserve(&mut self) {
+        self.first_builder_reserve = true;
+    }
+
+    /// The twin of `enable_first_builder_reserve`.
+    pub fn disable_first_builder_reserve(&mut self) {
+        self.first_builder_reserve = false;
+    }
+    /// Reserve the cheapest Campus building a city owes ahead of ordinary
+    /// production. See `AdvancedAi::first_research_building_reserve`; opt-in
+    /// gene `first-research-building-reserve`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_first_research_building_reserve(&mut self) {
+        self.first_research_building_reserve = true;
+    }
+
+    /// The twin of `enable_first_research_building_reserve`.
+    pub fn disable_first_research_building_reserve(&mut self) {
+        self.first_research_building_reserve = false;
+    }
+    /// Let the Builder see the Housing an improvement carries, the way the
+    /// baseline chooser already does. See
+    /// `AdvancedAi::improvement_housing_value`; opt-in gene
+    /// `improvement-housing-value`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_improvement_housing_value(&mut self) {
+        self.improvement_housing_value = true;
+    }
+
+    /// The twin of `enable_improvement_housing_value`.
+    pub fn disable_improvement_housing_value(&mut self) {
+        self.improvement_housing_value = false;
+    }
+    /// Climb to a tier-2 government once Political Philosophy lands, instead of
+    /// playing the whole game on four policy slots. See
+    /// `AdvancedAi::government_ladder`; opt-in gene `government-ladder`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_government_ladder(&mut self) {
+        self.government_ladder = true;
+    }
+
+    /// The twin of `enable_government_ladder`.
+    pub fn disable_government_ladder(&mut self) {
+        self.government_ladder = false;
+    }
+    /// Fill an idle turn with something that is not a soldier, or leave it
+    /// idle. See `AdvancedAi::never_an_empty_queue_2`; opt-in gene
+    /// `never-an-empty-queue-2`, version two of `never-an-empty-queue`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue_2 = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue_2`.
+    pub fn disable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue_2 = false;
+    }
+    /// Build the best real candidate instead of standing idle when nothing
+    /// clears the ordinary production bar. See
+    /// `AdvancedAi::never_an_empty_queue`; opt-in gene `never-an-empty-queue`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_never_an_empty_queue(&mut self) {
+        self.never_an_empty_queue = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue`.
+    pub fn disable_never_an_empty_queue(&mut self) {
+        self.never_an_empty_queue = false;
+    }
+    /// Reserve every empty trade route slot the empire can use, not only the
+    /// first. See `AdvancedAi::solvency_first_trade_slot_2`; opt-in gene
+    /// `solvency-first-trade-slot-2`, version two of
+    /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_solvency_first_trade_slot_2(&mut self) {
+        self.solvency_first_trade_slot_2 = true;
+    }
+
+    /// The twin of `enable_solvency_first_trade_slot_2`.
+    pub fn disable_solvency_first_trade_slot_2(&mut self) {
+        self.solvency_first_trade_slot_2 = false;
+    }
+    /// Modernize the standing army before the discretionary purchase pass
+    /// spends the treasury, while a major war is being fought. See
+    /// `AdvancedAi::upgrade_the_garrison`; opt-in gene `upgrade-the-garrison`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_upgrade_the_garrison(&mut self) {
+        self.upgrade_the_garrison = true;
+    }
+
+    /// The twin of `enable_upgrade_the_garrison`.
+    pub fn disable_upgrade_the_garrison(&mut self) {
+        self.upgrade_the_garrison = false;
+    }
 
     // ---- append: a-b ------------------------------------------------
 

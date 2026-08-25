@@ -986,10 +986,9 @@ fn defer_host_peace_retries(
 /// approach+blow where it has proved the line on a private board.
 ///
 /// ★★★★★ AND THAT DEFERRAL WAS THE PRICE OF EVERY STRIKE THAT FOLLOWS A STEP.
-/// The joint tactical search's lines are `[Move, Attack]` (`src/ai/tactics.rs`),
-/// the friendly volley's are move-then-shoot, and the mover's own step onto a
-/// firing tile is followed by the shot it opened — and every one of those
-/// arrived here as a walk plus a follow-up, and left as a walk. Measured on
+/// A friendly volley is move-then-shoot, and a mover's own step onto a firing
+/// tile is followed by the shot it opened — and every one of those arrived here
+/// as a walk plus a follow-up, and left as a walk. Measured on
 /// run civvis-20260803T005930Z: 7 melee ATTACK orders against 1,546 MOVE_TO
 /// in 188 turns of war; 622 of 1,787 military unit-turns hovering 2–4 hexes
 /// from a target. The unit stepped into contact and stood there, unstruck,
@@ -2637,8 +2636,8 @@ fn finish_live_war_units(
 
 /// [`finish_live_war_units`] with `excluded` units left out of the volley
 /// entirely — a settler's bound guard under
-/// `AdvancedAi::settler_stack_discipline`, which the joint engagement
-/// leaves alone for the same reason.
+/// `AdvancedAi::settler_stack_discipline`, which stays out of this pre-pass
+/// for the same reason.
 fn finish_live_war_units_excluding(
     planned_game: &mut civvis::game::Game,
     pid: usize,
@@ -2677,7 +2676,7 @@ fn finish_live_war_units_excluding(
 
         // Prove that a direct volley actually removes the target before taking
         // any unit away from the ordinary AI. Damage-only opportunities remain
-        // the joint tactical planner's decision.
+        // the ordinary tactical path's decision.
         let mut proof = planned_game.clone();
         let mut proof_committed = committed.clone();
         let mut chosen = Vec::new();
@@ -6713,7 +6712,7 @@ mod tests {
     /// ⚠⚠ ELEVEN SHIPPED TREATMENTS HAD NO CONTROL ARM ON THE ONLY HARNESS
     /// WHERE THEY FIRE, and nothing said so: this binary matched 57
     /// hand-written names against a 68-row table, and its usage string was a
-    /// third, shorter copy again. `deny_while_targeted`, `joint_tactics`,
+    /// third, shorter copy again. `deny_while_targeted`,
     /// `live_religious_purchase`, `live_trader_route`,
     /// `loyalty_policy_defence`, `peacetime_deterrence`, `ranged_line_of_sight`,
     /// `recorded_tactical_step`, `slot_kind_tiebreak` and `strike_opening` were

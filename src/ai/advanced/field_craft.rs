@@ -167,13 +167,9 @@ const FLIP_RIVAL_SUZERAIN: i64 = 60;
 
 impl AdvancedAi {
     /// Whether this unit is one the field-craft genes act for: the seat's
-    /// own land military unit, on the board, not already spoken for by the
-    /// joint plan.
+    /// own land military unit, on the board.
     fn field_craft_unit(&self, g: &Game, pid: usize, uid: u32) -> bool {
         if g.is_arena() || self.base.minor || self.base.barb {
-            return false;
-        }
-        if self.tactics_resolved.contains(&uid) || self.tactics_withdrawn.contains(&uid) {
             return false;
         }
         let Some(unit) = g.units.get(&uid) else {

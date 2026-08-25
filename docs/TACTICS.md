@@ -1,4 +1,8 @@
-# Unit battling: the state of the art, what CIVVIS does, and what changed
+# Historical joint-tactics design record
+
+> Historical record. `joint-tactics` and its `joint-reach-lines` companion
+> were removed on 2026-08-25 after the 35,148-seat screen's −0.104 pp win
+> difference; the implementation and its live and arena arms no longer exist.
 
 2026-07-31. Historical record of the tactical-search experiment; companion to
 `src/skirmish.rs` and `src/bin/battle_bench.rs`. §§1–8 are the original
