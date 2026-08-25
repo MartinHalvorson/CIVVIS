@@ -34666,4 +34666,3 @@ fn an_isolated_site_is_penalised_and_the_penalty_is_bounded() {
         "the isolation term stops growing past its cap ({further} vs {far})"
     );
 }
-
