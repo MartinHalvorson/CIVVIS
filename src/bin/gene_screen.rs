@@ -2204,7 +2204,9 @@ impl<'a> Seats<'a> {
             .len()
             .max(1) as f64;
         let design_effect = (on_seats + off_seats) / clusters;
-        (variance(on_events, on_seats) + variance(off_events, off_seats)).max(0.0).sqrt()
+        (variance(on_events, on_seats) + variance(off_events, off_seats))
+            .max(0.0)
+            .sqrt()
             * design_effect.max(1.0).sqrt()
     }
 
