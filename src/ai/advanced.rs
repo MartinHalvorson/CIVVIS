@@ -4683,7 +4683,6 @@ pub struct AdvancedAi {
     civilian_out_of_reach: bool,
 
     // ---- append: e-f ------------------------------------------------
-
     /// Reserve the FIRST Builder ahead of ordinary production, the way
     /// `solvency-first-trade-slot` reserves the first trade slot.
     ///
@@ -4744,7 +4743,6 @@ pub struct AdvancedAi {
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
     // ---- append: g-k ------------------------------------------------
-
     /// Let the Builder see the Housing an improvement carries.
     ///
     /// ★★★★ ONE CHOOSER READS IT AND THE OTHER DOES NOT.
@@ -4831,7 +4829,6 @@ pub struct AdvancedAi {
     pub government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
-
     /// Version 2 of `never-an-empty-queue`: fill an idle turn with something
     /// that is not a soldier, or leave it idle.
     ///
@@ -4955,7 +4952,6 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
-
     /// Version 2 of `solvency-first-trade-slot`: reserve EVERY empty trade
     /// slot the empire can actually use, not only the first.
     ///
@@ -5027,7 +5023,6 @@ pub struct AdvancedAi {
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
-
     /// Modernize the standing army before the discretionary purchase pass
     /// spends the treasury, while a war is being fought on our ground.
     ///
@@ -10836,7 +10831,7 @@ impl AdvancedAi {
                     .iter()
                     .any(|built| g.building_is_family(*built, *name))
             })
-            .min_by(|left, right| left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1)))
+            .min_by(|left, right| left.0.total_cmp(&right.0).then_with(|| left.1.cmp(right.1)))
             .map(|(_, name)| *name)
     }
 
@@ -19565,14 +19560,16 @@ impl AdvancedAi {
                     .saturating_sub(g.active_routes(pid))
                     .max(0) as usize;
                 let usable = open.min(self.trade_route_opportunity_count(g, pid));
-                counts.traders < usable
-                    && self.base.safe_trade_origin_for_controller(g, pid, cid)
+                counts.traders < usable && self.base.safe_trade_origin_for_controller(g, pid, cid)
             } else {
                 self.base.solvency_first_trade_slot
                     && counts.traders == 0
-                    && self
-                        .base
-                        .should_add_trader_in_city_for_controller(g, pid, cid, counts.traders)
+                    && self.base.should_add_trader_in_city_for_controller(
+                        g,
+                        pid,
+                        cid,
+                        counts.traders,
+                    )
             };
             // The same sentence for the other two assets the argmax
             // chronically under-buys. See `first_builder_reserve` and
@@ -19589,15 +19586,14 @@ impl AdvancedAi {
                 };
                 if BasicAi::has_builder_work(g, pid)
                     && g.can_produce(pid, cid, &builder)
-                    && g
-                        .apply(
-                            pid,
-                            &Action::Produce {
-                                city: cid,
-                                item: builder.clone(),
-                            },
-                        )
-                        .is_ok()
+                    && g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: builder.clone(),
+                        },
+                    )
+                    .is_ok()
                 {
                     counts.add_item(g, &builder);
                     continue;
@@ -19608,15 +19604,14 @@ impl AdvancedAi {
                 if let Some(building) = owed {
                     let item = Item::Building { building };
                     if g.can_produce(pid, cid, &item)
-                        && g
-                            .apply(
-                                pid,
-                                &Action::Produce {
-                                    city: cid,
-                                    item: item.clone(),
-                                },
-                            )
-                            .is_ok()
+                        && g.apply(
+                            pid,
+                            &Action::Produce {
+                                city: cid,
+                                item: item.clone(),
+                            },
+                        )
+                        .is_ok()
                     {
                         counts.add_item(g, &item);
                         continue;
@@ -19785,9 +19780,7 @@ impl AdvancedAi {
                         items
                             .into_iter()
                             .zip(scores)
-                            .filter(|(item, score)| {
-                                *score > PRODUCTION_VETO_FLOOR && wanted(item)
-                            })
+                            .filter(|(item, score)| *score > PRODUCTION_VETO_FLOOR && wanted(item))
                             .max_by(|left, right| {
                                 upkeep_free(&left.0)
                                     .cmp(&upkeep_free(&right.0))
@@ -21086,13 +21079,12 @@ impl AdvancedAi {
                 // See `builder_supply_floor`: one Builder per two cities is
                 // the quota, and it is a constant that never asks whether
                 // there is any land left to improve.
-                let (desired, base) = if self.builder_supply_floor
-                    && BasicAi::has_builder_work(g, pid)
-                {
-                    (city_count.max(1), BUILDER_SUPPLY_FLOOR_BASE)
-                } else {
-                    (city_count.div_ceil(2).max(1), 260.0)
-                };
+                let (desired, base) =
+                    if self.builder_supply_floor && BasicAi::has_builder_work(g, pid) {
+                        (city_count.max(1), BUILDER_SUPPLY_FLOOR_BASE)
+                    } else {
+                        (city_count.div_ceil(2).max(1), 260.0)
+                    };
                 if counts.builders < desired {
                     base + 35.0 * (desired - counts.builders) as f64
                 } else {
