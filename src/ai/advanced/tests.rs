@@ -29071,11 +29071,6 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
             true,
         ),
         (
-            "spread_campaign_persists",
-            "spread-campaign-persists",
-            false,
-        ),
-        (
             "holy_site_where_the_threat_is",
             "holy-site-where-the-threat-is",
             false,
@@ -29111,10 +29106,6 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         "the bare controller starts it off"
     );
     assert!(
-        !ai.spread_campaign_persists,
-        "the bare controller starts it off"
-    );
-    assert!(
         !ai.holy_site_where_the_threat_is,
         "the bare controller starts it off"
     );
@@ -29125,25 +29116,21 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     ai.enable_religious_defence_scales();
     ai.enable_guru_heals_the_corps();
     ai.enable_religious_units_heal_first();
-    ai.enable_spread_campaign_persists();
     ai.enable_holy_site_where_the_threat_is();
     ai.enable_enhancer_for_the_corps();
     assert!(ai.religious_defence_scales);
     assert!(ai.guru_heals_the_corps);
     assert!(ai.religious_units_heal_first);
-    assert!(ai.spread_campaign_persists);
     assert!(ai.holy_site_where_the_threat_is);
     assert!(ai.enhancer_for_the_corps);
     ai.disable_religious_defence_scales();
     ai.disable_guru_heals_the_corps();
     ai.disable_religious_units_heal_first();
-    ai.disable_spread_campaign_persists();
     ai.disable_holy_site_where_the_threat_is();
     ai.disable_enhancer_for_the_corps();
     assert!(!ai.religious_defence_scales);
     assert!(!ai.guru_heals_the_corps);
     assert!(!ai.religious_units_heal_first);
-    assert!(!ai.spread_campaign_persists);
     assert!(!ai.holy_site_where_the_threat_is);
     assert!(!ai.enhancer_for_the_corps);
 }
@@ -29396,117 +29383,6 @@ fn a_wounded_spreader_holds_to_heal_only_with_the_gene() {
         !on.religious_unit_holds_to_heal(&stranded, 0, wounded),
         "the hold never strands a unit somewhere it would not recover"
     );
-}
-
-/// `spread_campaign_persists`: the shipped offensive test is
-/// `active_campaign || faith >= 2_000×speed`, and `active_campaign` means
-/// holding a spreader with a charge left *this instant* — while `do_spread`
-/// removes a Missionary on its last charge. So a campaign that has been
-/// converting cities drops its posture the turn a wave finishes, and the caps
-/// fall with it. The gene keeps a campaign that has already converted a
-/// foreign city on the offensive while a target remains.
-#[test]
-fn a_finished_wave_ends_the_campaign_without_the_gene() {
-    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .unwrap();
-    }
-    game.current = 0;
-    assert!(game.victory_conditions.religious);
-    game.players[0].religion = Some("Our Faith".to_string());
-    game.players[1].religion = Some("Rival Faith".to_string());
-    // The rival's second city, so one of its cities can already be ours while
-    // another is still an unconverted target.
-    let rival_home = game.cities[&game.player_city_ids(1)[0]].pos;
-    let mut sites: Vec<Pos> = game
-        .map
-        .tiles
-        .values()
-        .filter(|tile| {
-            game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
-                && game.city_at(tile.pos).is_none()
-                && game.wdist(tile.pos, rival_home) > 4
-        })
-        .map(|tile| tile.pos)
-        .collect();
-    sites.sort_by_key(|position| (game.wdist(*position, rival_home), *position));
-    game.current = 1;
-    let second = sites
-        .into_iter()
-        .find(|position| {
-            let settler = game.spawn_test_unit("settler", 1, *position);
-            let founded = game.can_found_city(settler)
-                && game.apply(1, &Action::FoundCity { unit: settler }).is_ok();
-            if !founded {
-                game.remove_unit(settler);
-            }
-            founded
-        })
-        .expect("fixture needs a second rival site");
-    game.current = 0;
-    let converted = game
-        .city_at(second)
-        .expect("the rival's second city stands");
-    game.cities
-        .get_mut(&converted)
-        .unwrap()
-        .pressure
-        .insert("Our Faith".to_string(), 1_000.0);
-    assert_eq!(
-        game.city_religion(&game.cities[&converted]),
-        Some("Our Faith"),
-        "the campaign must already have taken a foreign city"
-    );
-    // …while the rival capital is still a target, and we hold no spreader and
-    // nothing like the 2,000 bank the shipped rule waits for.
-    let rival_capital = game.city_at(rival_home).unwrap();
-    assert_ne!(
-        game.city_religion(&game.cities[&rival_capital]),
-        Some("Our Faith")
-    );
-    game.players[0].faith = 300.0;
-    assert!(!game
-        .units
-        .values()
-        .any(|unit| unit.owner == 0 && game.rules.units[unit.kind].religious_spread > 0.0));
-
-    let off = AdvancedAi::new();
-    assert!(
-        !off.religious_offensive_posture(&game, 0, GrandStrategy::Science),
-        "the shipped rule drops the campaign the turn its last charge is spent"
-    );
-    let mut on = AdvancedAi::new();
-    on.enable_spread_campaign_persists();
-    assert!(
-        on.religious_offensive_posture(&game, 0, GrandStrategy::Science),
-        "a campaign that has taken a city is not over between waves"
-    );
-
-    // Nothing converted yet: the gene has no campaign to keep alive, and both
-    // agree with the shipped rule.
-    let mut fresh = game.clone();
-    fresh.cities.get_mut(&converted).unwrap().pressure.clear();
-    assert_ne!(
-        fresh.city_religion(&fresh.cities[&converted]),
-        Some("Our Faith")
-    );
-    assert!(!off.religious_offensive_posture(&fresh, 0, GrandStrategy::Science));
-    assert!(
-        !on.religious_offensive_posture(&fresh, 0, GrandStrategy::Science),
-        "the gene opens a campaign's second wave, never its first"
-    );
-
-    // And the Religion lane is unchanged either way: it was always offensive.
-    assert!(off.religious_offensive_posture(&fresh, 0, GrandStrategy::Religion));
-    assert!(on.religious_offensive_posture(&fresh, 0, GrandStrategy::Religion));
 }
 
 /// `holy_site_where_the_threat_is`: a religious unit is purchasable only in a

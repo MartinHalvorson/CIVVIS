@@ -3601,19 +3601,6 @@ pub struct AdvancedAi {
     /// gene `religious-units-heal-first`.
     pub religious_units_heal_first: bool,
 
-    /// ★★★ THE CAMPAIGN CANNOT SURVIVE ITS OWN LAST CHARGE.
-    /// `religious_offensive_posture` asks `active_campaign || faith >=
-    /// 2_000×speed`, and `active_campaign` means holding a spreader with a
-    /// charge left *this instant* — while `do_spread` removes a Missionary on
-    /// its last charge. So the turn a wave finishes, the posture drops:
-    /// `missionary_cap` six to two, `apostle_cap` two to zero, and a campaign
-    /// that was converting cities stops until the bank climbs back to two
-    /// thousand. With this on a seat that has already converted a foreign city
-    /// stays on the offensive while an unconverted foreign target remains; the
-    /// caller's reserve still decides what it can afford. Off everywhere by
-    /// default; opt-in gene `spread-campaign-persists`.
-    pub spread_campaign_persists: bool,
-
     /// ★★★ THE DEFENCE CANNOT BE BOUGHT WHERE IT IS NEEDED. A religious unit
     /// is purchasable only in a city that itself holds a Holy Site, so a
     /// founder whose only Holy Site is its Holy City answers a city flipping
@@ -5685,7 +5672,6 @@ impl AdvancedAi {
             religious_defence_scales: false,
             guru_heals_the_corps: false,
             religious_units_heal_first: false,
-            spread_campaign_persists: false,
             holy_site_where_the_threat_is: false,
             enhancer_for_the_corps: false,
             early_contact_window: false,
@@ -16324,11 +16310,7 @@ impl AdvancedAi {
                 && unit.charges > 0
                 && g.rules.units[unit.kind].religious_spread > 0.0
         });
-        // `spread_campaign_persists`: a campaign that has already converted a
-        // foreign city is not over because this turn's last charge was spent.
-        active_campaign
-            || self.spread_campaign_persists(g, pid, religion)
-            || g.players[pid].faith >= g.game_speed.scale(2_000.0)
+        active_campaign || g.players[pid].faith >= g.game_speed.scale(2_000.0)
     }
 
     fn religious_spending(&mut self, g: &mut Game, pid: usize, offensive: bool) {

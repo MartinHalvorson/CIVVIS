@@ -103,12 +103,11 @@
 | 97 | `deals-at-the-ceiling` | Price a trade quote at the counterparty's walk-away point less two Gold, falling back to the midpoint if refused. | 1 | off | 27.8% | -5 | -5 | -1 | 16.48% (n=10,061) | 16.73% (n=30,403) | -0.25% | -1.03% ±0.87% | -1.88% ±1.25% |
 | 98 | `campaign-pillage` | Let a soldier at war pillage the tile it stands on with movement its march does not use. | 1 | off | 28.7% | -4 | -12 | – | 16.47% (n=8,524) | 16.73% (n=25,952) | -0.26% | +1.83% ±1.02% | +2.83% ±1.41% |
 | 99 | `lane-commit` | From mid-game commit an adaptive seat to the victory lane it leads the field in, instead of re-picking each turn. | 1 | off | 21.4% | -4 | -21 | -6 | 16.42% (n=10,188) | 16.75% (n=30,276) | -0.33% | -0.70% ±0.88% | -0.65% ±1.24% |
-| 100 | `spread-campaign-persists` | Keep a spread campaign on the offensive between waves once it has converted a foreign city. | 1 | off | 2.8% | -12 | -39 | +16 | 16.45% (n=52,884) | 16.83% (n=72,984) | -0.38% | -0.24% ±0.82% | -0.71% ±1.12% |
-| 101 | `pillage-to-heal` | Let a unit at or below 65 health pillage a healing improvement on or beside its tile before retreating. | 1 | off | 38.7% | -12 | +36 | -23 | 16.35% (n=10,211) | 16.77% (n=30,253) | -0.42% | +0.75% ±0.90% | +1.68% ±1.19% |
-| 102 | `shoot-and-scoot` | Let a ranged unit inside melee reach step to a safer firing tile and shoot the threatening body. | 1 | off | 13.7% | -12 | -15 | +11 | 16.32% (n=10,208) | 16.78% (n=30,256) | -0.46% | -0.08% ±0.88% | -0.20% ±1.19% |
-| 103 | `zoc-screen` | Stand an idle melee unit where its zone of control shields our shooters and wounded from the most enemy reaches. | 1 | off | 10.9% | -5 | -19 | -26 | 16.28% (n=10,159) | 16.80% (n=30,305) | -0.51% | +1.52% ±0.87% | +2.33% ±1.21% |
-| 104 | `fog-honest` | Plan the whole turn against a fog-redacted world and replay only the resulting orders on the real game. | 1 | off | 0.0% | -118 | -77 | -95 | v1 7.73% (n=4,993) · v2 1.96% (n=4,948) | v1 17.92% (n=35,471) · v2 18.72% (n=35,516) | -10.19% | +0.67% ±1.14% | +2.43% ±1.50% |
-| 105 | `fog-honest-2` | Version 2 of fog-honest: the same redacted planning plus one re-plan from the real board when an order is refused. | 1 | off | 0.0% | -178 | -181 | -187 | v1 7.73% (n=4,993) · v2 1.96% (n=4,948) | v1 17.92% (n=35,471) · v2 18.72% (n=35,516) | -16.76% | +4.60% ±1.13% | +5.65% ±1.54% |
+| 100 | `pillage-to-heal` | Let a unit at or below 65 health pillage a healing improvement on or beside its tile before retreating. | 1 | off | 38.7% | -12 | +36 | -23 | 16.35% (n=10,211) | 16.77% (n=30,253) | -0.42% | +0.75% ±0.90% | +1.68% ±1.19% |
+| 101 | `shoot-and-scoot` | Let a ranged unit inside melee reach step to a safer firing tile and shoot the threatening body. | 1 | off | 13.7% | -12 | -15 | +11 | 16.32% (n=10,208) | 16.78% (n=30,256) | -0.46% | -0.08% ±0.88% | -0.20% ±1.19% |
+| 102 | `zoc-screen` | Stand an idle melee unit where its zone of control shields our shooters and wounded from the most enemy reaches. | 1 | off | 10.9% | -5 | -19 | -26 | 16.28% (n=10,159) | 16.80% (n=30,305) | -0.51% | +1.52% ±0.87% | +2.33% ±1.21% |
+| 103 | `fog-honest` | Plan the whole turn against a fog-redacted world and replay only the resulting orders on the real game. | 1 | off | 0.0% | -118 | -77 | -95 | v1 7.73% (n=4,993) · v2 1.96% (n=4,948) | v1 17.92% (n=35,471) · v2 18.72% (n=35,516) | -10.19% | +0.67% ±1.14% | +2.43% ±1.50% |
+| 104 | `fog-honest-2` | Version 2 of fog-honest: the same redacted planning plus one re-plan from the real board when an order is refused. | 1 | off | 0.0% | -178 | -181 | -187 | v1 7.73% (n=4,993) · v2 1.96% (n=4,948) | v1 17.92% (n=35,471) · v2 18.72% (n=35,516) | -16.76% | +4.60% ±1.13% | +5.65% ±1.54% |
 
 ## Evidence for future operator selections
 
@@ -118,7 +117,7 @@ The deployment genome is explicitly operator-pinned. The win columns, pooled *Di
 
 ### What the posterior resolves
 
-Of 80 priced genes the interval clears zero for **21 upward** and **0 downward**; **59 straddle zero**. Those are evidence states, not automatic deployment calls.
+Of 79 priced genes the interval clears zero for **21 upward** and **0 downward**; **58 straddle zero**. Those are evidence states, not automatic deployment calls.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Pinned | Evidence call |
 |---|---:|---:|---:|---|---|
@@ -150,7 +149,7 @@ Of 80 priced genes the interval clears zero for **21 upward** and **0 downward**
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 3 | 92,604 | 80 |
+| standard | 3 | 92,604 | 79 |
 | legacy | 7 | 132,440 | 51 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
@@ -266,7 +265,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `religion-sues-peace` | +7 [-11, +24] | 77.2% | on | +0.0 | 421,343 |
 | `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | on | +0.0 | 126,996 |
 | `inquisition-on-threat` | +9 [-9, +28] | 83.2% | on | +0.0 | 189,468 |
-| `spread-campaign-persists` | -17 [-41, +7] | 8.0% | off | +0.0 | 35,582 |
 | `relief-targets-the-siege` | +10 [-7, +26] | 87.0% | on | +0.0 | 153,392 |
 | `settler-threat-detour` | +24 [-2, +51] | 96.4% | on | +0.0 | 5,630 |
 | `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
@@ -277,10 +275,10 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `one-launch-pad` | +11 [-5, +28] | 91.6% | on | +0.0 | 81,761 |
 | `strike-opening` | +12 [-4, +29] | 92.5% | on | +0.0 | 65,525 |
 
-The top 7 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
+The top 6 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
 
 ```sh
-gene_screen --genes unit-cost-efficiency,holy-lane-parity,spread-campaign-persists,settler-threat-detour,barbarian-bargain,camp-party,war-reinforcement
+gene_screen --genes unit-cost-efficiency,holy-lane-parity,settler-threat-detour,barbarian-bargain,camp-party,war-reinforcement
 ```
 
 `python3 tools/genes.py boundary` prints this list on its own, with `--arm-pairs` and `--max-arm-pairs` to size it.
@@ -355,6 +353,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `barbarian-hunt` | +85 | 17.52% | 16.38% | `2026-08-24-standard-continuous-5988-total-seats.json` |
 | `fortify-idle-units` | +68 | 17.35% | 16.44% | `2026-08-24-standard-continuous-5988-total-seats.json` |
 | `fifteenth-citizen` | +62 | 17.29% | 16.46% | `2026-08-24-standard-continuous-5988-total-seats.json` |
+| `spread-campaign-persists` | +62 | 17.28% | 16.46% | `2026-08-24-standard-continuous-5988-total-seats.json` |
 | `barbarian-capture-priority` | +53 | 17.20% | 16.49% | `2026-08-24-standard-continuous-5988-total-seats.json` |
 | `lane-congress-ballot` | +45 | 17.11% | 16.52% | `2026-08-24-standard-continuous-5988-total-seats.json` |
 | `suzerain-cards` | +42 | 17.09% | 16.25% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |

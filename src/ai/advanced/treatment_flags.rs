@@ -75,21 +75,6 @@ impl AdvancedAi {
         self.religious_units_heal_first = false;
     }
 
-    /// Keep a spread campaign on the offensive between waves once it has
-    /// converted a foreign city. Keep a spread campaign that has already
-    /// converted a foreign city on the offensive between waves, instead of
-    /// dropping the posture the turn its last charge is spent. Off in
-    /// production; opted into by name. See
-    /// [`AdvancedAi::spread_campaign_persists`].
-    pub fn enable_spread_campaign_persists(&mut self) {
-        self.spread_campaign_persists = true;
-    }
-
-    /// The twin of `enable_spread_campaign_persists`.
-    pub fn disable_spread_campaign_persists(&mut self) {
-        self.spread_campaign_persists = false;
-    }
-
     /// Build a Holy Site in the city losing its religious majority so defenders
     /// can be bought there directly. Put a Holy Site in the city that is
     /// actually losing its majority, so its defender can be bought there

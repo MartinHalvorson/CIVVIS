@@ -167,42 +167,6 @@ impl AdvancedAi {
             .any(|city| Self::city_needs_religious_support(g, pid, city, &religion))
     }
 
-    /// `spread_campaign_persists`: whether a founder outside the Religion lane
-    /// is on the offensive.
-    ///
-    /// ★★★ THE CAMPAIGN CANNOT SURVIVE ITS OWN LAST CHARGE. The shipped test
-    /// is `active_campaign || faith >= 2_000×speed`, and `active_campaign`
-    /// means *this instant* holding a spreader with a charge left. A
-    /// Missionary is removed by `do_spread` on its last charge, so the turn a
-    /// wave finishes the posture drops: `missionary_cap` falls from six to
-    /// two, `apostle_cap` from two to zero, and the campaign that was
-    /// converting cities stops until the bank climbs back to two thousand.
-    /// The empire then re-buys, re-walks and re-converts ground it had
-    /// already taken. It is the same shape as `siege_commitment` and
-    /// `settler_target_hysteresis`: a live commitment that nothing keeps
-    /// alive between waves.
-    ///
-    /// With the gene on, a seat that has **already converted a foreign city**
-    /// to its religion stays on the offensive while an unconverted foreign
-    /// target remains — the reserve its caller passes still decides what it
-    /// can afford, so this opens the posture, never the purse.
-    ///
-    /// ⚠ It is a genuine risk and the screen must price it, not this comment.
-    /// #1491 measured the Holy Site re-ranking trading science victories for
-    /// religious ones about 1:1 at the deployment shape, and a campaign that
-    /// persists spends more Faith on spreaders. `docs/GENOME.md` is why this
-    /// ships off: reachability is not leverage.
-    pub(super) fn spread_campaign_persists(&self, g: &Game, pid: usize, religion: &str) -> bool {
-        if !self.spread_campaign_persists {
-            return false;
-        }
-        g.cities.values().any(|city| {
-            city.owner != pid
-                && !g.players[city.owner].is_barbarian
-                && g.city_religion(city) == Some(religion)
-        })
-    }
-
     /// `holy_site_where_the_threat_is`: put a Holy Site in the city that is
     /// actually slipping, so its defender can be bought there.
     ///

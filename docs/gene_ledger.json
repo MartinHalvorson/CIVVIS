@@ -594,7 +594,7 @@
   "counts": {
     "helps": 16,
     "hurts": 0,
-    "unresolved": 64,
+    "unresolved": 63,
     "default_on": 73
   },
   "genes": [
@@ -3699,51 +3699,6 @@
             "win_delta_pp": 0.341,
             "win_z": 0.622,
             "win_se_pp": 0.549
-          }
-        ]
-      }
-    },
-    {
-      "tag": "spread-campaign-persists",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -19,
-      "wins_prior_10k": -16,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.343466,
-      "posterior_pp": -17.030395,
-      "posterior_se_pp": 12.148556,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19106,
-        "n_off": 19054,
-        "win_delta_pp": -0.381,
-        "win_z": -0.997,
-        "share_delta_pp": -0.007,
-        "share_z": -0.086,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.117,
-            "win_z": -0.22,
-            "win_se_pp": 0.531
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.672,
-            "win_z": -1.221,
-            "win_se_pp": 0.55
           }
         ]
       }
