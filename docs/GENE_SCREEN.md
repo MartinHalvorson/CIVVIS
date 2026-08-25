@@ -1605,9 +1605,10 @@ written.
    below promotes anything automatically. `docs/GENOME.md` records what
    happened the one time selection ran on a correlate, and
    `docs/eval/README.md`'s rule stands: a screen's `*` is where to point an arm.
-2. **The secondary axis is score share**, printed for every gene as
-   *Share Δpp (z)* in `HEURISTIC_GENE_RANKING.md` and listed again for the lane
-   genes alone. Its verdict is the screen's own `*` convention on that axis:
+2. **The secondary axis is score share**, printed as *Share Δpp (z)* in
+   `HEURISTIC_GENE_RANKING.md`'s lane table (the main ranking table keeps only
+   `P(>0)` of the pooled columns). Its verdict is the screen's own `*`
+   convention on that axis:
    `helps *` at share z ≥ 2, `hurts *` at ≤ −2, `~` otherwise.
 3. **A lane gene whose share reading is `hurts *` is a removal candidate even
    with a positive win column.** The share axis is continuous and resolves an

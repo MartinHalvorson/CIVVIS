@@ -2720,19 +2720,20 @@ def render(ledger: dict) -> str:
             for r in resolutions(ledger)
         ),
         "",
-        "**Posterior (95% CI), P(>0), Share Δpp (z).** *Posterior* is a random-effects "
-        "(DerSimonian\u2013Laird) inverse-variance pool of **every** screen that priced the "
-        "gene, on this column's own scale: each screen's on\u2212off difference weighted by "
-        "its own standard error, with the between-screen disagreement (\u03c4) carried in the "
-        "interval instead of assumed away. It is the answer to two things the columns "
-        "cannot express \u2014 that the same +24 means different things from a \u00b129 screen "
-        "and a \u00b164 one, and that two positive columns from screens differing in "
-        "baseline, build and shape are not two confirmations (#2283/#2284 measured that: "
-        "five of seven lane genes changed sign on disjoint seeds). *P(>0)* is where the "
-        "shrinkage lands. *Share Δpp (z)* is the newest screen's score-share contrast and "
-        "its verdict, published beside the win columns because a lane gene can fail to pay "
-        "on the win axis at 250 turns. **None of these three automatically decides a "
-        "default**; they are evidence for a later explicit operator selection.",
+        "**P(>0).** The probability that the gene's pooled effect on the win column is "
+        "positive. The pool is a random-effects (DerSimonian\u2013Laird) inverse-variance "
+        "pool of **every** screen that priced the gene: each screen's on\u2212off difference "
+        "weighted by its own standard error, with the between-screen disagreement (\u03c4) "
+        "carried in the pool instead of assumed away, read as \u03a6(effect / se). It is the "
+        "answer to two things the win columns cannot express \u2014 that the same +24 means "
+        "different things from a \u00b129 screen and a \u00b164 one, and that two positive "
+        "columns from screens differing in baseline, build and shape are not two "
+        "confirmations (#2283/#2284 measured that: five of seven lane genes changed sign on "
+        "disjoint seeds). The pooled point and its 95% interval are printed per gene in the "
+        "evidence sections below; the newest screen's score-share contrast (*Share \u0394pp "
+        "(z)*) is printed in the lane table, where a lane gene that cannot pay on the win "
+        "axis at 250 turns shows its evidence. **P(>0) does not automatically decide a "
+        "default**; it is evidence for a later explicit operator selection.",
         "",
         "**Cost.** Positive is slower; negative is faster. *cost (compute)* is the "
         "on/off percent change in wall seconds per completed turn, while *cost (time)* "
@@ -2755,14 +2756,14 @@ def render(ledger: dict) -> str:
         "",
         default_on_summary(ledger),
         "",
-        "| Rank | Gene | Description | Best version | Default | "
+        "| Rank | Gene | Description | Best version | Default | P(>0) | "
         + " | ".join(
             reporting_batch_header(label, batch)
             for label, batch in zip(REPORTING_BATCH_LABELS, reporting_slots)
         )
-        + " | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | "
-        "P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
-        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
+        + " | Total (on) Win rate | Total (off) Win rate | Diff | "
+        "cost (compute) | cost (time) |",
+        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (_diff, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
@@ -2784,13 +2785,11 @@ def render(ledger: dict) -> str:
         posterior = posterior_of(history)
         lines.append(
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | "
-            f"{best_version_cell(tag, tags, verdict, measured)} | {default} | {last} | {prior} | "
-            f"{third} | "
+            f"{best_version_cell(tag, tags, verdict, measured)} | {default} | "
+            f"{probability_cell(posterior)} | {last} | {prior} | {third} | "
             f"{on_cell} | "
             f"{off_cell} | "
             f"{diff_cell(history)} | "
-            f"{posterior_cell(posterior)} | {probability_cell(posterior)} | "
-            f"{share_cell(history)} | "
             f"{cost_cell(history, 'compute_cost_pct', 'compute_cost_se_pct')} | "
             f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )

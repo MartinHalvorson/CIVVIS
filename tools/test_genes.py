@@ -1340,10 +1340,9 @@ def expected_columns() -> str:
         for label, batch in zip(ranking.REPORTING_BATCH_LABELS, slots)
     )
     return (
-        "| Rank | Gene | Description | Best version | Default | "
+        "| Rank | Gene | Description | Best version | Default | P(>0) | "
         + reporting
         + " | Total (on) Win rate | Total (off) Win rate | Diff | "
-        "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
         "cost (compute) | cost (time) |"
     )
 
@@ -1724,16 +1723,19 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
             rows.append([c.strip() for c in line.strip().strip("|").split(" | ")])
         return rows
 
-    def test_the_printed_posterior_uses_the_displayed_observations(self):
-        """The table's posterior moves with its report-only display batch."""
+    def test_the_printed_probability_uses_the_displayed_observations(self):
+        """The table's `P(>0)` moves with its report-only display batch. It
+        is the one pooled column the ranking keeps (operator, 2026-08-25):
+        the posterior's point and interval and the newest screen's share
+        contrast moved to the evidence and lane sections."""
         seen = 0
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
             posterior = ranking.posterior_of(self.measured[tag])
-            self.assertEqual(cell(cells, "Posterior (95% CI)"),
-                             ranking.posterior_cell(posterior), tag)
             self.assertEqual(cell(cells, "P(>0)"),
                              ranking.probability_cell(posterior), tag)
+            self.assertNotIn("Posterior (95% CI)", COLUMN)
+            self.assertNotIn("Share Δpp (z)", COLUMN)
             seen += 1
         self.assertGreater(seen, 50)
 
