@@ -205,6 +205,18 @@ impl ScienceStanding {
 }
 
 impl AdvancedAi {
+    /// The lane this seat is playing for: the operator's assignment, or —
+    /// while it drives the space race — Science. Only the science keys read
+    /// this (the rocketry-path tech value and the space-race projects and
+    /// Spaceports); every other read of an assigned lane, the objective
+    /// resolutions included, keeps reading `victory_target`.
+    pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
+        self.victory_target.or_else(|| {
+            self.science_drive_active()
+                .then_some(VictoryTarget::Science)
+        })
+    }
+
     /// The drive's state, for instruments and tests.
     pub fn science_drive(&self) -> Option<ScienceDrive> {
         self.science_drive
@@ -274,7 +286,7 @@ impl AdvancedAi {
                 self.science_drive = None;
                 return;
             }
-            None => self.committed_lane() == Some(VictoryTarget::Science),
+            None => false,
         };
         let review = g.standard_duration(SCIENCE_DRIVE_REVIEW).max(1);
         let start = Self::science_drive_start(g);

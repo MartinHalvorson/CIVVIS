@@ -179,350 +179,6 @@ use crate::ai::run_game;
 use crate::game::{GameOptions, GovernorState};
 
 #[test]
-fn fog_honest_planning_view_redacts_hidden_units_and_terrain() {
-    let mut game = Game::new_full(2, 30, 18, 84_201, 200, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|uid| game.units[uid].kind == "settler")
-            .expect("each seat starts with a settler");
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .expect("fixture capitals must be founded");
-    }
-    game.current = 0;
-    let home = game.cities[&game.player_city_ids(0)[0]].pos;
-    let visible = game.player_vision_now(0);
-    let far = game
-        .map
-        .tiles
-        .values()
-        .find(|tile| {
-            game.wdist(home, tile.pos) > 12
-                && !game.sees(&visible, tile.pos)
-                && game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
-        })
-        .map(|tile| tile.pos)
-        .expect("fixture needs an unexplored land tile");
-    let enemy = game.spawn_test_unit("warrior", 1, far);
-    assert!(!game.sees(&visible, far));
-
-    let private = game.fogged_clone(0, &BTreeMap::new());
-    assert!(
-        !private.units.contains_key(&enemy),
-        "an enemy that is not in the turn-start frame must not reach the planner"
-    );
-    let redacted = private
-        .map
-        .get(far)
-        .expect("redacted tile remains on the map");
-    assert!(private.rules.is_unknown(redacted));
-    assert!(redacted.assumed_traversable);
-    assert_eq!(redacted.resource, None);
-    assert_eq!(redacted.owner_city, None);
-}
-
-#[test]
-fn fog_honest_planning_drops_dangling_hidden_city_territory_refs() {
-    let mut game = Game::new_full(2, 40, 20, 84_205, 200, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|uid| game.units[uid].kind == "settler")
-            .expect("each seat starts with a settler");
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .expect("fixture capitals must be founded");
-    }
-    game.current = 0;
-    let home = game.cities[&game.player_city_ids(0)[0]].pos;
-    let visible = game.player_vision_now(0);
-    let far = game
-        .map
-        .tiles
-        .values()
-        .find(|tile| {
-            game.wdist(home, tile.pos) > 12
-                && !game.sees(&visible, tile.pos)
-                && game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
-                && game.city_at(tile.pos).is_none()
-        })
-        .map(|tile| tile.pos)
-        .expect("fixture needs an unexplored settlement site");
-    let settler = game.spawn_test_unit("settler", 1, far);
-    game.current = 1;
-    game.apply(1, &Action::FoundCity { unit: settler })
-        .expect("the hidden settlement must be founded");
-    let hidden_city = game
-        .city_at(far)
-        .expect("the fixture settlement must create a city");
-
-    // A visible border tile can retain the hidden city's ownership ID after
-    // the City Center is removed from the private planning world. This is the
-    // shape that used to make a normal settlement scan index a missing city.
-    let border = game
-        .map
-        .tiles
-        .values()
-        .find(|tile| game.sees(&visible, tile.pos) && tile.pos != home)
-        .map(|tile| tile.pos)
-        .expect("fixture needs a visible border tile");
-    game.map
-        .tiles
-        .get_mut(&border)
-        .expect("visible border tile remains on the map")
-        .owner_city = Some(hidden_city);
-
-    let private = game.fogged_clone(0, &BTreeMap::new());
-    assert!(!private.cities.contains_key(&hidden_city));
-    assert!(private.map.tiles.values().all(|tile| {
-        tile.owner_city
-            .is_none_or(|city_id| private.cities.contains_key(&city_id))
-    }));
-}
-
-#[test]
-fn fog_honest_planning_keeps_only_stale_hidden_city_combat_memory() {
-    let mut game = Game::new_full(2, 40, 20, 84_204, 200, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|uid| game.units[uid].kind == "settler")
-            .expect("each seat starts with a settler");
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .expect("fixture capitals must be founded");
-    }
-    game.current = 0;
-    let home = game.cities[&game.player_city_ids(0)[0]].pos;
-    let visible = game.player_vision_now(0);
-    let far = game
-        .map
-        .tiles
-        .values()
-        .find(|tile| {
-            game.wdist(home, tile.pos) > 12
-                && !game.sees(&visible, tile.pos)
-                && game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
-                && game.city_at(tile.pos).is_none()
-        })
-        .map(|tile| tile.pos)
-        .expect("fixture needs an unexplored settlement site");
-    let settler = game.spawn_test_unit("settler", 1, far);
-    game.current = 1;
-    game.apply(1, &Action::FoundCity { unit: settler })
-        .expect("the hidden settlement must be founded");
-    game.current = 0;
-    let enemy_city = game
-        .city_at(far)
-        .expect("the fixture settlement must create a city");
-    let visible = game.player_vision_now(0);
-    assert!(!game.sees(&visible, far));
-
-    let remembered = BTreeMap::from([(
-        enemy_city,
-        FogCityMemory {
-            owner: 1,
-            pos: far,
-            hp: 137,
-            wall_hp: 61,
-            strength: 93.0,
-        },
-    )]);
-    let private = game.fogged_clone(0, &remembered);
-    let city = private
-        .cities
-        .get(&enemy_city)
-        .expect("a remembered hidden city remains a target-shaped contact");
-    assert_eq!(city.owner, 1);
-    assert_eq!(city.pos, far);
-    assert_eq!(city.hp, 137);
-    assert_eq!(city.wall_hp, 61);
-    assert_eq!(city.pop, 1);
-    assert!(city.buildings.is_empty());
-    assert!(city.districts.is_empty());
-    assert_eq!(private.observed_city_strength.get(&enemy_city), Some(&93.0));
-}
-
-#[test]
-fn fog_honest_major_is_invariant_to_hidden_enemy_changes() {
-    let mut source = Game::new_full(2, 30, 18, 84_202, 200, 0, false);
-    for pid in 0..2 {
-        let settler = source
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|uid| source.units[uid].kind == "settler")
-            .expect("each seat starts with a settler");
-        source.current = pid;
-        source
-            .apply(pid, &Action::FoundCity { unit: settler })
-            .expect("fixture capitals must be founded");
-    }
-    source.current = 0;
-    let home = source.cities[&source.player_city_ids(0)[0]].pos;
-    let visible = source.player_vision_now(0);
-    let far = source
-        .map
-        .tiles
-        .values()
-        .find(|tile| {
-            source.wdist(home, tile.pos) > 12
-                && !source.sees(&visible, tile.pos)
-                && source.rules.is_passable(tile)
-                && !source.rules.is_water(tile)
-        })
-        .map(|tile| tile.pos)
-        .expect("fixture needs an unexplored land tile");
-    let enemy = source.spawn_test_unit("warrior", 1, far);
-    let mut changed = source.clone();
-    let other_far = changed
-        .map
-        .tiles
-        .values()
-        .find(|tile| {
-            changed.wdist(home, tile.pos) > 12
-                && !changed.sees(&visible, tile.pos)
-                && changed.rules.is_passable(tile)
-                && !changed.rules.is_water(tile)
-                && tile.pos != far
-        })
-        .map(|tile| tile.pos)
-        .expect("fixture needs a second unexplored land tile");
-    let hidden = changed
-        .units
-        .get_mut(&enemy)
-        .expect("hidden unit survives the clone");
-    hidden.pos = other_far;
-    hidden.hp = 1;
-
-    let mut first = AdvancedAi::fog_honest();
-    let mut second = AdvancedAi::fog_honest();
-    first.take_turn(&mut source, 0);
-    second.take_turn(&mut changed, 0);
-    let first_actions: Vec<_> = source
-        .log
-        .iter()
-        .filter(|(seat, _)| *seat == 0)
-        .map(|(_, action)| action)
-        .collect();
-    let second_actions: Vec<_> = changed
-        .log
-        .iter()
-        .filter(|(seat, _)| *seat == 0)
-        .map(|(_, action)| action)
-        .collect();
-    assert_eq!(
-        first_actions, second_actions,
-        "the fog-honest turn must not change when an unseen enemy moves or heals"
-    );
-}
-
-#[test]
-fn fog_honest_constructor_enables_memory_and_conservative_objectives() {
-    let ai = AdvancedAi::fog_honest();
-    assert!(ai.fog_honest);
-    assert!(ai.battlefront_observation);
-    assert!(ai.belief_pressure);
-    assert!(ai.blind_objective_strength);
-    assert!(ai.blind_objective_units);
-    assert!(!AdvancedAi::new().fog_honest);
-}
-
-#[test]
-fn two_fog_honest_majors_complete_a_short_turn_sequence() {
-    let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
-    let mut ais = vec![AdvancedAi::fog_honest(), AdvancedAi::fog_honest()];
-    run_game(&mut game, &mut ais);
-    assert!(
-        game.turn > 0,
-        "the private planning turn must replay EndTurn"
-    );
-    assert!(game
-        .log
-        .iter()
-        .any(|(_, action)| matches!(action, Action::EndTurn)));
-}
-
-#[test]
-fn the_fog_plan_census_records_what_the_board_did_with_the_plan() {
-    // The replay boundary used to discard every `apply` result, so the one
-    // number that says whether fair-play planning is executing was recorded
-    // nowhere. A stock controller's copy must stay empty; a fog-honest one
-    // must account for every action it planned.
-    let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
-    let mut ais = vec![AdvancedAi::fog_honest(), AdvancedAi::new()];
-    run_game(&mut game, &mut ais);
-    let fogged = ais[0].fog_plan_census();
-    assert!(fogged.turns > 0, "the fog-honest seat took turns");
-    let planned: u32 = fogged.planned.values().sum();
-    let applied: u32 = fogged.applied.values().sum();
-    let refused: u32 = fogged.refused.values().sum();
-    assert!(planned > 0, "the private world produced a tape");
-    assert!(applied > 0, "the authoritative board accepted part of it");
-    assert_eq!(
-        planned,
-        applied + refused + fogged.abandoned,
-        "every planned action is applied, refused, or abandoned"
-    );
-    assert_eq!(fogged.replans, 0, "version 1 never re-plans");
-    assert_eq!(
-        ais[1].fog_plan_census(),
-        crate::ai::FogPlanCensus::default(),
-        "a stock controller never crosses the replay boundary"
-    );
-}
-
-#[test]
-fn fog_honest_2_is_a_version_of_the_mode_and_ships_off() {
-    let mut ai = AdvancedAi::new();
-    assert!(!ai.fog_honest_2, "off in the deployment constructor");
-    assert!(!AdvancedAi::fog_honest().fog_honest_2, "off in version 1");
-    ai.enable_fog_honest_2();
-    assert!(ai.fog_honest_2);
-    assert!(
-        !ai.fog_honest,
-        "one version of a family plays: version 2's enable turns version 1 off"
-    );
-    assert!(ai.belief_pressure && ai.blind_objective_strength && ai.blind_objective_units);
-    let mut both = AdvancedAi::fog_honest();
-    both.enable_fog_honest_2();
-    assert!(both.fog_honest_2 && !both.fog_honest);
-    both.enable_fog_honest();
-    assert!(both.fog_honest && !both.fog_honest_2, "and back again");
-    ai.disable_fog_honest_2();
-    assert!(!ai.fog_honest_2 && !ai.fog_honest, "neither version plays");
-}
-
-#[test]
-fn fog_honest_2_re_plans_only_after_the_board_refuses_an_order() {
-    // The re-plan is a response to a refusal, not a second planning pass
-    // every turn pays for: it can never outnumber the turns that had one.
-    let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
-    let mut ai = AdvancedAi::new();
-    ai.enable_fog_honest_2();
-    let mut fleet = vec![ai, AdvancedAi::new()];
-    run_game(&mut game, &mut fleet);
-    let census = fleet[0].fog_plan_census();
-    assert!(census.turns > 0);
-    assert!(
-        census.replans <= census.refused_turns,
-        "a re-plan needs a refused turn to answer: {} re-plans on {} refused turns",
-        census.replans,
-        census.refused_turns
-    );
-    assert!(
-        census.replans <= census.turns * super::FOG_REPLAN_LIMIT,
-        "the re-plan is bounded per turn"
-    );
-}
-
-#[test]
 fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
     // The t200 shape from run civvis-20260807T224914Z: strategy=religion,
     // met two rivals, at war with both, every revealed foreign city
@@ -1530,6 +1186,262 @@ fn the_land_grab_settles_past_the_assigned_lanes_cutoff() {
     // But not once a settler cannot repay before the end.
     game.turn = game.max_turns - 2;
     assert!(!targeted.settler_expansion_window_open(&game, 0, capital));
+}
+
+/// The rapid gene is deliberately stronger than the live-only land grab at
+/// the opening: it has room for the three walkers that make three cities by
+/// t25 physically possible, then widens every two founded cities toward the
+/// twelve-to-fifteen-city midgame horizon. The safe-site and hard-target caps
+/// still bound every one of those walkers.
+#[test]
+fn rapid_city_expansion_opens_the_milestone_pipeline() {
+    let mut game = Game::new_full(2, 74, 46, 11_191, 250, 0, false);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each major starts with a settler");
+        let position = game.units[&settler].pos;
+        game.found_city_for(pid, position, None);
+        game.remove_unit(settler);
+    }
+    game.current = 0;
+
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.rapid_city_expansion);
+    assert!(!ai.base.rapid_city_expansion);
+    ai.enable_rapid_city_expansion();
+    assert!(ai.rapid_city_expansion);
+    assert!(ai.base.rapid_city_expansion);
+
+    for (turn, milestone) in [(25, 3), (50, 7), (80, 12)] {
+        game.turn = turn;
+        let target = ai.assess(&game, 0).desired_cities;
+        assert!(
+            target >= milestone,
+            "t{turn}: the rapid target {target} cannot support the {milestone}-city milestone"
+        );
+        assert!(
+            target <= RAPID_EXPANSION_CITY_CEILING,
+            "t{turn}: the gene must retain its bounded fifteen-city horizon"
+        );
+    }
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 1, 0),
+        3,
+        "the opening has room for the two cities needed by t25 plus the next wave"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 2, 0),
+        4,
+        "the t50 expansion wave starts before the third city is fully developed"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 6, 0),
+        6,
+        "the t80 expansion wave widens with the empire"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 14, 0),
+        1,
+        "the hard city target still caps the final Settler"
+    );
+}
+
+/// In the settlement phase, the rapid gene takes a reachable nearby site
+/// before a richer distant one.  That short route is what lets every new city
+/// join the next Settler wave instead of making the empire wait on walkers.
+#[test]
+fn rapid_city_expansion_fills_nearby_easy_sites_first() {
+    let (mut game, capital, home) = empire_with_a_capital(11_193);
+    let settler = game.spawn_test_unit("settler", 0, game.cities[&capital].pos);
+    let mut ai = BasicAi::new();
+    ai.enable_rapid_city_expansion();
+
+    let nearest = game
+        .wdisk(home, 6)
+        .into_iter()
+        .filter(|position| ai.valid_settle_site(&game, 0, *position))
+        .filter(|position| game.route_step(settler, *position, 0).is_some())
+        .map(|position| game.wdist(home, position))
+        .min()
+        .expect("fixture needs a reachable local settlement site");
+    let chosen = ai
+        .best_reachable_settle_site(&game, 0, settler, 6)
+        .expect("the rapid settler finds that local site")
+        .0;
+
+    assert_eq!(
+        game.wdist(home, chosen),
+        nearest,
+        "rapid expansion prioritizes the nearest reachable easy city"
+    );
+
+    // AdvancedAi owns normal Settler movement, so pin its strategic selector
+    // as well as the baseline fallback it composes over.
+    let mut strategic = AdvancedAi::new();
+    strategic.enable_rapid_city_expansion();
+    let strategic_chosen = strategic
+        .best_settler_target(&game, 0, settler, 8, None)
+        .expect("the strategic settler finds that local site")
+        .0;
+    assert_eq!(
+        game.wdist(home, strategic_chosen),
+        nearest,
+        "the advanced Settler path also keeps the rapid wave local"
+    );
+}
+
+/// The rapid wave sits after the ordinary governor so an already queued
+/// peacetime utility build cannot consume a legal open Settler seat.
+#[test]
+fn rapid_city_expansion_reclaims_a_peacetime_queue_for_its_settler_wave() {
+    let (mut game, capital, _) = empire_with_a_capital(11_194);
+    game.at_war.clear();
+    game.cities.get_mut(&capital).unwrap().pop = 2;
+    game.cities.get_mut(&capital).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("builder"),
+    }];
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: RAPID_EXPANSION_CITY_CEILING,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_rapid_city_expansion();
+    assert!(ai.base.has_practical_settle_site(&game, 0));
+
+    ai.rapid_expansion_settler_wave(&mut game, 0, &plan);
+
+    assert!(
+        matches!(
+            game.cities[&capital].queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
+        ),
+        "an open rapid-settlement pipeline owns this peaceful utility queue"
+    );
+}
+
+/// Once the practical safe-site search is exhausted, rapid expansion stops
+/// manufacturing stranded Settlers and changes the plan to take the next
+/// cities from a reachable rival. It must not trigger while a Settler is still
+/// walking or before the three-city home ring exists.
+#[test]
+fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
+    let (mut game, _capital, _) = empire_with_a_capital(11_192);
+    game.at_war.clear();
+    let rival_settler = game
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("the rival starts with a settler");
+    let rival_position = game.units[&rival_settler].pos;
+    game.found_city_for(1, rival_position, None);
+    game.remove_unit(rival_settler);
+    game.record_contact(0, 1);
+    found_test_city(&mut game, 0);
+    found_test_city(&mut game, 0);
+    let occupied: BTreeSet<Pos> = game.cities.values().map(|city| city.pos).collect();
+    for position in game.map.tiles.keys().copied() {
+        if !occupied.contains(&position) {
+            game.blocked_city_sites.insert(position);
+        }
+    }
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_rapid_city_expansion();
+    let plan = ai.assess(&game, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_player, Some(1));
+    assert!(plan.target_city.is_some());
+
+    let last_site = game.player_city_ids(0)[0];
+    let settler = game.spawn_test_unit("settler", 0, game.cities[&last_site].pos);
+    let with_walker = ai.assess(&game, 0);
+    assert_ne!(
+        with_walker.strategy,
+        GrandStrategy::Conquest,
+        "a Settler already carrying the last viable city must finish its job first"
+    );
+    game.remove_unit(settler);
+}
+
+/// End-to-end tempo regression for the rapid-city-expansion gene. Geography,
+/// rival contact, and early war legitimately vary individual seats, so this
+/// fixed four-map check asserts the requested aggregate bands: at least three
+/// cities at t25, 7--9 at t50, and 12--15 at t80.
+///
+/// Run with `cargo test --release --lib rapid_city_expansion_tempo_census -- --ignored --nocapture`.
+#[test]
+#[ignore = "whole-game tempo census; run explicitly with --nocapture"]
+fn rapid_city_expansion_tempo_census() {
+    const CHECKPOINTS: [u32; 3] = [25, 50, 80];
+    const MAPS: u64 = 4;
+    const MINIMUMS: [usize; 3] = [3, 7, 12];
+    const MAXIMUMS: [usize; 3] = [usize::MAX, 9, 15];
+    let mut totals = [0usize; CHECKPOINTS.len()];
+    let mut observed = [0usize; CHECKPOINTS.len()];
+
+    for seed in 11_300..11_300 + MAPS {
+        let mut game = Game::new_full(4, 74, 46, seed, 250, 0, false);
+        game.game_speed = crate::setup::GameSpeed::Online;
+        game.set_fog_memory(false);
+        let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+            .map(|pid| {
+                let mut ai = AdvancedAi::new();
+                if pid == 0 {
+                    ai.enable_rapid_city_expansion();
+                }
+                ai
+            })
+            .collect();
+        let mut seen = [false; CHECKPOINTS.len()];
+        while game.winner.is_none() && game.turn <= *CHECKPOINTS.last().unwrap() {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+            for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
+                if game.turn >= *checkpoint && !seen[slot] {
+                    let cities = game.player_city_ids(0).len();
+                    totals[slot] += cities;
+                    observed[slot] += 1;
+                    seen[slot] = true;
+                    println!("  seed {seed} t{checkpoint}: {cities} cities");
+                }
+            }
+        }
+    }
+
+    for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
+        assert_eq!(
+            observed[slot], MAPS as usize,
+            "every fixed map must reach the t{checkpoint} checkpoint"
+        );
+        let count = observed[slot];
+        let minimum_total = MINIMUMS[slot] * count;
+        let maximum_total = MAXIMUMS[slot].saturating_mul(count);
+        assert!(
+            totals[slot] >= minimum_total && totals[slot] <= maximum_total,
+            "t{checkpoint}: {:.2} cities over {count} maps must stay in the requested {}..={} aggregate band",
+            totals[slot] as f64 / count as f64,
+            MINIMUMS[slot],
+            MAXIMUMS[slot]
+        );
+        println!(
+            "  rapid-city-expansion t{checkpoint}: {:.2} cities over {}/{} maps",
+            totals[slot] as f64 / count as f64,
+            observed[slot],
+            MAPS
+        );
+    }
 }
 
 #[test]
@@ -15081,118 +14993,6 @@ fn religious_spending_stops_at_a_target_scaled_unit_ceiling() {
     assert_eq!(game.players[0].faith, before_faith);
 }
 
-/// ★★★★ THE FOUNDER THAT NEVER LAUNCHED ITS INQUISITION. A founder whose
-/// home city is under a rival's pressure, not in an offensive posture: the
-/// shipped caps buy Missionaries and never the Apostle that unlocks the
-/// Inquisitors. With `inquisition_on_threat` the Missionary corps still comes
-/// first; once it stands and the bank covers the Apostle, the Apostle is
-/// bought; once the Inquisition is launched the gene steps aside.
-#[test]
-fn a_founder_under_pressure_buys_the_apostle_after_its_missionaries_only_with_the_gene() {
-    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .unwrap();
-    }
-    game.current = 0;
-    let home = game.player_city_ids(0)[0];
-    install_ai_test_district(&mut game, home, "holy_site");
-    game.cities.get_mut(&home).unwrap().buildings =
-        vec![crate::name!("shrine"), crate::name!("temple")];
-    game.players[0].techs.insert(crate::name!("astrology"));
-    game.players[0].civics.insert(crate::name!("theology"));
-    game.players[0].religion = Some("Our Faith".to_string());
-    game.players[0].holy_city = Some(home);
-    game.players[1].religion = Some("Rival Faith".to_string());
-    // Our majority still holds, but the rival's pressure is past half of
-    // ours: `city_needs_religious_support` — home under pressure.
-    let pressure = &mut game.cities.get_mut(&home).unwrap().pressure;
-    pressure.insert("Our Faith".to_string(), 1_000.0);
-    pressure.insert("Rival Faith".to_string(), 700.0);
-    game.players[0].faith = game.game_speed.scale(2_000.0);
-
-    let apostles = |game: &Game| {
-        game.units
-            .values()
-            .filter(|unit| unit.owner == 0 && unit.kind == "apostle")
-            .count()
-    };
-    let missionaries = |game: &Game| {
-        game.units
-            .values()
-            .filter(|unit| unit.owner == 0 && unit.kind == "missionary")
-            .count()
-    };
-
-    // Without the gene: Missionaries up to the defensive cap, never an Apostle.
-    let mut control = game.clone();
-    let mut off = AdvancedAi::new();
-    for _ in 0..3 {
-        off.religious_spending_with_reserve(&mut control, 0, false, 80.0);
-    }
-    assert_eq!(
-        apostles(&control),
-        0,
-        "the shipped caps buy no Apostle off the offensive"
-    );
-    assert_eq!(
-        missionaries(&control),
-        2,
-        "…the defensive Missionary corps instead"
-    );
-    assert_eq!(off.census.inquisition_apostles, 0);
-
-    // With the gene: the Missionary corps first, then the Apostle, then no second.
-    let mut treated = game.clone();
-    let mut on = AdvancedAi::new();
-    on.enable_inquisition_on_threat();
-    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
-    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
-    assert_eq!(
-        missionaries(&treated),
-        2,
-        "the Missionary corps still comes first"
-    );
-    assert_eq!(apostles(&treated), 0);
-    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
-    assert_eq!(apostles(&treated), 1, "then the Apostle");
-    assert_eq!(on.census.inquisition_apostles, 1, "and it is counted");
-    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
-    assert_eq!(apostles(&treated), 1, "one is enough");
-    // A bank short of the Apostle's price buys nothing extra — no hoarding
-    // and no Missionary displaced.
-    let mut short = game.clone();
-    short.players[0].faith = 250.0;
-    let mut poor = AdvancedAi::new();
-    poor.enable_inquisition_on_threat();
-    poor.religious_spending_with_reserve(&mut short, 0, false, 80.0);
-    poor.religious_spending_with_reserve(&mut short, 0, false, 80.0);
-    assert_eq!(
-        missionaries(&short),
-        1,
-        "250 buys one Missionary and then waits"
-    );
-    assert_eq!(apostles(&short), 0);
-    // Once the Inquisition is launched the gene has nothing left to do.
-    let mut launched = game.clone();
-    launched.players[0]
-        .counters
-        .insert("inquisition".to_string(), 1);
-    let mut after = AdvancedAi::new();
-    after.enable_inquisition_on_threat();
-    for _ in 0..3 {
-        after.religious_spending_with_reserve(&mut launched, 0, false, 80.0);
-    }
-    assert_eq!(apostles(&launched), 0, "no defensive Apostle once launched");
-    assert_eq!(after.census.inquisition_apostles, 0);
-}
-
 /// `founder_temple`: a founder outside the Religion lane claims an idle Holy
 /// Site city for the Shrine, and under pressure preempts the queue.
 #[test]
@@ -15249,14 +15049,9 @@ fn a_founder_outside_the_religion_lane_gets_its_shrine_and_temple_only_with_the_
 fn the_religion_genes_are_native_opt_ins() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
-    assert!(!ai.inquisition_on_threat && !ai.holy_lane_parity);
-    assert!(!ai.founder_temple && !ai.theology_for_founders);
-    for tag in [
-        "inquisition-on-threat",
-        "founder-temple",
-        "theology-for-founders",
-        "holy-lane-parity",
-    ] {
+    assert!(!ai.holy_lane_parity);
+    assert!(!ai.founder_temple);
+    for tag in ["founder-temple", "holy-lane-parity"] {
         let enable = GENES
             .iter()
             .find(|gene| gene.tag == tag)
@@ -15265,9 +15060,7 @@ fn the_religion_genes_are_native_opt_ins() {
         let mut seat = AdvancedAi::new();
         enable(&mut seat);
         let on = match tag {
-            "inquisition-on-threat" => seat.inquisition_on_threat,
             "founder-temple" => seat.founder_temple,
-            "theology-for-founders" => seat.theology_for_founders,
             "holy-lane-parity" => seat.holy_lane_parity,
             _ => unreachable!(),
         };
@@ -15277,9 +15070,9 @@ fn the_religion_genes_are_native_opt_ins() {
     on.enable_holy_lane_parity();
     on.disable_holy_lane_parity();
     assert!(!on.holy_lane_parity);
-    on.enable_theology_for_founders();
-    on.disable_theology_for_founders();
-    assert!(!on.theology_for_founders);
+    on.enable_founder_temple();
+    on.disable_founder_temple();
+    assert!(!on.founder_temple);
 }
 
 #[test]
@@ -22066,24 +21859,6 @@ fn the_barbarian_scout_exemption_is_native() {
     assert!(live.barbarian_scouts_are_scouts);
 }
 
-/// The civilian rescue ships natively: a capturable civilian within reach
-/// is walked onto, and a settler in the barbarians' hands is never
-/// declined (run `civvis-20260818T222844Z` t27–t33 lost our own captured
-/// settler to the old duplicate-settler freeze, twice from adjacency).
-/// The frozen controllers keep their history, and the withhold arm prices
-/// the promotion.
-#[test]
-fn the_civilian_rescue_is_native() {
-    assert!(AdvancedAi::new().base.civilian_rescue);
-    assert!(!AdvancedAi::legacy().base.civilian_rescue);
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_civilian_rescue();
-    assert!(!withheld.base.civilian_rescue);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.base.civilian_rescue);
-}
-
 /// ★★★★ A camp that stands for 130 turns (civvis-20260816T200454Z): the
 /// home guard's recall budget is half the army with the garrison charged
 /// against it — a three-unit peacetime army with one unit in the capital
@@ -26996,9 +26771,7 @@ fn religion_genes_fires_check() {
         let mut ais = AdvancedAi::fleet(&game);
         for ai in ais.iter_mut() {
             ai.enable_engine_repairs();
-            ai.enable_inquisition_on_threat();
             ai.enable_founder_temple();
-            ai.enable_theology_for_founders();
         }
         crate::ai::run_game(&mut game, &mut ais);
         let mut census = StrategyCensus::default();
@@ -27018,8 +26791,8 @@ fn religion_genes_fires_check() {
             .filter(|p| p.counters.get("inquisition").copied().unwrap_or(0) > 0)
             .count();
         eprintln!(
-            "FIRES seed={seed} t{} victory={:?} founders={founders} inquisitions={inquisitions} defensive_apostles={}",
-            game.turn, game.victory_type, census.inquisition_apostles
+            "FIRES seed={seed} t{} victory={:?} founders={founders} inquisitions={inquisitions}",
+            game.turn, game.victory_type
         );
     }
 }
@@ -29071,11 +28844,6 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
             true,
         ),
         (
-            "spread_campaign_persists",
-            "spread-campaign-persists",
-            false,
-        ),
-        (
             "holy_site_where_the_threat_is",
             "holy-site-where-the-threat-is",
             false,
@@ -29111,10 +28879,6 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         "the bare controller starts it off"
     );
     assert!(
-        !ai.spread_campaign_persists,
-        "the bare controller starts it off"
-    );
-    assert!(
         !ai.holy_site_where_the_threat_is,
         "the bare controller starts it off"
     );
@@ -29125,25 +28889,21 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     ai.enable_religious_defence_scales();
     ai.enable_guru_heals_the_corps();
     ai.enable_religious_units_heal_first();
-    ai.enable_spread_campaign_persists();
     ai.enable_holy_site_where_the_threat_is();
     ai.enable_enhancer_for_the_corps();
     assert!(ai.religious_defence_scales);
     assert!(ai.guru_heals_the_corps);
     assert!(ai.religious_units_heal_first);
-    assert!(ai.spread_campaign_persists);
     assert!(ai.holy_site_where_the_threat_is);
     assert!(ai.enhancer_for_the_corps);
     ai.disable_religious_defence_scales();
     ai.disable_guru_heals_the_corps();
     ai.disable_religious_units_heal_first();
-    ai.disable_spread_campaign_persists();
     ai.disable_holy_site_where_the_threat_is();
     ai.disable_enhancer_for_the_corps();
     assert!(!ai.religious_defence_scales);
     assert!(!ai.guru_heals_the_corps);
     assert!(!ai.religious_units_heal_first);
-    assert!(!ai.spread_campaign_persists);
     assert!(!ai.holy_site_where_the_threat_is);
     assert!(!ai.enhancer_for_the_corps);
 }
@@ -29396,117 +29156,6 @@ fn a_wounded_spreader_holds_to_heal_only_with_the_gene() {
         !on.religious_unit_holds_to_heal(&stranded, 0, wounded),
         "the hold never strands a unit somewhere it would not recover"
     );
-}
-
-/// `spread_campaign_persists`: the shipped offensive test is
-/// `active_campaign || faith >= 2_000×speed`, and `active_campaign` means
-/// holding a spreader with a charge left *this instant* — while `do_spread`
-/// removes a Missionary on its last charge. So a campaign that has been
-/// converting cities drops its posture the turn a wave finishes, and the caps
-/// fall with it. The gene keeps a campaign that has already converted a
-/// foreign city on the offensive while a target remains.
-#[test]
-fn a_finished_wave_ends_the_campaign_without_the_gene() {
-    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .unwrap();
-    }
-    game.current = 0;
-    assert!(game.victory_conditions.religious);
-    game.players[0].religion = Some("Our Faith".to_string());
-    game.players[1].religion = Some("Rival Faith".to_string());
-    // The rival's second city, so one of its cities can already be ours while
-    // another is still an unconverted target.
-    let rival_home = game.cities[&game.player_city_ids(1)[0]].pos;
-    let mut sites: Vec<Pos> = game
-        .map
-        .tiles
-        .values()
-        .filter(|tile| {
-            game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
-                && game.city_at(tile.pos).is_none()
-                && game.wdist(tile.pos, rival_home) > 4
-        })
-        .map(|tile| tile.pos)
-        .collect();
-    sites.sort_by_key(|position| (game.wdist(*position, rival_home), *position));
-    game.current = 1;
-    let second = sites
-        .into_iter()
-        .find(|position| {
-            let settler = game.spawn_test_unit("settler", 1, *position);
-            let founded = game.can_found_city(settler)
-                && game.apply(1, &Action::FoundCity { unit: settler }).is_ok();
-            if !founded {
-                game.remove_unit(settler);
-            }
-            founded
-        })
-        .expect("fixture needs a second rival site");
-    game.current = 0;
-    let converted = game
-        .city_at(second)
-        .expect("the rival's second city stands");
-    game.cities
-        .get_mut(&converted)
-        .unwrap()
-        .pressure
-        .insert("Our Faith".to_string(), 1_000.0);
-    assert_eq!(
-        game.city_religion(&game.cities[&converted]),
-        Some("Our Faith"),
-        "the campaign must already have taken a foreign city"
-    );
-    // …while the rival capital is still a target, and we hold no spreader and
-    // nothing like the 2,000 bank the shipped rule waits for.
-    let rival_capital = game.city_at(rival_home).unwrap();
-    assert_ne!(
-        game.city_religion(&game.cities[&rival_capital]),
-        Some("Our Faith")
-    );
-    game.players[0].faith = 300.0;
-    assert!(!game
-        .units
-        .values()
-        .any(|unit| unit.owner == 0 && game.rules.units[unit.kind].religious_spread > 0.0));
-
-    let off = AdvancedAi::new();
-    assert!(
-        !off.religious_offensive_posture(&game, 0, GrandStrategy::Science),
-        "the shipped rule drops the campaign the turn its last charge is spent"
-    );
-    let mut on = AdvancedAi::new();
-    on.enable_spread_campaign_persists();
-    assert!(
-        on.religious_offensive_posture(&game, 0, GrandStrategy::Science),
-        "a campaign that has taken a city is not over between waves"
-    );
-
-    // Nothing converted yet: the gene has no campaign to keep alive, and both
-    // agree with the shipped rule.
-    let mut fresh = game.clone();
-    fresh.cities.get_mut(&converted).unwrap().pressure.clear();
-    assert_ne!(
-        fresh.city_religion(&fresh.cities[&converted]),
-        Some("Our Faith")
-    );
-    assert!(!off.religious_offensive_posture(&fresh, 0, GrandStrategy::Science));
-    assert!(
-        !on.religious_offensive_posture(&fresh, 0, GrandStrategy::Science),
-        "the gene opens a campaign's second wave, never its first"
-    );
-
-    // And the Religion lane is unchanged either way: it was always offensive.
-    assert!(off.religious_offensive_posture(&fresh, 0, GrandStrategy::Religion));
-    assert!(on.religious_offensive_posture(&fresh, 0, GrandStrategy::Religion));
 }
 
 /// `holy_site_where_the_threat_is`: a religious unit is purchasable only in a
@@ -31445,237 +31094,6 @@ fn one_war_sues_once_the_tide_has_run_against_us_for_long_enough() {
     assert!(front.window_net() > 0);
     assert_eq!(front.tide_against_since, None);
     assert_eq!(ai.one_war_peace(&game, 0, 1), None);
-}
-
-// ── `lane-commit`: from the midpoint, the empire plays for the victory it
-// leads the field in. See `advanced/lane_commit.rs`. ──────────────────────
-
-#[test]
-fn lane_commit_is_a_native_opt_in_off_in_both_controllers() {
-    assert!(!AdvancedAi::new().lane_commit);
-    assert!(!AdvancedAi::legacy().lane_commit);
-    let gene = GENES
-        .iter()
-        .find(|gene| gene.tag == "lane-commit")
-        .expect("the gene is published for gene_screen");
-    assert!(gene.opt_in() && gene.screenable() && !gene.live());
-    let mut ai = AdvancedAi::new();
-    (gene.enable)(&mut ai);
-    assert!(ai.lane_commit);
-    (gene.disable)(&mut ai);
-    assert!(!ai.lane_commit);
-}
-
-/// A two-player board on a 250-turn clock, at Standard speed so standard
-/// turns are turns: the midpoint is turn 125.
-fn lane_commit_board(turn: u32) -> Game {
-    let mut g = Game::new(2, 24, 16, 74, 250, 0);
-    assert_eq!(g.turn_limit(), Some(250));
-    g.turn = turn;
-    g
-}
-
-fn lane_reading(lane: VictoryTarget, progress: i32, lead: i32) -> lane_commit::LaneReading {
-    lane_commit::LaneReading {
-        lane,
-        progress,
-        lead,
-    }
-}
-
-/// The four lanes as a review reads them: science, culture, religion,
-/// diplomacy, each as (own progress, best rival's progress).
-fn lane_table(table: [(i32, i32); 4]) -> Vec<lane_commit::LaneReading> {
-    lane_commit::LANE_COMMIT_LANES
-        .iter()
-        .zip(table)
-        .map(|(lane, (own, rival))| lane_reading(*lane, own, own - rival))
-        .collect()
-}
-
-/// Nothing is committed before the midpoint; the gene off, or an operator's
-/// assignment, leaves the seat exactly as it was — `raced_target` answers
-/// the assignment alone.
-#[test]
-fn lane_commit_waits_for_the_midpoint_and_yields_to_an_assignment() {
-    let early = lane_commit_board(124);
-    let mut ai = AdvancedAi::new();
-    ai.enable_lane_commit();
-    ai.maintain_lane_commit(&early, 0);
-    assert_eq!(ai.lane_commitment(), None);
-    assert_eq!(ai.raced_target(), None);
-
-    let midpoint = lane_commit_board(125);
-    let mut off = AdvancedAi::new();
-    off.maintain_lane_commit(&midpoint, 0);
-    assert_eq!(off.lane_commitment(), None);
-
-    let mut assigned = AdvancedAi::new();
-    assigned.enable_lane_commit();
-    assigned.retarget(VictoryTarget::Culture);
-    assigned.maintain_lane_commit(&midpoint, 0);
-    assert_eq!(assigned.lane_commitment(), None);
-    assert_eq!(assigned.raced_target(), Some(VictoryTarget::Culture));
-
-    // On a real board the midpoint commits, and the commitment is one of
-    // the raced lanes.
-    let mut live = AdvancedAi::new();
-    live.enable_lane_commit();
-    live.maintain_lane_commit(&midpoint, 0);
-    let commitment = live.lane_commitment().expect("committed at the midpoint");
-    assert!(lane_commit::LANE_COMMIT_LANES.contains(&commitment.lane));
-    assert_eq!(commitment.since, 125);
-    assert_eq!(live.raced_target(), Some(commitment.lane));
-}
-
-/// The lane chosen is the one the seat leads the field in, not the one it
-/// is furthest along in: science at 45% is four points behind the tech
-/// leader, religion at 52% leads every founder by twelve — and the
-/// commitment reaches the assessment and `raced_target`.
-#[test]
-fn lane_commit_picks_the_lane_the_seat_leads() {
-    let g = lane_commit_board(125);
-    let mut ai = AdvancedAi::new();
-    ai.enable_lane_commit();
-    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
-    let commitment = ai.lane_commitment().expect("committed at the midpoint");
-    assert_eq!(commitment.lane, VictoryTarget::Religion);
-    assert_eq!(commitment.since, 125);
-    assert_eq!(commitment.progress, 52);
-    assert_eq!(commitment.lead, 12);
-    assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
-    assert!(
-        ai.plan.is_none(),
-        "a fresh commitment is assessed the same turn"
-    );
-    // Short of cities with land still open, the seat keeps settling; once
-    // the stock window shuts the plan is the committed lane; and a
-    // committed lane 65% along comes before more cities, stock's own bar.
-    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Expansion);
-    let window_shut = lane_commit_board(205);
-    assert_eq!(ai.assess(&window_shut, 0).strategy, GrandStrategy::Religion);
-    let mut far = AdvancedAi::new();
-    far.enable_lane_commit();
-    far.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (70, 40), (30, 35)]));
-    assert_eq!(far.assess(&g, 0).strategy, GrandStrategy::Religion);
-
-    // Leading two lanes, the one closer to landing wins; leading none, the
-    // one furthest along — what `victory_focus` would say — made sticky.
-    let mut two = AdvancedAi::new();
-    two.enable_lane_commit();
-    two.review_lane_commitment(&g, &lane_table([(45, 40), (10, 30), (52, 50), (30, 35)]));
-    assert_eq!(two.committed_lane(), Some(VictoryTarget::Religion));
-    let mut none = AdvancedAi::new();
-    none.enable_lane_commit();
-    none.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
-    assert_eq!(none.committed_lane(), Some(VictoryTarget::Science));
-    assert_eq!(none.lane_commitment().unwrap().lead, -4);
-    assert_eq!(
-        none.assess(&lane_commit_board(205), 0).strategy,
-        GrandStrategy::Science
-    );
-}
-
-/// A commitment holds against a challenger a few points better and yields
-/// to one well further along at the same standing, or to one that leads
-/// once the committed lane's own lead is gone; a lane taken off the board
-/// is left at once.
-#[test]
-fn lane_commit_holds_against_a_marginal_challenger() {
-    let g = lane_commit_board(125);
-    let mut ai = AdvancedAi::new();
-    ai.enable_lane_commit();
-    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
-    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Religion));
-
-    // Turn 135: diplomacy now leads too and reads 64% against religion's 58
-    // — six points, inside the twenty-point margin. Hold, and record the
-    // review.
-    let later = lane_commit_board(135);
-    ai.review_lane_commitment(
-        &later,
-        &lane_table([(47, 51), (12, 32), (58, 46), (64, 55)]),
-    );
-    let held = ai.lane_commitment().unwrap();
-    assert_eq!(held.lane, VictoryTarget::Religion);
-    assert_eq!((held.since, held.reviewed, held.progress), (125, 135, 58));
-
-    // Turn 145: diplomacy at 80% is twenty-two points further along than
-    // religion at 58 and both lead. Switch.
-    let switch = lane_commit_board(145);
-    ai.review_lane_commitment(
-        &switch,
-        &lane_table([(49, 53), (14, 34), (58, 46), (80, 60)]),
-    );
-    let commitment = ai.lane_commitment().unwrap();
-    assert_eq!(commitment.lane, VictoryTarget::Diplomacy);
-    assert_eq!(
-        (commitment.since, commitment.progress, commitment.lead),
-        (145, 80, 20)
-    );
-
-    // A committed lane whose lead is gone yields to a lane that leads, at
-    // any progress.
-    let mut overtaken = AdvancedAi::new();
-    overtaken.enable_lane_commit();
-    overtaken.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
-    overtaken.review_lane_commitment(
-        &later,
-        &lane_table([(47, 51), (12, 32), (58, 70), (40, 38)]),
-    );
-    assert_eq!(overtaken.committed_lane(), Some(VictoryTarget::Diplomacy));
-
-    // ...but not to a lane that is merely a little further along while
-    // neither leads.
-    let mut behind = AdvancedAi::new();
-    behind.enable_lane_commit();
-    behind.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
-    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
-    behind.review_lane_commitment(
-        &later,
-        &lane_table([(47, 53), (12, 32), (55, 70), (30, 35)]),
-    );
-    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
-    behind.review_lane_commitment(
-        &switch,
-        &lane_table([(47, 53), (12, 32), (67, 80), (30, 35)]),
-    );
-    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Religion));
-
-    // A lane the board no longer offers is left at the next review.
-    let mut no_religion = lane_commit_board(135);
-    no_religion.victory_conditions.religious = false;
-    let mut left = AdvancedAi::new();
-    left.enable_lane_commit();
-    left.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
-    let readings: Vec<_> = lane_table([(47, 51), (12, 32), (58, 46), (30, 35)])
-        .into_iter()
-        .filter(|reading| reading.lane != VictoryTarget::Religion)
-        .collect();
-    left.review_lane_commitment(&no_religion, &readings);
-    assert_eq!(left.committed_lane(), Some(VictoryTarget::Science));
-}
-
-/// The vetoes an assigned lane carries stay the operator's: a committed
-/// seat still votes in Congress, still buys missionaries and Great Works,
-/// still expands on the adaptive cutoff — only the objective resolutions
-/// read the commitment.
-#[test]
-fn lane_commit_reaches_the_objectives_and_not_the_vetoes() {
-    let g = lane_commit_board(125);
-    let mut ai = AdvancedAi::new();
-    ai.enable_lane_commit();
-    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
-    assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
-    assert_eq!(ai.victory_target(), None);
-    assert_eq!(ai.active_victory_target(&g), None);
-    // The rivals' readings come off the same table, so the field is read
-    // for every living major.
-    let readings = ai.lane_readings(&g, 0);
-    assert_eq!(readings.len(), 4);
-    for reading in &readings {
-        assert!((0..=100).contains(&reading.progress));
-    }
 }
 
 /// `victory_focus` is unchanged by the refactor that exposed the lane table:

@@ -272,9 +272,9 @@ mod advanced;
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
     ledger_verdict, live_tags, repair_tags, repair_tags_on, screenable_genes, AdvancedAi, Axis,
-    ExpansionCensus, FogPlanCensus, ForceDomain, ForceGroup, ForcePosture, Gene, GeneLedgerApplied,
-    GeneVerdict, GrandStrategy, Kind, Measure, StrategicPlan, StrategyCensus, Verdict,
-    VictoryTarget, GENES, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE,
+    ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, Gene, GeneLedgerApplied, GeneVerdict,
+    GrandStrategy, Kind, Measure, StrategicPlan, StrategyCensus, Verdict, VictoryTarget, GENES,
+    LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE,
     LAND_GRAB_TILES_PER_CITY, PRODUCTION_CITY_TARGET_FLOOR,
 };
 
@@ -324,6 +324,17 @@ const HOST_SETTLER_MIN_POP: f64 = 2.0;
 /// grab's `pick_item` window closes this far before the turn limit instead of
 /// at the genome's `settler_stop_turn`. See `BasicAi::land_grab`.
 const LAND_GRAB_SETTLE_HORIZON: u32 = 18;
+
+/// The rapid-expansion gene keeps this many Settlers in the shared pipeline
+/// before the empire's city count starts widening it further. Three walkers
+/// lets the first city seed the t25/t50 expansion wave without turning the
+/// target itself into an unbounded production order.
+pub(crate) const RAPID_EXPANSION_PIPELINE_BASE: usize = 3;
+
+/// Every two founded cities add one rapid-expansion pipeline seat. The
+/// ordinary land grab widens every three cities; this gene opens the next wave
+/// one city sooner so nearby safe sites are claimed before rivals take them.
+pub(crate) const RAPID_EXPANSION_PIPELINE_CITY_DIVISOR: usize = 2;
 
 /// One coordinated force as an observer sees it: what it is, where it is
 /// going, and how ready it is to fight when it gets there.
@@ -2257,19 +2268,6 @@ pub struct BasicAi {
     /// otherwise shift underneath them, and enabled explicitly by the
     /// Civilization VI bridge.
     pub(crate) come_ashore: bool,
-    /// A capturable civilian within a military unit's movement reach is taken
-    /// by walking onto it, and a settler in the barbarians' hands is never
-    /// declined — it is plunder to take back (usually our own production),
-    /// not a duplicate to refuse. Off for the frozen native controllers,
-    /// whose recorded ladders would otherwise shift underneath them, and
-    /// enabled by the production Advanced constructor. See
-    /// `capture_adjacent_civilian` and `pursue_capturable_civilian`.
-    ///
-    /// Motivated by run `civvis-20260818T222844Z`: our captured settler
-    /// walked unguarded past four of our units for seven turns (t27–t33);
-    /// the two times a unit stood adjacent, `decline_settlers` ordered it to
-    /// fortify instead, and the settler was lost to a camp.
-    pub(crate) civilian_rescue: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -2787,6 +2785,16 @@ pub struct BasicAi {
     /// constructors and the frozen anchor keep the one-at-a-time gate and the
     /// gene. See `pick_item` and `AdvancedAi::land_grab`.
     pub(crate) land_grab: bool,
+    /// The native rapid-city-expansion gene's half of the baseline governor.
+    ///
+    /// It is deliberately distinct from `land_grab`: that bridge-only policy
+    /// prices an unconstrained Firaxis board, while this screenable native gene
+    /// drives a settler-first opening, a faster shared pipeline, the legal
+    /// population floor, the founding pantheon, and the same late settlement
+    /// horizon. `AdvancedAi` owns the target and the safe-site-to-conquest
+    /// handoff; this flag keeps the governor that actually queues Settlers in
+    /// step with it.
+    pub(crate) rapid_city_expansion: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -4345,7 +4353,6 @@ impl BasicAi {
             naval_recon_2: false,
             camp_party: false,
             come_ashore: false,
-            civilian_rescue: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -4400,6 +4407,7 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
+            rapid_city_expansion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -4433,6 +4441,16 @@ impl BasicAi {
     /// `--explain-settler` probe can play the same gate.
     pub fn enable_land_grab(&mut self) {
         self.land_grab = true;
+    }
+
+    /// Enable the baseline half of the native rapid-city-expansion gene.
+    pub(crate) fn enable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion = true;
+    }
+
+    /// Disable the baseline half of the native rapid-city-expansion gene.
+    pub(crate) fn disable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion = false;
     }
 
     /// Lead the pantheon prefix with the two that found a city (see
@@ -4735,7 +4753,6 @@ impl BasicAi {
             naval_recon_2: false,
             camp_party: false,
             come_ashore: false,
-            civilian_rescue: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -4790,6 +4807,7 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
+            rapid_city_expansion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -6947,7 +6965,7 @@ impl BasicAi {
             // free Settler in the capital and Fertility Rites a free Builder,
             // and Divine Spark — the shipped first choice, taken in 40 of 40
             // recorded live runs — pays nothing until a district stands.
-            let prefix: &[&str] = if self.expansion_pantheon {
+            let prefix: &[&str] = if self.expansion_pantheon || self.rapid_city_expansion {
                 &[
                     "religious_settlements",
                     "fertility_rites",
@@ -8252,7 +8270,10 @@ impl BasicAi {
                     // fifth build. Frozen controllers retain their genes.
                     let missing_opening_recon =
                         self.book_pos == 0 && self.recon_is_the_missing_arm(g, pid);
-                    let gene = if missing_opening_recon {
+                    let rapid_opening_settler = self.rapid_city_expansion && self.book_pos == 0;
+                    let gene = if rapid_opening_settler {
+                        3.0 // OPENING_MENU[3] is Settler.
+                    } else if missing_opening_recon {
                         0.0 // OPENING_MENU[0] is Scout.
                     } else {
                         [self.w.open0, self.w.open1, self.w.open2, self.w.open3][self.book_pos]
@@ -8263,6 +8284,16 @@ impl BasicAi {
                         continue; // "pass" gene: fall back to evaluation
                     }
                     let name = OPENING_MENU[i];
+                    // The rapid gene's opening is one committed Settler, not
+                    // four book slots spent on a Warrior, Builder, and
+                    // Monument before the capital can start city two. If
+                    // population one refuses it, the pending-book path starts
+                    // it the instant the legal population floor is reached;
+                    // ending the book prevents a duplicate scripted Settler
+                    // from serialising the same opening.
+                    if rapid_opening_settler {
+                        self.book_pos = 4;
+                    }
                     if name == "settler" && !self.has_practical_settle_site(g, pid) {
                         continue;
                     }
@@ -8271,7 +8302,7 @@ impl BasicAi {
                     // the next slot plays now, and the Settler takes the queue
                     // the turn the city grows.
                     if name == "settler"
-                        && self.opening_settler_waits
+                        && (self.opening_settler_waits || self.rapid_city_expansion)
                         && (g.cities[cid].pop as f64) < HOST_SETTLER_MIN_POP
                     {
                         self.book_settler_pending = true;
@@ -10498,7 +10529,10 @@ impl BasicAi {
             // same width for the strategic governor.
             let seats_short =
                 (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
-            let pipeline = if self.land_grab && seats_short > 0 {
+            let pipeline = if self.rapid_city_expansion && seats_short > 0 {
+                (RAPID_EXPANSION_PIPELINE_BASE + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
+                    .min(seats_short)
+            } else if self.land_grab && seats_short > 0 {
                 (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
             } else if self.parallel_settlers
                 && n_cities >= 2
@@ -10513,7 +10547,7 @@ impl BasicAi {
             // Civilization VI starts a Settler at population 2, and the live
             // genome's 2.456 held a food-poor capital at one city for forty
             // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop {
+            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion {
                 self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
             } else {
                 self.w.settler_min_pop
@@ -10522,7 +10556,7 @@ impl BasicAi {
             // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
             // REPAY, not until the genome's turn. See `land_grab`.
             let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || (self.land_grab
+                || ((self.land_grab || self.rapid_city_expansion)
                     && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
@@ -11774,7 +11808,23 @@ impl BasicAi {
                 (pos, score)
             })
             .collect();
-        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        if self.rapid_city_expansion {
+            // The first phase is a land race for easy cities, not a search
+            // for the prettiest distant capital site.  A four-to-six tile
+            // seat that can be founded this wave compounds sooner than a
+            // slightly richer eight-tile seat that leaves the next city idle.
+            // Value remains the deterministic tiebreak among equally quick
+            // sites; once no nearby seat remains, the normal global fallback
+            // below still lets the empire cross the remaining frontier.
+            candidates.sort_by(|a, b| {
+                g.wdist(from, a.0)
+                    .cmp(&g.wdist(from, b.0))
+                    .then_with(|| b.1.partial_cmp(&a.1).unwrap())
+                    .then(a.0.cmp(&b.0))
+            });
+        } else {
+            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        }
         Self::first_reachable_settle_site(g, uid, &candidates)
     }
 
@@ -11829,16 +11879,19 @@ impl BasicAi {
             // itself rejects disconnected islands; tying the wider search to
             // Shipbuilding stranded settlers whose only site was farther than
             // the local radius on the same landmass.
-            let global = self.best_reachable_settle_site(
-                g,
-                pid,
-                uid,
-                g.map.width + g.map.height,
-            );
-            match (local, global) {
-                (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
-                (Some(local), _) => Some(local),
-                (None, global) => global,
+            let global = self.best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height);
+            if self.rapid_city_expansion {
+                // Settle the closest easy ring completely before spending a
+                // wave walking toward a harder site.  `global` is only a
+                // fallback when that ring is truly empty, not an override for
+                // a higher-yield distant tile.
+                local.or(global)
+            } else {
+                match (local, global) {
+                    (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
+                    (Some(local), _) => Some(local),
+                    (None, global) => global,
+                }
             }
             .map(|(target, _)| {
                 self.settler_targets.insert(uid, target);
@@ -14354,22 +14407,11 @@ impl BasicAi {
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[g.units[&uid].kind];
         let doctrine = Self::unit_doctrine(g, uid);
-        // A settler in the barbarians' hands is never declined: recapture
-        // costs one move and returns a full production payment (usually our
-        // own settler walking home to a camp), so it must neither be refused
-        // by the duplicate/unusable guard below nor trip its freeze.
-        // `barb_pid`, not `is_barbarian` — Free Cities carry the flag too.
-        let barb_rescue: Option<usize> = if self.civilian_rescue {
-            g.barb_pid
-        } else {
-            None
-        };
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
             g.units_at(position).into_iter().any(|other| {
                 g.units[&other].owner != pid
                     && g.is_at_war(pid, g.units[&other].owner)
                     && g.units[&other].kind == "settler"
-                    && barb_rescue != Some(g.units[&other].owner)
             })
         });
         let decline_settlers = adjacent_enemy_settler
@@ -14655,11 +14697,7 @@ impl BasicAi {
                         if other.owner == pid || !g.is_at_war(pid, other.owner) {
                             return None;
                         }
-                        // A barbarian-held settler outranks everything and is
-                        // never declined; see `civilian_rescue`.
-                        let barb_rescue = self.civilian_rescue && g.barb_pid == Some(other.owner);
                         match other.kind.as_str() {
-                            "settler" if barb_rescue => Some(4),
                             "settler" if !decline_settlers => Some(3),
                             "settler" => None,
                             "builder" => Some(2),
@@ -14795,9 +14833,7 @@ impl BasicAi {
         // is a barbarian that hunts what is in its own raid ring, not one that
         // chases a walker across the map.
         let barbarian_hunter = self.barb && self.barbarian_tactics;
-        if (!self.civilian_rescue && !barbarian_hunter)
-            || g.rules.units[g.units[&uid].kind].class != "military"
-        {
+        if !barbarian_hunter || g.rules.units[g.units[&uid].kind].class != "military" {
             return false;
         }
         let origin = g.units[&uid].pos;
@@ -21745,29 +21781,6 @@ mod tests {
         (game, target)
     }
 
-    /// A settler in the barbarians' hands is never declined. On run
-    /// `civvis-20260818T222844Z` our own captured settler stood beside a
-    /// unit of ours twice (t27, t33) and both times the duplicate-settler
-    /// guard ordered a fortify instead; the settler was walked to a camp.
-    #[test]
-    fn a_barbarian_held_settler_is_rescued_despite_a_duplicate() {
-        let (mut game, target) = capture_test_board(91_773);
-        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
-        let barb = game.barb_pid.unwrap();
-        let warrior = game.spawn_test_unit("warrior", 0, origin);
-        // The duplicate that made the old guard decline: our own settler,
-        // alive but far from the rescuer.
-        let far = game.cities[&game.player_city_ids(1)[0]].pos;
-        let own = game.spawn_test_unit("settler", 0, far);
-        let captured = game.spawn_test_unit("settler", barb, target);
-        let mut ai = BasicAi::new();
-        ai.civilian_rescue = true;
-
-        assert!(ai.military_step(&mut game, 0, warrior));
-        assert_eq!(game.units[&captured].owner, 0);
-        assert_eq!(game.units[&own].owner, 0);
-    }
-
     /// The frozen controllers keep their recorded behavior: with the rescue
     /// off, the duplicate-settler guard still declines a barbarian-held
     /// settler and holds the unit.
@@ -21784,61 +21797,6 @@ mod tests {
 
         ai.military_step(&mut game, 0, warrior);
         assert_eq!(game.units[&captured].owner, barb);
-    }
-
-    /// A major rival's settler is unchanged by the rescue: the
-    /// duplicate/unusable guard still declines it.
-    #[test]
-    fn a_duplicate_settler_from_a_major_is_still_declined_under_rescue() {
-        let (mut game, target) = capture_test_board(91_772);
-        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
-        game.at_war.insert((0, 1));
-        let warrior = game.spawn_test_unit("warrior", 0, origin);
-        let far = game.cities[&game.player_city_ids(1)[0]].pos;
-        game.spawn_test_unit("settler", 0, far);
-        let enemy_settler = game.spawn_test_unit("settler", 1, target);
-        let mut ai = BasicAi::new();
-        ai.civilian_rescue = true;
-
-        ai.military_step(&mut game, 0, warrior);
-        assert_eq!(game.units[&enemy_settler].owner, 1);
-    }
-
-    /// Capture reach is movement, not adjacency: a barbarian-held settler
-    /// two tiles out is walked onto within the same turn. Adjacent-only
-    /// capture is how the live pursuer parked *beside* the settler every
-    /// turn while the barbarians walked it home.
-    #[test]
-    fn a_barbarian_held_settler_two_tiles_away_is_walked_onto() {
-        let (mut game, mid) = capture_test_board(91_773);
-        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
-        let barb = game.barb_pid.unwrap();
-        let target = game
-            .nbrs(mid)
-            .into_iter()
-            .find(|position| {
-                game.wdist(origin, *position) == 2
-                    && game.city_at(*position).is_none()
-                    && game.map.get(*position).is_some_and(|tile| {
-                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                    })
-            })
-            .unwrap();
-        let warrior = game.spawn_test_unit("warrior", 0, origin);
-        let captured = game.spawn_test_unit("settler", barb, target);
-        let mut ai = BasicAi::new();
-        ai.civilian_rescue = true;
-
-        // The unit loop's shape: step until the unit declines or runs dry.
-        for _ in 0..8 {
-            if game.units[&warrior].moves_left <= 0.0 || !ai.military_step(&mut game, 0, warrior) {
-                break;
-            }
-        }
-        assert_eq!(
-            game.units[&captured].owner, 0,
-            "two tiles and two movement points are a capture, not a vigil"
-        );
     }
 
     #[test]

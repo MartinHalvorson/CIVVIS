@@ -388,7 +388,7 @@ mod tests {
         }
         assert_eq!(
             table::DEPLOYMENT_GENOME.len(),
-            73,
+            64,
             "an operator selection changed; update it deliberately"
         );
         assert!(
@@ -404,25 +404,24 @@ mod tests {
         }
     }
 
+    /// The 2026-08-24 promotions still pinned on. Five of the sixteen left
+    /// the selection on 2026-08-25 by operator directive: `civilian-rescue`
+    /// left the code, and `promote-when-wounded`, `one-launch-pad`,
+    /// `district-planning` and `science-multiplier-payoff` defaulted off.
     #[test]
-    fn the_sixteen_explicit_promotions_are_pinned_on() {
+    fn the_20260824_explicit_promotions_still_pinned_are_on() {
         for tag in [
             "unit-cost-efficiency",
             "unit-objective-memory",
             "camp-party",
             "slot-kind-tiebreak",
-            "promote-when-wounded",
             "religion-sues-peace",
             "lane-great-people",
-            "one-launch-pad",
-            "civilian-rescue",
             "missionary-evades-raiders",
-            "district-planning",
             "missionary-last-charge-explores",
             "settlement-gap-target",
             "religious-defence-scales",
             "lane-policy-deck",
-            "science-multiplier-payoff",
         ] {
             assert!(operator_default_on(tag), "{tag} was not pinned on");
         }
