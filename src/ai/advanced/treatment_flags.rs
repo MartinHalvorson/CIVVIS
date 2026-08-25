@@ -1000,6 +1000,16 @@ impl AdvancedAi {
         self.expansion_pays_back = false;
     }
 
+    /// Stop a war we choose from taking the grand strategy while our own
+    /// victory lane is live. See [`Self::elective_war_yields_to_a_lane`].
+    pub fn enable_elective_war_yields_to_a_lane(&mut self) {
+        self.elective_war_yields_to_a_lane = true;
+    }
+
+    pub fn disable_elective_war_yields_to_a_lane(&mut self) {
+        self.elective_war_yields_to_a_lane = false;
+    }
+
     /// Weigh whether a settle site can be held — barbarian exposure and
     /// distance from our own cities — not only what it yields. See
     /// [`Self::defensible_sites`].
