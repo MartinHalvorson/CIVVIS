@@ -87,7 +87,7 @@ while true; do
   # Keep diagnostic stdout separate from the activity ledger. popup_clear.py writes
   # each activity line to --log itself; combining both streams doubled every line.
   PYTHONWARNINGS='ignore::DeprecationWarning' "$PYTHON" -u "$CLEARER" \
-      --interval 2.5 --runs "$RUNS" --log "$ACTIVITY_LOG" >> "$KEEPER_LOG" 2>&1 &
+      --interval 0.25 --runs "$RUNS" --log "$ACTIVITY_LOG" >> "$KEEPER_LOG" 2>&1 &
   clearer_pid=$!
   say "started popup clearer pid $clearer_pid"
   wait "$clearer_pid"

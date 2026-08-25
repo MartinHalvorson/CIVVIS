@@ -1326,6 +1326,20 @@ pub const GENES: &[Gene] = &[
     // that has already paid for the Campus. 91% of standard Emperor games end
     // on a science victory, so this is the win condition itself.
     Gene { tag: "first-research-building-reserve", field: "first_research_building_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_research_building_reserve, disable: AdvancedAi::disable_first_research_building_reserve },
+    // A camp's Scout reports the nearest major settlement it sees and the
+    // camp raises its party against that report, so a camp nearer a rival's
+    // city than ours raids the rival -- and five deliberate clears (the
+    // adjacent clear, the camp errand, the home-defence threat list, the
+    // near-home chase, the presence alarm) took it down anyway, each
+    // measuring distance from OUR cities only. The envoy scorer and the
+    // alliance partner score likewise read a city-state's or a major's place
+    // against our own cities, so the one ACROSS a rival -- the front that
+    // rival cannot cover while facing us -- scored nothing for being there.
+    // The gene leaves the neighbours' camps standing, pays envoys and
+    // alliance partners on the far side of every rival, and refuses a
+    // rival's joint war against the major on its far side. Operator
+    // request, 2026-08-25.
+    Gene { tag: "enemy-of-my-enemy", field: "enemy_of_my_enemy", kind: Kind::OptIn, enable: AdvancedAi::enable_enemy_of_my_enemy, disable: AdvancedAi::disable_enemy_of_my_enemy },
     // ⭐ RAPID CITY EXPANSION (recovered 2026-08-25 from the branch stranded by
     // #2306; the implementation landed 21 minutes after that PR was closed as
     // "empty" and was never reviewed). Settler-first at the legal population
