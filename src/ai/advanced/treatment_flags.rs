@@ -2372,6 +2372,51 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
+    /// A boost already in hand is credited the turns of research it saves —
+    /// `frac * cost` over the empire's own science or culture per turn —
+    /// instead of the flat 28 that could not tell the boost saving eight turns
+    /// from the one saving two. Never pays less than that 28. See
+    /// [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// `boost-first-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_first_research(&mut self) {
+        self.boost_first_research = true;
+    }
+
+    /// The twin of `enable_boost_first_research`.
+    pub fn disable_boost_first_research(&mut self) {
+        self.boost_first_research = false;
+    }
+
+    /// A node the empire would finish inside a few turns, whose boost is still
+    /// earnable, is taken after the eureka rather than before it: the engine
+    /// credits a boost mid-research but never onto a node already finished.
+    /// See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// `boost-wait-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_wait_research(&mut self) {
+        self.boost_wait_research = true;
+    }
+
+    /// The twin of `enable_boost_wait_research`.
+    pub fn disable_boost_wait_research(&mut self) {
+        self.boost_wait_research = false;
+    }
+
+    /// A node is credited the boosts it makes chaseable at all: the quarry
+    /// Masonry's eureka wants needs Mining, Machinery's three Archers need
+    /// Archery. See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// `boost-unlock-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_unlock_research(&mut self) {
+        self.boost_unlock_research = true;
+    }
+
+    /// The twin of `enable_boost_unlock_research`.
+    pub fn disable_boost_unlock_research(&mut self) {
+        self.boost_unlock_research = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are

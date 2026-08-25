@@ -4575,6 +4575,18 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// A boost already in hand is worth the turns of research it saves, not a
+    /// flat credit. Opt-in gene `boost-first-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_first_research: bool,
+    /// A node the empire would finish before the eureka it is still owed can
+    /// land waits its turn. Opt-in gene `boost-wait-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_wait_research: bool,
+    /// A node is worth the boosts it makes chaseable: the quarry Masonry wants
+    /// needs Mining first. Opt-in gene `boost-unlock-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_unlock_research: bool,
 
     // ---- append: c-d ------------------------------------------------
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
@@ -4970,6 +4982,11 @@ mod civilian_safety;
 /// with the production queue. Three opt-in genes; see
 /// `advanced/deity_habits.rs`.
 mod deity_habits;
+
+/// Boost-aware research: research what is already boosted, wait out an
+/// eureka a short node would outrun, and buy the permission the other
+/// triggers need. Three opt-in genes; see `advanced/boost_research.rs`.
+mod boost_research;
 
 mod site_lookahead;
 
@@ -5709,6 +5726,9 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            boost_first_research: false,
+            boost_wait_research: false,
+            boost_unlock_research: false,
 
             // ---- append: c-d ----------------------------------------
             chop_into_the_queue: false,
@@ -12239,11 +12259,12 @@ impl AdvancedAi {
 
     fn tech_value(&self, g: &Game, pid: usize, tech: &str, strategy: GrandStrategy) -> f64 {
         let spec = &g.rules.techs[tech];
-        let mut value = if g.players[pid].boosted_techs.contains(&Name::new(tech)) {
-            28.0
-        } else {
-            0.0
-        };
+        // The whole opinion about boosts: the credit for one in hand, the wait
+        // for one nearly earned, and the credit for the boosts this node makes
+        // chaseable. With the three boost genes off this is the flat 28 for a
+        // boost in hand and nothing otherwise, exactly as before. See
+        // `advanced/boost_research.rs`.
+        let mut value = self.boost_research_value(g, pid, tech, true);
         for (name, unit) in &g.rules.units {
             if unit.tech.as_deref() == Some(tech)
                 && unit
@@ -12463,11 +12484,8 @@ impl AdvancedAi {
 
     fn civic_value(&self, g: &Game, pid: usize, civic: &str, strategy: GrandStrategy) -> f64 {
         let spec = &g.rules.civics[civic];
-        let mut value = if g.players[pid].boosted_civics.contains(&Name::new(civic)) {
-            28.0
-        } else {
-            0.0
-        };
+        // The civic half of the same term; see `advanced/boost_research.rs`.
+        let mut value = self.boost_research_value(g, pid, civic, false);
         for building in g
             .rules
             .buildings
