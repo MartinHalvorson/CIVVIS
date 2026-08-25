@@ -75,21 +75,6 @@ impl AdvancedAi {
         self.religious_units_heal_first = false;
     }
 
-    /// Keep a spread campaign on the offensive between waves once it has
-    /// converted a foreign city. Keep a spread campaign that has already
-    /// converted a foreign city on the offensive between waves, instead of
-    /// dropping the posture the turn its last charge is spent. Off in
-    /// production; opted into by name. See
-    /// [`AdvancedAi::spread_campaign_persists`].
-    pub fn enable_spread_campaign_persists(&mut self) {
-        self.spread_campaign_persists = true;
-    }
-
-    /// The twin of `enable_spread_campaign_persists`.
-    pub fn disable_spread_campaign_persists(&mut self) {
-        self.spread_campaign_persists = false;
-    }
-
     /// Build a Holy Site in the city losing its religious majority so defenders
     /// can be bought there directly. Put a Holy Site in the city that is
     /// actually losing its majority, so its defender can be bought there
@@ -142,19 +127,6 @@ impl AdvancedAi {
     pub fn disable_live_trader_route_adapter(&mut self) {
         self.live_trader_route_adapter = false;
     }
-    /// Let a founder under conversion pressure buy one Apostle to launch the
-    /// Inquisition after its Missionaries. See
-    /// [`AdvancedAi::inquisition_on_threat`]. Off everywhere by default; opted
-    /// into by name (`gene_screen`, `victory_eval --with
-    /// inquisition-on-threat`) and listed in `PRODUCTION_OPT_INS`.
-    pub fn enable_inquisition_on_threat(&mut self) {
-        self.inquisition_on_threat = true;
-    }
-
-    /// The twin of `enable_inquisition_on_threat`.
-    pub fn disable_inquisition_on_threat(&mut self) {
-        self.inquisition_on_threat = false;
-    }
 
     /// Have a founder outside the Religion lane still build the Shrine and
     /// Temple an Apostle needs. See [`AdvancedAi::founder_temple`]. Opt-in
@@ -166,18 +138,6 @@ impl AdvancedAi {
     /// The twin of `enable_founder_temple`.
     pub fn disable_founder_temple(&mut self) {
         self.founder_temple = false;
-    }
-
-    /// Have a founder research Theology next, after its first government, so it
-    /// can build a Temple. See [`AdvancedAi::theology_for_founders`]. Opt-in
-    /// gene.
-    pub fn enable_theology_for_founders(&mut self) {
-        self.theology_for_founders = true;
-    }
-
-    /// The twin of `enable_theology_for_founders`.
-    pub fn disable_theology_for_founders(&mut self) {
-        self.theology_for_founders = false;
     }
 
     /// Credit a Campus building the science its city's multipliers will
@@ -1376,48 +1336,6 @@ impl AdvancedAi {
         self.battlefront_observation = false;
     }
 
-    /// Plan the whole turn against a fog-redacted world and replay only the
-    /// resulting orders on the real game. Belief pressure and conservative
-    /// objective floors are enabled together so a hidden contact is represented
-    /// as stale uncertainty rather than as an empty tile or a live omniscient
-    /// unit.
-    pub fn enable_fog_honest(&mut self) {
-        self.fog_honest = true;
-        self.fog_honest_2 = false;
-        self.enable_fog_honest_belief();
-    }
-
-    /// The information contract both versions of the fog-honest major share.
-    fn enable_fog_honest_belief(&mut self) {
-        self.battlefront_observation = true;
-        self.belief_pressure = true;
-        self.blind_objective_strength = true;
-        self.blind_objective_units = true;
-    }
-
-    pub fn disable_fog_honest(&mut self) {
-        self.fog_honest = false;
-    }
-
-    /// Version 2 of fog-honest: the same redacted planning plus one re-plan
-    /// from the real board when an order is refused. One version of a family
-    /// plays, so this turns version 1 off (`docs/GENE_SCREEN.md`, *Versioning a
-    /// gene*: "write it so the newer version's enable turns the older one
-    /// off"); the turn entry in `AdvancedAi::take_turn` admits either flag.
-    /// Opt-in gene `fog-honest-2`. See [`AdvancedAi::fog_honest_2`].
-    pub fn enable_fog_honest_2(&mut self) {
-        self.fog_honest = false;
-        self.fog_honest_2 = true;
-        self.enable_fog_honest_belief();
-    }
-
-    /// The twin of `enable_fog_honest_2`. It leaves version 1's mode where it
-    /// found it, exactly as `disable_fog_honest` leaves the four flags
-    /// `enable_fog_honest` sets.
-    pub fn disable_fog_honest_2(&mut self) {
-        self.fog_honest_2 = false;
-    }
-
     /// Rank each district family by how much of the empire still lacks it, so
     /// Theater Squares get built.
     ///
@@ -1720,16 +1638,6 @@ impl AdvancedAi {
 
     pub fn disable_buildings_before_projects(&mut self) {
         self.buildings_before_projects = false;
-    }
-
-    /// Walk onto any capturable civilian within reach, and always take back a
-    /// Settler the barbarians hold. See `BasicAi::civilian_rescue`.
-    pub fn enable_civilian_rescue(&mut self) {
-        self.base.civilian_rescue = true;
-    }
-
-    pub fn disable_civilian_rescue(&mut self) {
-        self.base.civilian_rescue = false;
     }
 
     /// Withdraw a unit that one enemy blow could kill to safe healing ground,
@@ -2116,54 +2024,6 @@ impl AdvancedAi {
         self.flip_nearby_city_states = false;
     }
 
-    /// Let a unit at or below 65 health pillage a healing improvement on or
-    /// beside its tile before retreating. A unit at or below 65 health pillages
-    /// a heal-type improvement it stands on, or steps one tile onto one and
-    /// pillages it, before the recovery path walks it home.
-    /// [`AdvancedAi::pillage_to_heal`]. Opt-in gene `pillage-to-heal`; see
-    /// `advanced/field_craft.rs`.
-    pub fn enable_pillage_to_heal(&mut self) {
-        self.pillage_to_heal = true;
-    }
-
-    /// The twin of `enable_pillage_to_heal`.
-    pub fn disable_pillage_to_heal(&mut self) {
-        self.pillage_to_heal = false;
-    }
-
-    /// Let a ranged unit inside melee reach step to a safer firing tile and
-    /// shoot the threatening body. A ranged unit inside a hostile melee body's
-    /// reach steps to a firing tile inside strictly fewer hostile envelopes and
-    /// fires at that body, in war and against barbarians. Shooters exert no
-    /// zone of control, so the step fires behind a melee friend's zone, across
-    /// a river or onto ground the body cannot enter and swing from — never in
-    /// the open. [`AdvancedAi::shoot_and_scoot`]. Opt-in gene
-    /// `shoot-and-scoot`; see `advanced/field_craft.rs`.
-    pub fn enable_shoot_and_scoot(&mut self) {
-        self.shoot_and_scoot = true;
-    }
-
-    /// The twin of `enable_shoot_and_scoot`.
-    pub fn disable_shoot_and_scoot(&mut self) {
-        self.shoot_and_scoot = false;
-    }
-
-    /// Stand an idle melee unit where its zone of control shields our shooters
-    /// and wounded from the most enemy reaches. A melee unit the attack scan
-    /// found nothing for stands where its zone of control takes the most enemy
-    /// reaches off our shooters and wounded, read exactly off `attack_reach`,
-    /// and holds only while the stand is load-bearing.
-    /// [`AdvancedAi::zoc_screen`]. Opt-in gene `zoc-screen`; see
-    /// `advanced/field_craft.rs`.
-    pub fn enable_zoc_screen(&mut self) {
-        self.zoc_screen = true;
-    }
-
-    /// The twin of `enable_zoc_screen`.
-    pub fn disable_zoc_screen(&mut self) {
-        self.zoc_screen = false;
-    }
-
     /// Appraise weaker neighbours, plan to take one to three holdable cities
     /// the army can afford, and launch when staged. Appraise the neighbours on
     /// public military power and tech count, plan the holdable city — or two,
@@ -2196,22 +2056,6 @@ impl AdvancedAi {
     /// The twin of `enable_campaign_pillage`.
     pub fn disable_campaign_pillage(&mut self) {
         self.campaign_pillage = false;
-    }
-
-    /// From mid-game commit an adaptive seat to the victory lane it leads the
-    /// field in, instead of re-picking each turn. From the midpoint of the game
-    /// an adaptive seat commits to the victory lane it leads the field in and
-    /// holds that plan, in place of the per-turn best-progress pick. See
-    /// [`AdvancedAi::maintain_lane_commit`]. Opt-in gene `lane-commit`. (Filed
-    /// here rather than under a marker: the append-point check reads a line's
-    /// first identifier.)
-    pub fn enable_lane_commit(&mut self) {
-        self.lane_commit = true;
-    }
-
-    /// The twin of `enable_lane_commit`.
-    pub fn disable_lane_commit(&mut self) {
-        self.lane_commit = false;
     }
 
     /// Reserve the first empty trade route slot ahead of ordinary production in

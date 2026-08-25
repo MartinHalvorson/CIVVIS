@@ -47,28 +47,31 @@ PLAYERS = gene_ledger.SCREEN["players"]
 #: `home-defense` — six of them never screened, four of the ten that were
 #: reading a negative pooled *Diff*. Screen results remain evidence; they
 #: cannot move this tuple automatically.
+#: Then the 2026-08-25 cull-and-demotion directive: ten genes left the code
+#: (three of them pinned on) and six more defaulted off, 73 -> 64; see
+#: `OPERATOR_DEMOTIONS_20260825`.
 #: Changing it requires an intentional edit and PR note.
 DEPLOYED_GENOME_20260825 = (
     "air-surge", "amenity-district-path", "amenity-project-preemption",
-    "apostle-promotion-by-role", "army-target-weighs-enemy", "barbarian-bargain",
+    "army-target-weighs-enemy", "barbarian-bargain",
     "barbarian-ranged-answer", "barbarian-scouts-are-scouts", "bounded-recovery",
-    "buildings-before-projects", "camp-party", "civilian-rescue", "competition-victory-points",
+    "buildings-before-projects", "camp-party", "competition-victory-points",
     "culture-building-debt", "deals-for-our-gain", "diplomatic-lane-forecast",
-    "district-planning", "early-contact-window", "engine-faith-price", "enhancer-for-the-corps",
+    "early-contact-window", "engine-faith-price", "enhancer-for-the-corps",
     "escort-unstick", "flip-nearby-city-states", "founder-temple", "great-person-housing",
     "guru-heals-the-corps", "holy-lane-parity", "home-defense", "idle-faith-patronage",
-    "inquisition-on-threat", "lane-culture-spending", "lane-great-people", "lane-policy-deck",
+    "lane-culture-spending", "lane-great-people", "lane-policy-deck",
     "lane-space-race", "loyalty-rate-alarm", "maintenance-aware-deck",
     "missionary-evades-raiders", "missionary-last-charge-explores", "naval-recon",
-    "naval-threat-triage", "no-free-passage", "one-launch-pad", "one-war-at-a-time",
-    "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty", "promote-when-wounded",
+    "naval-threat-triage", "no-free-passage", "one-war-at-a-time",
+    "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
     "raid-pillage-prizes", "recon-replacement", "recorded-tactical-step",
-    "relief-targets-the-siege", "religion-sues-peace", "religious-defence-scales",
+    "religion-sues-peace", "religious-defence-scales",
     "religious-units-heal-first", "religious-veto-defence", "research-tier-premium",
-    "science-multiplier-payoff", "science-victory-drive", "score-horizon", "settle-sooner",
+    "science-victory-drive", "score-horizon", "settle-sooner",
     "settlement-gap-target", "settler-factory-coordination", "settler-screen",
     "settler-target-hysteresis", "settler-threat-detour", "slot-kind-tiebreak",
-    "solvency-first-trade-slot", "strike-opening", "theology-for-founders",
+    "solvency-first-trade-slot", "strike-opening",
     "unit-cost-efficiency", "unit-objective-memory", "war-economy", "war-reinforcement",
     "wide-map-capacity",
 )
@@ -610,7 +613,9 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
             {g["tag"] for g in ledger["genes"] if g["default_on"]},
             selected & measured,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 73)
+        self.assertEqual(ledger["counts"]["default_on"], 64)
+        for tag in gene_ledger.OPERATOR_DEMOTIONS_20260825:
+            self.assertNotIn(tag, selected, f"{tag} was demoted on 2026-08-25")
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
                          gene_ledger.OPERATOR_PROMOTIONS_20260824
                          + gene_ledger.OPERATOR_PROMOTIONS_20260825

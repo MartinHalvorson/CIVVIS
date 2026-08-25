@@ -547,6 +547,28 @@ OPERATOR_PROMOTIONS_20260825_SECOND = (
     "home-defense",
 )
 
+#: A third 2026-08-25 operator directive, verbatim: "remove fog-honest,
+#: fog-honest-2 from code entirely. zoc-screen, shoot-and-scoot,
+#: pillage-to-heal, spread-campaign-persists, lane-commit, civilian-rescue,
+#: theology-for-founders, inquisition-on-threat from code entirely. defulat
+#: district-planning, science-multiplier-payoff, relief-targets-the-siege,
+#: promote-when-wounded, apostle-promotion-by-role, one-launch-pad to off."
+#: The ten left the registry; of them `civilian-rescue`,
+#: `theology-for-founders` and `inquisition-on-threat` had been pinned on.
+#: These nine therefore left the selection below (73 -> 64). The promotion
+#: groups above are history and keep naming them.
+OPERATOR_DEMOTIONS_20260825 = (
+    "civilian-rescue",
+    "theology-for-founders",
+    "inquisition-on-threat",
+    "district-planning",
+    "science-multiplier-payoff",
+    "relief-targets-the-siege",
+    "promote-when-wounded",
+    "apostle-promotion-by-role",
+    "one-launch-pad",
+)
+
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
 #: selection. Keep the historical promotion groups above named separately so
@@ -555,7 +577,6 @@ OPERATOR_DEFAULT_ON = (
     "air-surge",
     "amenity-district-path",
     "amenity-project-preemption",
-    "apostle-promotion-by-role",
     "army-target-weighs-enemy",
     "barbarian-bargain",
     "barbarian-ranged-answer",
@@ -563,12 +584,10 @@ OPERATOR_DEFAULT_ON = (
     "bounded-recovery",
     "buildings-before-projects",
     "camp-party",
-    "civilian-rescue",
     "competition-victory-points",
     "culture-building-debt",
     "deals-for-our-gain",
     "diplomatic-lane-forecast",
-    "district-planning",
     "early-contact-window",
     "engine-faith-price",
     "enhancer-for-the-corps",
@@ -580,7 +599,6 @@ OPERATOR_DEFAULT_ON = (
     "holy-lane-parity",
     "home-defense",
     "idle-faith-patronage",
-    "inquisition-on-threat",
     "lane-culture-spending",
     "lane-great-people",
     "lane-policy-deck",
@@ -592,22 +610,18 @@ OPERATOR_DEFAULT_ON = (
     "naval-recon",
     "naval-threat-triage",
     "no-free-passage",
-    "one-launch-pad",
     "one-war-at-a-time",
     "opportunistic-war",
     "peacetime-deterrence",
     "price-the-suzerainty",
-    "promote-when-wounded",
     "raid-pillage-prizes",
     "recon-replacement",
     "recorded-tactical-step",
-    "relief-targets-the-siege",
     "religion-sues-peace",
     "religious-defence-scales",
     "religious-units-heal-first",
     "religious-veto-defence",
     "research-tier-premium",
-    "science-multiplier-payoff",
     "science-victory-drive",
     "score-horizon",
     "settle-sooner",
@@ -619,7 +633,6 @@ OPERATOR_DEFAULT_ON = (
     "slot-kind-tiebreak",
     "solvency-first-trade-slot",
     "strike-opening",
-    "theology-for-founders",
     "unit-cost-efficiency",
     "unit-objective-memory",
     "war-economy",
