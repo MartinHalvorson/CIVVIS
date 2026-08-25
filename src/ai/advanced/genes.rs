@@ -713,6 +713,15 @@ pub const GENES: &[Gene] = &[
     // declaration's `close_enough` already asks for") and branch nine uses
     // it. See `elective_war_in_reach`.
     Gene { tag: "elective-war-in-reach", field: "elective_war_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_elective_war_in_reach, disable: AdvancedAi::disable_elective_war_in_reach },
+    // ⚠ The same shape as the row above, on the branch beside it. Recovery's
+    // power gap reads `strongest_rival` -- the maximum over every MET major,
+    // at peace or not, next door or on another continent -- so an empire at
+    // war with a weak neighbour takes the defensive posture because a distant
+    // superpower exists. The file already names this ("the power-gap Recovery
+    // a strong third party would trigger") and exempts only `raid_only_war`.
+    // Recovery is 19% of the board's planner-turns under
+    // `audit --genome deployment`. See `recovery_reads_the_war`.
+    Gene { tag: "recovery-reads-the-war", field: "recovery_reads_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_reads_the_war, disable: AdvancedAi::disable_recovery_reads_the_war },
     // ⚠⚠ THE BIGGEST NUMBER IN THIS REPOSITORY SITS BEHIND A FLAG NOTHING
     // COULD SET. #554: a free settler while short of the city target more than
     // DOUBLES the win rate, 23.0% -> 52.3% at p=0.0000 over 300 games. #559:
