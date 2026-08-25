@@ -82,6 +82,18 @@
       "war-reinforcement",
       "wide-map-capacity"
     ],
+    "versions": "a pinned version pins its family; the family head - the priced version with the highest tracked wins (win_diff), ties to the higher version - is what ships and what deployment_genome records; a family holds at most 3 versions, the third-best leaves before a fourth is added",
+    "family_heads": {
+      "fog-honest": {
+        "pinned": null,
+        "head": null,
+        "ships": null,
+        "versions": {
+          "fog-honest": null,
+          "fog-honest-2": null
+        }
+      }
+    },
     "operator_promotions": [
       "unit-cost-efficiency",
       "unit-objective-memory",
