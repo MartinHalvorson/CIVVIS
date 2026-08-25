@@ -1595,7 +1595,7 @@ decisions** and `0xf412_82b3_5376_9723` across the five anchor profiles.
 ⚠ Rows before and after v19 are not comparable for the three genes keyed on
 which individual is offered — `great-person-housing` (ranked 4, on),
 `idle-faith-patronage` (10, on) and `tally-great-people`. Every column in those
-`HEURISTIC_GENE_RANKING.md` rows was measured against 65 individuals; a batch
+`GENE_HEURISTIC_RANKING.md` rows was measured against 65 individuals; a batch
 whose `batch.source_commit` predates this must not be pooled with one after it
 for them. `docs/eval/2026-08-21-great-people-never-pile-up.md` and
 `docs/eval/2026-08-21-idle-faith-buys-great-people.md` are likewise measured on
