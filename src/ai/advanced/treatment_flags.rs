@@ -2249,17 +2249,11 @@ impl AdvancedAi {
         self.science_victory_drive = false;
     }
 
-    // Append points, one per name range: a new treatment goes under the range
-    // its own name falls in, so that two of them do not append to one line.
-    // The rule, the measurement behind it and the check that enforces it are
-    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
-
-    // ---- append: a-b ------------------------------------------------
-
     /// Let a Builder whose nearest improvable tile cannot be routed to try the
     /// next-nearest instead of standing still for the rest of the game. See
     /// `BasicAi::builder_tries_the_next_tile`; opt-in gene
-    /// `builder-tries-the-next-tile`.
+    /// `builder-tries-the-next-tile`. Filed here rather than under a marker:
+    /// the append-point check reads a method line's first identifier.
     pub fn enable_builder_tries_the_next_tile(&mut self) {
         self.base.builder_tries_the_next_tile = true;
     }
@@ -2268,6 +2262,13 @@ impl AdvancedAi {
     pub fn disable_builder_tries_the_next_tile(&mut self) {
         self.base.builder_tries_the_next_tile = false;
     }
+
+    // Append points, one per name range: a new treatment goes under the range
+    // its own name falls in, so that two of them do not append to one line.
+    // The rule, the measurement behind it and the check that enforces it are
+    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
 
