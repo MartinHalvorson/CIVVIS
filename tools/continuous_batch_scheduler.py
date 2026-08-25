@@ -638,9 +638,14 @@ def merged_publication_details(worktree: Path, number: int) -> dict[str, str] | 
     makes the final transition idempotent instead of treating an already
     successful publication as an error that stalls the next batch.
     """
+    # ``civvis_collab ship`` removes a merged task worktree.  GitHub remains
+    # the durable authority for that terminal state, so fall back to this
+    # scheduler's management checkout when the retained task directory is no
+    # longer available.
+    query_cwd = worktree if worktree.is_dir() else ROOT
     result = run_checked(
         ["gh", "pr", "view", str(number), "--json", "state,mergedAt,mergeCommit"],
-        cwd=worktree,
+        cwd=query_cwd,
         description=f"read publication PR #{number} merge state",
     )
     try:
@@ -736,17 +741,18 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     worktree = Path(worktree_value)
     number = number_value
     report = report_value
-    if not worktree.is_dir():
-        raise SchedulerError(f"publication worktree is missing: {worktree}")
 
     # An operator may merge the publication while this scheduler is stopped or
-    # while it is retrying a prior stage. Check every durable post-claim stage
-    # before touching the worktree: otherwise a merged ``claimed`` PR would be
-    # regenerated and reach a needless "nothing to commit" failure instead of
-    # permitting the next batch to start.
+    # while it is retrying a prior stage. Check GitHub before requiring the
+    # task worktree: a normal successful ship deletes that temporary directory.
+    # Otherwise a merged ``claimed`` PR would be rejected as missing instead
+    # of permitting the next batch to start.
     if mark_published_if_already_merged(batch, publication, worktree=worktree, number=number):
         atomic_json(state_pathname, state)
         return
+
+    if not worktree.is_dir():
+        raise SchedulerError(f"publication worktree is missing: {worktree}")
 
     if stage == "claimed":
         target = worktree / report

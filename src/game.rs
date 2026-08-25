@@ -1350,8 +1350,15 @@ struct MoveTerms {
     /// effect that pays for it stays at the call site: it is this seven-tile
     /// occupancy scan, not the lookup, that costs anything.
     guru_adjacent: bool,
-    /// Monumentality is active and this unit is a Builder or a Settler.
-    monumentality_civilian: bool,
+    /// Monumentality is active and this unit is a Builder.
+    ///
+    /// Firaxis's `COMMEMORATION_INFRASTRUCTURE_GA_MOVEMENT` modifier is
+    /// gated by `REQUIREMENT_UNIT_IS_BUILDER`; Settlers receive the faith
+    /// purchase discount, but not the two movement points. Keeping those
+    /// effects separate matters to the live mirror: a Settler with the
+    /// fictional four-point allowance can be judged unable to cross a river
+    /// even though the host correctly lets its real two-point unit cross.
+    monumentality_builder: bool,
     /// Exodus of the Evangelists is active and this unit is religious.
     exodus_religious: bool,
     /// `adjacent_support_effect(unit, "adjacent_movement")`.
@@ -16940,8 +16947,8 @@ impl Game {
                             && self.units[other].religion == unit.religion
                     })
                 }),
-            monumentality_civilian: self.dedication_active(unit.owner, "monumentality")
-                && matches!(unit.kind.as_str(), "builder" | "settler"),
+            monumentality_builder: self.dedication_active(unit.owner, "monumentality")
+                && unit.kind == "builder",
             exodus_religious: self.dedication_active(unit.owner, "exodus_of_the_evangelists")
                 && spec.class == "religious",
             adjacent_movement: self.adjacent_support_effect(unit, "adjacent_movement"),
@@ -22303,7 +22310,7 @@ impl Game {
         {
             moves += spec.clear_terrain_start_movement;
         }
-        if terms.monumentality_civilian {
+        if terms.monumentality_builder {
             moves += 2.0;
         }
         if terms.exodus_religious {

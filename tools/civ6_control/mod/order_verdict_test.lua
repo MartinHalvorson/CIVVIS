@@ -62,13 +62,24 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	end
 	return stub()
 end })
+GameInfo.Types = {
+	UNIT_SETTLER = { Hash = 101, Kind = "KIND_UNIT" },
+	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },
+}
+CityOperationTypes = {
+	BUILD = "BUILD",
+	VALUE_REPLACE_AT = "REPLACE_AT",
+	PARAM_INSERT_MODE = "insert_mode",
+	PARAM_QUEUE_DESTINATION_LOCATION = "queue_destination",
+	PARAM_UNIT_TYPE = "unit_type",
+}
 setmetatable(_G, { __index = function(_, k)
 	if EXPORTS[k] then return rawget(_G, k) end
 	return stub()
 end })
 
 -- ---------------------------------------------------------------- fake host
-local host = { units = {}, ops = {}, refuse = {}, contacts = {} }
+local host = { units = {}, ops = {}, refuse = {}, contacts = {}, cities = {}, cityOps = {} }
 local PID = 0
 local function unitObject(u)
 	return {
@@ -82,6 +93,20 @@ local function unitObject(u)
 		GetGreatPerson = function() return nil end,
 		GetFortifyTurns = function() return 0 end,
 		GetFormationUnitCount = function() return 1 end,
+	}
+end
+local function cityObject(c)
+	return {
+		GetID = function() return c.id end,
+		GetX = function() return c.x or 0 end,
+		GetY = function() return c.y or 0 end,
+		GetBuildQueue = function()
+			return {
+				GetCurrentProductionTypeHash = function() return c.current or 0 end,
+				CanProduce = function() return true end,
+				HasBeenPlaced = function() return false end,
+			}
+		end,
 	}
 end
 UnitManager = {
@@ -107,6 +132,15 @@ UnitManager = {
 	end,
 	CanStartCommand = function() return false end,
 	RequestCommand = function() end,
+}
+CityManager = {
+	GetDistrictAt = function() return nil end,
+	RequestOperation = function(city, op, params)
+		local c = host.cities[city:GetID()]
+		host.cityOps[#host.cityOps + 1] = { city = city:GetID(), op = op,
+			item = params[CityOperationTypes.PARAM_UNIT_TYPE] }
+		if c ~= nil then c.current = params[CityOperationTypes.PARAM_UNIT_TYPE] end
+	end,
 }
 function host.arrive(id)
 	local u = host.units[id]
@@ -135,7 +169,18 @@ local player = setmetatable({
 		table.sort(objs, function(a, b) return a.GetID() < b.GetID() end)
 		return { Members = members(objs) }
 	end,
-	GetCities = function() return { Members = members({}) } end,
+	GetCities = function()
+		local cities = {}
+		for _, c in pairs(host.cities) do cities[#cities + 1] = cityObject(c) end
+		table.sort(cities, function(a, b) return a:GetID() < b:GetID() end)
+		return {
+			Members = members(cities),
+			FindID = function(_, id)
+				local c = host.cities[id]
+				return c ~= nil and cityObject(c) or nil
+			end,
+		}
+	end,
 	GetDiplomacy = function() return { IsAtWarWith = function() return false end } end,
 	GetScore = function() return 0 end,
 	GetTreasury = function() return { GetGoldBalance = function() return 0 end } end,
@@ -266,6 +311,32 @@ check("orphan tally turn", field(orphan, "turn"), 5)
 check("orphan tally verified", field(orphan, "orders_applied"), 2)
 check("orphan tally carries no mod count", orphan:find("orders_reported", 1, true), nil)
 check("t9 orders_seen with only verdicts", field(lastEvent("turn"), "orders_seen"), 0)
+
+-- 6. The first expansion Settler is not a disposable production queue. The
+-- controller can re-evaluate after it starts; a non-Settler order must not
+-- replace it while it is the only city's path to city two.
+local applyOrder = rawget(_G, "CivvisApplyOrder")
+assert(type(applyOrder) == "function", "CivvisApplyOrder is not exported")
+host.cities[42] = { id = 42, x = 4, y = 4, current = 101 }
+local cityOpsBefore = #host.cityOps
+local kept, keepWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 10)
+check("opening settler rejects a replacement", kept, false)
+check("opening settler names the refusal", keepWhy, "opening_settler_in_progress")
+check("opening settler leaves the host queue alone", #host.cityOps, cityOpsBefore)
+check("opening settler remains queued", host.cities[42].current, 101)
+local preserved = lastEvent("opening_settler_preserved")
+check("opening settler preservation names the city", field(preserved, "city"), 42)
+check("opening settler preservation names the requested item", field(preserved, "requested"), "UNIT_SCOUT")
+
+-- The same request is not a permanent production lock: after city two exists,
+-- CIVVIS can deliberately replace a later Settler as before.
+host.cities[43] = { id = 43, x = 8, y = 8, current = 0 }
+local replaced, replaceWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 11)
+check("later settler can be replaced", replaced, true)
+check("later replacement reaches the host", replaceWhy, "UNIT_SCOUT")
+check("later replacement changes the queue", host.cities[42].current, 102)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))

@@ -3107,9 +3107,15 @@ fn dark_to_golden_threshold_creates_a_three_dedication_heroic_age() {
 
     let position = game.units.values().next().unwrap().pos;
     let builder = game.spawn_unit("builder", 0, position);
+    let settler = game.spawn_unit("settler", 0, position);
     assert_eq!(
         game.unit_base_max_moves(builder),
         game.rules.units["builder"].moves + 2.0
+    );
+    assert_eq!(
+        game.unit_base_max_moves(settler),
+        game.rules.units["settler"].moves,
+        "Monumentality's movement modifier is gated to UNIT_BUILDER; Settlers only receive its purchase discount"
     );
 }
 

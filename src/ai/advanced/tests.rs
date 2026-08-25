@@ -2901,8 +2901,8 @@ fn production_advanced_omits_measured_null_arms() {
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        live_bridge.bounded_recovery,
-        "the live bridge must keep its explicit repair capability"
+        !live_bridge.bounded_recovery,
+        "the live bridge applies the ledger, which demoted the gene on 2026-08-25"
     );
 }
 
@@ -8277,10 +8277,10 @@ fn settler_factory_coordination_keeps_the_fast_pair_and_gives_them_distinct_site
 
     assert!(!AdvancedAi::new().settler_factory_coordination);
     assert!(!AdvancedAi::legacy().settler_factory_coordination);
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("settler-factory-coordination"),
-        Some(true),
-        "the +1.84 pp displayed-Diff promotion reaches the deployment genome"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("settler-factory-coordination")
+            .is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let gene = GENES
         .iter()
@@ -12674,6 +12674,9 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    // The loyalty forecast under test rides on `loyalty-rate-alarm`, which the
+    // batch rule holds off as of the 2026-08-25 batches; the arm turns it on.
+    live.enable_loyalty_rate_alarm();
     let why = live
         .settle_site_loyalty_verdict(&game, 0, target)
         .expect("the advanced forecast rejects a city that will flip before it grows");
@@ -16595,10 +16598,9 @@ fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
 
     assert!(!AdvancedAi::new().base.solvency_first_trade_slot);
     assert!(!AdvancedAi::legacy().base.solvency_first_trade_slot);
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("solvency-first-trade-slot"),
-        Some(true),
-        "the +8.07 pp displayed-Diff promotion reaches the deployment genome"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("solvency-first-trade-slot").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let gene = crate::ai::gene("solvency-first-trade-slot").expect("registered gene");
     assert!(gene.opt_in());
@@ -18926,8 +18928,8 @@ fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        deployed.settler_threat_detour,
-        "its sole +50 win column clears the provisional deployment bar"
+        !deployed.settler_threat_detour,
+        "demoted by the 2026-08-25 operator directive; the ledger leaves it off"
     );
     let enable = GENES
         .iter()
@@ -28835,20 +28837,15 @@ fn a_second_front_closes_the_surge_window() {
 #[test]
 fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
-    for (field, tag, default_on) in [
-        ("religious_defence_scales", "religious-defence-scales", true),
-        ("guru_heals_the_corps", "guru-heals-the-corps", true),
-        (
-            "religious_units_heal_first",
-            "religious-units-heal-first",
-            true,
-        ),
+    for (field, tag) in [
+        ("religious_defence_scales", "religious-defence-scales"),
+        ("guru_heals_the_corps", "guru-heals-the-corps"),
+        ("religious_units_heal_first", "religious-units-heal-first"),
         (
             "holy_site_where_the_threat_is",
             "holy-site-where-the-threat-is",
-            false,
         ),
-        ("enhancer_for_the_corps", "enhancer-for-the-corps", true),
+        ("enhancer_for_the_corps", "enhancer-for-the-corps"),
     ] {
         assert!(
             GENES
@@ -28860,10 +28857,9 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
             crate::ai::advanced::gene_ledger::screenable(tag),
             "{tag} must be screenable, so the ledger can price it"
         );
-        assert_eq!(
-            crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-            Some(default_on),
-            "{tag} must match the current deployment genome"
+        assert!(
+            crate::ai::advanced::gene_ledger::ledger_default_on(tag).is_some(),
+            "{tag}: the batch rule decides its default from its batch columns"
         );
     }
     assert!(
@@ -29940,17 +29936,12 @@ fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
 
 #[test]
 fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
-    for (field, tag, default_on) in [
+    for (field, tag) in [
         (
             "missionary_last_charge_explores",
             "missionary-last-charge-explores",
-            true,
         ),
-        (
-            "missionary_evades_raiders",
-            "missionary-evades-raiders",
-            true,
-        ),
+        ("missionary_evades_raiders", "missionary-evades-raiders"),
     ] {
         assert!(
             GENES
@@ -29962,10 +29953,9 @@ fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
             crate::ai::advanced::gene_ledger::screenable(tag),
             "{tag} must be screenable, so the ledger can price it"
         );
-        assert_eq!(
-            crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-            Some(default_on),
-            "{tag} must match the current deployment genome"
+        assert!(
+            crate::ai::advanced::gene_ledger::ledger_default_on(tag).is_some(),
+            "{tag}: the batch rule decides its default from its batch columns"
         );
     }
     let mut ai = AdvancedAi::new();
@@ -30525,10 +30515,10 @@ fn the_inquisitor_walks_to_the_heresy_only_with_the_gene() {
 
 #[test]
 fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
-    for (field, tag, default_on) in [
-        ("deals_for_our_gain", "deals-for-our-gain", true),
-        ("deals_at_the_ceiling", "deals-at-the-ceiling", false),
-        ("no_free_passage", "no-free-passage", true),
+    for (field, tag) in [
+        ("deals_for_our_gain", "deals-for-our-gain"),
+        ("deals_at_the_ceiling", "deals-at-the-ceiling"),
+        ("no_free_passage", "no-free-passage"),
     ] {
         assert!(
             GENES
@@ -30537,10 +30527,9 @@ fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
             "{tag} must be a registered native opt-in"
         );
         assert!(crate::ai::advanced::gene_ledger::screenable(tag));
-        assert_eq!(
-            crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-            Some(default_on),
-            "{tag} must match the current deployment genome"
+        assert!(
+            crate::ai::advanced::gene_ledger::ledger_default_on(tag).is_some(),
+            "{tag}: the batch rule decides its default from its batch columns"
         );
     }
     let mut ai = AdvancedAi::new();
@@ -30753,10 +30742,9 @@ fn one_war_at_a_time_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("one-war-at-a-time"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("one-war-at-a-time"),
-        Some(true),
-        "the +1.00 pp displayed-Diff promotion reaches the deployment genome"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("one-war-at-a-time").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.one_war_at_a_time && ai.one_war.is_none());
@@ -31178,10 +31166,9 @@ fn diplomatic_lane_forecast_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("diplomatic-lane-forecast"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("diplomatic-lane-forecast"),
-        Some(true),
-        "the operator pinned it on before any screen priced it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("diplomatic-lane-forecast").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.diplomatic_lane_forecast, "off in the stock agent");
@@ -31540,10 +31527,9 @@ fn frontier_massing_alarm_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("frontier-massing-alarm"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("frontier-massing-alarm"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("frontier-massing-alarm").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.frontier_massing_alarm, "off in the stock agent");
@@ -31655,10 +31641,9 @@ fn conversion_majority_alarm_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("conversion-majority-alarm"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("conversion-majority-alarm"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("conversion-majority-alarm").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.conversion_majority_alarm, "off in the stock agent");
@@ -31780,10 +31765,9 @@ fn culture_lane_forecast_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("culture-lane-forecast"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("culture-lane-forecast"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("culture-lane-forecast").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.culture_lane_forecast, "off in the stock agent");
@@ -31921,10 +31905,9 @@ fn science_chain_alarm_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("science-chain-alarm"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("science-chain-alarm"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("science-chain-alarm").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.science_chain_alarm, "off in the stock agent");
@@ -32030,10 +32013,9 @@ fn rival_suzerainty_alarm_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("rival-suzerainty-alarm"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("rival-suzerainty-alarm"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("rival-suzerainty-alarm").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.rival_suzerainty_alarm, "off in the stock agent");
@@ -32151,10 +32133,9 @@ fn congress_counter_leader_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("congress-counter-leader"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("congress-counter-leader"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("congress-counter-leader").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.congress_counter_leader, "off in the stock agent");
@@ -32292,10 +32273,9 @@ fn domination_city_count_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("domination-city-count"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("domination-city-count"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("domination-city-count").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.domination_city_count, "off in the stock agent");
@@ -32403,10 +32383,10 @@ fn unchosen_war_keeps_the_lane_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("unchosen-war-keeps-the-lane"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("unchosen-war-keeps-the-lane"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("unchosen-war-keeps-the-lane")
+            .is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.unchosen_war_keeps_the_lane, "off in the stock agent");
@@ -32515,10 +32495,9 @@ fn elective_war_in_reach_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("elective-war-in-reach"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("elective-war-in-reach"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("elective-war-in-reach").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.elective_war_in_reach, "off in the stock agent");
@@ -32619,10 +32598,9 @@ fn expansion_pays_back_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("expansion-pays-back"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("expansion-pays-back"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("expansion-pays-back").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.expansion_pays_back, "off in the stock agent");
@@ -32716,10 +32694,10 @@ fn elective_war_yields_to_a_lane_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("elective-war-yields-to-a-lane"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("elective-war-yields-to-a-lane"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("elective-war-yields-to-a-lane")
+            .is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.elective_war_yields_to_a_lane, "off in the stock agent");
@@ -32815,10 +32793,9 @@ fn defensible_sites_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("defensible-sites"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("defensible-sites"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("defensible-sites").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.defensible_sites, "off in the stock agent");
@@ -33088,14 +33065,18 @@ fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
     );
 }
 
-/// The gene is off everywhere it has not been switched on.
+/// The gene is off in the stock and legacy agents and reaches a seat only
+/// through the ledger: the 2026-08-25 operator directive pinned it on.
 #[test]
-fn builder_tries_the_next_tile_is_off_by_default() {
+fn builder_tries_the_next_tile_is_on_only_through_the_ledger() {
     assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
-    assert!(!deployment.base.builder_tries_the_next_tile);
+    assert!(
+        deployment.base.builder_tries_the_next_tile,
+        "pinned on by the 2026-08-25 operator directive"
+    );
 }
 
 /// The same defect one layer down, where the city-states and the basic ladder
@@ -34084,10 +34065,9 @@ fn contested_land_first_is_a_registered_reversible_opt_in() {
         crate::ai::advanced::gene_ledger::screenable("contested-land-first"),
         "the ledger must be able to price it"
     );
-    assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on("contested-land-first"),
-        Some(false),
-        "it ships off until a screen prices it"
+    assert!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("contested-land-first").is_some(),
+        "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.contested_land_first(), "off in the stock agent");
