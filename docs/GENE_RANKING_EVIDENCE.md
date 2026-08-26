@@ -194,14 +194,19 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | `buy-what-cards-cannot-boost` | off (unmeasured) | Price a Gold purchase at the build's card-boosted rate, so items a slotted card discounts lose purchase priority to items no card touches. | 1 |
 | `camp-tile-buyout` | off (unmeasured) | Buy the plot a Barbarian Outpost stands on for the city inside whose three rings it sits, when being rid of the outpost is worth more than the plot's quote. | 1 |
 | `campus-adjacency-threshold-2` | off (unmeasured) | A settle site with a plot in its first three rings that could host a Campus at raw Science adjacency 4 is worth 15% more, so the multiplier's threshold is bought where it is decided — at city siting — and not only priced at the district. | 1 |
+| `canal-city` | off (unmeasured) | Value a settle site on a one-tile land bridge by the sea detour its city center would save. | 1 |
 | `chain-payback-window` | off (unmeasured) | Price the science and culture chain debts by whether the building can still repay, not by how much of the clock is left. | — |
 | `chain-payback-window-2` | off (unmeasured) | Price the cheap rung of a district chain by payback and leave the whole district on the clock. | — |
+| `chokepoint-claim` | off (unmeasured) | Buy the plot that closes a passage a rival could walk or sail through. | 1 |
+| `chokepoint-garrison` | off (unmeasured) | Hold the gate on the approach to one of our cities with a surplus soldier or hull. | 1 |
+| `chokepoint-siting` | off (unmeasured) | Value a settle site by the passes and straits its own borders would cover. | 1 |
 | `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | 1 |
 | `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | 1 |
 | `coalition-before-war` | off (unmeasured) | Recruit the target's neighbours before an elective war: alliances, envoys to its city-states and joint-war invitations at the strike. | 1 |
 | `contested-land-first` | off (unmeasured) | Claim the ground between us and the nearest neighbours first while the army can hold it, waive the border provocation there, and wall and garrison the frontier. | 1 |
 | `district-coverage-2` | off (unmeasured) | The district coverage term falls to a quarter of the bred weight for a family every city already holds, not half, pushing the lever further in the direction that paid score share. | 1 |
 | `elective-war-yields-to-a-lane` | off (unmeasured) | Stop a war we choose from taking the grand strategy while our own victory lane is live. | 1 |
+| `encampment-seals-the-pass` | off (unmeasured) | Site the Encampment on the pass, a tile no foreign unit may ever enter. | 1 |
 | `enemy-of-my-enemy` | off (unmeasured) | Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival. | 1 |
 | `eureka-chasing-builder` | off (unmeasured) | An improvement that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
 | `eureka-chasing-production` | off (unmeasured) | A unit, building or district that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
