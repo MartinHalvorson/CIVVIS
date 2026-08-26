@@ -20,7 +20,7 @@
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
     "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one source, (win_on - 1/players) * 10000; last, prior and third are the three most recent sources that priced the gene, newest first, so a new source shifts last to prior and prior to third; they are published evidence - the default reads batch_columns, not these",
     "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its on-arm seats - the ranking's `Diff`, the whole on-off difference",
-    "default_on": "batch-rule+operator-pins: exactly the tags in deployment_genome are on, and that list is batch_rule's answer over every screenable gene plus operator_default_on, families collapsed to the version that ships; every other screenable tag is off",
+    "default_on": "operator-retained-selection: exactly the tags in deployment_genome are on; a reporting-only batch refresh retains that selected set while its batch columns remain published evidence",
     "batch_rule": "read over the reporting batches that priced the gene, newest first, at most batch_rule_window of them, each reading the ranking's wins +- per 10,000 total seats: (1) three batches all below batch_rule_remove_below -> remove the gene from the pool; (2) two or three batches negative -> off; (3) three batches all positive -> on; (4) three batches, exactly two positive, mean > batch_rule_average -> on; (5) one or two batches, exactly one positive, mean > batch_rule_average -> on; (6) two batches both positive -> on; (7) otherwise off - no batch, or a zero, is neither positive nor negative",
     "batch_rule_window": 3,
     "batch_rule_average": 7,
@@ -905,9 +905,9 @@
       "research-tier-premium",
       "settler-screen"
     ],
-    "operator_pins": "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, 2026-08-26); each is in deployment_genome whatever its batch columns read, and batch_decisions still records what the rule alone would have said. A pin moves a default only: it cannot hold a gene the rule removes from the pool, and it cannot turn a gene off",
+    "operator_pins": "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, 2026-08-26); they remain in the retained deployment_genome, while batch_decisions records what the batch rule would say as evidence",
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
-    "deployment_policy": "batch-rule+operator-pins",
+    "deployment_policy": "operator-retained-selection",
     "deployment_genome": [
       "air-surge",
       "amenity-project-preemption",
@@ -958,7 +958,7 @@
       "war-reinforcement",
       "wide-map-capacity"
     ],
-    "versions": "every version is judged by the batch rule on its own row; a family with a version on ships one version - the family head (the priced version with the highest tracked wins, win_diff, ties to the higher version) when the rule turns the head on, else the best version by tracked wins the rule turns on - and deployment_genome records that version; a family holds at most 3 versions, the third-best leaves before a fourth is added",
+    "versions": "every version's batch-rule reading remains recorded on its own row; this reporting-only rotation retains the already selected version, one per family, while a family still holds at most 3 versions and a fourth requires a cull of the third-best",
     "family_heads": {
       "amenity-project-preemption": {
         "rule_on": [
@@ -981,11 +981,9 @@
         }
       },
       "chain-payback-window": {
-        "rule_on": [
-          "chain-payback-window"
-        ],
+        "rule_on": [],
         "head": null,
-        "ships": "chain-payback-window",
+        "ships": null,
         "versions": {
           "chain-payback-window": null,
           "chain-payback-window-2": null
@@ -1039,21 +1037,20 @@
         }
       },
       "settler-guard-holds": {
-        "rule_on": [],
+        "rule_on": [
+          "settler-guard-holds"
+        ],
         "head": "settler-guard-holds",
-        "ships": null,
+        "ships": "settler-guard-holds",
         "versions": {
           "settler-guard-holds": 0.080401,
           "settler-guard-holds-2": null
         }
       },
       "settler-target-hysteresis": {
-        "rule_on": [
-          "settler-target-hysteresis",
-          "settler-target-hysteresis-2"
-        ],
+        "rule_on": [],
         "head": "settler-target-hysteresis",
-        "ships": "settler-target-hysteresis",
+        "ships": null,
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
@@ -1084,7 +1081,7 @@
       "standard",
       "legacy"
     ],
-    "deployment_policy_meaning": "the batch rule decides default_on from batch_columns for every gene operator_default_on does not name, and a named gene is on; `tools/genes.py write` re-decides every unpinned default when a reporting batch enters, and `check` fails while removals_due names a gene still in the registry"
+    "deployment_policy_meaning": "a reporting-only table refresh retains the preceding deployment_genome; the new batch columns are evidence and cannot change a default"
   },
   "sources": [
     {
@@ -1452,7 +1449,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 49
+    "default_on": 48
   },
   "genes": [
     {
@@ -1728,7 +1725,7 @@
     {
       "tag": "barbarian-ranged-answer",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -2,
       "wins_prior_10k": 17,
       "wins_third_10k": 14,
@@ -1773,7 +1770,7 @@
     {
       "tag": "barbarian-scouts-are-scouts",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 1,
       "wins_prior_10k": 12,
       "wins_third_10k": 23,
@@ -1863,7 +1860,7 @@
     {
       "tag": "blind-objective-units",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 2,
       "wins_prior_10k": 0,
       "wins_third_10k": -7,
@@ -2043,7 +2040,7 @@
     {
       "tag": "camp-party",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 28,
       "wins_prior_10k": -15,
       "wins_third_10k": 13,
@@ -2268,7 +2265,7 @@
     {
       "tag": "culture-building-debt",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 15,
       "wins_prior_10k": 24,
       "wins_third_10k": null,
@@ -2988,7 +2985,7 @@
     {
       "tag": "lane-policy-deck",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 29,
       "wins_prior_10k": 0,
       "wins_third_10k": null,
@@ -3933,7 +3930,7 @@
     {
       "tag": "science-multiplier-payoff",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": -8,
       "wins_third_10k": null,
@@ -4113,7 +4110,7 @@
     {
       "tag": "settler-guard-holds",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 25,
       "wins_prior_10k": -8,
       "wins_third_10k": -3,
@@ -4158,7 +4155,7 @@
     {
       "tag": "settler-target-hysteresis",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 17,
       "wins_prior_10k": -18,
       "wins_third_10k": 15,
@@ -4293,7 +4290,7 @@
     {
       "tag": "slot-kind-tiebreak",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 25,
       "wins_prior_10k": -1,
       "wins_third_10k": -12,
