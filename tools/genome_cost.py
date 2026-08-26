@@ -25,10 +25,19 @@ a quantity that is allowed to move, that nobody should be able to move
 measurement behind it is the thing `AGENTS.md` calls a claim rather than a
 check — and there is no measurement that says what a genome ought to cost.
 
-So `genome_cost.py check` fails on exactly one condition: the recorded file
-does not match what the ledger says today. Regenerating it is one command; the
-diff is the signal, and it lands in the pull request that moved the bill, next
-to the gene that moved it.
+So `genome_cost.py check` fails on exactly one condition: **the deployed gene
+set has changed and the bill was not re-recorded.** Regenerating it is one
+command; the diff is the signal, and it lands in the pull request that moved
+the bill, next to the gene that moved it.
+
+⚠ Deliberately NOT on the cost numbers. The reporting batches rotate several
+times a day — three landed on 2026-08-26 alone — and every rotation reprices
+every gene, so a check that compared the figures would be red almost
+continuously and would teach the fleet to ignore it. That is the credibility
+problem `rust-quality` cost this repository once already. The figures are
+recorded as evidence and refreshed whenever anyone runs `write`; the *set* is
+what is guarded, because a gene entering or leaving the genome is the event
+that moves the bill on purpose.
 
 ⚠ **The sum is not a total and this file never calls it one.** Every reading is
 a marginal cost measured with the rest of the genome enabled, so the figures do
@@ -77,74 +86,56 @@ def resolved(point: Optional[float], se: Optional[float]) -> bool:
             and math.isfinite(se) and abs(point) > se)
 
 
-def screen_files(ledger: dict) -> List[Path]:
-    """Every analysis JSON the ledger draws on, oldest first.
+def history(ledger: dict) -> Dict[str, List[dict]]:
+    """Per-gene measurement history — the ranking's own, not a second copy.
 
-    Sources and reporting batches both carry cost columns and the reporting
-    batches are the newer of the two, so they come last and win. Discovered
-    from the ledger rather than globbed: a screen the ledger does not use is
-    not evidence about the genome it describes.
+    ⚠⚠ `load_display_sources` is what `GENE_HEURISTIC_RANKING.md` builds every
+    row from: the ledger's authoritative sources PLUS the fixed display
+    batches, with a source that occupies both counted once. Walking
+    `docs/gene_screens/` directly instead was the first version of this file,
+    and it disagreed with the ranking's own Diff column by a rounding step on
+    `boost-wait-research` (0.20pp against 0.21pp) — two numbers claiming to be
+    the same one, which is the defect this file exists to avoid, committed by
+    the file itself.
+
+    ⚠ It matters that this is not `load_sources`, which is the *authoritative*
+    history: that covers 44 of the 76 deployed genes. The other 32 — including
+    `naval-threat-triage`, the dearest gene in the genome — are priced only by
+    the display batches.
     """
-    paths = [ROOT / source["path"] for source in ledger.get("sources", [])]
-    for batch in ledger.get("reporting_batches", []):
-        path = batch if isinstance(batch, str) else batch.get("path")
-        if path:
-            paths.append(ROOT / path)
-    return paths
+    measured, _newest = gene_ledger_tool.load_display_sources(ledger)
+    return measured
 
 
-def costs(ledger: dict) -> Tuple[Dict[str, dict], Dict[str, List[dict]]]:
-    """The newest usable cost reading per gene, and every gene's win history.
+def newest_cost(rows: List[dict]) -> Optional[dict]:
+    """The newest reading that carries a cost, oldest-first history.
 
     "Newest usable" rather than "newest": analysis JSON written before the
-    timing estimator carries no cost at all, and a gene that has not been in a
-    recent screen should report its last real measurement rather than a hole.
-
-    ⚠ The win comes from the screens and NOT from `docs/gene_ledger.json`'s
-    `genes` array, because **32 of the 76 deployed genes have no row there** —
-    `naval-threat-triage`, the most expensive gene in the genome, among them.
-    Reading the win from the ledger reported those 32 at a win of zero, which
-    made the dearest gene in the deployment look like it bought nothing.
+    timing estimator carries no cost at all, and a gene absent from the latest
+    batch should report its last real measurement rather than a hole. Same rule
+    as `genes.cost_cell`, which renders the ranking's column.
     """
-    found: Dict[str, dict] = {}
-    history: Dict[str, List[dict]] = {}
-    for path in screen_files(ledger):
-        if not path.exists():
+    for row in reversed(rows):
+        point, se = row.get(COST), row.get(COST_SE)
+        if point is None or se is None:
             continue
-        data = json.loads(path.read_text())
-        # `shape` is a label ("standard"), not a dict; seats live at the top.
-        seats = data.get("seats")
-        for gene in data.get("genes", []):
-            if not isinstance(gene, dict):
-                continue
-            if all(gene.get(field) is not None
-                   for field in ("win_on", "win_off", "n_on", "n_off")):
-                history.setdefault(gene["tag"], []).append({
-                    "win_on": float(gene["win_on"]),
-                    "win_off": float(gene["win_off"]),
-                    "n_on": int(gene["n_on"]),
-                    "n_off": int(gene["n_off"]),
-                })
-            point, se = gene.get(COST), gene.get(COST_SE)
-            if point is None or se is None:
-                continue
-            found[gene["tag"]] = {
-                "compute_cost_pct": float(point),
-                "compute_cost_se_pct": float(se),
-                "time_cost_pct": (None if gene.get(TIME) is None
-                                  else float(gene[TIME])),
-                "seats": gene.get("seats") or seats,
-                "source": path.name,
-            }
-    return found, history
+        if math.isfinite(float(point)) and math.isfinite(float(se)):
+            return {"compute_cost_pct": float(point),
+                    "compute_cost_se_pct": float(se),
+                    "time_cost_pct": (None if row.get(TIME) is None
+                                      else float(row[TIME])),
+                    "source": row.get("source")}
+    return None
 
 
 def bill(ledger: dict) -> dict:
     """Today's reading: the deployed set, each gene's cost, and the indicator."""
     deployed = list(ledger.get("rules", {}).get("deployment_genome", ()))
-    priced, history = costs(ledger)
+    measured = history(ledger)
+    priced = {tag: found for tag, rows in measured.items()
+              if (found := newest_cost(rows)) is not None}
     wins = {tag: gene_ledger_tool.pooled_win_diff_pp(rows)
-            for tag, rows in history.items() if rows}
+            for tag, rows in measured.items() if rows}
     rows = []
     for tag in deployed:
         entry = priced.get(tag)
@@ -153,7 +144,11 @@ def bill(ledger: dict) -> dict:
             "tag": tag,
             "compute_cost_pct": None if entry is None else round(entry["compute_cost_pct"], 3),
             "compute_cost_se_pct": None if entry is None else round(entry["compute_cost_se_pct"], 3),
-            "win_diff_pp": None if win is None else round(float(win), 3),
+            # ⚠ Six places, not three: `diff_cell` renders 0.205118 as "0.21%"
+            # and a value pre-rounded to 0.205 renders as "0.20%". Rounding
+            # before formatting is how this file first disagreed with the
+            # ranking it is supposed to agree with. `DIFF_PLACES` is 6.
+            "win_diff_pp": None if win is None else round(float(win), 6),
             "resolved": bool(entry) and resolved(entry["compute_cost_pct"],
                                                  entry["compute_cost_se_pct"]),
             "source": None if entry is None else entry["source"],
@@ -286,9 +281,11 @@ def main(argv=None) -> int:
     if args.command == "report":
         if args.all:
             deployed = set(ledger.get("rules", {}).get("deployment_genome", ()))
-            priced, history = costs(ledger)
+            measured = history(ledger)
+            priced = {tag: found for tag, rows in measured.items()
+                      if (found := newest_cost(rows)) is not None}
             wins = {tag: gene_ledger_tool.pooled_win_diff_pp(rows)
-                    for tag, rows in history.items() if rows}
+                    for tag, rows in measured.items() if rows}
             rows = []
             for tag, entry in priced.items():
                 row = dict(entry, tag=tag, win_diff_pp=wins.get(tag),
@@ -315,18 +312,22 @@ def main(argv=None) -> int:
         print("genome cost: %s is missing; run `python3 tools/genome_cost.py write`"
               % RECORD_JSON.relative_to(ROOT))
         return 1
-    if RECORD_JSON.read_text() != text:
-        recorded = json.loads(RECORD_JSON.read_text())
-        print("genome cost: the recorded bill is stale — %d deployed genes at "
-              "%+.2f%% recorded, %d at %+.2f%% today. Run `python3 "
-              "tools/genome_cost.py write` and keep the diff in this pull "
-              "request: it names which gene moved the fleet's compute bill."
-              % (recorded.get("deployed_genes", 0),
-                 recorded.get("summed_cost_pct", 0.0),
-                 reading["deployed_genes"], reading["summed_cost_pct"]))
+    recorded = json.loads(RECORD_JSON.read_text())
+    was = [row["tag"] for row in recorded.get("genes", [])]
+    now = [row["tag"] for row in reading["genes"]]
+    if set(was) != set(now):
+        joined = sorted(set(now) - set(was))
+        left = sorted(set(was) - set(now))
+        print("genome cost: the deployed genome changed and the bill was not "
+              "re-recorded.\n  joined: %s\n  left:   %s\n"
+              "  Run `python3 tools/genome_cost.py write` and keep the diff in "
+              "this pull request — it prices what just entered the genome."
+              % (", ".join(joined) or "(none)", ", ".join(left) or "(none)"))
         return 1
-    print("genome cost: recorded bill is current (%d deployed genes, %+.2f%%)"
-          % (reading["deployed_genes"], reading["summed_cost_pct"]))
+    print("genome cost: the deployed set is recorded (%d genes; the bill reads "
+          "%+.2f%% today, %+.2f%% when last written)"
+          % (reading["deployed_genes"], reading["summed_cost_pct"],
+             recorded.get("summed_cost_pct", 0.0)))
     return 0
 
 

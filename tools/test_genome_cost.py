@@ -19,18 +19,6 @@ import genome_cost
 REPO = Path(__file__).resolve().parent.parent
 
 
-def screen(tag: str, cost: float, se: float, win_on: float, win_off: float,
-           n_on: int = 10000, n_off: int = 5000) -> dict:
-    return {"tag": tag, "compute_cost_pct": cost, "compute_cost_se_pct": se,
-            "time_cost_pct": cost, "win_on": win_on, "win_off": win_off,
-            "n_on": n_on, "n_off": n_off}
-
-
-def ledger_with(genes: list, deployed: list, sources: list) -> dict:
-    return {"rules": {"deployment_genome": deployed},
-            "genes": genes, "sources": sources, "reporting_batches": []}
-
-
 class TheWinComesFromTheScreensNotTheLedger(unittest.TestCase):
     """32 of the 76 deployed genes have no row in the ledger's `genes` array."""
 
@@ -55,15 +43,38 @@ class TheWinComesFromTheScreensNotTheLedger(unittest.TestCase):
         self.assertIsNotNone(dearest["compute_cost_pct"])
 
     def test_the_pooled_diff_is_the_rankings_arithmetic_not_a_second_copy(self):
-        history = [{"win_on": 0.20, "win_off": 0.15, "n_on": 9000, "n_off": 3000},
-                   {"win_on": 0.18, "win_off": 0.16, "n_on": 6000, "n_off": 2000}]
-        expected = gene_ledger_tool.pooled_win_diff_pp(history)
-        ledger = ledger_with(
-            genes=[], deployed=["g"],
-            sources=[{"path": "a.json"}, {"path": "b.json"}])
-        found = genome_cost.bill  # arithmetic is shared by import, not copied
-        self.assertIsNotNone(found)
-        self.assertAlmostEqual(expected, gene_ledger_tool.pooled_win_diff_pp(history))
+        """Substituting the imported function changes every win this tool
+        reports, which is the only way to show it is not quietly reimplemented
+        here. `pooled_win_diff_pp`'s own docstring says the printed totals and
+        the published Diff are one arithmetic; a second copy would be a third
+        number claiming to be the same one."""
+        ledger = json.loads((REPO / "docs" / "gene_ledger.json").read_text())
+        real = genome_cost.bill(ledger)
+        original = gene_ledger_tool.pooled_win_diff_pp
+        try:
+            gene_ledger_tool.pooled_win_diff_pp = lambda history: 42.0
+            substituted = genome_cost.bill(ledger)
+        finally:
+            gene_ledger_tool.pooled_win_diff_pp = original
+        self.assertTrue(any(row["win_diff_pp"] == 42.0
+                            for row in substituted["genes"]))
+        self.assertFalse(any(row["win_diff_pp"] == 42.0 for row in real["genes"]))
+
+    def test_the_published_diff_is_what_the_ranking_prints(self):
+        """`naval-threat-triage` reads +0.68% in GENE_HEURISTIC_RANKING.md's
+        Diff column; reading its win from the ledger instead reported +0.00."""
+        ledger = json.loads((REPO / "docs" / "gene_ledger.json").read_text())
+        reading = genome_cost.bill(ledger)
+        wins = {row["tag"]: row["win_diff_pp"] for row in reading["genes"]}
+        ranking = (REPO / "GENE_HEURISTIC_RANKING.md").read_text()
+        for tag, win in wins.items():
+            row = [line for line in ranking.splitlines()
+                   if line.startswith("|") and ("`%s`" % tag) in line]
+            if not row or win is None:
+                continue
+            self.assertIn("%.2f%%" % win, row[0],
+                          "%s: this tool says %+.2fpp and the ranking's own "
+                          "Diff column says otherwise" % (tag, win))
 
 
 class OnlyAResolvedReadingCountsTowardTheIndicator(unittest.TestCase):
@@ -141,25 +152,38 @@ class TheDearAndUnderTheBarList(unittest.TestCase):
                           "the list must say a pin is a decision, not a defect")
 
 
-class TheNewestScreenWins(unittest.TestCase):
+class TheHistoryIsTheRankingsOwn(unittest.TestCase):
 
-    def test_reporting_batches_are_read_after_sources(self):
-        ledger = {"sources": [{"path": "docs/a.json"}],
-                  "reporting_batches": ["docs/b.json"]}
-        paths = [path.name for path in genome_cost.screen_files(ledger)]
-        self.assertEqual(paths, ["a.json", "b.json"])
+    def test_it_uses_the_display_history_not_the_authoritative_one(self):
+        """`load_sources` covers 44 of the 76 deployed genes; the other 32 —
+        including the dearest in the genome — are priced only by the display
+        batches, which is what `load_display_sources` adds."""
+        ledger = json.loads((REPO / "docs" / "gene_ledger.json").read_text())
+        authoritative, _ = gene_ledger_tool.load_sources(ledger)
+        display = genome_cost.history(ledger)
+        deployed = set(ledger["rules"]["deployment_genome"])
+        self.assertLess(len(deployed & set(authoritative)), len(deployed))
+        self.assertEqual(deployed - set(display), set())
 
-    def test_a_reporting_batch_may_be_a_string_or_a_mapping(self):
-        ledger = {"sources": [], "reporting_batches": ["docs/a.json",
-                                                       {"path": "docs/b.json"}]}
-        paths = [path.name for path in genome_cost.screen_files(ledger)]
-        self.assertEqual(paths, ["a.json", "b.json"])
+    def test_the_newest_reading_with_a_cost_wins(self):
+        rows = [{"compute_cost_pct": 1.0, "compute_cost_se_pct": 0.1,
+                 "time_cost_pct": 1.0, "source": "old"},
+                {"compute_cost_pct": 9.0, "compute_cost_se_pct": 0.2,
+                 "time_cost_pct": 9.0, "source": "new"}]
+        self.assertEqual(genome_cost.newest_cost(rows)["source"], "new")
 
-    def test_a_screen_the_ledger_does_not_use_is_not_evidence(self):
-        """Globbing `docs/gene_screens/` would pull in probes and pilot runs
-        the ledger deliberately excludes."""
-        ledger = {"sources": [], "reporting_batches": []}
-        self.assertEqual(genome_cost.screen_files(ledger), [])
+    def test_a_screen_that_predates_the_timing_estimator_is_skipped(self):
+        """It carries no cost at all, and a gene absent from the newest batch
+        should report its last real measurement rather than a hole."""
+        rows = [{"compute_cost_pct": 1.0, "compute_cost_se_pct": 0.1,
+                 "time_cost_pct": 1.0, "source": "priced"},
+                {"compute_cost_pct": None, "compute_cost_se_pct": None,
+                 "source": "unpriced"}]
+        self.assertEqual(genome_cost.newest_cost(rows)["source"], "priced")
+
+    def test_no_reading_at_all_returns_nothing(self):
+        self.assertIsNone(genome_cost.newest_cost([{"source": "x"}]))
+        self.assertIsNone(genome_cost.newest_cost([]))
 
 
 class TheRecordedBillIsCurrent(unittest.TestCase):
@@ -168,21 +192,47 @@ class TheRecordedBillIsCurrent(unittest.TestCase):
     def test_check_passes_on_this_repository(self):
         self.assertEqual(
             genome_cost.main(["check"]), 0,
-            "the recorded genome cost is stale. Run `python3 "
-            "tools/genome_cost.py write` and keep the diff in your pull "
-            "request — it names the gene that moved the fleet's compute bill.")
+            "the deployed genome changed and the bill was not re-recorded. Run "
+            "`python3 tools/genome_cost.py write` and keep the diff in your "
+            "pull request — it prices what just entered the genome.")
+
+    def test_the_guard_fires_when_a_gene_joins_the_genome(self):
+        """The event it exists for, exercised rather than asserted."""
+        recorded = json.loads(genome_cost.RECORD_JSON.read_text())
+        moved = dict(recorded, genes=recorded["genes"][:-1])
+        original = genome_cost.RECORD_JSON.read_text()
+        try:
+            genome_cost.RECORD_JSON.write_text(json.dumps(moved, indent=1) + "\n")
+            self.assertEqual(genome_cost.main(["check"]), 1)
+        finally:
+            genome_cost.RECORD_JSON.write_text(original)
+        self.assertEqual(genome_cost.main(["check"]), 0)
+
+    def test_the_guard_does_not_fire_when_only_the_figures_move(self):
+        """The reporting batches rotate several times a day and reprice every
+        gene. A check that compared the numbers would be red continuously and
+        would teach the fleet to ignore it."""
+        recorded = json.loads(genome_cost.RECORD_JSON.read_text())
+        repriced = dict(recorded, summed_cost_pct=recorded["summed_cost_pct"] + 4.0,
+                        genes=[dict(row, compute_cost_pct=(row["compute_cost_pct"] or 0) + 1.0)
+                               for row in recorded["genes"]])
+        original = genome_cost.RECORD_JSON.read_text()
+        try:
+            genome_cost.RECORD_JSON.write_text(json.dumps(repriced, indent=1) + "\n")
+            self.assertEqual(genome_cost.main(["check"]), 0)
+        finally:
+            genome_cost.RECORD_JSON.write_text(original)
 
     def test_the_recorded_file_says_its_sum_is_not_a_total(self):
         recorded = json.loads(genome_cost.RECORD_JSON.read_text())
         self.assertIn("do not compose", recorded["not_a_total"])
         self.assertIn("summed_cost_pct", recorded)
 
-    def test_write_and_check_agree(self):
+    def test_the_recorded_set_is_the_ledgers_deployment_genome(self):
         ledger = json.loads(genome_cost.LEDGER_JSON.read_text())
-        reading = genome_cost.bill(ledger)
         recorded = json.loads(genome_cost.RECORD_JSON.read_text())
-        self.assertEqual(recorded["deployed_genes"], reading["deployed_genes"])
-        self.assertEqual(recorded["summed_cost_pct"], reading["summed_cost_pct"])
+        self.assertEqual({row["tag"] for row in recorded["genes"]},
+                         set(ledger["rules"]["deployment_genome"]))
 
 
 if __name__ == "__main__":
