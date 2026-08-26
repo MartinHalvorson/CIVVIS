@@ -1771,7 +1771,7 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             strategy="auto", war_from_plan=False, tile_export_every=25,
             refresh_seconds=None, no_peace_deterrence=False, with_=[], without=[],
             no_counter_resolutions=False, combat_frames=0, replan_frames=2,
-            settler_escort_cap_sync=False, restart_below_leader_ratio=None,
+            settler_escort_cap_sync=True, restart_below_leader_ratio=None,
         )
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1814,17 +1814,24 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--replan-frames") + 1], "0")
         self.assertEqual(cmd[cmd.index("--combat-frames") + 1], "1")
 
-    def test_the_capped_escort_arm_reaches_play_only_when_enabled(self):
-        cmd = climb.play_command(
-            self._play_args(settler_escort_cap_sync=True), "t",
-            Path("orders.sqlite"), Path("civvis_orders"))
+    def test_the_safe_escort_setting_reaches_play_for_both_values(self):
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
         self.assertIn("--settler-escort-cap-sync", cmd)
-        self.assertNotIn(
-            "--settler-escort-cap-sync",
-            climb.play_command(self._play_args(), "t",
+        self.assertNotIn("--no-settler-escort-cap-sync", cmd)
+        self.assertIn(
+            "--no-settler-escort-cap-sync",
+            climb.play_command(self._play_args(settler_escort_cap_sync=False), "t",
                                Path("orders.sqlite"), Path("civvis_orders")),
-            "the experiment must stay off unless the batch names it",
+            "an explicit batch opt-out must reach civ6_play.py",
         )
+
+    def test_the_batch_cli_declares_the_safe_default_and_opt_out(self):
+        source = Path(climb.__file__).read_text()
+        self.assertIn('ap.add_argument("--settler-escort-cap-sync", dest="settler_escort_cap_sync",\n'
+                      '                    action="store_true", default=True,', source)
+        self.assertIn('ap.add_argument("--no-settler-escort-cap-sync", dest="settler_escort_cap_sync",\n'
+                      '                    action="store_false",', source)
 
     def test_a_withheld_deterrence_reaches_the_play_command(self):
         cmd = climb.play_command(self._play_args(no_peace_deterrence=True), "t",

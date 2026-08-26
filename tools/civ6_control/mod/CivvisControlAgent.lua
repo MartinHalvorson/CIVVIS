@@ -511,6 +511,9 @@ local function survey()
 		-- paths cancelled at turn start, so `moves` at export means movement
 		-- available this turn and the mirror may trust it. See CivvisBoard.
 		moves_at_turn_start = cfg.CapMovesToReach ~= false,
+		-- Host-side bridge repair keeps an unambiguously co-located combat guard
+		-- with a moving settler even when the planner omitted that guard's row.
+		settler_escort_sync = cfg.SettlerEscortCapSync ~= false,
 		-- Mid-turn replan frames: after the opening orders settle, a board
 		-- with newly revealed ground and movement left to spend on it (or a
 		-- strike) is exported again and the same turn re-planned, up to
@@ -12880,11 +12883,16 @@ end;
 -- Both are counted (`move_capped`, `queued_paths`) so a run says how often the
 -- host and the board disagreed. One bare global table (200-local ceiling).
 CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
-	                         escort_cap_unresolved = 0 } };
+	                         escort_cap_unresolved = 0, escort_shadow_injected = 0,
+	                         escort_shadow_applied = 0, escort_shadow_refused = 0,
+	                         escort_shadow_held = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
 	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
-	                     escort_cap_unresolved = 0 };
+	                     escort_cap_unresolved = 0, escort_shadow_injected = 0,
+	                     escort_shadow_applied = 0, escort_shadow_refused = 0,
+	                     escort_shadow_held = 0 };
+	CivvisBoard.escortHolds = {};
 end;
 
 -- The furthest plot on the host's path to (x, y) that `unit` reaches this
@@ -12914,86 +12922,155 @@ CivvisBoard.capToTurn = function(unit, x, y)
 	return { x = cx, y = cy, turns = last };
 end;
 
--- A setter and its guard can be co-located and ordered to the same distant
--- tile, yet take different host legs: the setter's row is capped while the
--- guard's faster path reaches the original destination.  This is a narrow,
--- experimental bridge repair, never a new escort policy: it applies only to
--- the first MOVE_TO for an already-matching pair, and only when the guard can
--- reach the setter's capped tile this turn.  Anything ambiguous remains on
--- today's path and is named for the experiment's ledger.
+-- Read the host path all the way through the requested plot.  A nil cap is
+-- normally a same-turn path, but it can also mean that WorldInput had no path
+-- data at all.  An escort may be synthesized only in the former case.
+CivvisBoard.reachesThisTurn = function(unit, x, y)
+	local path = try(function()
+		return UnitManager.GetMoveToPathEx(unit, Map.GetPlotIndex(x, y));
+	end, nil);
+	if path == nil or path.plots == nil or path.turns == nil then
+		return false, "path_unknown";
+	end
+	local n = 0;
+	for _ in pairs(path.plots) do n = n + 1; end
+	local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
+	if n <= 0 or destination == nil or path.plots[n] ~= destination then
+		return false, "path_destination_unknown";
+	end
+	local last = tonumber(path.turns[n]);
+	if last == nil then return false, "path_turn_unknown"; end
+	if last > 1 then return false, "guard_still_capped"; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = x;
+	params[UnitOperationTypes.PARAM_Y] = y;
+	if not canOperate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+		return false, "guard_cannot_move";
+	end
+	return true, nil;
+end;
+
+CivvisBoard.isCombatEscort = function(unit)
+	return try(function()
+		local definition = GameInfo.Units[unit:GetUnitType()];
+		return definition ~= nil
+			and ((tonumber(definition.Combat) or 0) > 0
+				or (tonumber(definition.RangedCombat) or 0) > 0);
+	end, false) == true;
+end
+
+-- A setter and its guard can be co-located while the planner exports only the
+-- setter's MOVE_TO.  That happened on the failed opening: the planner's model
+-- mirrored the stacked guard, whereas the host received no row for it and the
+-- settler was captured next turn.  Reconcile a matching explicit row as before,
+-- and additionally synthesize one host-only row when exactly one co-located
+-- combat unit is otherwise unmentioned.  This is still bridge repair, not an
+-- escort policy: ambiguous, separately ordered, or host-unreachable guards are
+-- left alone and named in the ledger.
 CivvisBoard.syncCappedSettlerEscorts = function(pid, turn, rows)
-	if cfg.SettlerEscortCapSync ~= true or cfg.CapMovesToReach == false then return; end
-	local first, settling = {}, {};
+	if cfg.SettlerEscortCapSync == false or cfg.CapMovesToReach == false then return; end
+	local first, firstRow, settling, setters, claimed = {}, {}, {}, {}, {};
 	for index, row in ipairs(rows) do
 		if tostring(row.kind or "") == "unit" then
 			local subject = tonumber(row.subject);
 			if subject ~= nil then
-				if first[subject] == nil then first[subject] = index; end
+				if first[subject] == nil then
+					first[subject], firstRow[subject] = index, row;
+				end
 				if tostring(row.verb or "") == "FOUND_CITY" then settling[subject] = true; end
 			end
 		end
 	end
+	-- Keep references to the original settler rows.  A synthesized guard is
+	-- inserted before its setter, so raw indices move during this pass.
 	for index, row in ipairs(rows) do
 		local setterId = tonumber(row.subject);
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
 		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
 				and setterId ~= nil and wantX ~= nil and wantY ~= nil
 				and first[setterId] == index and not settling[setterId] then
-			local setter = liveUnit(pid, setterId);
-			if setter ~= nil and unitTypeName(setter) == "UNIT_SETTLER" then
-				local capped = CivvisBoard.capToTurn(setter, wantX, wantY);
-				if type(capped) == "table" then
-					local guardRow, guard, guardId, candidates = nil, nil, nil, 0;
-					local sx = tonumber(try(function() return setter:GetX(); end, nil));
-					local sy = tonumber(try(function() return setter:GetY(); end, nil));
-					for guardIndex, candidate in ipairs(rows) do
-						local candidateId = tonumber(candidate.subject);
-						local cx, cy = tonumber(candidate.x), tonumber(candidate.y);
-						if guardIndex ~= index and tostring(candidate.kind or "") == "unit"
-								and tostring(candidate.verb or "") == "MOVE_TO"
-								and candidateId ~= nil and first[candidateId] == guardIndex
-								and cx == wantX and cy == wantY then
-							local candidateUnit = liveUnit(pid, candidateId);
-							local gx = tonumber(try(function() return candidateUnit:GetX(); end, nil));
-							local gy = tonumber(try(function() return candidateUnit:GetY(); end, nil));
-							local combat = try(function()
-								local definition = GameInfo.Units[candidateUnit:GetUnitType()];
-								return definition ~= nil
-									and ((tonumber(definition.Combat) or 0) > 0
-										or (tonumber(definition.RangedCombat) or 0) > 0);
-							end, false) == true;
-							if candidateUnit ~= nil and sx ~= nil and sy ~= nil
-									and gx ~= nil and gy ~= nil and gx == sx and gy == sy and combat then
-								guardRow, guard, guardId = candidate, candidateUnit, candidateId;
-								candidates = candidates + 1;
+			setters[#setters + 1] = { row = row, id = setterId, x = wantX, y = wantY };
+		end
+	end
+	local owner = try(function() return Players[pid]; end, nil);
+	local function unresolved(setterId, guardId, reason, wantX, wantY, sentX, sentY, candidates)
+		CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
+		emit("escort_cap_unresolved", {
+			turn = turn, settler = setterId, guard = guardId, reason = reason,
+			candidates = candidates, want = { wantX, wantY }, sent = { sentX, sentY },
+		});
+	end
+	for _, planned in ipairs(setters) do
+		local setter = liveUnit(pid, planned.id);
+		if setter ~= nil and unitTypeName(setter) == "UNIT_SETTLER" then
+			local capped = CivvisBoard.capToTurn(setter, planned.x, planned.y);
+			if capped ~= false then
+				local sentX, sentY = planned.x, planned.y;
+				if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
+				local setterReaches = CivvisBoard.reachesThisTurn(setter, sentX, sentY);
+				local sx = tonumber(try(function() return setter:GetX(); end, nil));
+				local sy = tonumber(try(function() return setter:GetY(); end, nil));
+				local candidates = {};
+				if setterReaches and owner ~= nil and sx ~= nil and sy ~= nil then
+					eachUnit(owner, function(candidate)
+						local guardId = tonumber(try(function() return candidate:GetID(); end, nil));
+						local gx = tonumber(try(function() return candidate:GetX(); end, nil));
+						local gy = tonumber(try(function() return candidate:GetY(); end, nil));
+						if guardId ~= nil and guardId ~= planned.id and not claimed[guardId]
+								and gx == sx and gy == sy and CivvisBoard.isCombatEscort(candidate) then
+							candidates[#candidates + 1] = { id = guardId, unit = candidate };
+						end
+					end);
+				end
+				if #candidates == 1 then
+					local guardId, guard = candidates[1].id, candidates[1].unit;
+					local guardRow = firstRow[guardId];
+					local sameGoal = guardRow ~= nil and tostring(guardRow.verb or "") == "MOVE_TO"
+						and tonumber(guardRow.x) == planned.x and tonumber(guardRow.y) == planned.y;
+					if guardRow == nil or sameGoal then
+						local reaches, why = CivvisBoard.reachesThisTurn(guard, sentX, sentY);
+						if reaches then
+							claimed[guardId] = true;
+							CivvisBoard.escortHolds[guardId] = nil;
+							if guardRow == nil then
+								local insertAt = nil;
+								for i, current in ipairs(rows) do
+									if current == planned.row then insertAt = i; break; end
+								end
+								table.insert(rows, insertAt or (#rows + 1), {
+									kind = "unit", subject = guardId, verb = "MOVE_TO", x = sentX, y = sentY,
+									_civvis_escort_shadow = true,
+								});
+								CivvisBoard.stats.escort_shadow_injected = CivvisBoard.stats.escort_shadow_injected + 1;
+								emit("escort_shadow_injected", {
+									turn = turn, settler = planned.id, guard = guardId,
+									want = { planned.x, planned.y }, sent = { sentX, sentY },
+								});
+							else
+								guardRow.x, guardRow.y = sentX, sentY;
+								CivvisBoard.stats.escort_cap_synced = CivvisBoard.stats.escort_cap_synced + 1;
+								emit("escort_cap_synced", {
+									turn = turn, settler = planned.id, guard = guardId,
+									want = { planned.x, planned.y }, sent = { sentX, sentY },
+								});
 							end
-						end
-					end
-					if candidates == 1 then
-						local guardLeg = CivvisBoard.capToTurn(guard, capped.x, capped.y);
-						if guardLeg == nil then
-							guardRow.x, guardRow.y = capped.x, capped.y;
-							CivvisBoard.stats.escort_cap_synced = CivvisBoard.stats.escort_cap_synced + 1;
-							emit("escort_cap_synced", {
-								turn = turn, settler = setterId, guard = guardId,
-								want = { wantX, wantY }, sent = { capped.x, capped.y },
-							});
 						else
-							CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
-							emit("escort_cap_unresolved", {
-								turn = turn, settler = setterId, guard = guardId,
-								reason = guardLeg == false and "guard_no_reach" or "guard_still_capped",
-								want = { wantX, wantY }, sent = { capped.x, capped.y },
-							});
+							-- A missing guard row must not fall through to explore
+							-- automation while the settler leaves it behind.  Holding the
+							-- soldier is the conservative bridge outcome when the host
+							-- cannot prove it can make the same leg this turn.
+							if guardRow == nil then
+								CivvisBoard.escortHolds[guardId] = true;
+								CivvisBoard.stats.escort_shadow_held = CivvisBoard.stats.escort_shadow_held + 1;
+							end
+							unresolved(planned.id, guardId, why, planned.x, planned.y, sentX, sentY, 1);
 						end
-					elseif candidates > 1 then
-						CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
-						emit("escort_cap_unresolved", {
-							turn = turn, settler = setterId, reason = "ambiguous_guards",
-							candidates = candidates, want = { wantX, wantY },
-							sent = { capped.x, capped.y },
-						});
+					else
+						unresolved(planned.id, guardId, "guard_has_order", planned.x, planned.y, sentX, sentY, 1);
 					end
+				elseif #candidates > 1 then
+					unresolved(planned.id, nil, "ambiguous_guards", planned.x, planned.y,
+						sentX, sentY, #candidates);
 				end
 			end
 		end
@@ -13168,10 +13245,14 @@ local function applyOrders(player, pid, turn, rows)
 		if perKind == nil then perKind = {}; refusedByKind[kind] = perKind; end
 		perKind[why] = (perKind[why] or 0) + 1;
 	end
-	-- Match the guard to the host-capped settler leg before either row is applied.
-	-- The gate is default-off; with it absent every row remains byte-for-byte on
-	-- the pre-existing path through this function.
+	-- Match the guard to the settler's actual host leg before either row is
+	-- applied.  A host-only shadow row is deliberately outside the CIVVIS order
+	-- counts and verdict: it is an actuation safety repair, not a new decision.
 	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
+	local shadowRows = 0;
+	for _, row in ipairs(rows) do
+		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
+	end
 
 	-- ★★★★★ FOUND A CITY BEFORE MOVING, ALWAYS. This is an actuation rule of
 	-- Civilization VI, not a decision, which is why it belongs here and not in CIVVIS.
@@ -13221,6 +13302,7 @@ local function applyOrders(player, pid, turn, rows)
 		local kind = tostring(row.kind or "?");
 		local verb = tostring(row.verb or "");
 		local subject = tonumber(row.subject);
+		local shadow = row._civvis_escort_shadow == true;
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
 		local fromX, fromY;
 		local watched = (kind == "unit" and verb == "MOVE_TO"
@@ -13241,7 +13323,9 @@ local function applyOrders(player, pid, turn, rows)
 		end);
 		if safe then ok, why = res1, res2; end
 		if ok then
-			if kind == "produce_next" then
+			if shadow then
+				CivvisBoard.stats.escort_shadow_applied = CivvisBoard.stats.escort_shadow_applied + 1;
+			elseif kind == "produce_next" then
 				-- A lease is accepted by the control channel but has not yet
 				-- mutated the host. Keep it out of the host applied-rate numerator
 				-- and denominator; the later `build` event is the actuation proof.
@@ -13253,7 +13337,7 @@ local function applyOrders(player, pid, turn, rows)
 			else
 				applied = applied + 1;
 			end
-			if not CivvisVerify.isVerdict(kind) then
+			if not shadow and not CivvisVerify.isVerdict(kind) then
 				byKind[kind] = (byKind[kind] or 0) + 1;
 				seenByKind[kind] = (seenByKind[kind] or 0) + 1;
 			end
@@ -13280,7 +13364,11 @@ local function applyOrders(player, pid, turn, rows)
 				end
 			end
 		else
-			countRefusal(kind, tostring(why));
+			if shadow then
+				CivvisBoard.stats.escort_shadow_refused = CivvisBoard.stats.escort_shadow_refused + 1;
+			else
+				countRefusal(kind, tostring(why));
+			end
 		end
 		ordered[index] = true;
 		return ok, why;
@@ -13412,6 +13500,7 @@ local function applyOrders(player, pid, turn, rows)
 		eachUnit(player, function(unit)
 			local id = try(function() return unit:GetID(); end, -1);
 			if id == -1 or mentioned[id] or gpHandled[id] then return; end
+			if CivvisBoard.escortHolds[id] then return; end
 			local name = unitTypeName(unit);
 			-- Civilians cannot explore, and a settler that wanders is a settler that
 			-- never founds — this project has already paid for both.
@@ -13434,7 +13523,7 @@ local function applyOrders(player, pid, turn, rows)
 
 	emit("orders", {
 		turn = turn, frame = awaiting.frame or 0, source = "civvis",
-		seen = #rows - deferred - verdicts,
+		seen = #rows - shadowRows - deferred - verdicts,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		seen_by = seenByKind, refused_by = refusedByKind,
 		deferred = deferred,
@@ -13451,10 +13540,14 @@ local function applyOrders(player, pid, turn, rows)
 		-- turn. See CivvisBoard.
 		move_capped = CivvisBoard.stats.capped,
 		move_no_reach = CivvisBoard.stats.no_reach,
-		-- Experimental reconciliation of a co-located guard with a capped
-		-- settler.  Unresolved candidates deliberately retain their old order.
+		-- Reconciliation of a co-located guard with the settler's actual host
+		-- leg.  The shadow counters are host safety operations, not CIVVIS rows.
 		escort_cap_synced = CivvisBoard.stats.escort_cap_synced,
 		escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved,
+		escort_shadow_injected = CivvisBoard.stats.escort_shadow_injected,
+		escort_shadow_applied = CivvisBoard.stats.escort_shadow_applied,
+		escort_shadow_refused = CivvisBoard.stats.escort_shadow_refused,
+		escort_shadow_held = CivvisBoard.stats.escort_shadow_held,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
@@ -13501,7 +13594,7 @@ local function applyOrders(player, pid, turn, rows)
 	eachCity(player, function() cityCount = cityCount + 1; end);
 	-- Kept for the decider's verdict on this turn, which arrives with the next
 	-- turn's orders and is emitted as `turn_verified`; see CivvisVerify.
-	CivvisVerify.remember(turn, #rows - deferred - verdicts, applied);
+	CivvisVerify.remember(turn, #rows - shadowRows - deferred - verdicts, applied);
 	emit("turn", {
 		turn = turn,
 		score = ourScore,
@@ -13513,7 +13606,7 @@ local function applyOrders(player, pid, turn, rows)
 		army = counts.military,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		orders_source = awaiting.source,
-		orders_seen = #rows - deferred - verdicts,
+		orders_seen = #rows - shadowRows - deferred - verdicts,
 		-- ⚠ `orders_applied` here is the RETURN-CODE count — arms whose request
 		-- did not throw — kept under its old name for the readers that clock on
 		-- this record. `orders_reported` is the same number under its honest

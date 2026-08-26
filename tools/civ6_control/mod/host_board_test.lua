@@ -12,12 +12,14 @@
 --      so the queue expects the capped plot, and `move_capped` is emitted;
 --   3. a path whose first step is already next turn is refused by name;
 --   4. a melee ATTACK is never capped;
---   5. the default-off escort reconciliation leaves the two capped paths alone;
---   6. its explicit arm keeps an exact, reachable guard with the setter;
---   7. an unreachable or differently-targeted guard remains untouched;
---   8. queued paths: combat units are cancelled, civilians are not, and the
+--   5. an explicit opt-out leaves the two capped paths alone;
+--   6. a matching explicit guard keeps pace with the setter;
+--   7. a missing guard row is synthesized before a one-step setter move;
+--   8. an unreachable or differently-targeted guard remains untouched;
+--   9. queued paths: combat units are cancelled, civilians are not, and the
 --      count is reported;
---   9. the `orders` event carries the cap counters.
+--  10. a refused settler move cannot draw its guard into a synthetic move;
+--  11. the `orders` event carries the cap and shadow counters.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -65,7 +67,7 @@ setmetatable(_G, { __index = function(_, k)
 	return stub()
 end })
 
-local host = { units = {}, ops = {}, cmds = {}, paths = {}, queued = {} }
+local host = { units = {}, ops = {}, cmds = {}, paths = {}, queued = {}, blocked = {} }
 local PID = 0
 local function unitObject(u)
 	return {
@@ -87,7 +89,7 @@ UnitManager = {
 		if u == nil or u.gone then return nil end
 		return unitObject(u)
 	end,
-	CanStartOperation = function() return true end,
+	CanStartOperation = function(unit) return not host.blocked[unit.GetID()] end,
 	RequestOperation = function(unit, hash, params)
 		local u = host.units[unit.GetID()]
 		host.ops[#host.ops + 1] = { id = u.id, op = hash, x = params and params.x, y = params and params.y }
@@ -181,7 +183,7 @@ end
 local function has(line, needle) return line ~= nil and line:find(needle, 1, true) ~= nil end
 local function row(subject, verb, x, y) return { kind = "unit", subject = subject, verb = verb, x = x, y = y } end
 local function reset()
-	host.units, host.ops, host.cmds, host.paths, host.queued, LOG = {}, {}, {}, {}, {}, {}
+	host.units, host.ops, host.cmds, host.paths, host.queued, host.blocked, LOG = {}, {}, {}, {}, {}, {}, {}
 	config.SettlerEscortCapSync = nil
 	queue.reset(7); board.reset()
 end
@@ -224,24 +226,27 @@ host.paths["13:" .. plotIndex(4, 1)] = { plots = { plotIndex(1, 1), plotIndex(2,
 applyOrders(player, PID, 7, { row(13, "ATTACK", 4, 1) })
 check("attack sent uncapped", ops(13), "UNITOPERATION_MOVE_TO@4,1")
 
--- 5. The reconciliation is off by default: the ordinary per-row cap remains.
+-- 5. The explicit opt-out keeps the ordinary per-row cap unchanged.
 reset()
+config.SettlerEscortCapSync = false
 host.units[17] = { id = 17, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
 host.units[18] = { id = 18, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.paths["17:" .. plotIndex(5, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1) },
 	turns = { 0, 1, 1, 2, 2 } }
+host.paths["17:" .. plotIndex(3, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1, 1 } }
 host.paths["18:" .. plotIndex(5, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1) },
 	turns = { 0, 1, 1, 1, 2 } }
 host.paths["18:" .. plotIndex(3, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1, 1 } }
 applyOrders(player, PID, 7, { row(17, "MOVE_TO", 5, 1), row(18, "MOVE_TO", 5, 1) })
-check("default off: setter uses its cap", ops(17), "UNITOPERATION_MOVE_TO@3,1")
-check("default off: guard keeps its own cap", ops(18), "UNITOPERATION_MOVE_TO@4,1")
-check("default off: no escort sync event", lastEvent("escort_cap_synced"), nil)
+check("opt-out: setter uses its cap", ops(17), "UNITOPERATION_MOVE_TO@3,1")
+check("opt-out: guard keeps its own cap", ops(18), "UNITOPERATION_MOVE_TO@4,1")
+check("opt-out: no escort sync event", lastEvent("escort_cap_synced"), nil)
 
--- 6. The explicit arm rewrites only the guard's row to the setter's actual leg.
+-- 6. A matching explicit row is rewritten to the setter's actual leg.
 reset()
 config.SettlerEscortCapSync = true
 host.units[17] = { id = 17, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
@@ -249,6 +254,8 @@ host.units[18] = { id = 18, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.paths["17:" .. plotIndex(5, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1) },
 	turns = { 0, 1, 1, 2, 2 } }
+host.paths["17:" .. plotIndex(3, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1, 1 } }
 host.paths["18:" .. plotIndex(5, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1) },
 	turns = { 0, 1, 1, 1, 2 } }
@@ -256,14 +263,35 @@ host.paths["18:" .. plotIndex(3, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1, 1 } }
 local setterRow, guardRow = row(17, "MOVE_TO", 5, 1), row(18, "MOVE_TO", 5, 1)
 applyOrders(player, PID, 7, { setterRow, guardRow })
-check("armed: setter uses its cap", ops(17), "UNITOPERATION_MOVE_TO@3,1")
-check("armed: guard follows setter cap", ops(18), "UNITOPERATION_MOVE_TO@3,1")
-check("armed: guard row was rewritten", guardRow.x, 3)
-check("armed: sync named both units", has(lastEvent("escort_cap_synced"), '"settler":17')
+check("matching: setter uses its cap", ops(17), "UNITOPERATION_MOVE_TO@3,1")
+check("matching: guard follows setter cap", ops(18), "UNITOPERATION_MOVE_TO@3,1")
+check("matching: guard row was rewritten", guardRow.x, 3)
+check("matching: sync named both units", has(lastEvent("escort_cap_synced"), '"settler":17')
 	and has(lastEvent("escort_cap_synced"), '"guard":18'), true)
-check("armed: orders count the sync", has(lastEvent("orders"), '"escort_cap_synced":1'), true)
+check("matching: orders count the sync", has(lastEvent("orders"), '"escort_cap_synced":1'), true)
 
--- 7. A guard that cannot reach the setter's leg retains its previous order.
+-- 7. The safe default supplies the row the planner omitted and applies it first.
+reset()
+host.units[19] = { id = 19, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[20] = { id = 20, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.paths["19:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.paths["20:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+local missingGuard = { row(19, "MOVE_TO", 2, 1) }
+applyOrders(player, PID, 7, missingGuard)
+check("shadow: guard moved before settler", ops(20), "UNITOPERATION_MOVE_TO@2,1")
+check("shadow: setter still moved", ops(19), "UNITOPERATION_MOVE_TO@2,1")
+check("shadow: row was inserted", #missingGuard, 2)
+check("shadow: named both units", has(lastEvent("escort_shadow_injected"), '"settler":19')
+	and has(lastEvent("escort_shadow_injected"), '"guard":20'), true)
+check("shadow: not counted as CIVVIS order", has(lastEvent("orders"), '"seen":1')
+	and has(lastEvent("orders"), '"applied":1'), true)
+check("shadow: orders carry host outcome", has(lastEvent("orders"), '"escort_shadow_injected":1')
+	and has(lastEvent("orders"), '"escort_shadow_applied":1')
+	and has(lastEvent("orders"), '"escort_shadow_refused":0'), true)
+
+-- 8. A guard that cannot reach the setter's leg retains its previous order.
 reset()
 config.SettlerEscortCapSync = true
 host.units[17] = { id = 17, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
@@ -271,6 +299,8 @@ host.units[18] = { id = 18, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 0 }
 host.paths["17:" .. plotIndex(5, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1) },
 	turns = { 0, 1, 1, 2, 2 } }
+host.paths["17:" .. plotIndex(3, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1, 1 } }
 host.paths["18:" .. plotIndex(5, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1) },
 	turns = { 0, 1, 1, 1, 2 } }
@@ -278,10 +308,24 @@ host.paths["18:" .. plotIndex(3, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 2, 2 } }
 applyOrders(player, PID, 7, { row(17, "MOVE_TO", 5, 1), row(18, "MOVE_TO", 5, 1) })
 check("unreachable guard keeps its cap", ops(18), "UNITOPERATION_MOVE_TO@4,1")
-check("unreachable guard is named", has(lastEvent("escort_cap_unresolved"), '"reason":"guard_no_reach"'), true)
+check("unreachable guard is named", has(lastEvent("escort_cap_unresolved"), '"reason":"guard_still_capped"'), true)
 check("orders count the unresolved guard", has(lastEvent("orders"), '"escort_cap_unresolved":1'), true)
 
--- 8. Different original goals are not an escort contract.
+-- 9. A missing but too-slow guard is not synthesized.
+reset()
+host.units[21] = { id = 21, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[22] = { id = 22, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 0 }
+host.paths["21:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.paths["22:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 2 } }
+applyOrders(player, PID, 7, { row(21, "MOVE_TO", 2, 1) })
+check("too-slow missing guard does not move", ops(22), "")
+check("too-slow missing guard is named", has(lastEvent("escort_cap_unresolved"), '"reason":"guard_still_capped"'), true)
+check("too-slow missing guard is held, not injected", has(lastEvent("orders"), '"escort_shadow_injected":0')
+	and has(lastEvent("orders"), '"escort_shadow_held":1'), true)
+
+-- 10. Different original goals are not an escort contract.
 reset()
 config.SettlerEscortCapSync = true
 host.units[17] = { id = 17, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
@@ -289,6 +333,8 @@ host.units[18] = { id = 18, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.paths["17:" .. plotIndex(5, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1) },
 	turns = { 0, 1, 1, 2, 2 } }
+host.paths["17:" .. plotIndex(3, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1, 1 } }
 host.paths["18:" .. plotIndex(6, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1), plotIndex(5, 1), plotIndex(6, 1) },
 	turns = { 0, 1, 1, 1, 2, 2 } }
@@ -296,7 +342,20 @@ applyOrders(player, PID, 7, { row(17, "MOVE_TO", 5, 1), row(18, "MOVE_TO", 6, 1)
 check("different goal keeps guard route", ops(18), "UNITOPERATION_MOVE_TO@4,1")
 check("different goal emits no sync", lastEvent("escort_cap_synced"), nil)
 
--- 9. Queued paths: combat units cancelled, civilians kept, count reported.
+-- 11. A host-refused settler cannot pull its guard into a synthetic move.
+reset()
+host.units[23] = { id = 23, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[24] = { id = 24, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.paths["23:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.paths["24:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.blocked[23] = true
+applyOrders(player, PID, 7, { row(23, "MOVE_TO", 2, 1) })
+check("blocked setter has no shadow injection", lastEvent("escort_shadow_injected"), nil)
+check("blocked setter does not synthesize a guard move", has(ops(24), "UNITOPERATION_MOVE_TO"), false)
+
+-- 12. Queued paths: combat units cancelled, civilians kept, count reported.
 reset()
 host.units[14] = { id = 14, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.units[15] = { id = 15, kind = "UNIT_SETTLER", x = 2, y = 2, moves = 2 }

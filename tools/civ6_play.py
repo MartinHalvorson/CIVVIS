@@ -857,9 +857,9 @@ def build_config(args: argparse.Namespace) -> dict:
         # cancelled at turn start; the seat then advertises `moves_at_turn_start`
         # and the mirror trusts the export's movement. See docs/LIVE_TACTICS.md.
         "CapMovesToReach": args.cap_moves_to_reach,
-        # A default-off host experiment: when a capped setter and exactly one
-        # co-located combat row share a MOVE_TO goal, make the guard follow the
-        # setter's actual leg only if it can reach that leg this turn.  This is
+        # Keep an unambiguously co-located combat escort on the setter's actual
+        # host leg, including when the planner omitted the guard's matching row.
+        # The mod proves the host can make that move before it adds it; this is
         # bridge reconciliation, not a change to the Rust escort heuristic.
         "SettlerEscortCapSync": args.settler_escort_cap_sync,
         "CancelQueuedPaths": args.cancel_queued_paths,
@@ -4203,9 +4203,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="send a MOVE_TO's whole destination even when the host's path "
                          "outruns the turn (the pre-board rule: the host queues the rest "
                          "and walks it before the next frame)")
-    ap.add_argument("--settler-escort-cap-sync", action="store_true", default=False,
-                    help="experimentally keep a co-located combat escort on a capped "
-                         "settler's actual host leg (off by default)")
+    ap.add_argument("--settler-escort-cap-sync", dest="settler_escort_cap_sync",
+                    action="store_true", default=True,
+                    help="keep an unambiguously co-located combat escort on a "
+                         "settler's actual host leg (the safe default)")
+    ap.add_argument("--no-settler-escort-cap-sync", dest="settler_escort_cap_sync",
+                    action="store_false",
+                    help="disable host-side repair of an omitted co-located settler "
+                         "escort move")
     ap.add_argument("--no-cancel-queued-paths", dest="cancel_queued_paths",
                     action="store_false", default=True,
                     help="leave combat units' queued host paths in place at turn start")
