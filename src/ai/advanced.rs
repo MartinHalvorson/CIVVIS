@@ -4608,6 +4608,13 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// The turn's fire is planned once from the engine's arithmetic: the
+    /// kills that can be finished, their shooters first in the unit order,
+    /// each biased toward its planned target. Opt-in gene `fire-plan`; see
+    /// `advanced/fire_plan.rs`.
+    fire_plan: bool,
+    /// This turn's plan; empty with the gene off. See `fire_plan`.
+    fire_plan_orders: fire_plan::FirePlan,
     /// Put a ceiling on how long a settler waits for an escort.
     ///
     /// ★★★★ THE THIRD CITY'S SETTLER IS STANDING STILL. The ladder abandons a
@@ -5612,6 +5619,11 @@ mod field_craft;
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
 
+/// The fire plan: this turn's kills, allocated once from the engine's own
+/// arithmetic, ordering the unit loop and biasing the attack scan. One
+/// opt-in gene; see `advanced/fire_plan.rs`.
+mod fire_plan;
+
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
 mod close_as_a_body;
@@ -6346,6 +6358,8 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            fire_plan: false,
+            fire_plan_orders: fire_plan::FirePlan::default(),
             escort_patience_runs_out: false,
             encampment_seals_the_pass: false,
             first_builder_reserve: false,
@@ -31313,6 +31327,11 @@ impl AdvancedAi {
             if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
                 score += self.base.w.focus_fire * 10.0;
             }
+            // `fire-plan`: the planned target gets the focus bias too; the
+            // exact decision below is unchanged. `None` with the gene off.
+            if self.fire_plan_target(uid) == Some(pos) {
+                score += self.base.w.focus_fire * 10.0;
+            }
             let caution = group
                 .as_ref()
                 .map(|orders| {
@@ -32562,6 +32581,10 @@ impl AdvancedAi {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
         }
+        // `fire-plan`: this turn's kills, drawn once from the board the unit
+        // loop is about to play, so the shooters that finish them go first.
+        // Empty with the gene off. See `advanced/fire_plan.rs`.
+        self.plan_fire(g, pid);
         // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
         // once from the start-of-turn board so units planned in parallel
         // agree on them. Nothing is read with both genes off. See
@@ -32588,7 +32611,8 @@ impl AdvancedAi {
                 _ if spec.siege => 5,
                 _ => 6,
             };
-            (order, *uid)
+            // Zero for every unit with `fire-plan` off: the shipped key.
+            (self.fire_plan_rank(*uid), order, *uid)
         });
         let pool = self
             .work_pool

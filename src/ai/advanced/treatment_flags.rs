@@ -2917,6 +2917,19 @@ impl AdvancedAi {
     // reads every line under a marker as an entry and takes its first
     // identifier, so a whole function files as `pub` and `self`.
 
+    /// The turn's fire is planned once from the engine's own arithmetic —
+    /// the kills that can be finished, their shooters first in the unit
+    /// order, ranged before the melee finisher, each biased toward its
+    /// planned target — without a clone. See `fire_plan`.
+    pub fn enable_fire_plan(&mut self) {
+        self.fire_plan = true;
+    }
+
+    /// The twin of `enable_fire_plan`.
+    pub fn disable_fire_plan(&mut self) {
+        self.fire_plan = false;
+    }
+
     /// On an advance, no unit ends the turn more than the body's pace plus
     /// one tile closer to the objective than the force's anchor stood, so a
     /// horseman does not meet the enemy four tiles before the line does.

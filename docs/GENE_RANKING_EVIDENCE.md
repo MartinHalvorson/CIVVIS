@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 |---|---|---|---:|
 | `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 |
 | `close-as-a-body` | off (unmeasured) | On an advance, no unit ends the turn more than the body's pace plus one tile closer to the objective than the force's anchor stood, so a horseman does not meet the enemy four tiles before the line does. | 1 |
+| `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 |
 | `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 |
 | `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 |
 | `lane-release-when-hopeless` | off (unmeasured) | Stop paying a lost victory lane's premiums. | 1 |
