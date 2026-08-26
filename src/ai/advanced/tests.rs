@@ -12787,47 +12787,45 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     assert_eq!(game.player_city_ids(0).len(), 1);
 }
 
-/// ★★★★ A border with no city behind it is a city in the fog. Run
-/// civvis-20260818T155552Z: Setia, founded t55 two tiles from Vietnam's border
-/// with none of Vietnam's four cities on the board, read −13.3 Loyalty a turn
-/// on its first export and flipped at t63; the forecast had passed it because
-/// it sums the cities it can see. See `UNSEEN_MAJOR_BORDER_RADIUS` and
-/// `Game::unseen_major_borders`: on the live seat a site within three tiles of
-/// such a border is refused before the walk; four tiles out, an empty set,
-/// stock and the withheld arm judge by the forecast alone as before.
+/// ★★★★ A border with an unresolved city behind it is a city in the fog. Run
+/// civvis-20260826T030045Z: Lugdunum was founded t55 five tiles from Germany's
+/// border, while its only visible German city stood ten tiles away. The host
+/// immediately read −22 Loyalty a turn and the undamaged city flipped at t70;
+/// the forecast had passed it because the nearer German city was not on the
+/// board. See `UNRESOLVED_MAJOR_BORDER_RADIUS` and
+/// `Game::unseen_major_borders`: the live seat refuses a site within five
+/// tiles of a fully unseen or fifth-ring-ambiguous major border. Six tiles
+/// out, an empty set, stock and the withheld arm judge by the forecast alone.
 #[test]
-fn a_site_beside_an_unseen_majors_border_is_doomed_before_the_walk() {
+fn a_site_beside_an_unresolved_majors_border_is_doomed_before_the_walk() {
     let (mut game, capital, home) = empire_with_a_capital(71_121);
     game.cities.get_mut(&capital).unwrap().pop = 4;
     // Fully explored, so the fog rule cannot be what refuses.
     let all: Vec<Pos> = game.map.tiles.keys().copied().collect();
     game.players[0].explored.extend(all);
     let site = anchor_at(&game, home, 4);
-    let border = anchor_at(&game, site, 2);
-    let far_border = anchor_at(&game, site, 4);
+    let border = anchor_at(&game, site, 5);
+    let far_border = anchor_at(&game, site, 6);
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.frontier_loyalty);
     assert!(
         live.settle_site_loyalty_verdict(&game, 0, site).is_none(),
-        "no unseen border on the board: the site is sound"
+        "no unresolved border on the board: the site is sound"
     );
 
     game.unseen_major_borders.insert(border);
-    assert!(AdvancedAi::beside_unseen_major_border(&game, site));
+    assert!(AdvancedAi::beside_unresolved_major_border(&game, site));
     let why = live
         .settle_site_loyalty_verdict(&game, 0, site)
-        .expect("the live seat dooms a site two tiles from an unseen major's border");
-    assert!(
-        why.contains("border whose city the seat has never seen"),
-        "{why}"
-    );
+        .expect("the live seat dooms a site five tiles from an unresolved major border");
+    assert!(why.contains("border whose city may be hidden"), "{why}");
 
-    // Four tiles from the border: outside the radius, judged by the forecast.
+    // Six tiles from the border: outside the radius, judged by the forecast.
     game.unseen_major_borders.clear();
     game.unseen_major_borders.insert(far_border);
-    assert!(!AdvancedAi::beside_unseen_major_border(&game, site));
+    assert!(!AdvancedAi::beside_unresolved_major_border(&game, site));
     assert!(live.settle_site_loyalty_verdict(&game, 0, site).is_none());
 
     // Stock and the withheld arm never read the set.

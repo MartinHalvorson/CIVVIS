@@ -306,16 +306,20 @@ const SETTLE_TARGET_LOYALTY_RISK_TURNS: f64 = 40.0;
 /// depend on how big the capital is.
 const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 
-/// How close to a met major's border — one whose owning city this seat has
-/// never seen — a settle site is refused before the walk. Their city stands
-/// somewhere within `CIV6_CITY_OWNERSHIP_REACH` of the border plot, so a site
-/// three tiles from the border is four to eight from a city the loyalty
-/// forecast cannot count. Run civvis-20260818T155552Z: Setia, founded t55 two
-/// tiles from Vietnam's border with none of Vietnam's four cities seen, read
-/// −13.3 Loyalty a turn on its first export and was lost at t63; the forecast
-/// had passed the site because its board held no Vietnamese city at all. See
-/// `frontier_loyalty` and `Game::unseen_major_borders`.
-const UNSEEN_MAJOR_BORDER_RADIUS: i32 = 3;
+/// How close to a met major's border whose city attribution is unresolved a
+/// settle site is refused before the walk. The mirror marks both a plot with
+/// no visible owning city and a fifth-ring plot of a visible city: the latter
+/// may really belong to a nearer city still in fog. A site five tiles from
+/// that boundary can therefore sit directly under an unseen city's Loyalty
+/// pressure while the speculative forecast counts only the distant city.
+///
+/// Run civvis-20260826T030045Z: Lugdunum was founded at t55 five tiles from
+/// Germany's border. The nearest visible German city was ten tiles away, so
+/// the model judged it safe; the host immediately read −22 Loyalty/turn and
+/// the undamaged city flipped at t70. Five is the measured boundary that
+/// catches that unresolved fifth-ring attribution without rejecting ordinary
+/// known-city sites. See `frontier_loyalty` and `Game::unseen_major_borders`.
+const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
 /// New-target picks re-asked after a doomed forecast. Exhaustion holds the
 /// Settler rather than routing it through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
@@ -3080,19 +3084,17 @@ pub struct AdvancedAi {
     /// before. Firaxis-only: it prices the live mirror's fog. Off for
     /// ordinary and frozen controllers.
     ///
-    /// ★★★★ AND THE BORDER WITH NO CITY BEHIND IT (2026-08-18). Run
-    /// civvis-20260818T155552Z: Setia, founded t55 INSIDE the halo (four
-    /// tiles from Cumae) but two tiles from Vietnam's border — four
-    /// Vietnamese cities, none of them on the board — read −13.3 Loyalty a
-    /// turn on its first export and was lost at t63. The forecast sums the
-    /// cities it can see, so it saw nothing to press the site; the mirror,
-    /// which cannot attribute those plots to a city, had recorded them only
-    /// as ground we cannot found on. Now it also names them
-    /// (`Game::unseen_major_borders`), and under this flag a site within
-    /// `UNSEEN_MAJOR_BORDER_RADIUS` of one is refused before the walk and on
-    /// arrival, journaled as "beside a rival's border whose city the seat has
-    /// never seen". Once that city comes into view the ordinary forecast
-    /// judges the site again.
+    /// ★★★★ AND THE BORDER WHOSE CITY CANNOT BE RESOLVED (2026-08-26). Run
+    /// civvis-20260826T030045Z: Lugdunum was founded t55 INSIDE the halo but
+    /// five tiles from Germany's border. The nearest visible German city was
+    /// ten tiles away, so the forecast saw no foreign pressure; the host read
+    /// −22 Loyalty a turn immediately and the undamaged city flipped at t70.
+    /// Civilization VI exports only a plot owner, so a fifth-ring plot of a
+    /// visible city can equally belong to a closer city still in fog. The
+    /// mirror records both that ambiguity and fully unseen borders in
+    /// `Game::unseen_major_borders`; under this flag a site within
+    /// `UNRESOLVED_MAJOR_BORDER_RADIUS` is retired before the walk and on
+    /// arrival. Ordinary known-city sites remain governed by the forecast.
     pub frontier_loyalty: bool,
     /// A settler target dropped for danger is not re-picked the moment the
     /// danger flickers off.
@@ -24643,7 +24645,7 @@ impl AdvancedAi {
     /// The host-only frontier half of the settlement Loyalty guard. It is
     /// deliberately separate from the rate forecast below: the deployment
     /// genome can hold `loyalty-rate-alarm` off without dropping the fog and
-    /// unseen-border protection that `frontier-loyalty` ships for the live
+    /// unresolved-border protection that `frontier-loyalty` ships for the live
     /// Civilization VI mirror.
     fn settle_site_frontier_loyalty_verdict(
         &self,
@@ -24658,15 +24660,15 @@ impl AdvancedAi {
                     .to_string(),
             );
         }
-        // ★★★★ A BORDER WITH NO CITY BEHIND IT IS A CITY IN THE FOG. The
-        // forecast below sums the cities on the board; a met major's border
-        // plot the mirror could attribute to no city of theirs means one
-        // stands within a few tiles unseen, and it will press the new city
-        // from turn one. See `UNSEEN_MAJOR_BORDER_RADIUS`.
-        if self.frontier_loyalty && Self::beside_unseen_major_border(g, site) {
+        // ★★★★ A BORDER WITH AN AMBIGUOUS CITY BEHIND IT IS A CITY IN THE
+        // FOG. The forecast below sums the cities on the board; a met major's
+        // border whose nearest visible city sits on its fifth ownership ring
+        // may instead belong to a nearer city we have not seen. It will press
+        // the new city from turn one. See `UNRESOLVED_MAJOR_BORDER_RADIUS`.
+        if self.frontier_loyalty && Self::beside_unresolved_major_border(g, site) {
             return Some(
-                "it lies beside a rival's border whose city the seat has never seen \
-                 — that city presses the site from the fog"
+                "it lies within five tiles of a rival border whose city may be hidden \
+                 — the forecast cannot price that Loyalty pressure"
                     .to_string(),
             );
         }
@@ -24702,12 +24704,13 @@ impl AdvancedAi {
             })
     }
 
-    /// Whether a met major's border plot whose owning city this seat has never
-    /// seen lies within `UNSEEN_MAJOR_BORDER_RADIUS` of `site`. Empty on any
-    /// board that is not a live mirror. See `Game::unseen_major_borders`.
-    pub(crate) fn beside_unseen_major_border(g: &Game, site: Pos) -> bool {
+    /// Whether an unresolved met-major border lies within
+    /// `UNRESOLVED_MAJOR_BORDER_RADIUS` of `site`. The mirror records both a
+    /// fully unseen city and a fifth-ring attribution that could conceal one;
+    /// the set is empty on a native board. See `Game::unseen_major_borders`.
+    pub(crate) fn beside_unresolved_major_border(g: &Game, site: Pos) -> bool {
         !g.unseen_major_borders.is_empty()
-            && g.wdisk(site, UNSEEN_MAJOR_BORDER_RADIUS)
+            && g.wdisk(site, UNRESOLVED_MAJOR_BORDER_RADIUS)
                 .into_iter()
                 .any(|pos| g.unseen_major_borders.contains(&pos))
     }

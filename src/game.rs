@@ -5804,15 +5804,16 @@ pub struct Game {
     /// ground on the following turn instead of sealing our own invasion out.
     #[serde(default)]
     pub closed_borders: BTreeSet<Pos>,
-    /// Ground a MET major civilization owns whose owning city this seat has
-    /// never seen — the border in the fog. Written fresh from the export every
-    /// turn beside `closed_borders`, and empty on any board that is not a
-    /// live mirror. A settle site beside such a border sits four to seven
-    /// tiles from a city the loyalty forecast cannot count, and the forecast
-    /// then says nothing while the host says −13 a turn: run
-    /// civvis-20260818T155552Z founded Setia at t55 two tiles from Vietnam's
-    /// border (four Vietnamese cities, none seen), read −13.3 Loyalty on its
-    /// first export and lost it at t63. See `AdvancedAi::frontier_loyalty`.
+    /// Ground a MET major civilization owns whose city attribution is unresolved
+    /// to this seat. That means either no city of theirs is visible, or the plot
+    /// sits on the fifth ownership ring of the nearest visible city, where the
+    /// host cannot distinguish that city from a nearer one still in fog. Written
+    /// fresh from the export every turn beside `closed_borders`, and empty on any
+    /// board that is not a live mirror. A settle site beside such a border can sit
+    /// under Loyalty pressure the forecast cannot count: run
+    /// civvis-20260826T030045Z founded Lugdunum five tiles from a German border
+    /// attributed to a city ten tiles away, read −22 Loyalty on its first export,
+    /// and lost the undamaged city at t70. See `AdvancedAi::frontier_loyalty`.
     #[serde(default)]
     pub unseen_major_borders: BTreeSet<Pos>,
     /// How much sealed ground each MAJOR seat accounts for — the mirrored seat
