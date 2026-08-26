@@ -34410,18 +34410,17 @@ fn a_neighbour_twelve_tiles_east(met: bool) -> Game {
     game
 }
 
-/// The sixth ring beside a city-state is legal under the engine's ordinary
-/// city-spacing rule, but remains inside a mobile siege stack's practical
-/// reach once a rival Suzerain brings the city-state into war. Standard
-/// settlement safety keeps that exact ring clear, while the seventh ring and
-/// frozen legacy remain open.
+/// The sixth ring beside a revealed but presently fogged city-state is legal
+/// under the engine's ordinary city-spacing rule, but remains inside a mobile
+/// siege stack's practical reach once a rival Suzerain brings the city-state
+/// into war. Standard settlement safety keeps that exact ring clear, while the
+/// seventh ring and frozen legacy remain open.
 #[test]
-fn settlement_safety_keeps_clear_of_a_visible_city_states_sixth_ring() {
+fn settlement_safety_remembers_a_revealed_city_states_sixth_ring() {
     let mut game = a_neighbour_twelve_tiles_east(false);
     let city_state = game.player_city_ids(1)[0];
     let city_state_pos = game.cities[&city_state].pos;
     game.players[1].is_minor = true;
-    game.spawn_test_unit("scout", 0, (21, 10));
 
     let doorstep = (16, 10);
     let beyond = (15, 10);
@@ -34456,10 +34455,14 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_sixth_ring() {
     let live = AdvancedAi::new();
     let visible = live.battlefront_visibility(&game, 0);
     assert!(
-        game.sees(&visible, city_state_pos),
-        "fixture: the city-state is visible"
+        game.players[0].explored.contains(&city_state_pos),
+        "fixture: the city-state center was revealed"
     );
-    let exclusion = live.city_state_settlement_exclusion(&game, 0, &visible);
+    assert!(
+        !game.sees(&visible, city_state_pos),
+        "fixture: the revealed city-state has fallen out of current sight"
+    );
+    let exclusion = live.city_state_settlement_exclusion(&game, 0);
     assert!(
         exclusion.contains(&doorstep),
         "the sixth, otherwise legal founding ring stays clear"
@@ -34483,7 +34486,7 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_sixth_ring() {
     );
     assert!(
         AdvancedAi::legacy()
-            .city_state_settlement_exclusion(&game, 0, &visible)
+            .city_state_settlement_exclusion(&game, 0)
             .is_empty(),
         "the frozen legacy controller keeps its recorded settlement policy"
     );
