@@ -329,6 +329,44 @@ class PublicationMetadata(unittest.TestCase):
         self.assertEqual(base, "base-commit")
         self.assertEqual(genome, ("current-a", "current-b"))
 
+    def test_the_guard_knows_every_path_genes_py_write_records(self):
+        """⭐ The allowed set is DERIVED from the writers, not restated here.
+
+        `PUBLICATION_GENERATED_FILES` is deliberately explicit — a new
+        generated artifact should be reviewed into it rather than swept into a
+        publication. But the list lives in this file and the writing lives in
+        `tools/genes.py`, so when #2584 taught `genes.py write` to record
+        `tools/genome_cost_floor.json` the two drifted, and the fail-closed
+        guard refused every continuous publication on every machine until
+        someone noticed. Restating the tuple in a test cannot catch that: it is
+        the same hand-maintenance a second time.
+
+        This asks the writers what they write. `genes.py write` ends by writing
+        these four paths and calling `genome_cost.record`, which writes its own;
+        a sixth output added as a module path constant fails here instead of in
+        a stalled tournament.
+        """
+        import genes
+        import genome_cost
+
+        recorded = {
+            genes.LEDGER_JSON,
+            genes.RANKING_MD,
+            genes.EVIDENCE_MD,
+            genes.REGISTRY_PATH,
+            genome_cost.RECORD_JSON,
+        }
+        relative = {
+            str(path.resolve().relative_to(genes.ROOT.resolve()))
+            for path in recorded
+        }
+        self.assertEqual(
+            relative,
+            set(scheduler.PUBLICATION_GENERATED_FILES),
+            "every path `genes.py write` records must be allowed through the "
+            "publication guard, and nothing else",
+        )
+
     def test_publication_claim_and_guard_include_every_generated_ranking_artifact(self):
         self.assertEqual(
             scheduler.PUBLICATION_GENERATED_FILES,
@@ -337,6 +375,7 @@ class PublicationMetadata(unittest.TestCase):
                 "GENE_HEURISTIC_RANKING.md",
                 "docs/GENE_RANKING_EVIDENCE.md",
                 "src/ai/advanced/genes.rs",
+                "tools/genome_cost_floor.json",
             ),
         )
         batch = scheduler.new_batch(1, 1, ident="publication-artifacts")

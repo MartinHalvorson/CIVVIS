@@ -1005,6 +1005,7 @@
     "operator_default_on": [
       "apostle-promotion-by-role",
       "army-target-weighs-enemy",
+      "barbarian-settler-capture",
       "boost-wait-research",
       "builder-supply-floor",
       "buildings-before-projects",
@@ -1071,6 +1072,7 @@
       "barbarian-bargain",
       "barbarian-ranged-answer",
       "barbarian-scouts-are-scouts",
+      "barbarian-settler-capture",
       "blind-objective-units",
       "boost-wait-research",
       "builder-supply-floor",
@@ -1670,7 +1672,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 83
+    "default_on": 84
   },
   "genes": [
     {

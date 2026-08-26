@@ -8246,6 +8246,382 @@ mod tests {
             Some("project:campus_research_grants")
         );
         assert_eq!(key("UNIT_NOT_A_UNIT", None), None);
+
+    /// A board with one met rival on seat 1, for the host-diplomacy tests.
+    fn diplomacy_board(turn: u32, rival: StateRival) -> (Snapshot, StateSnapshot) {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(9, 9, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        state.rivals.push(rival);
+        (snapshot, state)
+    }
+
+    fn diplomacy_actions(game: &crate::game::Game) -> Vec<crate::game::Action> {
+        game.legal_actions_within(0, crate::game::ActionFamilies::DIPLOMACY)
+    }
+
+    fn formal_war_legal(game: &crate::game::Game) -> bool {
+        diplomacy_actions(game).iter().any(|action| {
+            matches!(
+                action,
+                crate::game::Action::DeclareWarWithCasusBelli { player: 1, casus_belli }
+                    if casus_belli == "formal_war"
+            )
+        })
+    }
+
+    /// ★★★★★ The host's DENOUNCED state and its grievance ledger land on the
+    /// board, on the right sides, with the host's own clock — and a later
+    /// NEUTRAL export clears them. FIDELITY.md "The one-to-one map", item 1:
+    /// every war, peace and denounce decision was made blind to this.
+    #[test]
+    fn a_host_denouncement_and_its_grievances_land_on_the_board_and_a_neutral_export_clears_them() {
+        let rival = StateRival {
+            player: 3,
+            can_declare: true,
+            diplomatic_state: Some("DIPLO_STATE_DENOUNCED".to_string()),
+            our_denounce_turn: Some(38),
+            their_denounce_turn: Some(0),
+            denounce_time_limit: Some(30),
+            our_grievances_against_them: Some(0.0),
+            grievances_against_us: Some(50.0),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(40, rival);
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        assert_eq!(
+            game.relationship_state(0, 1),
+            "denounced",
+            "the host's DENOUNCED must be the board's"
+        );
+        assert_eq!(
+            game.players[0].denounced_since.get(&1).copied(),
+            Some(38),
+            "the denouncement started when the host says it did"
+        );
+        assert_eq!(
+            game.players[0].denounced_until.get(&1).copied(),
+            Some(38 + 30 + 1),
+            "and runs the host's DenounceTimeLimit (+1, DiplomacyActionView.lua:1500)"
+        );
+        assert!(
+            !game.players[1].denounced_until.contains_key(&0),
+            "a denounce turn of 0 on their side means they did not denounce us"
+        );
+        assert_eq!(
+            game.players[1].grievances.get(&0).copied(),
+            Some(50.0),
+            "50 grievances against us sit on THEIR ledger under our seat"
+        );
+        assert!(
+            !game.players[0].grievances.contains_key(&1),
+            "and none on ours: one signed balance per pair"
+        );
+        assert!(
+            !formal_war_legal(game),
+            "two turns into our own denouncement the Formal War wait has not \
+             matured — the board waits the host's five turns, not a faked one"
+        );
+        assert!(
+            !diplomacy_actions(game)
+                .iter()
+                .any(|action| matches!(action, crate::game::Action::Denounce { player: 1 })),
+            "an active denouncement cannot be repeated"
+        );
+
+        // Five host turns on: the Formal War the engine's own rule allows.
+        state.turn = 43;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            formal_war_legal(&mirror.game),
+            "at since + 5 the host's clock opens the Formal War"
+        );
+
+        // The host now says NEUTRAL with a clean ledger and no permission.
+        state.turn = 44;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        state.rivals[0].our_denounce_turn = Some(38);
+        state.rivals[0].grievances_against_us = Some(0.0);
+        state.rivals[0].can_declare = false;
+        mirror.sync(&snapshot, &state, 0);
+        let game = &mirror.game;
+        assert_eq!(game.relationship_state(0, 1), "neutral");
+        assert!(!game.players[0].denounced_until.contains_key(&1));
+        assert!(!game.players[0].denounced_since.contains_key(&1));
+        assert!(!game.players[1].grievances.contains_key(&0));
+        assert!(game.alliance_with(0, 1).is_none() && !game.are_friends(0, 1));
+    }
+
+    /// ALLIED level 2 → an `alliances` entry on both seats with the host's
+    /// kind, level and expiry past this turn; NEUTRAL afterwards clears it.
+    #[test]
+    fn a_host_alliance_lands_with_its_kind_level_and_expiry_and_clears_on_neutral() {
+        let rival = StateRival {
+            player: 3,
+            diplomatic_state: Some("DIPLO_STATE_ALLIED".to_string()),
+            alliance_type: Some("ALLIANCE_MILITARY".to_string()),
+            alliance_level: Some(2),
+            alliance_turns_left: Some(12),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(60, rival);
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        let alliance = game
+            .alliance_with(0, 1)
+            .expect("the host's alliance is on our seat");
+        assert_eq!(alliance.kind, "military");
+        assert_eq!(alliance.level, 2);
+        assert_eq!(
+            alliance.ends,
+            60 + 12 + 1,
+            "ends past this turn, at the host's expiry"
+        );
+        assert!(game.are_allied(1, 0), "and on theirs");
+        assert!(game.are_friends(0, 1), "an alliance implies the friendship");
+        assert_eq!(game.relationship_state(0, 1), "allied");
+        assert!(
+            !diplomacy_actions(game).iter().any(|action| matches!(
+                action,
+                crate::game::Action::DeclareWar { player: 1 }
+                    | crate::game::Action::Denounce { player: 1 }
+            )),
+            "no war and no denouncement against an ally"
+        );
+
+        state.turn = 61;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        state.rivals[0].alliance_type = None;
+        state.rivals[0].alliance_level = None;
+        state.rivals[0].alliance_turns_left = None;
+        mirror.sync(&snapshot, &state, 0);
+        let game = &mirror.game;
+        assert!(game.alliance_with(0, 1).is_none() && game.alliance_with(1, 0).is_none());
+        assert!(!game.are_friends(0, 1));
+        assert_eq!(game.relationship_state(0, 1), "neutral");
+    }
+
+    /// DECLARED_FRIEND → `friends_until` both sides from the host's
+    /// friendship turn, and the board withholds war and denouncement the way
+    /// the host does; NEUTRAL clears it.
+    #[test]
+    fn a_host_declared_friendship_lands_and_bars_war_until_a_neutral_export() {
+        let rival = StateRival {
+            player: 3,
+            can_declare: false,
+            diplomatic_state: Some("DIPLO_STATE_DECLARED_FRIEND".to_string()),
+            friendship_turn: Some(30),
+            denounce_time_limit: Some(30),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(40, rival);
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        assert!(game.are_friends(0, 1) && game.are_friends(1, 0));
+        assert_eq!(
+            game.players[0].friends_until.get(&1).copied(),
+            Some(60),
+            "friendship runs from the host's turn for DenounceTimeLimit turns (:1511)"
+        );
+        assert_eq!(game.relationship_state(0, 1), "declared_friend");
+        assert!(
+            !diplomacy_actions(game).iter().any(|action| matches!(
+                action,
+                crate::game::Action::DeclareWar { player: 1 }
+                    | crate::game::Action::DeclareWarWithCasusBelli { player: 1, .. }
+                    | crate::game::Action::Denounce { player: 1 }
+            )),
+            "the host refuses war and denouncement against a declared friend; so must the board"
+        );
+
+        state.turn = 41;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        state.rivals[0].friendship_turn = Some(0);
+        mirror.sync(&snapshot, &state, 0);
+        assert!(!mirror.game.are_friends(0, 1) && !mirror.game.are_friends(1, 0));
+        assert_eq!(mirror.game.relationship_state(0, 1), "neutral");
+    }
+
+    /// Missions, promises, visibility and the grant WE make cross both ways
+    /// and clear when the next export withdraws them; the same rules on the
+    /// rebuild path.
+    #[test]
+    fn host_missions_promises_visibility_and_our_grant_cross_both_ways() {
+        let rival = StateRival {
+            player: 3,
+            diplomatic_state: Some("DIPLO_STATE_FRIENDLY".to_string()),
+            embassy_at: Some(true),
+            delegation_at: Some(false),
+            their_embassy: Some(false),
+            their_delegation: Some(true),
+            promises_made: Some(vec!["DONT_SETTLE_NEAR_ME".to_string()]),
+            promises_received: Some(vec![
+                "DONT_SPY_ON_ME".to_string(),
+                "DONT_CONVERT_MY_CITIES".to_string(),
+            ]),
+            visibility: Some(2),
+            their_visibility_on_us: Some(1),
+            open_borders_granted: Some(true),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(50, rival);
+        // Rebuild path first: the same helper, a fresh board.
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            rebuilt
+                .game
+                .diplomatic_mission_to(0, 1)
+                .map(|m| m.kind.as_str()),
+            Some("embassy")
+        );
+        assert_eq!(rebuilt.game.diplomatic_visibility(0, 1), 2.0);
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        assert_eq!(
+            game.diplomatic_mission_to(0, 1).map(|m| m.kind.as_str()),
+            Some("embassy"),
+            "our Resident Embassy at their court"
+        );
+        assert_eq!(
+            game.diplomatic_mission_to(1, 0).map(|m| m.kind.as_str()),
+            Some("delegation"),
+            "their Delegation at ours"
+        );
+        assert!(
+            game.players[0]
+                .promises
+                .get(&1)
+                .is_some_and(|book| book.contains_key("no_settling")),
+            "a promise WE made sits on our ledger under their seat, as the engine kind"
+        );
+        let theirs = game.players[1]
+            .promises
+            .get(&0)
+            .expect("their promises to us");
+        assert!(theirs.contains_key("no_spying") && theirs.contains_key("no_conversion"));
+        assert_eq!(
+            game.diplomatic_visibility(0, 1),
+            2.0,
+            "the host's visibility level outranks the board's derivation"
+        );
+        assert_eq!(game.diplomatic_visibility(1, 0), 1.0);
+        assert!(
+            game.players[0]
+                .open_borders_until
+                .get(&1)
+                .is_some_and(|until| *until > 50),
+            "the Open Borders we grant is on our seat under theirs"
+        );
+        assert_eq!(
+            game.relationship_state(0, 1),
+            "neutral",
+            "FRIENDLY is no treaty"
+        );
+
+        state.turn = 51;
+        state.rivals[0].embassy_at = Some(false);
+        state.rivals[0].their_delegation = Some(false);
+        state.rivals[0].promises_made = Some(Vec::new());
+        state.rivals[0].promises_received = Some(Vec::new());
+        state.rivals[0].visibility = None;
+        state.rivals[0].their_visibility_on_us = Some(0);
+        state.rivals[0].open_borders_granted = Some(false);
+        mirror.sync(&snapshot, &state, 0);
+        let game = &mirror.game;
+        assert!(game.diplomatic_mission_to(0, 1).is_none());
+        assert!(game.diplomatic_mission_to(1, 0).is_none());
+        assert!(!game.players[0].promises.contains_key(&1));
+        assert!(!game.players[1].promises.contains_key(&0));
+        assert!(
+            !game.players[0].observed_visibility.contains_key(&1),
+            "a reading the host would not give falls back to the derivation"
+        );
+        assert_eq!(game.diplomatic_visibility(1, 0), 0.0);
+        assert!(!game.players[0].open_borders_until.contains_key(&1));
+    }
+
+    /// ⚠ The old mod exports no `diplomatic_state`: the `can_declare`
+    /// permission fake is written exactly as before on both paths, and a new
+    /// export that says NEUTRAL while the host permits a declaration still
+    /// carries it — the bridge has no `Denounce` order, so this is the only
+    /// path by which a permitted war is ever declared.
+    #[test]
+    fn an_export_without_diplomatic_state_keeps_the_can_declare_fallback() {
+        let rival = StateRival {
+            player: 3,
+            can_declare: true,
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(40, rival);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            rebuilt.game.players[0].denounced_until.get(&1).copied(),
+            Some(41),
+            "rebuild path: the permission fake, unchanged"
+        );
+        assert!(formal_war_legal(&rebuilt.game));
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.players[0].denounced_until.get(&1).copied(),
+            Some(41)
+        );
+        assert!(
+            mirror.game.players[0].grievances.is_empty()
+                && mirror.game.players[1].grievances.is_empty()
+                && mirror.game.players[0].observed_visibility.is_empty(),
+            "nothing else is invented for an export that does not carry it"
+        );
+
+        // Withdrawn permission clears the fake (sync path).
+        state.turn = 41;
+        state.rivals[0].can_declare = false;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(!mirror.game.players[0].denounced_until.contains_key(&1));
+
+        // A NEUTRAL export with the permission keeps the fake alive.
+        state.turn = 42;
+        state.rivals[0].can_declare = true;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.players[0].denounced_until.get(&1).copied(),
+            Some(43)
+        );
+        assert!(
+            formal_war_legal(&mirror.game),
+            "the host permits a declaration; the board must still have a maturing path to one"
+        );
     }
 
     #[test]
@@ -11251,6 +11627,77 @@ pub struct StateRival {
     /// border and none arrived.
     #[serde(default)]
     pub enforces_borders: Option<bool>,
+    /// The host's own relationship state for this rival toward us —
+    /// `GameInfo.DiplomaticStates[GetDiplomaticAI():GetDiplomaticStateIndex(us)]
+    /// .StateType`: `DIPLO_STATE_WAR`, `_DENOUNCED`, `_UNFRIENDLY`, `_NEUTRAL`,
+    /// `_FRIENDLY`, `_DECLARED_FRIEND`, `_ALLIED` (`DiplomacyActionView.lua:870`).
+    /// `None` on an older export, which keeps the `can_declare` fallback below.
+    /// See [`apply_host_diplomacy`] for what each state writes on the board.
+    #[serde(default)]
+    pub diplomatic_state: Option<String>,
+    /// Grievances we hold against them and they against us, both `>= 0`. The
+    /// host keeps ONE signed balance per pair (`GetGrievancesAgainst`,
+    /// `DiplomacyActionView_WorldCongressTab.lua:42`); the mod splits it.
+    #[serde(default)]
+    pub our_grievances_against_them: Option<f64>,
+    #[serde(default)]
+    pub grievances_against_us: Option<f64>,
+    /// `Game.GetGameDiplomacy():GetGrievanceChangePerTurn(them, us)` — the
+    /// host's per-turn drift of that balance. Crosses for the record and
+    /// `--dump-mirror`; no decision reads it yet (the board's own decay rule
+    /// runs in `Game::process_diplomacy`).
+    #[serde(default)]
+    pub grievance_change_per_turn: Option<f64>,
+    /// `GetAllianceType` as `GameInfo.Alliances[i].AllianceType`
+    /// (`ALLIANCE_MILITARY`, …), absent when the host answers `-1`; the level
+    /// and the turns until expiry from the shipped Alliance tab.
+    #[serde(default)]
+    pub alliance_type: Option<String>,
+    #[serde(default)]
+    pub alliance_level: Option<i32>,
+    #[serde(default)]
+    pub alliance_turns_left: Option<i64>,
+    /// `GetDenounceTurn` from each side and `GetDeclaredFriendshipTurn`
+    /// (`DiplomacyActionView.lua:1486-1511`), with the game's
+    /// `GetDenounceTimeLimit`, so the Formal War wait on the board is the
+    /// host's own clock. A value `<= 0` means no such turn.
+    #[serde(default)]
+    pub our_denounce_turn: Option<i64>,
+    #[serde(default)]
+    pub their_denounce_turn: Option<i64>,
+    #[serde(default)]
+    pub friendship_turn: Option<i64>,
+    #[serde(default)]
+    pub denounce_time_limit: Option<i64>,
+    /// `GetVisibilityOn` both ways — the `GameInfo.Visibilities` index
+    /// (0 none … 4 top secret). Written to `Player::observed_visibility`,
+    /// which [`crate::game::Game::diplomatic_visibility`] prefers.
+    #[serde(default)]
+    pub visibility: Option<i64>,
+    #[serde(default)]
+    pub their_visibility_on_us: Option<i64>,
+    /// Open Borders WE grant them (`theirs:HasOpenBordersFrom(us)`).
+    #[serde(default)]
+    pub open_borders_granted: Option<bool>,
+    /// Our Delegation / Resident Embassy at their court and theirs at ours
+    /// (`HasDelegationAt` / `HasEmbassyAt`, the accessors the delegation
+    /// actuator already calls).
+    #[serde(default)]
+    pub delegation_at: Option<bool>,
+    #[serde(default)]
+    pub embassy_at: Option<bool>,
+    #[serde(default)]
+    pub their_delegation: Option<bool>,
+    #[serde(default)]
+    pub their_embassy: Option<bool>,
+    /// `PromiseTypes` member names (`DONT_SETTLE_NEAR_ME`, …) for promises we
+    /// made to them and they made to us (`IsPromiseMade`,
+    /// `DiplomacyActionView_AllianceRow.lua:61-70`). `Some(vec![])` is the
+    /// host's "none"; `None` an older export.
+    #[serde(default)]
+    pub promises_made: Option<Vec<String>>,
+    #[serde(default)]
+    pub promises_received: Option<Vec<String>>,
     /// How many technologies this rival has finished, or `-1` if the host
     /// could not be asked.
     ///
@@ -13485,10 +13932,51 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "turns_to_establish", "neutralized_turns", "promotions",
     ];
     const RIVAL: &[&str] = &[
-        "player", "civ", "leader", "government", "dark_age", "golden_age",
-        "heroic_golden_age", "can_declare", "score", "dvp", "military", "at_war",
-        "techs", "civics", "cities", "units",
-        "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
+        "player",
+        "civ",
+        "leader",
+        "government",
+        "dark_age",
+        "golden_age",
+        "heroic_golden_age",
+        "can_declare",
+        // The host's own relationship, ledger, alliance, missions, promises
+        // and visibility for this rival — see `StateRival::diplomatic_state`.
+        "diplomatic_state",
+        "our_grievances_against_them",
+        "grievances_against_us",
+        "grievance_change_per_turn",
+        "alliance_type",
+        "alliance_level",
+        "alliance_turns_left",
+        "our_denounce_turn",
+        "their_denounce_turn",
+        "friendship_turn",
+        "denounce_time_limit",
+        "visibility",
+        "their_visibility_on_us",
+        "open_borders_granted",
+        "delegation_at",
+        "embassy_at",
+        "their_delegation",
+        "their_embassy",
+        "promises_made",
+        "promises_received",
+        "score",
+        "dvp",
+        "military",
+        "at_war",
+        "techs",
+        "civics",
+        "cities",
+        "units",
+        "science",
+        "culture",
+        "tourism",
+        "gold",
+        "gold_per_turn",
+        "faith",
+        "faith_per_turn",
         "public_stats",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
@@ -17343,6 +17831,274 @@ fn apply_host_competitions(game: &mut crate::game::Game, state: &StateSnapshot) 
     game.replace_host_competitions(competitions);
 }
 
+/// Write the host's own diplomacy for one rival — seat pair `(0, owner)` —
+/// onto the board, assigned from every export so a lapsed state clears.
+///
+/// Before this the only diplomacy that crossed for a rival was `at_war`,
+/// `open_borders` and `can_declare`, and the last was mirrored as a faked
+/// denouncement (`denounced_until = turn + 1`) so that a Formal War could be
+/// legal on a board whose own five-turn wait never matures. `can_declare`
+/// says a war is LEGAL; it never said whether it was ruinous. Every decision
+/// that reads the ledger — `preferred_war_opening`'s casus belli choice and
+/// its wait, the alliance-partner filter (`grievances < 75`), the coalition
+/// and joint-war partner screens, `relationship_opinion`, the declared-friend
+/// and alliance bars in `legal_actions` — read an empty ledger on every live
+/// turn.
+///
+/// What each host state writes (`civvis_orders --dump-mirror` reads it back):
+/// - `DIPLO_STATE_DENOUNCED`: `denounced_until` / `denounced_since` on the
+///   side(s) that denounced, from the host's `GetDenounceTurn` and
+///   `GetDenounceTimeLimit` (`DiplomacyActionView.lua:1486-1503`), so the
+///   Formal War wait on the board is the host's own clock. When the host
+///   gives neither side's turn the pair reads as denounced from this turn.
+/// - `DIPLO_STATE_DECLARED_FRIEND`: `friends_until` both sides from
+///   `GetDeclaredFriendshipTurn` (`:1510-1511`); `legal_actions` then
+///   withholds war and denouncement, as the host does.
+/// - `DIPLO_STATE_ALLIED`: `alliances` both sides with the host's type, level
+///   and turns to expiry, plus the friendship an alliance implies.
+/// - Any other state clears all three on both sides.
+/// - Independently of the state: the grievance balance both ways, missions
+///   both ways, promises both ways, the Open Borders WE grant, and the
+///   visibility level both ways (`Player::observed_visibility`, which
+///   `Game::diplomatic_visibility` prefers to its derivation).
+///
+/// ⚠ The `can_declare` permission fake stays, in one case: when the host
+/// permits a declaration and the board holds no ACTIVE denouncement of our
+/// own, `denounced_until = turn + 1` is still written. The bridge carries no
+/// `Denounce` order, so a board denouncement never reaches the host; without
+/// the fake `preferred_war_opening` would denounce on the board every turn,
+/// be rebuilt without it, and never declare — the 81-turn, zero-declaration
+/// history that put the fake there. It is the one board fact that is not the
+/// host's, and FIDELITY.md's queue names it.
+///
+/// An export without `diplomatic_state` (an older mod) writes only the fake,
+/// exactly as before.
+pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, rival: &StateRival) {
+    if owner == 0 || owner >= game.players.len() {
+        return;
+    }
+    let turn = game.turn;
+    let permitted = rival.can_declare && !rival.at_war;
+    let Some(state) = rival.diplomatic_state.as_deref() else {
+        if permitted {
+            game.players[0].denounced_until.insert(owner, turn + 1);
+        } else {
+            game.players[0].denounced_until.remove(&owner);
+        }
+        return;
+    };
+    let state = state.strip_prefix("DIPLO_STATE_").unwrap_or(state);
+    let limit = rival
+        .denounce_time_limit
+        .filter(|limit| *limit > 0)
+        .map(|limit| limit as u32);
+    let host_turn = |value: Option<i64>| value.filter(|t| *t > 0).map(|t| t as u32);
+    // A state that began on `since` runs `limit` more host turns (the
+    // denouncement one more, `:1500`); without both it is simply re-read from
+    // the next export.
+    let expiry = |since: Option<u32>, extra: u32| match (since, limit) {
+        (Some(since), Some(limit)) => since.saturating_add(limit).saturating_add(extra),
+        _ => turn + 2,
+    };
+
+    // Denouncement, each side from its own denounce turn.
+    let denounced = state == "DENOUNCED";
+    let ours = denounced
+        .then(|| host_turn(rival.our_denounce_turn))
+        .flatten();
+    let theirs = denounced
+        .then(|| host_turn(rival.their_denounce_turn))
+        .flatten();
+    let side_unknown = denounced && ours.is_none() && theirs.is_none();
+    for (denouncer, target, since, active) in [
+        (0, owner, ours, ours.is_some() || side_unknown),
+        (owner, 0, theirs, theirs.is_some() || side_unknown),
+    ] {
+        let player = &mut game.players[denouncer];
+        if active {
+            player.denounced_until.insert(target, expiry(since, 1));
+            match since {
+                Some(since) => {
+                    player.denounced_since.insert(target, since);
+                }
+                None => {
+                    player.denounced_since.remove(&target);
+                }
+            }
+        } else {
+            player.denounced_until.remove(&target);
+            player.denounced_since.remove(&target);
+        }
+    }
+    // The permission fake (see above): the host permits a declaration and
+    // the board holds no active denouncement of our own.
+    let own_active = game.players[0]
+        .denounced_until
+        .get(&owner)
+        .is_some_and(|until| *until > turn);
+    if permitted && !own_active {
+        game.players[0].denounced_until.insert(owner, turn + 1);
+        game.players[0].denounced_since.remove(&owner);
+    }
+
+    // Declared friendship; an alliance implies it, as the engine's own deal
+    // acceptance writes both.
+    if matches!(state, "DECLARED_FRIEND" | "ALLIED") {
+        let until = expiry(host_turn(rival.friendship_turn), 0);
+        game.players[0].friends_until.insert(owner, until);
+        game.players[owner].friends_until.insert(0, until);
+    } else {
+        game.players[0].friends_until.remove(&owner);
+        game.players[owner].friends_until.remove(&0);
+    }
+
+    // Alliance, with the host's type and level; `ends` past this turn so
+    // `alliance_with` sees it, and past the host's expiry when it is given.
+    if state == "ALLIED" {
+        let kind = rival
+            .alliance_type
+            .as_deref()
+            .map(|kind| {
+                kind.strip_prefix("ALLIANCE_")
+                    .unwrap_or(kind)
+                    .to_ascii_lowercase()
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        let level = rival.alliance_level.unwrap_or(1).max(1);
+        let ends = match rival.alliance_turns_left.filter(|left| *left >= 0) {
+            Some(left) => turn.saturating_add(left as u32).saturating_add(1),
+            None => turn + 2,
+        };
+        // The engine's own level thresholds, so a reader of `points` agrees
+        // with the level the host reports.
+        let points = match level {
+            1 => 0.0,
+            2 => 80.0,
+            _ => 240.0,
+        };
+        let alliance = crate::game::AllianceState {
+            kind,
+            points,
+            level,
+            ends,
+        };
+        game.players[0].alliances.insert(owner, alliance.clone());
+        game.players[owner].alliances.insert(0, alliance);
+    } else {
+        game.players[0].alliances.remove(&owner);
+        game.players[owner].alliances.remove(&0);
+    }
+
+    // The grievance balance, each direction on the aggrieved side's ledger
+    // (`Player::grievances[offender]`), the way `add_direct_grievances`
+    // books it. Untouched when the host gave neither number.
+    if rival.our_grievances_against_them.is_some() || rival.grievances_against_us.is_some() {
+        for (aggrieved, offender, amount) in [
+            (0, owner, rival.our_grievances_against_them),
+            (owner, 0, rival.grievances_against_us),
+        ] {
+            let amount = amount.unwrap_or(0.0);
+            if amount > 0.0 && amount.is_finite() {
+                game.players[aggrieved].grievances.insert(offender, amount);
+            } else {
+                game.players[aggrieved].grievances.remove(&offender);
+            }
+        }
+    }
+
+    // Missions: an Embassy replaces a Delegation, at most one per counterpart.
+    for (sender, host, embassy, delegation) in [
+        (0, owner, rival.embassy_at, rival.delegation_at),
+        (owner, 0, rival.their_embassy, rival.their_delegation),
+    ] {
+        if embassy.is_none() && delegation.is_none() {
+            continue;
+        }
+        let kind = if embassy == Some(true) {
+            Some("embassy")
+        } else if delegation == Some(true) {
+            Some("delegation")
+        } else {
+            None
+        };
+        let missions = &mut game.players[sender].diplomatic_missions;
+        match kind {
+            Some(kind) => {
+                let sent = missions
+                    .get(&host)
+                    .filter(|mission| mission.kind == kind)
+                    .map(|mission| mission.sent)
+                    .unwrap_or(turn);
+                missions.insert(
+                    host,
+                    crate::game::DiplomaticMission {
+                        kind: kind.to_string(),
+                        sent,
+                    },
+                );
+            }
+            None => {
+                missions.remove(&host);
+            }
+        }
+    }
+
+    // Promises, keyed as the engine keys them: the promisor's ledger, by the
+    // requester, by kind. The host names a kind from the requester's side
+    // ("near ME"); three map onto engine kinds, the rest keep their name.
+    let promise_kind = |name: &str| match name {
+        "DONT_SETTLE_NEAR_ME" => "no_settling".to_string(),
+        "DONT_SPY_ON_ME" => "no_spying".to_string(),
+        "DONT_CONVERT_MY_CITIES" => "no_conversion".to_string(),
+        other => other.to_ascii_lowercase(),
+    };
+    for (promisor, requester, names) in [
+        (0, owner, rival.promises_made.as_ref()),
+        (owner, 0, rival.promises_received.as_ref()),
+    ] {
+        let Some(names) = names else {
+            continue;
+        };
+        if names.is_empty() {
+            game.players[promisor].promises.remove(&requester);
+            continue;
+        }
+        let book: BTreeMap<String, u32> = names
+            .iter()
+            .map(|name| (promise_kind(name), turn + 2))
+            .collect();
+        game.players[promisor].promises.insert(requester, book);
+    }
+
+    // Visibility both ways; a missing reading falls back to the derivation.
+    for (viewer, subject, level) in [
+        (0, owner, rival.visibility),
+        (owner, 0, rival.their_visibility_on_us),
+    ] {
+        match level {
+            Some(level) => {
+                game.players[viewer]
+                    .observed_visibility
+                    .insert(subject, level.max(0) as f64);
+            }
+            None => {
+                game.players[viewer].observed_visibility.remove(&subject);
+            }
+        }
+    }
+
+    // The Open Borders WE grant, the mirror image of `rival.open_borders`.
+    match rival.open_borders_granted {
+        Some(true) => {
+            game.players[0].open_borders_until.insert(owner, turn + 2);
+        }
+        Some(false) => {
+            game.players[0].open_borders_until.remove(&owner);
+        }
+        None => {}
+    }
+}
+
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
     snapshot: &Snapshot,
@@ -18037,9 +18793,11 @@ pub fn rebuild_from_state(
         } else {
             game.at_war.remove(&bond);
         }
-        if rival.can_declare && !rival.at_war {
-            game.players[0].denounced_until.insert(owner, game.turn + 1);
-        }
+        // The host's relationship, ledger, alliance, missions, promises and
+        // visibility for this rival — and, inside it, the `can_declare`
+        // permission fake an older export is left with. See
+        // `apply_host_diplomacy`.
+        apply_host_diplomacy(&mut game, owner, rival);
         // The host's own "received Open Borders" answer, assigned rather than
         // extended: the flag is re-read from every export, so an agreement
         // that lapses on the host closes the mirrored grant on the next
@@ -19756,11 +20514,11 @@ impl LiveMirror {
             } else {
                 self.game.at_war.remove(&bond);
             }
-            if rival.can_declare && !rival.at_war {
-                self.game.players[0].denounced_until.insert(owner, self.game.turn + 1);
-            } else {
-                self.game.players[0].denounced_until.remove(&owner);
-            }
+            // The permission above, and — when the mod exports it — the
+            // host's whole relationship for this rival: state, grievance
+            // ledger, alliance, missions, promises and visibility. See
+            // `apply_host_diplomacy`.
+            apply_host_diplomacy(&mut self.game, owner, rival);
             // The host's "received Open Borders" answer, applied the same way
             // `at_war` is: assigned from every export, so a lapsed agreement
             // closes the mirrored grant on the next sync. The border-sealing
