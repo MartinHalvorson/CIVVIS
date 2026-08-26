@@ -297,11 +297,21 @@ class PublicationMetadata(unittest.TestCase):
             agent="continuous-batch", coordinated="#1234", computer="Test Mac")
         self.assertIn("5,000 validated completed games / 30,000 seats / 5,000 wins", body)
         self.assertIn("changes no game mechanics", body)
-        self.assertIn("generated default selection", body)
+        self.assertIn("retaining the selected default genome", body)
         self.assertIn("Computer: `Test Mac`", body)
         self.assertIn("Coordinated with: #1234", body)
         self.assertIn("publish validated 5,000-completed-game", body)
         self.assertIn("overwrite-guard: allow this report deliberately regenerates", body)
+
+    def test_every_publication_explicitly_preserves_the_selected_defaults(self):
+        self.assertEqual(
+            scheduler.reporting_write_command("docs/gene_screens/example.json"),
+            [
+                sys.executable, "tools/genes.py", "write",
+                "--preserve-deployment-defaults", "--reporting-batch",
+                "docs/gene_screens/example.json",
+            ],
+        )
 
     def test_publication_claim_and_guard_include_every_generated_ranking_artifact(self):
         self.assertEqual(

@@ -522,80 +522,105 @@ mod tests {
         }
     }
 
-    /// ★ THE MIRROR: every default is the batch rule's answer over the
-    /// generated batch columns, or an operator pin above it, so
-    /// `tools/genes.py` and this crate cannot disagree about what ships. An
-    /// unpinned gene with no columns is off; a family ships exactly one
-    /// version, and only when the rule or a pin turns a version on.
+    /// ★ THE MIRROR: a normal deployment follows the batch rule plus pins;
+    /// a reporting-only publication retains the preceding selected genome.
+    /// Both forms keep one version per family and agree with every generated
+    /// verdict row, so a displayed historical batch cannot silently rewrite
+    /// the live defaults.
     #[test]
     fn the_default_follows_the_batch_rule() {
-        assert_eq!(deployment_policy(), "batch-rule+operator-pins");
+        let retained = deployment_policy() == "operator-retained-selection";
+        assert!(
+            retained || deployment_policy() == "batch-rule+operator-pins",
+            "unknown generated deployment policy: {}",
+            deployment_policy()
+        );
         let genome = table::DEPLOYMENT_GENOME;
         let mut sorted = genome.to_vec();
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(sorted, genome, "the deployment genome is sorted and unique");
-        let mut rule_on_by_family: std::collections::BTreeMap<&str, Vec<&str>> =
-            std::collections::BTreeMap::new();
-        for (tag, columns) in table::BATCH_COLUMNS {
-            assert!(
-                screenable(tag),
-                "{tag}: only a screenable gene has batch columns"
-            );
-            let call = batch_rule(columns);
-            // ⭐ A pin is on above the rule's answer, which `call` still is.
-            let on = call == BatchRule::On || operator_pinned_on(tag);
-            let family = family_base(tag);
-            if family == *tag {
+        if retained {
+            for tag in genome {
+                assert!(screenable(tag), "{tag} is retained but not screenable");
                 assert_eq!(
-                    genome.contains(tag),
-                    on,
-                    "{tag}: {columns:?} reads {call:?} (pinned: {}), but the generated genome \
-                     disagrees",
-                    operator_pinned_on(tag)
+                    ledger_default_on(tag),
+                    Some(true),
+                    "{tag} is retained but not enabled by the runtime ledger"
                 );
-            } else if on {
-                rule_on_by_family.entry(family).or_default().push(tag);
             }
-            if on && family != *tag {
-                continue;
+            let mut per_family: std::collections::BTreeMap<&str, usize> =
+                std::collections::BTreeMap::new();
+            for tag in genome {
+                *per_family.entry(family_base(tag)).or_default() += 1;
             }
-            if family != *tag {
+            assert!(
+                per_family.values().all(|&count| count == 1),
+                "a retained deployment has more than one version in a family: {per_family:?}"
+            );
+        } else {
+            let mut rule_on_by_family: std::collections::BTreeMap<&str, Vec<&str>> =
+                std::collections::BTreeMap::new();
+            for (tag, columns) in table::BATCH_COLUMNS {
                 assert!(
-                    !genome.contains(tag),
-                    "{tag}: neither the rule nor a pin turns this version on, yet it ships"
+                    screenable(tag),
+                    "{tag}: only a screenable gene has batch columns"
+                );
+                let call = batch_rule(columns);
+                // ⭐ A pin is on above the rule's answer, which `call` still is.
+                let on = call == BatchRule::On || operator_pinned_on(tag);
+                let family = family_base(tag);
+                if family == *tag {
+                    assert_eq!(
+                        genome.contains(tag),
+                        on,
+                        "{tag}: {columns:?} reads {call:?} (pinned: {}), but the generated genome \
+                         disagrees",
+                        operator_pinned_on(tag)
+                    );
+                } else if on {
+                    rule_on_by_family.entry(family).or_default().push(tag);
+                }
+                if on && family != *tag {
+                    continue;
+                }
+                if family != *tag {
+                    assert!(
+                        !genome.contains(tag),
+                        "{tag}: neither the rule nor a pin turns this version on, yet it ships"
+                    );
+                }
+            }
+            for tag in genome {
+                assert!(
+                    batch_columns(tag).is_some() || operator_pinned_on(tag),
+                    "{tag} ships but no reporting batch priced it; the rule turns on only priced genes"
+                );
+                assert!(
+                    batch_columns(tag).map(batch_rule) == Some(BatchRule::On)
+                        || operator_pinned_on(tag),
+                    "{tag} ships but neither the rule nor an operator pin turns it on"
+                );
+                assert_eq!(
+                    ledger_default_on(tag),
+                    Some(true),
+                    "{tag} is in the genome but not enabled by the runtime ledger"
                 );
             }
-        }
-        for tag in genome {
-            assert!(
-                batch_columns(tag).is_some() || operator_pinned_on(tag),
-                "{tag} ships but no reporting batch priced it; the rule turns on only priced genes"
-            );
-            assert!(
-                batch_columns(tag).map(batch_rule) == Some(BatchRule::On)
-                    || operator_pinned_on(tag),
-                "{tag} ships but neither the rule nor an operator pin turns it on"
-            );
-            assert_eq!(
-                ledger_default_on(tag),
-                Some(true),
-                "{tag} is in the genome but not enabled by the runtime ledger"
-            );
-        }
-        for (family, versions) in &rule_on_by_family {
-            let shipped: Vec<&str> = versions
-                .iter()
-                .copied()
-                .filter(|v| genome.contains(v))
-                .collect();
-            let base_ships = genome.contains(family);
-            assert_eq!(
-                shipped.len() + usize::from(base_ships && !versions.contains(family)),
-                1,
-                "family {family}: the rule or a pin turns on {versions:?}; exactly one version \
-                 ships"
-            );
+            for (family, versions) in &rule_on_by_family {
+                let shipped: Vec<&str> = versions
+                    .iter()
+                    .copied()
+                    .filter(|v| genome.contains(v))
+                    .collect();
+                let base_ships = genome.contains(family);
+                assert_eq!(
+                    shipped.len() + usize::from(base_ships && !versions.contains(family)),
+                    1,
+                    "family {family}: the rule or a pin turns on {versions:?}; exactly one version \
+                     ships"
+                );
+            }
         }
         let measured_on = gene_ledger().iter().filter(|row| row.default_on).count();
         assert!(
@@ -624,6 +649,7 @@ mod tests {
     /// and a mean no higher than 7.
     #[test]
     fn the_operator_pins_ship_above_the_rule() {
+        let retained = deployment_policy() == "operator-retained-selection";
         let pins = operator_pins();
         let mut sorted = pins.to_vec();
         sorted.sort_unstable();
@@ -648,13 +674,15 @@ mod tests {
                 Some(true),
                 "{tag} is pinned on but the runtime ledger holds it off"
             );
-            if let Some(columns) = batch_columns(tag) {
-                assert_ne!(
-                    batch_rule(columns),
-                    BatchRule::Remove,
-                    "{tag} is pinned on, but the rule removes it from the gene pool; a pin \
+            if !retained {
+                if let Some(columns) = batch_columns(tag) {
+                    assert_ne!(
+                        batch_rule(columns),
+                        BatchRule::Remove,
+                        "{tag} is pinned on, but the rule removes it from the gene pool; a pin \
                      decides a default, never whether the code exists"
-                );
+                    );
+                }
             }
         }
         // On the 2026-08-26 batches every one of the nine is an override —
@@ -672,6 +700,9 @@ mod tests {
     /// test — like `genes.py check` — fails and names it.
     #[test]
     fn no_gene_is_due_for_removal() {
+        if deployment_policy() == "operator-retained-selection" {
+            return;
+        }
         let due: Vec<&str> = table::BATCH_COLUMNS
             .iter()
             .filter(|(_, columns)| batch_rule(columns) == BatchRule::Remove)
