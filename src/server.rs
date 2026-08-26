@@ -4407,9 +4407,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // "unreachable" and the client has no way to offer Civ 6's "go there".
         // `route_step` is the router the AI already uses: it plans across
         // future turns, around mountains, coastlines and choke points, and
-        // returns the first step. Read-only — the client still sends a normal
-        // Move for the step it is given, so the engine remains the authority
-        // on whether that move is legal now.
+        // returns the first step. When that router has nothing — a column
+        // packed into a defile, where the only way forward holds one of our
+        // own units — the answer is a whole walk across it instead, see
+        // `Game::pass_through_destination` and `docs/MOVEMENT.md`. Read-only
+        // either way: the client sends `move_to` for whatever it is given,
+        // which is the one action that may cross, so the engine remains the
+        // authority on whether the walk is legal now.
         ("POST", "/route") => {
             let session = sh.session.lock().unwrap();
             let answer = crate::routes::route_step(&session, &parsed);
