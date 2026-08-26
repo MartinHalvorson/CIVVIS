@@ -253,6 +253,29 @@ def arrival_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str
     }
 
 
+def city_occupations(
+    events: list[dict[str, Any]], local_player: int | None
+) -> tuple[int, int]:
+    """`(taken, lost)` cities, from the mod's `city_occupation` events.
+
+    The mod has emitted these since the tactical ledger landed and nothing
+    has ever read them, so no report has been able to say whether a war
+    ended in a capture — the question eleven declared wars and four sieges
+    to 180-190/200 were waiting on.
+    """
+    taken = lost = 0
+    for event in events:
+        if event.get("kind") != "city_occupation" or local_player is None:
+            continue
+        ours_now = event.get("ours_now")
+        was_ours = event.get("original_owner") == local_player
+        if ours_now is True and not was_ours:
+            taken += 1
+        elif ours_now is False and was_ours:
+            lost += 1
+    return taken, lost
+
+
 def combat_section(events: list[dict[str, Any]], local_player: int | None) -> dict[str, Any] | None:
     combats = [event for event in events if event.get("kind") == "combat"]
     if not combats:
@@ -300,6 +323,7 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
     kills = ours["kills"] + theirs["losses_attacking"]
     losses = theirs["kills"] + ours["losses_attacking"]
     mean_err = (sum(preview_error) / len(preview_error)) if preview_error else None
+    cities_taken, cities_lost = city_occupations(events, local_player)
     return {
         "combats": len(combats),
         "our_attacks": ours["combats"],
@@ -310,6 +334,8 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
         "losses": losses,
         "kills_per_loss": round(kills / losses, 2) if losses else None,
         "city_strikes": ours["city_strikes"],
+        "cities_taken": cities_taken,
+        "cities_lost": cities_lost,
         "kills_by_kind": dict(kills_by_kind.most_common()),
         "losses_by_kind": dict(losses_by_kind.most_common()),
         "host_preview": None
@@ -514,7 +540,8 @@ def render(report: dict[str, Any]) -> str:
             f"  combat   {combat['combats']} combats: ours {combat['our_attacks']}, received {combat['attacks_received']}; "
             f"kills {combat['kills']}, losses {combat['losses']} "
             f"(kills/loss {combat['kills_per_loss'] if combat['kills_per_loss'] is not None else 'n/a'}); "
-            f"damage dealt {combat['damage_dealt']}, taken {combat['damage_taken']}; city strikes {combat['city_strikes']}"
+            f"damage dealt {combat['damage_dealt']}, taken {combat['damage_taken']}; city strikes {combat['city_strikes']}; "
+            f"cities taken {combat['cities_taken']}, lost {combat['cities_lost']}"
         )
         preview = combat["host_preview"]
         if preview:

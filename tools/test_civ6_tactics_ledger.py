@@ -140,6 +140,43 @@ class QueueAndCombatTest(unittest.TestCase):
         self.assertIn("kills 0, losses 1", text)
 
 
+class CityOccupationTest(unittest.TestCase):
+    def test_a_captured_city_is_counted_and_a_lost_one_is_not_a_capture(self) -> None:
+        events = [
+            {"kind": "seat", "local_player": 0},
+            {"kind": "state", "turn": 5, "gold": 0, "units": [], "hostiles": []},
+            {"kind": "combat", "turn": 5,
+             "attacker": {"player": 0, "id": 1, "kind": "UNIT_WARRIOR", "type": "unit"},
+             "defender": {"player": 2, "id": 900, "kind": "CITY", "type": "city"},
+             "damage_to_defender": 20, "damage_to_attacker": 5,
+             "defender_killed": False, "attacker_killed": False},
+            # Taken from a rival.
+            {"kind": "city_occupation", "turn": 5, "player": 0, "city": 77,
+             "name": "Kumasi", "original_owner": 2, "ours_now": True},
+            # Our own, retaken by us: not a capture.
+            {"kind": "city_occupation", "turn": 6, "player": 0, "city": 78,
+             "name": "Rome", "original_owner": 0, "ours_now": True},
+            # And one of ours lost.
+            {"kind": "city_occupation", "turn": 7, "player": 2, "city": 79,
+             "name": "Ostia", "original_owner": 0, "ours_now": False},
+            {"kind": "state", "turn": 8, "gold": 0, "units": [], "hostiles": []},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _write_run(Path(tmp), events, [])
+            report = ledger.ledger(run)
+        combat = report["combat"]
+        self.assertEqual(combat["cities_taken"], 1)
+        self.assertEqual(combat["cities_lost"], 1)
+        self.assertIn("cities taken 1, lost 1", ledger.render(report))
+
+    def test_a_run_with_no_seat_event_claims_no_captures(self) -> None:
+        events = [
+            {"kind": "city_occupation", "turn": 5, "player": 0, "city": 77,
+             "original_owner": 2, "ours_now": True},
+        ]
+        self.assertEqual(ledger.city_occupations(events, None), (0, 0))
+
+
 class HoverTest(unittest.TestCase):
     def test_a_unit_that_neither_moves_nor_strikes_near_a_hostile_hovers(self) -> None:
         events = [
