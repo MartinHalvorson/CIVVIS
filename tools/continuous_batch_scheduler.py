@@ -1017,6 +1017,20 @@ def check_quiet(worktree: Path, number: int, *, timeout_seconds: float = INITIAL
         time.sleep(10.0)
 
 
+def reporting_write_command(report: str) -> list[str]:
+    """Regenerate a report batch without letting it re-select live defaults.
+
+    Tournament results must update the published evidence table. The operator's
+    selected on/off genome is intentionally a separate decision, so every
+    scheduler publication carries this explicit mode rather than relying on a
+    mutable CLI default.
+    """
+    return [
+        sys.executable, "tools/genes.py", "write",
+        "--preserve-deployment-defaults", "--reporting-batch", report,
+    ]
+
+
 def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent: str,
                      coordinated: str, computer: str) -> str:
     source = batch["source"]
@@ -1042,7 +1056,7 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "artifact; raw JSONL records are never treated as games.",
         f"- The games were pinned to clean source `{source['commit']}` / binary "
         f"`{source['binary_sha256']}`. This publication changes no game mechanics; it updates "
-        "only the generated default selection when the recorded batch rule changes it.",
+        "the generated table evidence while deliberately retaining the selected default genome.",
         "",
         "overwrite-guard: allow this report deliberately regenerates the complete ranking snapshot from "
         "a frozen batch, replacing its current table, ledger, and evidence rows.",
@@ -1056,8 +1070,8 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "- [x] `python3 tools/test_genes.py`",
         "- [x] `cargo test --profile ci --locked`",
         "- [x] `git diff --check origin/main...`",
-        "- [x] No game-mechanic source change; any generated default-selection change is the "
-        "recorded batch rule, so a soak is not applicable",
+        "- [x] No game-mechanic or default-selection change; the reporting batch only refreshes "
+        "published evidence, so a soak is not applicable",
         "- [x] No unrelated runtime artifacts",
         "",
         "## Notes for integration",
@@ -1196,7 +1210,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         target.parent.mkdir(parents=True, exist_ok=True)
         write_reporting_artifact(analysis_path(state_root, batch), target, batch)
         generated = list(PUBLICATION_GENERATED_FILES)
-        write = [sys.executable, "tools/genes.py", "write", "--reporting-batch", report]
+        write = reporting_write_command(report)
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
         if first.returncode != 0:
             reason = (

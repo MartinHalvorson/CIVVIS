@@ -546,6 +546,46 @@ class TheOperatorPins(unittest.TestCase):
             [tag for tag in pins if rules["batch_decisions"].get(tag) == "off"], pins)
 
 
+class RetainedReportingDefaults(unittest.TestCase):
+    """A completed report batch refreshes evidence without silently selecting
+    a new live genome. The old batch rule remains recorded beside it, so an
+    explicit later selection decision has the same evidence available."""
+
+    def test_a_reporting_only_rotation_keeps_the_selected_on_off_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.json"
+            source.write_text(json.dumps(analysis([{"tag": "g"}, {"tag": "h"}])))
+            reports = batch_files(tmp, [
+                batch([{"tag": "g", "wins": -20}, {"tag": "h", "wins": 20}]),
+                batch([{"tag": "g", "wins": -21}, {"tag": "h", "wins": 21}]),
+                batch([{"tag": "g", "wins": -22}, {"tag": "h", "wins": 22}]),
+            ])
+            # Synthetic tags stand in for real registry genes, so the checked-in
+            # operator pins must not leak into this fixture.
+            with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_ON", ()):
+                with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    ledger = gene_ledger.build_ledger(
+                        [source], filter_known=False, reporting_batches=reports,
+                        deployment_policy=gene_ledger.RETAINED_DEPLOYMENT_POLICY,
+                        retained_deployment_genome=("g",))
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(ledger["rules"]["deployment_policy"],
+                         gene_ledger.RETAINED_DEPLOYMENT_POLICY)
+        self.assertEqual(ledger["rules"]["deployment_genome"], ["g"])
+        self.assertEqual(ledger["rules"]["batch_decisions"], {"g": "remove", "h": "on"})
+        self.assertEqual(ledger["rules"]["removals_due"], [])
+        by_tag = {row["tag"]: row for row in ledger["genes"]}
+        self.assertTrue(by_tag["g"]["default_on"], "retained on stays on")
+        self.assertFalse(by_tag["h"]["default_on"], "new positive evidence stays evidence")
+
+    def test_a_retained_family_cannot_ship_two_versions(self):
+        with self.assertRaises(SystemExit) as caught:
+            gene_ledger.retain_deployment_genome(
+                ("g", "g-2"), allowed={"g", "g-2"}, family_tags=["g", "g-2"],
+                wins_by_tag={}, pinned=())
+        self.assertIn("multiple versions", str(caught.exception))
+
+
 class TheDifferenceEvidence(unittest.TestCase):
     """The ranking still reports its pooled on-off difference, but it no
     longer acts as a deployment veto."""
