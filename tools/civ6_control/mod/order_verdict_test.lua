@@ -329,14 +329,52 @@ local preserved = lastEvent("opening_settler_preserved")
 check("opening settler preservation names the city", field(preserved, "city"), 42)
 check("opening settler preservation names the requested item", field(preserved, "requested"), "UNIT_SCOUT")
 
--- The same request is not a permanent production lock: after city two exists,
--- CIVVIS can deliberately replace a later Settler as before.
+-- Founding city two while the already-protected pipeline Settler is still in
+-- the capital must not release it.  The live board changes city count between
+-- the two requests, which used to replace the second Settler with a Warrior.
 host.cities[43] = { id = 43, x = 8, y = 8, current = 0 }
-local replaced, replaceWhy = applyOrder(player, PID,
+
+local pipelineHeld, pipelineWhy = applyOrder(player, PID,
 	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 11)
+check("pipeline settler survives the first founding", pipelineHeld, false)
+check("pipeline settler names the refusal", pipelineWhy, "opening_settler_in_progress")
+check("pipeline settler leaves the host queue alone", #host.cityOps, cityOpsBefore)
+check("pipeline settler remains queued", host.cities[42].current, 101)
+
+-- The lock belongs only to the Settler that was already in progress.  Once
+-- the host has changed that queue away, a later two-city Settler can still be
+-- replaced normally.
+host.cities[42].current = 102
+local cleared, clearWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 12)
+check("completed pipeline clears its lock", cleared, true)
+check("completed pipeline uses its current queue", clearWhy, "already_building")
+
+host.cities[42].current = 101
+local replaced, replaceWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 13)
 check("later settler can be replaced", replaced, true)
 check("later replacement reaches the host", replaceWhy, "UNIT_SCOUT")
 check("later replacement changes the queue", host.cities[42].current, 102)
+
+-- A pipeline Setter can also start on a quiet one-city frame before any
+-- competing request has observed it.  That successful host start must seed
+-- the same lock for the first-city founding handoff.
+host.cities[43] = nil
+host.cities[42].current = 0
+local started, startedWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SETTLER" }, 14)
+check("one-city pipeline settler starts", started, true)
+check("one-city pipeline names its start", startedWhy, "UNIT_SETTLER")
+check("one-city pipeline reaches the host", host.cities[42].current, 101)
+
+host.cities[43] = { id = 43, x = 8, y = 8, current = 0 }
+local startedPipelineHeld, startedPipelineWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 15)
+check("started pipeline survives the first founding", startedPipelineHeld, false)
+check("started pipeline names the refusal", startedPipelineWhy,
+	"opening_settler_in_progress")
+check("started pipeline remains queued", host.cities[42].current, 101)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))

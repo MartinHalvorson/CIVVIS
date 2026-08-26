@@ -55,6 +55,13 @@ local residualAnswers = {};
 -- Civ 6 city id -> the item CIVVIS asked that city to build THIS turn. Cleared with
 -- the rest of the per-turn handshake state; see `chooseProduction`.
 local civvisBuild = {};
+-- Capital city id -> true while the live opening's second Settler is still
+-- committed in the host queue.  Unlike `civvisBuild`, this deliberately spans
+-- turns: the first Settler may found city two between two fresh CIVVIS boards,
+-- while the second is still building in the capital.  Keep this a bare global:
+-- the control chunk is at Lua 5.1's file-local limit, and a local here can make
+-- the entire game-side agent refuse to load.
+CivvisOpeningSettlerLocks = {};
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -10888,23 +10895,35 @@ local function applyOrder(player, pid, row, turn)
 		local currentTurns = tonumber(try(function()
 			return city:GetBuildQueue():GetTurnsLeft();
 		end, -1)) or -1;
-		-- The first expansion Settler is a commitment, not a provisional queue
-		-- suggestion.  CIVVIS receives a fresh board every turn and can otherwise
-		-- replace it with a newly preferred Scout before either item completes.
-		-- Keep that one-city opening intact; later cities and a repeated Settler
-		-- request retain the ordinary ability to change production.
+		-- An opening Settler is a commitment, not a provisional queue suggestion.
+		-- CIVVIS receives a fresh board every turn and can otherwise replace it
+		-- with a newly preferred Scout before either item completes.  The live
+		-- land-grab policy starts a second Settler while the first walks.  The
+		-- first can then found city two before that second queue finishes; using
+		-- only the current city count released the queue on that exact frame and
+		-- replaced it with the deferred opening Warrior.  Remember a Settler that
+		-- was already protected in the one-city opening, and release that exact
+		-- city lock only after its host queue changes away from Settler.  A later
+		-- two-city Settler never acquires the lock, so ordinary replacement stays
+		-- available once the opening pipeline has actually completed.
 		local currentOpening = current;
 		local settlerRow = GameInfo.Types["UNIT_SETTLER"];
 		if currentOpening ~= 0 and settlerRow ~= nil
-				and currentOpening == settlerRow.Hash and resolved ~= "UNIT_SETTLER" then
+				and currentOpening == settlerRow.Hash then
 			local cityCount = 0;
 			eachCity(player, function() cityCount = cityCount + 1; end);
-			if cityCount == 1 then
+			if cityCount == 1 then CivvisOpeningSettlerLocks[cityId] = true; end
+			if resolved ~= "UNIT_SETTLER"
+					and (cityCount == 1 or CivvisOpeningSettlerLocks[cityId]) then
 				emit("opening_settler_preserved", {
 					turn = turn, city = cityId, requested = resolved,
+					cities = cityCount,
+					pipeline = CivvisOpeningSettlerLocks[cityId] == true,
 				});
 				return false, "opening_settler_in_progress";
 			end
+		else
+			CivvisOpeningSettlerLocks[cityId] = nil;
 		end
 		-- A live city can go from healthy to lost between two CIVVIS boards.  If
 		-- the engine says an unwalled city is already damaged or has a visible
@@ -11036,6 +11055,11 @@ local function applyOrder(player, pid, row, turn)
 		local ok = pcall(function()
 			CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
 		end);
+		if ok and verb == "UNIT_SETTLER" then
+			local cityCount = 0;
+			eachCity(player, function() cityCount = cityCount + 1; end);
+			if cityCount == 1 then CivvisOpeningSettlerLocks[cityId] = true; end
+		end
 		return ok, ok and (emergencyWall and "BUILDING_WALLS" or verb) or "throw";
 	end
 
