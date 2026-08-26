@@ -296,7 +296,12 @@ impl AdvancedAi {
     /// `treasury-at-work`: whether buying `item` leaves the recurring budget
     /// at or above zero. Always true while the family is off, and for
     /// anything that is not a unit with upkeep.
-    pub(super) fn treasury_purchase_stays_solvent(&self, g: &Game, pid: usize, item: &Item) -> bool {
+    pub(super) fn treasury_purchase_stays_solvent(
+        &self,
+        g: &Game,
+        pid: usize,
+        item: &Item,
+    ) -> bool {
         if !(self.treasury_at_work || self.treasury_at_work_2) {
             return true;
         }
@@ -322,7 +327,7 @@ impl AdvancedAi {
             if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
                 continue;
             }
-            let item = Item::Unit { unit: name.clone() };
+            let item = Item::Unit { unit: *name };
             if !cities.iter().any(|cid| g.can_produce(pid, *cid, &item)) {
                 continue;
             }
@@ -685,7 +690,11 @@ mod tests {
     fn off_the_reserve_is_the_stock_value_and_on_it_is_a_defender() {
         let (g, _city) = board();
         let ai = AdvancedAi::new();
-        assert_eq!(ai.working_treasury_reserve(&g, 0, 325.0), 325.0, "off: untouched");
+        assert_eq!(
+            ai.working_treasury_reserve(&g, 0, 325.0),
+            325.0,
+            "off: untouched"
+        );
 
         let mut ai = AdvancedAi::new();
         ai.enable_treasury_at_work();
@@ -698,7 +707,10 @@ mod tests {
         assert!(g.can_produce(0, g.player_city_ids(0)[0], &slinger));
         let expected = g.item_cost_for(0, &slinger) * GOLD_PER_PRODUCTION;
         assert!(expected > 0.0);
-        assert_eq!(reserve, expected, "one ranged defender, {reserve} vs {expected}");
+        assert_eq!(
+            reserve, expected,
+            "one ranged defender, {reserve} vs {expected}"
+        );
         assert!(reserve < 325.0, "far below the plan's 250 + 75 per city");
 
         // Version two shares the reserve law.
@@ -744,8 +756,12 @@ mod tests {
         let capital = g.cities.get_mut(&city).unwrap();
         capital.queue.clear();
         capital.buildings.retain(|building| building != "monument");
-        let builder_price = g.unit_purchase_cost(0, city, "builder", "gold").expect("a builder is buyable");
-        let monument_price = g.building_purchase_cost(0, city, "monument", "gold").expect("a monument is buyable");
+        let builder_price = g
+            .unit_purchase_cost(0, city, "builder", "gold")
+            .expect("a builder is buyable");
+        let monument_price = g
+            .building_purchase_cost(0, city, "monument", "gold")
+            .expect("a monument is buyable");
         let reserve = 100.0;
 
         // Short of the reserve by one Gold: nothing is bought.
@@ -763,7 +779,10 @@ mod tests {
             .count();
         assert_eq!(builders, 1, "one Builder bought");
         assert!(g.players[0].gold >= reserve, "the reserve is never spent");
-        assert!(!g.cities[&city].buildings.iter().any(|b| b == "monument"), "one a turn");
+        assert!(
+            !g.cities[&city].buildings.iter().any(|b| b == "monument"),
+            "one a turn"
+        );
 
         // Next turn, with a Builder on the map, the Monument.
         assert!(ai.young_empire_purchase(&mut g, 0, reserve));
