@@ -6371,8 +6371,7 @@ local function exportState(player, pid, turn, frame)
 		local activity = try(function()
 			local kind = UnitManager.GetActivityType(unit);
 			if kind == nil then return nil; end
-			for _, label in ipairs({ "SLEEP", "HOLD", "OPERATION", "AWAKE",
-			                         "HEAL", "SENTRY", "INTERCEPT", "MISSION" }) do
+			for _, label in ipairs({ "SLEEP", "HOLD", "OPERATION", "AWAKE" }) do
 				if ActivityTypes["ACTIVITY_" .. label] == kind then
 					return string.lower(label);
 				end
@@ -6490,10 +6489,22 @@ local function exportState(player, pid, turn, frame)
 			upgrade_to = upgradeTo,
 			upgrade_cost = upgradeCost,
 			upgrade_blocked_reason = upgradeBlocked,
-			-- `UnitManager.GetUnitMaintenance(unitHash)`: the per-type bill the
-			-- shipped ReportScreen.lua:324 sums and ToolTipHelper.lua:705 prints.
+			-- The per-type bill the shipped ReportScreen.lua:314-334 sums and
+			-- ToolTipHelper.lua:705 prints, by formation the way that screen
+			-- reads it: `GetUnitArmyMaintenance` for an Army/Armada,
+			-- `GetUnitCorpsMaintenance` for a Corps/Fleet, `GetUnitMaintenance`
+			-- otherwise. BEFORE the player's `GetMaintDiscountPerUnit`, which
+			-- ReportScreen.lua:338 subtracts afterwards and the board keeps
+			-- as its own policy term. ⚠ nil when the tier could not be read
+			-- (`CivvisMilitaryFormation` -1): a Corps billed as a plain unit
+			-- would read as a discount the host never gave.
 			maintenance = try(function()
-				return row ~= nil and UnitManager.GetUnitMaintenance(row.Hash) or nil;
+				if row == nil then return nil; end
+				local tier = CivvisMilitaryFormation(unit);
+				if tier == 2 then return UnitManager.GetUnitArmyMaintenance(row.Hash); end
+				if tier == 1 then return UnitManager.GetUnitCorpsMaintenance(row.Hash); end
+				if tier == 0 then return UnitManager.GetUnitMaintenance(row.Hash); end
+				return nil;
 			end, nil),
 			-- UnitPanel.lua:2257 and :2242, the panel's own stat reads.
 			religious_strength = try(function() return unit:GetReligiousStrength(); end, nil),
