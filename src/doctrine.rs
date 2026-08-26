@@ -2019,9 +2019,9 @@ pub fn harvest_engagements(seed: u64, setup: &Harvest) -> Vec<Engagement> {
                     continue;
                 }
                 if majors_only
-                    && [a, b].iter().any(|seat| {
-                        g.players[*seat].is_barbarian || g.players[*seat].is_minor
-                    })
+                    && [a, b]
+                        .iter()
+                        .any(|seat| g.players[*seat].is_barbarian || g.players[*seat].is_minor)
                 {
                     continue;
                 }
