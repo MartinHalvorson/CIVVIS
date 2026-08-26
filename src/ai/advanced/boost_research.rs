@@ -147,13 +147,7 @@ impl AdvancedAi {
     /// of its printed price, and the score that buys is the old one times
     /// `1 / (1 - frac).sqrt()`. One with the gene off, and one for a node
     /// whose boost is not in hand — so nothing else in the tree moves.
-    pub(super) fn boost_in_hand_scale(
-        &self,
-        g: &Game,
-        pid: usize,
-        node: &str,
-        techs: bool,
-    ) -> f64 {
+    pub(super) fn boost_in_hand_scale(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
         if !self.boost_first_research || !Self::boost_in_hand(g, pid, node, techs) {
             return 1.0;
         }
@@ -446,7 +440,9 @@ mod tests {
             0.0
         );
         game.players[0].boosted_techs.insert(name!("masonry"));
-        game.players[0].boosted_civics.insert(name!("craftsmanship"));
+        game.players[0]
+            .boosted_civics
+            .insert(name!("craftsmanship"));
         assert_eq!(
             ai.boost_research_value(&game, 0, "masonry", true),
             BOOST_IN_HAND_FLAT_VALUE
@@ -485,7 +481,9 @@ mod tests {
     fn a_boost_in_hand_scales_the_score_by_what_the_discount_buys() {
         let mut game = capital_board(53_002);
         game.players[0].boosted_techs.insert(name!("masonry"));
-        game.players[0].boosted_civics.insert(name!("craftsmanship"));
+        game.players[0]
+            .boosted_civics
+            .insert(name!("craftsmanship"));
         let plain = AdvancedAi::new();
         let mut ai = AdvancedAi::new();
         ai.enable_boost_first_research();
@@ -533,16 +531,15 @@ mod tests {
         ai.enable_boost_first_research();
         // The two ends of the opening tree by plain merit.
         let available = game.available_techs(0);
-        let best = available
+        let best = *available
             .iter()
             .max_by(|a, b| {
                 plain
                     .tech_value(&game, 0, a, strategy)
                     .total_cmp(&plain.tech_value(&game, 0, b, strategy))
             })
-            .expect("the opening tree offers something")
-            .clone();
-        let worst = available
+            .expect("the opening tree offers something");
+        let worst = *available
             .iter()
             .filter(|tech| **tech != best)
             .min_by(|a, b| {
@@ -550,8 +547,7 @@ mod tests {
                     .tech_value(&game, 0, a, strategy)
                     .total_cmp(&plain.tech_value(&game, 0, b, strategy))
             })
-            .expect("and something else")
-            .clone();
+            .expect("and something else");
         let gap = plain.tech_value(&game, 0, &best, strategy)
             / plain.tech_value(&game, 0, &worst, strategy);
         assert!(
@@ -701,18 +697,17 @@ mod tests {
         set_science(&mut game, 40.0);
         let mut opening = AdvancedAi::new();
         opening.enable_boost_unlock_research();
-        let untouched: Vec<&str> = game
-            .rules
-            .techs
-            .keys()
-            .map(|tech| tech.as_str())
-            .filter(|tech| {
-                opening
-                    .eureka_chases(&game, 0)
-                    .iter()
-                    .all(|chase| !opening.opens_the_trigger(&game, 0, tech, true, &chase.trigger))
-            })
-            .collect();
+        let untouched: Vec<&str> =
+            game.rules
+                .techs
+                .keys()
+                .map(|tech| tech.as_str())
+                .filter(|tech| {
+                    opening.eureka_chases(&game, 0).iter().all(|chase| {
+                        !opening.opens_the_trigger(&game, 0, tech, true, &chase.trigger)
+                    })
+                })
+                .collect();
         assert!(
             !untouched.is_empty(),
             "some technology on the board opens no trigger in reach"

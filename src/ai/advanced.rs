@@ -12807,8 +12807,7 @@ impl AdvancedAi {
         // the node costs `1 - frac` of its printed price, so the score it buys
         // is this one times `1 / (1 - frac).sqrt()`. One with
         // `boost_first_research` off. See `advanced/boost_research.rs`.
-        (value + 35.0) / spec.cost.max(10.0).sqrt()
-            * self.boost_in_hand_scale(g, pid, tech, true)
+        (value + 35.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, tech, true)
     }
 
     fn civic_value(&self, g: &Game, pid: usize, civic: &str, strategy: GrandStrategy) -> f64 {
@@ -12878,8 +12877,7 @@ impl AdvancedAi {
             _ => 0.0,
         };
         // The civic half of the same discount; see `advanced/boost_research.rs`.
-        (value + 32.0) / spec.cost.max(10.0).sqrt()
-            * self.boost_in_hand_scale(g, pid, civic, false)
+        (value + 32.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, civic, false)
     }
 
     fn incoming_deal_value(
