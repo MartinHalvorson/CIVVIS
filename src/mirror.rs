@@ -13634,6 +13634,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "player", "civ", "leader", "government", "dark_age", "golden_age",
         "heroic_golden_age", "can_declare", "score", "dvp", "military", "at_war",
         "techs", "civics", "cities", "units",
+        "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
+        "public_stats",
         // The rival's tree by name, the World Rankings lane numbers, its
         // majority religion, the per-rival tourists, Era Score and routes.
         "tech_names",
@@ -13645,8 +13647,6 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "tourists_visiting_us",
         "era_score",
         "trade_routes",
-        "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
-        "public_stats",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
@@ -13730,7 +13730,12 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     for rival in value.get("rivals").and_then(|v| v.as_array()).into_iter().flatten() {
         keys(rival, RIVAL, "rival", &mut gaps);
         public_stats(rival.get("public_stats"), "rival.public_stats", &mut gaps);
-        for route in rival.get("trade_routes").and_then(|v| v.as_array()).into_iter().flatten() {
+        for route in rival
+            .get("trade_routes")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
             keys(route, RIVAL_ROUTE, "rival.trade_route", &mut gaps);
         }
         cities(rival.get("cities"), &mut gaps);

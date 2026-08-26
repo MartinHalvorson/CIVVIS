@@ -47054,7 +47054,10 @@ impl Game {
         {
             return observed;
         }
-        let Some(religion) = self.players.get(pid).and_then(|player| player.religion.as_deref())
+        let Some(religion) = self
+            .players
+            .get(pid)
+            .and_then(|player| player.religion.as_deref())
         else {
             return 0;
         };
