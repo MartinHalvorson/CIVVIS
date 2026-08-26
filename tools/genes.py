@@ -3583,6 +3583,20 @@ def main(argv=None) -> int:
         # ⭐ THE RULE'S ONE ACTION THIS TOOL CANNOT TAKE ITSELF: a gene below
         # −10 in all three batches leaves the gene pool, and the code has to
         # be cut by hand. Until it is, the ledger is not current.
+        # ⭐ THE COMPUTE BILL MOVES WHEN THE GENOME MOVES, so it is checked
+        # here rather than in a workflow of its own. `write` below records it,
+        # which is what keeps this from ever being the reason a trunk is red:
+        # the command that moves the genome is the command that prices the move.
+        import genome_cost
+        stale = genome_cost.is_stale(recorded)
+        if stale is not None:
+            joined, left = stale
+            print("genes: the deployed genome changed and "
+                  f"{genome_cost.RECORD_JSON.relative_to(ROOT)} was not re-recorded "
+                  f"(joined: {', '.join(joined) or '(none)'}; "
+                  f"left: {', '.join(left) or '(none)'}); "
+                  "run `python3 tools/genes.py write`")
+            return 1
         removals = ledger["rules"].get("removals_due", [])
         if removals:
             print("genes: the batch rule REMOVES " + ", ".join(removals) + " from the gene pool "
@@ -3647,9 +3661,18 @@ def main(argv=None) -> int:
     ranking, evidence = render_parts(ledger)
     RANKING_MD.write_text(ranking)
     EVIDENCE_MD.write_text(evidence)
+    # ⭐ And what the genome now costs to run. Imported here rather than at the
+    # top because `genome_cost` imports this module for `pooled_win_diff_pp` —
+    # the ranking's Diff and the bill's are deliberately one arithmetic — and a
+    # module-level import either way would be a cycle.
+    import genome_cost
+    bill = genome_cost.record(ledger)
     print_table(ledger)
     print(f"wrote {LEDGER_JSON.relative_to(ROOT)}, the verdict block in {REGISTRY}, "
-          f"{RANKING_MD.relative_to(ROOT)} and {EVIDENCE_MD.relative_to(ROOT)}")
+          f"{RANKING_MD.relative_to(ROOT)}, {EVIDENCE_MD.relative_to(ROOT)} and "
+          f"{genome_cost.RECORD_JSON.relative_to(ROOT)} "
+          f"({bill['deployed_genes']} deployed genes, "
+          f"{bill['summed_cost_pct']:+.2f}% summed marginal compute cost)")
     return 0
 
 

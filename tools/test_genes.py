@@ -2779,3 +2779,44 @@ class EveryTestInThisFileIsCollected(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheCommandThatMovesTheGenomeRecordsWhatItCosts(unittest.TestCase):
+    """⭐ Wired after the event it exists for happened on its first day.
+
+    `tools/genome_cost.py` landed in #2576 with a guard that fails when the
+    deployed gene set changes without the compute bill being re-recorded. #2570
+    turned twelve genes on and five off a few hours later, and the guard did
+    exactly what it was built to do — and put `main` red, because nothing
+    regenerated the file. A guard whose only outcome is a red trunk teaches the
+    fleet to ignore it, which is the credibility problem `rust-quality` cost
+    this repository once. So `write` records it and `check` reads it.
+    """
+
+    def test_write_records_the_bill(self):
+        import genome_cost
+        source = Path(genes.__file__).read_text(encoding="utf-8")
+        write_half = source.split('# source / write')[-1]
+        self.assertIn("genome_cost.record(ledger)", write_half)
+        self.assertTrue(genome_cost.RECORD_JSON.exists())
+
+    def test_check_fails_when_the_bill_is_stale(self):
+        import genome_cost
+        source = Path(genes.__file__).read_text(encoding="utf-8")
+        self.assertIn("genome_cost.is_stale(recorded)", source)
+
+    def test_the_recorded_bill_matches_this_repositorys_genome(self):
+        import genome_cost
+        self.assertIsNone(
+            genome_cost.is_stale(),
+            "the deployed genome moved without the compute bill being "
+            "re-recorded; run `python3 tools/genes.py write`")
+
+    def test_the_import_is_deferred_because_the_two_modules_are_mutual(self):
+        """`genome_cost` imports this module for `pooled_win_diff_pp` — the
+        ranking's Diff and the bill's are deliberately one arithmetic — so a
+        module-level import in either direction is a cycle."""
+        source = Path(genes.__file__).read_text(encoding="utf-8")
+        header = source.split("def ", 1)[0]
+        self.assertNotIn("import genome_cost", header)
+        self.assertIn("    import genome_cost", source)
