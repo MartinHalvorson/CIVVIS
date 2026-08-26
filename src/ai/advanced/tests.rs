@@ -13864,16 +13864,16 @@ fn the_gene_takes_a_barbarian_held_settler_despite_a_duplicate_settler() {
     }
     let barb = game.barb_pid.unwrap();
     let origin = game.cities[&game.player_city_ids(0)[0]].pos;
-    let target = game
-        .nbrs(origin)
-        .into_iter()
-        .find(|position| {
-            game.city_at(*position).is_none()
-                && game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                })
-        })
-        .unwrap();
+    let target =
+        game.nbrs(origin)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
     // The duplicate: our own settler, alive elsewhere.
     let far = game.cities[&game.player_city_ids(1)[0]].pos;
     game.spawn_test_unit("settler", 0, far);
@@ -13890,7 +13890,10 @@ fn the_gene_takes_a_barbarian_held_settler_despite_a_duplicate_settler() {
     };
 
     let mut ai = AdvancedAi::new();
-    assert!(!ai.base.barbarian_settler_capture, "production carries no repair");
+    assert!(
+        !ai.base.barbarian_settler_capture,
+        "production carries no repair"
+    );
     let mut without = game.clone();
     let _ = ai.advanced_military_step(&mut without, 0, warrior, &plan);
     assert_eq!(
@@ -13900,7 +13903,10 @@ fn the_gene_takes_a_barbarian_held_settler_despite_a_duplicate_settler() {
 
     ai.enable_barbarian_settler_capture();
     assert!(ai.advanced_military_step(&mut game, 0, warrior, &plan));
-    assert_eq!(game.units[&captured].owner, 0, "the gene takes the settler back");
+    assert_eq!(
+        game.units[&captured].owner, 0,
+        "the gene takes the settler back"
+    );
 }
 
 #[test]

@@ -118,8 +118,7 @@ const MAX_SINGLE_BLOW: f64 = 100.0;
 pub(crate) const WATER_MARCH_PENALTY: f64 = 18.0;
 
 /// Probe: how many times the deployed controller reaches `garrison_step`.
-pub static GARRISON_STEP_CALLS: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+pub static GARRISON_STEP_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// How far a major's soldier walks to take back a barbarian-held settler
@@ -14808,8 +14807,8 @@ impl BasicAi {
                         }
                         // A barbarian-held settler outranks everything and is
                         // never declined; see `barbarian_settler_capture`.
-                        let barb_rescue = self.barbarian_settler_capture
-                            && g.barb_pid == Some(other.owner);
+                        let barb_rescue =
+                            self.barbarian_settler_capture && g.barb_pid == Some(other.owner);
                         match other.kind.as_str() {
                             "settler" if barb_rescue => Some(4),
                             "settler" if !decline_settlers => Some(3),
@@ -14985,8 +14984,7 @@ impl BasicAi {
         let lone_garrison = g
             .city_at(origin)
             .is_some_and(|cid| g.cities[&cid].owner == pid)
-            && g
-                .units_at(origin)
+            && g.units_at(origin)
                 .into_iter()
                 .filter(|other| {
                     let other = &g.units[other];
@@ -21970,7 +21968,10 @@ mod tests {
             game.wdist(game.units[&warrior].pos, target) < BARBARIAN_SETTLER_PURSUIT_RADIUS,
             "the first step of the walk closes on the settler"
         );
-        assert_eq!(game.units[&captured].owner, barb, "not yet: the capture is next turn's");
+        assert_eq!(
+            game.units[&captured].owner, barb,
+            "not yet: the capture is next turn's"
+        );
 
         // The same settler owned by a major at war is not worth the walk.
         let (mut game, _) = capture_test_board(91_773);

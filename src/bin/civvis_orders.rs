@@ -8183,7 +8183,10 @@ mod tests {
             .unwrap();
 
         let capture = translate(
-            &Action::Move { unit: warrior, to: civvis::hex::offset_to_axial(5, 4) },
+            &Action::Move {
+                unit: warrior,
+                to: civvis::hex::offset_to_axial(5, 4),
+            },
             &mirror,
             &state,
         )
@@ -8193,7 +8196,10 @@ mod tests {
         assert_eq!(capture.subject, Some(101));
 
         let walk = translate(
-            &Action::Move { unit: warrior, to: civvis::hex::offset_to_axial(3, 3) },
+            &Action::Move {
+                unit: warrior,
+                to: civvis::hex::offset_to_axial(3, 3),
+            },
             &mirror,
             &state,
         )
@@ -8218,7 +8224,11 @@ mod tests {
 
         let mut arrived = before.clone();
         arrived.hostiles.clear();
-        let warrior = arrived.units.iter_mut().find(|unit| unit.id == 101).unwrap();
+        let warrior = arrived
+            .units
+            .iter_mut()
+            .find(|unit| unit.id == 101)
+            .unwrap();
         warrior.x = 5;
         warrior.y = 4;
         assert!(matches!(
