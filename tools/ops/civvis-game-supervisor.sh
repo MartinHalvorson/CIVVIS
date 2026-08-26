@@ -436,6 +436,12 @@ while true; do
     sleep 120
     continue
   fi
+  # Logs and the follower-runtime marker use the readable short revision, but
+  # the native mirror's /status reports its launch stamp. Keep the exact
+  # fetched SHA before shortening it so `ship` can prove the visible mirror is
+  # the same build that the supervisor just selected.
+  HEAD_REVISION=$HEAD_SHA
+  HEAD_COMMIT_TIME=$(git show -s --format=%cI HEAD 2>/dev/null || true)
   if [[ "$PIN" == "head" ]]; then
     ORIGIN_MAIN_SHA=$(git rev-parse origin/main 2>/dev/null || true)
     if [[ "$HEAD_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
@@ -448,7 +454,7 @@ while true; do
     sleep 60
     continue
   fi
-  HEAD_SHA=${HEAD_SHA:0:7}
+  HEAD_SHA=${HEAD_REVISION:0:7}
   if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
     say "build FAILED at $HEAD_SHA; retrying in 120s"
     sleep 120
@@ -500,7 +506,12 @@ while true; do
       sleep 2
     fi
     mkdir -p "$MIRROR_HOME"
-    ( cd "$REPO" && nohup python3 -u tools/follow.py \
+    # `civvis play --mirror` inherits these launch stamps through follow.py.
+    # It cannot infer the selected revision from a shared checkout, because
+    # that checkout advances in place while the mirror keeps serving.
+    ( cd "$REPO" && CIVVIS_COMMIT="$HEAD_REVISION" \
+        CIVVIS_COMMIT_TIME="$HEAD_COMMIT_TIME" \
+        nohup python3 -u tools/follow.py \
         > "$FOLLOW_LOG" 2>&1 & )
     print -r -- "$HEAD_SHA" > "$FOLLOW_REVISION_FILE.$$.tmp"
     mv -f "$FOLLOW_REVISION_FILE.$$.tmp" "$FOLLOW_REVISION_FILE"
