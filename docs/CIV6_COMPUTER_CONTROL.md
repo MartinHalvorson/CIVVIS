@@ -657,11 +657,11 @@ prophets are retired, never deleted).
 
 See `docs/CIV6_LADDER.md` for the current standing.
 
-### Every game is played out; under 70 % of the leader after turn 100 is the one exception (2026-08-26)
+### Every game is played out; under 70 % of the leader after turn 150 is the one exception (2026-08-26)
 
 Operator request 2026-08-26: "scrap the early terminate rules that cut off
 civvis verification games. start playing out full games each time for now. or
-until we fall below 70% of the score of the leader after turn 100." Until then
+until we fall below 70% of the score of the leader after turn 150." Until then
 four early stops ended most King games before the game could: the
 three-cities-by-turn-32 and second-settler-captured opening restarts (#2505),
 the score-science-culture deficit restart (#2319 — its 0.70 default lived in
@@ -672,10 +672,10 @@ King games, 73 ended that way. All four are gone.
 What remains is one rule, carried by `civ6_play.py` itself as a default
 (`--restart-below-leader-ratio 0.70`; the supervisor and the climb forward
 `CIVVIS_RESTART_BELOW_LEADER_RATIO` verbatim when it is set, and `0` plays
-every game out): at or after turn 100, a score under 70 % of the leader's for
+every game out): at or after turn 150, a score under 70 % of the leader's for
 five consecutive readable agent turns abandons the game. "The leader" is the
 best-scoring rival the seat has met — `rival_best` in the mod's turn record —
-so a rival still unmet at turn 100 is invisible to the rule, which errs toward
+so a rival still unmet at turn 150 is invisible to the rule, which errs toward
 playing on. A readable turn back over the line resets the count; a turn
 without a standing neither counts nor resets. An abandoned run is filed with
 `reason: "abandoned"` and the verdict (`rule: below_leader_score`, turn,

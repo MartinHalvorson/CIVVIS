@@ -1877,11 +1877,11 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 
-class AGameUnderTheLeadersScoreAfterTurn100IsAbandoned(unittest.TestCase):
+class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
     """Operator request 2026-08-26: "scrap the early terminate rules that cut
     off civvis verification games. start playing out full games each time for
     now. or until we fall below 70% of the score of the leader after turn
-    100." One rule, a default of the harness itself; patience guards a
+    150." One rule, a default of the harness itself; patience guards a
     one-turn dip; the ending is filed as its own reason."""
 
     @staticmethod
@@ -1889,43 +1889,43 @@ class AGameUnderTheLeadersScoreAfterTurn100IsAbandoned(unittest.TestCase):
         return {"kind": kind, "ctx": ctx, "turn": turn, "score": score,
                 "rival_best": rival}
 
-    def test_the_line_is_seventy_percent_after_turn_100_for_five_turns(self):
+    def test_the_line_is_seventy_percent_after_turn_150_for_five_turns(self):
         self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.70)
-        self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 100)
+        self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 150)
         self.assertEqual(civ6_play.LEADER_SCORE_PATIENCE, 5)
 
     def test_five_consecutive_turns_under_the_line_abandon_with_the_standing(self):
         state = {}
-        for turn in range(100, 104):
+        for turn in range(150, 154):
             self.assertIsNone(civ6_play.below_leader_score_reading(
                 state, self._turn(turn, 69, 100), 0.70))
         verdict = civ6_play.below_leader_score_reading(
-            state, self._turn(104, 69, 100), 0.70)
+            state, self._turn(154, 69, 100), 0.70)
         self.assertEqual(verdict, {
-            "rule": "below_leader_score", "turn": 104, "score": 69,
+            "rule": "below_leader_score", "turn": 154, "score": 69,
             "rival_best": 100, "score_ratio": 0.69,
-            "score_ratio_ceiling": 0.70, "min_turn": 100,
+            "score_ratio_ceiling": 0.70, "min_turn": 150,
             "consecutive_turns": 5,
         })
 
-    def test_nothing_fires_before_turn_100_however_far_behind(self):
+    def test_nothing_fires_before_turn_150_however_far_behind(self):
         state = {}
-        for turn in range(1, 100):
+        for turn in range(1, 150):
             self.assertIsNone(civ6_play.below_leader_score_reading(
                 state, self._turn(turn, 10, 500), 0.70))
         self.assertNotIn("leader_score_streak", state)
 
     def test_at_the_line_is_not_under_it_and_a_recovery_resets_the_count(self):
         state = {}
-        for turn in range(120, 124):
+        for turn in range(160, 164):
             civ6_play.below_leader_score_reading(
                 state, self._turn(turn, 300, 500), 0.70)
         self.assertEqual(state["leader_score_streak"], 4)
         # exactly 70 % is not under the line, and it resets the count
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(124, 350, 500), 0.70))
+            state, self._turn(164, 350, 500), 0.70))
         self.assertEqual(state["leader_score_streak"], 0)
-        for turn in range(125, 129):
+        for turn in range(165, 169):
             self.assertIsNone(civ6_play.below_leader_score_reading(
                 state, self._turn(turn, 300, 500), 0.70))
         self.assertEqual(state["leader_score_streak"], 4)
@@ -1934,28 +1934,28 @@ class AGameUnderTheLeadersScoreAfterTurn100IsAbandoned(unittest.TestCase):
         state = {}
         for _ in range(5):   # the agent re-reports one turn five times
             self.assertIsNone(civ6_play.below_leader_score_reading(
-                state, self._turn(130, 300, 500), 0.70))
+                state, self._turn(170, 300, 500), 0.70))
         self.assertEqual(state["leader_score_streak"], 1)
         # no standing: neither counts nor resets
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(131, 300, None), 0.70))
+            state, self._turn(171, 300, None), 0.70))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(132, 300, 0), 0.70))
+            state, self._turn(172, 300, 0), 0.70))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(133, None, 500), 0.70))
+            state, self._turn(173, None, 500), 0.70))
         self.assertEqual(state["leader_score_streak"], 1)
         # other contexts and other event kinds are not readings at all
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(134, 300, 500, ctx="spectator"), 0.70))
+            state, self._turn(174, 300, 500, ctx="spectator"), 0.70))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(134, 300, 500, kind="state"), 0.70))
+            state, self._turn(174, 300, 500, kind="state"), 0.70))
         self.assertEqual(state["leader_score_streak"], 1)
 
     def test_zero_or_an_invalid_line_plays_every_game_out(self):
         for ceiling in (0, 0.0, -1, 1.5, True, None, "0.7"):
             with self.subTest(ceiling=ceiling):
                 state = {}
-                for turn in range(100, 140):
+                for turn in range(150, 190):
                     self.assertIsNone(civ6_play.below_leader_score_reading(
                         state, self._turn(turn, 10, 500), ceiling))
                 self.assertNotIn("leader_score_streak", state)
