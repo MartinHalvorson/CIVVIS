@@ -4745,6 +4745,24 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Let the assigned diplomatic lane size its own Congress ballot.
+    ///
+    /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
+    /// vote count reads `plan.strategy` -- the posture `assess` happens to
+    /// have chosen this turn -- while the lane the seat is actually playing
+    /// lives in `victory_target`. Those two disagree most of the time: on the
+    /// live King seat `civvis-20260826T112920Z` the assigned lane was
+    /// Diplomacy for all 248 turns, and the per-turn posture was Expansion on
+    /// 96 turns and Recovery on 80 against Diplomacy's 66.
+    ///
+    /// So the seat cast **one vote** on thirteen of its twenty-five Congress
+    /// ballots -- t61, t62, t81, t82, t83, t101, t121, t122, t141, t142,
+    /// t201, t202, t242 -- while holding 74, 144, 219 and 195 Diplomatic
+    /// Favor with `spent: 0` on every one of them. It ended the game at turn
+    /// 248 with **238 Favor banked** and 2 Diplomatic Victory Points against
+    /// the leader's 19. Favor expires with the game; a vote behind the
+    /// seat's own `congress_choice` is never worse than banking it.
+    lane_votes_its_favor: bool,
     /// Stop paying for a victory lane that cannot be won, and let the empire
     /// score instead.
     ///
@@ -4856,6 +4874,29 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Stop paying the entry fee for a religion race that is already closed.
+    ///
+    /// ★★★★ THE PRIZE IS GATED AND THE FEE IS NOT -- AND THE RACE IS OVER.
+    /// `pursue_religion` is already false for any seat with a non-Religion
+    /// victory target, but `skip_prophet_race` -- the reservation that stops
+    /// the empire *paying* for the race -- is gated behind
+    /// `skip_the_prophet_race`, which a stock seat does not carry. So a
+    /// diplomatic seat discards the winnings and keeps buying the ticket.
+    ///
+    /// The distinction this gene adds is that it reads an OBSERVED fact
+    /// rather than a prior. `skip-the-prophet-race` is a bet that contesting
+    /// is not worth it, and forcing non-founding measured **-12 pp**
+    /// (replicated). This fires only once `religions_founded()` has reached
+    /// `max_religions()` with none of them ours -- at which point no prophet
+    /// this empire ever recruits can found anything, and the bet is not a bet.
+    ///
+    /// Live King seat `civvis-20260826T112920Z`: four religions founded on a
+    /// Small map whose cap is four, none of them Rome's, and the seat still
+    /// finished with a Holy Site, 228 Prophet points, two Missionaries and
+    /// **6,329 unspendable Faith** -- while eleven of its twelve cities
+    /// followed the score leader's religion, paying that rival two points
+    /// each. This gene stops the spending; it cannot buy the score back.
+    religion_race_is_closed: bool,
     /// Sue for peace when the war has taken nothing and the treasury is
     /// paying for it.
     ///
@@ -6200,6 +6241,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
             never_an_empty_queue: false,
@@ -6213,6 +6255,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            religion_race_is_closed: false,
             peace_when_war_does_not_pay: false,
             quest_production: false,
             quest_trade_route: false,
@@ -12104,6 +12147,33 @@ impl AdvancedAi {
             .map(|civic| civic.as_str())
     }
 
+    /// How many votes to put behind this turn's Congress choice.
+    ///
+    /// The shipped rule reads the posture of the turn the session sits on.
+    /// See `lane_votes_its_favor` for why an assigned diplomatic lane is
+    /// usually in some other posture when that happens.
+    fn congress_ballot_size(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> u32 {
+        let lane_votes =
+            self.lane_votes_its_favor && self.victory_target == Some(VictoryTarget::Diplomacy);
+        if strategy == GrandStrategy::Diplomacy || lane_votes {
+            g.congress_affordable_votes(pid)
+        } else {
+            1
+        }
+    }
+
+    /// Whether the world has closed the religion race with this empire
+    /// outside it. See `religion_race_is_closed`.
+    ///
+    /// Kongo is exempt: Taxis pays it for everyone else's religion, so its
+    /// faith economy does not depend on founding one.
+    fn religion_race_closed_for(&self, g: &Game, pid: usize) -> bool {
+        self.religion_race_is_closed
+            && g.religions_founded() >= g.max_religions()
+            && g.players[pid].religion.is_none()
+            && !g.has_ability(pid, "taxis")
+    }
+
     /// Whether the assigned victory lane can still be won. See
     /// `lane_release_when_hopeless`; the answer is cached in `lane_lost` once
     /// per acting turn because this walks every major's victory races.
@@ -15371,11 +15441,7 @@ impl AdvancedAi {
                     continue;
                 }
                 if let Some(choice) = self.congress_choice(g, pid, &resolution, plan.strategy) {
-                    let votes = if plan.strategy == GrandStrategy::Diplomacy {
-                        g.congress_affordable_votes(pid)
-                    } else {
-                        1
-                    };
+                    let votes = self.congress_ballot_size(g, pid, plan.strategy);
                     think!(self.journal(), Diplomacy, Decision,
                            "Voting {} on {}", plain(&choice), plain(&resolution.id);
                            "{votes} vote{} behind it, on the {} plan",
@@ -32859,16 +32925,22 @@ impl AdvancedAi {
         let active_victory_target = self.active_victory_target(g);
         // See `skip_the_prophet_race`: an adaptive seat pursues a religion
         // unconditionally, and in this regime that trade is measured negative.
-        self.base.pursue_religion = g.has_ability(pid, "taxis")
+        // See `religion_race_is_closed`: the world's religions are all
+        // founded and none of them is ours, so no prophet this empire ever
+        // recruits can found one. Kongo is exempt -- Taxis pays it for
+        // everyone else's religion, so its faith economy is unconditional.
+        let religion_race_closed = self.religion_race_closed_for(g, pid);
+        self.base.pursue_religion = (g.has_ability(pid, "taxis")
             || active_victory_target == Some(VictoryTarget::Religion)
-            || (active_victory_target.is_none() && !self.skip_the_prophet_race);
+            || (active_victory_target.is_none() && !self.skip_the_prophet_race))
+            && !religion_race_closed;
         // The prize and the entry fee are two different gates. Clearing
         // `pursue_religion` alone discards the winnings while still paying for
         // the Holy Site that contests the race, so carry the flag down to the
         // reservation as well — but never against a seat whose own lane is
         // Religion, and never for Kongo, whose Taxis ability makes the faith
         // economy unconditional.
-        self.base.skip_prophet_race = self.skip_the_prophet_race
+        self.base.skip_prophet_race = (self.skip_the_prophet_race || religion_race_closed)
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
         self.base.science_building_first = self.science_building_first;

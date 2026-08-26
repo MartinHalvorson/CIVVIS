@@ -189,7 +189,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 |
 | `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 |
 | `lane-release-when-hopeless` | off (unmeasured) | Stop paying a lost victory lane's premiums. | 1 |
+| `lane-votes-its-favor` | off (unmeasured) | Let the assigned diplomatic lane size its own Congress ballot. | 1 |
 | `peace-when-the-war-does-not-pay` | off (unmeasured) | Sue for peace when a war has taken nothing and cannot be paid for. | 1 |
+| `religion-race-is-closed` | off (unmeasured) | Stop paying for a religion race the world has already closed. | 1 |
 | `war-needs-a-treasury` | off (unmeasured) | Refuse a war the treasury cannot pay for. | 1 |
 
 ## Removed from the code
