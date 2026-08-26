@@ -7702,7 +7702,7 @@ fetchpriority=\"high\""
         // second-guessing it.
         assert!(EMBEDDED_INDEX.contains(
             "body.watching-tactics #launchtabs, body.watching-tactics #diplomacybtn,\n  \
-             body.watching-tactics #tradebtn, body.watching-tactics #hooktabs { display: none; }"
+             body.watching-tactics #tradebtn, body.watching-tactics #hooksbar #hooktabs { display: none; }"
         ));
         assert!(EMBEDDED_INDEX.contains("if (!RULES || !state || watchingBattlefield()) return;"));
         assert!(EMBEDDED_INDEX.contains("const empire = !watchingBattlefield();"));
