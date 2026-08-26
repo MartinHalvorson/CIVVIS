@@ -3325,6 +3325,33 @@ def rust_block_of(text: str) -> str:
     return text[text.index(GENERATED_BEGIN):]
 
 
+def retained_deployment_selection(current_rules: dict,
+                                 explicit_json: str | None) -> tuple[str, ...]:
+    """Return the selected genome a reporting-only write must retain.
+
+    A normal ``write`` reads the working ledger, but a publication task can
+    carry older generated artifacts while it merges current source.  Its
+    scheduler therefore supplies the deployment genome from that merged base
+    explicitly, so evidence regeneration cannot revive an old checkpoint's
+    defaults.
+    """
+    if explicit_json is None:
+        raw = current_rules.get("deployment_genome", ())
+    else:
+        try:
+            raw = json.loads(explicit_json)
+        except json.JSONDecodeError as error:
+            raise SystemExit(
+                "--retained-deployment-genome must be a JSON array of gene tags") from error
+    if (not isinstance(raw, (list, tuple))
+            or any(not isinstance(tag, str) or not tag for tag in raw)):
+        raise SystemExit(
+            "retained deployment genome must be a JSON array of non-empty gene tags")
+    if len(set(raw)) != len(raw):
+        raise SystemExit("retained deployment genome names a gene more than once")
+    return tuple(raw)
+
+
 def _add_source_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("sources", nargs="*", help="gene_screen --analyze --json outputs to enter")
     ap.add_argument(
@@ -3336,6 +3363,12 @@ def _add_source_args(ap: argparse.ArgumentParser) -> None:
         "--preserve-deployment-defaults", action="store_true",
         help=("record this reporting-batch rotation as evidence only and retain the "
               "current deployment genome"),
+    )
+    ap.add_argument(
+        "--retained-deployment-genome", metavar="JSON", default=None,
+        help=("JSON array of default gene tags to retain with "
+              "--preserve-deployment-defaults; lets a publisher retain its merged "
+              "source selection even when its worktree holds older generated output"),
     )
     ap.add_argument(
         "--reporting-unverified-build", metavar="REASON", default=None,
@@ -3427,6 +3460,8 @@ def main(argv=None) -> int:
         raise SystemExit("--reporting-unverified-build requires --reporting-batch FILE")
     if args.preserve_deployment_defaults and not entered_reporting:
         raise SystemExit("--preserve-deployment-defaults requires --reporting-batch FILE")
+    if args.retained_deployment_genome is not None and not args.preserve_deployment_defaults:
+        raise SystemExit("--retained-deployment-genome requires --preserve-deployment-defaults")
     if args.preserve_deployment_defaults and current is None:
         raise SystemExit("--preserve-deployment-defaults needs an existing deployment genome")
     reporting = latest_reporting_batches(entered_reporting, recorded_reporting)
@@ -3437,7 +3472,8 @@ def main(argv=None) -> int:
     current_rules = (current or {}).get("rules", {})
     if args.preserve_deployment_defaults:
         deployment_policy = RETAINED_DEPLOYMENT_POLICY
-        retained_deployment_genome = tuple(current_rules.get("deployment_genome", ()))
+        retained_deployment_genome = retained_deployment_selection(
+            current_rules, args.retained_deployment_genome)
     else:
         deployment_policy = current_rules.get("deployment_policy", DEPLOYMENT_POLICY)
         retained_deployment_genome = (
