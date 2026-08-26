@@ -7964,6 +7964,53 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 		chunk = {};
 	end
 
+	-- ★★★★★ WHAT THE HOST SAYS THIS PLOT PAYS, WHICH IS NOT DERIVABLE FROM THE
+	-- NAMES ABOVE.
+	--
+	-- Terrain, feature, resource and improvement are all the export ever
+	-- carried, and CIVVIS re-derived the plot's yields from its own catalogue.
+	-- That sum is short by every term the ground holds and no row of the
+	-- ruleset names — above all the permanent fertility a flood or an eruption
+	-- leaves behind (`RandomEvent_Yields` in `Expansion2_RandomEvents.xml`:
+	-- Food AND Production, up to 75% and 35% per plot on a Megacolossal
+	-- eruption), which the host stores on the plot and exposes through no
+	-- accessor but this one. Volcanic Soil itself has NO yields of its own —
+	-- `Feature_YieldChanges` has not a single row for it — so a mirror that
+	-- reads the feature and not the plot sees a bare Grassland where the game
+	-- shows 3 Food 3 Production.
+	--
+	-- The state export has carried `worked[].yields` for a while, but only for
+	-- the handful of plots a city is working THIS turn. Everything a Builder,
+	-- a Settler or the citizen governor is choosing BETWEEN was read from the
+	-- catalogue, which is exactly the set that has to be right.
+	--
+	-- ⚠ BUDGET. Six reads per plot, and only on the plots this sweep was
+	-- already going to send. Land only: the model's own fertility skips water
+	-- (`Game::fertilize_tile`) and a coast tile's catalogue row is not the one
+	-- that drifts, so two thirds of a Continents map costs nothing. Absent
+	-- where every yield is zero, and absent entirely under `TileYields=false`.
+	local function plotYieldTuple(plot)
+		if cfg.TileYields == false then return nil; end
+		return try(function()
+			local out = {
+				plot:GetYield(YieldTypes.FOOD),
+				plot:GetYield(YieldTypes.PRODUCTION),
+				plot:GetYield(YieldTypes.GOLD),
+				plot:GetYield(YieldTypes.SCIENCE),
+				plot:GetYield(YieldTypes.CULTURE),
+				plot:GetYield(YieldTypes.FAITH),
+			};
+			local any = false;
+			for i = 1, 6 do
+				-- A build whose enum lacks a member reads nil; send nothing
+				-- rather than a tuple with a hole a reader would take for zero.
+				if out[i] == nil then return nil; end
+				if out[i] ~= 0 then any = true; end
+			end
+			return any and out or nil;
+		end);
+	end
+
 	local known = CivvisTiles.known;
 	for y = 0, height - 1 do
 		for x = 0, width - 1 do
@@ -7973,15 +8020,38 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 				-- Unrevealed ground is deliberately sent as a hole rather than
 				-- as its true terrain: the mirror must not know more than the
 				-- seat does, or the simulator would plan on stolen information.
-				local owner = revealed and (try(function() return plot:GetOwner(); end, -1) or -1) or nil;
+				--
+				-- ★★★★ WHAT IS ON THE PLOT, NOT ONLY WHO HOLDS IT.
+				--
+				-- The delta used to re-send a plot when it was newly revealed or
+				-- when it CHANGED HANDS, and on nothing else. A volcano that
+				-- buries four tiles in Volcanic Soil changes no owner, and
+				-- neither does a chopped Forest, a drained Marsh or a flood —
+				-- so the mirror kept the old feature, and the yields derived
+				-- from it, until the next full sweep came round. The feature
+				-- index is one integer read and it closes that window.
+				local mark = nil;
+				if revealed then
+					local owner = try(function() return plot:GetOwner(); end, -1) or -1;
+					local feature = try(function() return plot:GetFeatureType(); end, -1) or -1;
+					mark = owner * 1024 + feature;
+				end
 				local key = y * width + x;
-				local changed = revealed and (full or known[key] == nil or known[key] ~= owner);
+				local changed = mark ~= nil and (full or known[key] ~= mark);
 				if changed then
-					known[key] = owner;
+					known[key] = mark;
 					if not full then fresh = fresh + 1; end
 					index = index + 1;
+					local water = try(function() return plot:IsWater(); end, false);
 					chunk[index] = {
 						x = x, y = y,
+						-- The host's own six yields for this plot; see
+						-- `plotYieldTuple`. Land only, absent where the read
+						-- fails or every yield is zero. ⚠ Named `yl`, not `y`:
+						-- `y` is this plot's row coordinate two fields up, and
+						-- a duplicate key in one Lua constructor silently keeps
+						-- the last one written.
+						yl = (not water) and plotYieldTuple(plot) or nil,
 						-- ⚠ NAMES, NOT INDICES. `GetTerrainType` returns a row
 						-- index into the game's own Terrains table, and the
 						-- CIVVIS vocabulary (tools/civ6_control/vocab.json) is
@@ -7997,7 +8067,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						             try(function() return plot:GetFeatureType(); end, -1)),
 						r = visibleResourceName(player, plot),
 						o = try(function() return plot:GetOwner(); end, -1),
-						w = try(function() return plot:IsWater(); end, false),
+						w = water,
 						i = try(function() return plot:IsImpassable(); end, false),
 						fw = try(function() return plot:IsFreshWater(); end, false),
 						-- ★★★★ WHAT IS ALREADY BUILT HERE. Without it the mirror shows a
