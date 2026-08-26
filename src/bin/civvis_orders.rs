@@ -2843,27 +2843,34 @@ fn withholdable_treatments() -> String {
         .join(", ")
 }
 
-/// Resolve the ledger-held live genes an explicit `--with` arm may restore.
-/// The live universe already set these flags before the ledger withheld them,
-/// so skipping just that withholding restores the exact named gene without a
-/// second hand-written enable table.
+/// Resolve the genes an explicit `--with` arm may seat: a ledger-held live
+/// treatment to restore, or a held-off production opt-in to add.
+///
+/// The live universe already set the live flags before the ledger withheld
+/// them, so skipping just that withholding restores the exact named gene
+/// without a second hand-written enable table. An opt-in was never in that
+/// universe — seating one is an addition, and it is the only route a gene
+/// priced on the arena has to the live board before the whole-game screen
+/// answers (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
 fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
     let mut selected = Vec::new();
     for treatment in forced {
-        match civvis::ai::GENES
+        let tag = match civvis::ai::GENES
             .iter()
-            .find(|gene| gene.live() && gene.tag == treatment)
+            .find(|gene| gene.tag == treatment)
             .map(|gene| gene.tag)
         {
-            Some(tag) if civvis::ai::gene_ledger::ledger_held_live_treatment(tag) => {
-                if !selected.contains(&tag) {
-                    selected.push(tag);
-                }
+            Some(tag)
+                if civvis::ai::gene_ledger::ledger_held_live_treatment(tag)
+                    || civvis::ai::gene_ledger::ledger_held_opt_in(tag) =>
+            {
+                tag
             }
             Some(tag) => {
                 return Err(format!(
                     "--with treatment {treatment:?} already ships in the deployment genome \
-                     (tag {tag:?}); only ledger-held live treatments form a distinct arm"
+                     (tag {tag:?}); only a ledger-held live treatment or a held-off opt-in \
+                     forms a distinct arm"
                 ));
             }
             None => {
@@ -2872,14 +2879,17 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
                     forceable_live_treatments()
                 ));
             }
+        };
+        if !selected.contains(&tag) {
+            selected.push(tag);
         }
     }
     Ok(selected)
 }
 
-/// Every name a live `--with` arm can restore, in canonical registry order.
+/// Every name a live `--with` arm can seat, in canonical registry order.
 fn forceable_live_treatments() -> String {
-    civvis::ai::gene_ledger::ledger_held_live_treatments().join(", ")
+    civvis::ai::gene_ledger::forceable_treatments().join(", ")
 }
 
 /// Reconstruct the exact live genome for each decision. The default retains
@@ -4580,6 +4590,15 @@ const EVIDENCE_KINDS: &[&str] = &[
     "deal_session",
     "peace_response",
     "improved",
+    // ⭐ THE HOST ALREADY SAID WHY THE STEP DID NOT HAPPEN. The mod has
+    // emitted `move_refused` — with the destination, whether it is water,
+    // whether it is impassable and who owns it — since the order channel
+    // existed, and its own comment says the point is that "the Rust side
+    // can feed a NAMED refusal back so CIVVIS stops re-deriving the same
+    // impossible step". Nothing in Rust has ever read it: a failed
+    // `MOVE_TO` was diagnosed by comparing two frames' positions, which
+    // cannot tell a refusal from a unit that simply had no movement left.
+    "move_refused",
 ];
 
 /// Ledger events of the evidence kinds stamped with one of `turns`.
@@ -4700,6 +4719,31 @@ fn target_harmed(
     }
 }
 
+/// The host's own reason a unit did not step, if it gave one for this unit
+/// and turn. Prefers the named refusal over the position diff: a host that
+/// says `dest_impassable` is a fact, and "the unit is where it was" is an
+/// inference that reads the same for a refusal, an exhausted allowance and
+/// an order the mod never issued.
+fn move_refusal_reason(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    unit: i64,
+) -> Option<String> {
+    let event = evidence.iter().find(|event| {
+        event.get("kind").and_then(|k| k.as_str()) == Some("move_refused")
+            && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+            && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
+    })?;
+    let named = |key: &str| event.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+    Some(if named("dest_impassable") {
+        "host_refused_impassable".to_string()
+    } else if named("dest_water") {
+        "host_refused_water".to_string()
+    } else {
+        "host_refused_move".to_string()
+    })
+}
+
 fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
     evidence.iter().any(|event| {
         event.get("kind").and_then(|k| k.as_str()) == Some("combat")
@@ -4802,7 +4846,12 @@ fn verify_unit_order(
                     if start == 0 || end < start {
                         Verdict::Verified
                     } else if end == start {
-                        Verdict::Failed("did_not_move".to_string())
+                        // The host's own reason when it gave one; see
+                        // `move_refusal_reason`.
+                        Verdict::Failed(
+                            move_refusal_reason(evidence, turn, id)
+                                .unwrap_or_else(|| "did_not_move".to_string()),
+                        )
                     } else {
                         Verdict::Failed("moved_away".to_string())
                     }
@@ -6836,6 +6885,51 @@ mod tests {
 
     /// The ledger's best genome remains the default, but a verification arm
     /// needs a precise way to restore one held row and record a real contrast.
+    /// The host says why a step did not happen; the checks now say it back.
+    #[test]
+    fn a_refused_step_carries_the_hosts_own_reason() {
+        let evidence = vec![
+            serde_json::json!({
+                "kind": "move_refused", "turn": 42, "unit": 7,
+                "x": 3, "y": 4, "dest_impassable": true
+            }),
+            serde_json::json!({
+                "kind": "move_refused", "turn": 42, "unit": 9,
+                "x": 5, "y": 6, "dest_water": true
+            }),
+            serde_json::json!({
+                "kind": "move_refused", "turn": 42, "unit": 11, "x": 1, "y": 1
+            }),
+        ];
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 42, 7).as_deref(),
+            Some("host_refused_impassable")
+        );
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 42, 9).as_deref(),
+            Some("host_refused_water")
+        );
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 42, 11).as_deref(),
+            Some("host_refused_move")
+        );
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 43, 7),
+            None,
+            "a refusal belongs to the turn it happened on"
+        );
+        assert_eq!(super::move_refusal_reason(&evidence, 42, 8), None);
+        assert_eq!(
+            super::move_refusal_reason(&[], 42, 7),
+            None,
+            "and a run whose mod says nothing keeps the position diff"
+        );
+        assert!(
+            super::EVIDENCE_KINDS.contains(&"move_refused"),
+            "the reader has to be asked for the kind before it can read it"
+        );
+    }
+
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
         // A live gene the batch rule holds off as of the 2026-08-25 batches;
@@ -6867,6 +6961,32 @@ mod tests {
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
             .expect_err("a treatment already in the live genome cannot form a force-on arm");
         assert!(host_only.contains("already ships"), "{host_only}");
+
+        // A held-off opt-in is the other thing an arm may name: it is the
+        // only route a gene priced on the arena has to the live board
+        // before the whole-game screen answers.
+        let opt_in = civvis::ai::gene_ledger::ledger_held_opt_ins()
+            .first()
+            .copied()
+            .expect("the registry holds opt-ins the ledger has not turned on");
+        let seated = super::forced_live_treatments(&[opt_in.to_string()])
+            .expect("a held-off opt-in is a valid live arm");
+        assert_eq!(seated, vec![opt_in]);
+        let mut seat = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut seat, &seated, &[])
+            .expect("the opt-in arm configures the live controller");
+        assert!(
+            civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&seated)
+                .contains(&opt_in),
+            "the arm's genome names the opt-in it seated"
+        );
+        let mut ordinary = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut ordinary, &[], &[])
+            .expect("the ordinary live seat configures");
+        assert!(
+            !civvis::ai::gene_ledger::deployment_treatments().contains(&opt_in),
+            "and seating it changes nothing about the deployment genome"
+        );
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
         assert!(unknown.contains("whole-turn-backtrack-guard"), "{unknown}");
