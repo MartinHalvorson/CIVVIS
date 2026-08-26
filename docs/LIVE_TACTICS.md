@@ -558,6 +558,58 @@ and **+14.0 ± 5.8** (t 2.42, 56/38) with healing on. The plan pays where
 there are several shooters and a target worth finishing, and is inert in a
 six-unit open-field trade. Whole-game screen pending, as a no-harm check.
 
+## 16. The live seat can be told to play a gene, and the row says how the army fought (2026-08-26)
+
+Three leaks in §2 and §3, closed together.
+
+**A gene priced on the arena had no route to the live board.** `--with`
+accepted only a *ledger-held live treatment* — a `Kind::Repair` or
+`Kind::HostOnly` gene the batch rule had turned off — because that is a
+restoration: the live universe set the flag and the ledger took it away, so
+skipping the withholding restores it exactly. A `Kind::OptIn` gene was never
+in that universe, so it could reach the live seat only by entering
+`DEPLOYMENT_GENOME`, which is the whole-game screen's decision. Under §13's
+policy that inverts the gate: the arena decides a tactical gene and the
+screen is the no-harm check, and until the screen answers the gene cannot be
+tried where it matters. `ledger_held_opt_in` / `forceable_treatments`
+(`gene_ledger.rs`) name the other half, and `--with <opt-in>` now seats one —
+an *addition*, recorded as such: `apply_gene_ledger_with_forced_live` puts it
+in `applied.forced`, `deployment_treatments_with_forced_live` names it in the
+arm's genome, and the deployment genome itself does not move.
+
+**The ladder row said nothing about the fighting.** It has carried
+`applied_pct` since the bridge existed and nothing about the army, so every
+claim about the live seat's exchange ratio (0.18 kills per loss, and the
+Firaxis seats' 1.71) came from opening `HallofFame.sqlite` by hand or from a
+code comment. `civ6_ladder.combat_totals` lifts the cheap half of the
+tactical ledger — the half that needs only `events.jsonl` — onto the row:
+`kills, losses, kills_per_loss, damage_dealt, damage_taken, cities_taken,
+cities_lost, military_units_gone`, plus `forced` beside the `withheld` that
+was already there. `None` on a run whose mod predates the tactical ledger,
+which is a different statement from a seat that never fought.
+
+**`city_occupation` was emitted and read by nothing.** The mod has written it
+since the tactical ledger landed, so no report could say whether a war ended
+in a capture — the question eleven declared wars and four sieges to 180-190
+of 200 were waiting on. `city_occupations` counts a city taken from a rival
+and one of ours lost (a city of ours retaken is neither), and it is now a
+column on both the ledger report and the ladder row.
+
+**`move_refused` was emitted and read by nothing**, and its own comment in
+the mod said the point was that "the Rust side can feed a NAMED refusal back
+so CIVVIS stops re-deriving the same impossible step". A failed `MOVE_TO` was
+diagnosed by comparing two frames' positions — which reads the same for a
+refusal, an exhausted allowance and an order the mod never issued. It is now
+an `EVIDENCE_KIND`, and a `MOVE_TO` that did not move is failed as
+`host_refused_impassable` / `host_refused_water` / `host_refused_move` when
+the host said so, and `did_not_move` when it did not.
+
+**What is still open from §3 after this:** the combat frame has still never
+played (`CombatFrames` is 0 in all 261 ladder rows since 2026-08-19, and this
+machine has held its live games since 2026-08-02); the swap verb is still
+untranslated on the bridge, and `Action::Swap` — implemented, tested and
+refused correctly in the engine since `do_swap` — is still chosen by no
+controller (`docs/MOVEMENT.md` names the `swap-rotation` gene that would).
 ## 17. Price it like the engine — and the null it measured (2026-08-26)
 
 Two opt-in genes (`src/ai/advanced/engine_pricing.rs`) replace the
