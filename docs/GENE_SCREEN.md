@@ -619,7 +619,7 @@ advantage was variance — it bought precision per game — and the operator cho
 randomness over it so that no gene is ever measured against a structured
 background.
 
-## The gene ledger: the deployment genome follows the batch rule
+## The gene ledger: the deployment genome follows the batch rule, under the operator's pins
 
 ⭐ **Since 2026-08-25 every default is decided by the batch rule** (operator,
 verbatim: *"if the last 3 batches all report a positive ± wins/10k, we should
@@ -647,18 +647,42 @@ newest first over the batches that priced the gene:
 is its twin, and `the_default_follows_the_batch_rule` re-derives every
 generated default from the generated `BATCH_COLUMNS`, so the two languages
 cannot disagree about what ships. Entering a batch (`python3 tools/genes.py
-write --reporting-batch <analysis>.json`) re-decides every default; there is
-no hand-kept list, and a default changes by playing more games. The 2026-08-24
-to 2026-08-25 operator-pinned list (`OPERATOR_DEFAULT_ON`, 36 → 52 → 57 → 73
-→ 64 genes across five directives) and the column thresholds, pooled-*Diff*
-veto and posterior alternatives before it are history: the dated notes below
-preserve how earlier selections were made, not a current rule. Win columns,
-*Diff*, posterior intervals, verdicts and score share remain evidence beside
-the rule's answer.
+write --reporting-batch <analysis>.json`) re-decides every unpinned default.
+The column thresholds, pooled-*Diff* veto and posterior alternatives before it
+are history: the dated notes below preserve how earlier selections were made,
+not a current rule. Win columns, *Diff*, posterior intervals, verdicts and
+score share remain evidence beside the rule's answer.
+
+⭐ **Above the rule, the operator's pins** (operator, 2026-08-26, verbatim:
+*"idle-faith-patronage, buildings-before-projects, deals-for-our-gain,
+founder-temple, lane-great-people, army-target-weighs-enemy,
+research-tier-premium, settler-screen, early-contact-window should all default
+on"*). `tools/genes.py::OPERATOR_DEFAULT_ON` names the genes that default
+**on** whatever their batch columns read; `build_ledger` records them as
+`rules.operator_default_on`, generates them as
+`src/ai/advanced/genes.rs::OPERATOR_DEFAULT_ON`, and
+`the_operator_pins_ship_above_the_rule` holds the two together. The rule's own
+answer for a pinned gene stays in `rules.batch_decisions` — all nine read
+`off` at clause 4 on the 2026-08-26 batches, each positive in the two newest
+and negative in the third with a mean no higher than 7 — so a pin is published
+as an override, never dissolved into the genome. A pin moves a default only:
+it cannot hold a gene the rule removes from the pool (`genes.py write` refuses
+that outright), and it cannot turn a gene off. The 2026-08-24 to 2026-08-25
+pinned list (`OPERATOR_DEFAULT_ON`, 36 → 52 → 57 → 73 → 64 genes across five
+directives) was the whole selection; this one is nine names above a rule that
+decides everything else.
+
+**Pinning a default.** Add the tag to `OPERATOR_DEFAULT_ON` (sorted), run
+`python3 tools/genes.py write && python3 tools/genes.py check`, then
+`cargo test --lib` — a pin naming a gene the registry does not screen is a
+hard error, and a test that asserts the old default fails and is updated to
+the new reality. Unpinning is the same edit in reverse: the gene falls back to
+whatever the rule reads from its columns.
 
 - **`docs/gene_ledger.json`** records the screen profile and measurements for
-  every gene, the `deployment_policy` (`batch-rule`), the `batch_columns` the
-  rule read and its `batch_decisions` per gene, the resulting
+  every gene, the `deployment_policy` (`batch-rule+operator-pins`), the
+  `batch_columns` the rule read and its `batch_decisions` per gene, the
+  `operator_default_on` pins above it, the resulting
   `deployment_genome`, and `removals_due`. The generated
   `src/ai/advanced/genes.rs::DEPLOYMENT_GENOME` / `BATCH_COLUMNS` and
   `src/ai/advanced/gene_ledger.rs` re-derive and apply the same answer.
@@ -673,11 +697,12 @@ the rule's answer.
   (`conflict`) and a gene no screen has measured. Past the family-wise bar is
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
   leave three on. The newest screen that priced the gene supplies the verdict.
-- **The deployment policy.** The batch rule above, and nothing else: no
-  source-column threshold, pooled-*Diff* veto, posterior fallback, or
-  operator list. A screenable tag is on exactly when it appears in
-  `deployment_genome`, which is the rule's answer with each family collapsed
-  to the one version that ships; all other screenable tags are off.
+- **The deployment policy.** The batch rule above and the operator's pins,
+  and nothing else: no source-column threshold, pooled-*Diff* veto or
+  posterior fallback. A screenable tag is on exactly when it appears in
+  `deployment_genome`, which is the rule's answer plus `operator_default_on`
+  with each family collapsed to the one version that ships; all other
+  screenable tags are off.
 - **Applying the deployment genome.** `AdvancedAi::enable_live_bridge` and
   `enable_engine_repairs` end with `apply_gene_ledger`: every selected live or
   production treatment is enabled and every unselected screenable treatment is
@@ -1220,10 +1245,10 @@ This section records the earlier threshold and posterior discussion so past
 tables remain interpretable. `AUTHORITY`, the column threshold, and the
 pooled-*Diff* veto are no longer configuration or deployment behavior, and
 neither is the 2026-08-24 operator-pinned list that replaced them. The
-current policy is the batch rule documented above (*The gene ledger*); no
-other statistical setting can throw a switch or move a default. Read the
-remaining analysis as evidence about the old selection processes, not a
-current decision procedure.
+current policy is the batch rule documented above (*The gene ledger*), under
+the nine names the operator pins on; no statistical setting can throw a switch
+or move a default. Read the remaining analysis as evidence about the old
+selection processes, not a current decision procedure.
 
 ⭐ **First, the thing the switch is not.** The columns rule reads the *newest*
 screen that priced each gene, so the moment the standard sources landed the
@@ -1324,11 +1349,12 @@ more games".
 
 ### Using this evidence now
 
-The selection changes only when the batch rule re-reads a new batch. Read
-the win, *Diff*, posterior, shape and lane evidence together to understand a
-flip and to decide where to spend games: a straddling interval is a reason to
-run more games, never a reason to edit a default by hand, and never an
-automatic fallback to the former column rule.
+The selection changes when the batch rule re-reads a new batch, or when the
+operator adds or drops a name in `OPERATOR_DEFAULT_ON`. Read the win, *Diff*,
+posterior, shape and lane evidence together to understand a flip and to decide
+where to spend games: a straddling interval is a reason to run more games,
+never a reason to edit an unpinned default by hand, and never an automatic
+fallback to the former column rule.
 
 ## Two stages, and why not a partial foldover
 
