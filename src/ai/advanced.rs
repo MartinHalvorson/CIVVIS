@@ -5589,12 +5589,13 @@ mod religious_defence;
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
 mod field_craft;
-/// Close as a body, and screen the shooters: two opt-in genes in the deployed
-/// mover's tile score; see `advanced/close_as_a_body.rs`.
-mod close_as_a_body;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
+
+/// Close as a body, and screen the shooters: two opt-in genes in the deployed
+/// mover's tile score; see `advanced/close_as_a_body.rs`.
+mod close_as_a_body;
 
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own

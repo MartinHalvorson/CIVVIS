@@ -279,7 +279,10 @@ mod tests {
             .map(|uid| g.units[uid].pos)
             .min_by_key(|pos| {
                 (
-                    units.iter().map(|other| g.wdist(*pos, g.units[other].pos)).sum::<i32>(),
+                    units
+                        .iter()
+                        .map(|other| g.wdist(*pos, g.units[other].pos))
+                        .sum::<i32>(),
                     *pos,
                 )
             })
@@ -355,8 +358,14 @@ mod tests {
         };
         let ahead_off = run(false);
         let ahead_on = run(true);
-        assert!(ahead_off > 0, "off, the horseman goes forward ({ahead_off})");
-        assert!(ahead_on <= 0, "on, the horseman holds or falls back ({ahead_on})");
+        assert!(
+            ahead_off > 0,
+            "off, the horseman goes forward ({ahead_off})"
+        );
+        assert!(
+            ahead_on <= 0,
+            "on, the horseman holds or falls back ({ahead_on})"
+        );
     }
 
     /// The penalty is zero inside the pace and grows by two progress terms a
@@ -382,9 +391,12 @@ mod tests {
         let _scout = g.spawn_unit("scout", 0, at(5, 6));
         let enemy = at(19, 6);
         let group = advancing(&g, target);
-        assert!(ai.body_pace(&g, warrior, &group, target, &[enemy]).is_some());
+        assert!(ai
+            .body_pace(&g, warrior, &group, target, &[enemy])
+            .is_some());
         assert!(
-            ai.body_pace(&g, warrior, &group, target, &[at(6, 6)]).is_none(),
+            ai.body_pace(&g, warrior, &group, target, &[at(6, 6)])
+                .is_none(),
             "a unit in contact is not paced"
         );
         let scout = g.player_unit_ids(0)[1];
@@ -396,9 +408,13 @@ mod tests {
             posture: ForcePosture::Hold,
             ..group.clone()
         };
-        assert!(ai.body_pace(&g, warrior, &holding, target, &[enemy]).is_none());
+        assert!(ai
+            .body_pace(&g, warrior, &holding, target, &[enemy])
+            .is_none());
         ai.disable_close_as_a_body();
-        assert!(ai.body_pace(&g, warrior, &group, target, &[enemy]).is_none());
+        assert!(ai
+            .body_pace(&g, warrior, &group, target, &[enemy])
+            .is_none());
     }
 
     /// The screen term reads the arena's own definition: a melee tile beside
@@ -432,7 +448,10 @@ mod tests {
         let in_front = at(9, 6);
         let behind = at(7, 6);
         assert!(ai.screen_bonus(&g, ForceRole::Vanguard, in_front, &frame) > 0.0);
-        assert_eq!(ai.screen_bonus(&g, ForceRole::Vanguard, behind, &frame), 0.0);
+        assert_eq!(
+            ai.screen_bonus(&g, ForceRole::Vanguard, behind, &frame),
+            0.0
+        );
         // The shooter's side: beside a melee friend that is nearer the enemy.
         let frame = ai
             .screen_frame(&g, archer, &group, &[enemy])
@@ -442,7 +461,10 @@ mod tests {
             ai.screen_bonus(&g, ForceRole::Ranged, at(6, 6), &frame),
             SHOOTER_SCREEN_WEIGHT * ai.base.w.screen
         );
-        assert_eq!(ai.screen_bonus(&g, ForceRole::Ranged, at(9, 6), &frame), 0.0);
+        assert_eq!(
+            ai.screen_bonus(&g, ForceRole::Ranged, at(9, 6), &frame),
+            0.0
+        );
         // Nothing to screen against: no frame at all.
         assert!(ai.screen_frame(&g, warrior, &group, &[at(22, 6)]).is_none());
         ai.disable_screen_the_shooters();
@@ -490,11 +512,21 @@ mod tests {
             let group = advancing(&g, enemy);
             march(&mut g, &ai, archer, &group);
             let (a, w) = (g.units[&archer].pos, g.units[&warrior].pos);
-            (g.wdist(a, w) <= 1 && g.wdist(w, enemy) < g.wdist(a, enemy), a)
+            (
+                g.wdist(a, w) <= 1 && g.wdist(w, enemy) < g.wdist(a, enemy),
+                a,
+            )
         };
         let (on, where_on) = run(true);
-        assert!(on, "with the gene the archer ends screened (at {where_on:?})");
-        assert_eq!(g_dist(where_on, at(12, 6)), 3, "behind the warrior, at three");
+        assert!(
+            on,
+            "with the gene the archer ends screened (at {where_on:?})"
+        );
+        assert_eq!(
+            g_dist(where_on, at(12, 6)),
+            3,
+            "behind the warrior, at three"
+        );
     }
 
     fn g_dist(a: Pos, b: Pos) -> i32 {
