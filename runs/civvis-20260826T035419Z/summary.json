@@ -1,0 +1,268 @@
+{
+  "abandoned": {
+    "consecutive_turns": 5,
+    "culture": 39.3984,
+    "rival_best": 524,
+    "rival_best_culture": 103.895,
+    "rival_best_science": 99.8672,
+    "rule": "score_science_culture_deficit",
+    "science": 69.9297,
+    "score": 252,
+    "score_ratio": 0.4809,
+    "score_ratio_ceiling": 0.7,
+    "turn": 104
+  },
+  "cities_at_60": 4,
+  "city_two_turn": 19,
+  "configured": true,
+  "deals": {
+    "closed": 0,
+    "declined": 0,
+    "expired": 0,
+    "peace_accepted": 1,
+    "peace_refused": 0,
+    "sessions_answered": 1,
+    "sessions_opened": 1,
+    "sessions_unanswered": 0,
+    "stood_down": false
+  },
+  "decider_revisions": [
+    "dbfe4979cbcd251b962ea7c602e59a3815773f2f",
+    "985308f1bd46b2471ffff482b35ddb8ad87e0201"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-26T04:26:48Z",
+  "forced": [],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 252,
+  "last_turn": 104,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": false,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "orders": {
+    "*": {
+      "applied": 681,
+      "refused": {
+        "ATTACK": 4,
+        "MOVE_TO": 5,
+        "cannot_start_DISTRICT_CAMPUS": 1,
+        "city_strike_refused": 25,
+        "delegation_already_present": 16,
+        "delegation_cooldown": 2,
+        "found_off_site": 4,
+        "move_no_moves_this_turn": 22,
+        "no_params_BUILDING_MACHU_PICCHU": 1,
+        "policy_deck_too_large": 1,
+        "queue_prior_refused": 4,
+        "taken_BELIEF_RELIGIOUS_SETTLEMENTS": 1,
+        "unit_gone:1376268": 1,
+        "unit_gone:262146": 1,
+        "unit_gone:65536": 1
+      },
+      "seen": 802
+    },
+    "city_strike": {
+      "applied": 42,
+      "refused": {
+        "city_strike_refused": 25
+      },
+      "seen": 67
+    },
+    "civic": {
+      "applied": 17,
+      "refused": {},
+      "seen": 17
+    },
+    "delegation": {
+      "applied": 5,
+      "refused": {
+        "delegation_already_present": 16,
+        "delegation_cooldown": 2
+      },
+      "seen": 23
+    },
+    "envoy": {
+      "applied": 8,
+      "refused": {},
+      "seen": 8
+    },
+    "government": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "governor_appoint": {
+      "applied": 3,
+      "refused": {},
+      "seen": 3
+    },
+    "governor_assign": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "governor_promote": {
+      "applied": 5,
+      "refused": {},
+      "seen": 5
+    },
+    "pantheon": {
+      "applied": 1,
+      "refused": {
+        "taken_BELIEF_RELIGIOUS_SETTLEMENTS": 1
+      },
+      "seen": 2
+    },
+    "peace": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "policy_deck": {
+      "applied": 25,
+      "refused": {
+        "policy_deck_too_large": 1
+      },
+      "seen": 26
+    },
+    "produce": {
+      "applied": 59,
+      "refused": {
+        "cannot_start_DISTRICT_CAMPUS": 1,
+        "no_params_BUILDING_MACHU_PICCHU": 1
+      },
+      "seen": 61
+    },
+    "produce_next": {
+      "applied": 114,
+      "refused": {},
+      "seen": 114
+    },
+    "purchase": {
+      "applied": 3,
+      "refused": {},
+      "seen": 3
+    },
+    "research": {
+      "applied": 29,
+      "refused": {},
+      "seen": 29
+    },
+    "unit": {
+      "applied": 481,
+      "refused": {
+        "ATTACK": 4,
+        "MOVE_TO": 5,
+        "found_off_site": 4,
+        "move_no_moves_this_turn": 22,
+        "queue_prior_refused": 4,
+        "unit_gone:1376268": 1,
+        "unit_gone:262146": 1,
+        "unit_gone:65536": 1
+      },
+      "seen": 523
+    }
+  },
+  "orders_applied": 559,
+  "orders_seen": 279,
+  "outcome": null,
+  "reason": "abandoned",
+  "rival_best": 524,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260826T035419Z",
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260826T035419Z",
+  "victory_target": "diplomatic",
+  "withheld": []
+}
