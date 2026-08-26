@@ -2335,6 +2335,62 @@ impl AdvancedAi {
     /// The twin of `enable_boost_unlock_research`.
     pub fn disable_boost_unlock_research(&mut self) {
         self.boost_unlock_research = false;
+    /// Pays the Envoy a city-state's quest promises on the unit or district family it asked for.
+    /// The production queue reads the outstanding `train_unit_type` and
+    /// `zone_district_type` quests and prices the item the city-state named
+    /// at the seat's own Envoy value, scaled by what that city-state's next
+    /// Envoy buys. A reorder of the queue, never an addition to it. Opt-in
+    /// gene `quest-production`; see `advanced/city_state_quests.rs`.
+    /// Operator request, 2026-08-26.
+    pub fn enable_quest_production(&mut self) {
+        self.quest_production = true;
+    }
+    /// The twin of `enable_quest_production`.
+    pub fn disable_quest_production(&mut self) {
+        self.quest_production = false;
+    }
+
+    /// Sends the Trader to the city-state that is asking us for a trade route, for the Envoy.
+    /// The destination score carries the Envoy an outstanding
+    /// `send_trade_route` quest pays, on any of that city-state's cities, so
+    /// the ordinary yield terms still choose between them. Opt-in gene
+    /// `quest-trade-route`; see `advanced/city_state_quests.rs`. Operator
+    /// request, 2026-08-26.
+    pub fn enable_quest_trade_route(&mut self) {
+        self.quest_trade_route = true;
+    }
+    /// The twin of `enable_quest_trade_route`.
+    pub fn disable_quest_trade_route(&mut self) {
+        self.quest_trade_route = false;
+    }
+
+    /// Runs the camp errand against the outpost a city-state named, from further out than the usual ring.
+    /// A `clear_barbarian_camp` quest names one outpost within five tiles of
+    /// the city-state, and clearing any other one does not pay; the errand
+    /// prefers the named camp over a nearer unnamed one and admits it from
+    /// beyond the home radius it normally stops at. Opt-in gene
+    /// `quest-camp-errand`; see `advanced/city_state_quests.rs`. Operator
+    /// request, 2026-08-26.
+    pub fn enable_quest_camp_errand(&mut self) {
+        self.base.quest_camp_errand = true;
+    }
+    /// The twin of `enable_quest_camp_errand`.
+    pub fn disable_quest_camp_errand(&mut self) {
+        self.base.quest_camp_errand = false;
+    }
+
+    /// Prices the Envoy on whatever completes the Eureka or Inspiration a city-state asked for.
+    /// A `trigger_tech_boost` or `trigger_civic_boost` quest is paid by the
+    /// trigger, so the Envoy rides on the same boost table
+    /// `eureka-chasing-production` reads — as the Envoy, beside that gene's
+    /// research and independent of it. Opt-in gene `quest-boost`; see
+    /// `advanced/city_state_quests.rs`. Operator request, 2026-08-26.
+    pub fn enable_quest_boost(&mut self) {
+        self.quest_boost = true;
+    }
+    /// The twin of `enable_quest_boost`.
+    pub fn disable_quest_boost(&mut self) {
+        self.quest_boost = false;
     }
 
     /// Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival.

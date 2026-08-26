@@ -1,5 +1,6 @@
 //! The gene ledger: what the screen has measured about every gene, and the
-//! deployment genome the batch rule decides from it.
+//! deployment genome the batch rule — under the operator's pins — decides
+//! from it.
 //!
 //! ⭐ ONE SCREEN. Operator directive 2026-08-22: every row here comes from the
 //! same shape — six majors on 74x46 continents with nine city-states, Online
@@ -31,8 +32,17 @@
 //! read as `BATCH_COLUMNS`; `the_default_follows_the_batch_rule` re-derives
 //! the one from the other here, so the two languages cannot disagree about
 //! what ships. A gene the rule removes fails `genes.py check` (and
-//! `no_gene_is_due_for_removal` here) until its code is cut. There is no
-//! operator list: a default changes by playing more games.
+//! `no_gene_is_due_for_removal` here) until its code is cut.
+//!
+//! ⭐ ABOVE THE RULE, THE OPERATOR'S PINS (operator, 2026-08-26): the genes
+//! named in `tools/genes.py::OPERATOR_DEFAULT_ON`, generated here as
+//! [`OPERATOR_DEFAULT_ON`](operator_pins), ship **on** whatever their batch
+//! columns read. [`batch_rule`] still answers for them — the ledger's
+//! `rules.batch_decisions` records the `off` the columns alone would have
+//! given — so a pin is visible as an override rather than dissolved into the
+//! genome. A pin moves a default only: it cannot hold a gene the rule removes
+//! from the pool, and it cannot turn a gene off. Every default that is not a
+//! pin changes by playing more games.
 //!
 //! ⭐ WITHIN A FAMILY (operator, 2026-08-23, restated 2026-08-25): every
 //! version (`<base>-<n>`) is judged by the rule on its own row, and a family
@@ -166,7 +176,7 @@ pub struct GeneVerdict {
 /// rows at the end of `genes.rs`, written by `python3 tools/genes.py write`.
 mod table {
     pub(super) use super::super::genes::{
-        BATCH_COLUMNS, DEPLOYMENT_GENOME, DEPLOYMENT_POLICY, VERDICTS as ROWS,
+        BATCH_COLUMNS, DEPLOYMENT_GENOME, DEPLOYMENT_POLICY, OPERATOR_DEFAULT_ON, VERDICTS as ROWS,
     };
 }
 
@@ -250,9 +260,21 @@ pub fn deployment_policy() -> &'static str {
     table::DEPLOYMENT_POLICY
 }
 
-/// Whether a tag is in the deployment genome the batch rule decided.
+/// Whether a tag is in the deployment genome the batch rule and the
+/// operator's pins decided.
 pub fn deployment_default_on(tag: &str) -> bool {
     table::DEPLOYMENT_GENOME.contains(&tag)
+}
+
+/// ⭐ The genes the operator named on by hand, in generated order. Each ships
+/// on whatever [`batch_rule`] reads from its [`batch_columns`].
+pub fn operator_pins() -> &'static [&'static str] {
+    table::OPERATOR_DEFAULT_ON
+}
+
+/// Whether the operator pinned this tag on above the batch rule.
+pub fn operator_pinned_on(tag: &str) -> bool {
+    table::OPERATOR_DEFAULT_ON.contains(&tag)
 }
 
 /// The ledger's row for a published tag, if the screens have measured it.
@@ -267,10 +289,11 @@ pub fn screenable(tag: &str) -> bool {
     super::gene(tag).is_some_and(|gene| gene.screenable())
 }
 
-/// Whether a gene is on in the deployment genome the batch rule decided. A
-/// screenable tag the rule does not turn on is off, whether or not a batch
-/// has priced it. `None` for a gene the screen cannot price (the
-/// Firaxis-only flags), which the bundle leaves as it set it.
+/// Whether a gene is on in the deployment genome the batch rule and the
+/// operator's pins decided. A screenable tag neither the rule turns on nor
+/// the operator pins is off, whether or not a batch has priced it. `None` for
+/// a gene the screen cannot price (the Firaxis-only flags), which the bundle
+/// leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
     // A host-only flag is never governed by a screen row; the bundle retains
     // control of its live defaults.
@@ -402,6 +425,17 @@ mod tests {
         for (json_tag, rust_tag) in genome.iter().zip(table::DEPLOYMENT_GENOME) {
             assert_eq!(json_tag.as_str(), Some(*rust_tag));
         }
+        let pins = json["rules"]["operator_default_on"]
+            .as_array()
+            .expect("operator_default_on array");
+        assert_eq!(
+            pins.len(),
+            table::OPERATOR_DEFAULT_ON.len(),
+            "the JSON ledger and the generated table hold different operator pins"
+        );
+        for (json_tag, rust_tag) in pins.iter().zip(table::OPERATOR_DEFAULT_ON) {
+            assert_eq!(json_tag.as_str(), Some(*rust_tag));
+        }
         let columns = json["rules"]["batch_columns"]
             .as_object()
             .expect("batch_columns object");
@@ -489,12 +523,13 @@ mod tests {
     }
 
     /// ★ THE MIRROR: every default is the batch rule's answer over the
-    /// generated batch columns, so `tools/genes.py` and this crate cannot
-    /// disagree about what ships. A gene with no columns is off; a family
-    /// ships exactly one version, and only when the rule turns a version on.
+    /// generated batch columns, or an operator pin above it, so
+    /// `tools/genes.py` and this crate cannot disagree about what ships. An
+    /// unpinned gene with no columns is off; a family ships exactly one
+    /// version, and only when the rule or a pin turns a version on.
     #[test]
     fn the_default_follows_the_batch_rule() {
-        assert_eq!(deployment_policy(), "batch-rule");
+        assert_eq!(deployment_policy(), "batch-rule+operator-pins");
         let genome = table::DEPLOYMENT_GENOME;
         let mut sorted = genome.to_vec();
         sorted.sort_unstable();
@@ -508,35 +543,39 @@ mod tests {
                 "{tag}: only a screenable gene has batch columns"
             );
             let call = batch_rule(columns);
+            // ⭐ A pin is on above the rule's answer, which `call` still is.
+            let on = call == BatchRule::On || operator_pinned_on(tag);
             let family = family_base(tag);
             if family == *tag {
                 assert_eq!(
                     genome.contains(tag),
-                    call == BatchRule::On,
-                    "{tag}: {columns:?} reads {call:?}, but the generated genome disagrees"
+                    on,
+                    "{tag}: {columns:?} reads {call:?} (pinned: {}), but the generated genome \
+                     disagrees",
+                    operator_pinned_on(tag)
                 );
-            } else if call == BatchRule::On {
+            } else if on {
                 rule_on_by_family.entry(family).or_default().push(tag);
             }
-            if call == BatchRule::On && family != *tag {
+            if on && family != *tag {
                 continue;
             }
             if family != *tag {
                 assert!(
                     !genome.contains(tag),
-                    "{tag}: the rule turns this version off, yet it ships"
+                    "{tag}: neither the rule nor a pin turns this version on, yet it ships"
                 );
             }
         }
         for tag in genome {
             assert!(
-                batch_columns(tag).is_some(),
+                batch_columns(tag).is_some() || operator_pinned_on(tag),
                 "{tag} ships but no reporting batch priced it; the rule turns on only priced genes"
             );
-            assert_eq!(
-                batch_rule(batch_columns(tag).unwrap()),
-                BatchRule::On,
-                "{tag} ships but the rule does not turn it on"
+            assert!(
+                batch_columns(tag).map(batch_rule) == Some(BatchRule::On)
+                    || operator_pinned_on(tag),
+                "{tag} ships but neither the rule nor an operator pin turns it on"
             );
             assert_eq!(
                 ledger_default_on(tag),
@@ -554,7 +593,8 @@ mod tests {
             assert_eq!(
                 shipped.len() + usize::from(base_ships && !versions.contains(family)),
                 1,
-                "family {family}: the rule turns on {versions:?}; exactly one version ships"
+                "family {family}: the rule or a pin turns on {versions:?}; exactly one version \
+                 ships"
             );
         }
         let measured_on = gene_ledger().iter().filter(|row| row.default_on).count();
@@ -575,6 +615,56 @@ mod tests {
                 "host-only rows stay outside the runtime deployment policy"
             );
         }
+    }
+
+    /// ⭐ THE OPERATOR'S PINS: each named gene ships, the rule's own answer for
+    /// it is still published, and a pin never rescues a gene the rule removes
+    /// from the pool. Nine genes on 2026-08-26, every one of them a gene the
+    /// rule reads off at clause 4 — two positive batches, a negative third,
+    /// and a mean no higher than 7.
+    #[test]
+    fn the_operator_pins_ship_above_the_rule() {
+        let pins = operator_pins();
+        let mut sorted = pins.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted, pins, "the operator's pins are sorted and unique");
+        for tag in pins {
+            assert!(
+                screenable(tag),
+                "{tag} is pinned on but the screen cannot price it; a pin is a screenable \
+                 gene's tag"
+            );
+            assert!(
+                operator_pinned_on(tag),
+                "{tag} is in the pin list but operator_pinned_on says otherwise"
+            );
+            assert!(
+                deployment_default_on(tag),
+                "{tag} is pinned on but does not ship"
+            );
+            assert_eq!(
+                ledger_default_on(tag),
+                Some(true),
+                "{tag} is pinned on but the runtime ledger holds it off"
+            );
+            if let Some(columns) = batch_columns(tag) {
+                assert_ne!(
+                    batch_rule(columns),
+                    BatchRule::Remove,
+                    "{tag} is pinned on, but the rule removes it from the gene pool; a pin \
+                     decides a default, never whether the code exists"
+                );
+            }
+        }
+        // On the 2026-08-26 batches every one of the nine is an override —
+        // the rule reads it off — and the ledger keeps saying so. That is a
+        // fact about today's columns, not an invariant: a later batch may
+        // turn a pinned gene on by the rule, and the pin then agrees with it.
+        assert!(
+            pins.iter().all(|tag| batch_columns(tag).is_some()),
+            "every pin is priced today; a pin over an unpriced gene ships on its name alone"
+        );
     }
 
     /// ★ The rule's one action the tool cannot take itself: a gene below −10
