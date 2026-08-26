@@ -21,6 +21,7 @@
 //! cargo run --release --bin doctrine_arena -- --position the_defile --a advanced --b basic
 //! cargo run --release --bin doctrine_arena -- --profile advanced --seeds 20
 //! cargo run --release --bin doctrine_arena -- --capture --games 24 --out target/engagements.json
+//! cargo run --release --bin doctrine_arena -- --capture --majors-only --games 48 --turns 200 --out target/wars.json
 //! cargo run --release --bin doctrine_arena -- --engagements target/engagements.json \
 //!     --a advanced+close-as-a-body --b advanced --seeds 12
 //! cargo run --release --bin doctrine_arena -- --engagements target/engagements.json --heal \
@@ -338,19 +339,25 @@ fn capture(args: &[String], start_seed: u64, jobs: usize) {
         radius: number(args, "--radius", i64::from(stock.radius)).clamp(3, 12) as i32,
         window_turns: number(args, "--window-turns", i64::from(stock.window_turns)).max(2) as u32,
         cooldown: number(args, "--cooldown", i64::from(stock.cooldown)).max(1) as u32,
+        majors_only: args.iter().any(|arg| arg == "--majors-only"),
     };
     let out = text(args, "--out", "target/engagements.json");
     println!(
         "doctrine_arena --capture: {games} game(s) of {} players on {}x{} to turn {}, every \
          contact captured on a radius-{} window read over {} turns, one capture per pair every \
-         {} turns",
+         {} turns{}",
         setup.players,
         setup.width,
         setup.height,
         setup.turns,
         setup.radius,
         setup.window_turns,
-        setup.cooldown
+        setup.cooldown,
+        if setup.majors_only {
+            ", wars between majors only"
+        } else {
+            ""
+        }
     );
     let harvested: Vec<Vec<Engagement>> = map(games, jobs, |index| {
         harvest_engagements(start_seed + index as u64, &setup)

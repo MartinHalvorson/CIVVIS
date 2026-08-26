@@ -1945,6 +1945,12 @@ pub struct Harvest {
     pub window_turns: u32,
     /// Turns before the same pair of players is captured again.
     pub cooldown: u32,
+    /// Only engagements between two major civilizations. The barbarian seat
+    /// produces most contacts on most maps — a raid is the engagement the
+    /// live seat loses the most units to — but a file of wars is a
+    /// different distribution from a file of raids, and a run should say
+    /// which it is reading.
+    pub majors_only: bool,
 }
 
 impl Default for Harvest {
@@ -1957,6 +1963,7 @@ impl Default for Harvest {
             radius: 7,
             window_turns: 16,
             cooldown: 25,
+            majors_only: false,
         }
     }
 }
@@ -1977,6 +1984,7 @@ pub fn harvest_engagements(seed: u64, setup: &Harvest) -> Vec<Engagement> {
         radius,
         window_turns,
         cooldown,
+        majors_only,
     } = *setup;
     let mut g = Game::new_with(crate::game::GameOptions::new(
         players,
@@ -2008,6 +2016,13 @@ pub fn harvest_engagements(seed: u64, setup: &Harvest) -> Vec<Engagement> {
         for a in 0..seats {
             for b in (a + 1)..seats {
                 if !g.players[a].alive || !g.players[b].alive || !g.is_at_war(a, b) {
+                    continue;
+                }
+                if majors_only
+                    && [a, b].iter().any(|seat| {
+                        g.players[*seat].is_barbarian || g.players[*seat].is_minor
+                    })
+                {
                     continue;
                 }
                 if taken
@@ -2353,6 +2368,7 @@ mod tests {
             radius: 5,
             window_turns: 8,
             cooldown: 20,
+            majors_only: false,
         };
         let boards = harvest_engagements(17, &small);
         let text = Engagement::to_json(&boards);
