@@ -174,6 +174,28 @@ cell:
 Combined arms is flat across the whole range; melee crosses zero near 30. 40
 sits comfortably inside both.
 
+## 4b. ⚠ Everything above and below was measured against a wall
+
+Until 2026-08-26 this engine treated a friendly unit's hex as impassable. The
+shipped game checks the stacking layer at the **end** of a move, so a unit
+crosses its own column and only ends elsewhere; CIVVIS asked that question at
+every step. See `docs/MOVEMENT.md`.
+
+Every result recorded in this document — the two-step approach lines, the
+mobility-true reach, the closed-form reply, the recorded nulls — was measured
+inside that wall, on both arms. A paired bench cannot see a rule error: it
+cancels out of the control and out of the treatment identically, which is
+exactly why the defect survived the whole programme and was found by a person
+playing the arena instead. The numbers here are still the honest comparison
+they claim to be *between the agents that produced them*; they are not evidence
+about how those agents fight now that a column can file through a defile and a
+front line can rotate.
+
+The re-measurement to do, in this order: re-run the `--a advanced --b advanced`
+control (it must still report exactly 0.00), then re-run the cells whose whole
+subject is movement — the approach lines and the mobility gate — before
+trusting any of their recorded magnitudes.
+
 ## 5. The instrument
 
 Whole-game win rate is the right acceptance test and the wrong measuring device

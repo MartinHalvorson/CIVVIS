@@ -896,6 +896,16 @@ impl AdvancedAi {
         let Some((_, path)) = g.approach_reach(uid).remove(&at) else {
             return (false, false);
         };
+        // A stand on the far side of our own screen is reached by crossing it,
+        // and `MoveTo` is the only action that may execute such a walk — see
+        // `Game::entry_at`, and note that stepping it one `Move` at a time
+        // stops dead on the friendly tile. An ordinary walk stays one recorded
+        // step at a time, which is what the order ledger reads.
+        if path.iter().any(|step| !g.can_stop(uid, *step)) {
+            let moved = self.base.path_walk_to(g, pid, uid, at);
+            let arrived = g.units.get(&uid).is_some_and(|unit| unit.pos == at);
+            return (moved, arrived);
+        }
         let mut moved = false;
         for step in path {
             if !g.can_move(uid, step) || !self.base.tactical_apply_move(g, pid, uid, step) {
