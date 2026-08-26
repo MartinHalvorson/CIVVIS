@@ -179,106 +179,81 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
-## Awaiting measurement
-
-These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
-
-| Gene | Default | Description | Best version |
-|---|---|---|---:|
-| `boost-first-research` | off (unmeasured) | Scale a node whose boost is already in hand by what the discount buys under the value function's own cost divisor. | 1 |
-| `boost-unlock-research` | off (unmeasured) | Credit a technology or civic with the boosts it makes chaseable by unlocking what their triggers need. | 1 |
-| `boost-wait-research` | off (unmeasured) | Take a node the empire would finish before its own eureka lands after that eureka, not before it. | 1 |
-| `build-what-cards-boost` | off (unmeasured) | Lean the city production governor toward items the slotted policy deck makes cheap, by half the card's bonus. | 1 |
-| `buy-what-cards-cannot-boost` | off (unmeasured) | Price a Gold purchase at the build's card-boosted rate, so items a slotted card discounts lose purchase priority to items no card touches. | 1 |
-| `canal-city` | off (unmeasured) | Value a settle site on a one-tile land bridge by the sea detour its city center would save. | 1 |
-| `chokepoint-claim` | off (unmeasured) | Buy the plot that closes a passage a rival could walk or sail through. | 1 |
-| `chokepoint-garrison` | off (unmeasured) | Hold the gate on the approach to one of our cities with a surplus soldier or hull. | 1 |
-| `chokepoint-siting` | off (unmeasured) | Value a settle site by the passes and straits its own borders would cover. | 1 |
-| `encampment-seals-the-pass` | off (unmeasured) | Site the Encampment on the pass, a tile no foreign unit may ever enter. | 1 |
-| `gold-for-the-young-city` | off (unmeasured) | Pay a Gold purchase premium in a city producing less than the empire's best city, proportional to the deficit. | 1 |
-| `native-emergency-purchase` | off (unmeasured) | Buy Walls or a land defender for a city that lost health to a strike within four turns with a hostile unit near, spending through the reserve. | 1 |
-| `quest-boost` | off (unmeasured) | Prices the Envoy on whatever completes the Eureka or Inspiration a city-state asked for. | 1 |
-| `quest-camp-errand` | off (unmeasured) | Runs the camp errand against the outpost a city-state named, from further out than the usual ring. | 1 |
-| `quest-production` | off (unmeasured) | Pays the Envoy a city-state's quest promises on the unit or district family it asked for. | 1 |
-| `quest-trade-route` | off (unmeasured) | Sends the Trader to the city-state that is asking us for a trade route, for the Envoy. | 1 |
-| `science-building-first` | off (unmeasured) | An adaptive seat stops racing for a Great Prophet: the race costs more science than the religion returns. | 1 |
-| `skip-the-prophet-race` | off (unmeasured) | `AdvancedAi::skip_the_prophet_race`; opt-in gene `skip-the-prophet-race`. | 1 |
-
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:
 
 | Gene | Wins ±/10k seats (last tracked measurement) | Win rate (on) | Win rate (off) | Source |
 |---|---:|---:|---:|---|
-| `barbarian-hunt` | +113 | 17.80% | 16.28% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `envoy-infrastructure` | +78 | 17.45% | 16.41% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `housing-districts` | +71 | 17.37% | 16.43% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `home-defense` | +59 | 17.26% | 16.47% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `home-defense` | +86 | 17.52% | 16.38% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `pillage-to-heal` | +65 | 17.32% | 16.45% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `shoot-and-scoot` | +51 | 17.18% | 16.50% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
 | `suzerain-cards` | +42 | 17.09% | 16.25% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `barbarian-capture-priority` | +36 | 17.03% | 16.55% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `congress-banks-decided` | +34 | 17.00% | 16.55% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `tactical-strategy` | +34 | 17.01% | 16.55% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `builder-worked-tile-priority` | +29 | 16.96% | 16.57% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
 | `wonder-prereq-reach` | +29 | 16.96% | 16.38% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `district-building-chain` | +25 | 16.91% | 16.58% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `district-lookahead-settle` | +24 | 16.91% | 16.59% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `guru-heals-the-corps` | +16 | 16.83% | 16.61% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `war-patience` | +16 | 16.83% | 16.61% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `escort-unstick-2` | +15 | 16.81% | 16.60% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `campus-finishes-first` | +12 | 16.79% | 16.62% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `coupled-expansion` | +12 | 16.78% | 16.63% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `guru-heals-the-corps` | +28 | 16.95% | 16.57% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `zoc-screen` | +15 | 16.82% | 16.62% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `district-lookahead-settle` | +11 | 16.77% | 16.56% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `endgame-war-runway` | +11 | 16.77% | 16.56% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `camp-reach` | +10 | 16.77% | 16.56% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `siege-is-progress` | +10 | 16.77% | 16.63% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
 | `housing-buildings` | +8 | 16.75% | 16.59% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `lane-congress-ballot` | +8 | 16.75% | 16.64% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `housing-districts` | +7 | 16.73% | 16.60% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `inquisition-on-threat` | +6 | 16.72% | 16.50% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
 | `research-grants-first` | +5 | 16.72% | 16.62% | `2026-08-24-standard-continuous-38160-total-seats.json` |
-| `priced-tile-purchase` | +4 | 16.70% | 16.65% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
 | `ranged-line-of-sight` | +4 | 16.71% | 16.63% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `joint-tactics` | +3 | 16.70% | 16.63% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `culture-coverage` | +1 | 16.67% | 16.66% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `priced-tile-purchase` | +0 | 16.67% | 16.66% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `envoy-infrastructure` | -1 | 16.66% | 16.68% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `recon-flight` | -1 | 16.66% | 16.67% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `housing-cards` | -4 | 16.62% | 16.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `congress-banks-decided` | -6 | 16.60% | 16.73% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `arrival-waves` | -7 | 16.59% | 16.74% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `fifteenth-citizen` | -7 | 16.60% | 16.74% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `barbarian-hunt` | -10 | 16.57% | 16.77% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `idle-walkers-close-the-pipeline` | -10 | 16.56% | 16.77% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `lane-congress-favor` | -10 | 16.57% | 16.76% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `condemn-under-congress` | -11 | 16.55% | 16.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `coupled-expansion` | -12 | 16.55% | 16.79% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `muster-at-command-radius` | -12 | 16.55% | 16.79% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `barbarian-walls-one-tier` | -13 | 16.54% | 16.80% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `campus-finishes-first` | -13 | 16.54% | 16.79% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `science-payback-horizon` | -13 | 16.54% | 16.80% | `2026-08-24-standard-continuous-38160-total-seats.json` |
-| `lane-congress-favor` | -14 | 16.53% | 16.71% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `wonder-ring-settle-value` | -15 | 16.52% | 16.71% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `lane-commit` | -16 | 16.51% | 16.72% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `siege-is-progress` | -16 | 16.50% | 16.72% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `settler-site-agreement` | -18 | 16.49% | 16.73% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `theology-for-founders` | -18 | 16.49% | 17.22% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `condemn-under-congress` | -19 | 16.47% | 16.73% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `inquisition-on-threat` | -19 | 16.47% | 17.25% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `zoc-screen` | -20 | 16.47% | 16.73% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `civilian-rescue` | -22 | 16.45% | 17.30% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `settler-site-agreement` | -14 | 16.53% | 16.80% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `wonder-ring-settle-value` | -14 | 16.53% | 17.08% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `barbarian-capture-priority` | -16 | 16.51% | 16.83% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `fortify-idle-units` | -18 | 16.49% | 16.84% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `war-patience` | -19 | 16.47% | 16.86% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `tactical-strategy` | -21 | 16.46% | 16.87% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `congress-counter-votes` | -22 | 16.44% | 16.89% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `governor-expansion-lane` | -22 | 16.44% | 16.89% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `theology-for-founders` | -25 | 16.41% | 17.46% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
 | `siege-muster` | -26 | 16.41% | 16.93% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `step-and-reassess` | -27 | 16.40% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
-| `congress-counter-votes` | -28 | 16.39% | 16.76% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `civilian-rescue` | -28 | 16.39% | 17.49% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `siege-tracks-wall` | -28 | 16.39% | 16.95% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `chain-tech-lookahead` | -29 | 16.38% | 16.96% | `2026-08-24-standard-continuous-38160-total-seats.json` |
-| `endgame-war-runway` | -35 | 16.32% | 16.78% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `fifteenth-citizen` | -36 | 16.31% | 16.79% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `builder-reward-survey` | -38 | 16.29% | 16.79% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `settle-plan-ahead` | -39 | 16.28% | 16.80% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `district-building-chain` | -29 | 16.37% | 16.95% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `lane-congress-ballot` | -29 | 16.38% | 16.96% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `spread-campaign-persists` | -29 | 16.38% | 16.77% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `builder-worked-tile-priority` | -32 | 16.35% | 16.99% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `lane-commit` | -32 | 16.34% | 16.77% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `escort-unstick-2` | -33 | 16.34% | 16.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `settle-plan-ahead` | -33 | 16.34% | 16.99% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `siege-role` | -39 | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `research-floor-holds` | -40 | 16.27% | 17.07% | `2026-08-24-standard-continuous-38160-total-seats.json` |
-| `pillage-to-heal` | -46 | 16.21% | 16.82% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `shoot-and-scoot` | -47 | 16.20% | 16.83% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `spread-campaign-persists` | -47 | 16.20% | 16.82% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `builder-reward-survey` | -46 | 16.21% | 17.13% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `naval-production-policy` | -51 | 16.16% | 17.17% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `garrison-walls` | -54 | 16.12% | 17.21% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `loyalty-policy-defence` | -54 | 16.13% | 17.20% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `fortify-idle-units` | -59 | 16.08% | 16.86% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `culture-coverage` | -61 | 16.06% | 16.87% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `siege-tracks-wall` | -71 | 15.95% | 16.90% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `naval-production-policy` | -88 | 15.79% | 16.96% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `contact-posture` | -60 | 16.06% | 17.27% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `governor-victory-lanes` | -110 | 15.57% | 17.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `contact-posture` | -155 | 15.12% | 17.19% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
 | `governor-every-lane` | -173 | 14.93% | 18.38% | `2026-08-24-standard-continuous-38160-total-seats.json` |
-| `fog-honest` | -946 | 7.21% | 18.02% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
-| `fog-honest-2` | -1447 | 2.19% | 18.70% | `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` |
+| `fog-honest` | -822 | 8.45% | 17.84% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
+| `fog-honest-2` | -1449 | 2.17% | 18.79% | `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` |
 
 ## How to read this
 
@@ -358,4 +333,4 @@ So the gene stays in the code, `off` and unresolved, and **the cull rule does no
 
 So the rule, for whoever culls next. A cull is not the symmetric opposite of a default. A gene left `off` costs one row in a foldover screen and **no games**, and it can be re-priced by every screen that runs afterwards; a gene removed can never be re-priced by anything, and restoring it costs a dedicated confirmation run (1,200 map pairs for `holy-lane-parity`). So the bar for deleting code is not "the worst reading available" -- `barbarian-hunt`'s -86 was the worst reading in the table and it was still the wrong number. It is **a reading on the instrument the agent is actually being screened on**, and the three questions that establish it: is this column `standard` or `legacy`; is there a screen in flight or unmerged that has already priced this gene (check `batch.source_commit` against the cull date, and check the open pull requests); and does a direct arm against the deployment genome agree. `barbarian-hunt` failed all three.
 
-_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-standard-continuous-38160-total-seats.json` (standard, 38,160 seats). The fixed display batches are: `2026-08-26-standard-continuous-18000-total-seats-20260825T195923Z-d83b.json` (18,000 seats), `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` (18,000 seats), `2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json` (30,000 seats). The deployment defaults live in `docs/gene_ledger.json`; the table's batch cells are published evidence; this reporting-only rotation retains the selected deployment defaults._
+_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-standard-continuous-38160-total-seats.json` (standard, 38,160 seats). The fixed display batches are: `2026-08-26-standard-continuous-15456-total-seats-20260826T080535Z-3a87.json` (15,456 seats), `2026-08-26-standard-continuous-18000-total-seats-20260825T195923Z-d83b.json` (18,000 seats), `2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json` (18,000 seats). The deployment defaults live in `docs/gene_ledger.json`; the table's batch cells are published evidence; this reporting-only rotation retains the selected deployment defaults._
