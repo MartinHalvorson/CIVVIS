@@ -7997,7 +7997,13 @@ mod tests {
             width: 20,
             height: 20,
             chunk: 1,
-            plots: vec![owned(5, 5), owned(5, 6), owned(6, 5), owned(4, 5), owned(5, 4)],
+            plots: vec![
+                owned(5, 5),
+                owned(5, 6),
+                owned(6, 5),
+                owned(4, 5),
+                owned(5, 4),
+            ],
         }]);
         let row = |t: &str, c: f64, p: f64| StateMenuItem {
             t: t.to_string(),
@@ -8107,15 +8113,21 @@ mod tests {
         // The host's price is the price, and off the purchase menu is not for
         // sale — through the pricers the lanes call and the enumeration.
         assert_eq!(
-            mirror.game.building_purchase_cost(0, cid, "granary", "gold"),
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold"),
             Some(340.0)
         );
         assert_eq!(
-            mirror.game.building_purchase_cost(0, cid, "granary", "faith"),
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "faith"),
             None
         );
         assert_eq!(
-            mirror.game.building_purchase_cost(0, cid, "monument", "gold"),
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "monument", "gold"),
             None
         );
         assert_eq!(
@@ -8126,7 +8138,10 @@ mod tests {
             mirror.game.unit_purchase_cost(0, cid, "builder", "faith"),
             Some(105.0)
         );
-        assert_eq!(mirror.game.unit_purchase_cost(0, cid, "warrior", "gold"), None);
+        assert_eq!(
+            mirror.game.unit_purchase_cost(0, cid, "warrior", "gold"),
+            None
+        );
         let buys_granary = |game: &crate::game::Game| {
             game.legal_actions_within(0, crate::game::ActionFamilies::PURCHASES)
                 .iter()
@@ -8139,7 +8154,10 @@ mod tests {
                 })
         };
         mirror.game.players[0].gold = 339.0;
-        assert!(!buys_granary(&mirror.game), "339 Gold does not buy a 340 Granary");
+        assert!(
+            !buys_granary(&mirror.game),
+            "339 Gold does not buy a 340 Granary"
+        );
         mirror.game.players[0].gold = 340.0;
         assert!(
             buys_granary(&mirror.game),
@@ -8151,7 +8169,9 @@ mod tests {
         let fresh = rebuilt.game.player_city_ids(0)[0];
         assert!(!rebuilt.game.can_produce(0, fresh, &spearman));
         assert_eq!(
-            rebuilt.game.building_purchase_cost(0, fresh, "granary", "gold"),
+            rebuilt
+                .game
+                .building_purchase_cost(0, fresh, "granary", "gold"),
             Some(340.0)
         );
         assert_eq!(rebuilt.game.cities[&fresh].queue.len(), 2);
@@ -8167,7 +8187,9 @@ mod tests {
             "an empty menu gates nothing"
         );
         assert_eq!(
-            mirror.game.building_purchase_cost(0, cid, "granary", "gold"),
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold"),
             None
         );
 
@@ -8183,7 +8205,10 @@ mod tests {
         assert!(mirror.game.can_produce(0, cid, &spearman));
         assert_eq!(mirror.game.cities[&cid].queue, vec![warrior]);
         assert!(
-            mirror.game.building_purchase_cost(0, cid, "granary", "gold").is_some(),
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold")
+                .is_some(),
             "the model's own price is back"
         );
     }
@@ -8196,11 +8221,26 @@ mod tests {
         let rules = crate::rules::Rules::embedded();
         let key = |civ6: &str, tier: Option<u8>| host_production_key(&rules, civ6, tier);
         assert_eq!(key("UNIT_WARRIOR", None).as_deref(), Some("unit:warrior"));
-        assert_eq!(key("UNIT_WARRIOR", Some(1)).as_deref(), Some("formation:warrior:1"));
-        assert_eq!(key("UNIT_WARRIOR", Some(2)).as_deref(), Some("formation:warrior:2"));
-        assert_eq!(key("BUILDING_LIBRARY", None).as_deref(), Some("building:library"));
-        assert_eq!(key("BUILDING_PYRAMIDS", None).as_deref(), Some("wonder:pyramids"));
-        assert_eq!(key("DISTRICT_GOVERNMENT", None).as_deref(), Some("district:government_plaza"));
+        assert_eq!(
+            key("UNIT_WARRIOR", Some(1)).as_deref(),
+            Some("formation:warrior:1")
+        );
+        assert_eq!(
+            key("UNIT_WARRIOR", Some(2)).as_deref(),
+            Some("formation:warrior:2")
+        );
+        assert_eq!(
+            key("BUILDING_LIBRARY", None).as_deref(),
+            Some("building:library")
+        );
+        assert_eq!(
+            key("BUILDING_PYRAMIDS", None).as_deref(),
+            Some("wonder:pyramids")
+        );
+        assert_eq!(
+            key("DISTRICT_GOVERNMENT", None).as_deref(),
+            Some("district:government_plaza")
+        );
         assert_eq!(
             key("PROJECT_ENHANCE_DISTRICT_CAMPUS", None).as_deref(),
             Some("project:campus_research_grants")
@@ -13230,19 +13270,46 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
 /// ⚠ A superset is correct, not an error. Serde aliases mean one field answers to two
 /// names — `kind` also accepts `type` — and only the export side needs both.
 const CITY_KEYS: &[&str] = &[
-    "id", "name", "buildings", "pillaged_buildings", "religion", "religion_next",
+    "id",
+    "name",
+    "buildings",
+    "pillaged_buildings",
+    "religion",
+    "religion_next",
     "religion_turns",
-    "pantheon_active", "districts", "wonders", "worked", "specialists", "great_works",
-    "yields", "producing", "producing_hash", "production_progress", "production",
-    "production_cost", "production_turns",
+    "pantheon_active",
+    "districts",
+    "wonders",
+    "worked",
+    "specialists",
+    "great_works",
+    "yields",
+    "producing",
+    "producing_hash",
+    "production_progress",
+    "production",
+    "production_cost",
+    "production_turns",
     // The host's menus and the queue behind the head, read by
     // `host_menus_from` and `host_queue_tail`.
     "buildable",
     "purchasable",
     "queue",
-    "food", "loyalty_per_turn", "falls_to",
-    "x", "y", "pop", "capital", "defense", "damage", "max_damage", "wall_damage",
-    "max_wall_damage", "loyalty", "housing", "housing_from_improvements",
+    "food",
+    "loyalty_per_turn",
+    "falls_to",
+    "x",
+    "y",
+    "pop",
+    "capital",
+    "defense",
+    "damage",
+    "max_damage",
+    "wall_damage",
+    "max_wall_damage",
+    "loyalty",
+    "housing",
+    "housing_from_improvements",
     // The host's own amenity ledger and the multiplier it puts on every non-food
     // yield. `the_schema_allowlists_cover_every_declared_field` caught these missing
     // on the first run, which is the whole reason that test exists.
@@ -19068,7 +19135,11 @@ impl LiveMirror {
         // city whose export lost the key stops being gated.
         let menus = host_menus_from(
             &state.cities,
-            &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
+            &self
+                .cid_of
+                .iter()
+                .map(|(civ6, cid)| (*cid, *civ6))
+                .collect(),
             &self.game.rules,
         );
         self.game

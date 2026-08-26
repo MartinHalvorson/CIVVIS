@@ -34075,7 +34075,8 @@ impl Game {
                     Some(host) => host,
                     None => Some(modelled),
                 };
-                if faith_districts && priced("faith").is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                if faith_districts
+                    && priced("faith").is_some_and(|cost| p.faith + f64::EPSILON >= cost)
                 {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
@@ -34084,7 +34085,9 @@ impl Game {
                         currency: "faith".to_string(),
                     });
                 }
-                if gold_districts && priced("gold").is_some_and(|cost| p.gold + f64::EPSILON >= cost) {
+                if gold_districts
+                    && priced("gold").is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+                {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
                         district: Name::new(district),
@@ -34730,12 +34733,11 @@ impl Game {
                             .scale(self.district_cost_for_placement(pid, district, true))
                             * 4.0;
                         // The host's purchase menu prices a district too, when present.
-                        let priced = |currency: &str| {
-                            match self.host_purchase_price(cid, item, currency) {
+                        let priced =
+                            |currency: &str| match self.host_purchase_price(cid, item, currency) {
                                 Some(host) => host,
                                 None => Some(modelled),
-                            }
-                        };
+                            };
                         if faith_districts
                             && priced("faith").is_some_and(|cost| p.faith + f64::EPSILON >= cost)
                         {
@@ -39626,9 +39628,7 @@ impl Game {
                 return host.filter(|_| !self.purchase_is_blocked(cid, &plain));
             }
         }
-        if unit == "settler"
-            && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0)
-        {
+        if unit == "settler" && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0) {
             return None;
         }
 
@@ -40104,7 +40104,6 @@ impl Game {
         }
         let district = spec
             .district
-
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
         // ★★★ CIVILIZATION VI SELLS A CITY DEFENCE FOR NO CURRENCY AT ALL.
@@ -40198,7 +40197,6 @@ impl Game {
         }
         let district = spec
             .district
-
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
         if spec.outer_defense > 0

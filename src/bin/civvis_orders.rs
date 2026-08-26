@@ -6567,7 +6567,10 @@ mod tests {
                 broken.push(format!("{host} -> {back:?}, the gate wants {key}"));
             }
         }
-        assert!(checked > 200, "only {checked} orderable names are in the snapshot");
+        assert!(
+            checked > 200,
+            "only {checked} orderable names are in the snapshot"
+        );
         assert!(
             broken.is_empty(),
             "host spellings that do not come back to the board's key:\n{}",
