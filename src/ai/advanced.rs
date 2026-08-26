@@ -1393,6 +1393,12 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// `lane-release-when-hopeless`: the verdict on the assigned victory lane,
+    /// recomputed once per acting turn in `take_turn_inner` because
+    /// `Game::victory_races` walks every city of every major and the readers
+    /// are `production_value` and the civic chooser, called hundreds of times
+    /// a turn. `false` whenever the gene is off.
+    lane_lost: bool,
     /// Chokepoint readings are shared by every gene that asks for one in an
     /// acting turn, on the same terms as `settlement_atlas` above. See
     /// `advanced/chokepoints.rs`.
@@ -4399,6 +4405,29 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Want as many cities as the map can seat, not as many as it has land
+    /// for.
+    ///
+    /// ★★★★ SETTLERS WITH NOWHERE TO GO. `assess` sizes the city target from
+    /// a land census -- `2 + land / 30` under `land_grab`, clamped to
+    /// sixteen -- and nothing in that arithmetic asks whether sixteen sites
+    /// exist. The pipeline, the production arm and the BasicAi settler gate
+    /// all read the target and keep making Settlers while `cities + settlers`
+    /// is under it.
+    ///
+    /// Live King seat `civvis-20260826T112920Z`, 2026-08-26: target sixteen,
+    /// twelve cities founded, and **168 idle settler-turns** -- five Settlers
+    /// parked between turns 180 and 230 with no site to walk to, one of them
+    /// standing on the same plot from turn 170 to the end of the game. The
+    /// two sites that did get founded late scored 39.1 and 47.8 against an
+    /// opening capital's 186.2, and became population-3 cities. Each of those
+    /// Settlers cost a city four population-turns of growth and a full
+    /// production slot.
+    ///
+    /// With this on the target is additionally capped at the cities the
+    /// empire holds plus the sites the map can still seat, counted best-first
+    /// with the scanner's own spacing. See `map_settlement_room`.
+    city_target_meets_the_map: bool,
     /// The plot a Barbarian Outpost stands on is bought for the city inside
     /// whose three rings it sits, when being rid of the outpost is worth more
     /// than the plot's quote. Opt-in gene `camp-tile-buyout`; see
@@ -4608,6 +4637,25 @@ pub struct AdvancedAi {
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
     // ---- append: g-k ------------------------------------------------
+    /// `government-ladder-2`: keep climbing, and keep climbing longer while
+    /// the field out-slots us. See `government_ladder_rung`.
+    government_ladder_2: bool,
+    /// Take the policy slots the lane's list forgot to name.
+    ///
+    /// `strategic_government` picks from a hand-written priority list per
+    /// lane. A government absent from that list is invisible even when its
+    /// civic is already owned, so the empire can hold a ten-slot government
+    /// and keep playing a four-slot one. The live King seat did exactly that:
+    /// Corporate Libertarianism from turn 222, Classical Republic to the end
+    /// at turn 248, five policy slots against the field's ten. The lists are a
+    /// preference order between comparable governments, not a whitelist of
+    /// the only governments worth having.
+    ///
+    /// With this on, an unlocked government with strictly more policy
+    /// capacity than the listed pick wins the seat. The Anarchy guard below
+    /// it is untouched: this only ever raises capacity, and that guard
+    /// already refuses a lateral or a downgrade.
+    government_capacity_fallback: bool,
     /// Let the Builder see the Housing an improvement carries.
     ///
     /// ★★★★ ONE CHOOSER READS IT AND THE OTHER DOES NOT.
@@ -4697,6 +4745,37 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Stop paying for a victory lane that cannot be won, and let the empire
+    /// score instead.
+    ///
+    /// ★★★★ THE ASSIGNED LANE VETOES THE SCOREBOARD. An explicit
+    /// `victory_target` is not only a preference here, it is a set of hard
+    /// refusals spread across the agent: `production_value`'s Building arm
+    /// returns `-10_000` for every Great Work building unless the lane is
+    /// Culture, its Project arm returns `-10_000` for every space-race
+    /// project unless the lane is Science, the Wonder gate opens only for
+    /// Culture or Score, and `culture_spending` -- the Naturalist and the
+    /// touring Rock Bands, the only Faith purchases a religion-less empire
+    /// has left -- is dispatched only on the Culture lane.
+    ///
+    /// Those refusals are correct while the lane is live. They are ruinous
+    /// after it is decided. The live King seat, `civvis-20260826T112920Z`,
+    /// played `--victory diplomatic` to turn 248 holding 2 diplomatic points
+    /// against the leader's 19 -- a race it could not have won for a hundred
+    /// turns -- and spent that hundred turns forbidden to build a Museum,
+    /// forbidden to launch from the Spaceport it had just finished, and
+    /// unable to spend 6,329 banked Faith. It lost the game on score by 448,
+    /// of which 90 was six missing wonders and 63 was twenty-one missing
+    /// civics.
+    ///
+    /// With this on, once the clock is past [`LANE_VERDICT_SHARE`] and the
+    /// seat holds less than [`LANE_LOST_SHARE`] of the leader's progress in
+    /// its own lane, every one of those refusals lifts. The lane is not
+    /// abandoned -- nothing here stops the seat winning it if the race turns
+    /// -- but the empire stops paying a premium for a race it is losing and
+    /// starts banking the score, the wonders and the culture that decide a
+    /// game that reaches its turn limit.
+    lane_release_when_hopeless: bool,
     /// Version 2 of `never-an-empty-queue`: fill an idle turn with something
     /// that is not a soldier, or leave it idle.
     ///
@@ -4777,6 +4856,25 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Sue for peace when the war has taken nothing and the treasury is
+    /// paying for it.
+    ///
+    /// ★★★★ AN APPOINTED OBJECTIVE IS A PERMANENT EXEMPTION FROM PEACE. The
+    /// peace desk's fatigue clause -- twenty-four turns of war and twelve
+    /// without campaign progress -- is written `!appointed_objective && ...`,
+    /// so a campaign that never lands keeps the empire at war for the rest of
+    /// the game. Live King seat `civvis-20260826T112920Z`, 2026-08-26: at war
+    /// with the Maori for 172 of 248 turns, one objective appointed at turn
+    /// 100 and never taken, an air surge appointed against a THIRD empire at
+    /// turn 103 while the treasury held nothing. All four peace requests the
+    /// seat did make were accepted -- it simply stopped asking.
+    ///
+    /// This adds the fatigue clause back without the exemption, behind two
+    /// further conditions: the empire cannot carry the war financially
+    /// (`treasury_can_carry_a_war`), or the objective has stood untouched for
+    /// [`PEACE_STALL_TURNS`]. A campaign that is actually progressing is
+    /// untouched, because `last_campaign_progress` moves when it does.
+    peace_when_war_does_not_pay: bool,
     /// The production queue pays the Envoy a city-state has promised for the
     /// unit or district family its quest names. Opt-in gene
     /// `quest-production`; see `advanced/city_state_quests.rs`.
@@ -4921,6 +5019,25 @@ pub struct AdvancedAi {
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Do not start a war the treasury cannot pay for.
+    ///
+    /// ★★★★ THE SEAT DECLARED AT ZERO GOLD. Live King seat
+    /// `civvis-20260826T112920Z`, 2026-08-26: at turn 100 the empire held 25
+    /// Gold at -11 a turn; at turn 110 it declared war on the Maori of its own
+    /// accord (`war` record, `source: civvis`) having already accepted peace
+    /// with them at turn 88, and spent turns 80-135 building 26 Bombards, 10
+    /// Cavalry and 15 Spies out of a treasury that sat at 0 for fifty
+    /// consecutive turns. Military power fell 218 -> 30 as the units it could
+    /// not pay for disbanded themselves, the bankruptcy amenity penalty
+    /// reached 18 across nine cities, and the war ran to the end of the game.
+    ///
+    /// Every solvency guard in the agent is downstream of the declaration:
+    /// `live_war_economy_requires_recovery` reprices production, the
+    /// `maintenance_emergency` arm of `strategic_policies` swaps a policy
+    /// card, `war_treasury_floor` reserves gold for upgrades -- and all three
+    /// run only once the war is already on. This is the same reserve shape,
+    /// asked one turn earlier, where it can still say no.
+    war_needs_a_treasury: bool,
     /// Modernize the standing army before the discretionary purchase pass
     /// spends the treasury, while a war is being fought on our ground.
     ///
@@ -5086,6 +5203,47 @@ const PRODUCTION_VETO_FLOOR: f64 = -9_000.0;
 /// half of the game to pay them back; past it the detour is the cost the
 /// shipped `civic_value` ratio was right to avoid.
 const GOVERNMENT_LADDER_WINDOW: f64 = 0.5;
+
+/// The share of the clock before which `lane-release-when-hopeless` returns no
+/// verdict at all. Half of 250 is turn 125: a diplomatic or culture race is
+/// genuinely open before it, and an empire that has not started scoring by
+/// then still has half a game to. Every lane's own catch-up mechanics --
+/// congress points, tourism, project chains -- work inside that half.
+const LANE_VERDICT_SHARE: f64 = 0.5;
+
+/// The share of the leading rival's progress in the seat's own lane below
+/// which that lane reads as lost. A seat at a third of the leader's
+/// diplomatic points with half the clock gone needs the leader to stop
+/// entirely; the live King seat was at 5% of the leader's and still paying
+/// full price for the race.
+const LANE_LOST_SHARE: f64 = 0.34;
+
+/// How far ahead `war-needs-a-treasury` projects the current deficit before
+/// declaring. Twenty-five turns is the same horizon `solvent_faith_army`
+/// already prices a standing army over (`FAITH_ARMY_SOLVENCY_TURNS`), and it
+/// is roughly the march-and-siege length of one campaign at Online speed.
+const WAR_SOLVENCY_TURNS: f64 = 25.0;
+
+/// Standard turns without campaign progress after which
+/// `peace-when-the-war-does-not-pay` treats an appointed objective as a
+/// standing order nobody is executing. The shipped `fatigued` clause already
+/// waits twelve; this is the second, longer clock that overrides the
+/// appointment itself rather than deferring to it.
+const PEACE_STALL_TURNS: u32 = 30;
+
+/// The distance two counted settlement sites must stand apart before
+/// `city-target-meets-the-map` seats both. The scanner already refuses any
+/// plot within three tiles of a founded city (`city_exclusion`), so four is
+/// the first distance at which founding one site leaves the other legal.
+const SETTLEMENT_SPACING: i32 = 4;
+
+/// The share of the turn budget inside which `government-ladder-2` still
+/// climbs **while the empire is behind the field on policy slots**. Three
+/// quarters of 250 is turn 187: a tier-3 government adopted there still spends
+/// sixty turns paying its slots back, and the seat it replaces was two slots
+/// short of every rival for the whole game. Level with the field, the shipped
+/// half-clock window stands.
+const GOVERNMENT_LADDER_BEHIND_WINDOW: f64 = 0.75;
 
 /// A Campus standing without the building that pays for it. The debt is per
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
@@ -5813,6 +5971,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
+            lane_lost: false,
             narrows_atlas: RefCell::new(chokepoints::NarrowsAtlas::default()),
             work_pool: None,
             belief: BeliefState::new(),
@@ -5993,6 +6152,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            city_target_meets_the_map: false,
             camp_tile_buyout: false,
             contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
 
@@ -6030,6 +6190,8 @@ impl AdvancedAi {
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
 
             // ---- append: g-k ----------------------------------------
+            government_ladder_2: false,
+            government_capacity_fallback: false,
             improvement_housing_value: false,
             gold_for_the_young_city: false,
             growth_to_settle: false,
@@ -6038,6 +6200,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
             never_an_empty_queue: false,
             native_emergency_purchase: false,
@@ -6050,6 +6213,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            peace_when_war_does_not_pay: false,
             quest_production: false,
             quest_trade_route: false,
             quest_boost: false,
@@ -6071,6 +6235,7 @@ impl AdvancedAi {
             siege_is_progress_2: false,
 
             // ---- append: t-z ----------------------------------------
+            war_needs_a_treasury: false,
             upgrade_the_garrison: false,
             wonder_adjacent_sites: false,
             wonder_adjacent_sites_2: false,
@@ -7222,6 +7387,10 @@ impl AdvancedAi {
 
     fn may_form_war_plan(&self, g: &Game, pid: usize) -> bool {
         if !self.timed_war
+            // See `war_needs_a_treasury`: an appointed package redirects
+            // every idle queue in the empire into an army, so the veto has to
+            // reach the appointment and not only the declaration.
+            || !self.war_is_affordable(g, pid)
             || self.war_plan.is_some()
             // Two appointed packages would bid for the same idle queues and
             // the same declaration. Whichever was appointed first keeps the
@@ -9423,6 +9592,14 @@ impl AdvancedAi {
                 || (g.players[pid].techs.contains(&crate::name!("shipbuilding"))
                     && self.settle_site_exists(g, pid, *pos, g.map.width + g.map.height))
         });
+        // See `city_target_meets_the_map`: the target above is a land census,
+        // and land is not the same thing as somewhere to put a city.
+        let desired_cities = if self.city_target_meets_the_map {
+            let room = self.map_settlement_room(g, pid, &expansion_origins, desired_cities);
+            desired_cities.min(cities.len() + room)
+        } else {
+            desired_cities
+        };
         // The rapid gene's phase boundary is deliberately the same practical
         // safe-site search that permits a Settler. A low-value, unsafe, or
         // unreachable tile therefore does not postpone the conquest phase;
@@ -11664,6 +11841,15 @@ impl AdvancedAi {
                 _ if self.government_ladder_goal(g, pid, objective).is_some() => {
                     self.government_ladder_goal(g, pid, objective)
                 }
+                // See `lane_release_when_hopeless`: a lane that cannot be won
+                // does not get to spend the rest of the game's civics on its
+                // own beeline. The live King seat took "the cheapest step
+                // toward global warming mitigation" for every civic from turn
+                // 107 to turn 229 while its diplomatic race stood at 2 points
+                // against 19 -- a path that crosses no government civic at
+                // all, and never arrived. Released, `civic_value`'s argmax
+                // takes the slot back.
+                _ if self.lane_lost => None,
                 GrandStrategy::Culture => [
                     "humanism",
                     "conservation",
@@ -11811,7 +11997,7 @@ impl AdvancedAi {
         pid: usize,
         objective: GrandStrategy,
     ) -> Option<&'static str> {
-        if !self.government_ladder {
+        if !self.government_ladder && !self.government_ladder_2 {
             return None;
         }
         if !g.players[pid]
@@ -11819,6 +12005,9 @@ impl AdvancedAi {
             .contains(&crate::name!("political_philosophy"))
         {
             return None;
+        }
+        if self.government_ladder_2 {
+            return self.government_ladder_rung(g, pid);
         }
         if g.turn as f64 > g.max_turns.max(1) as f64 * GOVERNMENT_LADDER_WINDOW {
             return None;
@@ -11835,6 +12024,150 @@ impl AdvancedAi {
             return None;
         }
         ladder.into_iter().next()
+    }
+
+    /// `government-ladder-2`: the same climb, but it does not stop at tier two
+    /// and it does not stop climbing while the empire is behind the field on
+    /// policy slots.
+    ///
+    /// Version one asks a fixed question — "do I own Exploration, Divine Right
+    /// or Reformed Church?" — and retires the moment any one of them lands.
+    /// That is a rung, not a ladder: an empire that owns Exploration and plays
+    /// a six-slot Merchant Republic against a field on ten never climbs again.
+    /// The live King seat never even reached rung one, so the retirement clause
+    /// was never the binding constraint; what the run showed is that the
+    /// binding constraint is the WINDOW. Half the clock is turn 125, and the
+    /// civics that actually gate the large governments sit past it.
+    ///
+    /// So version two asks the question capacity actually poses: is there a
+    /// government whose gate civic I do not own that would carry more policy
+    /// slots than the one I am playing, and is the cheapest step toward it
+    /// still worth taking? It ranks by the gate civic's own cost, which rises
+    /// with era, so the answer early is a tier-2 government and the answer
+    /// late is the tier-4 one — the same order version one hard-coded, without
+    /// the ceiling.
+    ///
+    /// The window still exists, because a policy slot bought at turn 240 pays
+    /// nothing back. It is simply longer while the empire is measurably behind
+    /// on slots: [`GOVERNMENT_LADDER_WINDOW`] normally, and
+    /// [`GOVERNMENT_LADDER_BEHIND_WINDOW`] while some living major plays a
+    /// government with more capacity than ours.
+    fn government_ladder_rung(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        let capacity = |name: &str| {
+            g.rules.governments.get(name).map_or(0, |spec| {
+                spec.slots.military
+                    + spec.slots.economic
+                    + spec.slots.diplomatic
+                    + spec.slots.wildcard
+            })
+        };
+        let ours = g.players[pid].government.as_deref().map_or(0, &capacity);
+        let behind = g
+            .players
+            .iter()
+            .filter(|rival| rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian)
+            .any(|rival| rival.government.as_deref().map_or(0, &capacity) > ours);
+        let window = if behind {
+            GOVERNMENT_LADDER_BEHIND_WINDOW
+        } else {
+            GOVERNMENT_LADDER_WINDOW
+        };
+        if g.turn as f64 > g.max_turns.max(1) as f64 * window {
+            return None;
+        }
+        g.rules
+            .governments
+            .iter()
+            .filter(|(name, _)| capacity(name.as_str()) > ours)
+            .filter_map(|(_, spec)| spec.civic.as_ref())
+            .filter(|civic| !g.players[pid].civics.contains(civic))
+            .filter(|civic| g.rules.civics.get(civic.as_str()).is_some())
+            // Cheapest gate first: civic cost rises with era, so this walks the
+            // ladder a rung at a time instead of beelining the last government
+            // in the game from the Classical era.
+            .min_by(|a, b| {
+                g.rules.civics[a.as_str()]
+                    .cost
+                    .partial_cmp(&g.rules.civics[b.as_str()].cost)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.as_str().cmp(b.as_str()))
+            })
+            .map(|civic| civic.as_str())
+    }
+
+    /// Whether the assigned victory lane can still be won. See
+    /// `lane_release_when_hopeless`; the answer is cached in `lane_lost` once
+    /// per acting turn because this walks every major's victory races.
+    fn assigned_lane_is_lost(&self, g: &Game, pid: usize) -> bool {
+        if !self.lane_release_when_hopeless {
+            return false;
+        }
+        let Some(target) = self.victory_target else {
+            return false;
+        };
+        if (g.turn as f64) < g.max_turns.max(1) as f64 * LANE_VERDICT_SHARE {
+            return false;
+        }
+        // `victory_races` prices the Score lane against this number; the lanes
+        // read below do not use it, but the call wants an honest one.
+        let leading = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| g.score(player.id))
+            .max()
+            .unwrap_or(0);
+        let lane_progress = |who: usize| {
+            let races = g.victory_races(who, leading);
+            match target {
+                VictoryTarget::Science => Some(races.science),
+                VictoryTarget::Culture => Some(races.culture),
+                VictoryTarget::Religion => Some(races.religious),
+                VictoryTarget::Diplomacy => Some(races.diplomatic),
+                VictoryTarget::Domination => Some(races.domination),
+                // The Score lane is the fallback this gene releases INTO. It
+                // is never lost while the clock runs, so it is never released.
+                VictoryTarget::Score => None,
+            }
+        };
+        let Some(ours) = lane_progress(pid) else {
+            return false;
+        };
+        let best = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .filter_map(|player| lane_progress(player.id))
+            .fold(0.0_f64, f64::max);
+        best > 0.0 && ours < best * LANE_LOST_SHARE
+    }
+
+    /// Whether the empire can pay for a war it is about to start. See
+    /// `war_needs_a_treasury`.
+    ///
+    /// Two arms, both written from the engine's own reserve shape
+    /// (`100 + 25` a city, the figure `live_war_economy_requires_recovery`
+    /// and `strategic_policies` already use): the empire is already inside
+    /// the engine's economic-recovery condition, or the treasury cannot carry
+    /// [`WAR_SOLVENCY_TURNS`] more turns of the deficit it is already
+    /// running. Either way the war it is about to declare will be fought by
+    /// units it is about to disband.
+    fn war_is_affordable(&self, g: &Game, pid: usize) -> bool {
+        !self.war_needs_a_treasury || self.treasury_can_carry_a_war(g, pid)
+    }
+
+    /// The reserve question itself, with no gene attached: two genes ask it,
+    /// `war-needs-a-treasury` before declaring and
+    /// `peace-when-the-war-does-not-pay` before suing.
+    fn treasury_can_carry_a_war(&self, g: &Game, pid: usize) -> bool {
+        let reserve = 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
+        let gold = g.players[pid].gold;
+        let per_turn = g.players[pid].gold_per_turn;
+        let in_recovery = per_turn < -0.5 && gold < reserve;
+        let runs_dry = per_turn < 0.0 && gold + per_turn * WAR_SOLVENCY_TURNS < 0.0;
+        !(in_recovery || runs_dry)
     }
 
     fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
@@ -11965,6 +12298,50 @@ impl AdvancedAi {
                 .find(|government| unlocked(government))
                 .map(str::to_string)
         });
+        // `priorities` is a hand-written list per lane, and a government
+        // missing from it is invisible even when its civic is already owned.
+        // The live King seat held Corporate Libertarianism -- ten policy slots
+        // -- from turn 222 and stayed in Classical Republic's four to the end,
+        // because no lane list names it. Nothing about the lane makes five
+        // fewer slots correct; the list is a preference order, not a
+        // whitelist. So when the empire owns an unlocked government with
+        // strictly more policy capacity than the listed pick, take the
+        // capacity. The Anarchy guard below still has the last word.
+        let choice = if self.government_capacity_fallback {
+            let capacity = |name: &str| {
+                g.rules.governments.get(name).map_or(0, |spec| {
+                    spec.slots.military
+                        + spec.slots.economic
+                        + spec.slots.diplomatic
+                        + spec.slots.wildcard
+                })
+            };
+            let listed = choice.as_deref().map_or(0, capacity);
+            let richer = g
+                .rules
+                .governments
+                .keys()
+                .map(|name| name.as_str())
+                .filter(|name| unlocked(name))
+                .map(|name| (capacity(name), name.to_string()))
+                .filter(|(slots, _)| *slots > listed)
+                // Keys iterate in sorted order; the reversed name keeps the
+                // first of an equal-capacity pair, so the pick is stable.
+                .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)));
+            match richer {
+                Some((slots, name)) => {
+                    think!(self.journal(), Government, Detail,
+                           "Reaching past the {} list for {}",
+                           plain(objective.as_str()), plain(&name);
+                           "it is unlocked and offers {slots} policy slots against \
+                            the {listed} the list would take");
+                    Some(name)
+                }
+                None => choice,
+            }
+        } else {
+            choice
+        };
         if let Some(government) = choice
             .filter(|government| g.players[pid].government.as_deref() != Some(government.as_str()))
         {
@@ -15126,6 +15503,16 @@ impl AdvancedAi {
                         && fatigued
                         && !one_war_presses
                         && g.player_city_ids(*other).len() > 1)
+                    // See `peace_when_war_does_not_pay`: the same fatigue
+                    // clause, without the appointed-objective exemption that
+                    // kept the live King seat at war for 172 of 248 turns.
+                    || (self.peace_when_war_does_not_pay
+                        && fatigued
+                        && !one_war_presses
+                        && g.player_city_ids(*other).len() > 1
+                        && (!self.treasury_can_carry_a_war(g, pid)
+                            || g.turn.saturating_sub(self.last_campaign_progress)
+                                >= g.standard_duration(PEACE_STALL_TURNS)))
                     || envoy_reclaim.is_some()
                     || one_war_peace.is_some())
             {
@@ -15256,6 +15643,11 @@ impl AdvancedAi {
             || (!rushing && g.player_city_ids(pid).len() < 2)
             || g.is_at_war(pid, target)
             || (!emergency_target && !self.campaign_target_legal(g, pid, target))
+            // See `war_needs_a_treasury`. `strategic_policies` already
+            // records the shape of this failure -- "the counter-leader plan
+            // held 85 Gold at -59 per turn before it declared" -- but only
+            // reacts to it with a policy card, after the declaration.
+            || !self.war_is_affordable(g, pid)
         {
             return;
         }
@@ -21522,9 +21914,15 @@ impl AdvancedAi {
                 } else {
                     !spec.great_work_slots.is_empty()
                 };
+                // See `lane_release_when_hopeless`: the veto is the assigned
+                // lane refusing to pay for another lane's building. Once the
+                // assigned lane is lost the refusal costs the empire the
+                // Amphitheatre, the Museum, the Broadcast Centre and every
+                // Great Work slot in the game -- and the score they carry.
                 if self.victory_target.is_some()
                     && self.victory_target != Some(VictoryTarget::Culture)
                     && great_work_vetoed
+                    && !self.lane_lost
                 {
                     return -10_000.0;
                 }
@@ -22114,8 +22512,14 @@ impl AdvancedAi {
                         Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
                     )
                 });
+                // See `lane_release_when_hopeless`: a released lane plays for
+                // score, and a wonder is fifteen score points -- the largest
+                // single item on the board, against two for a district and
+                // three for a civic. The live King seat finished seven to the
+                // leader's thirteen.
                 let lane_opens = plan.strategy == GrandStrategy::Culture
                     || self.victory_target == Some(VictoryTarget::Score)
+                    || self.lane_lost
                     || (wonder_civ && self.victory_target.is_none());
                 // `religion_founding_site` is the data-level marker for a
                 // Stonehenge-like wonder, rather than a name check. Once this
@@ -22328,7 +22732,14 @@ impl AdvancedAi {
                     -10_000.0
                 } else if (space_race
                     && self.victory_target.is_some()
-                    && self.victory_target != Some(VictoryTarget::Science))
+                    && self.victory_target != Some(VictoryTarget::Science)
+                    // See `lane_release_when_hopeless`. The live King seat
+                    // stood a Spaceport at turn 225 and launched nothing from
+                    // it: on `--victory diplomatic` every launch project this
+                    // arm can offer is refused here, whatever the seat's
+                    // science lead. A lost lane does not get to forbid the
+                    // victory that is still open.
+                    && !self.lane_lost)
                     || turns > remaining_turns * 0.8
                 {
                     -10_000.0
@@ -23981,6 +24392,61 @@ impl AdvancedAi {
         score_cache: Option<&mut BTreeMap<Pos, f64>>,
     ) -> Vec<(Pos, f64)> {
         self.settle_sites_scanning(g, pid, from, radius, prefilter_limit, score_cache, false)
+    }
+
+    /// How many more cities the map can actually seat, counted rather than
+    /// assumed. See `city_target_meets_the_map`.
+    ///
+    /// Sites are taken best-first and a site is only counted if it stands at
+    /// least [`SETTLEMENT_SPACING`] from every site already counted — the
+    /// same spacing the scanner's own `city_exclusion` disk imposes around a
+    /// founded city, so two candidate plots three tiles apart count once, not
+    /// twice. The walk stops as soon as it has counted `wanted` of them: the
+    /// only question asked here is whether the target is reachable, and the
+    /// scan is the expensive part of `assess`.
+    fn map_settlement_room(
+        &self,
+        g: &Game,
+        pid: usize,
+        origins: &[Pos],
+        wanted: usize,
+    ) -> usize {
+        if wanted == 0 || origins.is_empty() {
+            return 0;
+        }
+        let radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
+            g.map.width + g.map.height
+        } else {
+            10
+        };
+        let mut sites: Vec<(Pos, f64)> = Vec::new();
+        for origin in origins {
+            sites.extend(self.settle_sites_with_limit(
+                g,
+                pid,
+                *origin,
+                radius,
+                Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
+            ));
+        }
+        sites.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        let mut seated: Vec<Pos> = Vec::new();
+        for (pos, _) in sites {
+            if seated
+                .iter()
+                .all(|taken| g.wdist(*taken, pos) >= SETTLEMENT_SPACING)
+            {
+                seated.push(pos);
+                if seated.len() >= wanted {
+                    break;
+                }
+            }
+        }
+        seated.len()
     }
 
     /// Whether any site this search would return exists, without ranking the
@@ -32403,6 +32869,9 @@ impl AdvancedAi {
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
         self.base.science_building_first = self.science_building_first;
+        // One reading a turn: `Game::victory_races` walks every city of every
+        // major, and `production_value` asks this question per item per city.
+        self.lane_lost = self.assigned_lane_is_lost(g, pid);
         if self.base.minor || self.base.barb {
             self.base.take_turn(g, pid);
             return;
@@ -32668,7 +33137,12 @@ impl AdvancedAi {
             // Culture racer still settling never reaches them.
             if self.victory_planning
                 && (plan.strategy == GrandStrategy::Culture
-                    || self.culture_lane_spends(g, pid, &plan))
+                    || self.culture_lane_spends(g, pid, &plan)
+                    // See `lane_release_when_hopeless`: for a religion-less
+                    // empire the Naturalist and the Rock Band are the only
+                    // Faith purchases left in the game, and the live King seat
+                    // ended with 6,329 Faith and no way to spend a coin of it.
+                    || self.lane_lost)
             {
                 self.culture_spending(g, pid);
             }
