@@ -15,7 +15,7 @@
 //!
 //! - **The committed game is an ordinary game.** Its action log replays
 //!   through a plain `apply` loop exactly like a sequential log
-//!   ([`replay tests`](self::tests)), saves round-trip, and every
+//!   (the replay tests in `simultaneous::tests`), saves round-trip, and every
 //!   determinism gate the engine already has applies unchanged. The variant
 //!   lives entirely in this driver; `game.rs` has no simultaneous code path.
 //! - **A plan the world has outrun is dropped, not reinterpreted.** Between

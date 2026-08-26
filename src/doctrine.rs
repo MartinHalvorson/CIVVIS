@@ -58,7 +58,7 @@
 //! quantity is the sum over the pair.
 //!
 //! As in `skirmish.rs`, the same agent in both roles must net to **exactly
-//! zero** on every seed, and [`a_self_match_nets_to_zero_on_every_position`]
+//! zero** on every seed, and `a_self_match_nets_to_zero_on_every_position`
 //! asserts it. That is what licenses reading any treatment number out of this
 //! harness.
 //!
@@ -914,7 +914,7 @@ pub struct DoctrineProfile {
     pub arrival: Option<f64>,
     /// The same spread over **foot units alone** — two movement points or
     /// fewer. A horseman with four moves reaches the enemy turns before a
-    /// line of spearmen does however well the line is handled, so [`arrival`]
+    /// line of spearmen does however well the line is handled, so [`Self::arrival`]
     /// on its own cannot tell an agent that manoeuvres badly from one that
     /// simply uses its cavalry. This column is the one that can: if it moves
     /// with `arrival`, the march is the finding; if it does not, the cavalry

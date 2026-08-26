@@ -4,6 +4,16 @@
 //! ported from was removed on 2026-07-21 (`docs/ROADMAP.md`, v0.6), so there is
 //! no second implementation to agree with; this one is deterministic per seed.
 #![recursion_limit = "512"]
+// ⭐ THIS CRATE DOCUMENTS ITS PRIVATE ITEMS ON PURPOSE. The reasoning lives in
+// doc comments on the functions that carry it, and a public `enable_*` toggle
+// links the private field it sets so a reader — or an IDE — can jump straight
+// there. `rustdoc` warns because such a link cannot be followed in *published*
+// docs; nothing here is published, and rewriting 78 of them into dead code
+// spans would cost the navigation to buy nothing. A link that names something
+// no longer in the crate is a different matter and still warns:
+// `unresolved_intra_doc_links` stays on, and is what caught the envelope
+// cache's argument for a mechanism deleted in #2163 (#2556).
+#![allow(rustdoc::private_intra_doc_links)]
 
 // The action encoder's consumers are all in `experiments/closed/`; the module
 // compiles only `kind_name` without the `closed-experiments` feature.

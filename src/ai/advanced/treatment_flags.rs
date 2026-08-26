@@ -708,7 +708,7 @@ impl AdvancedAi {
 
     /// Credit the envoy scorer with the resources, bonuses and points a
     /// suzerainty pays, amortised over envoys still needed. See
-    /// [`SUZERAIN_PRIZE`]. Off on the anchor, so a comparison against it
+    /// [`super::SUZERAIN_PRIZE`]. Off on the anchor, so a comparison against it
     /// measures the term rather than a rename.
     pub fn enable_price_the_suzerainty(&mut self) {
         self.price_the_suzerainty = true;
@@ -2415,7 +2415,7 @@ impl AdvancedAi {
     /// the plot's quote. The outpost must be one we can see and one a soldier
     /// of ours can reach and disperse — Civilization VI removes an outpost on
     /// entry, never because the ground changed hands. See
-    /// [`AdvancedAi::camp_buyout_plot_score`]. Opt-in gene `camp-tile-buyout`.
+    /// [`AdvancedAi::camp_buyout_clearance`]. Opt-in gene `camp-tile-buyout`.
     /// Filed above the markers: the append-point check reads a method line's
     /// first identifier.
     pub fn enable_camp_tile_buyout(&mut self) {

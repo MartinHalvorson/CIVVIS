@@ -9,7 +9,7 @@
 //! imitation/ranking experiments, and evaluator arms.
 //!
 //! `legal_encoded(g, pid)` returns the legal actions alongside their kind
-//! indices and feature rows. The kind mask says which of the [`KINDS`]
+//! indices and feature rows. The kind mask says which of the `KINDS`
 //! categories are available at all, which is what a hierarchical policy
 //! (choose kind, then choose among that kind's actions) needs.
 //!

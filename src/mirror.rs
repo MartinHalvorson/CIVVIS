@@ -9730,7 +9730,7 @@ pub struct StateCity {
     /// happiness picture was derived from its own rules on the reconstructed board
     /// and never once checked against the host.
     ///
-    /// That derived number is not decoration: [`Game::amenity_yield_mult_for`] bands
+    /// That derived number is not decoration: [`crate::game::Game::amenity_yield_mult_for`] bands
     /// it straight onto science, production, gold, **culture** and faith — `+5` →
     /// 1.20, `0` → 1.00, `-4` → 0.80, `-6` → 0.70. CIVVIS's model puts the live
     /// empires at `-4/-5`, i.e. paying a **25-30% tax on every yield**, which would
