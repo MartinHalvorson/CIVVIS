@@ -505,3 +505,27 @@ recovery measurable (the arena never healed, so unit preservation was never
 priceable); and a seat is `advanced+<gene>`, so a gene is priced here before
 the whole-game screen prices what it is worth. The whole-game screen becomes a
 no-harm check for tactical genes, not their gate.
+
+## 15. The fire plan (2026-08-26, opt-in gene `fire-plan`)
+
+The removed joint search's measured value was mostly *ordering* — its static
+seed lost 700 kills on identical total damage (§3 of TACTICS.md). `fire-plan`
+(`src/ai/advanced/fire_plan.rs`) keeps that part without a clone: once a
+turn, `legal_actions_within(UNITS)` names every strike the engine allows,
+`ranged_strike_strengths` / `melee_exchange_strengths` price each at the
+centre roll — the engine's own arithmetic, matchup, flanking, support,
+terrain, river and fortification included — and kills are allocated
+greedily, fewest shooters first, ranged before the melee finisher, with a
+15 % margin over the centre roll where a spare shooter allows. The planned
+shooters go first in the unit order and each is biased toward its planned
+target in the attack scan; the exact, clone-verified attack decision is
+unchanged. Off in both constructors, byte-identical when off.
+
+Measured on the arena gate (§13): `battle_bench` stock six-unit army
+−0.3 ± 13.1 (null; 84/160 seeds diverged), foot-heavy eight-unit army
++23.4 ± 19.2; the curriculum at 40 seeds **+20.6 ± 10.0 a seed** (t 2.05,
+125/83, sign p 0.004), positive on nine of eleven boards and significant on
+none alone; the 68-war captured file at 6 seeds +5.2 ± 5.9 with healing off
+and **+14.0 ± 5.8** (t 2.42, 56/38) with healing on. The plan pays where
+there are several shooters and a target worth finishing, and is inert in a
+six-unit open-field trade. Whole-game screen pending, as a no-harm check.
