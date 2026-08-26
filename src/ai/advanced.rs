@@ -25090,7 +25090,21 @@ impl AdvancedAi {
         // target wait for the next turn's march.
         // See `civilian_out_of_reach`: the same retreat, native, against the
         // exact tiles a raider could stand on next turn.
-        if self.civilian_out_of_reach {
+        // The opt-in owns the broad, pre-emptive route rule below.  The live
+        // bridge still needs this narrow floor for the stronger fact that a
+        // Settler is already inside a visible barbarian's exact capture reach:
+        // leaving it there while every one-step retreat is also covered loses
+        // it before it receives another turn. `civilian_flee_step` returns
+        // `None` unless that direct-capture condition holds, then searches the
+        // unit's whole remaining move instead of only its adjacent tiles.
+        //
+        // Do not promote `civilian_out_of_reach` here. That opt-in also owns
+        // the ordinary route-step avoidance policy; this is only the live
+        // formationless bridge's emergency survival floor, gated by the
+        // standard settlement-safety policy.
+        if self.civilian_out_of_reach
+            || (self.formationless_settler_escort() && self.settlement_safety)
+        {
             if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
                 return acted;
             }

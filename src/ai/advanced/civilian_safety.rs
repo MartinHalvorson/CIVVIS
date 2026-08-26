@@ -248,7 +248,12 @@ impl AdvancedAi {
         let mut options: Vec<(bool, usize, i32, i32, Pos)> = g
             .reachable(uid)
             .into_iter()
-            .filter(|pos| *pos != current && g.can_move(uid, *pos))
+            // `reachable` contains full-turn destinations. `can_move` asks
+            // whether a position is one immediate step away, so applying it
+            // here silently drops the two-step safe escape this emergency
+            // path exists to use. Re-check the exact route the `MoveTo`
+            // order will follow instead.
+            .filter(|pos| *pos != current && g.path_to(uid, *pos).is_some())
             .map(|pos| {
                 let safe = self.civilian_safe_at(g, pid, uid, pos, &reach);
                 let covering = reach.raiders_covering(g, pos);
