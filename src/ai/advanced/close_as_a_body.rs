@@ -32,14 +32,16 @@
 //!   body is wherever it is.
 //! - **`screen-the-shooters`** — the arena's own definition of *screened*
 //!   ("a friendly stands beside the shooter and closer to the nearest enemy
-//!   than it does"), paid from both sides: a melee unit's tile earns the
-//!   screen weight for each unscreened shooter it would stand beside and in
-//!   front of, and a shooter's tile earns it for a melee friend beside it
-//!   and in front. The shipped `w.screen` term prices depth along the
-//!   objective axis and does not ask for adjacency or for the enemy's
-//!   actual direction, which is why a shooter can satisfy it and still
-//!   stand alone at the front. Melee moves after ranged in the unit order,
-//!   so the melee half of the term sees the shooters' final tiles.
+//!   than it does"), paid to the shooter: a ranged or siege tile earns two
+//!   screen weights when a melee friend stands beside it and nearer the
+//!   enemy. The shipped `w.screen` term prices depth along the objective
+//!   axis and does not ask for adjacency or for the enemy's actual
+//!   direction, which is why a shooter can satisfy it and still stand alone
+//!   at the front. The melee half of the same idea — a melee tile paid for
+//!   standing in front of an unscreened shooter — was measured and dropped:
+//!   it cost −19 ± 12 a seed on the curriculum (`lake_trasimene` −99) and
+//!   added nothing to the skirmish, because a line that steps sideways to
+//!   cover its archers is a line that is not pressing.
 //!
 //! Off in `AdvancedAi::new()` and `legacy()`, `Kind::OptIn` rows in
 //! `genes.rs`, byte-identical when off: with both flags off neither helper
@@ -69,10 +71,7 @@ pub(super) const CONTACT_RANGE: i32 = 2;
 /// of the force; beyond it there is nothing to screen against yet and the
 /// march terms decide.
 const SCREEN_BAND: i32 = 6;
-/// Shooters one melee tile can be credited with screening. Two: a tile
-/// between two archers and the enemy is the best a single unit can do.
-const SCREEN_CAP: usize = 2;
-/// The shooter's side, in screen weights. Two: the screened tile is usually
+/// The screened tile, in screen weights. Two: the screened tile is usually
 /// the one a step behind the exposed one, and the shipped depth and spacing
 /// terms price that step at about five, so one screen weight would never
 /// win it and the term would be decoration.
@@ -88,13 +87,10 @@ pub(super) struct BodyPace {
     pub pace: i32,
 }
 
-/// What a tile's screen value is read against: the force's shooters and
-/// melee with their distance to the nearest enemy, and the enemies.
+/// What a shooter's tile is read against: the force's melee with their
+/// distance to the nearest enemy, and the enemies.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct ScreenFrame {
-    /// Each ranged or siege member other than the mover: its tile, its
-    /// distance to the nearest enemy, and whether a friend already screens it.
-    pub shooters: Vec<(Pos, i32, bool)>,
     /// Each melee member other than the mover: its tile and its distance to
     /// the nearest enemy.
     pub melee: Vec<(Pos, i32)>,
@@ -163,9 +159,9 @@ impl AdvancedAi {
         BODY_PACE_PENALTY * self.base.w.objective_progress * progress * f64::from(excess)
     }
 
-    /// The force's shooters and melee as the screen term reads them, or
-    /// `None` when the gene is off, the unit is alone, or no enemy is near
-    /// enough to screen against.
+    /// The force's melee as the screen term reads them, or `None` when the
+    /// gene is off, the mover is not a shooter, the unit is alone, or no
+    /// enemy is near enough to screen against.
     pub(super) fn screen_frame(
         &self,
         g: &Game,
@@ -173,79 +169,56 @@ impl AdvancedAi {
         group: &ForceGroup,
         enemies: &[Pos],
     ) -> Option<ScreenFrame> {
-        if !self.screen_the_shooters || group.units.len() < 2 || enemies.is_empty() {
+        if !self.screen_the_shooters
+            || group.units.len() < 2
+            || enemies.is_empty()
+            || !matches!(
+                Self::force_role(g, uid),
+                ForceRole::Ranged | ForceRole::Siege
+            )
+        {
             return None;
         }
         let unit = g.units.get(&uid)?;
         if nearest(g, unit.pos, enemies) > SCREEN_BAND {
             return None;
         }
-        let members: Vec<(u32, Pos, ForceRole)> = group
+        let melee: Vec<(Pos, i32)> = group
             .units
             .iter()
             .filter(|other| **other != uid)
             .filter_map(|other| {
                 let stands = g.units.get(other)?;
-                Some((*other, stands.pos, Self::force_role(g, *other)))
+                matches!(
+                    Self::force_role(g, *other),
+                    ForceRole::Vanguard | ForceRole::Mobile
+                )
+                .then(|| (stands.pos, nearest(g, stands.pos, enemies)))
             })
             .collect();
-        let mut frame = ScreenFrame {
-            enemies: enemies.to_vec(),
-            ..ScreenFrame::default()
-        };
-        for (id, pos, role) in &members {
-            let reach = nearest(g, *pos, enemies);
-            match role {
-                ForceRole::Ranged | ForceRole::Siege => {
-                    let screened = members.iter().any(|(other, stands, _)| {
-                        other != id
-                            && g.wdist(*stands, *pos) <= 1
-                            && nearest(g, *stands, enemies) < reach
-                    });
-                    frame.shooters.push((*pos, reach, screened));
-                }
-                ForceRole::Vanguard | ForceRole::Mobile => frame.melee.push((*pos, reach)),
-                _ => {}
-            }
+        if melee.is_empty() {
+            return None;
         }
-        Some(frame)
+        Some(ScreenFrame {
+            melee,
+            enemies: enemies.to_vec(),
+        })
     }
 
-    /// The screen a tile provides or receives, in units of `w.screen`: for a
-    /// melee unit, each unscreened shooter it would stand beside and in
-    /// front of, up to `SCREEN_CAP`; for a shooter, a melee friend beside
-    /// the tile and in front of it.
-    pub(super) fn screen_bonus(
-        &self,
-        g: &Game,
-        role: ForceRole,
-        tile: Pos,
-        frame: &ScreenFrame,
-    ) -> f64 {
+    /// The screen a shooter's tile receives: `SHOOTER_SCREEN_WEIGHT` screen
+    /// weights when a melee friend stands beside the tile and nearer the
+    /// enemy than it, else nothing.
+    pub(super) fn screen_bonus(&self, g: &Game, tile: Pos, frame: &ScreenFrame) -> f64 {
         let reach = nearest(g, tile, &frame.enemies);
-        let screened = match role {
-            ForceRole::Vanguard | ForceRole::Mobile => frame
-                .shooters
-                .iter()
-                .filter(|(pos, their_reach, already)| {
-                    !already && g.wdist(tile, *pos) == 1 && reach < *their_reach
-                })
-                .count()
-                .min(SCREEN_CAP),
-            ForceRole::Ranged | ForceRole::Siege => {
-                let covered = frame
-                    .melee
-                    .iter()
-                    .any(|(pos, their_reach)| g.wdist(tile, *pos) == 1 && *their_reach < reach);
-                return if covered {
-                    SHOOTER_SCREEN_WEIGHT * self.base.w.screen
-                } else {
-                    0.0
-                };
-            }
-            _ => 0,
-        };
-        self.base.w.screen * screened as f64
+        let covered = frame
+            .melee
+            .iter()
+            .any(|(pos, their_reach)| g.wdist(tile, *pos) == 1 && *their_reach < reach);
+        if covered {
+            SHOOTER_SCREEN_WEIGHT * self.base.w.screen
+        } else {
+            0.0
+        }
     }
 }
 
@@ -416,12 +389,12 @@ mod tests {
             .is_none());
     }
 
-    /// The screen term reads the arena's own definition: a melee tile beside
-    /// an unscreened shooter and nearer the enemy than it earns the screen
-    /// weight; a shooter's tile beside a melee friend that stands in front of
-    /// it earns the same.
+    /// The screen term reads the arena's own definition from the shooter's
+    /// side: a tile beside a melee friend that stands nearer the enemy earns
+    /// the weight; a tile in front of the friend does not; a melee mover, a
+    /// force with no melee, and a distant enemy give no frame at all.
     #[test]
-    fn the_screen_is_adjacency_toward_the_enemy() {
+    fn the_screen_is_adjacency_behind_a_friend_toward_the_enemy() {
         let mut ai = AdvancedAi::new();
         ai.enable_screen_the_shooters();
         let mut g = open_field();
@@ -429,66 +402,23 @@ mod tests {
         let warrior = g.spawn_unit("warrior", 0, at(7, 6));
         let enemy = at(12, 6);
         g.spawn_unit("warrior", 1, enemy);
-        let group = ForceGroup {
-            id: archer,
-            domain: super::super::ForceDomain::Land,
-            units: vec![archer, warrior],
-            anchor: at(8, 6),
-            objective: enemy,
-            focus_target: None,
-            posture: ForcePosture::Advance,
-            readiness: 1.0,
-            local_strength_ratio: 1.0,
-        };
-        let frame = ai
-            .screen_frame(&g, warrior, &group, &[enemy])
-            .expect("an enemy within the band");
-        assert_eq!(frame.shooters, vec![(at(8, 6), 4, false)]);
-        let in_front = at(9, 6);
-        let behind = at(7, 6);
-        assert!(ai.screen_bonus(&g, ForceRole::Vanguard, in_front, &frame) > 0.0);
-        assert_eq!(
-            ai.screen_bonus(&g, ForceRole::Vanguard, behind, &frame),
-            0.0
-        );
-        // The shooter's side: beside a melee friend that is nearer the enemy.
+        let group = advancing(&g, enemy);
         let frame = ai
             .screen_frame(&g, archer, &group, &[enemy])
             .expect("an enemy within the band");
         assert_eq!(frame.melee, vec![(at(7, 6), 5)]);
         assert_eq!(
-            ai.screen_bonus(&g, ForceRole::Ranged, at(6, 6), &frame),
+            ai.screen_bonus(&g, at(6, 6), &frame),
             SHOOTER_SCREEN_WEIGHT * ai.base.w.screen
         );
-        assert_eq!(
-            ai.screen_bonus(&g, ForceRole::Ranged, at(9, 6), &frame),
-            0.0
-        );
-        // Nothing to screen against: no frame at all.
-        assert!(ai.screen_frame(&g, warrior, &group, &[at(22, 6)]).is_none());
-        ai.disable_screen_the_shooters();
-        assert!(ai.screen_frame(&g, warrior, &group, &[enemy]).is_none());
-    }
-
-    /// With the gene on, the melee unit ends beside the archer and nearer
-    /// the enemy than it — screened, as the arena counts it.
-    #[test]
-    fn the_warrior_ends_in_front_of_the_archer() {
-        let mut g = open_field();
-        let archer = g.spawn_unit("archer", 0, at(9, 6));
-        let warrior = g.spawn_unit("warrior", 0, at(9, 4));
-        let enemy = at(12, 6);
-        g.spawn_unit("warrior", 1, enemy);
-        g.spawn_unit("warrior", 1, at(13, 6));
-        let mut ai = AdvancedAi::new();
-        ai.enable_screen_the_shooters();
-        let group = advancing(&g, enemy);
-        march(&mut g, &ai, warrior, &group);
-        let (a, w) = (g.units[&archer].pos, g.units[&warrior].pos);
+        assert_eq!(ai.screen_bonus(&g, at(9, 6), &frame), 0.0);
         assert!(
-            g.wdist(a, w) <= 1 && g.wdist(w, enemy) < g.wdist(a, enemy),
-            "the warrior screens the archer (ended at {w:?})"
+            ai.screen_frame(&g, warrior, &group, &[enemy]).is_none(),
+            "a melee mover is not screened"
         );
+        assert!(ai.screen_frame(&g, archer, &group, &[at(22, 6)]).is_none());
+        ai.disable_screen_the_shooters();
+        assert!(ai.screen_frame(&g, archer, &group, &[enemy]).is_none());
     }
 
     /// The shooter's side: with a warrior two tiles from the enemy, the

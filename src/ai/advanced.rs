@@ -5040,10 +5040,9 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
-    /// A melee tile beside an unscreened shooter and nearer the enemy earns
-    /// the screen weight, and a shooter's tile beside a melee friend in front
-    /// of it earns the same. Opt-in gene `screen-the-shooters`; see
-    /// `advanced/close_as_a_body.rs`.
+    /// A shooter's tile beside a melee friend that stands nearer the enemy
+    /// earns two screen weights — the arena's own definition of screened.
+    /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
     screen_the_shooters: bool,
     /// Build a science building before one that makes no science.
     ///
@@ -28884,7 +28883,7 @@ impl AdvancedAi {
                 }
             }
             if let Some(frame) = &screen_frame {
-                value += self.screen_bonus(g, role, tile, frame);
+                value += self.screen_bonus(g, tile, frame);
             }
             // The posture selector's superiority gate is already arena-off
             // (an army that declines every even fight loses the field to the

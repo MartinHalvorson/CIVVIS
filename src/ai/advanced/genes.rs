@@ -1565,7 +1565,7 @@ pub const GENES: &[Gene] = &[
     // The same arena reads the deployed controller's shooters unscreened
     // 25–32 % of their turns against basic's 39–50 %. The arena's own
     // definition of screened — a friend beside the shooter and nearer the
-    // enemy — paid from the melee side and the shooter side.
+    // enemy — paid to the shooter's tile; the melee side measured −19/seed.
     Gene { tag: "screen-the-shooters", field: "screen_the_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_screen_the_shooters, disable: AdvancedAi::disable_screen_the_shooters },
 ];
 

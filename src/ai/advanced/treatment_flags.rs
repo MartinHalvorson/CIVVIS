@@ -2930,10 +2930,10 @@ impl AdvancedAi {
         self.close_as_a_body = false;
     }
 
-    /// A melee unit's tile earns the screen weight for each unscreened
-    /// shooter it would stand beside and in front of, and a shooter's tile
-    /// earns it for a melee friend beside it and nearer the enemy — the
-    /// arena's own definition of screened. See `screen_the_shooters`.
+    /// A shooter's tile beside a melee friend that stands nearer the enemy
+    /// earns two screen weights — the arena's own definition of screened,
+    /// paid to the archer that stays behind the line. See
+    /// `screen_the_shooters`.
     pub fn enable_screen_the_shooters(&mut self) {
         self.screen_the_shooters = true;
     }
