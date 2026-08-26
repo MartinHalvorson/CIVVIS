@@ -215,6 +215,10 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | `never-an-empty-queue-2` | off (unmeasured) | Fill an idle turn with something that is not a soldier, or leave it idle. | — |
 | `opening-warrior-recon` | off (unmeasured) | Before the first city, move a nearby Warrior before the Settler and choose the city site from the terrain the Warrior has now revealed. | 1 |
 | `power-the-laboratory-2` | off (unmeasured) | A building whose powered half would be switched on the day it stands — the city is powered and stays powered with the building's own demand — is priced with that half, so the Lab, Stock Exchange and Factory in already-powered cities stop being bought without it. | 1 |
+| `quest-boost` | off (unmeasured) | Prices the Envoy on whatever completes the Eureka or Inspiration a city-state asked for. | 1 |
+| `quest-camp-errand` | off (unmeasured) | Runs the camp errand against the outpost a city-state named, from further out than the usual ring. | 1 |
+| `quest-production` | off (unmeasured) | Pays the Envoy a city-state's quest promises on the unit or district family it asked for. | 1 |
+| `quest-trade-route` | off (unmeasured) | Sends the Trader to the city-state that is asking us for a trade route, for the Envoy. | 1 |
 | `rapid-city-expansion` | off (unmeasured) | Run the screenable native expansion curve: rapid safe settlement first, then a conquest posture only after the practical frontier is exhausted. | 1 |
 | `recovery-reads-the-war` | off (unmeasured) | Measure the Recovery power gap against the war we are actually fighting. | 1 |
 | `science-building-first` | off (unmeasured) | An adaptive seat stops racing for a Great Prophet: the race costs more science than the religion returns. | 1 |
