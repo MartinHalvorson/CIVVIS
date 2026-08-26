@@ -194,7 +194,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `moksha-defends-the-faithless` | off (unmeasured) | Put Moksha first for a religionless empire under conversion. | 1 |
 | `peace-when-the-war-does-not-pay` | off (unmeasured) | Sue for peace when a war has taken nothing and cannot be paid for. | 1 |
 | `religion-race-is-closed` | off (unmeasured) | Stop paying for a religion race the world has already closed. | 1 |
-| `screen-the-shooters` | off (unmeasured) | A melee unit's tile earns the screen weight for each unscreened shooter it would stand beside and in front of, and a shooter's tile earns it for a melee friend beside it and nearer the enemy — the arena's own definition of screened. | 1 |
+| `screen-the-shooters` | off (unmeasured) | A shooter's tile beside a melee friend that stands nearer the enemy earns two screen weights — the arena's own definition of screened, paid to the archer that stays behind the line. | 1 |
 | `treasury-at-work` | off (unmeasured) | Keep one emergency defender and ten turns of deficit in the bank, not 250 + 75 Gold a city. | — |
 | `treasury-at-work-2` | off (unmeasured) | The working reserve, and the first Builder or a missing Monument bought ahead of the purchase argmax. | — |
 | `war-needs-a-treasury` | off (unmeasured) | Refuse a war the treasury cannot pay for. | 1 |
