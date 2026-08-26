@@ -16411,9 +16411,9 @@ fetchpriority=\"high\""
             "launchTreeHook(\"science\") + launchTreeHook(\"culture\") +\n    LAUNCH_BAR_ORDER"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"works\",\n\
-                          \"climate\", \"governors\", \"history\"];"
+            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"works\","
         ));
+        assert!(EMBEDDED_INDEX.contains("\"climate\", \"governors\", \"history\"];"));
         assert!(EMBEDDED_INDEX.contains("style=\"--ring:${pct}%\""));
         for piece in [
             "id=\"hooksbar\"",
@@ -16448,7 +16448,10 @@ fetchpriority=\"high\""
             "function empireHistory()",
             "function empireEra()",
         ] {
-            assert!(EMBEDDED_INDEX.contains(piece), "the launch bar's screen is missing {piece}");
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the launch bar's screen is missing {piece}"
+            );
         }
 
         // The corners. End Turn owns the lower right (ActionPanel.xml) with
@@ -16464,7 +16467,10 @@ fetchpriority=\"high\""
         let end_turn = EMBEDDED_INDEX
             .find("<button class=\"primary\" id=\"endturn\">End turn</button>")
             .expect("End Turn");
-        assert!(corner < end_turn && end_turn - corner < 400, "End Turn stands in the corner");
+        assert!(
+            corner < end_turn && end_turn - corner < 400,
+            "End Turn stands in the corner"
+        );
         assert_eq!(EMBEDDED_INDEX.matches("id=\"endturn\"").count(), 1);
         assert!(!EMBEDDED_INDEX.contains("panel.appendChild(footer);"));
         for piece in [
@@ -16477,7 +16483,10 @@ fetchpriority=\"high\""
             "html:not(.seat-known) #actionpanel { display: none !important; }",
             "publishSoloHeight(panel, \"--solo-action-height\");",
         ] {
-            assert!(EMBEDDED_INDEX.contains(piece), "the action corner is missing {piece}");
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the action corner is missing {piece}"
+            );
         }
         // Every option is one of the engine's legal actions posted the way the
         // tree, the city screen and the deck already post it — never an
@@ -16495,9 +16504,15 @@ fetchpriority=\"high\""
             "selectUnitById(${unit.id})",
             "send(${JSON.stringify(action)})",
         ] {
-            assert!(options.contains(post), "the corner must post {post} unchanged");
+            assert!(
+                options.contains(post),
+                "the corner must post {post} unchanged"
+            );
         }
-        assert!(!options.contains("{type:"), "the corner composes no action of its own");
+        assert!(
+            !options.contains("{type:"),
+            "the corner composes no action of its own"
+        );
         assert!(EMBEDDED_INDEX.contains(
             "top: var(--solo-below-bars); right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
         ));
@@ -16714,7 +16729,9 @@ fetchpriority=\"high\""
         // picker beside it.
         assert!(EMBEDDED_INDEX.contains("▶▶ Auto-play 1 turn</button>"));
         assert!(EMBEDDED_INDEX.contains("function syncAutoplayLabel()"));
-        assert!(EMBEDDED_INDEX.contains("`▶▶ Auto-play ${turns} turn${turns === 1 ? \"\" : \"s\"}`"));
+        assert!(
+            EMBEDDED_INDEX.contains("`▶▶ Auto-play ${turns} turn${turns === 1 ? \"\" : \"s\"}`")
+        );
         assert!(EMBEDDED_INDEX.contains(
             "document.getElementById(\"autoplayturns\").onchange = () => syncAutoplayLabel();"
         ));
