@@ -2603,4 +2603,3 @@ primitives 12.9%**, unnamed-but-now-attributed 32.5%.
    1.61%, both of which are the ring lookup inside `wdist`. `can_enter_past`
    still re-asks `wdist(from, pos) != 1` for a neighbour its caller just
    enumerated (rank 5 of the 2026-08-21 list, never taken).
-
