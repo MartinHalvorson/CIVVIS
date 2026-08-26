@@ -2777,7 +2777,7 @@ fn the_default_controller_keeps_the_faith_army_ungated() {
 /// |---|---|
 /// | `bounded_recovery` | **NULL over 600 maps** on two disjoint seeds; removed from production 2026-08-17. The live bridge and explicit evaluator treatments retain the flag. |
 /// | `city_target_floor = 6` | **REMOVED 2026-08-10.** Withholding it passed the promotion matrix — deployment-online 55.9%, Elo +41 (CI +7..+76), p=0.0000; compact-standard flat. Its solo axis had already measured null (49.6%, Elo −3, p=0.9007) before it shipped inside this composite. |
-/// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
+/// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
 ///
 /// A composite may legitimately pass a gate while a component is null on
 /// its own, and the 2026-08-01 promotion was such a composite. The two
@@ -2877,11 +2877,6 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
     // `advanced`, and the re-addition treatment is `advanced_war_half`.
     for (flag, on_anchor, in_production) in [
         (
-            "home_defense",
-            frozen.base.home_defense,
-            production.base.home_defense,
-        ),
-        (
             "unit_objective_memory",
             frozen.base.unit_objective_memory,
             production.base.unit_objective_memory,
@@ -2913,7 +2908,7 @@ fn production_advanced_omits_measured_null_arms() {
 }
 
 #[test]
-fn production_advanced_scales_cities_development_and_home_defense_together() {
+fn production_advanced_scales_cities_and_development_together() {
     let production = AdvancedAi::new();
     // ⚠ Three, not six. The production floor was removed on 2026-08-10
     // after the promotion matrix returned PASS for withholding it:
@@ -2925,11 +2920,6 @@ fn production_advanced_scales_cities_development_and_home_defense_together() {
     assert!(production.plan_city_target);
     assert_eq!(production.base.w.city_target, 4.0);
     assert_eq!(production.base.w.builder_per_city, 0.5);
-    // ⚠ Off since 2026-08-14: withholding the war half (these two plus the
-    // unit-tactics pair) passed the corrected-gate promotion matrix at
-    // +38 Elo (CI +10..+66, seed stream 18000000). `advanced_war_half`
-    // still carries all four, so the axis stays reachable.
-    assert!(!production.base.home_defense);
     assert!(!production.bounded_recovery);
     assert!(production.settlement_safety);
     assert!(production.adjacency_site_planning);
@@ -2941,7 +2931,6 @@ fn production_advanced_scales_cities_development_and_home_defense_together() {
     assert!(!control.plan_city_target);
     assert_eq!(control.base.w.city_target, 4.0);
     assert_eq!(control.base.w.builder_per_city, 0.5);
-    assert!(!control.base.home_defense);
     assert!(!control.bounded_recovery);
 
     let frozen = AdvancedAi::legacy();
@@ -2949,7 +2938,6 @@ fn production_advanced_scales_cities_development_and_home_defense_together() {
     assert!(!frozen.plan_city_target);
     assert_eq!(frozen.base.w.city_target, 4.0);
     assert_eq!(frozen.base.w.builder_per_city, 0.5);
-    assert!(!frozen.base.home_defense);
     assert!(!frozen.bounded_recovery);
 
     // Production policy never mutates a wider, better-developed genome.
@@ -12799,47 +12787,45 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     assert_eq!(game.player_city_ids(0).len(), 1);
 }
 
-/// ★★★★ A border with no city behind it is a city in the fog. Run
-/// civvis-20260818T155552Z: Setia, founded t55 two tiles from Vietnam's border
-/// with none of Vietnam's four cities on the board, read −13.3 Loyalty a turn
-/// on its first export and flipped at t63; the forecast had passed it because
-/// it sums the cities it can see. See `UNSEEN_MAJOR_BORDER_RADIUS` and
-/// `Game::unseen_major_borders`: on the live seat a site within three tiles of
-/// such a border is refused before the walk; four tiles out, an empty set,
-/// stock and the withheld arm judge by the forecast alone as before.
+/// ★★★★ A border with an unresolved city behind it is a city in the fog. Run
+/// civvis-20260826T030045Z: Lugdunum was founded t55 five tiles from Germany's
+/// border, while its only visible German city stood ten tiles away. The host
+/// immediately read −22 Loyalty a turn and the undamaged city flipped at t70;
+/// the forecast had passed it because the nearer German city was not on the
+/// board. See `UNRESOLVED_MAJOR_BORDER_RADIUS` and
+/// `Game::unseen_major_borders`: the live seat refuses a site within five
+/// tiles of a fully unseen or fifth-ring-ambiguous major border. Six tiles
+/// out, an empty set, stock and the withheld arm judge by the forecast alone.
 #[test]
-fn a_site_beside_an_unseen_majors_border_is_doomed_before_the_walk() {
+fn a_site_beside_an_unresolved_majors_border_is_doomed_before_the_walk() {
     let (mut game, capital, home) = empire_with_a_capital(71_121);
     game.cities.get_mut(&capital).unwrap().pop = 4;
     // Fully explored, so the fog rule cannot be what refuses.
     let all: Vec<Pos> = game.map.tiles.keys().copied().collect();
     game.players[0].explored.extend(all);
     let site = anchor_at(&game, home, 4);
-    let border = anchor_at(&game, site, 2);
-    let far_border = anchor_at(&game, site, 4);
+    let border = anchor_at(&game, site, 5);
+    let far_border = anchor_at(&game, site, 6);
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.frontier_loyalty);
     assert!(
         live.settle_site_loyalty_verdict(&game, 0, site).is_none(),
-        "no unseen border on the board: the site is sound"
+        "no unresolved border on the board: the site is sound"
     );
 
     game.unseen_major_borders.insert(border);
-    assert!(AdvancedAi::beside_unseen_major_border(&game, site));
+    assert!(AdvancedAi::beside_unresolved_major_border(&game, site));
     let why = live
         .settle_site_loyalty_verdict(&game, 0, site)
-        .expect("the live seat dooms a site two tiles from an unseen major's border");
-    assert!(
-        why.contains("border whose city the seat has never seen"),
-        "{why}"
-    );
+        .expect("the live seat dooms a site five tiles from an unresolved major border");
+    assert!(why.contains("border whose city may be hidden"), "{why}");
 
-    // Four tiles from the border: outside the radius, judged by the forecast.
+    // Six tiles from the border: outside the radius, judged by the forecast.
     game.unseen_major_borders.clear();
     game.unseen_major_borders.insert(far_border);
-    assert!(!AdvancedAi::beside_unseen_major_border(&game, site));
+    assert!(!AdvancedAi::beside_unresolved_major_border(&game, site));
     assert!(live.settle_site_loyalty_verdict(&game, 0, site).is_none());
 
     // Stock and the withheld arm never read the set.
@@ -16794,7 +16780,7 @@ fn naval_threat_triage_ignores_an_incapable_ship_but_keeps_the_xp_shot() {
     assert!(
         control
             .base
-            .garrison_assignments_inner(&game, 0, &[barb], true)
+            .garrison_assignments(&game, 0, &[barb])
             .iter()
             .any(|(unit, _)| *unit == foot),
         "the untreated alarm recruits a land unit to garrison against the offshore hull"
@@ -16802,7 +16788,7 @@ fn naval_threat_triage_ignores_an_incapable_ship_but_keeps_the_xp_shot() {
     assert!(
         treated
             .base
-            .garrison_assignments_inner(&game, 0, &[barb], true)
+            .garrison_assignments(&game, 0, &[barb])
             .is_empty(),
         "triage creates no land recall for a ship that cannot hurt the city"
     );
@@ -22043,7 +22029,7 @@ fn the_barbarian_scout_exemption_is_native() {
 /// radius so this test measures the party and not the reach. ⚠ Inside that
 /// radius a held camp is TWO threat rows — the camp and the raider standing
 /// on it — each sized to the same defender, so the party doubles. That
-/// double-count is `home_defense_objective`'s, not the party's; naming it
+/// double-count is `barbarian_response_objective`'s, not the party's; naming it
 /// here rather than tuning a number nobody could explain later.
 #[test]
 fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countryside() {
@@ -22109,7 +22095,7 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
     let objectives = |ai: &AdvancedAi, g: &Game| -> Vec<Option<Pos>> {
         field
             .iter()
-            .map(|uid| ai.base.home_defense_objective(g, 0, *uid, &[barb]))
+            .map(|uid| ai.base.barbarian_response_objective(g, 0, *uid, &[barb]))
             .collect()
     };
 
@@ -22125,7 +22111,8 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
          same spearman (25 × 1.25 = 31 > one warrior's 20): {sent:?}"
     );
     assert_eq!(
-        live.base.home_defense_objective(&game, 0, scout, &[barb]),
+        live.base
+            .barbarian_response_objective(&game, 0, scout, &[barb]),
         None,
         "a scout is not sent to clear a camp"
     );
@@ -22691,7 +22678,7 @@ fn a_charted_village_preempts_a_prewar_campaign_staging_order() {
     );
 }
 
-/// `home_defense_objective` before the campaign march, mirroring the
+/// The dedicated barbarian response before the campaign march, mirroring the
 /// Basic step's precedence.
 #[test]
 fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
@@ -22783,7 +22770,7 @@ fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
     ai.battlefront_observation = false;
     assert_eq!(
         ai.base
-            .barbarian_home_defense_objective(&game, 0, soldier, &[barb]),
+            .barbarian_response_objective(&game, 0, soldier, &[barb]),
         Some(raider_at),
         "the dedicated barbarian response must claim this unit without a major war"
     );
@@ -22813,7 +22800,7 @@ fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
 }
 
 /// A kill that is already legal this turn is not a campaign order.  In
-/// particular, a barbarian need not be inside the bounded home-defense list:
+/// particular, a barbarian need not be inside the bounded response list:
 /// leaving a one-health raider alive beside an available Warrior is never the
 /// staging discipline this controller is trying to preserve.
 #[test]
@@ -22941,7 +22928,7 @@ fn immediate_kill_priority_finishes_barbarians_and_wartime_units() {
 
 /// The full unit-turn pipeline must take the same finish before its normal
 /// barbarian campaign filter runs.  A distant raider is deliberately not a
-/// home-defense objective, but an adjacent one-hit kill is still immediate
+/// barbarian-response objective, but an adjacent one-hit kill is still immediate
 /// combat rather than a request to start chasing camps across the map.
 #[test]
 fn advanced_turn_finishes_a_distant_barbarian_before_campaign_filtering() {
@@ -23034,7 +23021,7 @@ fn advanced_turn_finishes_a_distant_barbarian_before_campaign_filtering() {
 /// The live bridge intentionally puts the barbarian seat in `enemies`
 /// while a raider threatens a city. That made the controller leave the
 /// `enemies.is_empty()` branch, which contains `campaign_staging_step`.
-/// Consequently, the bounded home-defense assignment did not merely claim
+/// Consequently, the bounded barbarian-response assignment did not merely claim
 /// its responder: it paused every unclaimed assault unit until the raider
 /// disappeared. On live run `civvis-20260815T190904Z`, Rome held off its
 /// Netherlands declaration from turns 95 through 104 despite 337--462
@@ -23125,7 +23112,6 @@ fn a_distant_campaign_unit_stays_staged_while_barbarians_are_at_home() {
         rush: false,
     };
     let mut ai = AdvancedAi::new();
-    ai.enable_home_defense();
     ai.battlefront_observation = false;
 
     assert!(
@@ -23141,7 +23127,8 @@ fn a_distant_campaign_unit_stays_staged_while_barbarians_are_at_home() {
         "precondition: the assault unit already occupies a lawful 3--5 staging tile"
     );
     assert_eq!(
-        ai.base.home_defense_objective(&game, 0, assault, &[barb]),
+        ai.base
+            .barbarian_response_objective(&game, 0, assault, &[barb]),
         None,
         "the assault unit is beyond the bounded recall range and stays unclaimed"
     );
@@ -34445,10 +34432,8 @@ fn a_frontier_city_is_walled_and_garrisoned_under_contested_land_first() {
     use super::contested_land::CONTESTED_LAND_FRONTIER_WALLS;
     let mut game = a_neighbour_twelve_tiles_east(true);
     game.found_city_for(0, (16, 10), None);
-    let mut shipped = AdvancedAi::new();
-    shipped.enable_home_defense();
+    let shipped = AdvancedAi::new();
     let mut ai = AdvancedAi::new();
-    ai.enable_home_defense();
     ai.enable_contested_land_first();
 
     assert_eq!(

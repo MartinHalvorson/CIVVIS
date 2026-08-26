@@ -5451,7 +5451,7 @@ fn main() {
         .filter(|pair| pair[0] == "--with")
         .map(|pair| pair[1].clone())
         .collect();
-    // Repeatable: `--without come-ashore --without home-defense`.
+    // Repeatable: `--without come-ashore --without camp-party`.
     let withheld: Vec<String> = args
         .windows(2)
         .filter(|pair| pair[0] == "--without")

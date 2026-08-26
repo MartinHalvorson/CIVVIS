@@ -261,11 +261,6 @@
         0,
         7
       ],
-      "home-defense": [
-        21,
-        15,
-        -3
-      ],
       "housing-research": [
         -11,
         -5,
@@ -615,7 +610,6 @@
       "growth-to-settle": "off",
       "holy-lane-parity": "off",
       "holy-site-where-the-threat-is": "off",
-      "home-defense": "on",
       "housing-research": "off",
       "idle-faith-patronage": "off",
       "lane-culture-spending": "off",
@@ -697,7 +691,6 @@
       "flip-nearby-city-states",
       "frontier-massing-alarm",
       "great-person-housing",
-      "home-defense",
       "lane-space-race",
       "maintenance-aware-deck",
       "missionary-last-charge-explores",
@@ -1205,8 +1198,8 @@
   "counts": {
     "helps": 16,
     "hurts": 0,
-    "unresolved": 58,
-    "default_on": 41
+    "unresolved": 57,
+    "default_on": 40
   },
   "genes": [
     {
@@ -2555,51 +2548,6 @@
             "win_delta_pp": 0.235,
             "win_z": 0.43,
             "win_se_pp": 0.547
-          }
-        ]
-      }
-    },
-    {
-      "tag": "home-defense",
-      "verdict": "unresolved",
-      "default_on": true,
-      "wins_last_10k": 10,
-      "wins_prior_10k": -18,
-      "wins_third_10k": -15,
-      "win_diff_pp": -0.186727,
-      "posterior_pp": -9.870974,
-      "posterior_se_pp": 8.311435,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19331,
-        "n_off": 18829,
-        "win_delta_pp": 0.211,
-        "win_z": 0.556,
-        "share_delta_pp": 0.101,
-        "share_z": 1.259,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.477,
-            "win_z": -0.914,
-            "win_se_pp": 0.522
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.969,
-            "win_z": 1.745,
-            "win_se_pp": 0.556
           }
         ]
       }
