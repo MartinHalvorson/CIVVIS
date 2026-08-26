@@ -2082,6 +2082,55 @@ pub struct BasicAi {
     /// Break a production COST TIE by which great-work slots can actually be filled.
     pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
+    /// Do not enter the finite Great Prophet race at all.
+    ///
+    /// `pursue_religion` alone is NOT this flag. It gates the belief pick, the
+    /// missionary buy and the secret-society lean — the PRIZE — while the Holy
+    /// Site reservation below (search `prophet_race_closed`) is ungated and
+    /// still spends the district slot and the hammers that contest the race.
+    /// Clearing only `pursue_religion` therefore buys the worst of both: the
+    /// entry fee is paid and the winnings are discarded. This flag closes the
+    /// reservation too, so the empire never opens the tab.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race`.
+    pub(crate) skip_prophet_race: bool,
+    /// Build a building that MAKES SCIENCE before one that does not.
+    ///
+    /// Buildings are picked cheapest-first, and that order is deliberate policy
+    /// everywhere else — this flag does not repeal it. It partitions on one
+    /// question and keeps cheapest-first INSIDE each half, so the relative order
+    /// of any two science buildings, and of any two others, is exactly what it
+    /// was. What changes is only that a Library stops queueing behind every
+    /// cheaper building in the city.
+    ///
+    /// The regime is the argument: 89% of these games end in a science victory
+    /// and the empire finishes them 41 science against 112. A finished Campus
+    /// waiting on its Library is the win condition idling behind a Monument.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `science-building-first`.
+    pub(crate) science_building_first: bool,
+    /// Put the FIRST Holy Site at the front of the district order while the
+    /// Great Prophet race is still winnable.
+    ///
+    /// The race is finite and it is decided by who accumulates points first.
+    /// `d_holy` sits third in `DISTRICT_PRIORITY` behind Campus and Commercial
+    /// Hub, so an empire that means to found a religion routinely reserves its
+    /// site late and loses the slot: about **a quarter of seats finish with no
+    /// religion at all**.
+    ///
+    /// Measured 2026-08-25, and this gene exists because the OPPOSITE gene
+    /// failed. `skip-the-prophet-race` forced non-founding and cost
+    /// **-12.1 pp** — so a founded religion is worth a great deal here, and the
+    /// seats that miss one are leaving it on the table. See
+    /// [[civvis-twelve-genes-that-measured-null]].
+    ///
+    /// Narrow by construction: it lifts one family, only while this empire has
+    /// NO religion, NO site already reserved, and the race is still open. The
+    /// moment any of those stops holding it is inert, and the reservation logic
+    /// below still caps the empire at one site.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `race-for-a-religion`.
+    pub(crate) race_for_a_religion: bool,
     /// Choose the pantheon from the land this empire actually holds, instead of
     /// from a fixed order.
     ///
@@ -4351,6 +4400,9 @@ impl BasicAi {
             district_coverage_2: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            skip_prophet_race: false,
+            science_building_first: false,
+            race_for_a_religion: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -4752,6 +4804,9 @@ impl BasicAi {
             district_coverage_2: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            skip_prophet_race: false,
+            science_building_first: false,
+            race_for_a_religion: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -10751,9 +10806,41 @@ impl BasicAi {
                 *weight *= 1.0 - depth * (have / total);
             }
         }
+        // `race-for-a-religion`: the first site, and only while it can still
+        // win a slot. See the flag's doc comment. Applied AFTER the sort and as
+        // a move rather than a weight bump — `sort_by` is stable, so merely
+        // tying the lane leader leaves the lane leader in front.
+        let race_the_site = self.race_for_a_religion
+            && !self.minor
+            && g.players[pid].religion.is_none()
+            && g.religions_founded() < g.max_religions()
+            && !g.cities.values().any(|other| {
+                other.owner == pid
+                    && (other
+                        .districts
+                        .keys()
+                        .any(|district| g.district_family(*district) == "holy_site")
+                        || matches!(
+                            other.queue.first(),
+                            Some(Item::District { district, .. })
+                                if g.district_family(*district) == "holy_site"
+                        ))
+            });
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        if race_the_site {
+            if let Some(at) = dpri.iter().position(|(family, _)| *family == "holy_site") {
+                let entry = dpri.remove(at);
+                dpri.insert(0, entry);
+            }
+        }
         for (family, _) in dpri {
             if family == "holy_site" && g.players[pid].religion.is_none() {
+                // `skip-the-prophet-race`: never open the tab. See the flag's
+                // doc comment — gating the prize without gating this costs
+                // strictly more than either pure choice.
+                if self.skip_prophet_race {
+                    continue;
+                }
                 let prophet_race_closed = g.religions_founded() >= g.max_religions();
                 let site_reserved = g.cities.values().any(|other| {
                     other.owner == pid
@@ -10862,6 +10949,11 @@ impl BasicAi {
             // — that argument belongs elsewhere — and a building with no slots keeps
             // its exact position. What it stops is the alphabet deciding a real
             // question.
+            // `science-building-first`: one partition ahead of cost, nothing
+            // else touched. See the flag's doc comment.
+            let science_first = self.science_building_first;
+            let makes_science =
+                |b: &Name| -> bool { science_first && g.rules.buildings[b].yields.science > 0.0 };
             let tiebreak = self.slot_kind_tiebreak;
             let slot_worth = |b: &Name| -> f64 {
                 if !tiebreak {
@@ -10877,7 +10969,9 @@ impl BasicAi {
                     .sum()
             };
             buildable.sort_by(|a, b| {
-                a.0.cmp(&b.0)
+                makes_science(&b.1)
+                    .cmp(&makes_science(&a.1))
+                    .then_with(|| a.0.cmp(&b.0))
                     .then_with(|| {
                         // ⚠⚠ ONLY WHEN BOTH CANDIDATES HAVE SLOTS. My first version
                         // compared slot worth across every cost tie, which is a far
@@ -18336,6 +18430,204 @@ mod tests {
             .find(|unit| unit.owner == 0 && unit.kind == "missionary")
             .expect("the same Holy Site can buy once its majority is ours");
         assert_eq!(missionary.religion.as_deref(), Some("Home Faith"));
+    }
+
+    #[test]
+    fn racing_for_a_religion_puts_the_first_holy_site_ahead_of_the_lane() {
+        // The finite Prophet race is decided by who banks points first, and
+        // `d_holy` sits third behind Campus and Commercial Hub. This pins the
+        // lift, and — just as importantly — pins that it switches itself off
+        // the moment the empire already has a site.
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("HOLYSITE", 91_773),
+            120,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        for tech in ["astrology", "writing"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("monument"));
+
+        let family = |ai: &BasicAi, game: &Game| -> Option<String> {
+            match ai.pick_item(game, 0, capital, 2, 2, 2, 2, 10, 5, 5, 5) {
+                Some(Item::District { ref district, .. }) => {
+                    Some(game.district_family(district).to_string())
+                }
+                _ => None,
+            }
+        };
+
+        let mut treated = BasicAi::new();
+        assert!(
+            !treated.race_for_a_religion,
+            "off unless the advanced bridge asks for it"
+        );
+        treated.race_for_a_religion = true;
+        assert_eq!(
+            family(&treated, &game).as_deref(),
+            Some("holy_site"),
+            "while the race is open and nothing is reserved, the site leads"
+        );
+
+        // Reserve the site, and the lift must retire — the empire is capped at
+        // one site before it founds, so a second lift would be pure delay.
+        let center = game.cities[&capital].pos;
+        let plot = game.cities[&capital]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        game.map.tiles.get_mut(&plot).unwrap().district = Some(crate::name!("holy_site"));
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .districts
+            .insert(crate::name!("holy_site"), plot);
+        assert_ne!(
+            family(&treated, &game).as_deref(),
+            Some("holy_site"),
+            "one site is the whole of the treatment"
+        );
+    }
+
+    #[test]
+    fn the_science_building_partition_keeps_cheapest_first_inside_each_half() {
+        // The gene must move exactly one boundary. Everything else about the
+        // order — cheapest-first among science buildings, cheapest-first among
+        // the rest — has to survive, because that policy was priced elsewhere
+        // and this gene is not the place to relitigate it.
+        let rules = crate::rules::Rules::shipped();
+        let science: Vec<Name> = rules
+            .buildings
+            .iter()
+            .filter(|(_, s)| !s.wonder && s.yields.science > 0.0)
+            .map(|(b, _)| *b)
+            .collect();
+        assert!(
+            !science.is_empty(),
+            "the partition is vacuous if no building makes science"
+        );
+
+        // Order a mixed set the way the sort does, with the gene on and off.
+        let order = |on: bool| -> Vec<(i64, Name)> {
+            let mut v: Vec<(i64, Name)> = rules
+                .buildings
+                .iter()
+                .filter(|(_, s)| !s.wonder)
+                .map(|(b, s)| (s.cost as i64, *b))
+                .collect();
+            let makes = |b: &Name| on && rules.buildings[b].yields.science > 0.0;
+            v.sort_by(|a, b| {
+                makes(&b.1)
+                    .cmp(&makes(&a.1))
+                    .then_with(|| a.0.cmp(&b.0))
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+            v
+        };
+
+        let off = order(false);
+        let on = order(true);
+
+        // 1. Same multiset — the gene adds and removes nothing.
+        let mut a: Vec<Name> = off.iter().map(|e| e.1).collect();
+        let mut b: Vec<Name> = on.iter().map(|e| e.1).collect();
+        a.sort();
+        b.sort();
+        assert_eq!(a, b, "the partition must not add or drop a candidate");
+
+        // 2. Every science building precedes every non-science building.
+        let first_plain = on
+            .iter()
+            .position(|(_, b)| rules.buildings[b].yields.science <= 0.0)
+            .expect("some building makes no science");
+        assert!(
+            on[first_plain..]
+                .iter()
+                .all(|(_, b)| rules.buildings[b].yields.science <= 0.0),
+            "science buildings must form one unbroken prefix"
+        );
+
+        // 3. Cheapest-first still holds INSIDE each half.
+        for half in [&on[..first_plain], &on[first_plain..]] {
+            assert!(
+                half.windows(2).all(|w| w[0].0 <= w[1].0),
+                "cheapest-first must survive inside each half"
+            );
+        }
+    }
+
+    #[test]
+    fn skipping_the_prophet_race_refuses_the_reservation_the_prize_gate_leaves_open() {
+        // `pursue_religion` gates the belief pick, the missionary buy and the
+        // secret-society lean. It does NOT gate the Holy Site reservation, so a
+        // gene that clears only the prize still pays the entry fee. This pins
+        // the other half: `skip_prophet_race` must refuse the district itself.
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("HOLYSITE", 91_773),
+            120,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.players[0].techs.insert(crate::name!("astrology"));
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("monument"));
+
+        let holy = |ai: &BasicAi, game: &Game| {
+            matches!(
+                ai.pick_item(game, 0, capital, 2, 2, 2, 2, 10, 5, 5, 5)
+                    .expect("city has a production choice"),
+                Item::District { ref district, .. }
+                    if game.district_family(district) == "holy_site"
+            )
+        };
+
+        let shipped = BasicAi::new();
+        assert!(
+            !shipped.skip_prophet_race,
+            "off unless the advanced bridge asks for it"
+        );
+        assert!(
+            holy(&shipped, &game),
+            "the frozen native controller opens the prophet race here"
+        );
+
+        let mut treated = BasicAi::new();
+        treated.skip_prophet_race = true;
+        assert!(
+            !holy(&treated, &game),
+            "the treated empire must not spend the slot contesting a race it \
+             has already decided to sit out"
+        );
     }
 
     #[test]

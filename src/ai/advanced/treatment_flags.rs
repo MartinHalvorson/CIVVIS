@@ -2621,6 +2621,43 @@ impl AdvancedAi {
         self.base.contested_land_first = false;
     }
 
+    /// An adaptive seat stops racing for a Great Prophet: the race costs more
+    /// science than the religion returns. See
+    /// `AdvancedAi::race_for_a_religion`; opt-in gene
+    /// `race-for-a-religion`.
+    pub fn enable_race_for_a_religion(&mut self) {
+        self.race_for_a_religion = true;
+    }
+
+    /// The twin of `enable_race_for_a_religion`.
+    pub fn disable_race_for_a_religion(&mut self) {
+        self.race_for_a_religion = false;
+    }
+
+    /// `AdvancedAi::science_building_first`; opt-in gene
+    /// `science-building-first`.
+    pub fn enable_science_building_first(&mut self) {
+        self.science_building_first = true;
+    }
+
+    /// The twin of `enable_science_building_first`.
+    pub fn disable_science_building_first(&mut self) {
+        self.science_building_first = false;
+    }
+
+    /// `AdvancedAi::skip_the_prophet_race`; opt-in gene
+    /// `skip-the-prophet-race`. Filed above the markers with the other
+    /// toggles, because the append-point check reads a line's first
+    /// identifier and every one of these starts `pub`.
+    pub fn enable_skip_the_prophet_race(&mut self) {
+        self.skip_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_skip_the_prophet_race`.
+    pub fn disable_skip_the_prophet_race(&mut self) {
+        self.skip_the_prophet_race = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
