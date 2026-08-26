@@ -1316,7 +1316,7 @@ class CounterResolutionConfigTests(unittest.TestCase):
 
 
 class SettlerEscortCapSyncConfigTests(unittest.TestCase):
-    """The cap reconciliation is an explicit host experiment, never a default."""
+    """The host protects an unambiguously stacked settler by default."""
 
     @staticmethod
     def _config(**changes):
@@ -1330,16 +1330,18 @@ class SettlerEscortCapSyncConfigTests(unittest.TestCase):
                      speed="GAMESPEED_ONLINE", map="Continents.lua",
                      leader="LEADER_TRAJAN", **changes))
 
-    def test_only_the_explicit_arm_reaches_the_mod(self) -> None:
+    def test_the_safe_default_and_explicit_opt_out_reach_the_mod(self) -> None:
         self.assertIs(self._config(settler_escort_cap_sync=False)
                       ["SettlerEscortCapSync"], False)
         self.assertIs(self._config(settler_escort_cap_sync=True)
                       ["SettlerEscortCapSync"], True)
 
-    def test_the_cli_declares_an_off_default(self) -> None:
+    def test_the_cli_declares_a_safe_default_and_preserves_the_opt_out(self) -> None:
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
-        self.assertIn('ap.add_argument("--settler-escort-cap-sync", action="store_true", '
-                      'default=False,', source)
+        self.assertIn('ap.add_argument("--settler-escort-cap-sync", dest="settler_escort_cap_sync",\n'
+                      '                    action="store_true", default=True,', source)
+        self.assertIn('ap.add_argument("--no-settler-escort-cap-sync", dest="settler_escort_cap_sync",\n'
+                      '                    action="store_false",', source)
 
 
 class PeaceDeterrenceConfigTests(unittest.TestCase):
