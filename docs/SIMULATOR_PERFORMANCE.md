@@ -2479,3 +2479,128 @@ change. Note that this is the *opposite* shape to the rejection above and is
 not evidence against it: those sets hold hundreds of positions and are built
 once and read many times, where the flood's frontier holds tens and is thrown
 away.
+
+## 2026-08-26 — a third of every profile in this file had no symbol
+
+Every ranked hotspot list above was drawn from about two thirds of the running
+samples. The other third is reported by `/usr/bin/sample` as
+`<deduplicated_symbol>` — identical machine code folded to one address, one
+name kept — and it is the **largest single entry in the profile**, larger than
+any named leaf and larger than the last four shipped optimizations put
+together. Nothing in this file has ever mentioned it.
+
+This entry does two things: it closes the instrument gap, and it re-profiles
+`4b26eafb` (#2563) with the gap closed. `tools/profile_civvis.py` is the
+harness; `tools/test_profile_civvis.py` pins the parsing on every pull request.
+
+### The flag does not work, and that is the finding
+
+The obvious fix is to stop the linker folding. It was tried five ways, one game
+each, seed 7311001 at the screen's shape, `ci` profile, folded share of running
+samples:
+
+| build | folded |
+| --- | ---: |
+| the `ci` profile as it ships | **32.54%** |
+| `-C link-arg=-Wl,-no_deduplicate` | 31.10% |
+| `-Wl,-no_deduplicate` + `-C strip=none` | 32.59% |
+| `CARGO_PROFILE_CI_STRIP=none` | 31.59% |
+| `CARGO_PROFILE_CI_DEBUG=1` + `CARGO_PROFILE_CI_STRIP=none` | 30.35% |
+
+`-no_deduplicate` is a real option and reaches the link — a deliberately
+invented `-Wl,-no_such_option_at_all` fails with `ld: unknown options:` and
+this one does not — and it moves the number by noise. Keeping debug info
+quadruples the symbol table, 35,810 entries to 114,047, and still leaves 30%.
+Whatever merges these bodies is upstream of the linker, and
+`-Z merge-functions=disabled` is nightly-only while the fleet is on stable.
+
+⚠ **Do not spend another afternoon on the flag.** The table above is why it is
+in this file.
+
+### The answer is a caller, not a name
+
+A folded leaf has lost its own symbol and kept every one of its parents, and
+the parent is named. That is the whole fix, and it is what a reader wanted
+anyway — *which subsystem is this?*, not *which monomorphization?*.
+`profile_civvis.py` credits every placeholder to its nearest **named** ancestor
+and prints the section on every run. Seed 7311001, share of the busiest thread:
+
+| the unnamed third | share |
+| --- | ---: |
+| `tile_has_visibility_line` ← `visible_tiles_from` | 2.67% |
+| `in_enemy_zoc_for` ← `formation_enters_enemy_zoc` | 2.17% |
+| **`Vec::clone` ← `Game::clone`** | **1.43%** |
+| `can_enter_past` ← `flow_past` | 1.21% |
+| `spec_from_iter` ← `can_enter_past` | 1.15% |
+| `healing_location` ← `safe_healing_step` | 0.98% |
+| `build_reverse_flow_field` ← `route_step_to_any` | 0.76% |
+| **`Vec::clone` ← `speculative_clone`** | **0.76%** |
+| `defensible_district_owner_at` ← `in_enemy_zoc_for` | 0.75% |
+| `units_at` ← `unit_max_moves_at`'s `f64::max` fold | 0.69% |
+| … 37.15% attributed in total | |
+
+Sight, the movement flood, and **whole-`Game` cloning**. The first two are
+already ranked in this file. The third is new: 2.19% of the thread is `Vec`
+copies made by `Game::clone` and `speculative_clone`, and no profile in this
+document has ever shown it, because it was always inside the placeholder.
+
+### The re-profile, with the third put back
+
+`tools/profile_civvis.py --seed 7311001 --turns 250`, `4b26eafb`, load ~3-7 on
+18 cores, 15,770 samples on the busiest thread. Inclusive, entry frames above
+99% dropped:
+
+| | inclusive |
+| --- | ---: |
+| `AdvancedAi::take_turn_inner` | 96.6% |
+| `advanced_units` | 53.1% |
+| `advanced_military_step_with_decline` | 46.1% |
+| `BasicAi::healing_step` | 37.7% |
+| `plan_general_unit_turn` | 33.7% |
+| `BasicAi::retreat_step` | 31.0% |
+| **`BasicAi::take_turn_inner` — the minor seats** | **28.3%** |
+| `BasicAi::military_step` | 24.8% |
+| `enemy_attack_envelopes` | 21.9% |
+| `attack_reach_from_flood` | 14.9% |
+| **`forcing_reply_penalty_owned`** | **14.3%** |
+| `Game::apply` | 13.2% |
+| `flow_past` | 10.4% |
+| vision (`vision_frame` 8.7, `player_vision` 7.9) | ~9% |
+
+and the roll-ups, as a share of running samples: **allocator and libc memory
+primitives 12.9%**, unnamed-but-now-attributed 32.5%.
+
+### What this re-ranks
+
+1. **`BasicAi::take_turn_inner` at 28.3% is the city-states and barbarians.**
+   `advanced.rs` hands a minor or barbarian seat straight to `self.base` and
+   returns, so that row is entirely minor-seat deliberation, and 19 points of
+   it are `military_step → healing_step`. The 2026-08-22 entry above measured
+   87% of `precise_evacuation`'s cost on those seats and −29.1% per turn from
+   withholding it there; this is the same finding from the other direction,
+   four days and 206 merges later, and **it is still `true` in both
+   `BasicAi::new()` and `BasicAi::with_weights()`**. It remains unreachable by
+   the gene screen, which varies major genomes only.
+2. **`forcing_reply_penalty_owned` at 14.3% has no gene row, no evaluator arm
+   and no depth constant.** It clones a whole `Game` per candidate through
+   `speculative_clone`, and `Game::apply` at 13.2% and the 2.19% of `Vec`
+   copies above are largely it. That is precisely the shape of `#2059`: a
+   default nobody can price because it is not an arm. The remedy is the same
+   one that was applied to `precise_evacuation` — register it, then measure —
+   and it should happen before anything tries to optimize it.
+3. **The envelope reach does not depend on who is asking.**
+   `compute_enemy_attack_envelopes(g, pid)` uses `pid` only to *filter* which
+   units are hostile and visible; the expensive part,
+   `g.attack_reach_from_flood(unit.id)`, takes the enemy's id and the board and
+   nothing else. `enemy_envelope_cache` is a field of `BasicAi`, so with six
+   majors, nine city-states and a barbarian seat, **the same enemy's flow field
+   is computed up to sixteen times per board**. Hoisting that memo to `Game`
+   beside `vision_frames` — which already carries a content-stamped cache
+   across `speculative_clone` and is documented exact — would be
+   answer-identical by construction. Unmeasured; the counter that would size it
+   is one probe on the call site.
+4. `Sphere::distance` is 3.31% of running self time and `slice::binary_search`
+   1.61%, both of which are the ring lookup inside `wdist`. `can_enter_past`
+   still re-asks `wdist(from, pos) != 1` for a neighbour its caller just
+   enumerated (rank 5 of the 2026-08-21 list, never taken).
+
