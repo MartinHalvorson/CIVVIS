@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run and publish fail-closed 5,000-completed-game gene-screen rotations.
+"""Run and publish fail-closed completed-game gene-screen rotations.
 
 This is deliberately stricter than a shell loop around ``gene_screen``.  A
 six-major all-seats game writes six ``kind: game`` JSONL records, so a physical
@@ -31,9 +31,11 @@ import json
 import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -43,6 +45,7 @@ from continuous_screen_status import LedgerError, summarize, validate_analysis
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = "continuous_batch_scheduler/v1"
 CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
+CONTINUOUS_BATCH_DEADLINE_SCHEMA = "continuous_batch_deadline/v1"
 
 # ``tools/genes.py write`` deliberately updates the ranking table together
 # with its supporting evidence.  Keep this one explicit list shared by the
@@ -58,14 +61,33 @@ STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
 DEFAULT_POLL_SECONDS = 300.0
 INITIAL_CHECK_TIMEOUT_SECONDS = 20 * 60.0
+DEADLINE_TERMINATION_GRACE_SECONDS = 30.0
+ACTIVE_SEGMENT_POLL_SECONDS = 5.0
 
 
 class SchedulerError(RuntimeError):
     """The scheduler cannot prove it is safe to advance."""
 
 
+@dataclass(frozen=True)
+class SegmentResult:
+    """How one owned ``gene_screen`` process ended."""
+
+    returncode: int
+    stopped_at_deadline: bool
+    stopped_at: str | None = None
+
+
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace(
+        "+00:00", "Z")
+
+
+def utc_timestamp(value: dt.datetime) -> str:
+    """Render one explicit instant canonically, never as an implicit local time."""
+    if value.tzinfo is None:
+        raise SchedulerError("deadline must name its timezone")
+    return value.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z")
 
 
@@ -162,15 +184,29 @@ def new_batch(seed_floor: int, goal_games: int, *, ident: str | None = None) -> 
     }
 
 
-def new_state(seed_floor: int, goal_games: int = DEFAULT_GOAL_GAMES) -> dict[str, Any]:
+def new_state(seed_floor: int, goal_games: int = DEFAULT_GOAL_GAMES, *,
+              deadline_at: dt.datetime | None = None,
+              next_goal_games: int | None = None) -> dict[str, Any]:
     """Initial state. ``next_seed`` moves before a game process is launched."""
     positive_int(seed_floor, name="seed floor")
     positive_int(goal_games, name="goal games")
+    if deadline_at is None and next_goal_games is not None:
+        raise SchedulerError("a successor goal needs a deadline")
+    if deadline_at is not None and next_goal_games is None:
+        raise SchedulerError("a deadline needs an explicit successor goal")
+    current = new_batch(seed_floor, goal_games)
+    if deadline_at is not None:
+        current["deadline"] = {
+            "schema": CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+            "deadline_at": utc_timestamp(deadline_at),
+            "next_goal_completed_games": positive_int(
+                next_goal_games, name="successor goal games"),
+        }
     return {
         "schema": SCHEMA,
         "goal_completed_games": goal_games,
         "next_seed": seed_floor,
-        "current": new_batch(seed_floor, goal_games),
+        "current": current,
         "history": [],
     }
 
@@ -192,6 +228,40 @@ def validate_state(state: dict[str, Any]) -> None:
     checked_relative(current.get("analysis"), name="current analysis")
     if current.get("phase") not in {"running", "frozen", "publishing", "published", "blocked"}:
         raise SchedulerError(f"unknown batch phase {current.get('phase')!r}")
+    deadline = current.get("deadline")
+    if deadline is not None:
+        if not isinstance(deadline, dict):
+            raise SchedulerError("batch deadline must be an object")
+        if deadline.get("schema") != CONTINUOUS_BATCH_DEADLINE_SCHEMA:
+            raise SchedulerError(
+                f"batch deadline schema is {deadline.get('schema')!r}; expected "
+                f"{CONTINUOUS_BATCH_DEADLINE_SCHEMA!r}")
+        parse_utc_timestamp(deadline.get("deadline_at"), name="batch deadline")
+        positive_int(deadline.get("next_goal_completed_games"), name="deadline successor goal")
+        if deadline.get("cutoff_at") is not None:
+            cutoff_at = parse_utc_timestamp(deadline["cutoff_at"], name="deadline cutoff")
+            if cutoff_at < parse_utc_timestamp(deadline["deadline_at"], name="batch deadline"):
+                raise SchedulerError("deadline cutoff precedes its requested deadline")
+            original_goal = positive_int(
+                deadline.get("original_goal_completed_games"), name="deadline original goal")
+            actual_goal = positive_int(
+                deadline.get("actual_completed_games"), name="deadline actual games")
+            if actual_goal > original_goal:
+                raise SchedulerError("deadline actual games exceed its original goal")
+            if goal != actual_goal:
+                raise SchedulerError("deadline cutoff and state goal disagree")
+            raw_rows = checked_relative(deadline.get("raw_rows"), name="deadline raw rows")
+            frozen_rows = checked_relative(deadline.get("frozen_rows"), name="deadline frozen rows")
+            if current.get("rows") != frozen_rows or current.get("raw_rows") != raw_rows:
+                raise SchedulerError("deadline cutoff row paths disagree with the current batch")
+            raw_hash = deadline.get("raw_rows_sha256")
+            if not isinstance(raw_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", raw_hash):
+                raise SchedulerError("deadline raw row hash is not a SHA-256 digest")
+            dropped = deadline.get("dropped_trailing_records")
+            if isinstance(dropped, bool) or not isinstance(dropped, int) or dropped < 0:
+                raise SchedulerError("deadline dropped trailing record count is invalid")
+        elif current.get("phase") != "running":
+            raise SchedulerError("an uncut deadline batch cannot leave the running phase")
     reservations = current.get("reservations")
     if not isinstance(reservations, list):
         raise SchedulerError("current reservations must be a list")
@@ -204,6 +274,13 @@ def validate_state(state: dict[str, Any]) -> None:
         games = positive_int(reservation.get("target_games"), name=f"reservation {index} target_games")
         if last - first + 1 != games:
             raise SchedulerError(f"reservation {index} seed window does not equal its target games")
+        launch_state = reservation.get("launch_state")
+        if launch_state is not None and launch_state not in {"reserved", "running", "finished"}:
+            raise SchedulerError(f"reservation {index} has an unknown launch state")
+        if reservation.get("returncode") is None and launch_state == "finished":
+            raise SchedulerError(f"reservation {index} is finished but has no exit record")
+        if reservation.get("returncode") is not None and launch_state in {"reserved", "running"}:
+            raise SchedulerError(f"reservation {index} has both an exit record and a live launch state")
         if index and first <= previous_last:
             raise SchedulerError("state reservations overlap or are out of order")
         previous_last = last
@@ -213,7 +290,9 @@ def validate_state(state: dict[str, Any]) -> None:
         raise SchedulerError("state history must be a list")
 
 
-def load_state(path: Path, *, seed_floor: int | None, goal_games: int) -> dict[str, Any]:
+def load_state(path: Path, *, seed_floor: int | None, goal_games: int,
+               deadline_at: dt.datetime | None = None,
+               next_goal_games: int | None = None) -> dict[str, Any]:
     if path.exists():
         try:
             state = json.loads(path.read_text(encoding="utf-8"))
@@ -223,14 +302,29 @@ def load_state(path: Path, *, seed_floor: int | None, goal_games: int) -> dict[s
             raise SchedulerError(f"state {path} is not an object")
         validate_state(state)
         if state["goal_completed_games"] != goal_games:
-            raise SchedulerError(
-                f"state has a {state['goal_completed_games']:,}-game boundary, not "
-                f"the requested {goal_games:,}. Start a distinct state directory instead.")
+            deadline = state["current"].get("deadline")
+            consumed_deadline = (
+                isinstance(deadline, dict)
+                and deadline.get("original_goal_completed_games") == goal_games
+                and deadline.get("next_goal_completed_games") == next_goal_games
+                and deadline.get("cutoff_at") is not None
+            )
+            successor_rotation = (
+                next_goal_games is not None
+                and state.get("history")
+                and state["goal_completed_games"] == next_goal_games
+                and deadline is None
+            )
+            if not consumed_deadline and not successor_rotation:
+                raise SchedulerError(
+                    f"state has a {state['goal_completed_games']:,}-game boundary, not "
+                    f"the requested {goal_games:,}. Start a distinct state directory instead.")
         return state
     if seed_floor is None:
         raise SchedulerError(
             f"no state exists at {path}; pass --seed-floor once so its first range is explicit")
-    return new_state(seed_floor, goal_games)
+    return new_state(seed_floor, goal_games, deadline_at=deadline_at,
+                     next_goal_games=next_goal_games)
 
 
 def batch_directory(state_root: Path, batch: dict[str, Any]) -> Path:
@@ -326,6 +420,7 @@ def reserve_segment(state: dict[str, Any], status: dict[str, Any]) -> dict[str, 
         "target_games": remaining,
         "target_seats": remaining * STANDARD_PLAYERS,
         "reserved_at": utc_now(),
+        "launch_state": "reserved",
         "returncode": None,
     }
     batch["reservations"].append(reservation)
@@ -396,8 +491,87 @@ def ensure_source(state_root: Path, state: dict[str, Any], repo: Path) -> dict[s
     return source
 
 
-def run_segment(state_root: Path, batch: dict[str, Any], reservation: dict[str, Any], *, jobs: int) -> int:
-    """Run exactly the pre-reserved remaining game count, without profile overrides."""
+def terminate_owned_process(process: subprocess.Popen[bytes]) -> int:
+    """Stop one scheduler-owned process tree, escalating only after a grace period.
+
+    ``gene_screen`` writes one game as a short ordered group of rows.  The
+    deadline path snapshots only fully written groups afterwards, so this
+    signal never turns a half-written group into a counted game.  A separate
+    session makes the PID a process-group leader, which lets the scheduler
+    stop ``caffeinate`` and its child together without touching its own
+    launchd process group.
+    """
+    if process.poll() is not None:
+        return int(process.returncode)
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        pass
+    try:
+        return process.wait(timeout=DEADLINE_TERMINATION_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except ProcessLookupError:
+            pass
+        return process.wait()
+
+
+def active_reservation(batch: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the one pre-reserved child which did not report an exit yet."""
+    active = [item for item in batch.get("reservations", [])
+              if isinstance(item, dict) and item.get("returncode") is None]
+    if len(active) > 1:
+        raise SchedulerError("more than one scheduler reservation is marked live")
+    return active[0] if active else None
+
+
+def process_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def terminate_recorded_process(reservation: dict[str, Any]) -> str:
+    """Stop a child left behind by an interrupted scheduler process."""
+    pid = positive_int(reservation.get("pid"), name="live reservation pid")
+    group = positive_int(reservation.get("process_group", pid), name="live reservation process group")
+    if process_is_alive(pid):
+        try:
+            if os.name == "posix":
+                os.killpg(group, signal.SIGTERM)
+            else:
+                os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic() + DEADLINE_TERMINATION_GRACE_SECONDS
+        while process_is_alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if process_is_alive(pid):
+            try:
+                if os.name == "posix":
+                    os.killpg(group, signal.SIGKILL)
+                else:
+                    os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    return utc_now()
+
+
+def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
+                batch: dict[str, Any], reservation: dict[str, Any], *, jobs: int,
+                deadline_at: dt.datetime | None = None) -> SegmentResult:
+    """Run one reservation, stopping at a durable absolute deadline when set."""
     source = batch.get("source")
     if not isinstance(source, dict):
         raise SchedulerError("cannot run a segment without a pinned source")
@@ -422,17 +596,50 @@ def run_segment(state_root: Path, batch: dict[str, Any], reservation: dict[str, 
     if caffeinate.is_file():
         command = [str(caffeinate), "-dims", *command]
     with log.open("ab") as output:
-        process = subprocess.Popen(command, cwd=Path(str(source["worktree"])), stdout=output,
-                                   stderr=subprocess.STDOUT)
+        process = subprocess.Popen(
+            command, cwd=Path(str(source["worktree"])), stdout=output,
+            stderr=subprocess.STDOUT, start_new_session=True)
+        reservation.update({
+            "pid": process.pid,
+            "process_group": process.pid,
+            "started_at": utc_now(),
+            "launch_state": "running",
+        })
+        atomic_json(state_pathname, state)
+        stopped_at_deadline = False
+        stopped_at: str | None = None
         try:
-            returncode = process.wait()
+            while True:
+                if deadline_at is None:
+                    returncode = process.wait()
+                    break
+                seconds_left = (deadline_at - dt.datetime.now(dt.timezone.utc)).total_seconds()
+                if seconds_left <= 0:
+                    stopped_at_deadline = True
+                    stopped_at = utc_now()
+                    returncode = terminate_owned_process(process)
+                    break
+                try:
+                    returncode = process.wait(timeout=min(seconds_left, 1.0))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
         except KeyboardInterrupt:
-            process.terminate()
-            process.wait()
+            reservation["returncode"] = terminate_owned_process(process)
+            reservation["finished_at"] = utc_now()
+            reservation["launch_state"] = "finished"
+            atomic_json(state_pathname, state)
             raise
     reservation["returncode"] = returncode
     reservation["finished_at"] = utc_now()
-    return returncode
+    reservation["launch_state"] = "finished"
+    if stopped_at_deadline:
+        reservation["deadline_stopped_at"] = stopped_at
+    return SegmentResult(
+        returncode=returncode,
+        stopped_at_deadline=stopped_at_deadline,
+        stopped_at=stopped_at,
+    )
 
 
 def parse_utc_timestamp(value: Any, *, name: str) -> dt.datetime:
@@ -446,6 +653,230 @@ def parse_utc_timestamp(value: Any, *, name: str) -> dt.datetime:
     if parsed.tzinfo is None:
         raise SchedulerError(f"{name} must name its timezone: {value!r}")
     return parsed.astimezone(dt.timezone.utc)
+
+
+def batch_deadline(batch: dict[str, Any]) -> dt.datetime | None:
+    """Return the one unconsumed deadline attached to a batch, if any."""
+    deadline = batch.get("deadline")
+    if deadline is None:
+        return None
+    if not isinstance(deadline, dict):
+        raise SchedulerError("batch deadline must be an object")
+    if deadline.get("cutoff_at") is not None:
+        return None
+    return parse_utc_timestamp(deadline.get("deadline_at"), name="batch deadline")
+
+
+def verify_deadline_invocation(state: dict[str, Any], *, deadline_at: dt.datetime | None,
+                               next_goal_games: int | None) -> None:
+    """Bind a running service to the deadline it originally persisted.
+
+    A launchd restart must not quietly lose the stop time, and a consumed
+    deadline must not be attached to successor 3,000-game rotations again.
+    """
+    deadline = state["current"].get("deadline")
+    if deadline_at is None:
+        if isinstance(deadline, dict) and deadline.get("cutoff_at") is None:
+            raise SchedulerError("this running state has a deadline; pass its --deadline-at again")
+        return
+    if next_goal_games is None:
+        raise SchedulerError("--deadline-at requires --next-goal-games")
+    if deadline is None:
+        # The requested deadline was already consumed and rotation deliberately
+        # created an ordinary successor batch.  Keep the stable launchd
+        # arguments harmless rather than re-attaching a deadline forever.
+        if state.get("history"):
+            return
+        raise SchedulerError("state exists without the requested deadline")
+    if not isinstance(deadline, dict):
+        raise SchedulerError("batch deadline must be an object")
+    if deadline.get("cutoff_at") is not None:
+        return
+    if deadline.get("deadline_at") != utc_timestamp(deadline_at):
+        raise SchedulerError("stored batch deadline differs from --deadline-at")
+    if deadline.get("next_goal_completed_games") != next_goal_games:
+        raise SchedulerError("stored deadline successor goal differs from --next-goal-games")
+
+
+def relative_to_state_root(state_root: Path, path: Path) -> str:
+    """Store only checked state-relative paths in the durable scheduler file."""
+    try:
+        return str(path.resolve().relative_to(state_root.resolve()))
+    except ValueError as error:
+        raise SchedulerError(f"path {path} escapes state root {state_root}") from error
+
+
+def has_nonblank_after(lines: list[bytes], index: int) -> bool:
+    return any(line.strip() for line in lines[index + 1:])
+
+
+def snapshot_complete_prefix(raw_rows: Path, target: Path) -> tuple[dict[str, Any], int]:
+    """Freeze only whole terminal game groups from an interrupted raw ledger.
+
+    The generator appends one ordered six-seat group at a time.  A hard
+    deadline can catch its final write halfway through a JSON line or halfway
+    through that group.  Preserve the raw ledger untouched and make a stable
+    analysis input containing every prior whole group; any malformed or
+    short *trailing* group is deliberately excluded.  Corruption anywhere
+    else is an error, never an invitation to silently repair history.
+    """
+    try:
+        lines = raw_rows.read_bytes().splitlines(keepends=True)
+    except OSError as error:
+        raise SchedulerError(f"cannot read deadline rows {raw_rows}: {error}") from error
+    kept: list[bytes] = []
+    pending: list[bytes] = []
+    players: int | None = None
+    pending_key: tuple[int, int] | None = None
+    saw_header = False
+    total_records = 0
+    stopped = False
+    for index, line in enumerate(lines):
+        if not line.strip():
+            continue
+        total_records += 1
+        if stopped:
+            raise SchedulerError("nonblank ledger data appears after a truncated trailing record")
+        # A row writer emits a newline with every committed record.  Treat an
+        # unterminated tail as incomplete even if its JSON happened to parse.
+        if not line.endswith(b"\n"):
+            if has_nonblank_after(lines, index):
+                raise SchedulerError("unterminated row is not the terminal ledger record")
+            stopped = True
+            continue
+        try:
+            decoded = line.decode("utf-8")
+            record = json.loads(decoded)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            if has_nonblank_after(lines, index):
+                raise SchedulerError(f"malformed nonterminal ledger record: {error}") from error
+            stopped = True
+            continue
+        if not isinstance(record, dict):
+            raise SchedulerError("ledger record is not an object")
+        kind = record.get("kind")
+        if kind == "header":
+            if pending:
+                if players is None or len(pending) != players:
+                    raise SchedulerError("a header interrupts an unfinished game group")
+                kept.extend(pending)
+                pending = []
+                pending_key = None
+            try:
+                players = positive_int(record.get("players"), name="deadline header players")
+            except SchedulerError as error:
+                raise SchedulerError("deadline header has no valid player count") from error
+            kept.append(line)
+            saw_header = True
+            continue
+        if kind != "game":
+            raise SchedulerError(f"ledger record has unexpected kind {kind!r}")
+        if players is None:
+            raise SchedulerError("game row appears before its header")
+        seed = record.get("seed")
+        arm = record.get("arm", 0)
+        if isinstance(seed, bool) or not isinstance(seed, int) or isinstance(arm, bool) or not isinstance(arm, int):
+            raise SchedulerError("game row has no integer seed/arm key")
+        key = (seed, arm)
+        if pending_key is not None and key != pending_key:
+            if len(pending) != players:
+                raise SchedulerError("an incomplete game group is followed by another game")
+            kept.extend(pending)
+            pending = []
+            pending_key = None
+        if pending_key is None:
+            pending_key = key
+        pending.append(line)
+        if len(pending) > players:
+            raise SchedulerError("a game group has more rows than its declared player count")
+    if pending and len(pending) == players:
+        kept.extend(pending)
+    if not saw_header:
+        raise SchedulerError("deadline ledger contains no header")
+    kept_records = sum(1 for line in kept if line.strip())
+    dropped_records = total_records - kept_records
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        temporary.write_bytes(b"".join(kept))
+        status = summarize(temporary)
+        os.replace(temporary, target)
+    except (OSError, LedgerError) as error:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise SchedulerError(f"deadline ledger cannot be safely frozen: {error}") from error
+    return status, dropped_records
+
+
+def seal_deadline_cutoff(state_root: Path, state_pathname: Path, state: dict[str, Any], *,
+                         stopped_at: str | None = None) -> None:
+    """Turn a passed deadline into one auditable, validated partial screen.
+
+    The raw header retains the intentionally enormous reservation.  The
+    frozen snapshot therefore remains explicitly partial in its analyzer
+    artefact, while its scheduler boundary and table sample size are the
+    actual validated games/seats played by the requested deadline.
+    """
+    batch = state["current"]
+    deadline = batch.get("deadline")
+    if not isinstance(deadline, dict):
+        raise SchedulerError("cannot seal a batch without a deadline")
+    if deadline.get("cutoff_at") is not None:
+        status = refresh_status(state_root, state)
+        if status["complete_games"] != batch["goal_completed_games"]:
+            raise SchedulerError("previous deadline cutoff no longer matches its frozen boundary")
+        freeze_analysis(state_root, state, state_pathname=state_pathname)
+        atomic_json(state_pathname, state)
+        return
+    raw_relative = checked_relative(batch.get("rows"), name="raw deadline rows")
+    raw_rows = state_path(state_root, raw_relative)
+    frozen_rows = batch_directory(state_root, batch) / "rows-deadline-cutoff.jsonl"
+    status, dropped_records = snapshot_complete_prefix(raw_rows, frozen_rows)
+    complete_games = positive_int(status.get("complete_games"), name="deadline completed games")
+    original_goal = positive_int(batch.get("goal_completed_games"), name="deadline original goal")
+    if complete_games > original_goal:
+        raise SchedulerError("deadline snapshot exceeds its original completed-game goal")
+    frozen_relative = relative_to_state_root(state_root, frozen_rows)
+    batch["raw_rows"] = raw_relative
+    batch["rows"] = frozen_relative
+    batch["goal_completed_games"] = complete_games
+    state["goal_completed_games"] = complete_games
+    deadline.update({
+        "cutoff_at": stopped_at or utc_now(),
+        "original_goal_completed_games": original_goal,
+        "actual_completed_games": complete_games,
+        "raw_rows": raw_relative,
+        "raw_rows_sha256": sha256(raw_rows),
+        "frozen_rows": frozen_relative,
+        "dropped_trailing_records": dropped_records,
+    })
+    # The process stopped at this instant.  Do not let analysis or publication
+    # retry time make the rate look slower than the tournament itself.
+    batch.setdefault("completed_at", deadline["cutoff_at"])
+    refresh_status(state_root, state)
+    atomic_json(state_pathname, state)
+    freeze_analysis(state_root, state, state_pathname=state_pathname)
+    atomic_json(state_pathname, state)
+
+
+def deadline_reporting_metadata(batch: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the immutable audit trail for a deadline-finalized report."""
+    deadline = batch.get("deadline")
+    if not isinstance(deadline, dict) or deadline.get("cutoff_at") is None:
+        return None
+    return {
+        "schema": CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+        "deadline_at": deadline["deadline_at"],
+        "cutoff_at": deadline["cutoff_at"],
+        "original_goal_completed_games": deadline["original_goal_completed_games"],
+        "actual_completed_games": deadline["actual_completed_games"],
+        "raw_rows": deadline["raw_rows"],
+        "raw_rows_sha256": deadline["raw_rows_sha256"],
+        "frozen_rows": deadline["frozen_rows"],
+        "dropped_trailing_records": deadline["dropped_trailing_records"],
+    }
 
 
 def continuous_batch_timing(batch: dict[str, Any]) -> dict[str, Any] | None:
@@ -497,6 +928,9 @@ def write_reporting_artifact(source: Path, target: Path, batch: dict[str, Any]) 
     timing = continuous_batch_timing(batch)
     if timing is not None:
         analysis["continuous_batch_timing"] = timing
+    deadline = deadline_reporting_metadata(batch)
+    if deadline is not None:
+        analysis["continuous_batch_deadline"] = deadline
     atomic_json(target, analysis)
 
 
@@ -864,8 +1298,13 @@ def rotate(state_pathname: Path, state: dict[str, Any]) -> None:
         "wins": previous["wins"],
         "source": previous["source"],
         "publication": previous["publication"],
+        "deadline": previous.get("deadline"),
         "closed_at": utc_now(),
     })
+    deadline = previous.get("deadline")
+    if isinstance(deadline, dict) and deadline.get("cutoff_at") is not None:
+        state["goal_completed_games"] = positive_int(
+            deadline.get("next_goal_completed_games"), name="deadline successor goal")
     state["current"] = new_batch(state["next_seed"], state["goal_completed_games"])
     atomic_json(state_pathname, state)
 
@@ -874,6 +1313,46 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
          jobs: int, machine: str | None, agent: str | None, publish: bool) -> str:
     """Advance one durable boundary: a segment, freeze, publication, or rotation."""
     batch = state["current"]
+    deadline = batch_deadline(batch)
+    now = dt.datetime.now(dt.timezone.utc)
+    live = active_reservation(batch) if batch["phase"] == "running" else None
+    if live is not None:
+        launch_state = live.get("launch_state")
+        if launch_state == "reserved":
+            # A crash between seed reservation and Popen means no child can
+            # exist.  Retire the range rather than ever replaying it.
+            live["returncode"] = "not_started_after_scheduler_restart"
+            live["finished_at"] = utc_now()
+            live["launch_state"] = "finished"
+            atomic_json(state_pathname, state)
+        elif launch_state != "running":
+            raise SchedulerError("live reservation has no recognized launch state")
+        else:
+            pid = positive_int(live.get("pid"), name="live reservation pid")
+            if process_is_alive(pid):
+                if deadline is not None and now >= deadline:
+                    stopped_at = terminate_recorded_process(live)
+                    live["returncode"] = "deadline_after_scheduler_restart"
+                    live["finished_at"] = stopped_at
+                    live["launch_state"] = "finished"
+                    live["deadline_stopped_at"] = stopped_at
+                    atomic_json(state_pathname, state)
+                    seal_deadline_cutoff(state_root, state_pathname, state, stopped_at=stopped_at)
+                    return "frozen_deadline"
+                return "active_segment"
+            # The scheduler died after it had persisted the reservation but before
+            # it could record the child exit.  The reserved seeds remain spent;
+            # the next segment can only begin after them.
+            live["returncode"] = "unobserved_after_scheduler_restart"
+            live["finished_at"] = utc_now()
+            live["launch_state"] = "finished"
+            atomic_json(state_pathname, state)
+    if batch["phase"] == "running" and deadline is not None and now >= deadline:
+        # This also recovers the narrow interruption after the deadline
+        # signal: it snapshots the raw prefix before asking the normal reader
+        # to parse a possible terminal half-row.
+        seal_deadline_cutoff(state_root, state_pathname, state)
+        return "frozen_deadline"
     status = refresh_status(state_root, state)
     atomic_json(state_pathname, state)
     phase = batch["phase"]
@@ -887,15 +1366,21 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
         atomic_json(state_pathname, state)
         reservation = reserve_segment(state, status)
         atomic_json(state_pathname, state)
-        returncode = run_segment(state_root, batch, reservation, jobs=jobs)
+        result = run_segment(
+            state_root, state_pathname, state, batch, reservation, jobs=jobs,
+            deadline_at=deadline)
         atomic_json(state_pathname, state)
+        if result.stopped_at_deadline:
+            seal_deadline_cutoff(
+                state_root, state_pathname, state, stopped_at=result.stopped_at)
+            return "frozen_deadline"
         latest = refresh_status(state_root, state)
         atomic_json(state_pathname, state)
         if latest["complete_games"] == batch["goal_completed_games"]:
             freeze_analysis(state_root, state, state_pathname=state_pathname)
             atomic_json(state_pathname, state)
             return "frozen"
-        if returncode == 0:
+        if result.returncode == 0:
             raise SchedulerError(
                 "gene_screen exited successfully before its pre-registered remaining games; "
                 "refusing to invent a replacement segment")
@@ -918,12 +1403,16 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
 def print_status(state_root: Path, state: dict[str, Any]) -> None:
     batch = state["current"]
     status = refresh_status(state_root, state)
-    print("continuous 5,000-game scheduler")
+    print("continuous completed-game scheduler")
     print(f"  batch: {batch['id']} ({batch['phase']})")
     print(f"  complete: {status['complete_games']:,} games / {status['complete_seats']:,} seats")
     print(f"  boundary: {batch['goal_completed_games']:,} validated completed games")
     print(f"  reserved segments: {len(batch['reservations'])}; next seed: {state['next_seed']:,}")
     print(f"  publication: {batch['publication'].get('stage', 'not_started')}")
+    deadline = batch.get("deadline")
+    if isinstance(deadline, dict):
+        suffix = " (cut off)" if deadline.get("cutoff_at") is not None else ""
+        print(f"  deadline: {deadline.get('deadline_at')}{suffix}")
 
 
 def machine_from_config(repo: Path) -> str | None:
@@ -943,6 +1432,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="first seed, required only while creating a new state file")
     parser.add_argument("--goal-games", type=int, default=DEFAULT_GOAL_GAMES,
                         help="validated completed-game rotation boundary (default: 5000)")
+    parser.add_argument("--deadline-at", metavar="UTC",
+                        help=("absolute ISO-8601 cutoff for this initial batch; its raw "
+                              "partial ledger is frozen and published at the deadline"))
+    parser.add_argument("--next-goal-games", type=int,
+                        help=("completed-game size for all rotations after --deadline-at; "
+                              "required with a deadline"))
     parser.add_argument("--jobs", type=int,
                         help="game workers; default is floor(85%% of logical cores)")
     parser.add_argument("--publisher-agent", default="continuous-batch",
@@ -957,6 +1452,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         goal = positive_int(args.goal_games, name="--goal-games")
+        deadline_at = (parse_utc_timestamp(args.deadline_at, name="--deadline-at")
+                       if args.deadline_at else None)
+        next_goal_games = (positive_int(args.next_goal_games, name="--next-goal-games")
+                           if args.next_goal_games is not None else None)
+        if (deadline_at is None) != (next_goal_games is None):
+            raise SchedulerError("--deadline-at and --next-goal-games must be used together")
         jobs = positive_int(args.jobs, name="--jobs") if args.jobs is not None else workers_for_cores(logical_cores())
         if args.poll_seconds <= 0:
             raise SchedulerError("--poll-seconds must be positive")
@@ -975,12 +1476,16 @@ def main(argv: list[str] | None = None) -> int:
             # lock. Two launchd restarts can therefore never both accept the
             # same fresh --seed-floor before either sees the other state file.
             state_file = state_root / "scheduler-state.json"
-            state = load_state(state_file, seed_floor=args.seed_floor, goal_games=goal)
+            state = load_state(
+                state_file, seed_floor=args.seed_floor, goal_games=goal,
+                deadline_at=deadline_at, next_goal_games=next_goal_games)
             if not state_file.exists():
                 atomic_json(state_file, state)
             if args.command == "status":
                 print_status(state_root, state)
                 return 0
+            verify_deadline_invocation(
+                state, deadline_at=deadline_at, next_goal_games=next_goal_games)
             machine = args.machine or machine_from_config(repo)
             while True:
                 outcome = tick(
@@ -992,6 +1497,8 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
                 if outcome == "partial_segment":
                     time.sleep(args.poll_seconds)
+                if outcome == "active_segment":
+                    time.sleep(ACTIVE_SEGMENT_POLL_SECONDS)
     except SchedulerError as error:
         print(f"continuous batch scheduler: {error}", file=sys.stderr)
         return 2

@@ -377,5 +377,113 @@ class PublicationTiming(unittest.TestCase):
                 })
 
 
+class DeadlineRotation(unittest.TestCase):
+    DEADLINE = scheduler.parse_utc_timestamp("2026-08-26T12:00:00Z", name="test deadline")
+
+    def test_new_deadline_state_persists_the_deadline_and_successor_goal(self):
+        state = scheduler.new_state(10, 1_000_000, deadline_at=self.DEADLINE, next_goal_games=3_000)
+        deadline = state["current"]["deadline"]
+        self.assertEqual(deadline, {
+            "schema": scheduler.CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+            "deadline_at": "2026-08-26T12:00:00Z",
+            "next_goal_completed_games": 3_000,
+        })
+        scheduler.validate_state(state)
+
+    def test_deadline_snapshot_discards_only_a_terminal_partial_game_group(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "rows-continuous.jsonl"
+            target = root / "rows-deadline-cutoff.jsonl"
+            complete_rows(raw, seed_first=700, target_games=100, complete_games=2)
+            raw_bytes = raw.read_bytes()
+            # The process can be interrupted between two rows of its final
+            # six-seat write.  The raw ledger stays intact for audit.
+            raw.write_bytes(raw_bytes + b'{"kind":"game","seed":702,"arm":0,"seat":0')
+
+            status, dropped = scheduler.snapshot_complete_prefix(raw, target)
+
+            self.assertEqual(status["complete_games"], 2)
+            self.assertEqual(status["complete_seats"], 12)
+            self.assertEqual(dropped, 1)
+            self.assertEqual(raw.read_bytes(), raw_bytes + b'{"kind":"game","seed":702,"arm":0,"seat":0')
+            self.assertEqual(scheduler.summarize(target)["complete_games"], 2)
+
+    def test_sealed_deadline_uses_actual_games_but_keeps_raw_target_auditable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(900, 100, deadline_at=self.DEADLINE, next_goal_games=3_000)
+            batch = state["current"]
+            reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+            raw = root / batch["rows"]
+            complete_rows(raw, seed_first=reservation["seed_first"], target_games=100, complete_games=2)
+            raw_bytes = raw.read_bytes()
+            raw.write_bytes(raw_bytes + b'{"kind":"game","seed":902,"arm":0,"seat":0')
+            state_path = root / "scheduler-state.json"
+
+            with mock.patch.object(scheduler, "freeze_analysis") as freeze:
+                scheduler.seal_deadline_cutoff(
+                    root, state_path, state, stopped_at="2026-08-26T12:00:00Z")
+
+            self.assertEqual(state["goal_completed_games"], 2)
+            self.assertEqual(batch["goal_completed_games"], 2)
+            self.assertEqual(batch["raw_rows"], batch["directory"] + "/rows-continuous.jsonl")
+            self.assertEqual(batch["deadline"]["original_goal_completed_games"], 100)
+            self.assertEqual(batch["deadline"]["actual_completed_games"], 2)
+            self.assertEqual(batch["deadline"]["dropped_trailing_records"], 1)
+            self.assertEqual(scheduler.refresh_status(root, state)["complete_games"], 2)
+            self.assertTrue(freeze.called)
+
+    def test_rotation_switches_to_the_deadline_successor_goal_once_published(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(1_100, 100, deadline_at=self.DEADLINE, next_goal_games=3_000)
+            batch = state["current"]
+            state["goal_completed_games"] = 2
+            batch.update({"goal_completed_games": 2, "phase": "published", "complete_games": 2,
+                          "complete_seats": 12, "wins": 2, "source": {"commit": "a"},
+                          "publication": {"stage": "merged"}})
+            batch["deadline"].update({
+                "cutoff_at": "2026-08-26T12:00:00Z",
+                "original_goal_completed_games": 100,
+                "actual_completed_games": 2,
+                "raw_rows": batch["rows"],
+                "raw_rows_sha256": "a" * 64,
+                "frozen_rows": batch["rows"],
+                "dropped_trailing_records": 0,
+            })
+
+            scheduler.rotate(root / "scheduler-state.json", state)
+
+            self.assertEqual(state["goal_completed_games"], 3_000)
+            self.assertEqual(state["current"]["goal_completed_games"], 3_000)
+            self.assertNotIn("deadline", state["current"])
+            self.assertEqual(state["history"][0]["deadline"]["actual_completed_games"], 2)
+
+    def test_tick_seals_an_already_due_deadline_before_reading_live_rows(self):
+        state = scheduler.new_state(1_200, 100, deadline_at=self.DEADLINE, next_goal_games=3_000)
+        with mock.patch.object(scheduler, "seal_deadline_cutoff") as seal, \
+                mock.patch.object(scheduler.dt, "datetime", wraps=scheduler.dt.datetime) as clock:
+            clock.now.return_value = scheduler.parse_utc_timestamp(
+                "2026-08-26T12:00:01Z", name="after deadline")
+            self.assertEqual(scheduler.tick(
+                Path("/state"), Path("/state/scheduler-state.json"), state,
+                repo=Path("/repo"), jobs=1, machine="machine", agent="agent", publish=True),
+                "frozen_deadline")
+        self.assertTrue(seal.called)
+
+    def test_restarted_scheduler_waits_for_its_persisted_live_child(self):
+        state = scheduler.new_state(1_300, 10)
+        reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+        reservation.update({"launch_state": "running", "pid": 4242, "process_group": 4242})
+        with mock.patch.object(scheduler, "process_is_alive", return_value=True), \
+                mock.patch.object(scheduler, "refresh_status") as status:
+            outcome = scheduler.tick(
+                Path("/state"), Path("/state/scheduler-state.json"), state,
+                repo=Path("/repo"), jobs=1, machine="machine", agent="agent", publish=True)
+        self.assertEqual(outcome, "active_segment")
+        status.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
