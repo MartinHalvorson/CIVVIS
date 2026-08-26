@@ -430,8 +430,12 @@ def reserve_segment(state: dict[str, Any], status: dict[str, Any]) -> dict[str, 
     return reservation
 
 
-def run_checked(command: Iterable[str], *, cwd: Path, description: str) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(list(command), cwd=cwd, text=True, capture_output=True, check=False)
+def run_checked(command: Iterable[str], *, cwd: Path, description: str,
+                env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        list(command), cwd=cwd, text=True, capture_output=True, check=False,
+        env=None if env is None else {**os.environ, **env},
+    )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise SchedulerError(f"{description} failed ({result.returncode}): {detail[-2000:]}")
@@ -1017,17 +1021,47 @@ def check_quiet(worktree: Path, number: int, *, timeout_seconds: float = INITIAL
         time.sleep(10.0)
 
 
-def reporting_write_command(report: str) -> list[str]:
+def deployment_genome_at_publication_base(worktree: Path) -> tuple[str, tuple[str, ...]]:
+    """Read defaults from the ``main`` commit actually merged into a task.
+
+    A publication task may carry a checkpoint of generated reports while it
+    catches up to ``main``.  Reading that working ledger would accidentally
+    retain the checkpoint's old defaults.  The merge base is the exact source
+    selection the task contains, so it is the only safe baseline to hand to
+    the reporting-only generator.
+    """
+    base = git_output(worktree, "merge-base", "HEAD", "origin/main")
+    try:
+        ledger = json.loads(
+            git_output(worktree, "show", f"{base}:docs/gene_ledger.json"))
+    except json.JSONDecodeError as error:
+        raise SchedulerError(
+            f"deployment ledger at publication base {base} is not valid JSON") from error
+    rules = ledger.get("rules")
+    genome = rules.get("deployment_genome") if isinstance(rules, dict) else None
+    if (not isinstance(genome, list)
+            or any(not isinstance(tag, str) or not tag for tag in genome)
+            or len(set(genome)) != len(genome)):
+        raise SchedulerError(
+            f"deployment ledger at publication base {base} has no valid deployment genome")
+    return base, tuple(genome)
+
+
+def reporting_write_command(report: str,
+                            deployment_genome: Iterable[str]) -> list[str]:
     """Regenerate a report batch without letting it re-select live defaults.
 
     Tournament results must update the published evidence table. The operator's
-    selected on/off genome is intentionally a separate decision, so every
-    scheduler publication carries this explicit mode rather than relying on a
-    mutable CLI default.
+    selected on/off genome is intentionally a separate decision.  Capture it
+    from the task's merged ``main`` base rather than from mutable generated
+    files in the task worktree.
     """
     return [
         sys.executable, "tools/genes.py", "write",
-        "--preserve-deployment-defaults", "--reporting-batch", report,
+        "--preserve-deployment-defaults",
+        "--retained-deployment-genome",
+        json.dumps(list(deployment_genome), separators=(",", ":")),
+        "--reporting-batch", report,
     ]
 
 
@@ -1210,7 +1244,11 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         target.parent.mkdir(parents=True, exist_ok=True)
         write_reporting_artifact(analysis_path(state_root, batch), target, batch)
         generated = list(PUBLICATION_GENERATED_FILES)
-        write = reporting_write_command(report)
+        selection_base, deployment_genome = deployment_genome_at_publication_base(
+            worktree)
+        publication["deployment_selection_base"] = selection_base
+        publication["deployment_selection_count"] = len(deployment_genome)
+        write = reporting_write_command(report, deployment_genome)
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
         if first.returncode != 0:
             reason = (
@@ -1237,7 +1275,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         run_checked([sys.executable, "tools/test_genes.py"], cwd=worktree,
                     description="run generated-ranking regressions")
         run_checked(["cargo", "test", "--profile", "ci", "--locked"], cwd=worktree,
-                    description="test publication source")
+                    description="test publication source", env={"RUST_TEST_THREADS": "1"})
         run_checked(["git", "diff", "--check", "origin/main..."], cwd=worktree,
                     description="check publication diff")
         publication["stage"] = "prepared"

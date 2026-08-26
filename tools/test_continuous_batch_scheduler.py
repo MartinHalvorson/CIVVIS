@@ -304,14 +304,30 @@ class PublicationMetadata(unittest.TestCase):
         self.assertIn("overwrite-guard: allow this report deliberately regenerates", body)
 
     def test_every_publication_explicitly_preserves_the_selected_defaults(self):
+        genome = ("current-a", "current-b")
         self.assertEqual(
-            scheduler.reporting_write_command("docs/gene_screens/example.json"),
+            scheduler.reporting_write_command("docs/gene_screens/example.json", genome),
             [
                 sys.executable, "tools/genes.py", "write",
-                "--preserve-deployment-defaults", "--reporting-batch",
+                "--preserve-deployment-defaults",
+                "--retained-deployment-genome", '["current-a","current-b"]',
+                "--reporting-batch",
                 "docs/gene_screens/example.json",
             ],
         )
+
+    def test_publication_selection_comes_from_the_merged_main_base(self):
+        def output(_repo, *args):
+            if args == ("merge-base", "HEAD", "origin/main"):
+                return "base-commit"
+            self.assertEqual(args, ("show", "base-commit:docs/gene_ledger.json"))
+            return json.dumps({"rules": {"deployment_genome": ["current-a", "current-b"]}})
+
+        with mock.patch.object(scheduler, "git_output", side_effect=output):
+            base, genome = scheduler.deployment_genome_at_publication_base(Path("/worktree"))
+
+        self.assertEqual(base, "base-commit")
+        self.assertEqual(genome, ("current-a", "current-b"))
 
     def test_publication_claim_and_guard_include_every_generated_ranking_artifact(self):
         self.assertEqual(

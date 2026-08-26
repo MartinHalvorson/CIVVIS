@@ -597,6 +597,20 @@ class RetainedReportingDefaults(unittest.TestCase):
                 wins_by_tag={}, pinned=())
         self.assertIn("multiple versions", str(caught.exception))
 
+    def test_an_explicit_retained_selection_beats_a_stale_working_ledger(self):
+        self.assertEqual(
+            gene_ledger.retained_deployment_selection(
+                {"deployment_genome": ["stale"]}, '["current-a", "current-b"]'),
+            ("current-a", "current-b"),
+        )
+        self.assertEqual(
+            gene_ledger.retained_deployment_selection(
+                {"deployment_genome": ["stale"]}, None),
+            ("stale",),
+        )
+        with self.assertRaisesRegex(SystemExit, "JSON array"):
+            gene_ledger.retained_deployment_selection({}, "not-json")
+
 
 class TheDifferenceEvidence(unittest.TestCase):
     """The ranking still reports its pooled on-off difference, but it no
