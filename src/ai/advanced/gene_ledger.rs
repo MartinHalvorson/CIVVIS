@@ -337,6 +337,38 @@ pub fn ledger_held_live_treatment(tag: &str) -> bool {
 /// registry order. This is deliberately narrower than every default-off gene:
 /// the caller begins from the live universe, so only its withheld rows can be
 /// restored without silently enabling a different bundle.
+/// A production opt-in the ledger does not turn on. `--with` may seat one,
+/// so a gene priced on the arena can be tried on the live board before the
+/// whole-game screen has had its say — the arena is the gate for a tactical
+/// gene and the screen is the no-harm check, and until the screen answers
+/// there is otherwise no route to the live seat at all except a throwaway
+/// build with the constructor flipped.
+///
+/// It is an *addition*, not the restoration `ledger_held_live_treatment`
+/// describes: an opt-in was never in the live universe, so forcing one puts
+/// a behaviour on the board that no default would.
+pub fn ledger_held_opt_in(tag: &str) -> bool {
+    ledger_default_on(tag) != Some(true) && super::gene(tag).is_some_and(|gene| gene.opt_in())
+}
+
+/// Every opt-in a live `--with` arm may seat, in registry order.
+pub fn ledger_held_opt_ins() -> Vec<&'static str> {
+    super::GENES
+        .iter()
+        .filter(|gene| gene.opt_in())
+        .map(|gene| gene.tag)
+        .filter(|tag| ledger_held_opt_in(tag))
+        .collect()
+}
+
+/// Every tag a live `--with` arm may name: a held-off live treatment to
+/// restore, or a held-off opt-in to add.
+pub fn forceable_treatments() -> Vec<&'static str> {
+    let mut tags = ledger_held_live_treatments();
+    tags.extend(ledger_held_opt_ins());
+    tags
+}
+
 pub fn ledger_held_live_treatments() -> Vec<&'static str> {
     super::GENES
         .iter()
@@ -362,7 +394,9 @@ pub fn deployment_treatments_with_forced_live(forced_on: &[&str]) -> Vec<&'stati
         })
         .collect();
     for gene in super::GENES.iter().filter(|gene| gene.opt_in()) {
-        if ledger_default_on(gene.tag) == Some(true) && !tags.contains(&gene.tag) {
+        let seated = ledger_default_on(gene.tag) == Some(true)
+            || (ledger_held_opt_in(gene.tag) && forced_on.contains(&gene.tag));
+        if seated && !tags.contains(&gene.tag) {
             tags.push(gene.tag);
         }
     }
@@ -418,6 +452,12 @@ impl AdvancedAi {
             if ledger_default_on(gene.tag) == Some(true) {
                 (gene.enable)(self);
                 applied.enabled.push(gene.tag);
+            } else if ledger_held_opt_in(gene.tag) && forced_on.contains(&gene.tag) {
+                // The one route an arena-priced gene has to the live board
+                // before the whole-game screen answers. See
+                // `ledger_held_opt_in`.
+                (gene.enable)(self);
+                applied.forced.push(gene.tag);
             }
         }
         applied
@@ -972,6 +1012,29 @@ mod tests {
             !ledger_held_live_treatment("founder-temple"),
             "a withheld production opt-in is not a live-universe override"
         );
+        // A held-off opt-in is not a live-universe override either, but it
+        // IS a treatment an arm may *add*: the two predicates ask different
+        // questions and `forceable_treatments` is their sum. Taken from the
+        // registry rather than named, because which opt-ins the ledger holds
+        // off changes with every batch.
+        let held_opt_in = ledger_held_opt_ins()
+            .first()
+            .copied()
+            .expect("the registry holds opt-ins the ledger has not turned on");
+        assert!(!ledger_held_live_treatment(held_opt_in));
+        assert!(!ledger_held_opt_in("whole-turn-backtrack-guard"));
+        let forceable = forceable_treatments();
+        assert!(forceable.contains(&"whole-turn-backtrack-guard"));
+        assert!(forceable.contains(&held_opt_in));
+        let seated = deployment_treatments_with_forced_live(&[held_opt_in]);
+        assert!(
+            seated.contains(&held_opt_in) && !deployment_treatments().contains(&held_opt_in),
+            "an arm may seat a held-off opt-in without moving the deployment genome"
+        );
+        let mut seat = super::AdvancedAi::new();
+        seat.enable_live_bridge_universe();
+        let applied = seat.apply_gene_ledger_with_forced_live(&[held_opt_in]);
+        assert!(applied.forced.contains(&held_opt_in));
         assert!(ledger_held_live_treatments().contains(&"whole-turn-backtrack-guard"));
 
         let deployed = deployment_treatments();
