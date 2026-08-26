@@ -2791,6 +2791,25 @@ and a plot's district, its completion bit and its wonder already cross
 where a neighbour is in fog — and `ap` above is the reading that closes the
 same fog for appeal.
 
+**Verified against the recording.** `civvis-20260826T184456Z` predates the
+mod change, so every new key is absent and the mirror takes the fallback path
+on each: `civvis_orders --explain` built from the merge base (`b60814571`)
+and from this change give byte-identical stdout and stderr at t33 (10 orders,
+12 `[why]` lines, 1,551 bytes) and at t100 (11 orders, 18 `[why]` lines,
+2,122 bytes); `--dump-mirror --turn 100` reads the new fields back as
+`climate_phase 0`, `climate null`, no quests, no route options, 0 appeal
+readings and `host_observed` 19 — the foreign-unit tiles it held before. The
+presence path is pinned by seven tests:
+`the_hosts_climate_level_is_the_boards_phase_and_floods_the_bands_it_names`,
+`a_host_quest_seats_the_city_states_request_on_the_pair`,
+`rival_envoy_counts_cross_and_a_missing_list_keeps_the_minimum_winning_seed`,
+`a_plots_host_appeal_and_national_park_stand_on_the_board`,
+`a_plot_the_host_shows_is_in_the_mirrored_seats_sight`,
+`a_route_options_host_yields_reach_the_board_keyed_by_the_pair_and_lapse_with_the_slot`
+(all `src/mirror.rs`) and
+`a_host_priced_route_option_is_what_the_trader_chooser_prices`
+(`src/ai/advanced/tests.rs`).
+
 ### The map, ranked — the queue for the next passes
 
 What the audit found and this change does not touch, most valuable first.
