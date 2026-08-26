@@ -51,10 +51,11 @@
 //!    the most turns.
 //! 4. **`native-emergency-purchase`** — the emergency defence purchase fires
 //!    on a native signal: a city that has lost health, was struck within the
-//!    last [`EMERGENCY_RECENT_TURNS`] turns, and has a hostile military unit
-//!    within [`EMERGENCY_RADIUS`] tiles. It buys Walls if the city can raise
-//!    them, otherwise the best land defender — the live doctrine's own choice
-//!    — and it spends through the reserve exactly as the live path does.
+//!    last [`EMERGENCY_RECENT_TURNS`] turns. The confirmed damage remains
+//!    authoritative if the attacker has left the current board; it buys Walls
+//!    if the city can raise them, otherwise the best land defender — the live
+//!    doctrine's own choice — and it spends through the reserve exactly as
+//!    the live path does.
 //!
 //! ⚠ The trigger asks for DAMAGE, not for a hostile in sight.
 //! `besieged_city_item` records why: reacting to a single raider in range
@@ -136,8 +137,6 @@ pub const PURCHASE_CARD_MULT_RANGE: (f64, f64) = (0.25, 4.0);
 pub const YOUNG_CITY_PREMIUM: f64 = 0.5;
 /// How recently a city must have been struck for the native emergency.
 pub const EMERGENCY_RECENT_TURNS: u32 = 4;
-/// How near a hostile military unit must stand for the native emergency.
-pub const EMERGENCY_RADIUS: i32 = 3;
 /// `treasury-at-work`: turns of a recurring deficit the working reserve
 /// keeps in the bank, so a purchase never turns a deficit into bankruptcy
 /// before the deck or the army can be corrected.
@@ -227,8 +226,10 @@ impl AdvancedAi {
         young_city_premium_from(here, best)
     }
 
-    /// `native-emergency-purchase`: whether this city is bleeding under an
-    /// attack a native controller can see. False while the gene is off.
+    /// `native-emergency-purchase`: whether this city has confirmed recent
+    /// damage. The attacker may already have moved outside the reconstructed
+    /// board, but the city damage and attack timestamp remain native evidence
+    /// that its defence must take priority. False while the gene is off.
     pub(super) fn native_city_emergency(&self, g: &Game, pid: usize, cid: u32) -> bool {
         if !self.native_emergency_purchase {
             return false;
@@ -244,12 +245,7 @@ impl AdvancedAi {
         {
             return false;
         }
-        g.units.values().any(|unit| {
-            unit.owner != pid
-                && g.rules.units[unit.kind].class == "military"
-                && (g.players[unit.owner].is_barbarian || g.is_at_war(pid, unit.owner))
-                && g.wdist(unit.pos, city.pos) <= EMERGENCY_RADIUS
-        })
+        true
     }
 
     /// The emergency's answer for a bleeding city: Walls if the city can raise
@@ -567,26 +563,8 @@ mod tests {
     }
 
     #[test]
-    fn the_native_emergency_needs_damage_a_recent_strike_and_a_hostile() {
+    fn the_native_emergency_needs_damage_and_a_recent_strike() {
         let (mut g, city) = board();
-        let home = g.cities[&city].pos;
-        let raider_at = g
-            .wdisk(home, 2)
-            .into_iter()
-            .find(|position| {
-                *position != home
-                    && g.map
-                        .get(*position)
-                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
-                    && g.units_at(*position).is_empty()
-            })
-            .expect("open ground beside the capital");
-        let barbarians = g
-            .players
-            .iter()
-            .position(|player| player.is_barbarian)
-            .expect("a barbarian seat");
-        g.spawn_test_unit("warrior", barbarians, raider_at);
         g.turn = 30;
 
         let mut on = AdvancedAi::new();
@@ -602,7 +580,7 @@ mod tests {
         assert!(on.native_city_emergency(&g, 0, city));
         let item = on
             .native_emergency_item(&g, 0, city)
-            .expect("a bleeding city under a raider has an answer");
+            .expect("a recently damaged city has an answer after its attacker leaves sight");
         assert!(
             matches!(item, Item::Building { .. } | Item::Unit { .. }),
             "walls or a land defender: {item:?}"
@@ -618,12 +596,9 @@ mod tests {
             "the strike is stale"
         );
         g.cities.get_mut(&city).unwrap().last_attacked = 29;
-        for unit in g.player_unit_ids(barbarians) {
-            g.remove_unit(unit);
-        }
         assert!(
-            !on.native_city_emergency(&g, 0, city),
-            "no hostile near, no emergency"
+            on.native_city_emergency(&g, 0, city),
+            "a freshly struck city stays an emergency even without a visible attacker"
         );
     }
 

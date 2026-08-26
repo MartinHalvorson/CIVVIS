@@ -731,14 +731,32 @@ mod tests {
                 }
             }
         }
-        // A pin over a gene no batch has priced would ship on its name alone,
-        // which the operator may well mean — but it has never happened yet,
-        // and the day it does is worth noticing rather than discovering later
-        // from a genome nobody can explain.
-        assert!(
-            pins.iter().all(|tag| batch_columns(tag).is_some()),
-            "every pin is priced today; a pin over an unpriced gene ships on its name alone"
-        );
+        // A pin over a gene no batch has priced ships on its name alone. The
+        // operator may well mean exactly that, and on 2026-08-26 did:
+        // `barbarian-settler-capture` was asked for by name after the live
+        // seat fortified beside a free settler for twenty turns
+        // (civvis-20260826T194422Z), and no reporting batch has run since.
+        // Each such pin is named here so the genome stays explicable; the
+        // next batch prices it like any other gene, and its row below leaves
+        // the day a batch column exists.
+        const PINNED_BEFORE_PRICING: &[&str] = &["barbarian-settler-capture"];
+        for tag in pins {
+            assert!(
+                batch_columns(tag).is_some() || PINNED_BEFORE_PRICING.contains(tag),
+                "{tag} is pinned on before any batch priced it; name it in \
+                 PINNED_BEFORE_PRICING with the operator's reason, or wait for a batch"
+            );
+        }
+        for tag in PINNED_BEFORE_PRICING {
+            assert!(
+                operator_pinned_on(tag),
+                "{tag} is named as pinned before pricing but is not a pin"
+            );
+            assert!(
+                batch_columns(tag).is_none(),
+                "{tag} is priced now; its PINNED_BEFORE_PRICING row has done its job"
+            );
+        }
     }
 
     /// ⭐ THE OPERATOR'S HOLDS: each named gene stays out of the genome

@@ -3721,6 +3721,29 @@ fn rebuilt_unit_missing(mirror_state: &civvis::mirror::LiveMirror, uid: u32) -> 
     !mirror_state.civ6_of.contains_key(&uid)
 }
 
+/// Whether `unit` moving onto `to` is a civilian capture on CIVVIS's board: an
+/// enemy civilian or support unit stands there, at war with the mover, with
+/// no military unit of theirs on the tile (that tile is an attack problem) and
+/// none of ours (a stack, not a capture). Religious units are neither — walking
+/// onto one neither captures nor kills it.
+fn move_captures(game: &civvis::game::Game, unit: u32, to: (i32, i32)) -> bool {
+    let Some(mover) = game.units.get(&unit) else {
+        return false;
+    };
+    let mut civilian = false;
+    for other in game.units.values().filter(|other| other.pos == to) {
+        if other.owner == mover.owner || !game.is_at_war(mover.owner, other.owner) {
+            return false;
+        }
+        match game.rules.units[other.kind].class.as_str() {
+            "military" => return false,
+            "civilian" | "support" => civilian = true,
+            _ => {}
+        }
+    }
+    civilian
+}
+
 /// One CIVVIS action -> one Civilization VI order, or None with a counted reason.
 fn translate(
     action: &Action,
@@ -3755,10 +3778,35 @@ fn translate(
                     return None;
                 }
             }
+            // ★★★★★ A MOVE ONTO AN ENEMY CIVILIAN IS A CAPTURE, AND A BARE
+            // MOVE_TO NEVER MAKES IT. CIVVIS captures a civilian by moving onto
+            // its tile (`capture_adjacent_civilian`: "civilian capture is
+            // movement, not combat"), and this arm sent that move as a plain
+            // `MOVE_TO`. The mod's own note on `attackModifiers` says what the
+            // host does with one: without `UnitOperationMoveModifiers.ATTACK`
+            // "the pathfinder will not enter a plot an enemy is standing on,
+            // and the request resolves to 'walk next to it and stop'" —
+            // Firaxis's `Civ6Common.lua:152` sets that flag on every melee
+            // move a human makes, capture included.
+            //
+            // Measured over the 273 live runs that carried #2075's rescue
+            // (2026-08-18 → 08-25): 278 unit-turns adjacent to an unguarded
+            // barbarian-held settler with movement left, 65 `MOVE_TO` orders
+            // aimed at its tile, ZERO captures. Every "capture" in that window
+            // was a kill that advanced onto a GUARDED settler. So the move
+            // crosses as `CAPTURE`: the mod requests the same MOVE_TO with the
+            // attack modifier and no strike ledger, and `verify_unit_order`
+            // reads the unit standing on the tile, or the civilian gone from
+            // it, as the capture.
+            let verb = if move_captures(&mirror_state.game, *unit, *to) {
+                "CAPTURE"
+            } else {
+                "MOVE_TO"
+            };
             civ6_of.get(unit).map(|civ6| Order {
                 kind: "unit",
                 subject: Some(*civ6),
-                verb: Some("MOVE_TO".to_string()),
+                verb: Some(verb.to_string()),
                 pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
             })
         }
@@ -4843,6 +4891,20 @@ fn verify_unit_order(
                     }
                 }
                 (None, None) => Verdict::Unverifiable,
+            }
+        }
+        // The capture is the unit standing where the civilian stood, or the
+        // civilian gone from there (it is ours now, so `foreign_units` no
+        // longer lists it).
+        "CAPTURE" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            match now {
+                Some(now) if (now.x, now.y) == want => Verdict::Verified,
+                _ if target_harmed(before, after, want) => Verdict::Verified,
+                None => gone(),
+                Some(_) => Verdict::Failed("not_captured".to_string()),
             }
         }
         "FOUND_CITY" => {
@@ -8245,6 +8307,101 @@ mod tests {
             planned.units[&chariot].pos, target,
             "the private CIVVIS board still simulates and scores the full approach"
         );
+    }
+
+    /// A move onto an enemy civilian crosses as `CAPTURE`, the attack-modifier
+    /// MOVE_TO the host needs to enter an occupied plot; a move onto open
+    /// ground stays `MOVE_TO`. Measured reason: 65 bare `MOVE_TO` orders at a
+    /// barbarian-held settler's tile across 273 live runs, zero captures.
+    #[test]
+    fn a_move_onto_an_enemy_civilian_crosses_as_a_capture() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        let settler = &mut state.hostiles[0];
+        settler.kind = "UNIT_SETTLER".to_string();
+        settler.combat = 0.0;
+        settler.hp = 100.0;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let barbarian = mirror.game.barb_pid.unwrap();
+        assert!(
+            mirror
+                .game
+                .units
+                .values()
+                .any(|unit| unit.owner == barbarian && unit.kind == "settler"),
+            "the barbarian-held settler must reach the board"
+        );
+        let warrior = mirror
+            .civ6_of
+            .iter()
+            .find_map(|(unit, civ6)| (*civ6 == 101).then_some(*unit))
+            .unwrap();
+
+        let capture = translate(
+            &Action::Move {
+                unit: warrior,
+                to: civvis::hex::offset_to_axial(5, 4),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the capture crosses");
+        assert_eq!(capture.verb.as_deref(), Some("CAPTURE"));
+        assert_eq!(capture.pos, Some((5, 4)));
+        assert_eq!(capture.subject, Some(101));
+
+        let walk = translate(
+            &Action::Move {
+                unit: warrior,
+                to: civvis::hex::offset_to_axial(3, 3),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the walk crosses");
+        assert_eq!(walk.verb.as_deref(), Some("MOVE_TO"));
+    }
+
+    /// A capture is verified by the unit standing where the civilian stood,
+    /// or by the civilian gone from there; a unit still beside it failed.
+    #[test]
+    fn a_capture_is_verified_by_arrival_or_by_the_civilian_gone() {
+        let (tiles, mut before) = local_barbarian_defense_board();
+        let settler = &mut before.hostiles[0];
+        settler.kind = "UNIT_SETTLER".to_string();
+        settler.combat = 0.0;
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("CAPTURE".to_string()),
+            pos: Some((5, 4)),
+        };
+
+        let mut arrived = before.clone();
+        arrived.hostiles.clear();
+        let warrior = arrived
+            .units
+            .iter_mut()
+            .find(|unit| unit.id == 101)
+            .unwrap();
+        warrior.x = 5;
+        warrior.y = 4;
+        assert!(matches!(
+            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[]),
+            Verdict::Verified
+        ));
+
+        let mut gone = before.clone();
+        gone.hostiles.clear();
+        assert!(matches!(
+            verify_unit_order(&order, 30, &before, &gone, &tiles, &[]),
+            Verdict::Verified
+        ));
+
+        let stood = before.clone();
+        assert!(matches!(
+            verify_unit_order(&order, 30, &before, &stood, &tiles, &[]),
+            Verdict::Failed(reason) if reason == "not_captured"
+        ));
     }
 
     #[test]
