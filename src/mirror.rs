@@ -219,6 +219,47 @@ pub struct Plot {
     /// road pays no movement.
     #[serde(default)]
     pub rp: bool,
+    /// ★★★★★ THE HOST'S OWN SIX YIELDS FOR THIS PLOT, in the order Food,
+    /// Production, Gold, Science, Culture, Faith (`Plot:GetYield`).
+    ///
+    /// Everything else on this record names a ROW OF THE RULESET, and CIVVIS
+    /// re-derives what the plot pays from its own catalogue. That derivation is
+    /// short by every term the ground holds and no row names, and the largest
+    /// of them is the permanent fertility Gathering Storm's disasters leave
+    /// behind: `RandomEvent_Yields` grants an affected plot +1 Food and +1
+    /// Production (and Science on the two worst eruptions) with per-severity
+    /// odds up to 75%, stored on the plot and reachable through no other
+    /// accessor. Volcanic Soil has no `Feature_YieldChanges` row at all, so a
+    /// mirror reading the feature name alone sees bare Grassland where the game
+    /// shows 3 Food 3 Production — which is exactly what the operator reported
+    /// on the live board.
+    ///
+    /// Land plots only, absent where every yield is zero or the read failed,
+    /// and absent on every export older than this field. See
+    /// [`apply_observed_plot_yields`] for how it reaches the board, and
+    /// `plotYieldTuple` in `CivvisControlAgent.lua` for how it is gathered.
+    #[serde(default)]
+    pub yl: Option<Vec<f64>>,
+}
+
+impl Plot {
+    /// The exported yields as the engine's own record, or `None` when the plot
+    /// carries no reading. A tuple of the wrong length is no reading: an export
+    /// that cannot spell all six is not one to correct a tile against.
+    pub fn host_yields(&self) -> Option<crate::rules::Yields> {
+        let values = self.yl.as_ref()?;
+        if values.len() != 6 || !values.iter().all(|value| value.is_finite()) {
+            return None;
+        }
+        Some(crate::rules::Yields {
+            food: values[0],
+            production: values[1],
+            gold: values[2],
+            science: values[3],
+            culture: values[4],
+            faith: values[5],
+        })
+    }
 }
 
 fn minus_one() -> i32 {
@@ -278,6 +319,14 @@ pub struct Snapshot {
     pub width: i32,
     pub height: i32,
     revealed: BTreeMap<(i32, i32), Plot>,
+    /// The turn each plot's record was written. `revealed` accumulates and
+    /// never forgets, so a plot last exported forty turns ago still sits in it
+    /// looking exactly like one exported this turn — fine for terrain, which
+    /// does not change, and wrong for anything read as the host's CURRENT
+    /// answer. [`apply_observed_plot_yields`] uses this to refuse a stale
+    /// reading rather than pay a tile what it paid before the sweep that
+    /// dropped it.
+    stamped: BTreeMap<(i32, i32), u32>,
 }
 
 impl Snapshot {
@@ -315,7 +364,18 @@ impl Snapshot {
         self.height = self.height.max(chunk.height);
         for plot in &chunk.plots {
             self.revealed.insert((plot.x, plot.y), plot.clone());
+            self.stamped.insert((plot.x, plot.y), chunk.turn);
         }
+    }
+
+    /// Whether this plot's record is the CURRENT one: written by the newest
+    /// full sweep, or by a delta since. A plot whose stamp predates the newest
+    /// sweep was missed by it — a truncated chunk, a dropped line — and what it
+    /// says about the host right now is a guess.
+    pub fn is_current(&self, pos: (i32, i32)) -> bool {
+        self.stamped
+            .get(&pos)
+            .is_some_and(|stamp| *stamp >= self.turn)
     }
 
     pub fn plot(&self, pos: (i32, i32)) -> Option<&Plot> {
@@ -329,6 +389,12 @@ impl Snapshot {
         match self.revealed.get_mut(&pos) {
             Some(plot) => {
                 plot.im = Some(im.to_string());
+                // ⚠ AND THE PLOT'S YIELD READING GOES WITH IT. The tuple was
+                // measured before this improvement existed; keeping it would
+                // make the host-to-model correction below cancel the very Farm
+                // that was just finished, because the model has it and the
+                // reading does not. The next sweep brings a matching pair.
+                plot.yl = None;
                 true
             }
             None => false,
@@ -453,6 +519,7 @@ mod tests {
             wo: None,
             rt: None,
             rp: false,
+            yl: None,
         }
     }
 
@@ -1997,6 +2064,7 @@ mod tests {
                 wo: None,
                 rt: None,
                 rp: false,
+                yl: None,
             }],
         }];
         let snapshot = Snapshot::from_chunks(&chunks);
@@ -3926,6 +3994,267 @@ mod tests {
         assert_eq!(loaded.observed_tile_yield_adjustments.len(), 2);
     }
 
+    /// ★★★★★ AND ON EVERY OTHER PLOT THE SWEEP READ, NOT ONLY THE WORKED ONES.
+    ///
+    /// The correction above covers the six or eight plots a city is working this
+    /// turn. Everything else — the ground a Builder, a Settler and the citizen
+    /// governor are choosing BETWEEN — was paid CIVVIS's own catalogue sum, and
+    /// that sum has no row for the fertility an eruption leaves: Volcanic Soil
+    /// carries no `Feature_YieldChanges` at all, so the mirror read bare
+    /// Grassland where the live game showed 3 Food 3 Production.
+    #[test]
+    fn a_swept_plots_host_yields_correct_it_even_when_nobody_works_it() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut worked = plot(6, 4, "TERRAIN_GRASS");
+        worked.o = 0;
+        // The volcano's leavings: Grassland under Volcanic Soil, which the
+        // ruleset prices at 2 Food and the host pays 3 Food 3 Production.
+        let mut fertile = plot(6, 5, "TERRAIN_GRASS");
+        fertile.o = 0;
+        fertile.f = Some("FEATURE_VOLCANIC_SOIL".to_string());
+        fertile.yl = Some(vec![3.0, 3.0, 0.0, 0.0, 0.0, 0.0]);
+        // A plot the sweep read and nobody owns is corrected too: it is exactly
+        // the ground a Settler is choosing between.
+        let mut wild = plot(7, 5, "TERRAIN_PLAINS");
+        wild.yl = Some(vec![1.0, 4.0, 0.0, 0.0, 0.0, 0.0]);
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, worked, fertile, wild],
+        }]);
+        let host_center = crate::rules::Yields {
+            food: 3.0,
+            production: 2.0,
+            ..crate::rules::Yields::default()
+        };
+        let state = StateSnapshot {
+            turn: 60,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Herculaneum".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                worked: Some(vec![StateWorkedPlot {
+                    x: 5,
+                    y: 4,
+                    yields: Some(host_center),
+                }]),
+                center_yields: Some(host_center),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let fertile_pos = crate::hex::offset_to_axial(6, 5);
+        let fix = recon.game.observed_tile_yield_adjustments[&fertile_pos];
+        // Grassland pays 2 Food in the catalogue and Volcanic Soil pays nothing;
+        // the host says 3 Food 3 Production.
+        assert!((fix.food - 1.0).abs() < 1e-9, "{fix:?}");
+        assert!((fix.production - 3.0).abs() < 1e-9, "{fix:?}");
+        let paid = recon.game.workable_tile_yields(fertile_pos);
+        assert!(
+            (paid.food - 3.0).abs() < 1e-9,
+            "the board pays what the host pays: {paid:?}"
+        );
+        assert!((paid.production - 3.0).abs() < 1e-9, "{paid:?}");
+
+        let wild_pos = crate::hex::offset_to_axial(7, 5);
+        let wild_paid = recon.game.workable_tile_yields(wild_pos);
+        assert!((wild_paid.production - 4.0).abs() < 1e-9, "{wild_paid:?}");
+
+        // A counterfactual improvement still moves the tile by its modelled
+        // amount, because the correction is a delta and not an override.
+        let mut planned = recon.game.clone();
+        planned.map.tiles.get_mut(&fertile_pos).unwrap().improvement = Some(crate::name!("farm"));
+        let farmed = planned.workable_tile_yields(fertile_pos);
+        assert!(
+            farmed.food > paid.food,
+            "a modelled Farm must still pay on top of the host's reading: {farmed:?}"
+        );
+    }
+
+    /// The state export's reading is this turn's; the sweep's may be several
+    /// turns old. Where both speak, the fresher one is the one that pays.
+    #[test]
+    fn a_worked_plots_state_reading_outranks_the_sweeps_older_one() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut worked = plot(6, 4, "TERRAIN_GRASS");
+        worked.o = 0;
+        worked.yl = Some(vec![2.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, worked],
+        }]);
+        let host_center = crate::rules::Yields {
+            food: 3.0,
+            production: 2.0,
+            ..crate::rules::Yields::default()
+        };
+        let host_worked = crate::rules::Yields {
+            food: 5.0,
+            ..crate::rules::Yields::default()
+        };
+        let state = StateSnapshot {
+            turn: 60,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Pompeii".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                worked: Some(vec![
+                    StateWorkedPlot {
+                        x: 5,
+                        y: 4,
+                        yields: Some(host_center),
+                    },
+                    StateWorkedPlot {
+                        x: 6,
+                        y: 4,
+                        yields: Some(host_worked),
+                    },
+                ]),
+                center_yields: Some(host_center),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let worked_pos = crate::hex::offset_to_axial(6, 4);
+        let paid = recon.game.workable_tile_yields(worked_pos);
+        assert!(
+            (paid.food - 5.0).abs() < 1e-9,
+            "the state export's 5 Food outranks the sweep's 2: {paid:?}"
+        );
+    }
+
+    /// `Snapshot::revealed` accumulates and never forgets, so a plot the newest
+    /// sweep missed still sits in it looking authoritative. Its yields are a
+    /// claim about a turn that has passed, and paying a tile on one would freeze
+    /// it at what it was worth then.
+    #[test]
+    fn a_plot_older_than_the_newest_sweep_corrects_nothing() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut stale = plot(6, 5, "TERRAIN_GRASS");
+        stale.o = 0;
+        stale.yl = Some(vec![9.0, 9.0, 0.0, 0.0, 0.0, 0.0]);
+        let snapshot = Snapshot::from_chunks(&[
+            TilesChunk {
+                turn: 20,
+                width: 10,
+                height: 10,
+                chunk: 1,
+                plots: vec![stale],
+            },
+            TilesChunk {
+                turn: 60,
+                width: 10,
+                height: 10,
+                chunk: 1,
+                plots: vec![center],
+            },
+        ]);
+        assert!(
+            !snapshot.is_current((6, 5)),
+            "the turn-20 record is not current"
+        );
+        assert!(snapshot.is_current((5, 4)));
+        let state = StateSnapshot {
+            turn: 60,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Stabiae".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let stale_pos = crate::hex::offset_to_axial(6, 5);
+        assert!(
+            !recon
+                .game
+                .observed_tile_yield_adjustments
+                .contains_key(&stale_pos),
+            "a record the newest sweep did not write must correct nothing"
+        );
+    }
+
+    /// A mirrored board carries no simulated weather: the generated world's
+    /// disaster bookkeeping must not survive onto ground the host described,
+    /// or a modelled eruption would be counted twice — once as the model's own
+    /// fertility and once inside the host correction taken against it.
+    #[test]
+    fn mirrored_ground_keeps_no_generated_disaster_state() {
+        let mut plot_a = plot(5, 4, "TERRAIN_PLAINS");
+        plot_a.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![plot_a],
+        }]);
+        let mut game = rebuild_game(&snapshot, 2, 1);
+        let pos = crate::hex::offset_to_axial(5, 4);
+        {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.disaster_food = 2.0;
+            tile.disaster_production = 1.0;
+            tile.disaster_faith = 3.0;
+            tile.drought = true;
+            tile.flooded = true;
+            tile.submerged = true;
+            tile.storm = Some("hurricane".to_string());
+            tile.fallout_until = 99;
+        }
+        apply_terrain(&mut game, &snapshot);
+        let tile = &game.map.tiles[&pos];
+        assert_eq!(tile.disaster_food, 0.0);
+        assert_eq!(tile.disaster_production, 0.0);
+        assert_eq!(tile.disaster_faith, 0.0);
+        assert!(!tile.drought && !tile.flooded && !tile.submerged);
+        assert!(tile.storm.is_none());
+        assert_eq!(tile.fallout_until, 0);
+    }
+
+    /// An `improved` event folds a finished improvement onto a plot the sweep
+    /// read earlier. The yield tuple that came with that sweep was measured
+    /// before the improvement existed, so keeping it would make the correction
+    /// cancel the very Farm the event reports.
+    #[test]
+    fn folding_a_finished_improvement_drops_the_plots_older_yield_reading() {
+        let mut fertile = plot(6, 5, "TERRAIN_GRASS");
+        fertile.o = 0;
+        fertile.yl = Some(vec![3.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let mut snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![fertile],
+        }]);
+        assert!(snapshot.set_improvement((6, 5), "IMPROVEMENT_FARM"));
+        assert!(
+            snapshot.plot((6, 5)).and_then(Plot::host_yields).is_none(),
+            "the reading predates the improvement and cannot stand beside it"
+        );
+    }
+
     /// ★★★★★ A PILLAGED BUILDING PAYS NOTHING, AND THE EXPORT NOW SAYS WHICH.
     ///
     /// `HasBuilding` stays true for a pillaged Library. Without the pillage list
@@ -4231,6 +4560,7 @@ mod tests {
                     wo: None,
                     rt: None,
                     rp: false,
+                    yl: None,
                 })
             })
             .collect();
@@ -4327,6 +4657,7 @@ mod tests {
                     wo: None,
                     rt: None,
                     rp: false,
+                    yl: None,
                 })
             })
             .collect();
@@ -7923,6 +8254,7 @@ mod tests {
                         wo: None,
                         rt: None,
                         rp: false,
+                        yl: None,
                     })
                 })
                 .collect(),
@@ -7993,6 +8325,7 @@ mod tests {
                         wo: None,
                         rt: None,
                         rp: false,
+                        yl: None,
                     })
                 })
                 .collect(),
@@ -8178,6 +8511,7 @@ mod tests {
                     wo: None,
                     rt: None,
                     rp: false,
+                    yl: None,
                 })
             })
             .collect();
@@ -8404,6 +8738,7 @@ mod tests {
                         wo: None,
                         rt: None,
                         rp: false,
+                        yl: None,
                     })
                 })
                 .collect(),
@@ -8571,6 +8906,10 @@ fn apply_finished_improvements(raw: &str, turn: Option<u32>, snapshot: &mut Snap
         };
         if let Some(plot) = snapshot.revealed.get_mut(&(x as i32, y as i32)) {
             plot.im = Some(im.to_string());
+            // The plot's exported yields were read before this improvement
+            // existed; see `Snapshot::set_improvement` for why they cannot
+            // survive it.
+            plot.yl = None;
         }
     }
 }
@@ -8736,6 +9075,30 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             // The host's road, on the engine's own ladder. An older export
             // carries no `rt` and reads 0, exactly what the mirror wrote before.
             tile.road = route_level(plot.rt.as_deref(), plot.rp);
+            // ★★★★ AND NO SIMULATED WEATHER ON MIRRORED GROUND.
+            //
+            // The same defect as `apply_rivers`, `apply_landmass` and the
+            // cliffs, one group of fields over: a field this pass does not
+            // write keeps whatever `Game::new`'s generated world put there.
+            // These eight are the engine's own disaster bookkeeping, and the
+            // export carries none of them — the host has no accessor for the
+            // fertility on a plot, and its flood, drought and fallout state
+            // reach the board through `Plot:GetYield` instead (a flooded or
+            // irradiated plot reads zero there, which is exactly what it pays).
+            // So the honest value is nothing at all: a modelled eruption on a
+            // mirrored board would be invented weather, and it would now be
+            // counted TWICE, once as the model's own fertility and once inside
+            // the host correction derived against it. Cleared unconditionally,
+            // like `Tile::continent` above, because the point is to lose the
+            // generated value rather than to keep it.
+            tile.flooded = false;
+            tile.submerged = false;
+            tile.drought = false;
+            tile.storm = None;
+            tile.fallout_until = 0;
+            tile.disaster_faith = 0.0;
+            tile.disaster_food = 0.0;
+            tile.disaster_production = 0.0;
         }
     }
     // `place_city` initially claims its complete first ring. When part of that
@@ -15487,10 +15850,99 @@ fn great_work_era(era: Option<&str>) -> usize {
         .unwrap_or(0)
 }
 
+/// ★★★★★ THE HOST'S OWN READING OF EVERY PLOT IT EXPORTED, not only the ones a
+/// city happens to be working this turn.
+///
+/// The per-plot correction below this in `apply_observed_city_economy` has
+/// always been derived from `state.cities[].worked[].yields` — six or eight
+/// plots per city, the ones the host's citizen manager assigned. Every OTHER
+/// plot on the board was paid CIVVIS's own catalogue sum, and that sum is short
+/// by whatever the ground holds that no row of the ruleset names.
+///
+/// Disaster fertility is the whole of it. Gathering Storm stores an eruption's
+/// or a flood's permanent +1 Food / +1 Production ON THE PLOT
+/// (`RandomEvent_Yields`), and Volcanic Soil itself has not one
+/// `Feature_YieldChanges` row — so a mirror that reads the feature name sees
+/// bare Grassland where the game shows 3 Food 3 Production. The operator
+/// reported exactly that tile on the live board.
+///
+/// The set that was wrong is the set that matters: a plot nobody works yet is
+/// precisely what a Builder is choosing to improve, what the citizen governor
+/// is choosing to grow onto, and what a Settler is choosing to found beside.
+///
+/// Four rules keep this a correction rather than an override:
+///
+/// 1. **Deltas, never absolutes**, like every other correction here — a
+///    counterfactual Farm still moves the tile by its modeled amount.
+/// 2. **Never over a fresher reading.** The worked and centre plots are
+///    corrected first, from THIS turn's state export; this fills in around them
+///    with `or_insert` and cannot displace them.
+/// 3. **Only a current record.** `Snapshot::revealed` accumulates forever, so a
+///    plot the newest sweep missed still sits in it looking authoritative;
+///    [`Snapshot::is_current`] refuses those.
+/// 4. **Not on a district, foundation, wonder or city centre.** Those pay
+///    through their own readers, and a plot's `GetYield` is the ground under
+///    them.
+fn apply_observed_plot_yields(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    for (x, y) in snapshot.revealed_positions().collect::<Vec<_>>() {
+        if !snapshot.is_current((x, y)) {
+            continue;
+        }
+        let Some(host) = snapshot.plot((x, y)).and_then(Plot::host_yields) else {
+            continue;
+        };
+        let pos = crate::hex::offset_to_axial(x, y);
+        let Some(tile) = game.map.get(pos) else {
+            continue;
+        };
+        if tile.district.is_some()
+            || tile.district_foundation.is_some()
+            || tile.wonder.is_some()
+            || game.city_at(pos).is_some()
+        {
+            continue;
+        }
+        if game.observed_tile_yield_adjustments.contains_key(&pos) {
+            continue;
+        }
+        let model = game.modeled_tile_yields(pos);
+        let delta = crate::rules::Yields {
+            food: host.food - model.food,
+            production: host.production - model.production,
+            gold: host.gold - model.gold,
+            science: host.science - model.science,
+            culture: host.culture - model.culture,
+            faith: host.faith - model.faith,
+        };
+        // ⚠ ONLY WHERE THE MODEL IS ACTUALLY WRONG. Most of a map is ordinary
+        // ground the catalogue prices exactly, and a zero correction is a
+        // no-op that would still be cloned into every planning copy of the
+        // board and written into every saved mirror. Recording only the
+        // disagreements keeps this map the size of the problem — and makes it
+        // readable as "the plots the host and CIVVIS do not agree on", which is
+        // what `tools/civ6_yield_drift.py` wants from it.
+        if [
+            delta.food,
+            delta.production,
+            delta.gold,
+            delta.science,
+            delta.culture,
+            delta.faith,
+        ]
+        .iter()
+        .all(|value| value.abs() < 1e-9)
+        {
+            continue;
+        }
+        game.observed_tile_yield_adjustments.insert(pos, delta);
+    }
+}
+
 /// Restore exact private city facts before deriving host-to-model corrections.
 fn apply_observed_city_economy(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
+    snapshot: Option<&Snapshot>,
     unmapped: &mut Vec<String>,
 ) {
     game.observed_city_yield_adjustments.clear();
@@ -15708,6 +16160,15 @@ fn apply_observed_city_economy(
         }
     }
 
+    // ...and the same correction for every OTHER plot the sweep read, which is
+    // the set a Builder, a Settler and the citizen governor are choosing
+    // between. Second, so the worked and centre readings above — taken from
+    // this turn's state export rather than the last sweep — are the ones that
+    // stand where both exist. See `apply_observed_plot_yields`.
+    if let Some(snapshot) = snapshot {
+        apply_observed_plot_yields(game, snapshot);
+    }
+
     // Exact citizen assignments and durable Great Work state are now in place.
     // Calibrate the actual happiness band before deriving yield corrections.
     // The correction is a delta, not a host-value override, so a simulated Arena
@@ -15768,6 +16229,7 @@ fn apply_observed_city_economy(
 fn apply_observed_host_metrics(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
+    snapshot: Option<&Snapshot>,
     unmapped: &mut Vec<String>,
 ) {
     game.observed_trade_capacity.clear();
@@ -15791,7 +16253,7 @@ fn apply_observed_host_metrics(
         observed.domestic_tourists = count(state.domestic_tourists);
     }
 
-    apply_observed_city_economy(game, state, unmapped);
+    apply_observed_city_economy(game, state, snapshot, unmapped);
 
     let mut derived = crate::rules::Yields::default();
     for cid in game.player_city_ids(0) {
@@ -16869,7 +17331,7 @@ pub fn rebuild_from_state(
     // The host's World Congress, likewise before the corrections: Trade Policy
     // and Luxury Policy change what the model pays and supplies.
     apply_host_congress(&mut game, state, &seat_of_host, &mut unmapped);
-    apply_observed_host_metrics(&mut game, state, &mut unmapped);
+    apply_observed_host_metrics(&mut game, state, Some(snapshot), &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
@@ -18562,7 +19024,7 @@ impl LiveMirror {
         // rebuild path for why; the trailing call repeats it for era score.
         apply_player_ages(&mut self.game, state);
         apply_host_congress(&mut self.game, state, &seat_of_host, &mut self.unmapped);
-        apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
+        apply_observed_host_metrics(&mut self.game, state, Some(snapshot), &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
         // After the city passes, for the same reason as on the rebuild path:
         // planting a city awards era score, and Firaxis's reading must be what
@@ -18963,6 +19425,7 @@ mod host_fact_tests {
             wo: None,
             rt: None,
             rp: false,
+            yl: None,
         }
     }
 
@@ -20764,7 +21227,7 @@ mod host_fact_tests {
         unavailable.cities[0].amenities = f64::NAN;
         unavailable.cities[0].amenities_needed = f64::NAN;
         let mut unmapped = Vec::new();
-        apply_observed_city_economy(&mut rebuilt.game, &unavailable, &mut unmapped);
+        apply_observed_city_economy(&mut rebuilt.game, &unavailable, None, &mut unmapped);
         assert!(
             !rebuilt
                 .game

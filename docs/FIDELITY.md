@@ -2163,9 +2163,9 @@ droughts hold their tiles for a severity-scaled span before lifting.
 
 Two honest boundaries around it:
 
-- **The rates are calibrated, not shipped.** The tuning that lives in
-  `Expansion2_RandomEvents.xml` — occurrences per game, severity weights,
-  per-severity damage — is not published outside an installation, and the
+- **The rates are calibrated, not shipped — except the fertility table,
+  which is now read.** Occurrences per game, severity weights and
+  per-severity damage are not published outside an installation, and the
   only figures that are public are the band a volcano's activity sits in
   (45%–95% across the five intensities) and the fact that intensities 3
   and 4 widen an eruption to two rings. Both of those are exact here. The
@@ -2175,14 +2175,24 @@ Two honest boundaries around it:
   numbers chosen to land in the documented range, and a pinned tournament
   ruleset can replace the file wholesale. `validate` checks the file's
   shape, and a test asserts a full game lands near the rates it asks for.
-- **Flood fertilisation stays off.** Gathering Storm gives a flooded
-  Floodplains tile a chance at permanent extra Food and Production, and
-  that probability is one of the numbers only an installation carries.
-  The mechanism is implemented — `disaster_food`/`disaster_production` are
-  real tile yields, and storms use them — but `river_flood`'s
-  `fertility_chance` is zero until the shipped table can be read, because
-  a guessed fertility rate changes what Floodplains are worth for the
-  whole game.
+- **Fertilisation is the shipped `RandomEvent_Yields` table.** This bullet
+  used to read "flood fertilisation stays off … until the shipped table
+  can be read", and the table was on disk the whole time
+  (`DLC/Expansion2/Data/Expansion2_RandomEvents.xml`). It rates each yield
+  type separately, which is the part the engine had wrong twice over:
+  `river_flood` and `blizzard` were at zero although the table gives them
+  15–60% and 10–20% Food, and `Tile::disaster_production` was summed into
+  every tile's yields while **nothing ever wrote it** — fertility was
+  modelled as one Food roll. A plot Civilization VI pays 3 Food 3
+  Production after an eruption was paid 3 Food 2 Production here.
+  `fertility_chance` and `fertility_production_chance` now carry the
+  shipped odds per severity, rolled apart, and an eruption's Volcanic Soil
+  settles on the plots the eruption actually enriched — which is what
+  `ReplaceFeature="true"` means on those same rows. The one departure is
+  `river_flood`: the table rates its three Floodplains features apart
+  (Plains Floodplains take Food most readily, Grassland Floodplains
+  Production) and `DisasterSpec` carries one rate per severity, so the
+  three are averaged. Tornado and Drought have no rows and stay at zero.
 
 **Both halves of every Dedication.** A Dedication in Civ VI is two rules,
 not one: the Normal-Age half that turns the behaviour it names into Era

@@ -262,6 +262,178 @@ fn an_eruption_damages_the_ring_and_leaves_volcanic_soil() {
     );
 }
 
+/// ★★★★★ FERTILITY IS FOOD **AND PRODUCTION**, ROLLED APART.
+///
+/// `RandomEvent_Yields` rates each yield type separately — a Catastrophic
+/// eruption leaves Food on half the plots it reaches and Production on a
+/// quarter of them — and this engine rolled once and granted Food.
+/// `Tile::disaster_production` was summed into a tile's yields the whole time
+/// and nothing ever wrote it, so a plot Civilization VI pays 3 Food 3
+/// Production after an eruption was paid 3 Food 2 Production here, and the same
+/// gap reached the mirrored board through the tile catalogue.
+#[test]
+fn an_eruption_leaves_production_fertility_and_not_only_food() {
+    let mut game = quiet_game();
+    let (volcano, ring) = volcano_and_ring(&game);
+    arm_certain_eruption(&mut game, volcano, &ring);
+    {
+        let spec = std::sync::Arc::make_mut(&mut game.rules)
+            .disasters
+            .get_mut("volcanic_eruption")
+            .unwrap();
+        spec.fertility_chance = vec![1.0; 3];
+        spec.fertility_production_chance = vec![1.0; 3];
+        // Nothing may be pillaged out from under the fertility roll.
+        spec.pillage_chance = vec![0.0; 3];
+    }
+
+    game.resolve_eruption(volcano, 3);
+
+    let fertile: Vec<&Pos> = ring
+        .iter()
+        .filter(|position| game.map.tiles[*position].disaster_food > 0.0)
+        .collect();
+    assert!(
+        !fertile.is_empty(),
+        "a certain eruption fertilises its ring"
+    );
+    for position in fertile {
+        assert_eq!(
+            game.map.tiles[position].disaster_production, 1.0,
+            "the shipped table's YIELD_PRODUCTION half has to land too"
+        );
+    }
+}
+
+/// The two halves are independent rolls, so a class the shipped table gives
+/// Production and no Food — none ships that way today, but the shape is the
+/// point — must still pay its Production.
+#[test]
+fn production_fertility_is_rolled_apart_from_food_fertility() {
+    let mut game = quiet_game();
+    let (volcano, ring) = volcano_and_ring(&game);
+    arm_certain_eruption(&mut game, volcano, &ring);
+    {
+        let spec = std::sync::Arc::make_mut(&mut game.rules)
+            .disasters
+            .get_mut("volcanic_eruption")
+            .unwrap();
+        spec.fertility_chance = vec![0.0; 3];
+        spec.fertility_production_chance = vec![1.0; 3];
+        spec.pillage_chance = vec![0.0; 3];
+    }
+
+    game.resolve_eruption(volcano, 3);
+
+    let enriched: Vec<&Pos> = ring
+        .iter()
+        .filter(|position| game.map.tiles[*position].disaster_production > 0.0)
+        .collect();
+    assert!(
+        !enriched.is_empty(),
+        "Production fertility does not need a Food roll"
+    );
+    for position in &enriched {
+        assert_eq!(
+            game.map.tiles[*position].disaster_food, 0.0,
+            "a Food chance of zero must leave no Food"
+        );
+        assert_eq!(
+            game.map.tiles[*position].feature.as_deref(),
+            Some("volcanic_soil"),
+            "`ReplaceFeature` rides on the yield rows, so ash settles where fertility did"
+        );
+    }
+}
+
+/// The shipped rates, read out of `Expansion2_RandomEvents.xml` rather than
+/// guessed: every class the table gives a fertility row has one here, and the
+/// two it gives none — Tornado and Drought — stay at zero.
+#[test]
+fn the_shipped_fertility_table_is_what_the_ruleset_carries() {
+    let game = quiet_game();
+    for (id, food, production) in [
+        ("volcanic_eruption", true, true),
+        ("river_flood", true, true),
+        ("hurricane", true, true),
+        ("blizzard", true, false),
+        ("dust_storm", true, true),
+    ] {
+        let spec = &game.rules.disasters[id];
+        assert!(
+            spec.fertility_chance.iter().any(|chance| *chance > 0.0) == food,
+            "{id} Food fertility"
+        );
+        assert!(
+            spec.fertility_production_chance
+                .iter()
+                .any(|chance| *chance > 0.0)
+                == production,
+            "{id} Production fertility"
+        );
+    }
+    for id in ["tornado", "drought"] {
+        let spec = &game.rules.disasters[id];
+        assert!(
+            spec.fertility_chance.iter().all(|chance| *chance == 0.0),
+            "{id}"
+        );
+        assert!(
+            spec.fertility_production_chance
+                .iter()
+                .all(|chance| *chance == 0.0),
+            "{id}"
+        );
+    }
+}
+
+/// ★★★★★ AND AN UNOWNED PLOT KEEPS IT TOO.
+///
+/// `modeled_tile_yields` used to hand a tile nobody owns straight to
+/// `Rules::worked_tile_yields`, which reads terrain, feature, resource and
+/// improvement and knows nothing about the ground's own history — so the
+/// fertility an eruption left, a neighbouring wonder's adjacency, drought and
+/// fallout were all invisible until somebody's border reached the plot. That is
+/// exactly backwards: unclaimed ground is what a Settler and a Builder are
+/// choosing BETWEEN, and Volcanic Soil has no yields of its own, so the
+/// fertility is the whole of what the plot is worth.
+#[test]
+fn unclaimed_ground_still_pays_the_fertility_a_disaster_left_on_it() {
+    let mut game = quiet_game();
+    let position = land_tile(&game);
+    {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.owner_city = None;
+    }
+    let bare = game.modeled_tile_yields(position);
+    assert_eq!((bare.food, bare.production), (2.0, 0.0), "{bare:?}");
+
+    {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.feature = Some(crate::name!("volcanic_soil"));
+        tile.disaster_food = 1.0;
+        tile.disaster_production = 3.0;
+    }
+    let fertile = game.modeled_tile_yields(position);
+    assert_eq!(
+        (fertile.food, fertile.production),
+        (3.0, 3.0),
+        "unclaimed volcanic soil pays what the ash left: {fertile:?}"
+    );
+
+    // And the ground stops paying while it is under fallout, whoever holds it.
+    game.map.tiles.get_mut(&position).unwrap().fallout_until = game.turn + 5;
+    assert_eq!(
+        game.modeled_tile_yields(position),
+        crate::rules::Yields::default()
+    );
+}
+
 #[test]
 fn an_eruption_keeps_volcanic_soil_off_mountains_and_every_kind_of_water() {
     let mut game = quiet_game();

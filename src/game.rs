@@ -5982,6 +5982,15 @@ pub struct Drought {
 /// climb the way the shipped intensity ladder does.
 const DISASTER_INTENSITY_SCALE: [f64; 5] = [0.0, 0.5, 1.0, 1.75, 2.75];
 
+/// Which half of a tile's permanent disaster fertility a roll landed on.
+/// `RandomEvent_Yields` rates Food and Production separately, and the tile
+/// holds them separately (`Tile::disaster_food`, `Tile::disaster_production`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Fertility {
+    Food,
+    Production,
+}
+
 /// The share of the map's volcanoes that are active at each intensity — the
 /// shipped 45%-to-95% band.
 const ACTIVE_VOLCANO_SHARE: [f64; 5] = [0.0, 0.45, 0.62, 0.79, 0.95];
@@ -18665,6 +18674,11 @@ impl Game {
     /// Apply one disaster class to one tile: damage whoever is standing there,
     /// maybe pillage what is built there, and maybe leave the ground better
     /// than it was.
+    ///
+    /// Returns whether the ground came out of it richer, which is what decides
+    /// an eruption's Volcanic Soil: `RandomEvent_Yields` carries
+    /// `ReplaceFeature="true"` on the volcano's own yield rows, so the ash
+    /// settles exactly where the fertility did.
     fn strike_disaster_tile(
         &mut self,
         position: Pos,
@@ -18672,9 +18686,9 @@ impl Game {
         severity: u8,
         protection: Option<&str>,
         rng: &mut Rng,
-    ) {
+    ) -> bool {
         if self.disaster_immune(position, protection) {
-            return;
+            return false;
         }
         let damage = spec.unit_damage.round() as i32;
         if rng.chance(spec.pillage_chance(severity)) {
@@ -18682,14 +18696,24 @@ impl Game {
         } else if damage > 0 {
             self.damage_disaster_units(position, damage);
         }
-        if rng.chance(spec.fertility_chance(severity)) {
-            self.fertilize_tile(position);
+        // ⚠ TWO ROLLS, NOT ONE. `RandomEvent_Yields` rates each yield type
+        // apart — a Catastrophic eruption leaves Food half the time and
+        // Production a quarter of the time, independently — and this used to
+        // roll once and grant Food only.
+        let mut fertilized = rng.chance(spec.fertility_chance(severity));
+        if fertilized {
+            self.fertilize_tile(position, Fertility::Food);
         }
+        if rng.chance(spec.fertility_production_chance(severity)) {
+            self.fertilize_tile(position, Fertility::Production);
+            fertilized = true;
+        }
+        fertilized
     }
 
-    /// Permanent fertility left behind by a disaster. Land keeps the Food a
-    /// storm's silt leaves; the sea keeps nothing.
-    fn fertilize_tile(&mut self, position: Pos) {
+    /// Permanent fertility left behind by a disaster. Land keeps what a storm's
+    /// silt leaves; the sea keeps nothing.
+    fn fertilize_tile(&mut self, position: Pos, kind: Fertility) {
         if self
             .map
             .get(position)
@@ -18698,10 +18722,14 @@ impl Game {
             return;
         }
         let tile = self.map.tiles.get_mut(&position).unwrap();
-        if tile.disaster_food >= DISASTER_FERTILITY_CAP {
+        let held = match kind {
+            Fertility::Food => &mut tile.disaster_food,
+            Fertility::Production => &mut tile.disaster_production,
+        };
+        if *held >= DISASTER_FERTILITY_CAP {
             return;
         }
-        tile.disaster_food += 1.0;
+        *held += 1.0;
     }
 
     /// Kill citizens in a city a disaster reached, never below one.
@@ -18802,13 +18830,17 @@ impl Game {
             });
             let can_leave_soil = volcanic_soil_valid_terrain(tile) && replaceable_feature;
             let immune = self.disaster_immune(position, None);
-            self.strike_disaster_tile(position, &spec, severity, None, &mut rng);
+            let fertilized = self.strike_disaster_tile(position, &spec, severity, None, &mut rng);
             self.disaster_population_loss(position, spec.population_loss(severity));
             if immune {
                 continue;
             }
-            // Ash buries whatever was growing and leaves Volcanic Soil.
-            if can_leave_soil && rng.chance(spec.fertility_chance(severity)) {
+            // Ash buries whatever was growing and leaves Volcanic Soil — on the
+            // plots the eruption actually enriched, because the shipped
+            // `ReplaceFeature="true"` rides on those same yield rows. This used
+            // to roll the fertility chance a SECOND time, so a tile could take
+            // the Food and keep its Forest, or lose its Forest and take nothing.
+            if can_leave_soil && fertilized {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
                 // Volcanic Soil ships both ValidWonderPlacement and
                 // ValidDistrictPlacement, so an eruption may deposit it under
@@ -27635,8 +27667,29 @@ impl Game {
         }
     }
 
-    fn player_tile_yields(&self, pid: usize, pos: Pos, tile: &crate::world::Tile) -> Yields {
-        if tile.flooded || tile.fallout_until > self.turn || tile.district_foundation.is_some() {
+    /// Ground that pays nothing at all whoever holds it: a flooded lowland
+    /// waiting on a Flood Barrier, a plot inside a nuclear accident's fallout,
+    /// and a district that is placed but not yet built.
+    fn tile_pays_nothing(&self, tile: &crate::world::Tile) -> bool {
+        tile.flooded || tile.fallout_until > self.turn || tile.district_foundation.is_some()
+    }
+
+    /// ★★★★★ WHAT THE GROUND ITSELF PAYS, before any owner's techs and civics.
+    ///
+    /// The ruleset's worked yield, a neighbouring feature's adjacency (Vesuvius,
+    /// Yosemite), the permanent fertility a disaster left behind, and drought.
+    /// None of it depends on who holds the plot — and every bit of it was
+    /// invisible on a plot nobody held.
+    ///
+    /// [`Self::modeled_tile_yields`] used to hand an unowned tile straight to
+    /// `Rules::worked_tile_yields`, which knows the catalogue and nothing else.
+    /// A tile an eruption had enriched therefore read at its bare figure for
+    /// every settle score, every Builder choice and every draw of the board
+    /// until somebody's border finally reached it — and Volcanic Soil has no
+    /// yields of its own, so the enrichment was the whole of what that plot was
+    /// worth.
+    fn ground_tile_yields(&self, pos: Pos, tile: &crate::world::Tile) -> Yields {
+        if self.tile_pays_nothing(tile) {
             return Yields::default();
         }
         let mut yields = self.rules.worked_tile_yields(tile);
@@ -27670,6 +27723,20 @@ impl Game {
         if tile.drought && !drought_food_protected {
             yields.food = (yields.food - 1.0).max(0.0);
         }
+        yields
+    }
+
+    fn player_tile_yields(&self, pid: usize, pos: Pos, tile: &crate::world::Tile) -> Yields {
+        if self.tile_pays_nothing(tile) {
+            return Yields::default();
+        }
+        // The ground first; everything below this line is the owner's own —
+        // their techs, their civics, their improvements. ⚠ The Nazca Line loop
+        // that follows stays here rather than moving down with the ground: two
+        // of its four terms read the owner's civics and techs, and a Nazca Line
+        // stands inside a border by construction, so an unowned neighbour of
+        // one is an edge the split does not need to carry.
+        let mut yields = self.ground_tile_yields(pos, tile);
         for neighbor in self.nbrs(pos) {
             let adjacent = &self.map.tiles[&neighbor];
             if adjacent.pillaged || adjacent.improvement.as_deref() != Some("nazca_line") {
@@ -28930,7 +28997,17 @@ impl Game {
         yields
     }
 
-    fn workable_tile_yields(&self, pos: Pos) -> Yields {
+    /// What a citizen working this plot actually collects: CIVVIS's own tile
+    /// model plus whatever the host says it owes on top. Terrain, Hills,
+    /// feature, resource and improvement only — a district's or a wonder's
+    /// yields are the city's, not the ground's, and are added by their own
+    /// readers.
+    ///
+    /// Public so the observation the spectator board is drawn from can publish
+    /// this exact number rather than re-deriving one beside it (`obs::tile_json`),
+    /// and so `civvis-orders --dump-mirror` can print it per plot beside the
+    /// host's own reading.
+    pub fn workable_tile_yields(&self, pos: Pos) -> Yields {
         let mut yields = self.modeled_tile_yields(pos);
         // A mirrored board pays the tile what the host pays it; see
         // `observed_tile_yield_adjustments`. Empty on a native game.
@@ -28952,13 +29029,13 @@ impl Game {
         if !tile.pillaged || tile.improvement.is_none() {
             return owner
                 .map(|pid| self.player_tile_yields(pid, pos, tile))
-                .unwrap_or_else(|| self.rules.worked_tile_yields(tile));
+                .unwrap_or_else(|| self.ground_tile_yields(pos, tile));
         }
         let mut unworked = tile.clone();
         unworked.improvement = None;
         owner
             .map(|pid| self.player_tile_yields(pid, pos, &unworked))
-            .unwrap_or_else(|| self.rules.worked_tile_yields(&unworked))
+            .unwrap_or_else(|| self.ground_tile_yields(pos, &unworked))
     }
 
     /// Open a memo scope for the expensive read-only queries.

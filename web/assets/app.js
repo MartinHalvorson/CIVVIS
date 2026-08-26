@@ -28137,8 +28137,42 @@ function pickTree(kind, n) {
 }
 
 // ---------------------------------------------------------------- lens/tacks
-function tileYieldFull(t) {
-  const y = { food: 0, production: 0, gold: 0, science: 0, culture: 0, faith: 0 };
+// ★★★★★ THE GROUND'S YIELDS, AS THE ENGINE ITSELF COUNTS THEM.
+//
+// `tile.yields` is `Game::workable_tile_yields` for a tile the seat can see
+// right now — the same function the citizen planner and the city's own totals
+// go through. Prefer it over anything derived here, because a derivation out of
+// the shipped catalogue is short by every term the ground carries and the
+// catalogue does not: the fertility a flood or an eruption left behind, the
+// host's own per-plot reading on a mirrored board, a neighbouring feature's
+// adjacency, drought, fallout, flooding, and a pillaged improvement that pays
+// nothing. The operator's report was a live 3 Food 3 Production tile the board
+// drew as 2 Food 2 Production after a volcano went off beside it; the catalogue
+// sum was the whole reason.
+//
+// ⚠ GROUND ONLY. The engine's figure stops at the improvement, exactly as
+// `tileBaseYields` does, so a district, a planned district and a wonder are
+// still added on top by `tileTotalYields` and are not counted twice.
+function engineTileYields(t) {
+  if (!t || !t.yields) return null;
+  const y = emptyTileYields();
+  let any = false;
+  for (const kind of TILE_TIP_YIELD_ORDER) {
+    const value = Number(t.yields[kind]);
+    if (!Number.isFinite(value)) return null;
+    y[kind] = value;
+    any = true;
+  }
+  return any ? y : null;
+}
+// The fog fallback, and the pre-`yields` board: derive the ground from the
+// shipped catalogue, then add back the two things a remembered tile still
+// carries in its own record — the disaster fertility, and the nothing at all a
+// flooded or irradiated plot pays. It cannot recover the host correction or a
+// neighbour's adjacency; those need the tile in sight, and in sight the engine
+// answers above.
+function catalogTileYields(t) {
+  const y = emptyTileYields();
   if (!RULES) return y;
   const add = src => { if (!src || !src.yields) return;
     for (const k in y) y[k] += src.yields[k] || 0; };
@@ -28146,9 +28180,38 @@ function tileYieldFull(t) {
   if (t.hills) y.production += 1;
   if (t.feature && RULES.features) add(RULES.features[t.feature]);
   if (t.resource && RULES.resources) add(RULES.resources[t.resource]);
-  if (t.improvement && t.improvement !== "barbarian_camp" && RULES.improvements)
+  // ⚠ A PILLAGED IMPROVEMENT PAYS NOTHING until it is repaired
+  // (`Game::modeled_tile_yields` strips it), and this used to pay it in full.
+  if (t.improvement && t.improvement !== "barbarian_camp" && !t.pillaged && RULES.improvements)
     add(RULES.improvements[t.improvement]);
-  return y;
+  addTileYields(y, tileDisasterYields(t));
+  if (t.drought) y.food = Math.max(0, y.food - 1);
+  return tileYieldsSuppressed(t) ? emptyTileYields() : y;
+}
+// What a storm's silt left behind. Gathering Storm's disasters are a trade, not
+// a pure loss, and `Game::player_tile_yields` adds these three straight onto the
+// tile — which is why a twice-flooded Floodplain outyields the catalogue row it
+// is still filed under.
+function tileDisasterYields(t) {
+  const d = t && t.disaster_yields;
+  if (!d) return null;
+  return { food: Number(d.food) || 0, production: Number(d.production) || 0,
+           gold: 0, science: 0, culture: 0, faith: Number(d.faith) || 0 };
+}
+// Ground that pays nothing at all, matching the first line of
+// `Game::player_tile_yields`: a flooded lowland waiting on a Flood Barrier and a
+// plot still inside a nuclear accident's fallout. That line also zeroes a placed
+// but unbuilt district, which the tile record does not carry separately — in
+// sight `tile.yields` already accounts for it, and out of sight the plot is not
+// being decided on.
+function tileYieldsSuppressed(t) {
+  if (!t) return false;
+  if (t.flooded) return true;
+  const until = Number(t.fallout_until);
+  return Number.isFinite(until) && until > (Number(state && state.turn) || 0);
+}
+function tileYieldFull(t) {
+  return engineTileYields(t) || catalogTileYields(t);
 }
 // The three tile facts Civ 6 prints under the yields. Each mirrors the engine
 // rule of the same name so the tooltip cannot quietly disagree with the game:
@@ -30739,14 +30802,36 @@ function tileBaseYieldLines(t) {
   if (t.hills) lines.push(`<span class="tip-breakdown">Hills yields: +1 production</span>`);
   source("Feature", ruleSpec("features", t.feature)?.yields);
   source("Resource", ruleSpec("resources", t.resource)?.yields);
+  // Named rather than folded silently into the total: a tile that has been
+  // flooded or buried in ash twice reads richer than the row it is filed under,
+  // and the reason is worth one line.
+  source("Disaster fertility", tileDisasterYields(t));
   const base = tileBaseYields(t);
   if (tileDetailYieldWords(base)) lines.push("Base tile yields: " + tileDetailYieldWords(base));
+  // Everything the engine pays that the four lines above cannot name: a
+  // neighbouring feature's adjacency, drought, and — on a mirrored board — the
+  // host's own per-plot reading, which is the only place a live game writes
+  // down what an eruption left behind. Shown as one residual so the breakdown
+  // always adds up to the total below it instead of quietly falling short.
+  const engine = engineTileYields(t);
+  if (engine) {
+    const named = tileBaseYields(t);
+    if (t.improvement && t.improvement !== "barbarian_camp" && !t.pillaged)
+      addTileYields(named, ruleSpec("improvements", t.improvement)?.yields);
+    addTileYields(named, tileDisasterYields(t));
+    const residual = emptyTileYields();
+    for (const kind of TILE_TIP_YIELD_ORDER) residual[kind] = engine[kind] - named[kind];
+    const words = tileDetailYieldWords(residual);
+    if (words) lines.push(`<span class="tip-breakdown">Other tile yields: ${words}</span>`);
+  }
   return lines;
 }
 function tileTotalYields(t) {
-  const total = tileBaseYields(t);
-  if (t.improvement && t.improvement !== "barbarian_camp")
-    addTileYields(total, ruleSpec("improvements", t.improvement)?.yields);
+  // The ground — engine figure in sight, catalogue out of it. Both already
+  // carry the improvement, and both now pay a pillaged one nothing until it is
+  // repaired. What is left to add is what stands ON the ground rather than
+  // being part of it.
+  const total = tileYieldFull(t);
   if (t.district) {
     if (!t.district_yields) return null;
     addTileYields(total, t.district_yields);

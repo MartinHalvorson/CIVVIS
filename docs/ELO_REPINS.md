@@ -1729,3 +1729,44 @@ and `0x0b7b_b89a_2d86_c831` to **18,797 and
 `0x728b_8a78_d941_5de3`** across its five profiles. The dedicated age test
 pins both sides of the rule: a golden-age Builder gains two movement and a
 golden-age Settler remains at its shipped base allowance.
+
+## v24 (2026-08-26) — a tile keeps what a disaster left on it, and nobody has to own it first
+
+Two rules corrections in one place, both found from the live board: an
+operator reported a tile Civilization VI was paying **3 Food 3 Production**
+that CIVVIS drew as 2 Food 2 Production, after a volcano went off beside it.
+
+**Fertility was one Food roll; the shipped table rates each yield apart.**
+`RandomEvent_Yields` in `DLC/Expansion2/Data/Expansion2_RandomEvents.xml`
+carries a row per `YieldType`: a Catastrophic eruption leaves Food on 50% of
+the plots it reaches and Production on 25% of them, independently, and a
+Megacolossal one 75% and 35%. CIVVIS had a single `fertility_chance` and spent
+it on Food. `Tile::disaster_production` existed, was summed into every tile's
+yields, and **nothing ever wrote it**. The odds themselves were wrong in four
+more places: `river_flood` and `blizzard` sat at zero although the table gives
+them 15–60% and 10–20% Food, `volcanic_eruption`'s middle tier read 55%
+against the shipped 50%, `hurricane` read 20/40 against 30/45, and
+`dust_storm` 25/45 against 10/20. `docs/FIDELITY.md` said the table "cannot be
+read"; it was on disk. The one approximation left is `river_flood`, whose
+three Floodplains features are rated apart in the file and are averaged into
+the single per-severity rate `DisasterSpec` carries.
+
+**And an unowned plot kept none of it.** `Game::modeled_tile_yields` handed a
+tile nobody owned straight to `Rules::worked_tile_yields`, which reads terrain,
+feature, resource and improvement and knows nothing about the ground's own
+history — so disaster fertility, a neighbouring feature's adjacency, drought
+and fallout were invisible until a border reached the plot. That is exactly
+backwards: unclaimed ground is what a Settler and a Builder choose *between*,
+and Volcanic Soil ships with no `Feature_YieldChanges` row at all, so the
+fertility is the whole of what such a plot is worth. `ground_tile_yields` now
+carries the player-independent half and both the owned and unowned paths go
+through it.
+
+Neither half is a controller treatment that could hide behind a gene: every
+seat reads the same `data/*.json`, and a tile has to pay every player what the
+game pays it. The extra per-tile fertility roll also moves the disaster RNG
+stream, so the anchor's games diverge wholesale rather than at the margin. It
+moves from v23's 18,797 decisions and `0x728b_8a78_d941_5de3` to **18,557 and
+`0x441a_fc9a_dfdb_76ba`** across its five profiles. The shipped ruleset
+fingerprint moves with `data/disasters.json`, to
+`fnv1a64:fbd69339f1ba4e2b`.

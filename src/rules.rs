@@ -2286,9 +2286,25 @@ pub struct DisasterSpec {
     /// Chance an improvement or district in the area is pillaged.
     #[serde(default)]
     pub pillage_chance: Vec<f64>,
-    /// Chance an affected tile gains permanent fertility.
+    /// Chance an affected tile gains a permanent point of FOOD fertility.
+    ///
+    /// Taken from `RandomEvent_Yields` in `Expansion2_RandomEvents.xml`, whose
+    /// rows are per yield type and not one rate for "fertility": the same
+    /// eruption that has a 50% chance of leaving Food has a separate 25% chance
+    /// of leaving Production, and they are rolled apart. See
+    /// [`Self::fertility_production_chance`].
     #[serde(default)]
     pub fertility_chance: Vec<f64>,
+    /// Chance an affected tile gains a permanent point of PRODUCTION fertility,
+    /// the `YIELD_PRODUCTION` half of `RandomEvent_Yields`.
+    ///
+    /// ⚠ `Tile::disaster_production` has been summed into a tile's yields since
+    /// the disasters shipped and **nothing ever wrote it**: fertility was
+    /// modelled as Food alone, so a plot the game paid 3 Food 3 Production
+    /// after an eruption was paid 3 Food 2 Production here. An absent list
+    /// reads as zero, which is what every ruleset older than this field meant.
+    #[serde(default)]
+    pub fertility_production_chance: Vec<f64>,
     /// Citizens a city in the area loses.
     #[serde(default)]
     pub population_loss: Vec<i32>,
@@ -2319,6 +2335,10 @@ impl DisasterSpec {
 
     pub fn fertility_chance(&self, severity: u8) -> f64 {
         Self::tier(&self.fertility_chance, severity)
+    }
+
+    pub fn fertility_production_chance(&self, severity: u8) -> f64 {
+        Self::tier(&self.fertility_production_chance, severity)
     }
 
     pub fn population_loss(&self, severity: u8) -> i32 {
@@ -3548,9 +3568,24 @@ mod tests {
         // `Difficulties` projection added the human's camp Gold above Prince,
         // which `BARBARIAN_CAMP_GOLD_SCALING` runs to -20 at Deity and the
         // data had stopped transcribing at Warlord's +5.
+        // Moved again by reading the disasters' fertility table instead of
+        // guessing it. `RandomEvent_Yields` in
+        // `DLC/Expansion2/Data/Expansion2_RandomEvents.xml` rates each YIELD
+        // TYPE apart, and `data/disasters.json` carried one rate for
+        // "fertility" and applied it to Food alone: `river_flood` and
+        // `blizzard` sat at zero although the table gives them 15-60% and
+        // 10-20% Food, `volcanic_eruption`'s middle tier read 55% against the
+        // shipped 50%, `hurricane` read 20/40 against 30/45 and `dust_storm`
+        // 25/45 against 10/20 — and the `YIELD_PRODUCTION` half of every one of
+        // those rows was not modelled at all, while `Tile::disaster_production`
+        // was already being summed into every tile's yields. This is a
+        // transcription of the shipped file, not a balance choice; the one
+        // approximation is `river_flood`, whose three Floodplains features are
+        // rated apart in the table and averaged into the single per-severity
+        // rate `DisasterSpec` carries.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:dd2560d44eea3238"
+            "fnv1a64:fbd69339f1ba4e2b"
         );
     }
 

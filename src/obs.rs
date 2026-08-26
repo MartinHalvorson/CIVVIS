@@ -1561,9 +1561,47 @@ fn tile_json(
                 .map(|city| city.name.as_str())
         })
         .flatten();
+    // ★★★★★ THE ENGINE'S OWN NUMBER FOR THIS PLOT, SO THE BOARD CANNOT DISAGREE
+    // WITH THE GAME IT IS DRAWING.
+    //
+    // The client used to derive the pips and the tooltip itself — terrain plus
+    // Hills plus feature plus resource plus improvement, read out of the shipped
+    // ruleset. That sum is not what a citizen collects, and it is silently short
+    // by every term the ground carries and the catalogue does not:
+    //
+    //   - the fertility a flood or an eruption left behind (`disaster_yields`,
+    //     exported here since the disasters shipped and never once added up);
+    //   - the host's own per-plot reading on a mirrored board
+    //     (`observed_tile_yield_adjustments`), which is the only place a live
+    //     game's Volcanic Soil is written down at all;
+    //   - a neighbouring feature's `adjacent_yields` (Vesuvius, Yosemite);
+    //   - drought's -1 Food, and the nothing-at-all a flooded, irradiated or
+    //     just-placed-district plot pays;
+    //   - a pillaged improvement, which the client paid in full.
+    //
+    // The operator's report was a 3 Food 3 Production tile on the live map that
+    // the board drew as 2 Food 2 Production, after a volcano went off beside it.
+    // `Game::workable_tile_yields` is the function the citizen planner and the
+    // city's own yields go through, so publishing it is what makes the two agree
+    // by construction instead of by two catalogues staying in step.
+    //
+    // ⚠ GROUND ONLY — no district, no wonder. `Rules::worked_tile_yields`
+    // stops at the improvement and the client adds `district_yields`,
+    // `planned_district` and the wonder on top; sending a total that already
+    // held them would count them twice.
+    //
+    // Live tiles only, for the same reason as `appeal` and `adjacency` above: a
+    // remembered tile is a copy of what the seat once saw, and the engine's
+    // answer is about the plot as it stands now.
+    let yields = if live && g.map.tiles.contains_key(&tile.pos) {
+        json!(g.workable_tile_yields(tile.pos))
+    } else {
+        Value::Null
+    };
     json!({
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,
+        "yields": yields,
         "appeal": appeal,
         "tourism": live.then(|| round1(tourism_by_tile.get(&tile.pos).copied().unwrap_or(0.0))),
         "feature": tile.feature,
@@ -3363,6 +3401,98 @@ mod tests {
         assert_eq!(
             extended["decided"]["victory_label"],
             json!("Mercy Rule - Science")
+        );
+    }
+
+    /// ★★★★★ THE BOARD PUBLISHES THE ENGINE'S OWN TILE YIELDS.
+    ///
+    /// The client used to derive them from the shipped catalogue — terrain,
+    /// Hills, feature, resource, improvement — and that sum has no room for the
+    /// fertility a flood or an eruption leaves on the ground. Volcanic Soil
+    /// carries no yields of its own in Civilization VI either, so a tile the
+    /// game pays 3 Food 3 Production was drawn as the bare Grassland underneath
+    /// it. Publishing `Game::workable_tile_yields` is what makes the two agree
+    /// by construction.
+    #[test]
+    fn a_tiles_published_yields_carry_the_fertility_a_disaster_left() {
+        let mut game = Game::new_full(2, 20, 14, 19_067, 120, 1, false);
+        let ground = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find_map(|unit| {
+                let unit = &game.units[&unit];
+                (unit.kind == "settler").then_some(unit.pos)
+            })
+            .expect("the player starts with a settler");
+        {
+            let tile = game.map.tiles.get_mut(&ground).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let bare = observed_tile(&observation_spectator(&game, 0), ground)["yields"].clone();
+        assert_eq!(bare["food"], json!(2.0), "grassland pays 2 Food: {bare}");
+        assert_eq!(bare["production"], json!(0.0));
+
+        // One eruption's Food and one storm's Production, exactly as
+        // `Tile::disaster_food` and `Tile::disaster_production` hold them.
+        {
+            let tile = game.map.tiles.get_mut(&ground).unwrap();
+            tile.feature = Some(crate::name!("volcanic_soil"));
+            tile.disaster_food = 1.0;
+            tile.disaster_production = 3.0;
+        }
+        let fertile = observed_tile(&observation_spectator(&game, 0), ground)["yields"].clone();
+        assert_eq!(
+            (fertile["food"].clone(), fertile["production"].clone()),
+            (json!(3.0), json!(3.0)),
+            "the board has to draw what the game pays: {fertile}"
+        );
+        // And the raw fertility is still readable beside the total, so the
+        // client can name where the extra came from.
+        let published = observed_tile(&observation_spectator(&game, 0), ground).clone();
+        assert_eq!(published["disaster_yields"]["food"], json!(1.0));
+        assert_eq!(published["disaster_yields"]["production"], json!(3.0));
+    }
+
+    /// The mirror's host-to-model correction is part of what a tile pays, so it
+    /// is part of what the board draws. On a live game this is the only place
+    /// an eruption's fertility is written down at all: the host stores it on the
+    /// plot and the tile catalogue has no row for it.
+    #[test]
+    fn a_tiles_published_yields_carry_the_hosts_own_correction() {
+        let mut game = Game::new_full(2, 20, 14, 19_067, 120, 1, false);
+        let ground = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find_map(|unit| {
+                let unit = &game.units[&unit];
+                (unit.kind == "settler").then_some(unit.pos)
+            })
+            .expect("the player starts with a settler");
+        {
+            let tile = game.map.tiles.get_mut(&ground).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        game.observed_tile_yield_adjustments.insert(
+            ground,
+            crate::rules::Yields {
+                food: 1.0,
+                production: 3.0,
+                ..crate::rules::Yields::default()
+            },
+        );
+        let published = observed_tile(&observation_spectator(&game, 0), ground)["yields"].clone();
+        assert_eq!(
+            (published["food"].clone(), published["production"].clone()),
+            (json!(3.0), json!(3.0)),
+            "host 3/3 against a modelled 2/0: {published}"
         );
     }
 
