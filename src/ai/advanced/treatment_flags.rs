@@ -2869,6 +2869,17 @@ impl AdvancedAi {
         self.religion_race_is_closed = false;
     }
 
+    /// Put Moksha first for a religionless empire under conversion. See
+    /// `moksha_defends_the_faithless`.
+    pub fn enable_moksha_defends_the_faithless(&mut self) {
+        self.moksha_defends_the_faithless = true;
+    }
+
+    /// The twin of `enable_moksha_defends_the_faithless`.
+    pub fn disable_moksha_defends_the_faithless(&mut self) {
+        self.moksha_defends_the_faithless = false;
+    }
+
     /// Put a ceiling on how long a settler waits for an escort. See
     /// `escort_patience_runs_out`.
     pub fn enable_escort_patience_runs_out(&mut self) {
@@ -2883,11 +2894,15 @@ impl AdvancedAi {
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
+
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
+
     // ---- append: l-o ------------------------------------------------
+
     // ---- append: p-r ------------------------------------------------
+
     // ---- append: s-s ------------------------------------------------
 
     // ---- append: t-z ------------------------------------------------

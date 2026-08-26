@@ -4785,6 +4785,44 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Let a religionless empire under conversion reach for the one governor
+    /// that can stop it.
+    ///
+    /// ★★★★ THE ONLY COUNTER IS RANKED LAST. `governor_priority` is keyed on
+    /// the grand strategy alone and ranks Moksha **sixth of seven** under
+    /// Expansion and Recovery and **seventh of seven** under Diplomacy. For an
+    /// empire that founded no religion that ordering is exactly backwards,
+    /// because Moksha's third promotion `citadel_of_god` is the ONLY thing in
+    /// the ruleset that stops a foreign faith taking its cities:
+    ///
+    /// * `RemoveHeresy` needs an Inquisitor, which needs `LaunchInquisition`,
+    ///   which compares `apostle.religion != players[pid].religion` and needs
+    ///   a `holy_city` -- both impossible without founding one.
+    /// * A defensive Missionary needs a religion of our own to spread.
+    /// * `CondemnHeretic` needs a war with the empire doing the spreading.
+    /// * `do_spread` has no target-side gate at all -- not loyalty, not walls,
+    ///   not a garrison, not closed borders, not zone of control.
+    ///
+    /// `city_ignores_foreign_religious_pressure` is the one exception, and
+    /// `city_ignores_foreign_religion` has **no own-religion prerequisite**:
+    /// for an owner holding no faith it blocks every religion outright.
+    ///
+    /// Live King seat `civvis-20260826T112920Z`: no religion founded, four
+    /// religions in a world capped at four, **eleven of twelve cities ended
+    /// under the score leader's faith** -- paying that rival two score points
+    /// each while our own religion term stayed at zero -- and the four
+    /// governors appointed across fifteen spent titles were Amani, Victor,
+    /// Pingala and Reyna. Exactly the top four of the lists above. Moksha was
+    /// never raised.
+    ///
+    /// With this on, an empire with no religion of its own and a live
+    /// `home_conversion_threat` puts Moksha first. Its shipped promotion
+    /// ladder already runs `grand_inquisitor` -> `laying_on_of_hands` ->
+    /// `citadel_of_god`, so nothing else has to change; the four titles that
+    /// buys are the price of the only defence there is, and they have to be
+    /// spent BEFORE the city converts, which is why the ordering rather than
+    /// some later reaction is the fix.
+    moksha_defends_the_faithless: bool,
     /// Let the assigned diplomatic lane size its own Congress ballot.
     ///
     /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
@@ -6288,6 +6326,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            moksha_defends_the_faithless: false,
             lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
@@ -17613,6 +17652,30 @@ impl AdvancedAi {
         }
     }
 
+    /// The governor order for this turn, after the one board condition the
+    /// static table cannot see. See `moksha_defends_the_faithless`.
+    fn governor_priority_for(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+    ) -> Vec<&'static str> {
+        let base = Self::governor_priority(strategy);
+        if !self.moksha_defends_the_faithless
+            // An empire with its own faith defends it with Missionaries,
+            // Apostles and Inquisitors, all of which it can actually buy.
+            // This is for the one that cannot.
+            || g.players[pid].religion.is_some()
+            || self.home_conversion_threat(g, pid).is_none()
+        {
+            return base.to_vec();
+        }
+        let mut order = Vec::with_capacity(base.len());
+        order.push("moksha");
+        order.extend(base.iter().copied().filter(|name| *name != "moksha"));
+        order
+    }
+
     fn governor_priority(strategy: GrandStrategy) -> &'static [&'static str] {
         match strategy {
             GrandStrategy::Expansion => &[
@@ -17813,7 +17876,8 @@ impl AdvancedAi {
     }
 
     fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let priority = Self::governor_priority(plan.strategy);
+        let priority = self.governor_priority_for(g, pid, plan.strategy);
+        let priority = priority.as_slice();
         while g.governor_titles_available(pid) > 0 {
             // Strategy can change every assessment window, but Governor
             // Titles arrive much more slowly. Finish the earliest incumbent's
