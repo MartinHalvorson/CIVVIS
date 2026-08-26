@@ -518,6 +518,7 @@ mod tests {
                 turns_per_tech: 3,
                 unique_units: true,
                 flag: true,
+                heal: false,
                 ..TacticsRules::default()
             },
             civs: vec!["Nubia".to_string(), "Scythia".to_string()],
