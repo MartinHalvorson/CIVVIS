@@ -2970,6 +2970,29 @@ impl AdvancedAi {
         self.base.barbarian_settler_capture = false;
     }
 
+    /// Price a city site's Harbor-eligible coast in the final settlement
+    /// score. See `advanced/coastal_sites.rs`.
+    pub fn enable_coastal_city_sites(&mut self) {
+        self.coastal_city_sites = true;
+    }
+
+    /// The twin of `enable_coastal_city_sites`.
+    pub fn disable_coastal_city_sites(&mut self) {
+        self.coastal_city_sites = false;
+    }
+
+    /// Version 2 keeps the coast baseline and additionally prices the best
+    /// water-resource adjacency around a prospective Harbor.
+    pub fn enable_coastal_city_sites_2(&mut self) {
+        self.coastal_city_sites = false;
+        self.coastal_city_sites_2 = true;
+    }
+
+    /// The twin of `enable_coastal_city_sites_2`.
+    pub fn disable_coastal_city_sites_2(&mut self) {
+        self.coastal_city_sites_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
