@@ -2335,6 +2335,8 @@ impl AdvancedAi {
     /// The twin of `enable_boost_unlock_research`.
     pub fn disable_boost_unlock_research(&mut self) {
         self.boost_unlock_research = false;
+    }
+
     /// Pays the Envoy a city-state's quest promises on the unit or district family it asked for.
     /// The production queue reads the outstanding `train_unit_type` and
     /// `zone_district_type` quests and prices the item the city-state named
