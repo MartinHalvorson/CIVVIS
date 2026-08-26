@@ -1348,6 +1348,18 @@ pub const GENES: &[Gene] = &[
     // table `eureka-chasing-production` reads — the Envoy beside that gene's
     // research, and independent of it.
     Gene { tag: "quest-boost", field: "quest_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_quest_boost, disable: AdvancedAi::disable_quest_boost },
+    // Every adaptive seat pursues a religion unconditionally -- `take_turn_inner`
+    // reads `active_victory_target.is_none()`, and a screen seat has no target --
+    // and nothing weighs that against the science race it competes with.
+    // Measured over a 12,000-seat probe at seeds 95000000.., 89% science
+    // endings: founders won 14.5% (n=8,000) against 20.9% (n=4,000) for
+    // non-founders, a 6.4 pp gap on a binary two thirds of seats perform. It
+    // survives stratification by empire size and WIDENS with it (-2.4 pp at
+    // five cities, -16.3 at eight), and founders end five techs behind.
+    Gene { tag: "skip-the-prophet-race", field: "skip_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_skip_the_prophet_race, disable: AdvancedAi::disable_skip_the_prophet_race },
+    // Buildings are picked cheapest-first, so the Library — the win condition in
+    // a regime that ends 89% science — queues behind every cheaper building.
+    Gene { tag: "science-building-first", field: "science_building_first", kind: Kind::OptIn, enable: AdvancedAi::enable_science_building_first, disable: AdvancedAi::disable_science_building_first },
     // ⭐ FIVE GENES FOR HARD POWER OVER THE MAP (operator, 2026-08-25:
     // "control over chokepoints — controlling with territory an important
     // narrow water passageway. placing a city on a single wide strip of land

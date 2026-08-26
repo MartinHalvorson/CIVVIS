@@ -4807,6 +4807,44 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// Build a science building before one that makes no science.
+    ///
+    /// Carried down to `BasicAi::science_building_first`, which is where the
+    /// build order actually lives: `BasicAi::pick_item` makes 77.8% of this
+    /// empire's builds, and a gene that only reprices `production_value`
+    /// reaches the other 22%. See that flag for the regime argument.
+    science_building_first: bool,
+    /// An adaptive seat stops racing for a Great Prophet, because the race
+    /// costs more science than the religion returns.
+    ///
+    /// ★★★★ EVERY ADAPTIVE SEAT PURSUES A RELIGION, AND NOTHING WEIGHS IT
+    /// AGAINST THE RACE IT COMPETES WITH. `take_turn_inner` sets
+    /// `base.pursue_religion` from `active_victory_target.is_none()` — and a
+    /// screen seat has no explicit target, so the answer is always yes. It
+    /// gates the Holy Site's society choice, the pending-Prophet claim and the
+    /// faith purchase pass alike.
+    ///
+    /// MEASURED over this branch's 12,000-seat probe (seeds 95000000.., 89% of
+    /// games ending on a SCIENCE victory at median turn 185): seats that
+    /// founded a religion won **14.5%** (n=8,000) against **20.9%** (n=4,000)
+    /// for seats that did not — a 6.4 pp gap on a binary two thirds of seats
+    /// perform, against a 16.7% base rate. It survives stratification by
+    /// empire size and the gap WIDENS with it, which is what an opportunity
+    /// cost looks like: −2.4 pp at five cities, −4.5 at six, −8.8 at seven,
+    /// −16.3 at eight. Founders carry five fewer techs at the end (median 62
+    /// against 67), and the 160 religious victories they win do not cover it.
+    ///
+    /// ⚠ The selection runs the RIGHT way. A seat that chased a Prophet and
+    /// was beaten to it spent the faith and the Holy Site anyway and lands in
+    /// the "did not found" group — so that group is contaminated with wasted
+    /// investment and still wins more. Suppressing the race entirely should
+    /// therefore beat 20.9%, not merely reach it.
+    ///
+    /// Byzantium's `taxis` and an explicit Religion target both keep the race;
+    /// this only removes the unconditional yes. Opt-in gene
+    /// `skip-the-prophet-race`.
+    skip_the_prophet_race: bool,
+
     /// Version 2 of `solvency-first-trade-slot`: reserve EVERY empty trade
     /// slot the empire can actually use, not only the first.
     ///
@@ -6001,6 +6039,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_building_first: false,
+            skip_the_prophet_race: false,
             solvency_first_trade_slot_2: false,
             settler_screen: false,
             settler_second_look: false,
@@ -32223,9 +32263,21 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
+        // See `skip_the_prophet_race`: an adaptive seat pursues a religion
+        // unconditionally, and in this regime that trade is measured negative.
         self.base.pursue_religion = g.has_ability(pid, "taxis")
-            || active_victory_target.is_none()
-            || active_victory_target == Some(VictoryTarget::Religion);
+            || active_victory_target == Some(VictoryTarget::Religion)
+            || (active_victory_target.is_none() && !self.skip_the_prophet_race);
+        // The prize and the entry fee are two different gates. Clearing
+        // `pursue_religion` alone discards the winnings while still paying for
+        // the Holy Site that contests the race, so carry the flag down to the
+        // reservation as well — but never against a seat whose own lane is
+        // Religion, and never for Kongo, whose Taxis ability makes the faith
+        // economy unconditional.
+        self.base.skip_prophet_race = self.skip_the_prophet_race
+            && !g.has_ability(pid, "taxis")
+            && active_victory_target != Some(VictoryTarget::Religion);
+        self.base.science_building_first = self.science_building_first;
         if self.base.minor || self.base.barb {
             self.base.take_turn(g, pid);
             return;
