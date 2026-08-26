@@ -2782,18 +2782,79 @@ impl AdvancedAi {
         self.skip_the_prophet_race = false;
     }
 
+    /// Cap the city target at the sites the map can actually seat. See
+    /// `city_target_meets_the_map`.
+    pub fn enable_city_target_meets_the_map(&mut self) {
+        self.city_target_meets_the_map = true;
+    }
+
+    /// The twin of `enable_city_target_meets_the_map`.
+    pub fn disable_city_target_meets_the_map(&mut self) {
+        self.city_target_meets_the_map = false;
+    }
+
+    /// Climb past tier two, and keep climbing while the field out-slots us.
+    /// See `government_ladder_rung`.
+    pub fn enable_government_ladder_2(&mut self) {
+        self.government_ladder_2 = true;
+    }
+
+    /// The twin of `enable_government_ladder_2`.
+    pub fn disable_government_ladder_2(&mut self) {
+        self.government_ladder_2 = false;
+    }
+
+    /// Let an unlocked government the lane's list never names take the seat
+    /// when it carries more policy slots. See `government_capacity_fallback`.
+    pub fn enable_government_capacity_fallback(&mut self) {
+        self.government_capacity_fallback = true;
+    }
+
+    /// The twin of `enable_government_capacity_fallback`.
+    pub fn disable_government_capacity_fallback(&mut self) {
+        self.government_capacity_fallback = false;
+    }
+
+    /// Stop paying a lost victory lane's premiums. See
+    /// `lane_release_when_hopeless`.
+    pub fn enable_lane_release_when_hopeless(&mut self) {
+        self.lane_release_when_hopeless = true;
+    }
+
+    /// The twin of `enable_lane_release_when_hopeless`.
+    pub fn disable_lane_release_when_hopeless(&mut self) {
+        self.lane_release_when_hopeless = false;
+    }
+
+    /// Sue for peace when a war has taken nothing and cannot be paid for. See
+    /// `peace_when_war_does_not_pay`.
+    pub fn enable_peace_when_war_does_not_pay(&mut self) {
+        self.peace_when_war_does_not_pay = true;
+    }
+
+    /// The twin of `enable_peace_when_war_does_not_pay`.
+    pub fn disable_peace_when_war_does_not_pay(&mut self) {
+        self.peace_when_war_does_not_pay = false;
+    }
+
+    /// Refuse a war the treasury cannot pay for. See `war_needs_a_treasury`.
+    pub fn enable_war_needs_a_treasury(&mut self) {
+        self.war_needs_a_treasury = true;
+    }
+
+    /// The twin of `enable_war_needs_a_treasury`.
+    pub fn disable_war_needs_a_treasury(&mut self) {
+        self.war_needs_a_treasury = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
-
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
-
     // ---- append: l-o ------------------------------------------------
-
     // ---- append: p-r ------------------------------------------------
-
     // ---- append: s-s ------------------------------------------------
 
     // ---- append: t-z ------------------------------------------------

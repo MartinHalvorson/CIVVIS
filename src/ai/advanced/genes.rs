@@ -1428,6 +1428,64 @@ pub const GENES: &[Gene] = &[
     // alone: a stand-still posture in a major war screened NEGATIVELY at
     // 38,160 seats, which `advanced/field_craft.rs` records in its header.
     Gene { tag: "chokepoint-garrison", field: "chokepoint_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_chokepoint_garrison, disable: AdvancedAi::disable_chokepoint_garrison },
+    // `strategic_government` chooses from a hand-written priority list per
+    // lane, and a government missing from that list is invisible even when the
+    // empire already owns its civic. Live King seat 2026-08-26 (run
+    // `civvis-20260826T112920Z`): Corporate Libertarianism -- ten policy slots
+    // -- was held from turn 222 and the seat played Classical Republic's four
+    // to the end, because no lane list names it. Six of the thirteen
+    // governments in `data/governments.json` appear in no Diplomacy or Culture
+    // list at all. The lists rank comparable governments; they were never
+    // meant to cap capacity.
+    Gene { tag: "government-capacity-fallback", field: "government_capacity_fallback", kind: Kind::OptIn, enable: AdvancedAi::enable_government_capacity_fallback, disable: AdvancedAi::disable_government_capacity_fallback },
+    // Version one of the ladder retires the moment any tier-2 gate civic
+    // lands and refuses to climb past half the clock. The live King seat
+    // (`civvis-20260826T112920Z`, 2026-08-26) shows which half of that is
+    // binding: it reached NO tier-2 gate in 248 turns, so the retirement
+    // clause never fired, while the gate civics that carry real policy
+    // capacity all sit past turn 125 at Online speed. Version two ranks every
+    // government whose gate it does not own and whose slots beat the one it is
+    // playing, takes the cheapest such gate, and holds the window open to
+    // three quarters of the clock for as long as a living major plays a
+    // government with more slots than ours.
+    Gene { tag: "government-ladder-2", field: "government_ladder_2", kind: Kind::OptIn, enable: AdvancedAi::enable_government_ladder_2, disable: AdvancedAi::disable_government_ladder_2 },
+    // An explicit `victory_target` is a set of hard refusals, not a
+    // preference: Great Work buildings score `-10_000` off the Culture lane,
+    // space-race projects `-10_000` off the Science lane, the wonder gate
+    // opens for Culture and Score alone, and `culture_spending` -- the only
+    // Faith sink a religion-less empire has -- is dispatched on the Culture
+    // lane only. Live King seat `civvis-20260826T112920Z`, 2026-08-26: 248
+    // turns of `--victory diplomatic` at 2 diplomatic points against the
+    // leader's 19, ending with no Museum in twelve cities, a Spaceport
+    // finished at turn 225 with zero launches, 6,329 unspendable Faith, seven
+    // wonders to the leader's thirteen, and a 448-point loss on score.
+    Gene { tag: "lane-release-when-hopeless", field: "lane_release_when_hopeless", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_release_when_hopeless, disable: AdvancedAi::disable_lane_release_when_hopeless },
+    // Every solvency guard in the agent runs AFTER the declaration:
+    // `live_war_economy_requires_recovery` reprices production, the
+    // `maintenance_emergency` arm swaps a policy card, `war_treasury_floor`
+    // reserves upgrade gold. Live King seat `civvis-20260826T112920Z`,
+    // 2026-08-26: 25 Gold at -11 a turn at turn 100, an elective declaration
+    // on the Maori at turn 110 (`source: civvis`, twenty-two turns after
+    // accepting peace with them), fifty consecutive turns at a zero treasury,
+    // military power 218 -> 30 as unpaid units disbanded, and a bankruptcy
+    // amenity penalty of 18 across nine cities. This asks the same reserve
+    // question one turn earlier, where the answer can still prevent the war.
+    Gene { tag: "war-needs-a-treasury", field: "war_needs_a_treasury", kind: Kind::OptIn, enable: AdvancedAi::enable_war_needs_a_treasury, disable: AdvancedAi::disable_war_needs_a_treasury },
+    // The peace desk's fatigue clause is written `!appointed_objective &&
+    // fatigued && ...`, so an appointed campaign that never lands is a
+    // permanent exemption from peace. Live King seat
+    // `civvis-20260826T112920Z`, 2026-08-26: 172 of 248 turns at war with the
+    // Maori behind one objective appointed at turn 100 and never taken, while
+    // an air surge stood appointed against a third empire at a zero treasury.
+    // Every peace the seat did ask for -- four of four -- was accepted.
+    Gene { tag: "peace-when-the-war-does-not-pay", field: "peace_when_war_does_not_pay", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_when_war_does_not_pay, disable: AdvancedAi::disable_peace_when_war_does_not_pay },
+    // `assess` sizes the city target from a land census and never asks
+    // whether that many sites exist; every settler gate downstream reads the
+    // target. Live King seat `civvis-20260826T112920Z`, 2026-08-26: target
+    // sixteen, twelve cities, **168 idle settler-turns**, five Settlers parked
+    // from turn 180 to turn 230 with nowhere to walk, and the two sites that
+    // were founded late scored 39.1 and 47.8 against the capital's 186.2.
+    Gene { tag: "city-target-meets-the-map", field: "city_target_meets_the_map", kind: Kind::OptIn, enable: AdvancedAi::enable_city_target_meets_the_map, disable: AdvancedAi::disable_city_target_meets_the_map },
 ];
 
 // ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══

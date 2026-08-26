@@ -1107,6 +1107,15 @@
           "district-coverage-2": null
         }
       },
+      "government-ladder": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "government-ladder": null,
+          "government-ladder-2": null
+        }
+      },
       "holy-site-where-the-threat-is": {
         "rule_on": [],
         "head": "holy-site-where-the-threat-is",

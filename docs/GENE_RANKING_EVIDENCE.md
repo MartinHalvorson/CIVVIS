@@ -179,6 +179,19 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version |
+|---|---|---|---:|
+| `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 |
+| `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 |
+| `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 |
+| `lane-release-when-hopeless` | off (unmeasured) | Stop paying a lost victory lane's premiums. | 1 |
+| `peace-when-the-war-does-not-pay` | off (unmeasured) | Sue for peace when a war has taken nothing and cannot be paid for. | 1 |
+| `war-needs-a-treasury` | off (unmeasured) | Refuse a war the treasury cannot pay for. | 1 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:

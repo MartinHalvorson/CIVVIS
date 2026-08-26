@@ -34902,3 +34902,372 @@ fn the_native_emergency_purchase_spends_through_the_reserve() {
         "the whole treasury went to the defence"
     );
 }
+
+/// ★★★★ THE LANE LIST IS A PREFERENCE ORDER, NOT A CAPACITY CAP. Live King
+/// seat `civvis-20260826T112920Z` held Corporate Libertarianism -- ten policy
+/// slots -- from turn 222 and played Classical Republic's four to turn 248,
+/// because no lane's priority list in `strategic_government` names it. See
+/// `AdvancedAi::government_capacity_fallback`.
+#[test]
+fn an_unlocked_government_the_lane_list_never_names_still_takes_the_seat() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_501);
+    game.players[0].civics.insert(crate::name!("code_of_laws"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("political_philosophy"));
+    game.players[0].government = Some("classical_republic".to_string());
+    // The exact live shape: the tier-4 gate is owned, the tier-2 and tier-3
+    // gates the Diplomacy list names are not.
+    game.players[0]
+        .civics
+        .insert(crate::name!("corporate_libertarianism"));
+
+    let mut shipped = AdvancedAi::new();
+    shipped.victory_target = Some(VictoryTarget::Diplomacy);
+    let mut off = game.clone();
+    shipped.strategic_government(&mut off, 0, GrandStrategy::Diplomacy);
+    assert_eq!(
+        off.players[0].government.as_deref(),
+        Some("classical_republic"),
+        "the shipped lane list cannot see a government it does not name"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Diplomacy);
+    ai.enable_government_capacity_fallback();
+    let mut on = game.clone();
+    ai.strategic_government(&mut on, 0, GrandStrategy::Diplomacy);
+    assert_eq!(
+        on.players[0].government.as_deref(),
+        Some("corporate_libertarianism"),
+        "the unlocked ten-slot government wins the seat"
+    );
+}
+
+/// The fallback only ever raises policy capacity: an unlocked government with
+/// fewer slots than the listed pick is still ignored, and the Anarchy guard
+/// keeps its veto. See `AdvancedAi::government_capacity_fallback`.
+#[test]
+fn the_capacity_fallback_never_trades_policy_slots_away() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_502);
+    game.players[0].civics.insert(crate::name!("code_of_laws"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("political_philosophy"));
+    // Only the tier-1 governments are unlocked, and the seat already plays
+    // the richest of them.
+    game.players[0].government = Some("classical_republic".to_string());
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Diplomacy);
+    ai.enable_government_capacity_fallback();
+    ai.strategic_government(&mut game, 0, GrandStrategy::Diplomacy);
+    assert_eq!(
+        game.players[0].government.as_deref(),
+        Some("classical_republic"),
+        "nothing unlocked beats four slots, so the seat stands"
+    );
+}
+
+/// Version two of the ladder climbs past tier two, and keeps climbing past
+/// the half-clock while the field out-slots the empire. See
+/// `AdvancedAi::government_ladder_rung`.
+#[test]
+fn the_second_government_ladder_climbs_until_the_slots_are_level() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_503);
+    let mut ai = AdvancedAi::new();
+    ai.enable_government_ladder_2();
+
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Diplomacy),
+        None,
+        "before Political Philosophy the ladder stands down, as in version one"
+    );
+    game.players[0]
+        .civics
+        .insert(crate::name!("political_philosophy"));
+    game.players[0].government = Some("classical_republic".to_string());
+
+    // The cheapest gate that raises capacity above the current four slots.
+    let first = ai.government_ladder_goal(&game, 0, GrandStrategy::Diplomacy);
+    assert!(
+        first.is_some(),
+        "a four-slot government has somewhere to climb to"
+    );
+    let first = first.unwrap();
+    assert!(
+        game.rules
+            .governments
+            .iter()
+            .any(|(name, spec)| spec.civic.as_deref() == Some(first)
+                && name.as_str() != "classical_republic"),
+        "the goal is some government's own gate civic"
+    );
+
+    // ★ The difference from version one: owning that gate does NOT end the
+    // climb while a richer government is still out of reach.
+    game.players[0].civics.insert(Name::new(first));
+    game.players[0].government = Some("merchant_republic".to_string());
+    let second = ai.government_ladder_goal(&game, 0, GrandStrategy::Diplomacy);
+    assert!(
+        second.is_some() && second != Some(first),
+        "version one retired here; version two takes the next rung: {second:?}"
+    );
+
+    // Past the half clock, level with the field, the shipped window stands.
+    game.turn = game.max_turns / 2 + 5;
+    game.players[1].government = Some("merchant_republic".to_string());
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Diplomacy),
+        None,
+        "level on slots, the climb stops at the shipped half-clock window"
+    );
+
+    // Behind the field on slots, it keeps climbing to three quarters.
+    game.players[1].government = Some("digital_democracy".to_string());
+    assert!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Diplomacy)
+            .is_some(),
+        "a rival with more slots holds the window open"
+    );
+    game.turn = (game.max_turns as f64 * 0.8) as u32;
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Diplomacy),
+        None,
+        "and it still closes at three quarters"
+    );
+
+    // Off, it is an exact no-op.
+    ai.disable_government_ladder_2();
+    game.turn = 10;
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Diplomacy),
+        None,
+        "with neither version on, the ladder is silent"
+    );
+}
+
+/// ★★★★ THE ASSIGNED LANE VETOES THE SCOREBOARD. A `victory_target` refuses
+/// every Great Work building off the Culture lane and every space-race
+/// project off the Science lane. Live King seat `civvis-20260826T112920Z`
+/// played the diplomatic lane to turn 248 at 2 diplomatic points against 19
+/// and built no Museum in twelve cities. See
+/// `AdvancedAi::lane_release_when_hopeless`.
+#[test]
+fn a_lost_lane_stops_vetoing_the_buildings_that_score() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_504);
+    game.max_turns = 250;
+    game.turn = 200;
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Diplomacy);
+    ai.enable_lane_release_when_hopeless();
+
+    // Level on the lane, there is no verdict and the vetoes stand.
+    assert!(
+        !ai.assigned_lane_is_lost(&game, 0),
+        "nobody is winning the diplomatic race, so nothing is lost"
+    );
+
+    // The live shape: the rival is most of the way through the race and the
+    // seat has barely started.
+    game.players[0].dvp = 2;
+    game.players[1].dvp = 19;
+    assert!(
+        ai.assigned_lane_is_lost(&game, 0),
+        "two points against nineteen with fifty turns left is a lost race"
+    );
+
+    // Before the verdict turn the same board is not yet a verdict.
+    game.turn = 100;
+    assert!(
+        !ai.assigned_lane_is_lost(&game, 0),
+        "inside the first half the race is still open"
+    );
+
+    // And the gene is an exact no-op when off.
+    game.turn = 200;
+    ai.disable_lane_release_when_hopeless();
+    assert!(
+        !ai.assigned_lane_is_lost(&game, 0),
+        "off, there is never a verdict"
+    );
+}
+
+/// The verdict is never reached for a Score seat, which is the lane the
+/// release falls back to. See `AdvancedAi::lane_release_when_hopeless`.
+#[test]
+fn the_score_lane_is_never_released() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_505);
+    game.max_turns = 250;
+    game.turn = 240;
+    game.players[0].dvp = 0;
+    game.players[1].dvp = 19;
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Score);
+    ai.enable_lane_release_when_hopeless();
+    assert!(
+        !ai.assigned_lane_is_lost(&game, 0),
+        "the score lane runs to the last turn"
+    );
+}
+
+/// ★★★★ THE SEAT DECLARED AT ZERO GOLD. Live King seat
+/// `civvis-20260826T112920Z` declared war on the Maori at turn 110 holding a
+/// treasury that had been empty for fifty turns. See
+/// `AdvancedAi::war_needs_a_treasury`.
+#[test]
+fn a_war_is_not_declared_out_of_an_empty_treasury() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_506);
+    let mut ai = AdvancedAi::new();
+    ai.enable_war_needs_a_treasury();
+
+    // Solvent: the veto is silent.
+    game.players[0].gold = 400.0;
+    game.players[0].gold_per_turn = 6.0;
+    assert!(
+        ai.war_is_affordable(&game, 0),
+        "a solvent empire may still declare"
+    );
+
+    // The live shape at turn 110: nothing in the bank and a deficit.
+    game.players[0].gold = 17.0;
+    game.players[0].gold_per_turn = -7.0;
+    assert!(
+        !ai.war_is_affordable(&game, 0),
+        "an empire inside the engine's own recovery condition may not"
+    );
+
+    // A full treasury that the deficit will drain before the campaign lands.
+    game.players[0].gold = 150.0;
+    game.players[0].gold_per_turn = -30.0;
+    assert!(
+        !ai.war_is_affordable(&game, 0),
+        "a treasury that runs dry inside the solvency horizon may not either"
+    );
+
+    // Off, it is an exact no-op.
+    ai.disable_war_needs_a_treasury();
+    assert!(
+        ai.war_is_affordable(&game, 0),
+        "off, every war is affordable again"
+    );
+}
+
+/// ★★★★ SETTLERS WITH NOWHERE TO GO. The city target is a land census; the
+/// map is not obliged to seat it. Live King seat `civvis-20260826T112920Z`
+/// wanted sixteen cities, founded twelve and burned 168 idle settler-turns.
+/// See `AdvancedAi::city_target_meets_the_map`.
+#[test]
+fn the_city_target_is_capped_by_the_sites_the_map_can_seat() {
+    let (game, _capital, home) = empire_with_a_capital(71_507);
+    let ai = AdvancedAi::new();
+
+    let room = ai.map_settlement_room(&game, 0, &[home], 16);
+    assert!(
+        room <= 16,
+        "the walk stops once it has counted what was asked for"
+    );
+
+    // Every counted site stands at least the exclusion distance from the
+    // others, so two plots three tiles apart are one seat, not two.
+    let plenty = ai.map_settlement_room(&game, 0, &[home], 4);
+    assert!(
+        plenty <= 4,
+        "the cap is honoured for a smaller ask as well: {plenty}"
+    );
+    assert!(
+        room >= plenty,
+        "asking for more never seats fewer: {room} against {plenty}"
+    );
+
+    // No origins is no room, and no want is no work.
+    assert_eq!(ai.map_settlement_room(&game, 0, &[], 16), 0);
+    assert_eq!(ai.map_settlement_room(&game, 0, &[home], 0), 0);
+}
+
+/// ★★★★ AN APPOINTED OBJECTIVE IS A PERMANENT EXEMPTION FROM PEACE. The
+/// shipped fatigue clause is written `!appointed_objective && fatigued`, so a
+/// campaign that never lands keeps the empire at war for the rest of the
+/// game. Live King seat `civvis-20260826T112920Z`: 172 of 248 turns at war
+/// behind one objective appointed at turn 100 and never taken. See
+/// `AdvancedAi::peace_when_war_does_not_pay`.
+#[test]
+fn a_war_that_takes_nothing_and_cannot_be_paid_for_sues_for_peace() {
+    let (mut game, _second, their_capital) = timed_war_fixture(7);
+    // The rival needs a second city: white peace is not offered to an empire
+    // down to its last one.
+    let their_position = game.cities[&their_capital].pos;
+    found_nearby_test_city(&mut game, 1, their_position);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    game.turn = 140;
+    // The live shape: a treasury that has been empty for fifty turns.
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -11.0;
+
+    // A plan with an APPOINTED objective — the case the shipped clause
+    // exempts from peace forever.
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(their_capital),
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    // `appointed_objective` reads the war PLAN in its exploit phase, not the
+    // strategic plan's target city: that is the exemption under test.
+    let appointed = |game: &Game| {
+        timed_plan(
+            game,
+            their_capital,
+            crate::name!("bronze_working"),
+            crate::name!("swordsman"),
+            None,
+            None,
+            WarPhase::Exploit,
+        )
+    };
+
+    let mut shipped = AdvancedAi::new();
+    shipped.war_plan = Some(appointed(&game));
+    shipped.major_war_since = Some(game.turn - 40);
+    shipped.last_campaign_progress = game.turn - 40;
+    let mut untouched = game.clone();
+    shipped.advanced_diplomacy(&mut untouched, 0, &plan);
+    assert!(
+        !shipped.peace_offers.contains(&1),
+        "the shipped desk exempts an appointed objective from the fatigue clause"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_peace_when_war_does_not_pay();
+    ai.war_plan = Some(appointed(&game));
+    ai.major_war_since = Some(game.turn - 40);
+    ai.last_campaign_progress = game.turn - 40;
+    let mut treated = game.clone();
+    ai.advanced_diplomacy(&mut treated, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "a forty-turn war that has taken nothing out of an empty treasury sues for peace"
+    );
+
+    // A campaign that is actually progressing keeps its war.
+    let mut moving = AdvancedAi::new();
+    moving.enable_peace_when_war_does_not_pay();
+    moving.war_plan = Some(appointed(&game));
+    moving.major_war_since = Some(game.turn - 40);
+    moving.last_campaign_progress = game.turn;
+    let mut solvent = game.clone();
+    solvent.players[0].gold = 600.0;
+    solvent.players[0].gold_per_turn = 12.0;
+    moving.advanced_diplomacy(&mut solvent, 0, &plan);
+    assert!(
+        !moving.peace_offers.contains(&1),
+        "a paid-for campaign that is still landing blows is not interrupted"
+    );
+}
