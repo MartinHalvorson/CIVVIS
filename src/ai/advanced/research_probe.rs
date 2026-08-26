@@ -1031,6 +1031,13 @@ fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    assert!(
+        live.wonder_score_tally,
+        "the deployment now enables the independently scored wonder lane"
+    );
+    // This test isolates the live-only race's era and queue limits. The
+    // separately default-on tally lane intentionally does not share them.
+    live.disable_wonder_score_tally();
     let raced = live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
     assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
     // ★★★★ And prices it higher as the tally approaches: ×1 at the start,
@@ -1425,6 +1432,10 @@ fn the_live_seat_does_not_open_an_elective_war() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.no_elective_war);
+    assert!(
+        live.elective_war_yields_to_a_lane,
+        "the deployment routes elective-war yields through the active lane"
+    );
     let journal = crate::reasoning::Journal::recording();
     live.attach_journal(journal.handle());
     assert_ne!(
@@ -1436,9 +1447,12 @@ fn the_live_seat_does_not_open_an_elective_war() {
         .detail
         .contains("strong enough to take what a neighbour has")));
 
-    // The control arm takes the branch again.
+    // The control arm takes the branch again when both independent policies
+    // that suppress its old stock heuristic are withheld.
     live.disable_no_elective_war();
+    live.disable_elective_war_yields_to_a_lane();
     assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    live.enable_elective_war_yields_to_a_lane();
     live.enable_no_elective_war();
 
     // A war the neighbour opens is still answered: "already at war" is
