@@ -24891,6 +24891,61 @@ impl Game {
         out
     }
 
+    /// Where to walk toward `target` when the way forward is blocked by
+    /// nothing but this unit's own units.
+    ///
+    /// The cheap gate first: unless some neighbour is a tile this unit may
+    /// cross and may not stand on, there is no crossing to look for — and that
+    /// is exactly one of ours on our own stacking layer, because every other
+    /// refusal ([`Game::entry_at`]) blocks the crossing too. Past that gate the
+    /// answer is the reachable tile that most improves the distance to
+    /// `target` and whose walk actually crosses one of ours, which is what
+    /// keeps this from quietly becoming a second mover competing with an
+    /// ordinary march. Execute it with `Action::MoveTo`, the only action that
+    /// may cross.
+    ///
+    /// Both a controller and the browser's travel order need this, and for the
+    /// same reason: a router that only ever offers a tile the unit may stand
+    /// on has nothing to say about a column in a defile.
+    ///
+    /// Deliberately unbounded: a caller reaches this only when every ordinary
+    /// step has already been refused, so the unit is boxed in and its
+    /// reachable set is small. A cap here would silently drop the far end of a
+    /// long column.
+    pub fn pass_through_destination(
+        &self,
+        uid: u32,
+        target: Pos,
+        stop_range: i32,
+    ) -> Option<Pos> {
+        let cur = self.units.get(&uid)?.pos;
+        let here = self.wdist(cur, target);
+        if here <= stop_range {
+            return None;
+        }
+        if !self
+            .nbrs(cur)
+            .into_iter()
+            .any(|n| self.can_pass(uid, cur, n) && !self.can_stop(uid, n))
+        {
+            return None;
+        }
+        let mut candidates: Vec<(i32, Pos)> = self
+            .reachable(uid)
+            .into_iter()
+            .map(|pos| (self.wdist(pos, target), pos))
+            .filter(|(distance, _)| *distance < here && *distance >= stop_range)
+            .collect();
+        candidates.sort_unstable();
+        candidates
+            .into_iter()
+            .find(|(_, pos)| {
+                self.path_to(uid, *pos)
+                    .is_some_and(|path| path.iter().any(|step| !self.can_stop(uid, *step)))
+            })
+            .map(|(_, pos)| pos)
+    }
+
     /// The movement a unit would pay to enter `to` from `from` — the exact
     /// preflight a melee blow needs after a move (`can_pay_melee_entry`).
     pub(crate) fn step_cost_for(&self, uid: u32, from: Pos, to: Pos) -> f64 {

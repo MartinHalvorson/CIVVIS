@@ -488,3 +488,77 @@ fn the_threat_reading_still_passes_everything() {
         "and it is a reading, never a permission: a rival's unit still blocks the march"
     );
 }
+
+// ----------------------------------------------------------------------- T11
+
+/// ★★★★ THE REASON THIS MATTERS AT THE BOARD. A column in a one-tile defile
+/// has no legal step at all under the old rule: each unit's only way forward
+/// holds the unit in front of it, so the whole column stands still for the
+/// rest of the game. Here the controller walks the rear unit through its own
+/// column and out the far end, which is one order (`MoveTo`) and never one
+/// step.
+#[test]
+fn the_controller_files_a_column_through_a_defile() {
+    let (mut g, start, _) = plain_board(6501);
+    // A one-tile-wide corridor: everything that is not the line is mountain.
+    let mut line = vec![start];
+    let mut cursor = start;
+    let mut previous: Option<Pos> = None;
+    for _ in 0..5 {
+        let step = g
+            .nbrs(cursor)
+            .into_iter()
+            .find(|pos| {
+                Some(*pos) != previous
+                    && !line.contains(pos)
+                    && line.iter().all(|held| g.wdist(*held, *pos) >= 1)
+                    && g.wdist(start, *pos) == line.len() as i32
+            })
+            .expect("the controlled map continues the corridor");
+        previous = Some(cursor);
+        cursor = step;
+        line.push(step);
+    }
+    let corridor: std::collections::BTreeSet<Pos> = line.iter().copied().collect();
+    for pos in g.wdisk(start, 6) {
+        if !corridor.contains(&pos) {
+            g.map.tiles.get_mut(&pos).expect("a tile").terrain = crate::name!("mountain");
+        }
+    }
+    let target = *line.last().expect("the corridor has an end");
+
+    // Three horsemen nose to tail, the rear one ordered forward. Four
+    // movement points: enough to cross both and arrive, and not enough to
+    // make the arrival free.
+    let front = g.spawn_unit("horseman", 0, line[2]);
+    let middle_unit = g.spawn_unit("horseman", 0, line[1]);
+    let rear = g.spawn_unit("horseman", 0, line[0]);
+    g.begin_turn(0);
+
+    assert!(
+        g.nbrs(line[0])
+            .into_iter()
+            .filter(|pos| corridor.contains(pos))
+            .all(|pos| !g.can_move(rear, pos)),
+        "the fixture is a real defile: the rear unit has no single legal step forward"
+    );
+
+    let ai = crate::ai::BasicAi::new();
+    let moved = ai.step_toward_range(&mut g, 0, rear, target, 0);
+
+    assert!(
+        moved,
+        "the rear unit advances through its own column instead of standing still"
+    );
+    assert_eq!(
+        g.units[&rear].pos, line[4],
+        "it crosses both units in front and spends the rest of its movement \
+         advancing, exactly as a walk ordered to a distant tile does"
+    );
+    assert_eq!(
+        g.units[&rear].moves_left, 0.0,
+        "and it paid a movement point for every tile, crossings included"
+    );
+    assert_eq!(g.units[&middle_unit].pos, line[1], "the column does not shuffle");
+    assert_eq!(g.units[&front].pos, line[2]);
+}

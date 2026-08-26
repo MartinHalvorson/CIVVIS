@@ -11824,21 +11824,22 @@ impl BasicAi {
 
         // The common case above stays as cheap as the original greedy AI;
         // invoke A* only when no legal neighbor makes geometric progress.
-        let next = match g.route_step(uid, target, stop_range) {
-            Some(p) if g.can_move(uid, p) => p,
-            _ => return false,
-        };
-        if self.path_move(g, pid, uid, next) {
-            return true;
-        }
-        // A peer can take the A* tile first; sidestep at equal distance so
-        // a marching column keeps flowing around the blockage.
-        for p in g.nbrs(cur) {
-            if g.wdist(p, target) == g.wdist(cur, target)
-                && g.can_move(uid, p)
-                && self.path_move(g, pid, uid, p)
-            {
+        if let Some(next) = g
+            .route_step(uid, target, stop_range)
+            .filter(|p| g.can_move(uid, *p))
+        {
+            if self.path_move(g, pid, uid, next) {
                 return true;
+            }
+            // A peer can take the A* tile first; sidestep at equal distance so
+            // a marching column keeps flowing around the blockage.
+            for p in g.nbrs(cur) {
+                if g.wdist(p, target) == g.wdist(cur, target)
+                    && g.can_move(uid, p)
+                    && self.path_move(g, pid, uid, p)
+                {
+                    return true;
+                }
             }
         }
         // ★★★★ EVERYTHING ABOVE ASKS FOR A TILE THIS UNIT MAY BE LEFT
@@ -11849,7 +11850,7 @@ impl BasicAi {
         // reached here and never by the greedy loop above. Deliberately last:
         // the unit is otherwise standing still this turn, so this replaces a
         // hold and never a march anybody already chose.
-        if let Some(dest) = Self::pass_through_walk(g, uid, target, stop_range) {
+        if let Some(dest) = g.pass_through_destination(uid, target, stop_range) {
             if self.path_walk_to(g, pid, uid, dest) {
                 return true;
             }
@@ -11857,50 +11858,6 @@ impl BasicAi {
         false
     }
 
-    /// The tile beyond our own column, when the way forward is blocked by
-    /// nothing else.
-    ///
-    /// Only a neighbour this unit may cross and may not stand on counts as the
-    /// blockage — that is exactly one of ours on our own stacking layer, since
-    /// every other refusal ([`Game::entry_at`]) blocks the crossing too. The
-    /// answer is the tile past it that most improves the distance to `target`
-    /// and that this turn's movement actually reaches, ties broken by
-    /// position so the choice is deterministic.
-    fn pass_through_walk(g: &Game, uid: u32, target: Pos, stop_range: i32) -> Option<Pos> {
-        let cur = g.units.get(&uid)?.pos;
-        let here = g.wdist(cur, target);
-        if here <= stop_range {
-            return None;
-        }
-        let mut best: Option<(i32, Pos)> = None;
-        for blocker in g.nbrs(cur) {
-            if g.wdist(blocker, target) >= here
-                || !g.can_pass(uid, cur, blocker)
-                || g.can_stop(uid, blocker)
-            {
-                continue;
-            }
-            for beyond in g.nbrs(blocker) {
-                let distance = g.wdist(beyond, target);
-                if beyond == cur
-                    || distance >= here
-                    || distance < stop_range
-                    || !g.can_stop(uid, beyond)
-                {
-                    continue;
-                }
-                // The only expensive question, asked for the few tiles past an
-                // actual blockage: is the walk affordable this turn.
-                if g.path_to(uid, beyond).is_none() {
-                    continue;
-                }
-                if best.is_none_or(|(bd, bp)| (distance, beyond) < (bd, bp)) {
-                    best = Some((distance, beyond));
-                }
-            }
-        }
-        best.map(|(_, pos)| pos)
-    }
 
     fn settle_value(&self, g: &Game, pos: Pos) -> f64 {
         let mut total = 0.0;

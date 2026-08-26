@@ -327,7 +327,18 @@ pub fn route_step(session: &Session, parsed: &Value) -> Value {
             if !owned {
                 json!({"error": "not your unit"})
             } else {
-                match session.game.route_step(unit, to, 0) {
+                // The router only ever offers a tile the unit may stand on,
+                // so a column packed into a defile gets nothing from it. The
+                // shipped game walks such a unit through its own column and
+                // stops it beyond (`Game::entry_at`, `docs/MOVEMENT.md`); the
+                // client executes whatever comes back with `move_to`, which
+                // is the one action that may cross, so a whole walk answers
+                // here exactly as a single step does.
+                let step = session
+                    .game
+                    .route_step(unit, to, 0)
+                    .or_else(|| session.game.pass_through_destination(unit, to, 0));
+                match step {
                     Some(step) => json!({"step": [step.0, step.1], "error": Value::Null}),
                     None => json!({"step": Value::Null, "error": Value::Null}),
                 }
