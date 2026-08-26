@@ -2913,9 +2913,40 @@ impl AdvancedAi {
         self.treasury_at_work_2 = false;
     }
 
+    // Filed here rather than under a marker: `test_treatment_append_points`
+    // reads every line under a marker as an entry and takes its first
+    // identifier, so a whole function files as `pub` and `self`.
+
+    /// On an advance, no unit ends the turn more than the body's pace plus
+    /// one tile closer to the objective than the force's anchor stood, so a
+    /// horseman does not meet the enemy four tiles before the line does.
+    /// See `close_as_a_body`.
+    pub fn enable_close_as_a_body(&mut self) {
+        self.close_as_a_body = true;
+    }
+
+    /// The twin of `enable_close_as_a_body`.
+    pub fn disable_close_as_a_body(&mut self) {
+        self.close_as_a_body = false;
+    }
+
+    /// A melee unit's tile earns the screen weight for each unscreened
+    /// shooter it would stand beside and in front of, and a shooter's tile
+    /// earns it for a melee friend beside it and nearer the enemy — the
+    /// arena's own definition of screened. See `screen_the_shooters`.
+    pub fn enable_screen_the_shooters(&mut self) {
+        self.screen_the_shooters = true;
+    }
+
+    /// The twin of `enable_screen_the_shooters`.
+    pub fn disable_screen_the_shooters(&mut self) {
+        self.screen_the_shooters = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
+
 
     // ---- append: e-f ------------------------------------------------
 
@@ -2926,6 +2957,7 @@ impl AdvancedAi {
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
+
 
     // ---- append: t-z ------------------------------------------------
 }

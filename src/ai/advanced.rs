@@ -4416,6 +4416,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// On an advance, no unit ends the turn more than the body's pace plus
+    /// one tile closer to the objective than the force's anchor stood. Opt-in
+    /// gene `close-as-a-body`; see `advanced/close_as_a_body.rs`.
+    close_as_a_body: bool,
     /// Want as many cities as the map can seat, not as many as it has land
     /// for.
     ///
@@ -5036,6 +5040,11 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A melee tile beside an unscreened shooter and nearer the enemy earns
+    /// the screen weight, and a shooter's tile beside a melee friend in front
+    /// of it earns the same. Opt-in gene `screen-the-shooters`; see
+    /// `advanced/close_as_a_body.rs`.
+    screen_the_shooters: bool,
     /// Build a science building before one that makes no science.
     ///
     /// Carried down to `BasicAi::science_building_first`, which is where the
@@ -5580,6 +5589,9 @@ mod religious_defence;
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
 mod field_craft;
+/// Close as a body, and screen the shooters: two opt-in genes in the deployed
+/// mover's tile score; see `advanced/close_as_a_body.rs`.
+mod close_as_a_body;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
@@ -6285,6 +6297,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            close_as_a_body: false,
             city_target_meets_the_map: false,
             camp_tile_buyout: false,
             contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
@@ -6360,6 +6373,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
             solvency_first_trade_slot_2: false,
@@ -28758,6 +28772,29 @@ impl AdvancedAi {
         const ARENA_ADVANCE_URGENCY: f64 = 3.0;
         const ARENA_THREAT_CAUTION: f64 = 0.35;
         let arena = g.is_arena();
+        // `close-as-a-body` and `screen-the-shooters` read the same hostile
+        // frame the threat term below reads. Nothing here runs with both
+        // genes off; see `advanced/close_as_a_body.rs`.
+        let field_enemies: Vec<Pos> = if self.close_as_a_body || self.screen_the_shooters {
+            g.units
+                .values()
+                .filter(|other| {
+                    let enemy_spec = &g.rules.units[other.kind];
+                    enemies.contains(&other.owner)
+                        && enemy_spec.class == "military"
+                        && (enemy_spec.is_melee_capable() || enemy_spec.has_ranged_attack())
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                })
+                .map(|other| other.pos)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let body_pace = self.body_pace(g, uid, group, target, &field_enemies);
+        let screen_frame = self.screen_frame(g, uid, group, &field_enemies);
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -28778,6 +28815,9 @@ impl AdvancedAi {
                 (progress, threat_caution)
             };
             let mut value = -self.base.w.objective_progress * progress * objective_distance as f64;
+            if let Some(pace) = &body_pace {
+                value -= self.body_pace_penalty(g, tile, target, pace, progress);
+            }
             let nearest_friend = group
                 .units
                 .iter()
@@ -28841,6 +28881,9 @@ impl AdvancedAi {
                             * (front_depth - g.wdist(tile, target)).max(0) as f64;
                     }
                 }
+            }
+            if let Some(frame) = &screen_frame {
+                value += self.screen_bonus(g, role, tile, frame);
             }
             // The posture selector's superiority gate is already arena-off
             // (an army that declines every even fight loses the field to the
