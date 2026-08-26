@@ -345,9 +345,9 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         marker.  Passing that shortened value (or no launch stamp at all) to
         `follow.py` makes native `/status` say `unknown`, so `ship` cannot
         distinguish a healthy old mirror from the newly deployed build.  The
-        exact SHA and its commit time must be captured before shortening and
-        scoped to the follower alone; the Civ VI decision worker owns its own
-        explicit runtime provenance.
+        exact SHA and its commit time must be captured before shortening, then
+        handed through the climb under mirror-only names; its replacement
+        follower promotes them while the Civ VI decision worker stays unstamped.
         """
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         capture = source.index("HEAD_REVISION=$HEAD_SHA")
@@ -362,6 +362,13 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         self.assertIn('CIVVIS_COMMIT="$HEAD_REVISION"', launch)
         self.assertIn('CIVVIS_COMMIT_TIME="$HEAD_COMMIT_TIME"', launch)
         self.assertIn("nohup python3 -u tools/follow.py", launch)
+
+        climb_start = source.index('CIVVIS_MIRROR_COMMIT="$HEAD_REVISION"')
+        climb_end = source.index('python3 -u tools/civ6_civvis_climb.py',
+                                  climb_start)
+        handoff = source[climb_start:climb_end]
+        self.assertIn('CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME"', handoff)
+        self.assertNotIn('CIVVIS_COMMIT="$HEAD_REVISION"', handoff)
 
 
 class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):

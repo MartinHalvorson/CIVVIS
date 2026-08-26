@@ -124,15 +124,48 @@ class MirrorFreshnessTests(unittest.TestCase):
     def test_ensure_mirror_always_starts_a_follower_from_this_checkout(self):
         """A live PID alone proves nothing about which revision it loaded."""
         with mock.patch.object(climb, "retire_mirror", return_value=[101, 202]) as retire, \
+             mock.patch.object(climb, "mirror_follower_environment",
+                               return_value={"CIVVIS_COMMIT": "a" * 40}) as environment, \
              mock.patch.object(climb, "_detach") as detach:
             climb.ensure_mirror()
 
         retire.assert_called_once_with()
+        environment.assert_called_once_with()
         detach.assert_called_once_with(
             [climb.sys.executable, "-u", str(climb.HERE / "follow.py")],
             climb.MIRROR_FOLLOW_LOG,
             "mirror",
+            {"CIVVIS_COMMIT": "a" * 40},
         )
+
+    def test_mirror_follower_promotes_only_a_verified_supervisor_stamp(self):
+        """The climb's replacement follower must keep the selected full SHA."""
+        commit = "a" * 40
+        with mock.patch.dict(climb.os.environ, {
+            climb.MIRROR_COMMIT_ENV: commit,
+            climb.MIRROR_COMMIT_TIME_ENV: "2026-08-26T00:00:00Z",
+            "CIVVIS_COMMIT": "stale",
+            "CIVVIS_COMMIT_TIME": "stale-time",
+        }, clear=True):
+            environment = climb.mirror_follower_environment()
+
+        self.assertEqual(environment, {
+            "CIVVIS_COMMIT": commit,
+            "CIVVIS_COMMIT_TIME": "2026-08-26T00:00:00Z",
+        })
+
+    def test_mirror_follower_drops_an_unverified_or_stale_stamp(self):
+        """A mirror cannot call an inherited lie a freshly built revision."""
+        with mock.patch.dict(climb.os.environ, {
+            climb.MIRROR_COMMIT_ENV: "d451c8e",
+            "CIVVIS_COMMIT": "f" * 40,
+            "CIVVIS_COMMIT_TIME": "stale-time",
+        }, clear=True):
+            environment = climb.mirror_follower_environment()
+
+        self.assertNotIn(climb.MIRROR_COMMIT_ENV, environment)
+        self.assertNotIn("CIVVIS_COMMIT", environment)
+        self.assertNotIn("CIVVIS_COMMIT_TIME", environment)
 
 
 class PopupClearOwnershipTests(unittest.TestCase):

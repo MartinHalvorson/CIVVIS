@@ -51,18 +51,6 @@ impl AdvancedAi {
         self.religious_defence_scales = false;
     }
 
-    /// Let a founder defending its own cities buy one Guru, the only unit that
-    /// heals religious units. Off in production; opted into by name. See
-    /// [`AdvancedAi::guru_heals_the_corps`].
-    pub fn enable_guru_heals_the_corps(&mut self) {
-        self.guru_heals_the_corps = true;
-    }
-
-    /// The twin of `enable_guru_heals_the_corps`.
-    pub fn disable_guru_heals_the_corps(&mut self) {
-        self.guru_heals_the_corps = false;
-    }
-
     /// Let a wounded spreader in its own Holy Site's heal ring hold and heal
     /// instead of spending a weak charge. Off in production; opted into by
     /// name. See [`AdvancedAi::religious_units_heal_first`].
@@ -489,10 +477,9 @@ impl AdvancedAi {
     /// damaged, not only while the home is under conversion pressure, so the
     /// corps out spreading gets the heal too.
     ///
-    /// Version 2 of `guru_heals_the_corps`; one version of a family plays, so this
-    /// turns version 1 off. Opt-in gene `guru-heals-the-corps-2`. See `AdvancedAi::guru_heals_the_corps_2`.
+    /// Opt-in gene `guru-heals-the-corps-2`. See
+    /// [`AdvancedAi::guru_heals_the_corps_2`].
     pub fn enable_guru_heals_the_corps_2(&mut self) {
-        self.guru_heals_the_corps = false;
         self.guru_heals_the_corps_2 = true;
     }
 
