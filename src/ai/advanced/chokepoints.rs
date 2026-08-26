@@ -754,10 +754,7 @@ impl AdvancedAi {
         if !naval && g.is_embarked(unit) {
             return false;
         }
-        if self.tactics_resolved.contains(&uid)
-            || self.tactics_withdrawn.contains(&uid)
-            || self.settler_guards.values().any(|guard| *guard == uid)
-        {
+        if self.settler_guards.values().any(|guard| *guard == uid) {
             return false;
         }
         // The city keeps its own defenders; only the surplus walks out.
