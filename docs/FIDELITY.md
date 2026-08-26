@@ -2528,18 +2528,121 @@ a test pins that the human takes no yield handicap and the rivals keep theirs.
   the `STATE` schema allowlist, so every live record filed a
   `schema:state.strategic_resources` gap that was not one.
 
+### Shipped: the rival's own diplomacy crosses, both ways (ranked item 1)
+
+Until this change the only diplomacy that crossed for a met rival was
+`at_war`, `open_borders` (theirs to us) and `can_declare`, and the last was
+mirrored as a faked denouncement (`denounced_until = turn + 1`) so that a
+Formal War could be legal on a board whose own five-turn wait never matures.
+`can_declare` says a war is legal; it never said whether it was ruinous. The
+grievance ledger, the declared friendships, the alliances, the missions, the
+promises and the visibility levels were empty on every live turn, and every
+decision that reads them read nothing.
+
+**What crosses now**, per rival in `state.rivals[]`, each accessor copied
+from the shipped screen that calls it on the same objects in the same InGame
+context, each wrapped in `try(…, nil)`:
+
+| key | accessor | shipped line |
+|---|---|---|
+| `diplomatic_state` | `other:GetDiplomaticAI():GetDiplomaticStateIndex(us)` → `GameInfo.DiplomaticStates[i].StateType` | `DiplomacyActionView.lua:870,1473` |
+| `our_grievances_against_them`, `grievances_against_us` | `GetGrievancesAgainst` — ONE signed balance per pair, `> 0` ours against them, `< 0` theirs against us; the mod reads both seats and splits it | `DiplomacyActionView_WorldCongressTab.lua:42`, `_AllianceRow.lua:46` |
+| `grievance_change_per_turn` | `Game.GetGameDiplomacy():GetGrievanceChangePerTurn(them, us)` | `_WorldCongressTab.lua:78` |
+| `alliance_type`, `alliance_level`, `alliance_turns_left` | `GetAllianceType` (`-1` = none) → `GameInfo.Alliances[i].AllianceType`, `GetAllianceLevel`, `GetAllianceTurnsUntilExpiration` | `DiplomacyRibbon_Expansion1.lua:24-27`, `_AllianceTab.lua:44` |
+| `our_denounce_turn`, `their_denounce_turn`, `friendship_turn`, `denounce_time_limit` | `GetDenounceTurn` (each seat), `GetDeclaredFriendshipTurn`, `GetDenounceTimeLimit` | `DiplomacyActionView.lua:1486-1511` |
+| `visibility`, `their_visibility_on_us` | `GetVisibilityOn` (the `GameInfo.Visibilities` index, 0–4) | `DiplomacyActionView.lua:992` |
+| `open_borders_granted` | `theirs:HasOpenBordersFrom(us)` — the grant WE make | `DiplomacyActionView.lua:1429` |
+| `delegation_at`, `embassy_at`, `their_delegation`, `their_embassy` | `HasDelegationAt` / `HasEmbassyAt`, both seats | the delegation actuator already calls them |
+| `promises_made`, `promises_received` | `IsPromiseMade(other, PromiseTypes.*)` on each seat; a member is named from the requester's side (`DONT_SETTLE_NEAR_ME`), so ours = a promise we made | `_AllianceRow.lua:61-70` |
+
+**Where the mirror puts it** — `apply_host_diplomacy` in `src/mirror.rs`, on
+both import paths, assigned from every export so a lapsed state clears:
+`DIPLO_STATE_DENOUNCED` → `denounced_until`/`denounced_since` on the side(s)
+that denounced, from the host's denounce turn and time limit, so the board's
+Formal War wait is the host's own clock; `DECLARED_FRIEND` → `friends_until`
+both seats from the friendship turn; `ALLIED` → `alliances` both seats with
+the host's kind, level and expiry (plus the friendship an alliance implies);
+any other state clears all three. Independently: grievances on the aggrieved
+seat's ledger under the offender (`Player::grievances[offender]`, the way
+`add_direct_grievances` books them), `diplomatic_missions` both ways,
+`promises` both ways as engine kinds (`no_settling`, `no_spying`,
+`no_conversion`), `open_borders_until` for the grant we make, and a new
+`Player::observed_visibility` that `Game::diplomatic_visibility` prefers to
+its derivation. `civvis_orders --dump-mirror` reads it all back.
+
+**Which decisions now read host diplomacy** (none of these changed; they
+were reading an empty ledger):
+
+- `AdvancedAi::preferred_war_opening` — the casus belli set it chooses from
+  comes from `legal_actions`, whose `casus_belli_available` asks
+  `denounced_long_enough` on the real `denounced_since`; an active
+  denouncement of ours means WAIT for the Formal War, as the engine's rule
+  says, instead of a faked one that was always "long enough"; `Denounce` is
+  withheld while one is active.
+- `legal_actions` (DIPLOMACY family) — `are_friends` / `are_allied` bar
+  `DeclareWar`, every casus belli and `Denounce` against a declared friend
+  or ally, as the host does.
+- The alliance-partner filter (`grievances < 75`, `are_friends` +180, an
+  existing alliance of the same kind excludes) and the coalition and
+  joint-war partner screens (`grievances`, `are_friends`, `are_allied`) in
+  `src/ai/advanced.rs` and `advanced/coalition.rs`.
+- `relationship_opinion` (`agenda_opinion − grievances`), which ranks
+  partners for embassies and deals.
+- Combat strength (`game.rs`, the visibility-advantage modifier) reads
+  `diplomatic_visibility` both ways.
+- `has_open_borders` for THEIR units in OUR land reads the grant we make.
+- `break_promise` reads the promise ledger when a settle, spy or conversion
+  would break one.
+
+**What stays faked, deliberately.** When the host permits a declaration and
+the board holds no active denouncement of our own, `denounced_until = turn +
+1` is still written. The bridge has no `Denounce` order, so a board
+denouncement never reaches the host; without the fake the planner would
+denounce on the board every turn, be rebuilt without it and never declare —
+the 81-turn, zero-declaration history that put it there. It is the one
+board fact that is not the host's; the queue below carries the order that
+retires it. A NEUTRAL rival we may declare on therefore still reads
+`denounced` on the board.
+
+**Not reached, and why.** `CanChangeDiplomaticState` is called by no shipped
+screen, so its meaning is a guess — it is not exported as "can make peace".
+`GetAgendasAndVisibilities` is reachable but has no slot on the board:
+`Game::agenda_of` derives the historical agenda from the leader name that
+already crosses, and a random agenda has no engine model, so agenda names
+are not exported. `grievance_change_per_turn` crosses for the record and
+`--dump-mirror`; no decision reads it (the board's own decay runs in
+`Game::process_diplomacy`).
+
+**Verified against the recording.** `civvis-20260826T184456Z` predates the
+mod change, so every new key is absent and the mirror takes the fallback
+path: `civvis_orders --explain` built from the merge-base and from this
+change give byte-identical orders, `[why]` lines and notes at t33 (10
+orders, `denounced=Some(34)` on both — the permission fake) and at t100
+(11 orders, at war). The presence path is pinned by the tests.
+
+Five tests in `src/mirror.rs` pin the rules:
+`a_host_denouncement_and_its_grievances_land_on_the_board_and_a_neutral_export_clears_them`
+(DENOUNCED with 50 grievances against us → their ledger holds 50, the
+Formal War opens at `since + 5` and not before, NEUTRAL clears all of it),
+`a_host_alliance_lands_with_its_kind_level_and_expiry_and_clears_on_neutral`,
+`a_host_declared_friendship_lands_and_bars_war_until_a_neutral_export`,
+`host_missions_promises_visibility_and_our_grant_cross_both_ways` (both
+import paths) and
+`an_export_without_diplomatic_state_keeps_the_can_declare_fallback`.
+
 ### The map, ranked — the queue for the next passes
 
 What the audit found and this change does not touch, most valuable first.
 Each line names where to start.
 
-1. **Diplomatic state and grievances, both ways.** Not exported at all:
-   `GetDiplomaticAI():GetDiplomaticStateIndex`, `GetGrievancesAgainst`,
-   `GetGrievanceChangePerTurn`, alliance type/level, `GetVisibilityOn`,
-   promises. Every war, peace and denounce decision is made blind;
-   `can_declare` says legal, not ruinous. The mod runs in the InGame context
-   (`CivvisControl.modinfo`, `AddUserInterfaces`), the same context as
-   `DiplomacyActionView.lua`, so every accessor is reachable.
+1. **Diplomatic state and grievances, both ways.** SHIPPED (#2590) — see
+   "the rival's own diplomacy crosses" above. What it leaves: a `Denounce`
+   order on the bridge — no `PlayerOperations` verb denounces; the shipped
+   screen does `DiplomacyManager.RequestSession(ms_LocalPlayerID,
+   ms_SelectedPlayerID, "DENOUNCE")` (`DiplomacyActionView.lua:469`) — so
+   the `can_declare` permission fake can retire, and a casus-belli-typed
+   declaration so the host fights the Formal War the board chose instead of
+   a Surprise War.
 2. **The buildable and purchasable menus with costs.** `BuildQueue:CanProduce`
    and `CityGold:GetPurchaseCost` are called only inside the mod's own
    chooser and purchase actuator, never exported; the board decides

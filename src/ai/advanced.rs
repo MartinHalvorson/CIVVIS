@@ -30855,6 +30855,13 @@ impl AdvancedAi {
                 self.base.remember_capture_objective(g, pid, uid, city);
             }
         }
+        // A barbarian-held settler is not an unwanted one under the
+        // `barbarian-settler-capture` gene: it is the capture below.
+        let barb_rescue: Option<usize> = if self.base.barbarian_settler_capture {
+            g.barb_pid
+        } else {
+            None
+        };
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
@@ -30862,6 +30869,7 @@ impl AdvancedAi {
                     other.owner != pid
                         && g.is_at_war(pid, other.owner)
                         && other.kind == "settler"
+                        && barb_rescue != Some(other.owner)
                 })
             });
         if !unwanted_settler_adjacent
@@ -30911,6 +30919,18 @@ impl AdvancedAi {
         if self
             .base
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
+        {
+            return true;
+        }
+        // The gene's pursuit half: a capturable barbarian-held civilian a few
+        // tiles out is walked onto rather than watched. #2075 enabled the
+        // flag and never called this from here, so on the live seat the
+        // pursuit existed only in `BasicAi::military_step`, which a major
+        // does not run.
+        if self.base.barbarian_settler_capture
+            && self
+                .base
+                .pursue_capturable_civilian(g, pid, uid, decline_settlers)
         {
             return true;
         }
