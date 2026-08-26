@@ -12656,9 +12656,10 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
         "the live deployment ships the frontier guard"
     );
     assert!(
-        !live.base.loyalty_rate_alarm,
-        "the default genome keeps the separate rate forecast withheld"
+        live.base.loyalty_rate_alarm,
+        "the deployment enables the separate rate forecast"
     );
+    live.disable_loyalty_rate_alarm();
     assert_eq!(
         live.best_settler_target(&game, 0, settler, 8, None)
             .map(|(position, _)| position),
@@ -12682,6 +12683,8 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
     let mut arriving = AdvancedAi::new();
     arriving.enable_live_bridge();
     assert!(arriving.frontier_loyalty);
+    assert!(arriving.base.loyalty_rate_alarm);
+    arriving.disable_loyalty_rate_alarm();
     assert!(!arriving.base.loyalty_rate_alarm);
     arriving.settler_targets.insert(settler, target);
     assert!(
@@ -12770,12 +12773,13 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
         "the ordinary controller retains its established non-forecast path"
     );
 
-    // `loyalty-rate-alarm` is intentionally not in the default genome, but a
-    // city this close to an already visible rival capital is a frontier safety
-    // failure, not an invitation to enable that broader optional forecast.
+    // Withhold the separately default-on rate forecast to isolate the frontier
+    // safety floor for a city this close to an already visible rival capital.
     let mut default_live = AdvancedAi::new();
     default_live.enable_live_bridge();
     assert!(default_live.frontier_loyalty);
+    assert!(default_live.base.loyalty_rate_alarm);
+    default_live.disable_loyalty_rate_alarm();
     assert!(!default_live.base.loyalty_rate_alarm);
     let why = default_live
         .settle_site_frontier_loyalty_verdict(&game, 0, target)
@@ -12791,10 +12795,10 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
-    // Keep the broad optional forecast independently covered: the default
-    // frontier floor above has already rejected this nearby known city.
+    // The deployed rate forecast remains independently covered after the
+    // withheld frontier-floor control above.
     live.frontier_loyalty = false;
-    live.enable_loyalty_rate_alarm();
+    assert!(live.base.loyalty_rate_alarm);
     let why = live
         .settle_site_loyalty_verdict(&game, 0, target)
         .expect("the advanced forecast rejects a city that will flip before it grows");
@@ -33466,13 +33470,13 @@ fn a_settler_inside_a_raiders_reach_flees_out_of_it() {
     );
 }
 
-/// The production live bridge must not leave an unguarded Settler inside a
-/// visible direct capture envelope merely because every *one-step* retreat is
-/// also covered.  The opt-in owns the broader pre-emptive route rule; this is
+/// With its broader civilian-safety opt-in explicitly withheld, the live
+/// bridge must not leave an unguarded Settler inside a visible direct-capture
+/// envelope merely because every *one-step* retreat is also covered. This is
 /// the narrow emergency floor for a live Settler that will otherwise be taken
 /// before it receives another turn.
 #[test]
-fn a_default_live_settler_escapes_a_direct_barbarian_capture_without_the_opt_in() {
+fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() {
     let (mut game, _city, home) = barbarian_field(71_026);
     for unit in game.player_unit_ids(0) {
         if game.rules.units[game.units[&unit].kind].class == "military" {
@@ -33508,9 +33512,10 @@ fn a_default_live_settler_escapes_a_direct_barbarian_capture_without_the_opt_in(
         "the deployed seat uses the live shadow"
     );
     assert!(
-        !ai.civilian_out_of_reach,
-        "the emergency floor must not promote the opt-in genome"
+        ai.civilian_out_of_reach,
+        "the deployment enables the broader civilian-safety policy"
     );
+    ai.disable_civilian_out_of_reach();
     let reach = ai.barbarian_reach(&game, 0, start, 10);
     assert!(
         reach.covers(&game, start),
