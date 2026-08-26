@@ -296,7 +296,8 @@ class PublicationMetadata(unittest.TestCase):
             batch, "docs/gene_screens/example.json", machine="test-machine",
             agent="continuous-batch", coordinated="#1234", computer="Test Mac")
         self.assertIn("5,000 validated completed games / 30,000 seats / 5,000 wins", body)
-        self.assertIn("changes no game rules or default genes", body)
+        self.assertIn("changes no game mechanics", body)
+        self.assertIn("generated default selection", body)
         self.assertIn("Computer: `Test Mac`", body)
         self.assertIn("Coordinated with: #1234", body)
         self.assertIn("publish validated 5,000-completed-game", body)
@@ -309,6 +310,7 @@ class PublicationMetadata(unittest.TestCase):
                 "docs/gene_ledger.json",
                 "GENE_HEURISTIC_RANKING.md",
                 "docs/GENE_RANKING_EVIDENCE.md",
+                "src/ai/advanced/genes.rs",
             ),
         )
         batch = scheduler.new_batch(1, 1, ident="publication-artifacts")
@@ -322,6 +324,7 @@ class PublicationMetadata(unittest.TestCase):
             batch, "docs/gene_screens/example.json", machine="test-machine",
             agent="continuous-batch", coordinated="none", computer="Test Mac")
         self.assertIn("`docs/GENE_RANKING_EVIDENCE.md`", body)
+        self.assertIn("`src/ai/advanced/genes.rs`", body)
 
 
 class PublicationTiming(unittest.TestCase):

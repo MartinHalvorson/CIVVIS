@@ -47,15 +47,16 @@ SCHEMA = "continuous_batch_scheduler/v1"
 CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
 CONTINUOUS_BATCH_DEADLINE_SCHEMA = "continuous_batch_deadline/v1"
 
-# ``tools/genes.py write`` deliberately updates the ranking table together
-# with its supporting evidence.  Keep this one explicit list shared by the
-# ownership claim, changed-path guard, and staging command: a new generated
-# artifact must be reviewed here instead of being silently swept into a
-# publication.
+# ``tools/genes.py write`` deliberately updates the ranking table, its
+# supporting evidence, and the generated default-selection mirror. Keep this
+# one explicit list shared by the ownership claim, changed-path guard, and
+# staging command: a new generated artifact must be reviewed here instead of
+# being silently swept into a publication.
 PUBLICATION_GENERATED_FILES = (
     "docs/gene_ledger.json",
     "GENE_HEURISTIC_RANKING.md",
     "docs/GENE_RANKING_EVIDENCE.md",
+    "src/ai/advanced/genes.rs",
 )
 STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
@@ -1040,7 +1041,8 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "- The table rotation derives its batch header sample size from the immutable analyzer "
         "artifact; raw JSONL records are never treated as games.",
         f"- The games were pinned to clean source `{source['commit']}` / binary "
-        f"`{source['binary_sha256']}`. This publication changes no game rules or default genes.",
+        f"`{source['binary_sha256']}`. This publication changes no game mechanics; it updates "
+        "only the generated default selection when the recorded batch rule changes it.",
         "",
         "overwrite-guard: allow this report deliberately regenerates the complete ranking snapshot from "
         "a frozen batch, replacing its current table, ledger, and evidence rows.",
@@ -1054,7 +1056,8 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "- [x] `python3 tools/test_genes.py`",
         "- [x] `cargo test --profile ci --locked`",
         "- [x] `git diff --check origin/main...`",
-        "- [x] No game-rule or runtime-default change; soak is not applicable",
+        "- [x] No game-mechanic source change; any generated default-selection change is the "
+        "recorded batch rule, so a soak is not applicable",
         "- [x] No unrelated runtime artifacts",
         "",
         "## Notes for integration",
