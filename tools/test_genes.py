@@ -541,9 +541,14 @@ class TheOperatorPins(unittest.TestCase):
             self.assertIn(tag, screenable, tag)
             self.assertIn(tag, genome, f"{tag} is pinned on but does not ship")
             self.assertNotEqual(rules["batch_decisions"].get(tag), "remove", tag)
-        # Today every pin is a real override; a later batch may agree with one.
-        self.assertEqual(
-            [tag for tag in pins if rules["batch_decisions"].get(tag) == "off"], pins)
+        # A batch may agree with any pin.  What must remain true is that the
+        # decision beside every pin is recorded, rather than treating a
+        # reporting-only refresh as a reason to re-select defaults.
+        readings = {tag: rules["batch_decisions"].get(tag) for tag in pins}
+        self.assertTrue(
+            all(call in {"on", "off", "unresolved"} for call in readings.values()),
+            readings,
+        )
 
 
 class RetainedReportingDefaults(unittest.TestCase):
@@ -568,6 +573,8 @@ class RetainedReportingDefaults(unittest.TestCase):
                         [source], filter_known=False, reporting_batches=reports,
                         deployment_policy=gene_ledger.RETAINED_DEPLOYMENT_POLICY,
                         retained_deployment_genome=("g",))
+                    rust = gene_ledger.render_rust(ledger)
+                    evidence = ranking.render_evidence(ledger)
         self.assertEqual(stderr.getvalue(), "")
         self.assertEqual(ledger["rules"]["deployment_policy"],
                          gene_ledger.RETAINED_DEPLOYMENT_POLICY)
@@ -577,6 +584,11 @@ class RetainedReportingDefaults(unittest.TestCase):
         by_tag = {row["tag"]: row for row in ledger["genes"]}
         self.assertTrue(by_tag["g"]["default_on"], "retained on stays on")
         self.assertFalse(by_tag["h"]["default_on"], "new positive evidence stays evidence")
+        self.assertIn(
+            'pub(super) const DEPLOYMENT_POLICY: &str = "operator-retained-selection";',
+            rust,
+        )
+        self.assertIn("## Evidence beside the retained deployment selection", evidence)
 
     def test_a_retained_family_cannot_ship_two_versions(self):
         with self.assertRaises(SystemExit) as caught:
