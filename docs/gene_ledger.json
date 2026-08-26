@@ -251,11 +251,6 @@
         null,
         null
       ],
-      "guru-heals-the-corps": [
-        7,
-        4,
-        8
-      ],
       "holy-lane-parity": [
         4,
         -11,
@@ -623,7 +618,6 @@
       "garrison-under-fire": "off",
       "great-person-housing": "on",
       "growth-to-settle": "off",
-      "guru-heals-the-corps": "on",
       "holy-lane-parity": "off",
       "holy-site-where-the-threat-is": "off",
       "home-defense": "on",
@@ -709,7 +703,6 @@
       "flip-nearby-city-states",
       "frontier-massing-alarm",
       "great-person-housing",
-      "guru-heals-the-corps",
       "home-defense",
       "lane-space-race",
       "maintenance-aware-deck",
@@ -774,17 +767,6 @@
         "versions": {
           "district-coverage": 0.008266,
           "district-coverage-2": null
-        }
-      },
-      "guru-heals-the-corps": {
-        "rule_on": [
-          "guru-heals-the-corps"
-        ],
-        "head": "guru-heals-the-corps",
-        "ships": "guru-heals-the-corps",
-        "versions": {
-          "guru-heals-the-corps": -0.107723,
-          "guru-heals-the-corps-2": null
         }
       },
       "holy-site-where-the-threat-is": {
@@ -1238,8 +1220,8 @@
   "counts": {
     "helps": 16,
     "hurts": 0,
-    "unresolved": 60,
-    "default_on": 42
+    "unresolved": 59,
+    "default_on": 41
   },
   "genes": [
     {
@@ -2498,51 +2480,6 @@
             "win_delta_pp": 1.417,
             "win_z": 2.257,
             "win_se_pp": 0.628
-          }
-        ]
-      }
-    },
-    {
-      "tag": "guru-heals-the-corps",
-      "verdict": "unresolved",
-      "default_on": true,
-      "wins_last_10k": 24,
-      "wins_prior_10k": -29,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.107723,
-      "posterior_pp": -3.571326,
-      "posterior_se_pp": 26.640015,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 33.343815,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19050,
-        "n_off": 19110,
-        "win_delta_pp": 0.482,
-        "win_z": 1.264,
-        "share_delta_pp": 0.131,
-        "share_z": 1.695,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.707,
-            "win_z": 1.344,
-            "win_se_pp": 0.526
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.235,
-            "win_z": 0.423,
-            "win_se_pp": 0.555
           }
         ]
       }

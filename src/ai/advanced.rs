@@ -3429,18 +3429,6 @@ pub struct AdvancedAi {
     /// opt-in gene `religious-defence-scales`. See `advanced/religion.rs`.
     pub religious_defence_scales: bool,
 
-    /// ★★★ THE ONLY FIELD HEAL A CORPS HAS, AND ONLY THE ATTACKER MAY BUY IT.
-    /// `guru_cap` is `offensive && apostles > 0`, so a founder whose whole
-    /// religious effort is defending its own cities can never buy the one unit
-    /// that heals religious units (+40 hit points to every adjacent unit of
-    /// its faith). It matters because `Game::do_spread` scales the pressure a
-    /// charge adds by `hp/100`: a damaged corps is a proportionally weaker
-    /// one, and without a Guru its only recovery is standing in its own Holy
-    /// Site's ring. With this on a founder under conversion pressure that
-    /// already fields a damaged religious unit may hold one Guru. Off
-    /// everywhere by default; opt-in gene `guru-heals-the-corps`.
-    pub guru_heals_the_corps: bool,
-
     /// ★★★ A WOUNDED SPREADER SPENDS A WHOLE CHARGE FOR A FRACTION OF ONE.
     /// `do_spread` adds `spread × hp/100` pressure and `end_turn` heals a unit
     /// only when `!acted`, while `do_move` sets `acted` on every step and
@@ -4632,12 +4620,11 @@ pub struct AdvancedAi {
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
     growth_to_settle: bool,
-    /// Version 2 of `guru_heals_the_corps`: the founder may hold one Guru
-    /// whenever a religious unit of its own is damaged — not only while the
-    /// home is under conversion pressure. The corps that is damaged is the
-    /// one out spreading, and version 1's home-pressure gate kept the heal
-    /// from it. Implies version 1; its enable turns version 1 off. Opt-in
-    /// gene `guru-heals-the-corps-2`.
+    /// A founder may hold one Guru whenever one of its own non-Guru religious
+    /// units is damaged. A Guru restores the corps' only field heal; the
+    /// damaged unit may be out spreading rather than at a home under
+    /// conversion pressure. Off everywhere by default; opt-in gene
+    /// `guru-heals-the-corps-2`.
     guru_heals_the_corps_2: bool,
     /// Version 2 of `holy_site_where_the_threat_is`: the same claim in the
     /// same slipping city, bought with Gold or not made at all. Version 1
@@ -5871,7 +5858,6 @@ impl AdvancedAi {
             competition_victory_points: false,
             idle_faith_patronage: false,
             religious_defence_scales: false,
-            guru_heals_the_corps: false,
             religious_units_heal_first: false,
             holy_site_where_the_threat_is: false,
             enhancer_for_the_corps: false,
@@ -16789,8 +16775,8 @@ impl AdvancedAi {
             ) + veto_spreaders
         };
         let apostle_cap = if offensive { 2 } else { 0 };
-        // `guru_heals_the_corps`: the defence has damaged units and no heal.
-        let guru_defends = self.guru_defends_the_corps(g, pid, home_under_pressure);
+        // `guru-heals-the-corps-2`: the defence has damaged units and no heal.
+        let guru_defends = self.guru_defends_the_corps(g, pid);
         let guru_cap = usize::from((offensive && apostles > 0) || guru_defends);
         let inquisitor_cap = if home_under_pressure && inquisition_launched {
             2 + Self::religious_veto_extra_inquisitors(veto.as_ref())

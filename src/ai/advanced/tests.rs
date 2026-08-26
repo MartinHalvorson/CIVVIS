@@ -28943,7 +28943,7 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
     for (field, tag) in [
         ("religious_defence_scales", "religious-defence-scales"),
-        ("guru_heals_the_corps", "guru-heals-the-corps"),
+        ("guru_heals_the_corps_2", "guru-heals-the-corps-2"),
         ("religious_units_heal_first", "religious-units-heal-first"),
         (
             "holy_site_where_the_threat_is",
@@ -28971,7 +28971,7 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         "the bare controller starts it off"
     );
     assert!(
-        !ai.guru_heals_the_corps,
+        !ai.guru_heals_the_corps_2,
         "the bare controller starts it off"
     );
     assert!(
@@ -28987,22 +28987,22 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         "the bare controller starts it off"
     );
     ai.enable_religious_defence_scales();
-    ai.enable_guru_heals_the_corps();
+    ai.enable_guru_heals_the_corps_2();
     ai.enable_religious_units_heal_first();
     ai.enable_holy_site_where_the_threat_is();
     ai.enable_enhancer_for_the_corps();
     assert!(ai.religious_defence_scales);
-    assert!(ai.guru_heals_the_corps);
+    assert!(ai.guru_heals_the_corps_2);
     assert!(ai.religious_units_heal_first);
     assert!(ai.holy_site_where_the_threat_is);
     assert!(ai.enhancer_for_the_corps);
     ai.disable_religious_defence_scales();
-    ai.disable_guru_heals_the_corps();
+    ai.disable_guru_heals_the_corps_2();
     ai.disable_religious_units_heal_first();
     ai.disable_holy_site_where_the_threat_is();
     ai.disable_enhancer_for_the_corps();
     assert!(!ai.religious_defence_scales);
-    assert!(!ai.guru_heals_the_corps);
+    assert!(!ai.guru_heals_the_corps_2);
     assert!(!ai.religious_units_heal_first);
     assert!(!ai.holy_site_where_the_threat_is);
     assert!(!ai.enhancer_for_the_corps);
@@ -29040,12 +29040,13 @@ fn the_defensive_corps_answers_the_number_of_cities_only_with_the_gene() {
     );
 }
 
-/// `guru_heals_the_corps`: `guru_cap` is `offensive && apostles > 0`, so the
-/// founder defending its own cities can never buy the only unit that heals a
-/// religious corps. The gene answers yes only when there is a damaged unit to
-/// heal, and the defensive purchase orders name the Guru so the cap can bite.
+/// `guru_heals_the_corps_2`: `guru_cap` is `offensive && apostles > 0`, so
+/// the founder defending its own cities can never buy the only unit that
+/// heals a religious corps. The gene answers yes only when there is a damaged
+/// unit to heal, even without home conversion pressure, and the defensive
+/// purchase orders name the Guru so the cap can bite.
 #[test]
-fn a_defending_founder_buys_a_guru_only_with_the_gene() {
+fn a_damaged_corps_buys_a_guru_only_with_the_v2_gene() {
     let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
     for pid in 0..2 {
         let settler = game
@@ -29064,10 +29065,8 @@ fn a_defending_founder_buys_a_guru_only_with_the_gene() {
     game.players[0].civics.insert(crate::name!("theology"));
     game.players[0].religion = Some("Our Faith".to_string());
     game.players[0].holy_city = Some(home);
-    game.players[1].religion = Some("Rival Faith".to_string());
     let pressure = &mut game.cities.get_mut(&home).unwrap().pressure;
     pressure.insert("Our Faith".to_string(), 1_000.0);
-    pressure.insert("Rival Faith".to_string(), 700.0);
     game.players[0].faith = game.game_speed.scale(4_000.0);
     // A damaged spreader already in the field is the thing a Guru is for.
     let wounded = game.spawn_test_unit("missionary", 0, game.cities[&home].pos);
@@ -29094,7 +29093,7 @@ fn a_defending_founder_buys_a_guru_only_with_the_gene() {
 
     let mut treated = game.clone();
     let mut on = AdvancedAi::new();
-    on.enable_guru_heals_the_corps();
+    on.enable_guru_heals_the_corps_2();
     for _ in 0..6 {
         on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
     }
@@ -29104,7 +29103,7 @@ fn a_defending_founder_buys_a_guru_only_with_the_gene() {
     let mut healthy = game.clone();
     healthy.units.get_mut(&wounded).unwrap().hp = 100;
     let mut spare = AdvancedAi::new();
-    spare.enable_guru_heals_the_corps();
+    spare.enable_guru_heals_the_corps_2();
     for _ in 0..6 {
         spare.religious_spending_with_reserve(&mut healthy, 0, false, 80.0);
     }
@@ -33576,7 +33575,7 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     assert_ne!(safe.builder_targets.get(&builder), Some(&target));
 }
 
-/// The ten version-2 genes of 2026-08-24: each is a native opt-in, off in
+/// The nine version-2 genes of 2026-08-24: each is a native opt-in, off in
 /// both controllers, published for `gene_screen` as `<base>-2`, and its
 /// enable turns version 1 off so a seat plays one version of the family.
 #[test]
@@ -33584,7 +33583,6 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
     let families = [
         "amenity-project-preemption",
         "settler-guard-holds",
-        "guru-heals-the-corps",
         "siege-is-progress",
         "campus-adjacency-threshold",
         "holy-site-where-the-threat-is",
@@ -33600,7 +33598,6 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
                 ai.amenity_project_preemption_2,
             ),
             (ai.settler_guard_holds, ai.settler_guard_holds_2),
-            (ai.guru_heals_the_corps, ai.guru_heals_the_corps_2),
             (ai.siege_is_progress, ai.siege_is_progress_2),
             (
                 ai.campus_adjacency_threshold,

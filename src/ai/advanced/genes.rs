@@ -607,7 +607,6 @@ pub const GENES: &[Gene] = &[
     // two cities, cannot heal when it is defending, and spends charges at a
     // fraction of their strength. See `advanced/religion.rs`.
     Gene { tag: "religious-defence-scales", field: "religious_defence_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_defence_scales, disable: AdvancedAi::disable_religious_defence_scales },
-    Gene { tag: "guru-heals-the-corps", field: "guru_heals_the_corps", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_heals_the_corps, disable: AdvancedAi::disable_guru_heals_the_corps },
     Gene { tag: "religious-units-heal-first", field: "religious_units_heal_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_units_heal_first, disable: AdvancedAi::disable_religious_units_heal_first },
     Gene { tag: "holy-site-where-the-threat-is", field: "holy_site_where_the_threat_is", kind: Kind::OptIn, enable: AdvancedAi::enable_holy_site_where_the_threat_is, disable: AdvancedAi::disable_holy_site_where_the_threat_is },
     Gene { tag: "enhancer-for-the-corps", field: "enhancer_for_the_corps", kind: Kind::OptIn, enable: AdvancedAi::enable_enhancer_for_the_corps, disable: AdvancedAi::disable_enhancer_for_the_corps },
@@ -1125,9 +1124,8 @@ pub const GENES: &[Gene] = &[
     // family draw is biased toward the best version and the ledger ships the
     // best by pooled Diff. See `AdvancedAi::enable_district_coverage_2`.
     Gene { tag: "district-coverage-2", field: "district_coverage_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_coverage_2, disable: AdvancedAi::disable_district_coverage_2 },
-    // Version 2 of `guru-heals-the-corps` (2026-08-24): one gated delta on version 1; the
-    // family draw is biased toward the best version and the ledger ships the
-    // best by pooled Diff. See `AdvancedAi::enable_guru_heals_the_corps_2`.
+    // A damaged religious corps may hold one Guru for its only field heal.
+    // See `AdvancedAi::enable_guru_heals_the_corps_2`.
     Gene { tag: "guru-heals-the-corps-2", field: "guru_heals_the_corps_2", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_heals_the_corps_2, disable: AdvancedAi::disable_guru_heals_the_corps_2 },
     // Version 2 of `holy-site-where-the-threat-is` (2026-08-24): one gated delta on version 1; the
     // family draw is biased toward the best version and the ledger ships the
@@ -1377,7 +1375,6 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "flip-nearby-city-states",
     "frontier-massing-alarm",
     "great-person-housing",
-    "guru-heals-the-corps",
     "home-defense",
     "lane-space-race",
     "maintenance-aware-deck",
@@ -1456,7 +1453,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("garrison-under-fire", [Some(-14), Some(4), Some(-29)]),
     ("great-person-housing", [Some(7), Some(37), Some(29)]),
     ("growth-to-settle", [Some(-16), None, None]),
-    ("guru-heals-the-corps", [Some(7), Some(4), Some(8)]),
     ("holy-lane-parity", [Some(4), Some(-11), Some(-15)]),
     ("holy-site-where-the-threat-is", [Some(-22), Some(0), Some(7)]),
     ("home-defense", [Some(21), Some(15), Some(-3)]),
@@ -1553,7 +1549,6 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "founder-temple", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(11), wins_prior_10k: Some(7), win_diff_pp: Some(0.317732), posterior_pp: Some(19.361508), posterior_se_pp: Some(9.58433), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.455, win_z: 1.028, share_delta_pp: -0.108, share_z: -1.196, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "garrison-under-fire", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(31), wins_prior_10k: Some(-27), win_diff_pp: Some(0.234065), posterior_pp: Some(15.397499), posterior_se_pp: Some(16.420664), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.617, win_z: 1.615, share_delta_pp: 0.118, share_z: 1.499, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "great-person-housing", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(38), wins_prior_10k: Some(94), win_diff_pp: Some(1.583612), posterior_pp: Some(84.173107), posterior_se_pp: Some(10.509873), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.499, win_z: 3.464, share_delta_pp: 0.375, share_z: 4.121, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "guru-heals-the-corps", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(24), wins_prior_10k: Some(-29), win_diff_pp: Some(-0.107723), posterior_pp: Some(-3.571326), posterior_se_pp: Some(26.640015), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.482, win_z: 1.264, share_delta_pp: 0.131, share_z: 1.695, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "holy-lane-parity", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(5), wins_prior_10k: Some(19), win_diff_pp: Some(0.623541), posterior_pp: Some(32.349037), posterior_se_pp: Some(19.66726), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.185, win_z: 0.421, share_delta_pp: -0.184, share_z: -1.997, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "holy-site-where-the-threat-is", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(19), wins_prior_10k: Some(-19), win_diff_pp: Some(-0.031224), posterior_pp: Some(-1.100691), posterior_se_pp: Some(19.032158), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.391, win_z: 1.034, share_delta_pp: -0.088, share_z: -1.141, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "home-defense", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(10), wins_prior_10k: Some(-18), win_diff_pp: Some(-0.186727), posterior_pp: Some(-9.870974), posterior_se_pp: Some(8.311435), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.211, win_z: 0.556, share_delta_pp: 0.101, share_z: 1.259, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
