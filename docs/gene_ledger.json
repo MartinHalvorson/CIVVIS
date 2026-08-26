@@ -1003,15 +1003,43 @@
     },
     "removals_due": [],
     "operator_default_on": [
+      "apostle-promotion-by-role",
       "army-target-weighs-enemy",
+      "boost-wait-research",
       "buildings-before-projects",
+      "buy-what-cards-cannot-boost",
+      "camp-party",
+      "campaign-pillage",
+      "chokepoint-claim",
+      "civilian-out-of-reach",
+      "coalition-before-war",
+      "deals-at-the-ceiling",
       "deals-for-our-gain",
+      "defensible-sites",
+      "district-planning",
       "early-contact-window",
+      "elective-war-yields-to-a-lane",
+      "expansion-schedule",
       "founder-temple",
+      "gold-for-the-young-city",
+      "holy-lane-parity",
+      "holy-site-where-the-threat-is-2",
       "idle-faith-patronage",
       "lane-great-people",
+      "loyalty-rate-alarm",
+      "missionary-evades-raiders",
+      "naval-threat-triage",
+      "never-an-empty-queue",
+      "one-launch-pad",
+      "quest-trade-route",
+      "recon-replacement",
       "research-tier-premium",
-      "settler-screen"
+      "settler-screen",
+      "settler-target-hysteresis",
+      "stranded-settler-discount",
+      "unit-cost-efficiency",
+      "wonder-adjacent-sites",
+      "wonder-score-tally"
     ],
     "operator_pins": "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, 2026-08-26); they remain in the retained deployment_genome, while batch_decisions records what the batch rule would say as evidence",
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
@@ -1019,37 +1047,59 @@
     "deployment_genome": [
       "air-surge",
       "amenity-project-preemption",
+      "apostle-promotion-by-role",
       "army-target-weighs-enemy",
       "barbarian-bargain",
       "barbarian-ranged-answer",
       "barbarian-scouts-are-scouts",
       "blind-objective-units",
+      "boost-wait-research",
       "builder-tries-the-next-tile",
       "buildings-before-projects",
+      "buy-what-cards-cannot-boost",
+      "camp-party",
+      "campaign-pillage",
+      "chokepoint-claim",
+      "civilian-out-of-reach",
+      "coalition-before-war",
       "competition-victory-points",
       "congress-counter-leader",
       "culture-building-debt",
+      "deals-at-the-ceiling",
       "deals-for-our-gain",
+      "defensible-sites",
+      "district-planning",
       "early-contact-window",
       "elective-war-in-reach",
+      "elective-war-yields-to-a-lane",
       "engine-faith-price",
       "escort-unstick",
+      "expansion-schedule",
       "flip-nearby-city-states",
       "founder-temple",
       "frontier-massing-alarm",
+      "gold-for-the-young-city",
       "great-person-housing",
+      "holy-lane-parity",
+      "holy-site-where-the-threat-is-2",
       "idle-faith-patronage",
       "lane-great-people",
       "lane-space-race",
+      "loyalty-rate-alarm",
       "maintenance-aware-deck",
+      "missionary-evades-raiders",
       "missionary-last-charge-explores",
       "naval-recon",
+      "naval-threat-triage",
+      "never-an-empty-queue",
       "no-free-passage",
+      "one-launch-pad",
       "one-war-at-a-time",
       "opportunistic-war",
       "price-the-suzerainty",
       "promote-when-wounded",
-      "raid-pillage-prizes",
+      "quest-trade-route",
+      "recon-replacement",
       "recorded-tactical-step",
       "religious-veto-defence",
       "research-tier-premium",
@@ -1060,12 +1110,17 @@
       "settler-factory-coordination",
       "settler-guard-holds",
       "settler-screen",
+      "settler-target-hysteresis",
       "slot-kind-tiebreak",
       "solvency-first-trade-slot",
+      "stranded-settler-discount",
       "strike-opening",
+      "unit-cost-efficiency",
       "unit-objective-memory",
       "war-reinforcement",
-      "wide-map-capacity"
+      "wide-map-capacity",
+      "wonder-adjacent-sites",
+      "wonder-score-tally"
     ],
     "versions": "every version's batch-rule reading remains recorded on its own row; this reporting-only rotation retains the already selected version, one per family, while a family still holds at most 3 versions and a fourth requires a cull of the third-best",
     "family_heads": {
@@ -1107,10 +1162,21 @@
           "district-coverage-2": null
         }
       },
-      "holy-site-where-the-threat-is": {
+      "government-ladder": {
         "rule_on": [],
-        "head": "holy-site-where-the-threat-is",
+        "head": null,
         "ships": null,
+        "versions": {
+          "government-ladder": null,
+          "government-ladder-2": null
+        }
+      },
+      "holy-site-where-the-threat-is": {
+        "rule_on": [
+          "holy-site-where-the-threat-is-2"
+        ],
+        "head": "holy-site-where-the-threat-is",
+        "ships": "holy-site-where-the-threat-is-2",
         "versions": {
           "holy-site-where-the-threat-is": -0.031224,
           "holy-site-where-the-threat-is-2": null
@@ -1128,9 +1194,11 @@
         }
       },
       "never-an-empty-queue": {
-        "rule_on": [],
+        "rule_on": [
+          "never-an-empty-queue"
+        ],
         "head": null,
-        "ships": null,
+        "ships": "never-an-empty-queue",
         "versions": {
           "never-an-empty-queue": null,
           "never-an-empty-queue-2": null
@@ -1157,9 +1225,11 @@
         }
       },
       "settler-target-hysteresis": {
-        "rule_on": [],
+        "rule_on": [
+          "settler-target-hysteresis"
+        ],
         "head": "settler-target-hysteresis",
-        "ships": null,
+        "ships": "settler-target-hysteresis",
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
@@ -1177,9 +1247,11 @@
         }
       },
       "wonder-adjacent-sites": {
-        "rule_on": [],
+        "rule_on": [
+          "wonder-adjacent-sites"
+        ],
         "head": null,
-        "ships": null,
+        "ships": "wonder-adjacent-sites",
         "versions": {
           "wonder-adjacent-sites": null,
           "wonder-adjacent-sites-2": null
@@ -1564,7 +1636,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 49
+    "default_on": 76
   },
   "genes": [
     {
@@ -1705,7 +1777,7 @@
     {
       "tag": "apostle-promotion-by-role",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 12,
       "wins_prior_10k": 16,
       "wins_third_10k": 14,
@@ -2155,7 +2227,7 @@
     {
       "tag": "camp-party",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 28,
       "wins_prior_10k": -15,
       "wins_third_10k": 13,
@@ -2470,7 +2542,7 @@
     {
       "tag": "district-planning",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 12,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -2830,7 +2902,7 @@
     {
       "tag": "holy-lane-parity",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 5,
       "wins_prior_10k": 19,
       "wins_third_10k": 99,
@@ -3190,7 +3262,7 @@
     {
       "tag": "loyalty-rate-alarm",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 5,
       "wins_prior_10k": 38,
       "wins_third_10k": 40,
@@ -3325,7 +3397,7 @@
     {
       "tag": "one-launch-pad",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 19,
       "wins_prior_10k": -11,
       "wins_third_10k": 15,
@@ -3685,7 +3757,7 @@
     {
       "tag": "raid-pillage-prizes",
       "verdict": "helps",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 43,
       "wins_prior_10k": 53,
       "wins_third_10k": 30,
@@ -3730,7 +3802,7 @@
     {
       "tag": "recon-replacement",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 36,
       "wins_prior_10k": 30,
       "wins_third_10k": 48,
@@ -4270,7 +4342,7 @@
     {
       "tag": "settler-target-hysteresis",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": -18,
       "wins_third_10k": 15,
@@ -4450,7 +4522,7 @@
     {
       "tag": "stranded-settler-discount",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 33,
       "wins_prior_10k": -8,
       "wins_third_10k": 13,
@@ -4585,7 +4657,7 @@
     {
       "tag": "unit-cost-efficiency",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": null,
       "wins_third_10k": null,

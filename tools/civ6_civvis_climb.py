@@ -1380,7 +1380,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + [flag for treatment in args.without
            for flag in ("--civvis-without", treatment)]
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
-        + (["--settler-escort-cap-sync"] if args.settler_escort_cap_sync else [])
+        + (["--settler-escort-cap-sync"] if args.settler_escort_cap_sync
+           else ["--no-settler-escort-cap-sync"])
         + [
          "--tile-export-every", str(args.tile_export_every),
          # The mid-turn frames (docs/LIVE_TACTICS.md §8, §11). The combat
@@ -1708,9 +1709,12 @@ def main() -> int:
     ap.add_argument("--replan-frames", type=int, default=2,
                     help="forwarded to civ6_play.py: mid-turn replan frames per turn "
                          "(revealed ground or a strike re-exports the board; 0 = off)")
-    ap.add_argument("--settler-escort-cap-sync", action="store_true", default=False,
-                    help="forward the default-off capped-settler escort reconciliation "
-                         "experiment to civ6_play.py")
+    ap.add_argument("--settler-escort-cap-sync", dest="settler_escort_cap_sync",
+                    action="store_true", default=True,
+                    help="forward the safe host-side settler escort repair to civ6_play.py")
+    ap.add_argument("--no-settler-escort-cap-sync", dest="settler_escort_cap_sync",
+                    action="store_false",
+                    help="disable the host-side settler escort repair for this batch")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
     ap.add_argument("--no-build", dest="build", action="store_false", default=True,
                     help="do not rebuild the checkout's release decider before attempts")

@@ -529,14 +529,57 @@ class TheOperatorPins(unittest.TestCase):
             self.assertEqual(
                 gene_ledger.operator_pins(allowed, {"kept": "off"}, strict=True), ("kept",))
 
-    def test_the_checked_in_pins_are_the_nine_the_operator_named(self):
+    def test_the_checked_in_pins_follow_the_operator_default_policy(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         pins = rules["operator_default_on"]
-        self.assertEqual(pins, sorted(gene_ledger.OPERATOR_DEFAULT_ON))
-        self.assertEqual(len(pins), 9)
+        expected_pins = {
+            "apostle-promotion-by-role",
+            "army-target-weighs-enemy",
+            "boost-wait-research",
+            "buildings-before-projects",
+            "buy-what-cards-cannot-boost",
+            "camp-party",
+            "campaign-pillage",
+            "chokepoint-claim",
+            "civilian-out-of-reach",
+            "coalition-before-war",
+            "deals-at-the-ceiling",
+            "deals-for-our-gain",
+            "defensible-sites",
+            "district-planning",
+            "early-contact-window",
+            "elective-war-yields-to-a-lane",
+            "expansion-schedule",
+            "founder-temple",
+            "gold-for-the-young-city",
+            "holy-lane-parity",
+            "holy-site-where-the-threat-is-2",
+            "idle-faith-patronage",
+            "lane-great-people",
+            "loyalty-rate-alarm",
+            "missionary-evades-raiders",
+            "naval-threat-triage",
+            "never-an-empty-queue",
+            "one-launch-pad",
+            "quest-trade-route",
+            "recon-replacement",
+            "research-tier-premium",
+            "settler-screen",
+            "settler-target-hysteresis",
+            "stranded-settler-discount",
+            "unit-cost-efficiency",
+            "wonder-adjacent-sites",
+            "wonder-score-tally",
+        }
+        self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
+        self.assertEqual(pins, sorted(expected_pins))
+        self.assertEqual(len(pins), 37)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
+        self.assertIn("settler-target-hysteresis", genome)
+        self.assertNotIn("settler-target-hysteresis-2", genome)
+        self.assertNotIn("raid-pillage-prizes", genome)
         for tag in pins:
             self.assertIn(tag, screenable, tag)
             self.assertIn(tag, genome, f"{tag} is pinned on but does not ship")

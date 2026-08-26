@@ -512,27 +512,51 @@ DEPLOYMENT_POLICY = "batch-rule+operator-pins"
 #: but cannot silently flip treatments while a historical batch is published.
 RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: ⭐ THE OPERATOR'S PINS — genes that default **on** whatever their batch
-#: columns read. Operator, 2026-08-26, verbatim: *"idle-faith-patronage,
-#: buildings-before-projects, deals-for-our-gain, founder-temple,
-#: lane-great-people, army-target-weighs-enemy, research-tier-premium,
-#: settler-screen, early-contact-window should all default on"*.
-#: The rule reads all nine as **off** at clause 4 — each is positive in the
-#: two newest batches and negative in the third, and none of the nine means
-#: more than `BATCH_RULE_AVERAGE` — so the ledger records the rule's answer
-#: under `rules.batch_decisions` and the pin beside it, and the two never
-#: pretend to agree. A pin moves a default only: it cannot keep a gene the
-#: rule removes from the pool (`build_ledger` refuses that), and it cannot
-#: turn a gene off. Nothing derives this list; it is the operator's, by name.
+#: columns read. The 2026-08-26 selected defaults extend this list; the
+#: retained deployment selection separately excludes `raid-pillage-prizes`.
+#: For the versioned `settler-target-hysteresis` family, v1 is the ledger's
+#: highest tracked version (v2 has no pooled record), so only v1 is pinned.
+#: A pin moves a default only: it cannot keep a gene the rule removes from the
+#: pool (`build_ledger` refuses that), and it cannot turn a gene off. Nothing
+#: derives this list; it is the operator's, by name.
 OPERATOR_DEFAULT_ON = (
+    "apostle-promotion-by-role",
     "army-target-weighs-enemy",
+    "boost-wait-research",
     "buildings-before-projects",
+    "buy-what-cards-cannot-boost",
+    "camp-party",
+    "campaign-pillage",
+    "chokepoint-claim",
+    "civilian-out-of-reach",
+    "coalition-before-war",
+    "deals-at-the-ceiling",
     "deals-for-our-gain",
+    "defensible-sites",
+    "district-planning",
     "early-contact-window",
+    "elective-war-yields-to-a-lane",
+    "expansion-schedule",
     "founder-temple",
+    "gold-for-the-young-city",
+    "holy-lane-parity",
+    "holy-site-where-the-threat-is-2",
     "idle-faith-patronage",
     "lane-great-people",
+    "loyalty-rate-alarm",
+    "missionary-evades-raiders",
+    "naval-threat-triage",
+    "never-an-empty-queue",
+    "one-launch-pad",
+    "quest-trade-route",
+    "recon-replacement",
     "research-tier-premium",
     "settler-screen",
+    "settler-target-hysteresis",
+    "stranded-settler-discount",
+    "unit-cost-efficiency",
+    "wonder-adjacent-sites",
+    "wonder-score-tally",
 )
 #: The rule reads at most this many batches — the ranking's three columns.
 BATCH_RULE_WINDOW = 3

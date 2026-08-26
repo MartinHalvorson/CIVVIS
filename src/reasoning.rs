@@ -15,7 +15,7 @@
 //! Three properties do the work:
 //!
 //! - **Off is free.** A journal with no sink is one `Option` test, and the
-//!   [`think!`] macro puts the `format!` calls *inside* that test, so a
+//!   [`think!`](crate::think) macro puts the `format!` calls *inside* that test, so a
 //!   headless tournament never builds a string it will not keep.
 //! - **A clone records nothing.** Cloning an agent is how a rollout is made
 //!   (`StrategicAi` clones its inner agent to play out a hypothetical), and a
@@ -278,7 +278,7 @@ impl Journal {
         self.0.is_some()
     }
 
-    /// Whether a thought at this level would be kept. The [`think!`] macro
+    /// Whether a thought at this level would be kept. The [`think!`](crate::think) macro
     /// tests this before formatting anything, so this is also where the
     /// per-turn budget is spent: a refusal here is what marks the acting
     /// civilization's turn as truncated.
@@ -315,7 +315,7 @@ impl Journal {
         }
     }
 
-    /// Record a thought. Prefer the [`think!`] macro, which keeps the
+    /// Record a thought. Prefer the [`think!`](crate::think) macro, which keeps the
     /// formatting out of a game that is not being watched.
     pub fn note(
         &self,

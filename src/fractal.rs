@@ -42,7 +42,7 @@ impl Fractal {
 
     /// Build a field for point samples only. Terrain and relief fields often
     /// cut a percentile over a selected land set, which is indexed by
-    /// [`percentile_within`] and does not need a second map-wide index.
+    /// [`Self::percentile_within`] and does not need a second map-wide index.
     pub fn new_without_index(rng: &mut Rng, width: i32, height: i32, grain: u32) -> Self {
         Self::new_inner(rng, width, height, grain, false)
     }
@@ -82,7 +82,7 @@ impl Fractal {
         self.build_ridges_inner(rng, plates, blend_ridge, blend_fract, true);
     }
 
-    /// The point-sampling counterpart to [`build_ridges`].
+    /// The point-sampling counterpart to [`Self::build_ridges`].
     pub fn build_ridges_without_index(
         &mut self,
         rng: &mut Rng,
