@@ -2406,13 +2406,11 @@ class TheStandardScreen(unittest.TestCase):
             self.assertNotIn(tag, live_tags)
             self.assertIn(f"| `{tag}` |", ranked)
             self.assertIn(tag, cutoff_tags)
-        reporting_notes = "\n".join(
-            str(batch.get("unverified", ""))
-            for batch in self.ledger["reporting_batches"]
-        )
-        self.assertIn("research-planning", reporting_notes)
-        self.assertIn("high-signal negative genes were deliberately removed",
-                      reporting_notes)
+        # The three display batches rotate as new completed batches arrive.
+        # The cull must remain auditable in generated historical evidence, not
+        # only in the build note of a display slot that can be evicted.
+        self.assertIn("research-planning", ranked)
+        self.assertIn("left the code", ranked)
 
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded

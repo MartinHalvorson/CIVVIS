@@ -338,6 +338,30 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         self.assertLess(sync.index('checkout --quiet --detach origin/main'),
                         sync.index('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"'))
 
+    def test_the_supervisor_rechecks_head_after_the_fresh_build(self):
+        """A release build is long enough for `main` to move underneath it.
+
+        The old guard only compared the checkout to `origin/main` *before*
+        compiling.  In the observed handoff, a merge landed during that build,
+        so the next game began from the now-stale binary.  The final fetch must
+        happen after the build and must return to the batch boundary instead of
+        launching the old executable.
+        """
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        build = source.index('if ! cargo build --release --bin civvis_orders')
+        difficulty = source.index('DIFFICULTY=$EXPLICIT_DIFFICULTY', build)
+        handoff = source[build:difficulty]
+
+        self.assertIn('git -c gc.auto=0 fetch --quiet origin main', handoff)
+        self.assertIn('ORIGIN_MAIN_AFTER_BUILD=$(git rev-parse origin/main', handoff)
+        self.assertIn('"$HEAD_REVISION" != "$ORIGIN_MAIN_AFTER_BUILD"', handoff)
+        self.assertIn('rebuilding exact head before launch', handoff)
+        self.assertIn('continue', handoff)
+        self.assertLess(handoff.index('cargo build --release --bin civvis_orders'),
+                        handoff.index('fetch --quiet origin main'))
+        self.assertLess(handoff.index('fetch --quiet origin main'),
+                        handoff.index('"$HEAD_REVISION" != "$ORIGIN_MAIN_AFTER_BUILD"'))
+
     def test_visible_mirror_reports_the_exact_fetched_revision(self):
         """The display server must identify the build it is actually serving.
 
