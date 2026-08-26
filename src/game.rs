@@ -4085,6 +4085,16 @@ pub struct Player {
     /// every native game.
     #[serde(default)]
     pub borders_enforced: Option<bool>,
+    /// Diplomatic Visibility this seat holds on each rival AS THE HOST REPORTS
+    /// IT (`GetVisibilityOn`, the `GameInfo.Visibilities` index), when a live
+    /// mirror has said so. A native game derives the level in
+    /// [`Game::diplomatic_visibility`] from trees, missions, routes, alliances
+    /// and listening posts; a mirrored board cannot see most of those sources,
+    /// so without this every rival read as level 0 both ways and the combat
+    /// modifier that visibility buys was never priced. Assigned from every
+    /// export; empty on every native board.
+    #[serde(default)]
+    pub observed_visibility: BTreeMap<usize, f64>,
     #[serde(default)]
     pub alliances: BTreeMap<usize, AllianceState>,
     /// Outgoing Delegations or Resident Embassies, keyed by the leader that
@@ -4272,6 +4282,7 @@ impl Player {
             friends_until: BTreeMap::new(),
             open_borders_until: BTreeMap::new(),
             borders_enforced: None,
+            observed_visibility: BTreeMap::new(),
             alliances: BTreeMap::new(),
             diplomatic_missions: BTreeMap::new(),
             defensive_pacts: BTreeMap::new(),
@@ -11244,6 +11255,16 @@ impl Game {
     /// Alliance, and active Listening Posts. Secret Agents and Master Spies
     /// provide two levels instead of one while embedded in a rival city.
     pub fn diplomatic_visibility(&self, source: usize, target: usize) -> f64 {
+        // A live host's own answer outranks the derivation: the mirror fills
+        // `observed_visibility` from `GetVisibilityOn` and the derived sum
+        // below cannot see a rival's trade routes, spies or trees.
+        if let Some(observed) = self
+            .players
+            .get(source)
+            .and_then(|player| player.observed_visibility.get(&target))
+        {
+            return *observed;
+        }
         self.tree_effect(source, "diplomatic_visibility")
             + self
                 .diplomatic_mission_to(source, target)

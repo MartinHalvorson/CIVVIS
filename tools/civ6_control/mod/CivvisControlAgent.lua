@@ -6570,6 +6570,126 @@ local function exportState(player, pid, turn, frame)
 				can_declare = try(function()
 					return diplomacy:CanDeclareWarOn(otherId);
 				end, false),
+				-- ★★★★★ THE RELATIONSHIP ITSELF, ONE-TO-ONE. `can_declare` says a war is
+				-- LEGAL; nothing said whether it was ruinous. Every war, peace,
+				-- denounce and alliance decision on the board was taken blind to the
+				-- host's diplomatic state, grievance ledger, alliance, missions,
+				-- promises and visibility (docs/FIDELITY.md, "The one-to-one map",
+				-- item 1). Each accessor is one the shipped screens call on the same
+				-- objects in this same InGame context:
+				--   DiplomacyActionView.lua:870,1473  GetDiplomaticAI():GetDiplomaticStateIndex
+				--                                     -> GameInfo.DiplomaticStates[i].StateType
+				--   DiplomacyActionView.lua:1486-1511 GetDenounceTurn (both sides),
+				--                                     GetDeclaredFriendshipTurn,
+				--                                     Game.GetGameDiplomacy():GetDenounceTimeLimit
+				--   DiplomacyActionView_WorldCongressTab.lua:42,78
+				--                                     GetGrievancesAgainst is ONE SIGNED BALANCE:
+				--                                     > 0 ours against them, < 0 theirs against
+				--                                     us; GetGrievanceChangePerTurn(them, us)
+				--   DiplomacyRibbon_Expansion1.lua:24-27 GetAllianceType (-1 = none) /
+				--                                     GetAllianceLevel
+				--   DiplomacyActionView_AllianceTab.lua:44 GetAllianceTurnsUntilExpiration
+				--   DiplomacyActionView.lua:992       GetVisibilityOn (GameInfo.Visibilities index)
+				--   DiplomacyActionView_AllianceRow.lua:61-70 IsPromiseMade(other, PromiseTypes.*)
+				-- `nil` wherever the host cannot be asked; the mirror keeps its
+				-- `can_declare` fallback whenever `diplomatic_state` is absent.
+				diplomatic_state = try(function()
+					local index = other:GetDiplomaticAI():GetDiplomaticStateIndex(pid);
+					local row = GameInfo.DiplomaticStates[index];
+					return row ~= nil and row.StateType or nil;
+				end, nil),
+				our_grievances_against_them = try(function()
+					local balance = diplomacy:GetGrievancesAgainst(otherId);
+					return balance > 0 and balance or 0;
+				end, nil),
+				grievances_against_us = try(function()
+					local theirs = try(function()
+						return other:GetDiplomacy():GetGrievancesAgainst(pid);
+					end, nil);
+					if type(theirs) == "number" then
+						return theirs > 0 and theirs or 0;
+					end
+					local balance = diplomacy:GetGrievancesAgainst(otherId);
+					return balance < 0 and -balance or 0;
+				end, nil),
+				grievance_change_per_turn = try(function()
+					return Game.GetGameDiplomacy():GetGrievanceChangePerTurn(otherId, pid);
+				end, nil),
+				alliance_type = try(function()
+					local kind = diplomacy:GetAllianceType(otherId);
+					if type(kind) ~= "number" or kind < 0 then return nil; end
+					local row = GameInfo.Alliances[kind];
+					return row ~= nil and row.AllianceType or nil;
+				end, nil),
+				alliance_level = try(function()
+					if diplomacy:GetAllianceType(otherId) < 0 then return nil; end
+					return diplomacy:GetAllianceLevel(otherId);
+				end, nil),
+				alliance_turns_left = try(function()
+					if diplomacy:GetAllianceType(otherId) < 0 then return nil; end
+					return diplomacy:GetAllianceTurnsUntilExpiration(otherId);
+				end, nil),
+				our_denounce_turn = try(function()
+					return diplomacy:GetDenounceTurn(otherId);
+				end, nil),
+				their_denounce_turn = try(function()
+					return other:GetDiplomacy():GetDenounceTurn(pid);
+				end, nil),
+				friendship_turn = try(function()
+					return diplomacy:GetDeclaredFriendshipTurn(otherId);
+				end, nil),
+				denounce_time_limit = try(function()
+					return Game.GetGameDiplomacy():GetDenounceTimeLimit();
+				end, nil),
+				visibility = try(function()
+					return diplomacy:GetVisibilityOn(otherId);
+				end, nil),
+				their_visibility_on_us = try(function()
+					return other:GetDiplomacy():GetVisibilityOn(pid);
+				end, nil),
+				-- The grant WE make (their overview's "received" direction).
+				open_borders_granted = try(function()
+					return other:GetDiplomacy():HasOpenBordersFrom(pid);
+				end, nil),
+				delegation_at = try(function()
+					return diplomacy:HasDelegationAt(otherId);
+				end, nil),
+				embassy_at = try(function()
+					return diplomacy:HasEmbassyAt(otherId);
+				end, nil),
+				their_delegation = try(function()
+					return other:GetDiplomacy():HasDelegationAt(pid);
+				end, nil),
+				their_embassy = try(function()
+					return other:GetDiplomacy():HasEmbassyAt(pid);
+				end, nil),
+				-- Promise-type names as the shipped Alliance row lists them. The
+				-- enum member is named from the REQUESTER's side ("near ME"), so
+				-- `ours:IsPromiseMade(them, kind)` is a promise WE made to them and
+				-- `theirs:IsPromiseMade(us, kind)` one they made to us.
+				promises_made = try(function()
+					local made = {};
+					for _, name in ipairs({ "DONT_SETTLE_NEAR_ME", "DONT_SPY_ON_ME",
+							"DONT_CONVERT_MY_CITIES", "DONT_DIG_UP_MY_ARTIFACTS" }) do
+						local kind = PromiseTypes[name];
+						if kind ~= nil and diplomacy:IsPromiseMade(otherId, kind) then
+							made[#made + 1] = name;
+						end
+					end
+					return made;
+				end, nil),
+				promises_received = try(function()
+					local theirs = other:GetDiplomacy();
+					local received = {};
+					for _, name in ipairs({ "DONT_SETTLE_NEAR_ME", "DONT_SPY_ON_ME",
+							"DONT_CONVERT_MY_CITIES", "DONT_DIG_UP_MY_ARTIFACTS" }) do
+						local kind = PromiseTypes[name];
+						if kind ~= nil and theirs:IsPromiseMade(pid, kind) then
+							received[#received + 1] = name;
+						end
+					end
+					return received;
+				end, nil),
 				score = try(function() return other:GetScore(); end, -1),
 				-- Diplomatic-victory points, so the denial logic can see the one
 				-- victory that ended three of the last thirteen games early.
@@ -11650,7 +11770,13 @@ local function applyOrder(player, pid, row, turn)
 			end
 			return placed, "found";
 		end
-		if verb == "MOVE_TO" or verb == "ATTACK" then
+		-- CAPTURE is a MOVE_TO onto an enemy civilian with the attack modifier
+		-- and without a strike ledger entry: no combat follows, the unit simply
+		-- arrives and the civilian is ours. Without the modifier the host walks
+		-- next to the civilian and stops (see `attackModifiers`); measured on
+		-- the 273 live runs that carried #2075: 65 bare MOVE_TO orders aimed at
+		-- an unguarded barbarian-held settler, zero captures.
+		if verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE" then
 			if x == nil or y == nil then return false, "no_dest"; end
 			-- ★★★★★ SEND THIS TURN'S LEG, NOT A PATH THE HOST WALKS NEXT TURN.
 			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
@@ -11673,14 +11799,16 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			if verb == "ATTACK" then
+			if verb == "ATTACK" or verb == "CAPTURE" then
 				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
 				-- a strike, and the whole army has been swinging at air.
 				local modifiers = CivvisLedger.attackModifiers();
 				if modifiers ~= nil then
 					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
 				end
-				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+				if verb == "ATTACK" then
+					CivvisLedger.strike(unit, subject, verb, x, y, turn);
+				end
 			end
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
 			if not moved then
@@ -12837,7 +12965,7 @@ CivvisQueue.drain = function(player, pid, turn)
 				elseif ready then
 					local row = entry.rows[entry.next];
 					local verb = tostring(row.verb or "");
-					if spent and (verb == "MOVE_TO" or CivvisQueue.isStrike(row)) then
+					if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or CivvisQueue.isStrike(row)) then
 						-- Nothing that needs movement can run; say why, don't ask.
 						CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
 					else

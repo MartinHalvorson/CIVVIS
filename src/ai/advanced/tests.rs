@@ -13843,6 +13843,72 @@ fn army_takes_a_free_settler_after_reaching_its_planned_city_count() {
     ));
 }
 
+/// The live failure, on the deployed controller's own path. Run
+/// `civvis-20260826T194422Z`: a barbarian-held settler beside a Heavy Chariot
+/// with full movement, another settler of ours alive — `decline_settlers`
+/// true — and the chariot fortified. With the gene the chariot takes it; the
+/// production constructor, which carries no repair, still fortifies.
+#[test]
+fn the_gene_takes_a_barbarian_held_settler_despite_a_duplicate_settler() {
+    let mut game = Game::new_full(2, 20, 14, 71_021, 120, 0, true);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+    }
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    let barb = game.barb_pid.unwrap();
+    let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+    let target =
+        game.nbrs(origin)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+    // The duplicate: our own settler, alive elsewhere.
+    let far = game.cities[&game.player_city_ids(1)[0]].pos;
+    game.spawn_test_unit("settler", 0, far);
+    let warrior = game.spawn_test_unit("warrior", 0, origin);
+    let captured = game.spawn_test_unit("settler", barb, target);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.base.barbarian_settler_capture,
+        "production carries no repair"
+    );
+    let mut without = game.clone();
+    let _ = ai.advanced_military_step(&mut without, 0, warrior, &plan);
+    assert_eq!(
+        without.units[&captured].owner, barb,
+        "without the gene the duplicate-settler guard holds"
+    );
+
+    ai.enable_barbarian_settler_capture();
+    assert!(ai.advanced_military_step(&mut game, 0, warrior, &plan));
+    assert_eq!(
+        game.units[&captured].owner, 0,
+        "the gene takes the settler back"
+    );
+}
+
 #[test]
 fn exact_hybrid_search_uses_melee_to_finish_a_city() {
     let mut game = Game::new_full(2, 24, 16, 71_010, 120, 0, false);
@@ -33550,6 +33616,66 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() 
         !reach.covers(&game, after),
         "the live floor uses the safe two-step escape: start={start:?}, \
          raider={raider_at:?}, escape={safe_escape:?}, after={after:?}"
+    );
+}
+
+/// A guard below the shared survival floor is not a reason to leave its
+/// Settler inside a Barbarian's capture reach.  This is the narrow
+/// reconstruction of civvis-20260826T205933Z t24: a 27-HP Warrior shared
+/// the Settler's tile, two Barbarians removed it, and then captured the
+/// civilian.  The default policy already says that a sub-40 guard cannot
+/// hold; every civilian-safety path must honor that same definition.
+#[test]
+fn a_wounded_stacked_guard_does_not_cancel_the_settlers_barbarian_escape() {
+    let (mut game, _city, home) = barbarian_field(71_027);
+    for unit in game.player_unit_ids(0) {
+        if game.rules.units[game.units[&unit].kind].class == "military" {
+            game.remove_unit(unit);
+        }
+    }
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let guard = game.spawn_test_unit("warrior", 0, start);
+    game.units.get_mut(&guard).unwrap().hp = STACKED_GUARD_MIN_HP - 1;
+    let raider_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| {
+            open_land(&game, *pos)
+                && game
+                    .reachable(settler)
+                    .into_iter()
+                    .any(|escape| game.wdist(escape, *pos) >= 3)
+        })
+        .expect("an adjacent raider with a safe two-step escape");
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    assert!(ai.settler_guard_holds && ai.civilian_out_of_reach);
+    ai.settler_guards.insert(settler, guard);
+    let reach = ai.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the weakly guarded Settler is inside the Barbarian's capture reach"
+    );
+    assert!(
+        !ai.civilian_safe_at(&game, 0, settler, start, &reach),
+        "a bound guard below {STACKED_GUARD_MIN_HP} HP cannot cancel the escape"
+    );
+    assert_eq!(
+        ai.civilian_flee_step(&mut game, 0, settler),
+        Some(true),
+        "the safety pass takes the available full-turn escape"
+    );
+    let after = game.units[&settler].pos;
+    assert_ne!(after, start, "the Settler leaves the doomed stack");
+    assert!(
+        !reach.covers(&game, after),
+        "the escape leaves the Warrior's capture reach: {after:?}"
     );
 }
 
