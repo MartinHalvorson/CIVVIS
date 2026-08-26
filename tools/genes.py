@@ -209,10 +209,12 @@ the interval. Every gene gets `posterior_pp`, `posterior_se_pp` and, in
 `GENE_HEURISTIC_RANKING.md`, a 95% interval and `P(effect > 0)`.
 
 It is **published, not in force**. The deployment policy is the
-`batch-rule`: the three batch columns decide, the ledger records the columns
-and the rule's answer beside the evidence, and Rust re-derives the same
-answer from the same columns, so nothing else can silently rewrite what the
-agent plays.
+`batch-rule+operator-pins`: the three batch columns decide every gene the
+operator has not pinned on by name in `OPERATOR_DEFAULT_ON`, the ledger
+records the columns and the rule's own answer beside the evidence — a pinned
+gene keeps its `off` under `rules.batch_decisions` — and Rust re-derives the
+same answer from the same columns and the same pins, so nothing else can
+silently rewrite what the agent plays.
 
 The posterior remains useful evidence: it makes uncertainty and disagreement
 visible when the operator reads a flip. It is not an alternative authority.
@@ -487,16 +489,41 @@ Z_BAR = 2.0
 PER = 10_000
 DIFF_PLACES = 6
 
-#: ⭐ THE DEPLOYMENT GENOME FOLLOWS THE BATCH RULE (operator, 2026-08-25).
+#: ⭐ THE DEPLOYMENT GENOME FOLLOWS THE BATCH RULE (operator, 2026-08-25),
+#: WITH THE OPERATOR'S PINS ABOVE IT (operator, 2026-08-26).
 #: Every screenable gene's default is decided by the ranking's three batch
 #: columns — *Last Batch*, *Prior Batch*, *Third Batch*: the ± wins per
 #: 10,000 total seats each fixed reporting batch read for the gene, newest
 #: first (`total_seat_batch_wins`) — through `batch_rule`, and by nothing
-#: else. `python3 tools/genes.py write` re-decides every default when a batch
-#: enters; `check` refuses a ledger that still carries a gene the rule says
-#: must leave the pool. There is no operator list: a default is changed by
+#: else except `OPERATOR_DEFAULT_ON`, the genes the operator names on by
+#: hand. `python3 tools/genes.py write` re-decides every unpinned default when
+#: a batch enters; `check` refuses a ledger that still carries a gene the rule
+#: says must leave the pool. Every default that is not a pin is changed by
 #: playing more games.
-DEPLOYMENT_POLICY = "batch-rule"
+DEPLOYMENT_POLICY = "batch-rule+operator-pins"
+#: ⭐ THE OPERATOR'S PINS — genes that default **on** whatever their batch
+#: columns read. Operator, 2026-08-26, verbatim: *"idle-faith-patronage,
+#: buildings-before-projects, deals-for-our-gain, founder-temple,
+#: lane-great-people, army-target-weighs-enemy, research-tier-premium,
+#: settler-screen, early-contact-window should all default on"*.
+#: The rule reads all nine as **off** at clause 4 — each is positive in the
+#: two newest batches and negative in the third, and none of the nine means
+#: more than `BATCH_RULE_AVERAGE` — so the ledger records the rule's answer
+#: under `rules.batch_decisions` and the pin beside it, and the two never
+#: pretend to agree. A pin moves a default only: it cannot keep a gene the
+#: rule removes from the pool (`build_ledger` refuses that), and it cannot
+#: turn a gene off. Nothing derives this list; it is the operator's, by name.
+OPERATOR_DEFAULT_ON = (
+    "army-target-weighs-enemy",
+    "buildings-before-projects",
+    "deals-for-our-gain",
+    "early-contact-window",
+    "founder-temple",
+    "idle-faith-patronage",
+    "lane-great-people",
+    "research-tier-premium",
+    "settler-screen",
+)
 #: The rule reads at most this many batches — the ranking's three columns.
 BATCH_RULE_WINDOW = 3
 #: A gene whose batches are not all positive ships only when their mean
@@ -765,6 +792,37 @@ def batch_columns(batches: list, tag: str) -> list:
         for batch in batches
     ]
     return (columns + [None] * BATCH_RULE_WINDOW)[:BATCH_RULE_WINDOW]
+
+
+def operator_pins(pinnable: set[str], decisions: dict[str, str],
+                  strict: bool) -> tuple[str, ...]:
+    """⭐ THE OPERATOR'S PINS as this ledger will record them: the tags of
+    `OPERATOR_DEFAULT_ON` this ledger can pin, sorted.
+
+    `pinnable` is the tag set a pin may name — the screenable registry for
+    real generation, and only the tags a fixture's own batches priced for a
+    synthetic one, so the real pins do not leak into a fixture built over
+    stand-in tags. `decisions` is the batch rule's answer for each priced tag.
+    `strict` is on for real generation (`filter_known`), where a pin naming a
+    gene the registry does not screen is a hard error rather than a silent
+    no-op. A pin over a gene the rule REMOVES from the pool is refused in
+    either mode: the pin decides a default, never whether the code exists."""
+    pins = tuple(sorted(tag for tag in OPERATOR_DEFAULT_ON if tag in pinnable))
+    if strict:
+        unknown = sorted(set(OPERATOR_DEFAULT_ON) - set(pins))
+        if unknown:
+            raise SystemExit(
+                "genes: the operator's pinned defaults name " + ", ".join(unknown)
+                + ", which this registry does not screen; a pin is a gene's tag "
+                  "(`python3 tools/genes.py list`)")
+    cut = [tag for tag in pins if decisions.get(tag) == "remove"]
+    if cut:
+        raise SystemExit(
+            "genes: the batch rule removes " + ", ".join(cut) + " from the gene pool "
+            f"(below {BATCH_RULE_REMOVE_BELOW} wins/10k in all {BATCH_RULE_WINDOW} "
+            "batches), and a pin cannot keep a gene the rule cuts; drop it from "
+            "OPERATOR_DEFAULT_ON or cut the gene")
+    return pins
 
 
 def direct_arm_constant(sources: list[dict]) -> tuple[float, str] | None:
@@ -1370,7 +1428,8 @@ def family_head(family: list[str], wins_by_tag: dict[str, float]) -> str | None:
 def resolve_family_heads(rule_on: tuple[str, ...], tags: list[str],
                          wins_by_tag: dict[str, float]) -> tuple[tuple[str, ...], dict[str, dict]]:
     """A family the batch rule turns on ships ONE version. `rule_on` is every
-    tag the rule turned on, versions included; the family ships its head —
+    tag the rule turned on or the operator pinned on, versions included; the
+    family ships its head —
     the priced version with the highest tracked wins — when the rule turns
     the head on, else the best version by tracked wins among those the rule
     turns on (ties to the higher version). Returns the resolved deployment
@@ -1603,13 +1662,19 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
               + f" from the gene pool (below {BATCH_RULE_REMOVE_BELOW} in all "
               f"{BATCH_RULE_WINDOW} batches); `genes.py check` fails until the code is cut",
               file=sys.stderr)
+    # ⭐ THE OPERATOR'S PINS sit above the rule: a named gene ships on whatever
+    # its columns read. `decisions` keeps the rule's own answer, so the ledger
+    # publishes the override rather than hiding it inside the genome.
+    pinned = operator_pins(allowed if filter_known else set(columns_by_tag),
+                           decisions, filter_known)
+    default_on = tuple(sorted(set(rule_on) | set(pinned)))
     # ⭐ A family the rule turns on ships ONE version — its head by tracked
     # wins when the rule turns the head on, else the best version the rule
     # turns on; and no family may hold more than MAX_VERSIONS.
     family_tags = sorted(allowed | set(measures))
     check_family_sizes(family_tags)
     wins_by_tag = {tag: pooled_win_diff_pp(record) for tag, record in arms.items() if record}
-    selected, family_heads = resolve_family_heads(rule_on, family_tags, wins_by_tag)
+    selected, family_heads = resolve_family_heads(default_on, family_tags, wins_by_tag)
 
     genes = []
     for tag in sorted(measures):
@@ -1681,9 +1746,10 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "win_diff": "the pooled on rate minus the pooled off rate in percentage points, "
                         "over every screen that priced the gene, each weighted by its on-arm seats "
                         "- the ranking's `Diff`, the whole on-off difference",
-            "default_on": "batch-rule: exactly the tags in deployment_genome are on, and that "
-                          "list is batch_rule's answer over every screenable gene, families "
-                          "collapsed to the version that ships; every other screenable tag is off",
+            "default_on": "batch-rule+operator-pins: exactly the tags in deployment_genome are "
+                          "on, and that list is batch_rule's answer over every screenable gene "
+                          "plus operator_default_on, families collapsed to the version that "
+                          "ships; every other screenable tag is off",
             "batch_rule": "read over the reporting batches that priced the gene, newest first, "
                           "at most batch_rule_window of them, each reading the ranking's wins "
                           "+- per 10,000 total seats: (1) three batches all below "
@@ -1699,6 +1765,13 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "batch_columns": columns_by_tag,
             "batch_decisions": decisions,
             "removals_due": removals_due,
+            "operator_default_on": list(pinned),
+            "operator_pins": "the genes the operator named on by hand (genes.py "
+                             "OPERATOR_DEFAULT_ON, 2026-08-26); each is in deployment_genome "
+                             "whatever its batch columns read, and batch_decisions still "
+                             "records what the rule alone would have said. A pin moves a "
+                             "default only: it cannot hold a gene the rule removes from the "
+                             "pool, and it cannot turn a gene off",
             "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every "
                          "screen's on-off difference on the win column's scale, each weighted "
                          "by its own standard error and the between-screen variance carried in "
@@ -1715,10 +1788,12 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                         "third-best leaves before a fourth is added",
             "family_heads": family_heads,
             "posterior_shapes": list(POSTERIOR_SHAPES),
-            "deployment_policy_meaning": "the batch rule decides default_on from batch_columns; "
-                                         "`tools/genes.py write` re-decides every default when a "
-                                         "reporting batch enters, and `check` fails while "
-                                         "removals_due names a gene still in the registry",
+            "deployment_policy_meaning": "the batch rule decides default_on from batch_columns "
+                                         "for every gene operator_default_on does not name, and "
+                                         "a named gene is on; `tools/genes.py write` re-decides "
+                                         "every unpinned default when a reporting batch enters, "
+                                         "and `check` fails while removals_due names a gene "
+                                         "still in the registry",
         },
         "sources": recorded,
         "reporting_batches": reporting,
@@ -1775,16 +1850,25 @@ def render_rust(ledger: dict) -> str:
         "//",
         "// Source: docs/gene_ledger.json (the same tool writes both); `genes.py check` holds them",
         "// together, and `the_default_follows_the_batch_rule` re-derives every `default_on`",
-        "// below from `BATCH_COLUMNS` through `gene_ledger::batch_rule`.",
+        "// below from `BATCH_COLUMNS` through `gene_ledger::batch_rule`, above",
+        "// `OPERATOR_DEFAULT_ON`.",
         "",
         "/// The policy that supplies every `default_on` below.",
         f"pub(super) const DEPLOYMENT_POLICY: &str = {json.dumps(rules['deployment_policy'])};",
         "",
-        "/// The screenable genes the batch rule turns on, one version per family:",
-        "/// the deployment genome.",
+        "/// The screenable genes that ship on — the batch rule's answer plus the",
+        "/// operator's pins, one version per family: the deployment genome.",
         "#[rustfmt::skip]",
         "pub(super) const DEPLOYMENT_GENOME: &[&str] = &[",
         *(f"    {json.dumps(tag)}," for tag in rules["deployment_genome"]),
+        "];",
+        "",
+        "/// ⭐ The genes the operator named on by hand. Each is in",
+        "/// `DEPLOYMENT_GENOME` whatever its `BATCH_COLUMNS` read, and the rule's",
+        "/// own answer for it is still what `batch_rule` returns.",
+        "#[rustfmt::skip]",
+        "pub(super) const OPERATOR_DEFAULT_ON: &[&str] = &[",
+        *(f"    {json.dumps(tag)}," for tag in rules["operator_default_on"]),
         "];",
         "",
         "/// Every screenable gene a reporting batch priced, with its three batch",
@@ -2759,6 +2843,15 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "answer read off the three batch columns (`docs/gene_ledger.json`, `rules.batch_rule`): "
         "the batches decide, and every other column is evidence. Screenable genes "
         "awaiting every displayed measurement are listed separately below without a rank.",
+        "",
+        "**The operator's pins.** " + (
+            "The operator names these genes **on** by hand, above the rule: "
+            + ", ".join(f"`{tag}`" for tag in ledger["rules"]["operator_default_on"])
+            + ". Their *Default* reads **on** whatever their batch columns say, and "
+              "`rules.batch_decisions` in the ledger still records what the rule alone "
+              "would have answered. Every other row's *Default* is the rule's."
+            if ledger["rules"]["operator_default_on"] else
+            "None: every *Default* below is the batch rule's own answer."),
         "",
         "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
         "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
