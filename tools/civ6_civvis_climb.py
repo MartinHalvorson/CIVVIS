@@ -356,7 +356,8 @@ def busy() -> str | None:
     return " ".join(real) or None
 
 
-def _detach(cmd: list[str], log_path: Path, what: str) -> None:
+def _detach(cmd: list[str], log_path: Path, what: str,
+            environment: dict[str, str] | None = None) -> None:
     """Start a helper that must outlive this batch's process group.
 
     `start_new_session` is the load-bearing argument. Without it the child joins
@@ -372,7 +373,7 @@ def _detach(cmd: list[str], log_path: Path, what: str) -> None:
         with log_path.open("a") as handle:
             subprocess.Popen(
                 cmd, stdout=handle, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL, start_new_session=True,
+                stdin=subprocess.DEVNULL, start_new_session=True, env=environment,
             )
         print(f"[{what}] started; it logs to {log_path}", flush=True)
     except OSError as exc:
@@ -488,6 +489,34 @@ MIRROR_HOME = Path.home() / "civvis-civ6-mirror"
 MIRROR_FOLLOW_LOG = MIRROR_HOME / "follow.log"
 MIRROR_PORT = 8610
 MIRROR_RETIRE_SECONDS = 8.0
+MIRROR_COMMIT_ENV = "CIVVIS_MIRROR_COMMIT"
+MIRROR_COMMIT_TIME_ENV = "CIVVIS_MIRROR_COMMIT_TIME"
+
+
+def mirror_follower_environment() -> dict[str, str]:
+    """Promote the supervisor's selected revision into its replacement follower.
+
+    The supervisor starts a stamped follower before a batch, but this launcher
+    correctly retires that helper and its server so every verification batch uses
+    the current checkout.  Without this handoff the replacement starts with no
+    ``CIVVIS_COMMIT``, native ``/status`` reports ``unknown``, and deployment
+    cannot prove that the visible mirror is serving the game just built.
+
+    Keep the handoff under mirror-only names until the detached follower starts:
+    Civ VI's harness and decision worker must not inherit a display-server stamp.
+    A malformed or absent handoff deliberately clears any ambient runtime stamp
+    instead of presenting a stale revision as the fresh mirror's identity.
+    """
+    environment = os.environ.copy()
+    commit = environment.pop(MIRROR_COMMIT_ENV, "")
+    commit_time = environment.pop(MIRROR_COMMIT_TIME_ENV, "")
+    environment.pop("CIVVIS_COMMIT", None)
+    environment.pop("CIVVIS_COMMIT_TIME", None)
+    if re.fullmatch(r"[0-9a-f]{40}", commit):
+        environment["CIVVIS_COMMIT"] = commit
+        if commit_time:
+            environment["CIVVIS_COMMIT_TIME"] = commit_time
+    return environment
 
 
 def matching_pids(pattern: str) -> list[int]:
@@ -629,7 +658,7 @@ def ensure_mirror() -> None:
         return
     retire_mirror()
     _detach([sys.executable, "-u", str(follow)],
-            MIRROR_FOLLOW_LOG, "mirror")
+            MIRROR_FOLLOW_LOG, "mirror", mirror_follower_environment())
 
 
 def commits_behind_main() -> int | None:
