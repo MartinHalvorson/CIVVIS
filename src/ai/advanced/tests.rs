@@ -33466,6 +33466,88 @@ fn a_settler_inside_a_raiders_reach_flees_out_of_it() {
     );
 }
 
+/// The production live bridge must not leave an unguarded Settler inside a
+/// visible direct capture envelope merely because every *one-step* retreat is
+/// also covered.  The opt-in owns the broader pre-emptive route rule; this is
+/// the narrow emergency floor for a live Settler that will otherwise be taken
+/// before it receives another turn.
+#[test]
+fn a_default_live_settler_escapes_a_direct_barbarian_capture_without_the_opt_in() {
+    let (mut game, _city, home) = barbarian_field(71_026);
+    for unit in game.player_unit_ids(0) {
+        if game.rules.units[game.units[&unit].kind].class == "military" {
+            game.remove_unit(unit);
+        }
+    }
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    // Put the Warrior next to the Settler but still in the capital's vision.
+    // Its full two-move reach covers every legal one-step retreat, while the
+    // Settler has a safe two-step escape on this open board.
+    let raider_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, home) <= 2
+                && open_land(&game, *pos)
+                && game
+                    .reachable(settler)
+                    .into_iter()
+                    .any(|escape| game.wdist(escape, *pos) >= 3)
+        })
+        .expect("a visible adjacent raider with a two-step escape");
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    assert!(
+        ai.live_formationless_settler_shadow,
+        "the deployed seat uses the live shadow"
+    );
+    assert!(
+        !ai.civilian_out_of_reach,
+        "the emergency floor must not promote the opt-in genome"
+    );
+    let reach = ai.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the settler is capturable where it stands"
+    );
+    let legal_steps: Vec<_> = game
+        .nbrs(start)
+        .into_iter()
+        .filter(|pos| game.can_move(settler, *pos))
+        .collect();
+    assert!(
+        legal_steps.iter().all(|pos| reach.covers(&game, *pos)),
+        "the fixture must defeat the one-step retreat: {legal_steps:?}"
+    );
+    let safe_escape = game
+        .reachable(settler)
+        .into_iter()
+        .find(|pos| !reach.covers(&game, *pos))
+        .expect("the fixture must offer a safe full-turn escape");
+    assert!(
+        game.path_to(settler, safe_escape).is_some(),
+        "the advertised full-turn escape has a path"
+    );
+
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    let after = game.units[&settler].pos;
+    assert_ne!(
+        after, start,
+        "the live Settler does not wait to be captured"
+    );
+    assert!(
+        !reach.covers(&game, after),
+        "the live floor uses the safe two-step escape: start={start:?}, \
+         raider={raider_at:?}, escape={safe_escape:?}, after={after:?}"
+    );
+}
+
 /// The route step into a raider's reach is refused: a settler one tile short
 /// of it either sidesteps to safe ground or holds, and never ends its turn
 /// where the Warrior could stand next turn.
