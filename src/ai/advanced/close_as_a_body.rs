@@ -252,7 +252,6 @@ impl AdvancedAi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::Ai;
     use crate::doctrine::{build, position};
     use crate::hex;
 
