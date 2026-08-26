@@ -27,7 +27,7 @@ use crate::Pos;
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
 #[cfg(feature = "closed-experiments")]
-pub const KINDS: [&str; 85] = [
+pub const KINDS: [&str; 86] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
     "contribute_district", "perform_concert", "pillage", "repair_improvement",
@@ -48,7 +48,7 @@ pub const KINDS: [&str; 85] = [
     "liberate_city", "end_turn", "air_pillage", "priority_target", "upgrade",
     "build_railroad", "buy_plot", "send_delegation", "send_embassy",
     "propose_defensive_pact", "propose_joint_war", "request_promise", "demand_gold",
-    "aim_mass_driver", "mass_driver_strike",
+    "aim_mass_driver", "mass_driver_strike", "swap",
 ];
 
 /// The original scalar action block. It is kept as an append-only prefix so
@@ -181,6 +181,7 @@ pub fn kind_name(action: &Action) -> &'static str {
     match action {
         Action::Move { .. } => "move",
         Action::MoveTo { .. } => "move_to",
+        Action::Swap { .. } => "swap",
         Action::Attack { .. } => "attack",
         Action::Ranged { .. } => "ranged",
         Action::FoundCity { .. } => "found_city",
@@ -274,6 +275,8 @@ pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
     match action {
         Action::Move { to, .. } | Action::MoveTo { to, .. } => Some(*to),
         Action::AirRebase { to, .. } | Action::AirPatrol { to, .. } => Some(*to),
+        // A swap points at the tile it takes, which is where its partner is.
+        Action::Swap { other, .. } => g.units.get(other).map(|unit| unit.pos),
         Action::Attack { target, .. }
         | Action::Ranged { target, .. }
         | Action::AirStrike { target, .. }
@@ -598,6 +601,7 @@ pub fn acting_unit(action: &Action) -> Option<u32> {
     match action {
         Action::Move { unit, .. }
         | Action::MoveTo { unit, .. }
+        | Action::Swap { unit, .. }
         | Action::Attack { unit, .. }
         | Action::Ranged { unit, .. }
         | Action::FoundCity { unit }

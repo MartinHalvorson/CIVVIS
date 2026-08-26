@@ -4295,6 +4295,15 @@ pub enum Action {
         unit: u32,
         to: Pos,
     },
+    /// Exchange two adjacent units of one player. Civilization VI offers this
+    /// wherever a unit's move would end on a friendly unit of its own layer:
+    /// the pair trades hexes and each pays the entry cost of the tile it takes.
+    /// It is how a damaged front-liner is pulled out of contact for the healthy
+    /// unit behind it without either of them leaving the line.
+    Swap {
+        unit: u32,
+        other: u32,
+    },
     Attack {
         unit: u32,
         target: Pos,
@@ -6562,6 +6571,24 @@ impl From<Game> for GameSer {
             cities: g.cities.into_values().collect(),
         }
     }
+}
+
+/// What a one-hex step onto a tile is allowed to do.
+///
+/// Civilization VI checks the stacking layer at the **end** of a move, not at
+/// every step, so "may this unit enter that hex" and "may this unit finish
+/// there" are two different questions and only the second one asks about a
+/// friendly unit standing in the way. See [`Game::entry_at`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Entry {
+    /// The step is illegal: terrain, a cliff, a border, a hostile city or a
+    /// foreign unit. Nothing about waiting or spending more Movement helps.
+    Blocked,
+    /// The unit may cross this tile but may not end its movement on it,
+    /// because one of its own units already holds the same stacking layer.
+    Pass,
+    /// The unit may cross this tile and may end its movement on it.
+    Stop,
 }
 
 impl Game {
@@ -24283,6 +24310,25 @@ impl Game {
     }
 
     pub fn can_move(&self, uid: u32, pos: Pos) -> bool {
+        self.can_move_step(uid, pos, true)
+    }
+
+    /// `can_move` for a hex in the middle of a longer walk, where the unit is
+    /// crossing rather than arriving.
+    ///
+    /// `stopping` is the whole difference and it asks exactly one rule: may
+    /// this unit be left standing here. See [`Game::entry_at`] — Civilization
+    /// VI checks the stacking layer at the end of a move, so a friendly unit
+    /// blocks an arrival and not a crossing. Only [`Game::do_move_to`], which
+    /// executes a whole path in one action, passes `false`.
+    fn can_move_step(&self, uid: u32, pos: Pos, stopping: bool) -> bool {
+        let admits = |g: &Self, id: u32, from: Pos, to: Pos| {
+            if stopping {
+                g.can_enter(id, from, to)
+            } else {
+                g.can_pass(id, from, to)
+            }
+        };
         let u = &self.units[&uid];
         if u.linked_to.is_some() && !self.is_linked_leader(uid) {
             return false;
@@ -24298,13 +24344,13 @@ impl Game {
         if !self.can_pay_step(uid, u.pos, pos) {
             return false;
         }
-        if !self.can_enter(uid, self.units[&uid].pos, pos) {
+        if !admits(self, uid, self.units[&uid].pos, pos) {
             return false;
         }
         if self.is_linked_leader(uid) {
             let peer = self.units[&uid].linked_to.unwrap();
             return self.can_pay_step(peer, self.units[&peer].pos, pos)
-                && self.can_enter(peer, self.units[&peer].pos, pos);
+                && admits(self, peer, self.units[&peer].pos, pos);
         }
         true
     }
@@ -24350,26 +24396,118 @@ impl Game {
             || self.has_open_borders(unit.owner, territory_owner)
     }
 
+    /// Whether this unit may take a one-hex step onto `pos` **and finish
+    /// there** — the question a single `Move` action asks.
     fn can_enter(&self, uid: u32, from: Pos, pos: Pos) -> bool {
-        self.can_enter_past(uid, from, pos, false)
+        self.entry_at(uid, from, pos, false) == Entry::Stop
     }
 
-    /// `can_enter`, optionally with the stacking layer relaxed.
+    /// Whether this unit may cross `pos` on its way somewhere else.
     ///
-    /// `through_units` is never true for anything the rules decide — a move
-    /// that would share a tile is illegal and stays illegal. It exists for the
-    /// question somebody watching asks about a unit that is not theirs: how
-    /// far can that thing reach, given that whatever is parked in front of it
-    /// can walk away or die before it matters. Everything else a step has to
-    /// satisfy is still asked, zone of control included, because none of that
-    /// moves out of the way.
-    fn can_enter_past(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> bool {
-        let u = &self.units[&uid];
-        if self.wdist(from, pos) != 1 {
+    /// Weaker than [`Game::can_enter`] by exactly one rule: a tile held by one
+    /// of this unit's own units on the same stacking layer may be walked
+    /// through, and may not be finished on.
+    pub(crate) fn can_pass(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+        self.entry_at(uid, from, pos, false) != Entry::Blocked
+    }
+
+    /// Whether two units belonging to one player contend for a single
+    /// stacking layer, and so may not end a turn on the same tile.
+    fn shares_stacking_layer(
+        &self,
+        spec: &crate::rules::UnitSpec,
+        ospec: &crate::rules::UnitSpec,
+    ) -> bool {
+        // Based aircraft occupy a slot, not the land/naval stacking layer.
+        if ospec.domain.as_deref() == Some("air") {
             return false;
         }
-        if !self.unit_can_traverse(uid, pos) {
+        if ospec.class != spec.class {
             return false;
+        }
+        // Land and naval military units use separate stacking layers,
+        // including when the land unit is embarked.
+        let separate_military_layers = spec.class == "military"
+            && (spec.domain.as_deref() == Some("sea")) != (ospec.domain.as_deref() == Some("sea"));
+        !separate_military_layers
+    }
+
+    /// Whether this unit may **end its movement** on `pos`.
+    ///
+    /// The stacking layer is the only rule that separates finishing a move
+    /// from crossing a tile, and it is a fact about the destination alone:
+    /// nothing here depends on which neighbour the unit arrives from, which is
+    /// why a flood can decide it once per tile. Everything a step must satisfy
+    /// on the way — terrain, cliffs, borders, zone of control, foreign units —
+    /// belongs to [`Game::entry_at`].
+    pub(crate) fn can_stop(&self, uid: u32, pos: Pos) -> bool {
+        let Some(u) = self.units.get(&uid) else {
+            return false;
+        };
+        let spec = &self.rules.units[u.kind];
+        // A Great Person the host has on this plot but CIVVIS has no unit for
+        // holds the civilian layer for its owner. See `great_person_plots`.
+        if self
+            .great_person_plots
+            .get(&pos)
+            .is_some_and(|owner| *owner == u.owner && spec.class == "civilian")
+        {
+            return false;
+        }
+        for oid in self.unit_ids_at(pos) {
+            if *oid == uid {
+                continue; // where it already stands is somewhere it may stand
+            }
+            let o = &self.units[oid];
+            if o.owner != u.owner {
+                continue; // a foreign unit blocks the step itself, not the layer
+            }
+            if self.shares_stacking_layer(spec, &self.rules.units[o.kind]) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// What a one-hex step onto `pos` is allowed to do.
+    ///
+    /// ★★★★★ CIVILIZATION VI CHECKS THE STACKING LAYER AT THE END OF A MOVE,
+    /// NOT AT EVERY STEP. A unit may walk **through** a tile held by its own
+    /// unit of the same layer as long as it has the Movement to leave again,
+    /// and may not finish its move there. The shipped game's own end-turn
+    /// blocker `ENDTURN_BLOCKING_STACKED_UNITS` — which this repository's
+    /// Civilization VI bridge already handles, see
+    /// `docs/CIV6_COMPUTER_CONTROL.md` — exists precisely because units are
+    /// allowed to be stacked in the middle of a turn. Reference basis: the
+    /// in-game Civilopedia "Movement" entry,
+    /// <https://www.civilopedia.net/en-US/standard-rules/concepts/movement_3/>.
+    /// The rule is pinned by `src/game/movement_rule_tests.rs`; the rest of it
+    /// is written down in `docs/MOVEMENT.md`.
+    ///
+    /// ⚠ This was one boolean for both questions until 2026-08-26, and the
+    /// whole engine consequently read a friendly unit as a wall: `flow`,
+    /// `path_to` and the multi-turn `route_step` all refused to expand across
+    /// one, so no column ever filed through a defile and no front line ever
+    /// rotated. It was found by a person playing the Tactics arena, not by any
+    /// test, screen or ladder — every A/B in this repository plays both arms
+    /// under the same rules, so a rule error is invisible to all of them.
+    ///
+    /// Everything else a step has to satisfy binds identically at every hex of
+    /// a path — terrain, cliffs, rivers, borders, zone of control, hostile
+    /// cities, and every foreign unit — because none of that moves out of the
+    /// way.
+    ///
+    /// `through_units` drops occupancy altogether and nothing the rules decide
+    /// sets it. It exists for the question somebody watching asks about a unit
+    /// that is not theirs: how far can that thing reach, given that whatever
+    /// is parked in front of it can walk away or die before it matters.
+    fn entry_at(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> Entry {
+        let u = &self.units[&uid];
+        if self.wdist(from, pos) != 1 {
+            return Entry::Blocked;
+        }
+        if !self.unit_can_traverse(uid, pos) {
+            return Entry::Blocked;
         }
         // Only a fighter actually flying a patrol over this very tile can
         // block the step, and deciding a war is far from free — a city-state's
@@ -24383,10 +24521,10 @@ impl Game {
             .iter()
             .any(|&(owner, at)| at == pos && owner != u.owner && self.is_at_war(u.owner, owner))
         {
-            return false;
+            return Entry::Blocked;
         }
         if !self.unit_can_cross_cliff(uid, from, pos) {
-            return false;
+            return Entry::Blocked;
         }
         let spec = &self.rules.units[u.kind];
         if u.kind == "rock_band"
@@ -24398,13 +24536,13 @@ impl Game {
                         && self.policy_effect(city.owner, "block_foreign_rock_bands") > 0.0
                 })
         {
-            return false;
+            return Entry::Blocked;
         }
         match self.territory_owner_at(pos) {
             // The owner is on the board, so ordinary diplomacy is authoritative.
             Some(owner) => {
                 if !self.unit_has_territory_access(u, owner) {
-                    return false;
+                    return Entry::Blocked;
                 }
             }
             // Nobody on this board holds it — but a live host may still say
@@ -24417,73 +24555,74 @@ impl Game {
                     && self.closed_borders.contains(&pos)
                     && !self.unit_ignores_closed_borders(u)
                 {
-                    return false;
+                    return Entry::Blocked;
                 }
             }
         }
+        if let Some(cid) = self.city_at(pos) {
+            if self.cities[&cid].owner != u.owner {
+                return Entry::Blocked;
+            }
+        }
+        if let Some(cid) = self.encampment_at(pos) {
+            if self.cities[&cid].owner != u.owner {
+                return Entry::Blocked;
+            }
+        }
+        if through_units {
+            return Entry::Stop;
+        }
+        // One of our own on the layer we would finish on: the step is legal
+        // and the arrival is not.
+        let mut stacked = false;
         // A Great Person the host has on this plot but CIVVIS has no unit for:
         // the same stacking rules as the units below, read from the plot map. A
-        // foreign one blocks every layer short of a capture; one of ours blocks
-        // the civilian layer. See `great_person_plots`.
-        if !through_units {
-            if let Some(owner) = self.great_person_plots.get(&pos) {
-                if *owner != u.owner {
-                    if spec.class != "military" || !self.is_at_war(u.owner, *owner) {
-                        return false;
-                    }
-                } else if spec.class == "civilian" {
-                    return false;
+        // foreign one blocks every layer short of a capture; one of ours holds
+        // the civilian layer against arrival. See `great_person_plots`.
+        if let Some(owner) = self.great_person_plots.get(&pos) {
+            if *owner != u.owner {
+                if spec.class != "military" || !self.is_at_war(u.owner, *owner) {
+                    return Entry::Blocked;
                 }
+            } else if spec.class == "civilian" {
+                stacked = true;
             }
         }
         // Read the occupancy list in place: `units_at` copies it into a fresh
         // `Vec`, and `flow_past` asks this once per neighbour of every tile.
         for oid in self.unit_ids_at(pos) {
-            if through_units {
-                break;
-            }
             let o = &self.units[oid];
             let ospec = &self.rules.units[o.kind];
-            // Based aircraft occupy a slot, not the land/naval stacking layer.
-            // A hostile ground unit may enter the base and subsequently
-            // pillage it, which triggers forced aircraft scattering.
-            if ospec.domain.as_deref() == Some("air") {
-                continue;
-            }
             if o.owner != u.owner {
+                // Based aircraft occupy a slot, not the land/naval stacking
+                // layer. A hostile ground unit may enter the base and
+                // subsequently pillage it, which triggers forced aircraft
+                // scattering.
+                if ospec.domain.as_deref() == Some("air") {
+                    continue;
+                }
                 // Religious units occupy their own layer and may share a tile
                 // with any non-religious unit, regardless of diplomacy.
                 if (spec.class == "religious") != (ospec.class == "religious") {
                     continue;
                 }
                 if ospec.class == "military" || spec.class != "military" {
-                    return false;
+                    return Entry::Blocked;
                 }
                 if !self.is_at_war(u.owner, o.owner) {
-                    return false;
+                    return Entry::Blocked;
                 }
-            } else if ospec.class == spec.class {
-                // Land and naval military units use separate stacking
-                // layers, including when the land unit is embarked.
-                let separate_military_layers = spec.class == "military"
-                    && (spec.domain.as_deref() == Some("sea"))
-                        != (ospec.domain.as_deref() == Some("sea"));
-                if !separate_military_layers {
-                    return false;
-                }
+            } else if self.shares_stacking_layer(spec, ospec) {
+                // ⚠ Keep scanning. A tile holding one of ours can also hold a
+                // foreign religious unit, which blocks the step outright.
+                stacked = true;
             }
         }
-        if let Some(cid) = self.city_at(pos) {
-            if self.cities[&cid].owner != u.owner {
-                return false;
-            }
+        if stacked {
+            Entry::Pass
+        } else {
+            Entry::Stop
         }
-        if let Some(cid) = self.encampment_at(pos) {
-            if self.cities[&cid].owner != u.owner {
-                return false;
-            }
-        }
-        true
     }
 
     /// Whether one unit can be displaced to `pos` without capturing anything,
@@ -24684,6 +24823,12 @@ impl Game {
     ///
     /// A reading for candidate generation, never a permission: the engine
     /// re-decides every step when the line is played.
+    ///
+    /// ⚠ A path may cross tiles held by this unit's own units — Civilization
+    /// VI forbids ending stacked, not passing through, see [`Game::entry_at`]
+    /// — so a path is a single order and not a list of places to leave the
+    /// unit. Replay one with `Action::MoveTo`; walking it with one `Move` per
+    /// step stops dead at the first friendly tile.
     pub(crate) fn approach_reach(&self, uid: u32) -> BTreeMap<Pos, (f64, Vec<Pos>)> {
         let mut out = BTreeMap::new();
         let Some(unit) = self.units.get(&uid) else {
@@ -24707,7 +24852,7 @@ impl Game {
                 continue;
             }
             for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
+                if !self.map.tiles.contains_key(&n) || !self.can_pass(uid, cur, n) {
                     continue;
                 }
                 let cost = self.unit_step_cost(uid, cur, n);
@@ -24725,7 +24870,10 @@ impl Game {
             }
         }
         for (pos, (rem, _)) in best {
-            if pos == start {
+            // The flood crosses our own column and never ends on it, so a
+            // stand behind a friendly unit is a step on the way and not a
+            // candidate. See `Game::entry_at`.
+            if pos == start || !self.can_stop(uid, pos) {
                 continue;
             }
             let mut path = vec![pos];
@@ -24751,14 +24899,22 @@ impl Game {
 
     /// All tiles the unit can reach this turn with its remaining movement
     /// (Dijkstra maximizing leftover MP; every intermediate tile must be
-    /// legally enterable, matching repeated single-step moves).
+    /// legally crossable, and the destination legally stoppable).
+    ///
+    /// A tile occupied by one of this unit's own units on the same stacking
+    /// layer is crossed, never offered: the flood expands through it and
+    /// [`Game::can_stop`] then drops it. That is the Civilization VI rule, and
+    /// it is why this is not simply the flood's key set — see
+    /// [`Game::entry_at`].
     pub fn reachable(&self, uid: u32) -> Vec<Pos> {
         let (start, moves) = match self.units.get(&uid) {
             Some(u) => (u.pos, u.moves_left),
             None => return vec![],
         };
         let best = self.flow(uid, start, moves);
-        best.into_keys().filter(|p| *p != start).collect()
+        best.into_keys()
+            .filter(|p| *p != start && self.can_stop(uid, *p))
+            .collect()
     }
 
     /// How far a unit reaches: everywhere it could stand at the end of a whole
@@ -24904,6 +25060,12 @@ impl Game {
         let mut steps = Vec::new();
         for (&from, &rem) in &best {
             if rem <= 0.0 {
+                continue;
+            }
+            // The flood crosses tiles held by our own units and never stands
+            // on one, so a step *out of* one is not a single move anybody can
+            // make. Every pair advertised here is a legal `Move` on its own.
+            if from != start && !self.can_stop(uid, from) {
                 continue;
             }
             for to in self.nbrs(from) {
@@ -25625,8 +25787,14 @@ impl Game {
     }
 
     /// `flow`, optionally reading the board as if the tiles in the way were
-    /// empty. See [`Game::can_enter_past`]: nothing the rules decide uses
-    /// this, only the range a watcher is shown for somebody else's unit.
+    /// empty. See [`Game::entry_at`]: nothing the rules decide uses that,
+    /// only the range a watcher is shown for somebody else's unit.
+    ///
+    /// ⚠ The result is every tile this movement can **occupy or cross**, not
+    /// every tile it may finish on: a tile held by one of the unit's own units
+    /// on the same stacking layer is walked through and never landed on. Ask
+    /// [`Game::can_stop`] before offering one of these as a destination —
+    /// [`Game::reachable`] is the filtered form.
     fn flow_past(&self, uid: u32, start: Pos, moves: f64, through_units: bool) -> BTreeMap<Pos, f64> {
         let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
@@ -25643,7 +25811,7 @@ impl Game {
             }
             for n in self.nbrs(cur) {
                 if !self.map.tiles.contains_key(&n)
-                    || !self.can_enter_past(uid, cur, n, through_units)
+                    || self.entry_at(uid, cur, n, through_units) == Entry::Blocked
                 {
                     continue;
                 }
@@ -25665,6 +25833,14 @@ impl Game {
         best
     }
 
+    /// This turn's cheapest legal path to `to`, or `None` when the unit cannot
+    /// finish there this turn.
+    ///
+    /// Intermediate hexes may hold the unit's own units — Civilization VI lets
+    /// a unit walk through its own column and forbids only ending stacked, see
+    /// [`Game::entry_at`] — so the returned path is a sequence of steps to
+    /// execute together, not a list of places the unit may be left standing.
+    /// `Action::MoveTo` is the only thing that may execute it.
     pub(crate) fn path_to(&self, uid: u32, to: Pos) -> Option<Vec<Pos>> {
         let (start, moves) = {
             let u = self.units.get(&uid)?;
@@ -25672,6 +25848,9 @@ impl Game {
         };
         if start == to {
             return Some(vec![]);
+        }
+        if !self.can_stop(uid, to) {
+            return None;
         }
         // MoveTo is also the protocol used for an AI route's already chosen
         // adjacent step. Do not flood the unit's whole remaining movement
@@ -25694,7 +25873,7 @@ impl Game {
                 continue;
             }
             for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
+                if !self.map.tiles.contains_key(&n) || !self.can_pass(uid, cur, n) {
                     continue;
                 }
                 let cost = self.unit_step_cost(uid, cur, n);
@@ -25727,6 +25906,81 @@ impl Game {
         Some(path)
     }
 
+    /// Exchange two adjacent units of one player.
+    ///
+    /// Civilization VI offers this wherever a unit's move would end on a
+    /// friendly unit of its own stacking layer, and it is the reason that rule
+    /// costs a front line nothing: a damaged unit trades places with the
+    /// healthy one behind it without either leaving the line. Both units move,
+    /// so both pay the entry cost of the tile they take and both lose
+    /// fortification — a swap is two steps, never a free reposition. See
+    /// [`Game::entry_at`] for the stacking rule itself and `docs/MOVEMENT.md`
+    /// for the whole of it.
+    fn do_swap(&mut self, pid: usize, uid: u32, other: u32) -> Result<(), String> {
+        if uid == other {
+            return Err("a unit cannot swap with itself".into());
+        }
+        let from = self.own_unit(pid, uid)?.pos;
+        let to = self.own_unit(pid, other)?.pos;
+        if self.wdist(from, to) != 1 {
+            return Err("units are not adjacent".into());
+        }
+        if self.units[&uid].linked_to.is_some() || self.units[&other].linked_to.is_some() {
+            // A linked escort moves as one unit with its charge; exchanging
+            // half of a formation is a different question from this one.
+            return Err("a linked unit cannot swap".into());
+        }
+        let (mover_kind, peer_kind) = (self.units[&uid].kind, self.units[&other].kind);
+        if !self.shares_stacking_layer(
+            &self.rules.units[mover_kind],
+            &self.rules.units[peer_kind],
+        ) {
+            // Nothing to exchange: units on different layers already share a
+            // tile, so the mover may simply move.
+            return Err("those units do not share a stacking layer".into());
+        }
+        if [from, to].iter().any(|pos| {
+            self.unit_ids_at(*pos).iter().any(|id| {
+                self.rules.units[self.units[id].kind].domain.as_deref() == Some("air")
+            })
+        }) {
+            // Based aircraft belong to the tile, not to the unit carrying
+            // them, and a swap would leave them under somebody else.
+            return Err("a tile with based aircraft cannot swap".into());
+        }
+        // Each half is an ordinary crossing step onto the other's tile: the
+        // layer it would contend for is the one being vacated in the same
+        // action, and everything else — cost, zone of control, cliffs,
+        // borders, a hostile city — binds exactly as it does for a move.
+        if !self.can_move_step(uid, to, false) || !self.can_move_step(other, from, false) {
+            return Err("invalid swap".into());
+        }
+        let mover_cost = self.unit_step_cost(uid, from, to);
+        let peer_cost = self.unit_step_cost(other, to, from);
+        for id in [uid, other] {
+            let unit = self.units.get_mut(&id).unwrap();
+            unit.fortified = false;
+            unit.fortify_turns = 0;
+            unit.acted = true;
+            unit.moved = true;
+        }
+        self.relocate(uid, to);
+        self.relocate(other, from);
+        for (id, cost, arrived) in [(uid, mover_cost, to), (other, peer_cost, from)] {
+            let cap = self.unit_max_moves_at(id, arrived);
+            let unit = self.units.get_mut(&id).unwrap();
+            unit.moves_left = (unit.moves_left - cost).max(0.0).min(cap);
+        }
+        for (id, arrived) in [(uid, to), (other, from)] {
+            if self.formation_enters_enemy_zoc(id, arrived) {
+                self.stop_unit_by_zoc(id);
+            }
+        }
+        self.record_move_step(pid, uid, from, to);
+        self.record_move_step(pid, other, to, from);
+        Ok(())
+    }
+
     fn do_move_to(&mut self, pid: usize, uid: u32, to: Pos) -> Result<(), String> {
         let u = self.own_unit(pid, uid)?;
         if u.moves_left <= 0.0 {
@@ -25738,7 +25992,17 @@ impl Game {
         if path.is_empty() {
             return Err("already there".into());
         }
-        for step in path {
+        // ★★★★★ THE ONE ACTION THAT MAY CROSS OUR OWN UNITS, AND THE ONE
+        // PLACE THE "NEVER END STACKED" RULE HAS TO BE ENFORCED RATHER THAN
+        // CHECKED. `path_to` proves the destination is stoppable, but a walk
+        // can still stop short: it floods on this unit alone, so a linked
+        // escort's own legality can refuse a step, and a fresh unit's
+        // one-free-step allowance can run the budget out. Anchoring on the
+        // last hex the unit could legally be *left* on turns a truncated walk
+        // into a legal position instead of an illegal stack.
+        let last = path.len() - 1;
+        let mut anchor = (self.units[&uid].pos, self.units[&uid].moves_left);
+        for (index, step) in path.into_iter().enumerate() {
             if self
                 .units
                 .get(&uid)
@@ -25747,8 +26011,20 @@ impl Game {
             {
                 break;
             }
-            if self.do_move(pid, uid, step).is_err() {
+            if self.do_move_step(pid, uid, step, index == last).is_err() {
                 break; // out of MP or stopped by ZOC mid-path
+            }
+            if self.units.contains_key(&uid) && self.can_stop(uid, step) {
+                anchor = (step, self.units[&uid].moves_left);
+            }
+        }
+        if let Some(at) = self.units.get(&uid).map(|unit| unit.pos) {
+            if at != anchor.0 && !self.can_stop(uid, at) {
+                self.relocate(uid, anchor.0);
+                if let Some(unit) = self.units.get_mut(&uid) {
+                    // It spent the movement on the attempt either way.
+                    unit.moves_left = 0.0;
+                }
             }
         }
         Ok(())
@@ -35168,6 +35444,7 @@ impl Game {
         let r = match action {
             Action::Move { unit, to } => self.do_move(pid, *unit, *to),
             Action::MoveTo { unit, to } => self.do_move_to(pid, *unit, *to),
+            Action::Swap { unit, other } => self.do_swap(pid, *unit, *other),
             Action::Attack { unit, target } => self
                 .do_attack(pid, *unit, *target)
                 .inspect(|()| self.accrue_combat_weariness(pid, *target)),
@@ -35481,6 +35758,20 @@ impl Game {
     }
 
     fn do_move(&mut self, pid: usize, uid: u32, to: Pos) -> Result<(), String> {
+        self.do_move_step(pid, uid, to, true)
+    }
+
+    /// One hex of movement. `stopping` says whether the unit is arriving here
+    /// or merely crossing on its way further along a path; see
+    /// [`Game::can_move_step`]. Everything else about the step — cost, zone of
+    /// control, carriers, linked escorts, capture — is identical either way.
+    fn do_move_step(
+        &mut self,
+        pid: usize,
+        uid: u32,
+        to: Pos,
+        stopping: bool,
+    ) -> Result<(), String> {
         let u = self.own_unit(pid, uid)?;
         if u.moves_left <= 0.0 {
             return Err("no moves left".into());
@@ -35498,7 +35789,7 @@ impl Game {
             unit.fortify_turns = 0;
             return Ok(());
         }
-        if !self.can_move(uid, to) {
+        if !self.can_move_step(uid, to, stopping) {
             return Err("invalid move".into());
         }
         self.resolve_entered_units(uid, to);
@@ -51348,6 +51639,9 @@ mod visibility_tests;
 
 #[cfg(test)]
 mod combat_scenarios;
+
+#[cfg(test)]
+mod movement_rule_tests;
 
 #[cfg(test)]
 mod victory_conditions;
