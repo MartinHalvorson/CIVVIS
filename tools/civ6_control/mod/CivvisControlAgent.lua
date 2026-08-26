@@ -7195,21 +7195,47 @@ local function exportState(player, pid, turn, frame)
 	-- GlobalResourcePopup.lua writes `if pPlayer.IsFreeCities and
 	-- pPlayer:IsFreeCities()` with the comment "Not avail in base game". A build
 	-- without the method must fall through, not error.
-	local function addUnitsOf(bid)
+	-- ★★★★ ONE RECORD FOR BOTH PLAYERS, BEHIND ONE GATE. Free Cities units used
+	-- to cross with id/x/y/player/type only, behind `plotRevealed`, while a
+	-- barbarian carried hp, moves, xp, promotions, charges, strength and fortify
+	-- state behind `PlayersVisibility[pid]:IsVisible` — and the mirror then
+	-- planted every entry as a full-health barbarian (docs/FIDELITY.md, "The
+	-- one-to-one map", item 3). The builder below serves both walks; `free`
+	-- marks a Free Cities unit so the mirror can seat it without knowing
+	-- Firaxis's player index for that aggregate (nil, not false, elsewhere: an
+	-- absent key costs no bytes and reads as a barbarian on every mirror).
+	local function addUnitsOf(bid, isFree)
 		local other = Players[bid];
 		if other == nil then return; end
 		pcall(function()
 			for _, unit in other:GetUnits():Members() do
 				local ux, uy = unit:GetX(), unit:GetY();
-				if plotRevealed(pid, ux, uy) then
+				if PlayersVisibility[pid]:IsVisible(ux, uy) then
+					local name = try(function()
+						return GameInfo.Units[unit:GetUnitType()].UnitType;
+					end, "?");
+					local row = GameInfo.Units[name];
+					local progress = unitProgress(unit);
 					hostiles[#hostiles + 1] = {
 						-- The host's own unit id, so a combat event and a
 						-- next-frame sighting name the same unit. See CivvisLedger.
 						id = try(function() return unit:GetID(); end, nil),
 						x = ux, y = uy, player = bid,
-						type = try(function()
-							return GameInfo.Units[unit:GetUnitType()].UnitType;
-						end, "?"),
+						type = name,
+						free = isFree or nil,
+						hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+						moves = try(function() return unit:GetMovesRemaining(); end, -1),
+						xp = progress.xp, level = progress.level,
+						promotions = progress.promotions,
+						build_charges = progress.build_charges,
+						spread_charges = progress.spread_charges,
+						religion = progress.religion,
+						combat = row ~= nil and (row.Combat or 0) or 0,
+						ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+						fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+						fortified = try(function()
+							return (unit:GetFortifyTurns() or 0) > 0;
+						end, false),
 					};
 				end
 			end
@@ -7222,46 +7248,12 @@ local function exportState(player, pid, turn, frame)
 			local free = other ~= nil and try(function()
 				return other.IsFreeCities ~= nil and other:IsFreeCities() == true;
 			end, false);
-			if free == true then addUnitsOf(oid); end
+			if free == true then addUnitsOf(oid, true); end
 		end
 	end);
 	pcall(function()
 		local ids = try(function() return PlayerManager.GetAliveBarbarianIDs(); end, {}) or {};
-		for _, bid in ipairs(ids) do
-			local barb = Players[bid];
-			if barb ~= nil then
-				pcall(function()
-					for _, unit in barb:GetUnits():Members() do
-						local ux, uy = unit:GetX(), unit:GetY();
-						if PlayersVisibility[pid]:IsVisible(ux, uy) then
-							local name = try(function()
-								return GameInfo.Units[unit:GetUnitType()].UnitType;
-							end, "?");
-							local row = GameInfo.Units[name];
-							local progress = unitProgress(unit);
-							hostiles[#hostiles + 1] = {
-								id = try(function() return unit:GetID(); end, nil),
-								x = ux, y = uy, player = bid,
-								type = name,
-								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
-								moves = try(function() return unit:GetMovesRemaining(); end, -1),
-								xp = progress.xp, level = progress.level,
-								promotions = progress.promotions,
-								build_charges = progress.build_charges,
-								spread_charges = progress.spread_charges,
-								religion = progress.religion,
-								combat = row ~= nil and (row.Combat or 0) or 0,
-								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
-								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
-								fortified = try(function()
-									return (unit:GetFortifyTurns() or 0) > 0;
-								end, false),
-							};
-						end
-					end
-				end);
-			end
-		end
+		for _, bid in ipairs(ids) do addUnitsOf(bid, false); end
 	end);
 
 	-- ★★★★ WHAT GOVERNMENT WE ARE ALREADY UNDER.
