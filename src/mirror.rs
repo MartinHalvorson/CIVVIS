@@ -8077,6 +8077,322 @@ mod tests {
         );
     }
 
+    /// docs/FIDELITY.md "The one-to-one map", item 8: a rival's techs and
+    /// civics crossed as COUNTS, so its era, roster and border were guesses,
+    /// and Early Empire had to be exported as one bit. With the names on the
+    /// seat the border is derived the way a native game derives it, and the
+    /// bit is only the override.
+    #[test]
+    fn a_rivals_tree_by_name_seats_its_civics_and_derives_its_border() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(5, 7, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            tech_names: Some(vec![
+                "TECH_POTTERY".to_string(),
+                "TECH_BRONZE_WORKING".to_string(),
+            ]),
+            civic_names: Some(vec![
+                "CIVIC_CODE_OF_LAWS".to_string(),
+                "CIVIC_EARLY_EMPIRE".to_string(),
+            ]),
+            enforces_borders: None,
+            ..StateRival::default()
+        });
+
+        // Rebuild path.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let early_empire = crate::name::Name::new("early_empire");
+        let bronze = crate::name::Name::new("bronze_working");
+        assert!(
+            mirror.game.players[1].civics.contains(&early_empire),
+            "the rival's civic names must land on its seat: {:?}",
+            mirror.game.players[1].civics
+        );
+        assert!(
+            mirror.game.players[1].techs.contains(&bronze),
+            "the rival's tech names must land on its seat: {:?}",
+            mirror.game.players[1].techs
+        );
+        assert_eq!(
+            mirror.game.players[1].borders_enforced, None,
+            "with the tree on the seat and no bit, the civic decides — the native rule"
+        );
+        assert!(
+            mirror.game.enforces_borders(1),
+            "Early Empire on the seat enforces the border without the override"
+        );
+
+        // Sync path: the tree is ASSIGNED from every export, so a tree without
+        // Early Empire opens the border again.
+        state.rivals[0].civic_names = Some(vec!["CIVIC_CODE_OF_LAWS".to_string()]);
+        state.turn = 31;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            !mirror.game.players[1].civics.contains(&early_empire),
+            "assigned, not merged: a civic the host no longer lists must leave the seat"
+        );
+        assert!(
+            !mirror.game.enforces_borders(1),
+            "a rival without Early Empire has no border to enforce"
+        );
+
+        // The host's own bit stays the override over the derived answer.
+        state.rivals[0].enforces_borders = Some(true);
+        state.turn = 32;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[1].borders_enforced, Some(true));
+        assert!(
+            mirror.game.enforces_borders(1),
+            "the exported bit wins over the tree"
+        );
+
+        // Neither key (an older export): enforced, the conservative answer —
+        // unchanged behaviour.
+        state.rivals[0] = StateRival {
+            player: 3,
+            ..StateRival::default()
+        };
+        state.turn = 33;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[1].borders_enforced, Some(true));
+        assert!(mirror.game.enforces_borders(1));
+    }
+
+    /// The religion lane of the victory tracker counted a rival converted only
+    /// from the rival cities the board happened to hold. The shipped screen
+    /// asks the host (`GetReligionInMajorityOfCities`,
+    /// `GetNumCitiesFollowingReligion`), which counts cities the seat has
+    /// never seen; so does the board now, on both import paths.
+    #[test]
+    fn a_rivals_religion_lane_reads_the_hosts_majority_and_city_count() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 90,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 90,
+            founded_religion: Some("RELIGION_CATHOLICISM".to_string()),
+            cities_following_religion: Some(3),
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            ..StateCity::default()
+        });
+        // No rival city on the board at all: everything the lane knows about
+        // this rival comes from the host's two numbers.
+        state.rivals.push(StateRival {
+            player: 3,
+            religion: Some("RELIGION_CATHOLICISM".to_string()),
+            cities_following_religion: Some(12),
+            techs_researched: Some(31),
+            techs: -1.0,
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.players[0].religion.as_deref(),
+            Some("Catholicism"),
+            "the founded religion seats on our player, the premise of the lane"
+        );
+        assert_eq!(
+            mirror.game.majority_religion_of(1),
+            Some("Catholicism"),
+            "the host's majority religion is the board's answer for a rival"
+        );
+        assert!(mirror.game.civ_follows_religion(1, "Catholicism"));
+        assert_eq!(
+            mirror.game.cities_following_religion(1),
+            12,
+            "the host's cities-following count reaches the religion-progress reader"
+        );
+        assert_eq!(mirror.game.cities_following_religion(0), 3, "and ours");
+        let races = mirror.game.victory_races(1, 0);
+        assert_eq!(races.cities_following_religion, 12);
+        assert_eq!(
+            races.techs, 31,
+            "the science lane's own count wins over the loop count when it crossed"
+        );
+        assert_eq!(
+            mirror.game.victory_races(0, 0).converted_civs,
+            1,
+            "a rival the host calls converted counts toward our Religious Victory \
+             even with none of its cities on the board"
+        );
+
+        // Missing keys (an older export) on the sync path: the observed map
+        // is rebuilt from each snapshot, so nothing is carried forward and
+        // the board's own count — no rival cities — answers.
+        state.rivals[0] = StateRival {
+            player: 3,
+            ..StateRival::default()
+        };
+        state.cities_following_religion = None;
+        state.turn = 91;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.majority_religion_of(1), None);
+        assert_eq!(mirror.game.cities_following_religion(1), 0);
+        assert_eq!(mirror.game.victory_races(0, 0).converted_civs, 0);
+        assert_eq!(
+            mirror.game.cities_following_religion(0),
+            0,
+            "no host count and no converted city on the board"
+        );
+    }
+
+    /// The per-rival tourist term, the rival's Era Score and its outgoing
+    /// routes: each lands where an existing reader already looks
+    /// (`visiting_tourists_from`, `Player::era_score`, `game.routes`).
+    #[test]
+    fn a_rivals_tourists_era_score_and_routes_reach_the_board() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(8, 8, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 60,
+            // No aggregate from the host, so `foreign_tourists` sums the
+            // per-rival terms — the only place the pair is read.
+            foreign_tourists: f64::NAN,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            ..StateCity::default()
+        });
+        let rival_city = |id: i64, name: &str, x: i32, y: i32| StateCity {
+            id,
+            name: name.to_string(),
+            x,
+            y,
+            pop: 3,
+            ..StateCity::default()
+        };
+        let route = |ox: i32, oy: i32, dx: i32, dy: i32, player: i32| StateRivalRoute {
+            origin_x: ox,
+            origin_y: oy,
+            destination_x: dx,
+            destination_y: dy,
+            destination_player: player,
+        };
+        state.rivals.push(StateRival {
+            player: 3,
+            tourists_visiting_us: Some(7),
+            era_score: Some(9),
+            cities: vec![rival_city(20, "Nubt", 5, 6), rival_city(21, "Meroe", 8, 8)],
+            trade_routes: Some(vec![
+                // Domestic, both ends on the board.
+                route(5, 6, 8, 8, 3),
+                // Into our capital — the same route `incoming_routes` would
+                // seat, so it must not be doubled.
+                route(5, 6, 5, 5, 0),
+                // To a city that is not on the board: skipped, not guessed.
+                route(5, 6, 9, 9, 3),
+            ]),
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.foreign_tourists(0),
+            7,
+            "the host's per-rival draw is what the culture lane sums"
+        );
+        assert_eq!(mirror.game.players[1].era_score, 9);
+        let nubt = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(5, 6))
+            .expect("the rival city is planted");
+        let meroe = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(8, 8))
+            .expect("the rival city is planted");
+        let roma = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(5, 5))
+            .expect("our city is planted");
+        let rival_routes: Vec<(u32, u32)> = mirror
+            .game
+            .routes
+            .iter()
+            .filter(|route| route.owner == 1)
+            .map(|route| (route.origin, route.dest))
+            .collect();
+        assert_eq!(
+            rival_routes,
+            vec![(nubt, meroe), (nubt, roma)],
+            "both routes with known ends are seated on the rival's seat, the \
+             third is skipped"
+        );
+
+        // Sync path, same export: rebuilt from scratch, never doubled.
+        state.turn = 61;
+        mirror.sync(&snapshot, &state, 0);
+        let rival_route_count =
+            |game: &crate::game::Game| game.routes.iter().filter(|route| route.owner == 1).count();
+        assert_eq!(rival_route_count(&mirror.game), 2);
+        assert_eq!(mirror.game.foreign_tourists(0), 7);
+
+        // Missing keys: no rival routes, no per-rival term, era score kept
+        // from the last export that carried it (the seat's own slot).
+        state.rivals[0].trade_routes = None;
+        state.rivals[0].tourists_visiting_us = None;
+        state.rivals[0].era_score = None;
+        state.turn = 62;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(rival_route_count(&mirror.game), 0);
+        assert_eq!(mirror.game.foreign_tourists(0), 0);
+        assert_eq!(mirror.game.players[1].era_score, 9);
+    }
+
     /// Run civvis-20260826T184456Z: 122 military `MOVE_TO`s into a
     /// non-suzerain city-state's land, 4 % arrived; 36 into a city-state we
     /// were Suzerain of, 51 % arrived. The city was in view every time, so the
@@ -10927,6 +11243,49 @@ pub struct StateRival {
     /// Civics finished, or `-1` if unavailable. See `techs`.
     #[serde(default = "unknown_metric")]
     pub civics: f64,
+    /// The rival's tree by NAME — every `TechnologyType`/`CivicType` it
+    /// holds, from the same `HasTech`/`HasCivic` loops the counts above run.
+    /// The names go onto the rival's seat (`Player::techs`/`civics`) exactly
+    /// as the local seat's do (`apply_rival_tree`), so its era
+    /// (`Game::player_era`), the units it can field and its border
+    /// (`Game::enforces_borders` reads Early Empire off the civic tree) are
+    /// derived natively; `enforces_borders` above stays the override. `None`
+    /// on an older export; an empty list is a real "nothing yet".
+    #[serde(default)]
+    pub tech_names: Option<Vec<String>>,
+    #[serde(default)]
+    pub civic_names: Option<Vec<String>>,
+    /// The shipped World Rankings overview's own lane numbers for this rival
+    /// (`g_victoryData`, WorldRankings.lua:27,44,55): `GetNumTechsResearched`,
+    /// `GetMilitaryStrengthWithoutTreasury` and `GetNumCitiesFollowingReligion`.
+    /// `None` on an older export or a refused read.
+    #[serde(default)]
+    pub techs_researched: Option<i64>,
+    #[serde(default)]
+    pub military_no_treasury: Option<f64>,
+    #[serde(default)]
+    pub cities_following_religion: Option<i64>,
+    /// The religion a majority of this rival's cities follow
+    /// (`GetReligionInMajorityOfCities`, WorldRankings.lua:2049) — the test
+    /// the shipped religion tab runs to call a civilization converted. `None`
+    /// when no religion holds a majority or the host could not be asked.
+    #[serde(default)]
+    pub religion: Option<String>,
+    /// Tourists visiting US from this rival — the culture tab's "Visiting us"
+    /// column (`GetTouristsFrom` on the local player's culture,
+    /// WorldRankings.lua:1766): the per-rival term of the top-level
+    /// `foreign_tourists`.
+    #[serde(default)]
+    pub tourists_visiting_us: Option<i64>,
+    /// The rival's Era Score (`GetPlayerCurrentScore`, the accessor the
+    /// top-level `era_score` reads for us).
+    #[serde(default)]
+    pub era_score: Option<i64>,
+    /// The rival's outgoing trade routes whose both ends stand on revealed
+    /// ground, by endpoint. Seated on the board as routes the rival's seat
+    /// owns when both cities are on it (`restore_rival_outgoing_routes`).
+    #[serde(default)]
+    pub trade_routes: Option<Vec<StateRivalRoute>>,
     /// The rival's economy as the host reports it — per-turn Science and
     /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
     /// every one an accessor the shipped World Rankings and Deal screens call
@@ -10977,6 +11336,23 @@ pub struct StateRival {
 
 /// One met city-state. Its cities remain remembered after sight, while units
 /// are exported only under current visibility just like a major rival's.
+/// One endpoint pair of a rival's outgoing trade route, as
+/// `rivals[].trade_routes` carries it. `-1` on a coordinate the host could
+/// not read; the mirror skips such a route rather than guess.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateRivalRoute {
+    #[serde(default = "minus_one")]
+    pub origin_x: i32,
+    #[serde(default = "minus_one")]
+    pub origin_y: i32,
+    #[serde(default = "minus_one")]
+    pub destination_x: i32,
+    #[serde(default = "minus_one")]
+    pub destination_y: i32,
+    #[serde(default = "minus_one")]
+    pub destination_player: i32,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateMinor {
     #[serde(default)]
@@ -11402,6 +11778,12 @@ pub struct StateSnapshot {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// Cities anywhere following our religion, the religion lane's own
+    /// number (`GetNumCitiesFollowingReligion`, WorldRankings.lua:44), the
+    /// same accessor as each rival's. `None` on an older export or a refused
+    /// read.
+    #[serde(default)]
+    pub cities_following_religion: Option<i64>,
     #[serde(default = "unknown_strength")]
     pub military: f64,
     /// Era Score and the age it decides, from Firaxis's own `Game.GetEras()`.
@@ -11702,6 +12084,61 @@ fn apply_public_empire_stats(
         .filter(|value| *value >= 0);
 }
 
+/// Put a rival's tree by name on its seat, and let its border be derived
+/// from that tree when the host sent the names but not the one-bit answer.
+///
+/// The names are the same `HasTech`/`HasCivic` loop the counts come from,
+/// mapped through `civvis_node_name` exactly as the local seat's lists are,
+/// and ASSIGNED (not merged) so a seat that changed hands between exports
+/// does not keep a tree it no longer holds. With the tree on the seat,
+/// `Game::player_era`, the unit roster and `Game::enforces_borders` (Early
+/// Empire's `open_borders` tree effect) all read a rival the way they read a
+/// native player. A name CIVVIS lacks is filed in `unmapped`, as ours are.
+///
+/// The border: the host's own `enforces_borders` bit wins when it crossed;
+/// without it, a tree that crossed lets the civic decide (`None`, the native
+/// rule); and an export with neither reads as enforced — the conservative
+/// answer and the measured one (run civvis-20260826T184456Z, 37 military
+/// steps into a rival's closed border, none arrived).
+fn apply_rival_tree(
+    game: &mut crate::game::Game,
+    owner: usize,
+    rival: &StateRival,
+    unmapped: &mut Vec<String>,
+) {
+    if let Some(names) = &rival.tech_names {
+        let mut techs = std::collections::BTreeSet::new();
+        for civ6 in names {
+            match civvis_node_name(&game.rules.techs, civ6, "TECH_") {
+                Some(name) => {
+                    techs.insert(crate::name::Name::new(&name));
+                }
+                None if !unmapped.contains(civ6) => unmapped.push(civ6.clone()),
+                None => {}
+            }
+        }
+        game.players[owner].techs = techs;
+    }
+    if let Some(names) = &rival.civic_names {
+        let mut civics = std::collections::BTreeSet::new();
+        for civ6 in names {
+            match civvis_node_name(&game.rules.civics, civ6, "CIVIC_") {
+                Some(name) => {
+                    civics.insert(crate::name::Name::new(&name));
+                }
+                None if !unmapped.contains(civ6) => unmapped.push(civ6.clone()),
+                None => {}
+            }
+        }
+        game.players[owner].civics = civics;
+    }
+    game.players[owner].borders_enforced = match rival.enforces_borders {
+        Some(enforced) => Some(enforced),
+        None if rival.civic_names.is_some() => None,
+        None => Some(true),
+    };
+}
+
 /// Put a rival's host-reported public standings and economy on its seat:
 /// treasury and Faith balances directly, all five top-bar yields as a
 /// host-to-model delta, and aggregate HUD totals separately. This makes the
@@ -11737,8 +12174,21 @@ fn apply_rival_public_economy(
     };
     {
         let observed = game.observed_public_empire_stats.entry(owner).or_default();
-        observed.techs = count(rival.techs);
+        // The science lane's own number (`GetNumTechsResearched`) where it
+        // crossed, else the counted loop an older mod sends; they agree.
+        observed.techs = rival
+            .techs_researched
+            .filter(|value| *value >= 0)
+            .map(|value| value as usize)
+            .or_else(|| count(rival.techs));
         observed.civics = count(rival.civics);
+        observed.cities_following_religion = rival
+            .cities_following_religion
+            .filter(|value| *value >= 0)
+            .map(|value| value as usize);
+        observed.military_no_treasury = rival
+            .military_no_treasury
+            .filter(|value| value.is_finite() && *value >= 0.0);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
         // Like `techs`/`civics`: the observed table is rebuilt from each
         // snapshot (`apply_observed_host_metrics` clears it), so absent or
@@ -11746,6 +12196,24 @@ fn apply_rival_public_economy(
         // record is the player's `science_projects` below.
         observed.foreign_tourists = count(rival.foreign_tourists);
         observed.domestic_tourists = count(rival.domestic_tourists);
+    }
+    // The rival's majority religion, by the CIVVIS name its founded religion
+    // takes (`civvis_religion_name`): `Game::majority_religion_of` reads it
+    // before counting the cities the board holds, so the religion lane of the
+    // victory tracker (`victory_races`, `religious_conversion_tally`) counts
+    // a rival converted by cities the seat has never seen.
+    if let Some(name) = rival.religion.as_deref().and_then(civvis_religion_name) {
+        game.observed_majority_religion.insert(owner, name);
+    }
+    // Our draw from this rival, keyed the way `visiting_tourists_from` asks:
+    // (tourism source = us, where the tourists come from = them).
+    if let Some(tourists) = rival.tourists_visiting_us.filter(|value| *value >= 0) {
+        game.observed_visiting_tourists.insert((0, owner), tourists);
+    }
+    // Era Score on the rival's own seat, the slot `apply_player_ages` fills
+    // for ours; the standings (`obs.rs`) show it per player.
+    if let Some(score) = rival.era_score.filter(|value| *value >= 0) {
+        game.players[owner].era_score = score;
     }
     // The rival's space-race milestones land on its own player record, exactly
     // as the local seat's do — `rival_victory_pressure_with_culture` reads
@@ -11966,6 +12434,60 @@ fn restore_incoming_foreign_routes(
         }
     }
     unresolved
+}
+
+/// Seat the routes a rival runs OUT of its cities, when both ends are on the
+/// board.
+///
+/// `restore_incoming_foreign_routes` carries only the ones that end in our
+/// cities, so a rival's domestic and third-party routes paid it nothing on
+/// the mirrored board and its route income was CIVVIS's guess from a bare
+/// city. The mod exports a route only when both ends stand on revealed
+/// ground; here the owner is the origin city's seat ON THE BOARD, as for
+/// incoming routes, a route whose end is not planted is skipped rather than
+/// guessed, and our own routes (carried by the seat's own export, which
+/// `restore_active_trade_routes` rebuilds from scratch) are left alone.
+/// Runs after both of those, since the former clears `game.routes`.
+fn restore_rival_outgoing_routes(game: &mut crate::game::Game, rivals: &[StateRival]) {
+    let ends = game.turn.saturating_add(game.max_turns.max(1));
+    for rival in rivals {
+        let Some(routes) = rival.trade_routes.as_ref() else {
+            continue;
+        };
+        for route in routes {
+            if route.origin_x < 0
+                || route.origin_y < 0
+                || route.destination_x < 0
+                || route.destination_y < 0
+            {
+                continue;
+            }
+            let Some(origin) =
+                game.city_at(crate::hex::offset_to_axial(route.origin_x, route.origin_y))
+            else {
+                continue;
+            };
+            let Some(dest) = game.city_at(crate::hex::offset_to_axial(
+                route.destination_x,
+                route.destination_y,
+            )) else {
+                continue;
+            };
+            let owner = game.cities[&origin].owner;
+            if origin == dest || owner == 0 {
+                continue;
+            }
+            let route = crate::game::TradeRoute {
+                origin,
+                dest,
+                owner,
+                ends,
+            };
+            if !game.routes.contains(&route) {
+                game.routes.push(route);
+            }
+        }
+    }
 }
 
 /// The engine id and target vocabulary of one host World Congress resolution,
@@ -13041,6 +13563,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // `schema:state.strategic_resources` gap that was not one.
         "strategic_resources",
         "foreign_tourists", "domestic_tourists",
+        "cities_following_religion",
         "military",
         "trade_capacity",
         "great_person_points",
@@ -13111,6 +13634,17 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "player", "civ", "leader", "government", "dark_age", "golden_age",
         "heroic_golden_age", "can_declare", "score", "dvp", "military", "at_war",
         "techs", "civics", "cities", "units",
+        // The rival's tree by name, the World Rankings lane numbers, its
+        // majority religion, the per-rival tourists, Era Score and routes.
+        "tech_names",
+        "civic_names",
+        "techs_researched",
+        "military_no_treasury",
+        "cities_following_religion",
+        "religion",
+        "tourists_visiting_us",
+        "era_score",
+        "trade_routes",
         "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "public_stats",
         // Rival victory progress as the shipped World Rankings screen shows it.
@@ -13123,6 +13657,13 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // shipped and filed `schema:rival.open_borders` on every live turn.
         "open_borders",
         "enforces_borders",
+    ];
+    const RIVAL_ROUTE: &[&str] = &[
+        "origin_x",
+        "origin_y",
+        "destination_x",
+        "destination_y",
+        "destination_player",
     ];
     const MINOR: &[&str] = &[
         "player",
@@ -13189,6 +13730,9 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     for rival in value.get("rivals").and_then(|v| v.as_array()).into_iter().flatten() {
         keys(rival, RIVAL, "rival", &mut gaps);
         public_stats(rival.get("public_stats"), "rival.public_stats", &mut gaps);
+        for route in rival.get("trade_routes").and_then(|v| v.as_array()).into_iter().flatten() {
+            keys(route, RIVAL_ROUTE, "rival.trade_route", &mut gaps);
+        }
         cities(rival.get("cities"), &mut gaps);
         units(rival.get("units"), &mut gaps);
     }
@@ -16539,6 +17083,8 @@ fn apply_observed_host_metrics(
     game.observed_trade_capacity.clear();
     game.observed_yield_adjustments.clear();
     game.observed_public_empire_stats.clear();
+    game.observed_majority_religion.clear();
+    game.observed_visiting_tourists.clear();
     game.observed_city_loyalty_per_turn.clear();
     game.observed_city_strength.clear();
     game.observed_city_max_wall_hp.clear();
@@ -16555,6 +17101,10 @@ fn apply_observed_host_metrics(
         let observed = game.observed_public_empire_stats.entry(0).or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
+        observed.cities_following_religion = state
+            .cities_following_religion
+            .filter(|value| *value >= 0)
+            .map(|value| value as usize);
     }
 
     apply_observed_city_economy(game, state, snapshot, unmapped);
@@ -17497,7 +18047,9 @@ pub fn rebuild_from_state(
         // view — the fogged seal below never applied to attributed ground.
         // Assigned, not extended, like the grant: an older export without the
         // key reads as enforced, the conservative answer and the measured one.
-        game.players[owner].borders_enforced = Some(rival.enforces_borders.unwrap_or(true));
+        // The rival's tree by name lands on the seat in the same call, and a
+        // tree without the bit lets Early Empire decide (`apply_rival_tree`).
+        apply_rival_tree(&mut game, owner, rival, &mut unmapped);
         for city in &rival.cities {
             if let Some(cid) = plant_city(&mut game, owner, city) {
                 if city.id > 0 {
@@ -17646,6 +18198,7 @@ pub fn rebuild_from_state(
         &known_city_ids,
     ));
     unmapped.extend(restore_incoming_foreign_routes(&mut game, &state.cities));
+    restore_rival_outgoing_routes(&mut game, &state.rivals);
     apply_governor_state(&mut game, state, &mut unmapped);
     apply_great_person_points(&mut game, state, &mut unmapped);
     apply_strategic_stockpiles(&mut game, state, &mut unmapped);
@@ -19188,10 +19741,9 @@ impl LiveMirror {
             } else {
                 self.game.players[owner].open_borders_until.remove(&0);
             }
-            // See `rebuild_from_state`: the host's own Early Empire answer,
-            // re-read from every export.
-            self.game.players[owner].borders_enforced =
-                Some(rival.enforces_borders.unwrap_or(true));
+            // See `rebuild_from_state`: the host's own Early Empire answer
+            // and the rival's tree by name, re-read from every export.
+            apply_rival_tree(&mut self.game, owner, rival, &mut self.unmapped);
             for city in &rival.cities {
                 if !snapshot.is_revealed((city.x, city.y)) {
                     continue;
@@ -19360,6 +19912,7 @@ impl LiveMirror {
                 self.unmapped.push(issue);
             }
         }
+        restore_rival_outgoing_routes(&mut self.game, &state.rivals);
 
         // City placement is a native CIVVIS action and may clear host terrain;
         // repeat the authoritative passes only after every new own/rival city is

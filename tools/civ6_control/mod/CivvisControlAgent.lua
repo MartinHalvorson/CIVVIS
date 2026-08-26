@@ -6618,6 +6618,118 @@ local function exportState(player, pid, turn, frame)
 					end
 					return n;
 				end, -1),
+				-- ★★★★ THE RIVAL'S TREE BY NAME, NOT ONLY BY COUNT. The counts say
+				-- how far ahead a rival is; the names say WHAT it holds, which is
+				-- what the board needs to derive its era (`player_era` reads the
+				-- seat's own tech and civic sets), the units it can field, and
+				-- whether its border is enforced at all (Early Empire —
+				-- `enforces_borders` above exports that one civic as one bit; with
+				-- the tree on the seat the board derives it natively and keeps the
+				-- bit as the override). Same `HasTech`/`HasCivic` loops as the
+				-- counts, collected instead of summed: ~70 + ~50 names of ~20
+				-- bytes per met rival, a few kilobytes per export. nil (absent)
+				-- when the host cannot be asked; an empty list is a real "nothing
+				-- yet", which serialises as `[]` and reads as an empty list.
+				tech_names = try(function()
+					local t = other:GetTechs();
+					if t == nil then return nil; end
+					local names = {};
+					for row in GameInfo.Technologies() do
+						if t:HasTech(row.Index) then names[#names + 1] = row.TechnologyType; end
+					end
+					return names;
+				end, nil),
+				civic_names = try(function()
+					local c = other:GetCulture();
+					if c == nil then return nil; end
+					local names = {};
+					for row in GameInfo.Civics() do
+						if c:HasCivic(row.Index) then names[#names + 1] = row.CivicType; end
+					end
+					return names;
+				end, nil),
+				-- The shipped World Rankings overview's own lane numbers for this
+				-- rival (`g_victoryData`, WorldRankings.lua:27,44,55): the science
+				-- lane's `GetNumTechsResearched`, the domination lane's
+				-- `GetMilitaryStrengthWithoutTreasury` (the army alone; `military`
+				-- above is the ribbon figure with the treasury folded in) and the
+				-- religion lane's `GetNumCitiesFollowingReligion` — the
+				-- religious-victory progress the board could only guess from the
+				-- rival cities it happened to have seen. nil when unreadable.
+				techs_researched = try(function()
+					return other:GetStats():GetNumTechsResearched();
+				end, nil),
+				military_no_treasury = try(function()
+					return other:GetStats():GetMilitaryStrengthWithoutTreasury();
+				end, nil),
+				cities_following_religion = try(function()
+					return other:GetStats():GetNumCitiesFollowingReligion();
+				end, nil),
+				-- The religion a majority of this rival's cities follow — the
+				-- exact test the shipped religion tab runs to mark a civilization
+				-- converted (WorldRankings.lua:2049, `GetReligionInMajorityOfCities`
+				-- against each founder's `GetReligionTypeCreated`). nil when no
+				-- religion holds a majority or the host cannot be asked.
+				religion = try(function()
+					local index = other:GetReligion():GetReligionInMajorityOfCities();
+					if type(index) ~= "number" or index < 0 then return nil; end
+					local row = GameInfo.Religions[index];
+					return row ~= nil and row.ReligionType or nil;
+				end, nil),
+				-- Tourists visiting US from this rival: the culture tab's
+				-- "Visiting us" column (WorldRankings.lua:1766, `GetTouristsFrom(
+				-- playerID)` on the LOCAL player's culture). The top-level
+				-- `foreign_tourists` is the sum of these over every rival; this
+				-- is the per-rival term, the one the culture race is scored on.
+				tourists_visiting_us = try(function()
+					return Players[pid]:GetCulture():GetTouristsFrom(otherId);
+				end, nil),
+				-- The rival's Era Score, from the same `GetPlayerCurrentScore` the
+				-- top-level `era_score` reads for us: the age flags above say
+				-- which age it is in, this says how close the next one is.
+				era_score = try(function()
+					return Game.GetEras():GetPlayerCurrentScore(otherId);
+				end, nil),
+				-- The rival's outgoing trade routes, by endpoint. The same
+				-- `city:GetTrade():GetOutgoingRoutes()` walk `incomingRoutes` makes
+				-- for routes INTO our cities (TradeOverview.lua:60-78 reads the
+				-- same rows), kept only when BOTH ends stand on ground revealed
+				-- to us — the reading a player at the keyboard has, since a
+				-- Trader's path is drawn on the map it walks and a route between
+				-- two cities never seen is not. The mirror seats each as a route
+				-- the rival's seat owns (`restore_rival_outgoing_routes`), so the
+				-- rival's own route income stops being a guess from a bare city.
+				trade_routes = try(function()
+					local routes = {};
+					for _, city in other:GetCities():Members() do
+						local cx, cy = city:GetX(), city:GetY();
+						if plotRevealed(pid, cx, cy) then
+							for _, route in ipairs(try(function()
+								return city:GetTrade():GetOutgoingRoutes();
+							end, {}) or {}) do
+								local destinationPlayer = try(function()
+									return route.DestinationCityPlayer;
+								end, -1);
+								local destination = try(function()
+									return Players[destinationPlayer]:GetCities():FindID(route.DestinationCityID);
+								end);
+								if destination ~= nil then
+									local dx, dy = destination:GetX(), destination:GetY();
+									if plotRevealed(pid, dx, dy) then
+										routes[#routes + 1] = {
+											origin_x = cx,
+											origin_y = cy,
+											destination_x = dx,
+											destination_y = dy,
+											destination_player = destinationPlayer,
+										};
+									end
+								end
+							end
+						end
+					end
+					return routes;
+				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
 				-- fast it is moving. Every accessor is one the shipped World
@@ -7406,6 +7518,13 @@ local function exportState(player, pid, turn, frame)
 		domestic_tourists = try(function()
 			return player:GetCulture():GetStaycationers();
 		end, -1),
+		-- The religion lane's own number for us, the same accessor as each
+		-- rival's `cities_following_religion` (WorldRankings.lua:44): cities
+		-- anywhere following OUR religion, including ones the seat has never
+		-- seen. nil when the host cannot be asked.
+		cities_following_religion = try(function()
+			return player:GetStats():GetNumCitiesFollowingReligion();
+		end, nil),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
 		-- ★★★★★ THE AGE, WHICH THE BRIDGE HAS NEVER CARRIED.
