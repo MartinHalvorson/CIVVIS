@@ -662,15 +662,24 @@ on"*). `tools/genes.py::OPERATOR_DEFAULT_ON` names the genes that default
 `rules.operator_default_on`, generates them as
 `src/ai/advanced/genes.rs::OPERATOR_DEFAULT_ON`, and
 `the_operator_pins_ship_above_the_rule` holds the two together. The rule's own
-answer for a pinned gene stays in `rules.batch_decisions` — all nine read
-`off` at clause 4 on the 2026-08-26 batches, each positive in the two newest
-and negative in the third with a mean no higher than 7 — so a pin is published
-as an override, never dissolved into the genome. A pin moves a default only:
+answer for a pinned gene stays in `rules.batch_decisions`, so a pin is
+published as an override rather than dissolved into the genome — read that
+field for what the rule says today, never a comment. A pin moves a default
+only:
 it cannot hold a gene the rule removes from the pool (`genes.py write` refuses
 that outright), and it cannot turn a gene off. The 2026-08-24 to 2026-08-25
 pinned list (`OPERATOR_DEFAULT_ON`, 36 → 52 → 57 → 73 → 64 genes across five
 directives) was the whole selection; this one is nine names above a rule that
 decides everything else.
+
+⚠ **Do not write a batch reading into a comment.** The first version of this
+paragraph said all nine read `off`, which was true for the eight hours between
+the pins landing (#2536, 05:15Z) and the 2,576-game batch published in #2551 —
+after which the rule turned seven of the nine on by itself. A column is a
+measurement that moves every time a batch enters; prose that restates one is
+wrong by the next tournament and no test can catch it. State the invariant —
+a pin ships whatever the rule reads — and leave the numbers to
+`rules.batch_decisions` and the ranking's columns, which are regenerated.
 
 **Pinning a default.** Add the tag to `OPERATOR_DEFAULT_ON` (sorted), run
 `python3 tools/genes.py write && python3 tools/genes.py check`, then

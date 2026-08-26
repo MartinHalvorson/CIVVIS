@@ -5267,15 +5267,6 @@ impl BasicAi {
         );
     }
 
-    fn envelope_reach_bound(g: &Game, uid: u32) -> i32 {
-        /// The cheapest step any unit can pay: a Railroad tile.
-        /// `envelope_reach_bound_matches_the_shipped_route_ladder` pins it.
-        const MIN_STEP_COST: f64 = 0.25;
-        let moves = g.unit_max_moves(uid).max(0.0);
-        let strides = (moves / MIN_STEP_COST).ceil() as i32;
-        strides + 1 + g.unit_attack_range(uid).max(1)
-    }
-
     /// Everything that moved, appeared or changed spec since the last board
     /// this controller was asked about, as the tiles those changes touched.
     ///
@@ -5286,11 +5277,18 @@ impl BasicAi {
     ///
     /// A board delta answers the same question far more cheaply. An enemy's
     /// envelope depends only on the map, the war ledger, the cities, and the
-    /// units within [`Self::envelope_reach_bound`] of it. If none of those
-    /// changed since the previous ask, an envelope that was right then is
-    /// still right now — so the reuse test becomes "did any changed tile land
-    /// inside my radius", over a change list that is usually one unit long
-    /// because the caller has stepped one unit and asked again.
+    /// tiles [`Self::envelope_sensitive_tiles`] recorded for it. If none of
+    /// those changed since the previous ask, an envelope that was right then
+    /// is still right now — so the reuse test becomes "did any changed tile
+    /// land in this unit's sensitive set", over a change list that is usually
+    /// one unit long because the caller has stepped one unit and asked again.
+    ///
+    /// ⚠ The sensitive set, not a radius. #2151 keyed each envelope on a hash
+    /// of a disk sized by a movement-derived reach bound; #2163 replaced that
+    /// with the unit's own flood, which is exact rather than generous and does
+    /// not go empty under a zone-of-control lock. Nothing computes that radius
+    /// any more — `enemy_envelope_key` and the bound are both gone — and a
+    /// comment that says otherwise is describing #2151.
     ///
     /// ⚠ The induction only holds while this is refreshed on *every* ask.
     /// `None` means "assume everything changed", which is what a first ask, a
@@ -10063,27 +10061,6 @@ impl BasicAi {
             }
         }
         None
-    }
-
-    /// Whether any of this city's owned tiles borders territory outside the
-    /// empire — the same meaning of "frontier" the patrol-post scan uses ("a
-    /// frontier post borders land or water outside this empire"). An interior
-    /// city ringed entirely by its own empire's territory is somebody else's
-    /// walls problem; a city with wilderness or a rival at its border is where
-    /// conquest starts.
-    fn city_is_frontier(g: &Game, pid: usize, cid: u32) -> bool {
-        let Some(city) = g.cities.get(&cid) else {
-            return false;
-        };
-        city.owned_tiles.iter().any(|pos| {
-            g.nbrs(*pos).into_iter().any(|neighbor| {
-                g.map.get(neighbor).is_some_and(|tile| {
-                    tile.owner_city
-                        .and_then(|other| g.cities.get(&other))
-                        .is_none_or(|other| other.owner != pid)
-                })
-            })
-        })
     }
 
     /// Whether one district in this family is already finished or committed
@@ -23659,106 +23636,40 @@ mod attack_envelope_key_tests {
     use super::*;
     use crate::game::Game;
 
-    /// The reach bound's step-cost floor is the one the shipped rules allow.
+    /// No shipped step is cheaper than the route ladder's cheapest rung.
     ///
-    /// ★★★★★ EVERY CACHE HIT RESTS ON THIS NUMBER. `envelope_reach_bound`
-    /// converts movement points into tiles by dividing by 0.25, and if any
-    /// step in the shipped data could be paid for less, an enemy could reach
-    /// past its own neighbourhood key and a stale envelope would be served.
-    /// Terrain defaults to 1 MP and every feature that names a cost adds 1, so
-    /// the only discounts are the route ladder's, whose cheapest rung is a
-    /// Railroad at 0.25.
+    /// ⚠ THIS NO LONGER GUARDS THE ENVELOPE CACHE, AND USED TO SAY IT DID.
+    /// Until #2163 an envelope was keyed on a disk whose radius divided a
+    /// unit's movement by 0.25, so a sub-0.25 step would have let an enemy
+    /// reach past its own key and be served a stale envelope. The cache keys
+    /// on `envelope_sensitive_tiles` now — the unit's own flood, no radius
+    /// anywhere — so nothing is served stale if this drifts.
+    ///
+    /// It is kept because the floor it pins is still a fact about the shipped
+    /// data that movement code elsewhere assumes: terrain defaults to 1 MP,
+    /// every feature that names a cost adds to it, and the only discounts are
+    /// the route ladder's, whose cheapest rung is a Railroad at 0.25. A test
+    /// that has outlived its original argument earns its place on a new one or
+    /// goes; this one has a new one, stated here rather than implied.
     #[test]
-    fn envelope_reach_bound_matches_the_shipped_route_ladder() {
+    fn no_shipped_step_costs_less_than_the_route_ladder_allows() {
         let rules = crate::rules::Rules::shipped();
         for (name, terrain) in rules.terrains.iter() {
             assert!(
                 terrain.move_cost >= 1.0,
-                "terrain {name} costs {} -- below the 1 MP the reach bound \
-                 assumes for an off-route step",
+                "terrain {name} costs {} -- below the 1 MP an off-route step \
+                 is assumed to cost",
                 terrain.move_cost
             );
         }
         for (name, feature) in rules.features.iter() {
             assert!(
                 feature.move_cost >= 0.0,
-                "feature {name} refunds {} movement, which would let a unit \
-                 out-run its own neighbourhood key",
+                "feature {name} refunds {} movement, which no movement rule \
+                 in this engine is written to expect",
                 feature.move_cost
             );
         }
-    }
-
-    /// Every tile `attack_reach` returns lies inside the radius the
-    /// neighbourhood key was built from.
-    ///
-    /// ★★★★★ THIS IS THE SOUNDNESS ARGUMENT, EXECUTED. `enemy_envelope_key`
-    /// hashes the units and cities within `envelope_reach_bound` and reuses the
-    /// envelope when that hash is unchanged. If the bound ever under-estimates
-    /// what a unit can span, something outside the hashed neighbourhood could
-    /// move the envelope and a stale one would be served. Rather than argue
-    /// the arithmetic, run the real `attack_reach` over the whole shipped unit
-    /// roster on a real board and check the radius it actually spans.
-    ///
-    /// ⚠ A placement search is not the test to write here, and the attempt is
-    /// worth recording: with shipped units, moving an own unit **never**
-    /// changes an enemy's next-turn envelope on an open board. A two-movement
-    /// unit's flood is spent by the time zone of control could bite, and
-    /// cavalry ignore incoming zone of control outright. That is also why this
-    /// cache wins as much as it does — but it means no fixture can tell a
-    /// one-tile radius from a ten-tile one, and a first draft of this test
-    /// passed against a planted radius of 1.
-    #[test]
-    fn the_reach_bound_covers_every_tile_attack_reach_returns() {
-        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
-        game.at_war.insert((0, 1));
-        game.at_war.insert((1, 0));
-        let anchor = game.units[&game.player_unit_ids(0).into_iter().next().unwrap()].pos;
-        let ground: Vec<Pos> = game
-            .map
-            .tiles
-            .keys()
-            .copied()
-            .filter(|pos| {
-                game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t))
-                    && game.units_at(*pos).is_empty()
-                    && game.wdist(*pos, anchor) > 3
-            })
-            .collect();
-        let military: Vec<Name> = game
-            .rules
-            .units
-            .iter()
-            .filter(|(_, spec)| {
-                spec.class == "military" && (spec.is_melee_capable() || spec.has_ranged_attack())
-            })
-            .map(|(name, _)| name)
-            .copied()
-            .collect();
-        assert!(
-            military.len() > 20,
-            "only {} military kinds reached this check",
-            military.len()
-        );
-        let mut checked = 0usize;
-        for (index, kind) in military.iter().enumerate() {
-            let Some(&home) = ground.get(index % ground.len()) else {
-                continue;
-            };
-            let mut board = game.clone();
-            let uid = board.spawn_test_unit(kind.as_str(), 1, home);
-            let bound = BasicAi::envelope_reach_bound(&board, uid);
-            for tile in board.attack_reach(uid) {
-                assert!(
-                    board.wdist(tile, home) <= bound,
-                    "{kind} reaches {tile:?}, {} hexes away, but its neighbourhood \
-                     key only covers {bound}",
-                    board.wdist(tile, home)
-                );
-                checked += 1;
-            }
-        }
-        assert!(checked > 100, "only {checked} tiles were checked");
     }
 
     /// The delta notices every unit field the board key hashes.

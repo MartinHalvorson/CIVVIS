@@ -23,6 +23,40 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "ops"))
 import civ6_ladder  # noqa: E402
 import ladder_watchdog  # noqa: E402
 
+#: Held for the whole module run; removed when the interpreter exits.
+_SANDBOX = TemporaryDirectory(prefix="civvis-test-gamelock-")
+
+
+def setUpModule() -> None:
+    """⚠ NEVER ASK THIS MACHINE WHETHER A GAME MAY START.
+
+    `civ6_control/gamelock.py` resolves two paths in the operator's home
+    directory at import time: the durable operator-halt marker
+    (`~/.civvis-operator-halt.json`) and the live game lock
+    (`~/.civvis-civ6-game.lock`). Both are correct in production, and both are
+    real files on an operator's Mac — so a test that leaves them alone asks
+    *this machine* whether a game may start.
+
+    That is not hypothetical. A halt was recorded here on 2026-08-19T15:06Z and
+    left in force; from that day seventeen tests in this file and eleven in
+    `test_spectator_supervisor.py` failed on the operator's Mac and passed on
+    the runner, because `gamelock.standing_hold()` was correctly reporting a
+    halt no test had asked for. Nothing in the output named the cause, and a red
+    suite nobody can explain is a suite people stop reading.
+
+    So point both at an empty sandbox, through the two environment overrides
+    `gamelock` already publishes for exactly this — which a subprocess a test
+    spawns inherits — and at the module constants, which an already-imported
+    `gamelock` reads. A test that wants a halt writes one into the sandbox; a
+    test that wants none gets none, on every machine.
+    """
+    sandbox = Path(_SANDBOX.name)
+    halt, lock = sandbox / "operator-halt.json", sandbox / "civ6-game.lock"
+    os.environ["CIVVIS_OPERATOR_HALT_FILE"] = str(halt)
+    os.environ["CIVVIS_GAME_LOCK_DIR"] = str(lock)
+    ladder_watchdog.gamelock.OPERATOR_HALT = halt
+    ladder_watchdog.gamelock.LOCK = lock
+
 
 class FakeRunner:
     """Records the argv the keeper would run, e.g. `open -g -j -a Terminal`."""
@@ -932,6 +966,28 @@ class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
                                lambda: {"pid": os.getpid(), "tag": "whatever",
                                         "since": "2026-08-02T20:03:01Z"}):
             self.assertIsNone(ladder_watchdog.gamelock.standing_hold())
+
+
+
+class TheSuiteReadsASandboxNotThisMachine(unittest.TestCase):
+    """⚠ THE GUARD ON `setUpModule`. Delete that sandbox and this file goes
+    green on a runner with no halt marker and red only on the operator's Mac —
+    the failure it exists to prevent, returning silently. This says so on every
+    machine instead, including a clean one."""
+
+    def test_the_halt_marker_and_the_game_lock_live_in_the_sandbox(self):
+        sandbox = Path(_SANDBOX.name)
+        for name, path in (("OPERATOR_HALT", ladder_watchdog.gamelock.OPERATOR_HALT),
+                           ("LOCK", ladder_watchdog.gamelock.LOCK)):
+            self.assertTrue(
+                path.is_relative_to(sandbox),
+                f"gamelock.{name} is {path}, outside the test sandbox: this suite "
+                f"is reading the machine it runs on. See setUpModule.")
+        self.assertEqual(os.environ.get("CIVVIS_OPERATOR_HALT_FILE"),
+                         str(ladder_watchdog.gamelock.OPERATOR_HALT),
+                         "a subprocess a test spawns must inherit the same sandbox")
+        self.assertEqual(os.environ.get("CIVVIS_GAME_LOCK_DIR"),
+                         str(ladder_watchdog.gamelock.LOCK))
 
 
 if __name__ == "__main__":
