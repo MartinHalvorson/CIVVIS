@@ -492,9 +492,14 @@ it belongs to a family.
    the gene does default on"*). `docs/gene_ledger.json` keeps every family's
    rule-on versions, head, shipped version and each version's tracked wins
    under `rules.family_heads`. Every version keeps being priced on its own
-   row. `GENE_HEURISTIC_RANKING.md` names the head in
-   its *Best version* column (`1` is the original, so a gene with no
-   versions reads `1`) on every row of the family, and a versioned row's *Total (on)* / *Total (off)* cells show the
+   row. `GENE_HEURISTIC_RANKING.md` names the head, and beside it how many
+   versions the code holds, in its *Best version | Total versions* column
+   (operator, 2026-08-26: *"best version | total versions ... 2 | 3 then
+   (3 versions, best is #2)"*) — `1` is the original, so a gene with no
+   versions reads `1 | 1`, and the pair is the same on every row of the
+   family. The cell writes that pipe escaped (`2 \| 3`) because an unescaped
+   one would split the row into an extra column. A versioned row's
+   *Total (on)* / *Total (off)* cells show the
    best two versions' rates side by side — each version's *on* is the seats
    that played that version; every other seat is its *off*.
 6. **At most three versions at a time** (`MAX_VERSIONS`, operator,

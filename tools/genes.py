@@ -1046,8 +1046,9 @@ RANKING_HEADING = [
     "- Ranking",
     "- Gene Name",
     "- A short Gene Description",
-    "- The highest performing version of the gene, which is also the default "
-    "version if the gene defaults \"on\"",
+    "- The highest performing version of the gene — which is also the default "
+    "version if the gene defaults \"on\" — and how many versions of it exist, "
+    "as best | total (`2 | 3` is three versions, the second is best)",
     "- Default \"on\" of \"off\". Default \"on\" genes are a part of our best genome.",
     "- Estimated probability that this gene is beneficial to our performance",
     "- (3 cols) win rate from the last tournament / prior tournament / tournament "
@@ -1637,18 +1638,35 @@ def best_versions(family: list[str], verdict: dict[str, dict],
     return sorted(listed, key=key, reverse=True)
 
 
+#: The ranking's version cell joins its two numbers with a literal pipe
+#: (operator, 2026-08-26: *"best version | total versions ... 2 | 3 then
+#: (3 versions, best is #2)"*). It is ESCAPED, because an unescaped `|` inside
+#: a Markdown table cell is a column separator: `2 \| 3` renders as `2 | 3` and
+#: leaves the row's real cell count alone. Every reader of this table splits on
+#: `" | "` (spaces both sides), which `" \| "` does not contain.
+VERSION_CELL_SEPARATOR = r" \| "
+
+
 def best_version_cell(tag: str, tags: list[str], verdict: dict[str, dict],
                       measured: dict[str, list[dict]]) -> str:
-    """The ranking's *Best version* column: the number of the family's best
-    version (`1` = the original, `n` = `<base>-<n>`), the same on every row
-    of the family. A gene with no versions IS its original, so it reads `1`
-    (operator, 2026-08-25: *"the first version of a gene should be 1, not
-    —"*); `—` only for a family none of whose versions is priced yet."""
+    r"""The ranking's *Best version \| Total versions* column: the number of the
+    family's best version (`1` = the original, `n` = `<base>-<n>`), then how
+    many versions of it the code holds — the same pair on every row of the
+    family, so `2 \| 3` reads "three versions, the second is best" (operator,
+    2026-08-26). A gene with no versions IS its original and its whole family,
+    so it reads `1 \| 1` (operator, 2026-08-25: *"the first version of a gene
+    should be 1, not —"*); the best half is `—` only for a family none of whose
+    versions is priced yet, and the total is still shown beside it.
+
+    The total counts the versions in the CODE (`screenable_tags()`), which is
+    what the three-version cap counts and what `python3 tools/genes.py versions`
+    culls from — a version retired from the code is no longer one of them."""
     family = family_of(tag, tags)
     if not family:
-        return "1"
+        return f"1{VERSION_CELL_SEPARATOR}1"
     best = best_versions(family, verdict, measured)
-    return str(family.index(best[0]) + 1) if best else "—"
+    number = str(family.index(best[0]) + 1) if best else "—"
+    return f"{number}{VERSION_CELL_SEPARATOR}{len(family)}"
 
 
 def family_rate_cells(tag: str, tags: list[str], verdict: dict[str, dict],
@@ -3083,14 +3101,17 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
             "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
             "*on* is the seats that played that version, and every other seat — off, or a "
-            "sibling version on — is its *off*. *Best version* names the family's head "
-            "(`1` is the original) on every row of the family: the priced version with the "
+            "sibling version on — is its *off*. *Best version | Total versions* names the "
+            "family's head (`1` is the original) and how many versions of it the code "
+            "holds, on every row of the family, so `2 | 3` is three versions of which "
+            "the second is best. The head is the priced version with the "
             "highest tracked wins (pooled *Diff*), ties to the higher version. A retained "
             "selection keeps its chosen version on its row alone; every version's batch rule "
             "reading remains evidence. A versioned row's *Total (on)* and *Total (off)* cells "
             "show the best two versions' rates side by side, best first, each with its own `n`. "
-            "A gene with no versions is its own original and reads `1`; `—` marks a family none "
-            "of whose versions is priced yet. A family holds at most three versions; before a "
+            "A gene with no versions is its own original and its whole family, and reads "
+            "`1 | 1`; the left half is `—` for a family none of whose versions is "
+            "priced yet. A family holds at most three versions; before a "
             "fourth is added the third-best by tracked wins leaves the code "
             "(`python3 tools/genes.py versions`)."
         )
@@ -3124,17 +3145,20 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
             "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
             "*on* is the seats that played that version, and every other seat — off, or a "
-            "sibling version on — is its *off*. *Best version* names the family's head "
-            "(`1` is the original) on every row of the family: the priced version with the "
+            "sibling version on — is its *off*. *Best version | Total versions* names the "
+            "family's head (`1` is the original) and how many versions of it the code "
+            "holds, on every row of the family, so `2 | 3` is three versions of which "
+            "the second is best. The head is the priced version with the "
             "highest tracked wins (pooled *Diff*), ties to the higher version. Every version is "
             "judged by the batch rule on its own row; a family with a version on ships its head "
             "when the rule turns the head on, else the best version the rule turns on, and "
             "*Default* is **on** on that row alone. A versioned row's "
             "*Total (on)* and *Total (off)* cells show the best two versions' rates side by "
             "side, best first, each with its own `n`. A gene with no versions is its own "
-            "original and reads `1`; `—` marks a family none of whose versions is priced "
-            "yet. A family holds at most three versions; before a fourth is added the third-best by "
-            "tracked wins leaves the code (`python3 tools/genes.py versions`)."
+            "original and its whole family, and reads `1 | 1`; the left half is `—` "
+            "for a family none of whose versions is priced yet. A family holds at "
+            "most three versions; before a fourth is added the third-best by tracked "
+            "wins leaves the code (`python3 tools/genes.py versions`)."
         )
         batch_provenance = (
             "**Batch provenance.** The newest displayed batch is the completed current-standard "
@@ -3257,7 +3281,7 @@ def render_parts(ledger: dict) -> tuple[str, str]:
     # edit nobody notices is missing.
     lines = [
         *RANKING_HEADING,
-        "| Rank | Gene | Description | Best version | Default | P(>0) | "
+        "| Rank | Gene | Description | Best version \\| Total versions | Default | P(>0) | "
         + " | ".join(
             reporting_batch_header(label, batch)
             for label, batch in zip(REPORTING_BATCH_LABELS, reporting_slots)
@@ -3326,7 +3350,7 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             "",
             unmeasured_explanation,
             "",
-            "| Gene | Default | Description | Best version |",
+            "| Gene | Default | Description | Best version \\| Total versions |",
             "|---|---|---|---:|",
         ]
         for tag in sorted(unmeasured):

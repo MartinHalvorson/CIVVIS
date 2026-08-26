@@ -183,22 +183,22 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 
 These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
 
-| Gene | Default | Description | Best version |
+| Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
-| `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 |
-| `close-as-a-body` | off (unmeasured) | On an advance, no unit ends the turn more than the body's pace plus one tile closer to the objective than the force's anchor stood, so a horseman does not meet the enemy four tiles before the line does. | 1 |
-| `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 |
-| `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 |
-| `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 |
-| `lane-release-when-hopeless` | off (unmeasured) | Stop paying a lost victory lane's premiums. | 1 |
-| `lane-votes-its-favor` | off (unmeasured) | Let the assigned diplomatic lane size its own Congress ballot. | 1 |
-| `moksha-defends-the-faithless` | off (unmeasured) | Put Moksha first for a religionless empire under conversion. | 1 |
-| `peace-when-the-war-does-not-pay` | off (unmeasured) | Sue for peace when a war has taken nothing and cannot be paid for. | 1 |
-| `religion-race-is-closed` | off (unmeasured) | Stop paying for a religion race the world has already closed. | 1 |
-| `screen-the-shooters` | off (unmeasured) | A shooter's tile beside a melee friend that stands nearer the enemy earns two screen weights — the arena's own definition of screened, paid to the archer that stays behind the line. | 1 |
-| `treasury-at-work` | off (unmeasured) | Keep one emergency defender and ten turns of deficit in the bank, not 250 + 75 Gold a city. | — |
-| `treasury-at-work-2` | off (unmeasured) | The working reserve, and the first Builder or a missing Monument bought ahead of the purchase argmax. | — |
-| `war-needs-a-treasury` | off (unmeasured) | Refuse a war the treasury cannot pay for. | 1 |
+| `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 \| 1 |
+| `close-as-a-body` | off (unmeasured) | On an advance, no unit ends the turn more than the body's pace plus one tile closer to the objective than the force's anchor stood, so a horseman does not meet the enemy four tiles before the line does. | 1 \| 1 |
+| `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 \| 1 |
+| `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 \| 1 |
+| `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 \| 2 |
+| `lane-release-when-hopeless` | off (unmeasured) | Stop paying a lost victory lane's premiums. | 1 \| 1 |
+| `lane-votes-its-favor` | off (unmeasured) | Let the assigned diplomatic lane size its own Congress ballot. | 1 \| 1 |
+| `moksha-defends-the-faithless` | off (unmeasured) | Put Moksha first for a religionless empire under conversion. | 1 \| 1 |
+| `peace-when-the-war-does-not-pay` | off (unmeasured) | Sue for peace when a war has taken nothing and cannot be paid for. | 1 \| 1 |
+| `religion-race-is-closed` | off (unmeasured) | Stop paying for a religion race the world has already closed. | 1 \| 1 |
+| `screen-the-shooters` | off (unmeasured) | A shooter's tile beside a melee friend that stands nearer the enemy earns two screen weights — the arena's own definition of screened, paid to the archer that stays behind the line. | 1 \| 1 |
+| `treasury-at-work` | off (unmeasured) | Keep one emergency defender and ten turns of deficit in the bank, not 250 + 75 Gold a city. | — \| 2 |
+| `treasury-at-work-2` | off (unmeasured) | The working reserve, and the first Builder or a missing Monument bought ahead of the purchase argmax. | — \| 2 |
+| `war-needs-a-treasury` | off (unmeasured) | Refuse a war the treasury cannot pay for. | 1 \| 1 |
 
 ## Removed from the code
 
@@ -276,7 +276,7 @@ Every screenable heuristic gene on the Advanced controller, ranked by the displa
 
 **Selected defaults.** This reporting-only publication keeps the prior on/off selection, including the operator-named genes: `apostle-promotion-by-role`, `army-target-weighs-enemy`, `boost-wait-research`, `builder-supply-floor`, `buildings-before-projects`, `buy-what-cards-cannot-boost`, `camp-party`, `campaign-pillage`, `chokepoint-claim`, `civilian-out-of-reach`, `coalition-before-war`, `deals-at-the-ceiling`, `deals-for-our-gain`, `defensible-sites`, `district-planning`, `early-contact-window`, `elective-war-yields-to-a-lane`, `enhancer-for-the-corps`, `expansion-schedule`, `founder-temple`, `gold-for-the-young-city`, `holy-lane-parity`, `holy-site-where-the-threat-is-2`, `idle-faith-patronage`, `lane-great-people`, `loyalty-rate-alarm`, `missionary-evades-raiders`, `native-emergency-purchase`, `naval-threat-triage`, `never-an-empty-queue`, `one-launch-pad`, `pantheon-board`, `quest-boost`, `quest-trade-route`, `recon-replacement`, `relief-targets-the-siege`, `religious-units-heal-first`, `research-tier-premium`, `rival-suzerainty-alarm`, `science-chain-alarm`, `settler-screen`, `settler-target-hysteresis-2`, `settler-threat-detour`, `stranded-settler-discount`, `unchosen-war-keeps-the-lane`, `unit-cost-efficiency`, `unit-objective-memory`, `wonder-adjacent-sites`, `wonder-score-tally`. The batch rule's readings remain visible in `rules.batch_decisions`, but do not change a default during table rotation.
 
-**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` (`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's *on* is the seats that played that version, and every other seat — off, or a sibling version on — is its *off*. *Best version* names the family's head (`1` is the original) on every row of the family: the priced version with the highest tracked wins (pooled *Diff*), ties to the higher version. A retained selection keeps its chosen version on its row alone; every version's batch rule reading remains evidence. A versioned row's *Total (on)* and *Total (off)* cells show the best two versions' rates side by side, best first, each with its own `n`. A gene with no versions is its own original and reads `1`; `—` marks a family none of whose versions is priced yet. A family holds at most three versions; before a fourth is added the third-best by tracked wins leaves the code (`python3 tools/genes.py versions`).
+**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` (`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's *on* is the seats that played that version, and every other seat — off, or a sibling version on — is its *off*. *Best version | Total versions* names the family's head (`1` is the original) and how many versions of it the code holds, on every row of the family, so `2 | 3` is three versions of which the second is best. The head is the priced version with the highest tracked wins (pooled *Diff*), ties to the higher version. A retained selection keeps its chosen version on its row alone; every version's batch rule reading remains evidence. A versioned row's *Total (on)* and *Total (off)* cells show the best two versions' rates side by side, best first, each with its own `n`. A gene with no versions is its own original and its whole family, and reads `1 | 1`; the left half is `—` for a family none of whose versions is priced yet. A family holds at most three versions; before a fourth is added the third-best by tracked wins leaves the code (`python3 tools/genes.py versions`).
 
 **Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's excess over that chance rate, scaled from actual completed seats; they do not invent games or seats. The independent latest batch can have unequal on/off arms, which is why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row.
 
