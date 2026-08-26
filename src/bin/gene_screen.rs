@@ -5962,22 +5962,25 @@ mod tests {
     /// A seat plays exactly the genome it was drawn: the bit wins over the
     /// universe and over the ledger's default.
     #[test]
-    fn a_seat_plays_exactly_its_genome() {
+    fn a_seat_plays_a_public_gene_exactly() {
         // Nothing observable is exposed for most flags, so this test pins the
-        // logic on the one flag that is public: `siege_is_progress` is an
-        // engine repair, on after setup, off on stock.
+        // logic on a public flag: `siege_commitment` remains observable after
+        // the genome is applied.
         let genes = gene_table();
         let index = genes
             .iter()
-            .position(|g| g.tag == "siege-is-progress")
-            .expect("siege-is-progress is an engine repair");
+            .position(|g| g.tag == "siege-commitment")
+            .expect("siege-commitment is a registered gene");
         let mut on = vec![false; genes.len()];
         on[index] = true;
-        assert!(seat_with_genome(&genes, &on).siege_is_progress);
+        assert!(seat_with_genome(&genes, &on).siege_commitment);
         let off = vec![false; genes.len()];
-        assert!(!seat_with_genome(&genes, &off).siege_is_progress);
+        assert!(!seat_with_genome(&genes, &off).siege_commitment);
         let universe: Vec<bool> = genes.iter().map(|gene| gene.after_setup_on).collect();
-        assert!(seat_with_genome(&genes, &universe).siege_is_progress);
+        assert_eq!(
+            seat_with_genome(&genes, &universe).siege_commitment,
+            genes[index].after_setup_on
+        );
     }
 
     #[test]
