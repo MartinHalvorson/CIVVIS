@@ -2743,6 +2743,19 @@ pub struct BasicAi {
     /// controller's. Opt-in gene `contested-land-first`; see
     /// `advanced/contested_land.rs`.
     pub(crate) contested_land_first: bool,
+    /// Price a strike with the two strengths the engine will resolve it
+    /// with (`melee_exchange_strengths` / `ranged_strike_strengths`) rather
+    /// than bare combat strength, so matchup, flanking, support, ground and
+    /// the river reach the exchange evaluation. The flag lives here because
+    /// `exchange_score` does. Opt-in gene `exchange-is-the-engines`; see
+    /// `advanced/engine_pricing.rs`.
+    pub(crate) exchange_is_the_engines: bool,
+    /// Price the defender on the tile it is being asked about rather than
+    /// the one it stands on, with that tile's own defence — the reading
+    /// `incoming_damage` has always used and the movers never did. The flag
+    /// lives here because `projected_counter_damage` does. Opt-in gene
+    /// `defend-where-you-stand`; see `advanced/engine_pricing.rs`.
+    pub(crate) defend_where_you_stand: bool,
     /// ★ THE BARBARIANS HUNT THE RELIGIOUS CORPS TOO. A Missionary beside a
     /// city it is converting stands still for three turns at zero movement,
     /// and in Civilization VI a raider that reaches it condemns it. Here the
@@ -3023,7 +3036,15 @@ impl BasicAi {
                     } else {
                         g.unit_strength(enemy, false)
                     } + Self::class_matchup_strength(g, enemy_id, uid);
-                    let defense = g.unit_strength(defender, true)
+                    // `defend-where-you-stand`: the question is what the
+                    // enemy does to us *on `tile`*, so the defender is
+                    // priced there — the unit moved, plus that tile's own
+                    // defence. `None` with the gene off, and then this is
+                    // the strength it has always used. See
+                    // `advanced/engine_pricing.rs`.
+                    let defense = self
+                        .defence_base_where_it_would_stand(g, uid, tile)
+                        .unwrap_or_else(|| g.unit_strength(defender, true))
                         + Self::class_matchup_strength(g, uid, enemy_id);
                     let attack = effective_strength(attack, enemy.hp);
                     let defense = effective_strength(defense, defender.hp);
@@ -4449,6 +4470,8 @@ impl BasicAi {
             enemy_of_my_enemy: false,
             quest_camp_errand: false,
             contested_land_first: false,
+            exchange_is_the_engines: false,
+            defend_where_you_stand: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -4863,6 +4886,8 @@ impl BasicAi {
             enemy_of_my_enemy: false,
             quest_camp_errand: false,
             contested_land_first: false,
+            exchange_is_the_engines: false,
+            defend_where_you_stand: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -12801,14 +12826,28 @@ impl BasicAi {
             Some(o) => o,
         };
         let def = effective_strength(g.unit_strength(o, true), o.hp);
-        let deal = 30.0 * ((att - def) / 25.0).exp();
+        // `exchange-is-the-engines`: the two blows `do_attack`/`do_ranged`
+        // will actually resolve, matchup and ground and support included.
+        // `None` with the gene off, and then every line below is the
+        // arithmetic this function has always used. See
+        // `advanced/engine_pricing.rs`.
+        let engine = self.engine_exchange(g, uid, o.id, pos, ranged);
+        let deal = match &engine {
+            Some((dealt, _)) => *dealt,
+            None => 30.0 * ((att - def) / 25.0).exp(),
+        };
         let mut s = deal.min(o.hp as f64);
         if deal >= o.hp as f64 {
             s += self.w.kill_bonus;
         } else if !ranged {
-            let their_att = effective_strength(g.unit_strength(o, false), o.hp);
-            let my_def = effective_strength(g.unit_strength(u, true), u.hp);
-            let recv = 30.0 * ((their_att - my_def) / 25.0).exp();
+            let recv = match &engine {
+                Some((_, returned)) => *returned,
+                None => {
+                    let their_att = effective_strength(g.unit_strength(o, false), o.hp);
+                    let my_def = effective_strength(g.unit_strength(u, true), u.hp);
+                    30.0 * ((their_att - my_def) / 25.0).exp()
+                }
+            };
             s -= self.w.trade_caution * recv.min(u.hp as f64);
             if recv >= u.hp as f64 {
                 s -= 35.0; // don't suicide into a counter

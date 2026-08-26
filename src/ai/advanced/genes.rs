@@ -1582,6 +1582,19 @@ pub const GENES: &[Gene] = &[
     // capture crosses to the host as `CAPTURE` — the attack-modifier move
     // #2075's bare `MOVE_TO` never was (65 sent, 0 captures).
     Gene { tag: "barbarian-settler-capture", field: "barbarian_settler_capture", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_barbarian_settler_capture, disable: AdvancedAi::disable_barbarian_settler_capture },
+    // `exchange_score` — move ordering, the `military_step` accept, and the
+    // force's focus target — reads bare combat strength, so a spearman is
+    // priced against a horseman as if the anti-cavalry bonus did not exist
+    // and a river crossing costs nothing. `melee_exchange_strengths` and
+    // `ranged_strike_strengths` are the engine's own pair, and `do_attack`
+    // calls them, so this cannot drift from the fight it will get.
+    Gene { tag: "exchange-is-the-engines", field: "exchange_is_the_engines", kind: Kind::OptIn, enable: AdvancedAi::enable_exchange_is_the_engines, disable: AdvancedAi::disable_exchange_is_the_engines },
+    // Both threat terms ask what the enemy would do to us on a candidate
+    // tile and then price the defender where it is standing NOW, with no
+    // tile defence at all — so a unit weighing a hill gets nothing for the
+    // hill. `incoming_damage` has always cloned the unit onto the tile
+    // first; the movers never learned.
+    Gene { tag: "defend-where-you-stand", field: "defend_where_you_stand", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_where_you_stand, disable: AdvancedAi::disable_defend_where_you_stand },
     // The full modern settlement score pays coastal Housing and a small,
     // half-weighted Harbor adjacency, but never the usable coast itself. The
     // global prefilter and legacy scorer retain a six-point coast credit;
