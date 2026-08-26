@@ -1898,26 +1898,53 @@ pub fn capture_engagement(
     })
 }
 
+/// The world a harvest plays and the window it captures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Harvest {
+    pub players: usize,
+    pub width: i32,
+    pub height: i32,
+    /// The last turn played.
+    pub turns: u32,
+    /// Tiles around the contact that make the board.
+    pub radius: i32,
+    /// The clock each captured board is read on.
+    pub window_turns: u32,
+    /// Turns before the same pair of players is captured again.
+    pub cooldown: u32,
+}
+
+impl Default for Harvest {
+    fn default() -> Self {
+        Harvest {
+            players: 4,
+            width: 60,
+            height: 38,
+            turns: 150,
+            radius: 7,
+            window_turns: 16,
+            cooldown: 25,
+        }
+    }
+}
+
 /// Play one world game with the deployed controller in every seat and take
 /// every engagement it produces: the first turn each pair of players at war
 /// has armies within [`CONTACT_RANGE`], and again once `cooldown` turns have
 /// passed for that pair — a long war is several engagements, a skirmish that
-/// never breaks contact is one.
-///
-/// `radius` is the window around the contact and `window_turns` the clock
-/// each captured board is read on. The barbarian seat is a player like any
+/// never breaks contact is one. The barbarian seat is a player like any
 /// other here: a raid is an engagement too, and the one the live seat loses
 /// most units to.
-pub fn harvest_engagements(
-    seed: u64,
-    players: usize,
-    width: i32,
-    height: i32,
-    turns: u32,
-    radius: i32,
-    window_turns: u32,
-    cooldown: u32,
-) -> Vec<Engagement> {
+pub fn harvest_engagements(seed: u64, setup: &Harvest) -> Vec<Engagement> {
+    let Harvest {
+        players,
+        width,
+        height,
+        turns,
+        radius,
+        window_turns,
+        cooldown,
+    } = *setup;
     let mut g = Game::new_with(crate::game::GameOptions::new(
         players,
         width,
@@ -2253,7 +2280,16 @@ mod tests {
     /// the arena can read back and seat.
     #[test]
     fn a_harvest_produces_boards_the_arena_can_play() {
-        let boards = harvest_engagements(17, 2, 24, 16, 60, 5, 8, 20);
+        let small = Harvest {
+            players: 2,
+            width: 24,
+            height: 16,
+            turns: 60,
+            radius: 5,
+            window_turns: 8,
+            cooldown: 20,
+        };
+        let boards = harvest_engagements(17, &small);
         let text = Engagement::to_json(&boards);
         let back = Engagement::from_json(&text).expect("harvested boards read back");
         assert_eq!(back, boards);

@@ -38,7 +38,7 @@
 //! whole-game screen prices what the effect is worth.
 use civvis::doctrine::{
     harvest_engagements, matched_engagement, paired, DoctrineLedger, DoctrineProfile, Engagement,
-    MatchedPosition,
+    Harvest, MatchedPosition,
 };
 use civvis::elo::{seat_ai, seat_spec};
 use civvis::parallel::{default_jobs, map};
@@ -324,31 +324,31 @@ fn share_text(present: bool, value: f64) -> String {
 /// Play whole games and write every engagement they produce.
 fn capture(args: &[String], start_seed: u64, jobs: usize) {
     let games = number(args, "--games", 12).max(1) as usize;
-    let players = number(args, "--players", 4).clamp(2, 12) as usize;
-    let width = number(args, "--width", 60).max(20) as i32;
-    let height = number(args, "--height", 38).max(14) as i32;
-    let turns = number(args, "--turns", 150).max(10) as u32;
-    let radius = number(args, "--radius", 7).clamp(3, 12) as i32;
-    let window_turns = number(args, "--window-turns", 16).max(2) as u32;
-    let cooldown = number(args, "--cooldown", 25).max(1) as u32;
+    let stock = Harvest::default();
+    let setup = Harvest {
+        players: number(args, "--players", stock.players as i64).clamp(2, 12) as usize,
+        width: number(args, "--width", i64::from(stock.width)).max(20) as i32,
+        height: number(args, "--height", i64::from(stock.height)).max(14) as i32,
+        turns: number(args, "--turns", i64::from(stock.turns)).max(10) as u32,
+        radius: number(args, "--radius", i64::from(stock.radius)).clamp(3, 12) as i32,
+        window_turns: number(args, "--window-turns", i64::from(stock.window_turns)).max(2) as u32,
+        cooldown: number(args, "--cooldown", i64::from(stock.cooldown)).max(1) as u32,
+    };
     let out = text(args, "--out", "target/engagements.json");
     println!(
-        "doctrine_arena --capture: {games} game(s) of {players} players on {width}x{height} to turn \
-         {turns}, every contact captured on a radius-{radius} window read over {window_turns} \
-         turns, one capture per pair every {cooldown} turns"
+        "doctrine_arena --capture: {games} game(s) of {} players on {}x{} to turn {}, every \
+         contact captured on a radius-{} window read over {} turns, one capture per pair every \
+         {} turns",
+        setup.players,
+        setup.width,
+        setup.height,
+        setup.turns,
+        setup.radius,
+        setup.window_turns,
+        setup.cooldown
     );
-    let harvested: Vec<Vec<Engagement>> = map(games, jobs, |index| {
-        harvest_engagements(
-            start_seed + index as u64,
-            players,
-            width,
-            height,
-            turns,
-            radius,
-            window_turns,
-            cooldown,
-        )
-    });
+    let harvested: Vec<Vec<Engagement>> =
+        map(games, jobs, |index| harvest_engagements(start_seed + index as u64, &setup));
     let boards: Vec<Engagement> = harvested.into_iter().flatten().collect();
     let rules = civvis::rules::Rules::embedded();
     println!();
