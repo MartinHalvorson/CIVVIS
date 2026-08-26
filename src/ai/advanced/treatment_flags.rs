@@ -2930,6 +2930,32 @@ impl AdvancedAi {
         self.fire_plan = false;
     }
 
+    /// On an advance, no unit ends the turn more than the body's pace plus
+    /// one tile closer to the objective than the force's anchor stood, so a
+    /// horseman does not meet the enemy four tiles before the line does.
+    /// See `close_as_a_body`.
+    pub fn enable_close_as_a_body(&mut self) {
+        self.close_as_a_body = true;
+    }
+
+    /// The twin of `enable_close_as_a_body`.
+    pub fn disable_close_as_a_body(&mut self) {
+        self.close_as_a_body = false;
+    }
+
+    /// A shooter's tile beside a melee friend that stands nearer the enemy
+    /// earns two screen weights — the arena's own definition of screened,
+    /// paid to the archer that stays behind the line. See
+    /// `screen_the_shooters`.
+    pub fn enable_screen_the_shooters(&mut self) {
+        self.screen_the_shooters = true;
+    }
+
+    /// The twin of `enable_screen_the_shooters`.
+    pub fn disable_screen_the_shooters(&mut self) {
+        self.screen_the_shooters = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------

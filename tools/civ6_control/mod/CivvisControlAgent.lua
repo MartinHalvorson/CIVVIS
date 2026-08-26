@@ -6544,6 +6544,20 @@ local function exportState(player, pid, turn, frame)
 				open_borders = try(function()
 					return diplomacy:HasOpenBordersFrom(otherId);
 				end, nil),
+				-- Whether THEIR border exists at all. Civilization VI shuts a
+				-- civilization's territory to foreign units only once it holds
+				-- Early Empire ("unlocks the abilities to enforce borders and
+				-- grant Open Borders"; CIVIC_ENFORCE_BORDERS hangs off it). The
+				-- mirror does not model a rival's civics and used to answer
+				-- "free passage" for every rival whose city it could see: run
+				-- 184456Z sent 37 military steps into a rival's closed border
+				-- and none arrived. nil when the host cannot be asked; the
+				-- mirror reads nil as enforced.
+				enforces_borders = try(function()
+					local civic = GameInfo.Civics["CIVIC_EARLY_EMPIRE"];
+					if civic == nil then return nil; end
+					return other:GetCulture():HasCivic(civic.Index);
+				end, nil),
 				-- ★★★ THE GAME'S OWN ANSWER TO "MAY WE DECLARE ON THEM". CIVVIS gates a
 				-- war on its own diplomatic bookkeeping — it wants a casus belli, and
 				-- failing that it denounces and waits five turns for a Formal War. That
@@ -6764,6 +6778,17 @@ local function exportState(player, pid, turn, frame)
 				suzerain = influence ~= nil and try(function()
 					return influence:GetSuzerain();
 				end, -1) or -1,
+				-- Whether the city-state's border exists: Early Empire, the same
+				-- civic as a major's. A city-state's land is shut to everyone but
+				-- its Suzerain once it holds it — run 184456Z sent 122 military
+				-- steps into non-suzerain city-state land and 4% arrived, 51%
+				-- where we were Suzerain. nil when the host cannot be asked; the
+				-- mirror reads nil as enforced.
+				enforces_borders = try(function()
+					local civic = GameInfo.Civics["CIVIC_EARLY_EMPIRE"];
+					if civic == nil then return nil; end
+					return minor:GetCulture():HasCivic(civic.Index);
+				end, nil),
 				cities = theirCities, units = theirUnits,
 			};
 		end);
@@ -8034,7 +8059,26 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 				if revealed then
 					local owner = try(function() return plot:GetOwner(); end, -1) or -1;
 					local feature = try(function() return plot:GetFeatureType(); end, -1) or -1;
-					mark = owner * 1024 + feature;
+					-- ★★★★ AND WHAT WAS BUILT, BURNT OR PAVED ON IT. Owner and
+					-- feature closed the volcano's window; a Builder finishing a
+					-- Farm, a raider pillaging it, a road laid, a district placed
+					-- or completed, a wonder finished and a barbarian camp planted
+					-- or cleared change neither, so the board kept the old plot
+					-- until the next full sweep — up to TileExportEvery-1 turns of
+					-- a camp that is not there, or one that is. Every field the
+					-- record carries joins the signature; no new locals, the
+					-- chunk is at its ceiling.
+					mark = (owner * 1024 + feature) .. ":"
+						.. (try(function() return plot:GetImprovementType(); end, -1) or -1) .. ":"
+						.. (try(function() return plot:IsImprovementPillaged(); end, false) and 1 or 0) .. ":"
+						.. (try(function() return plot:GetRouteType(); end, -1) or -1) .. ":"
+						.. (try(function() return plot:IsRoutePillaged(); end, false) and 1 or 0) .. ":"
+						.. (try(function() return plot:GetDistrictType(); end, -1) or -1) .. ":"
+						.. (try(function()
+							local district = CityManager.GetDistrictAt(x, y);
+							return district ~= nil and district:IsComplete();
+						end, false) and 1 or 0) .. ":"
+						.. (try(function() return plot:GetWonderType(); end, -1) or -1);
 				end
 				local key = y * width + x;
 				local changed = mark ~= nil and (full or known[key] ~= mark);
