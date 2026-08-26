@@ -1,5 +1,5 @@
-//! The gene ledger: what the screen has measured about every gene, beside the
-//! explicit deployment genome the operator selected.
+//! The gene ledger: what the screen has measured about every gene, and the
+//! deployment genome the batch rule decides from it.
 //!
 //! ⭐ ONE SCREEN. Operator directive 2026-08-22: every row here comes from the
 //! same shape — six majors on 74x46 continents with nine city-states, Online
@@ -8,37 +8,43 @@
 //! regime to reconcile, and `tools/genes.py` refuses a source played at
 //! any other profile. The columns carried over from the pre-2026-08-22 Pangaea
 //! screens are marked `legacy` in `docs/gene_ledger.json`: history retained
-//! as evidence beside the pinned deployment selection.
+//! as evidence beside the batch rule's answer.
 //!
-//! ★★★★ THE DEFAULT IS AN EXPLICIT OPERATOR-PINNED GENOME.
-//! Operator directive 2026-08-24: preserve the 36 selections then deployed
-//! and explicitly promote `unit-cost-efficiency`, `unit-objective-memory`,
-//! `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`,
-//! `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, and
-//! `civilian-rescue`; then `missionary-evades-raiders`, `district-planning`,
-//! `missionary-last-charge-explores`, `settlement-gap-target`,
-//! `religious-defence-scales`, `lane-policy-deck`, and
-//! `science-multiplier-payoff`, for 52 enabled genes; then (2026-08-24,
-//! "default this gene to true initially once you write and merge it")
-//! `science-victory-drive`, pinned on before its first screen, for 53. The
-//! 2026-08-25 displayed pooled-Diff cutoff of +0.85 pp then explicitly
-//! promotes `solvency-first-trade-slot` (+8.07 pp),
-//! `settler-factory-coordination` (+1.84 pp), `one-war-at-a-time` (+1.00 pp),
-//! and `religious-veto-defence` (+0.93 pp), for 57.
-//! `DEPLOYMENT_GENOME` is that exact list. A screen refresh updates evidence,
-//! not the runtime default; changing a default requires an explicit operator
-//! update to the pinned list and regeneration.
+//! ★★★★ THE DEFAULT FOLLOWS THE BATCH RULE (operator, 2026-08-25). Every
+//! screenable gene's default is decided by its three batch columns in
+//! `GENE_HEURISTIC_RANKING.md` — *Last Batch*, *Prior Batch*, *Third Batch*,
+//! the ± wins per 10,000 total seats each fixed reporting batch read for the
+//! gene, newest first — through [`batch_rule`], the operator's words as a
+//! function, and by nothing else:
 //!
-//! ⭐ ONE EXCEPTION, WITHIN A FAMILY (operator, 2026-08-23, restated
-//! 2026-08-25): a pinned gene that has VERSIONS (`<base>-<n>`) ships its
-//! family HEAD — the priced version with the highest tracked wins, the
-//! ledger's pooled on−off *Diff*, ties to the higher version — whatever
-//! version the operator's list names. Naming any version pins the family on;
-//! `tools/genes.py::resolve_family_heads` writes the head into
-//! `DEPLOYMENT_GENOME` and records pin, head and every version's tracked
-//! wins in `docs/gene_ledger.json` (`rules.family_heads`). A family holds at
-//! most three versions; the third-best leaves before a fourth is added
-//! (`python3 tools/genes.py versions`).
+//! 1. three batches all below −10 → the gene is REMOVED from the gene pool;
+//! 2. two or three batches negative → off;
+//! 3. three batches all positive → on;
+//! 4. three batches, exactly two positive, and their mean > 7 → on;
+//! 5. one or two batches, exactly one positive, and their mean > 7 → on;
+//! 6. two batches, both positive → on (all of its batches are positive);
+//! 7. otherwise off — a gene no batch has priced is off, and a reading of
+//!    exactly zero is neither positive nor negative.
+//!
+//! `tools/genes.py write` re-decides every default when a reporting batch
+//! enters and writes the answer as `DEPLOYMENT_GENOME`, with the columns it
+//! read as `BATCH_COLUMNS`; `the_default_follows_the_batch_rule` re-derives
+//! the one from the other here, so the two languages cannot disagree about
+//! what ships. A gene the rule removes fails `genes.py check` (and
+//! `no_gene_is_due_for_removal` here) until its code is cut. There is no
+//! operator list: a default changes by playing more games.
+//!
+//! ⭐ WITHIN A FAMILY (operator, 2026-08-23, restated 2026-08-25): every
+//! version (`<base>-<n>`) is judged by the rule on its own row, and a family
+//! with a version on ships ONE version — its head, the priced version with
+//! the highest tracked wins (the ledger's pooled on−off *Diff*, ties to the
+//! higher version), when the rule turns the head on, else the best version
+//! by tracked wins among those the rule turns on.
+//! `tools/genes.py::resolve_family_heads` writes that version into
+//! `DEPLOYMENT_GENOME` and records each family's rule-on versions, head and
+//! shipped version in `docs/gene_ledger.json` (`rules.family_heads`). A
+//! family holds at most three versions; the third-best leaves before a
+//! fourth is added (`python3 tools/genes.py versions`).
 //!
 //! ★★★★ AND IT IS PUBLISHED BESIDE A PRECISION-WEIGHTED POSTERIOR.
 //! A threshold in column units is not a threshold in evidence: the screens
@@ -48,18 +54,19 @@
 //! (DerSimonian–Laird) inverse-variance pool of every screen's on−off
 //! difference on the win column's scale, with the between-screen
 //! disagreement carried in the interval. They are observational evidence,
-//! not a deployment rule; `HEURISTIC_GENE_RANKING.md` prints the evidence for
-//! future explicit selections.
+//! not a deployment rule; `GENE_HEURISTIC_RANKING.md` prints them beside
+//! the rule's answer.
 //!
-//! Verdicts still say what screens proved, but neither verdicts, win columns,
-//! pooled *Diff*, nor posterior values mechanically decide what ships.
+//! Verdicts still say what screens proved, but neither verdicts, the sources'
+//! win columns, pooled *Diff*, nor posterior values decide what ships: the
+//! three batch columns do.
 //!
 //! The verdict block at the end of `genes.rs` is **generated** by
 //! `tools/genes.py` from `gene_screen --analyze --json` outputs and
 //! mirrored in `docs/gene_ledger.json`; a test holds the generated file and
-//! the JSON together, and another validates every `default_on` against the
-//! generated pinned list. The verdict rules live in the tool and are repeated
-//! here so the reader of either side finds them:
+//! the JSON together, and another re-derives every `default_on` from the
+//! generated batch columns. The verdict rules live in the tool and are
+//! repeated here so the reader of either side finds them:
 //!
 //! - `helps`: win z ≥ 2 with share z > −2, or share
 //!   z ≥ 2 with win z > −2 (the screen's own `*` flag; `**` past the
@@ -76,7 +83,7 @@
 //! `enable_engine_repairs` end with: every live treatment and production
 //! treatment the ledger does not default on is withheld, every opt-in it
 //! defaults on is enabled. A screenable gene without a measurement row still
-//! follows the pinned list; a Firaxis-only flag, which the screen cannot
+//! follows the rule (off until a batch prices it); a Firaxis-only flag, which the screen cannot
 //! price, is left exactly as the bundle set it. The `_universe` twins of those
 //! two helpers set every flag and skip the ledger: they are the genome's
 //! universe, for
@@ -119,21 +126,23 @@ pub struct Measure {
 pub struct GeneVerdict {
     pub tag: &'static str,
     pub verdict: Verdict,
-    /// Whether the gene is on in the explicit operator-pinned deployment
-    /// genome, checked here against `DEPLOYMENT_GENOME`.
+    /// Whether the batch rule turns the gene on — whether it is in
+    /// `DEPLOYMENT_GENOME`, which `the_default_follows_the_batch_rule`
+    /// re-derives from `BATCH_COLUMNS`.
     pub default_on: bool,
     /// ± wins per 10,000 on-arm seats at the gene's measured on-rate in the latest
-    /// screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
+    /// screen that priced it: `GENE_HEURISTIC_RANKING.md`'s
     /// *± Wins / 10k seats*. `None` when no screen has priced it.
     pub wins_last_10k: Option<i32>,
     /// The same figure from the screen before that — *± Wins / 10k seats prior*.
     /// `None` when the gene has only one reading.
     ///
-    /// The JSON and `HEURISTIC_GENE_RANKING.md` also carry `wins_third_10k`,
-    /// the screen before this one, so a reader can assess trends. All windows
-    /// are evidence only; none selects a deployment default automatically.
+    /// The JSON and `GENE_HEURISTIC_RANKING.md` also carry `wins_third_10k`,
+    /// the screen before this one, so a reader can assess trends. These are
+    /// the SOURCES' on-arm columns and are evidence only; the default reads
+    /// the reporting batches' total-seat columns in `BATCH_COLUMNS`.
     pub wins_prior_10k: Option<i32>,
-    /// `HEURISTIC_GENE_RANKING.md`'s *Diff*: the pooled on win rate minus the
+    /// `GENE_HEURISTIC_RANKING.md`'s *Diff*: the pooled on win rate minus the
     /// pooled off win rate in percentage points, over **every** screen that
     /// priced the gene, each weighted by its on-arm seats. It is evidence only.
     /// `None` when no screen has priced it.
@@ -153,10 +162,82 @@ pub struct GeneVerdict {
     pub screen: Option<Measure>,
 }
 
-/// The generated policy, pinned list, and measurement rows at the end of
-/// `genes.rs`, written by `python3 tools/genes.py write`.
+/// The generated policy, deployment genome, batch columns and measurement
+/// rows at the end of `genes.rs`, written by `python3 tools/genes.py write`.
 mod table {
-    pub(super) use super::super::genes::{DEPLOYMENT_GENOME, DEPLOYMENT_POLICY, VERDICTS as ROWS};
+    pub(super) use super::super::genes::{
+        BATCH_COLUMNS, DEPLOYMENT_GENOME, DEPLOYMENT_POLICY, VERDICTS as ROWS,
+    };
+}
+
+/// The batch rule reads at most this many batches: the ranking's three
+/// columns, newest first.
+pub const BATCH_RULE_WINDOW: usize = 3;
+/// A gene whose batches are not all positive ships only when their mean
+/// exceeds this many wins per 10,000 total seats.
+pub const BATCH_RULE_AVERAGE: f64 = 7.0;
+/// A gene reading below this in every one of three batches leaves the pool.
+pub const BATCH_RULE_REMOVE_BELOW: i32 = -10;
+
+/// What the batch rule says about one gene.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BatchRule {
+    /// The gene defaults on.
+    On,
+    /// The gene defaults off.
+    Off,
+    /// The gene leaves the gene pool: its code is cut.
+    Remove,
+}
+
+/// ⭐ THE BATCH RULE — the operator's words (2026-08-25) as a function, the
+/// twin of `tools/genes.py::batch_rule`. `columns` are one gene's batch
+/// readings newest first: wins ± per 10,000 total seats in the ranking's
+/// *Last*, *Prior* and *Third Batch* columns, `None` where that batch did
+/// not price the gene. Read over the batches that priced the gene:
+///
+/// 1. three batches all below [`BATCH_RULE_REMOVE_BELOW`] → `Remove`;
+/// 2. two or three batches negative → `Off`;
+/// 3. three batches all positive → `On`;
+/// 4. three batches, exactly two positive, mean > [`BATCH_RULE_AVERAGE`] → `On`;
+/// 5. one or two batches, exactly one positive, mean > 7 → `On`;
+/// 6. two batches, both positive → `On`;
+/// 7. otherwise `Off` — no batch, or a zero, is neither positive nor negative.
+pub fn batch_rule(columns: &[Option<i32>; BATCH_RULE_WINDOW]) -> BatchRule {
+    let read: Vec<i32> = columns.iter().flatten().copied().collect();
+    if read.is_empty() {
+        return BatchRule::Off;
+    }
+    let positive = read.iter().filter(|&&column| column > 0).count();
+    let negative = read.iter().filter(|&&column| column < 0).count();
+    let mean = read.iter().sum::<i32>() as f64 / read.len() as f64;
+    if read.len() == BATCH_RULE_WINDOW
+        && read.iter().all(|&column| column < BATCH_RULE_REMOVE_BELOW)
+    {
+        return BatchRule::Remove;
+    }
+    if negative >= 2 {
+        return BatchRule::Off;
+    }
+    if read.len() == BATCH_RULE_WINDOW {
+        if positive == BATCH_RULE_WINDOW || (positive == 2 && mean > BATCH_RULE_AVERAGE) {
+            return BatchRule::On;
+        }
+        return BatchRule::Off;
+    }
+    if (read.len() == 2 && positive == 2) || (positive == 1 && mean > BATCH_RULE_AVERAGE) {
+        return BatchRule::On;
+    }
+    BatchRule::Off
+}
+
+/// The three batch columns the rule read for a tag, `None` when no reporting
+/// batch has priced it (which the rule reads as off).
+pub fn batch_columns(tag: &str) -> Option<&'static [Option<i32>; BATCH_RULE_WINDOW]> {
+    table::BATCH_COLUMNS
+        .iter()
+        .find(|(name, _)| *name == tag)
+        .map(|(_, columns)| columns)
 }
 
 /// Every gene the ledger has a verdict for, in the generated order.
@@ -169,8 +250,8 @@ pub fn deployment_policy() -> &'static str {
     table::DEPLOYMENT_POLICY
 }
 
-/// Whether a tag is in the explicit operator-pinned deployment genome.
-pub fn operator_default_on(tag: &str) -> bool {
+/// Whether a tag is in the deployment genome the batch rule decided.
+pub fn deployment_default_on(tag: &str) -> bool {
     table::DEPLOYMENT_GENOME.contains(&tag)
 }
 
@@ -186,17 +267,17 @@ pub fn screenable(tag: &str) -> bool {
     super::gene(tag).is_some_and(|gene| gene.screenable())
 }
 
-/// Whether a gene is on in the explicit deployment genome. A screenable tag
-/// outside the pinned list is off, whether or not a screen has measured it.
-/// `None` for a gene the screen cannot price (the Firaxis-only flags),
-/// which the bundle leaves as it set it.
+/// Whether a gene is on in the deployment genome the batch rule decided. A
+/// screenable tag the rule does not turn on is off, whether or not a batch
+/// has priced it. `None` for a gene the screen cannot price (the
+/// Firaxis-only flags), which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
     // A host-only flag is never governed by a screen row; the bundle retains
     // control of its live defaults.
     if !screenable(tag) {
         return None;
     }
-    Some(operator_default_on(tag))
+    Some(deployment_default_on(tag))
 }
 
 /// Whether a live treatment is normally present in the universe but held out
@@ -275,8 +356,7 @@ impl AdvancedAi {
         let mut applied = GeneLedgerApplied::default();
         // What the bundle had on — every live gene and the production genes —
         // the ledger may hold off; what it had off — the opt-ins — the ledger
-        // may turn on. `joint-tactics` is both live and an opt-in: as a live
-        // gene it is withheld or kept like any other.
+        // may turn on.
         for gene in super::GENES
             .iter()
             .filter(|gene| gene.live() || gene.production())
@@ -315,12 +395,39 @@ mod tests {
             Some(table::DEPLOYMENT_POLICY),
             "the JSON ledger and the generated table were written under different policies"
         );
-        let pinned = json["rules"]["deployment_genome"]
+        let genome = json["rules"]["deployment_genome"]
             .as_array()
             .expect("deployment_genome array");
-        assert_eq!(pinned.len(), table::DEPLOYMENT_GENOME.len());
-        for (json_tag, rust_tag) in pinned.iter().zip(table::DEPLOYMENT_GENOME) {
+        assert_eq!(genome.len(), table::DEPLOYMENT_GENOME.len());
+        for (json_tag, rust_tag) in genome.iter().zip(table::DEPLOYMENT_GENOME) {
             assert_eq!(json_tag.as_str(), Some(*rust_tag));
+        }
+        let columns = json["rules"]["batch_columns"]
+            .as_object()
+            .expect("batch_columns object");
+        assert_eq!(columns.len(), table::BATCH_COLUMNS.len());
+        for (tag, rust_columns) in table::BATCH_COLUMNS {
+            let json_columns = columns[*tag].as_array().expect("three columns");
+            assert_eq!(json_columns.len(), BATCH_RULE_WINDOW, "{tag}");
+            for (json_column, rust_column) in json_columns.iter().zip(rust_columns) {
+                assert_eq!(
+                    json_column.as_i64(),
+                    rust_column.map(i64::from),
+                    "{tag}: a batch column differs between the table and the JSON"
+                );
+            }
+            let decision = json["rules"]["batch_decisions"][*tag]
+                .as_str()
+                .expect("decision");
+            let expected = match batch_rule(rust_columns) {
+                BatchRule::On => "on",
+                BatchRule::Off => "off",
+                BatchRule::Remove => "remove",
+            };
+            assert_eq!(
+                decision, expected,
+                "{tag}: the two languages read the rule differently"
+            );
         }
         let genes = json["genes"].as_array().expect("genes array");
         assert_eq!(
@@ -367,17 +474,99 @@ mod tests {
         }
     }
 
-    /// Every generated row agrees with the explicit list, so observations
-    /// cannot quietly re-decide a runtime default.
+    /// The family a tag belongs to: `<base>-<n>` with `n >= 2` and `<base>`
+    /// itself a gene is version `n` of `<base>` (`tools/genes.py::families_of`).
+    fn family_base(tag: &'static str) -> &'static str {
+        match tag.rsplit_once('-') {
+            Some((base, version))
+                if version.parse::<u32>().is_ok_and(|n| n >= 2)
+                    && super::super::gene(base).is_some() =>
+            {
+                base
+            }
+            _ => tag,
+        }
+    }
+
+    /// ★ THE MIRROR: every default is the batch rule's answer over the
+    /// generated batch columns, so `tools/genes.py` and this crate cannot
+    /// disagree about what ships. A gene with no columns is off; a family
+    /// ships exactly one version, and only when the rule turns a version on.
     #[test]
-    fn the_default_matches_the_operator_pinned_genome() {
-        assert_eq!(deployment_policy(), "operator-pinned");
-        let mut measured_on = 0;
+    fn the_default_follows_the_batch_rule() {
+        assert_eq!(deployment_policy(), "batch-rule");
+        let genome = table::DEPLOYMENT_GENOME;
+        let mut sorted = genome.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted, genome, "the deployment genome is sorted and unique");
+        let mut rule_on_by_family: std::collections::BTreeMap<&str, Vec<&str>> =
+            std::collections::BTreeMap::new();
+        for (tag, columns) in table::BATCH_COLUMNS {
+            assert!(
+                screenable(tag),
+                "{tag}: only a screenable gene has batch columns"
+            );
+            let call = batch_rule(columns);
+            let family = family_base(tag);
+            if family == *tag {
+                assert_eq!(
+                    genome.contains(tag),
+                    call == BatchRule::On,
+                    "{tag}: {columns:?} reads {call:?}, but the generated genome disagrees"
+                );
+            } else if call == BatchRule::On {
+                rule_on_by_family.entry(family).or_default().push(tag);
+            }
+            if call == BatchRule::On && family != *tag {
+                continue;
+            }
+            if family != *tag {
+                assert!(
+                    !genome.contains(tag),
+                    "{tag}: the rule turns this version off, yet it ships"
+                );
+            }
+        }
+        for tag in genome {
+            assert!(
+                batch_columns(tag).is_some(),
+                "{tag} ships but no reporting batch priced it; the rule turns on only priced genes"
+            );
+            assert_eq!(
+                batch_rule(batch_columns(tag).unwrap()),
+                BatchRule::On,
+                "{tag} ships but the rule does not turn it on"
+            );
+            assert_eq!(
+                ledger_default_on(tag),
+                Some(true),
+                "{tag} is in the genome but not enabled by the runtime ledger"
+            );
+        }
+        for (family, versions) in &rule_on_by_family {
+            let shipped: Vec<&str> = versions
+                .iter()
+                .copied()
+                .filter(|v| genome.contains(v))
+                .collect();
+            let base_ships = genome.contains(family);
+            assert_eq!(
+                shipped.len() + usize::from(base_ships && !versions.contains(family)),
+                1,
+                "family {family}: the rule turns on {versions:?}; exactly one version ships"
+            );
+        }
+        let measured_on = gene_ledger().iter().filter(|row| row.default_on).count();
+        assert!(
+            measured_on <= genome.len(),
+            "the measured subset cannot contain more defaults than the genome"
+        );
         for row in gene_ledger() {
             assert_eq!(
                 row.default_on,
-                operator_default_on(row.tag),
-                "{} differs from the generated operator-pinned list",
+                deployment_default_on(row.tag),
+                "{}: the verdict row and the genome disagree",
                 row.tag
             );
             assert_eq!(
@@ -385,66 +574,85 @@ mod tests {
                 screenable(row.tag).then_some(row.default_on),
                 "host-only rows stay outside the runtime deployment policy"
             );
-            measured_on += usize::from(row.default_on);
         }
-        assert_eq!(
-            table::DEPLOYMENT_GENOME.len(),
-            73,
-            "an operator selection changed; update it deliberately"
-        );
+    }
+
+    /// ★ The rule's one action the tool cannot take itself: a gene below −10
+    /// in all three batches leaves the gene pool. Until its code is cut this
+    /// test — like `genes.py check` — fails and names it.
+    #[test]
+    fn no_gene_is_due_for_removal() {
+        let due: Vec<&str> = table::BATCH_COLUMNS
+            .iter()
+            .filter(|(_, columns)| batch_rule(columns) == BatchRule::Remove)
+            .map(|(tag, _)| *tag)
+            .collect();
         assert!(
-            measured_on <= table::DEPLOYMENT_GENOME.len(),
-            "the measured subset cannot contain more defaults than the pinned genome"
+            due.is_empty(),
+            "the batch rule removes {due:?} from the gene pool (below {BATCH_RULE_REMOVE_BELOW} \
+             in all {BATCH_RULE_WINDOW} batches): cut the gene's row, toggles, field, gated \
+             branches, tests and fires json, then `python3 tools/genes.py write`"
         );
-        for tag in table::DEPLOYMENT_GENOME {
-            assert_eq!(
-                ledger_default_on(tag),
-                Some(true),
-                "{tag} is pinned but not enabled by the runtime ledger"
-            );
-        }
     }
 
+    /// The rule, clause by clause, on the operator's own numbers.
     #[test]
-    fn the_sixteen_explicit_promotions_are_pinned_on() {
-        for tag in [
-            "unit-cost-efficiency",
-            "unit-objective-memory",
-            "camp-party",
-            "slot-kind-tiebreak",
-            "promote-when-wounded",
-            "religion-sues-peace",
-            "lane-great-people",
-            "one-launch-pad",
-            "civilian-rescue",
-            "missionary-evades-raiders",
-            "district-planning",
-            "missionary-last-charge-explores",
-            "settlement-gap-target",
-            "religious-defence-scales",
-            "lane-policy-deck",
-            "science-multiplier-payoff",
-        ] {
-            assert!(operator_default_on(tag), "{tag} was not pinned on");
-        }
+    fn the_batch_rule_clause_by_clause() {
+        use BatchRule::*;
+        let rule = |a: Option<i32>, b: Option<i32>, c: Option<i32>| batch_rule(&[a, b, c]);
+        // 1. all three below −10 → remove; −10 itself is not below −10.
+        assert_eq!(rule(Some(-11), Some(-30), Some(-12)), Remove);
+        assert_eq!(rule(Some(-10), Some(-30), Some(-12)), Off);
+        assert_eq!(
+            rule(Some(-11), Some(-30), None),
+            Off,
+            "two batches never remove"
+        );
+        // 2. two or three negative → off, whatever the third reads.
+        assert_eq!(rule(Some(-4), Some(4), Some(-3)), Off);
+        assert_eq!(rule(Some(200), Some(-1), Some(-1)), Off);
+        assert_eq!(rule(Some(-1), Some(-1), None), Off);
+        // 3. three positive → on, however small.
+        assert_eq!(rule(Some(1), Some(1), Some(1)), On);
+        // 4. exactly two of three positive → on only above a mean of 7.
+        assert_eq!(rule(Some(-4), Some(23), Some(15)), On);
+        assert_eq!(rule(Some(8), Some(5), Some(-12)), Off);
+        assert_eq!(
+            rule(Some(-4), Some(13), Some(12)),
+            Off,
+            "mean 7.0 is not above 7"
+        );
+        assert_eq!(rule(Some(-5), Some(13), Some(13)), Off, "mean 7.0 exactly");
+        assert_eq!(rule(Some(-4), Some(13), Some(13)), On, "mean 7.33");
+        assert_eq!(
+            rule(Some(0), Some(9), Some(34)),
+            On,
+            "a zero is not negative"
+        );
+        assert_eq!(
+            rule(Some(0), Some(0), Some(34)),
+            Off,
+            "one positive of three"
+        );
+        // 5. one or two batches, exactly one positive → on above a mean of 7.
+        assert_eq!(rule(Some(26), None, None), On);
+        assert_eq!(rule(Some(7), None, None), Off, "7 is not above 7");
+        assert_eq!(rule(Some(16), Some(-1), None), On);
+        assert_eq!(rule(Some(-33), Some(7), None), Off);
+        assert_eq!(rule(Some(15), Some(0), None), On);
+        // 6. two batches both positive → on.
+        assert_eq!(rule(Some(16), Some(8), None), On);
+        assert_eq!(rule(Some(1), Some(1), None), On);
+        // 7. otherwise off: nothing priced, or zeros.
+        assert_eq!(rule(None, None, None), Off);
+        assert_eq!(rule(Some(0), None, None), Off);
+        assert_eq!(rule(Some(0), Some(0), Some(0)), Off);
+        assert_eq!(rule(Some(-5), None, None), Off);
     }
 
-    #[test]
-    fn the_20260825_explicit_promotions_are_pinned_on() {
-        for tag in [
-            "science-victory-drive",
-            "solvency-first-trade-slot",
-            "settler-factory-coordination",
-            "one-war-at-a-time",
-            "religious-veto-defence",
-        ] {
-            assert!(operator_default_on(tag), "{tag} was not pinned on");
-        }
-    }
-
-    /// Every screenable gene has an explicit pinned state, including a gene
-    /// whose first measurement has not landed; a Firaxis-only flag has no
-    /// instrument and is left alone.
+    /// Every screenable gene has a default the rule decided, including a gene
+    /// no batch has priced yet (off); a Firaxis-only flag has no instrument
+    /// and is left alone.
     #[test]
     fn screenable_genes_have_an_explicit_default_and_host_only_flags_are_untouched() {
         assert_eq!(
@@ -477,9 +685,9 @@ mod tests {
     }
 
     /// The deployment genome is the universe minus the genes the ledger
-    /// holds off, plus the opt-ins it turns on from the explicit pinned list.
+    /// holds off, plus the opt-ins the batch rule turns on.
     #[test]
-    fn apply_gene_ledger_applies_the_pinned_selection_to_live_and_opt_in_genes() {
+    fn apply_gene_ledger_applies_the_batch_rule_selection_to_live_and_opt_in_genes() {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger();
@@ -501,7 +709,7 @@ mod tests {
             assert_eq!(
                 applied.enabled.contains(&tag),
                 ledger_default_on(tag) == Some(true),
-                "{tag}: an opt-in is enabled exactly when the pinned ledger says on"
+                "{tag}: an opt-in is enabled exactly when the batch rule says on"
             );
         }
         // The published deployment list is the universe minus the withheld
@@ -530,8 +738,11 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
-        let forced = ["settler-guard-holds"];
-        assert!(ledger_held_live_treatment("settler-guard-holds"));
+        // A live (repair) gene the batch rule holds off as of the 2026-08-25
+        // batches (+1 / −4 / +5); pick another held live gene if a later batch
+        // turns it on (`ledger_held_live_treatments()` lists them).
+        let forced = ["whole-turn-backtrack-guard"];
+        assert!(ledger_held_live_treatment("whole-turn-backtrack-guard"));
         assert!(
             !ledger_held_live_treatment("parallel-settlers"),
             "host-only treatments already follow their live-universe default"
@@ -540,16 +751,16 @@ mod tests {
             !ledger_held_live_treatment("founder-temple"),
             "a withheld production opt-in is not a live-universe override"
         );
-        assert!(ledger_held_live_treatments().contains(&"settler-guard-holds"));
+        assert!(ledger_held_live_treatments().contains(&"whole-turn-backtrack-guard"));
 
         let deployed = deployment_treatments();
         let forced_deployment = deployment_treatments_with_forced_live(&forced);
         assert!(
-            !deployed.contains(&"settler-guard-holds"),
+            !deployed.contains(&"whole-turn-backtrack-guard"),
             "the verification override must not change deployment"
         );
         assert!(
-            forced_deployment.contains(&"settler-guard-holds"),
+            forced_deployment.contains(&"whole-turn-backtrack-guard"),
             "the genome event must name the treatment the arm actually restored"
         );
         assert_eq!(
@@ -561,14 +772,17 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
-        assert!(ai.settler_guard_holds, "the named live treatment stands");
+        assert!(
+            ai.base.whole_turn_backtrack_guard,
+            "the named live treatment stands"
+        );
         assert!(
             !ai.blind_objective_strength,
             "another ledger-held treatment stays off unless named too"
         );
-        assert_eq!(applied.forced, vec!["settler-guard-holds"]);
+        assert_eq!(applied.forced, vec!["whole-turn-backtrack-guard"]);
         assert!(
-            !applied.withheld.contains(&"settler-guard-holds"),
+            !applied.withheld.contains(&"whole-turn-backtrack-guard"),
             "an explicit arm cannot report its restored gene as withheld"
         );
     }

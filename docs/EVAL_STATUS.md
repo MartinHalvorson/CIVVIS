@@ -12,18 +12,18 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Live-bridge treatments | 68 |
-| Firaxis-only treatments | 29 |
-| Native engine-repair treatments | 39 |
-| Withholdable live treatments | 39 |
+| Live-bridge treatments | 63 |
+| Firaxis-only treatments | 27 |
+| Native engine-repair treatments | 36 |
+| Withholdable live treatments | 36 |
 
 ## Bundle coverage
 
 How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
-- Withholdable live treatments: **39**
-- Named somewhere in the evidence: **39**
+- Withholdable live treatments: **36**
+- Named somewhere in the evidence: **36**
 - **Never named in any round: 0**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
@@ -33,7 +33,7 @@ mechanical. So the middle number over-counts coverage and the last one
 under-counts the debt — act on the last one, which cannot be flattered.
 
 The native half of this bundle is priced by the gene screen
-(`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`); the host-only
+(`docs/GENE_SCREEN.md`, `GENE_HEURISTIC_RANKING.md`); the host-only
 half can only be priced on the live seat, by `civvis_orders --without`
 over ladder games. This list is the debt neither has touched.
 
@@ -47,11 +47,11 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **186**
-- Reachable as a gene `gene_screen` can vary: **135**
-- Measured by at least one screen: **81**
-- Resolved by the ledger (helps or hurts): **17**
-- **Unreachable by any screen: 51**
+- Capability toggles on the controller: **203**
+- Reachable as a gene `gene_screen` can vary: **153**
+- Measured by at least one screen: **73**
+- Resolved by the ledger (helps or hurts): **16**
+- **Unreachable by any screen: 50**
 
 ⚠ This is the mirror of the section above and it errs the other way.
 `Never named` under-counts the live-bundle debt; this OVER-counts the
@@ -69,7 +69,7 @@ nothing said so.
 
 Unreachable:
 
-`adjacent_camp_clear`, `amenity_districts`, `bank_envoys`, `barbarian_heretic_hunt`, `battlefront_observation`, `camp_bounty`, `counter_in_lane`, `deny_while_targeted`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_land_capacity`, `frontier_loyalty`, `governor_in_recovery`, `great_work_veto_by_district`, `host_settler_pop`, `hut_collection`, `joint_reach_lines`, `land_grab`, `legal_tactical_candidates`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_religious_purchase_guard`, `live_trader_route_adapter`, `live_wonder_race`, `no_elective_war`, `open_water_navy`, `opening_settler_waits`, `parallel_settlers`, `production_builder_floor`, `production_settler_deadline`, `projected_stock_denial`, `sea_answers`, `settlement_safety`, `settler_founds_when_stalled`, `solvent_faith_army`, `spy_mission_patience`, `stock_denial_lead_time`, `tally_culture`, `tally_great_people`, `village_seeking`
+`adjacent_camp_clear`, `amenity_districts`, `bank_envoys`, `barbarian_heretic_hunt`, `battlefront_observation`, `camp_bounty`, `counter_in_lane`, `deny_while_targeted`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_land_capacity`, `frontier_loyalty`, `governor_in_recovery`, `great_work_veto_by_district`, `host_settler_pop`, `hut_collection`, `land_grab`, `legal_tactical_candidates`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_religious_purchase_guard`, `live_trader_route_adapter`, `live_wonder_race`, `no_elective_war`, `open_water_navy`, `opening_settler_waits`, `parallel_settlers`, `production_builder_floor`, `production_settler_deadline`, `projected_stock_denial`, `sea_answers`, `settlement_safety`, `settler_founds_when_stalled`, `solvent_faith_army`, `spy_mission_patience`, `stock_denial_lead_time`, `tally_culture`, `tally_great_people`, `village_seeking`
 
 ## Live ladder
 

@@ -566,7 +566,7 @@ section and refused twice over.
 
 *The rule did not license it.* "The same rule that culled the bottom of the
 ranking" is a rule about the bottom of the **ranking**, and this gene has no
-rank: it sits in `HEURISTIC_GENE_RANKING.md`'s *Awaiting measurement* list, not
+rank: it sits in `GENE_HEURISTIC_RANKING.md`'s *Awaiting measurement* list, not
 in the table, precisely because no screen had priced it. A gene with no reading
 cannot be at the bottom of a ranking of readings. Nothing here was ever a
 licence to remove code, and the paragraph above should have said what reading
@@ -859,9 +859,9 @@ not land finish a little lower on the tally (share down). It spends on the
 race, and the race now pays — at this rung **88% of games end on a science
 victory** and none reaches the clock.
 
-⚠ The gene remains **on** because the deployment genome is operator-pinned,
-not because a rule promoted it; this batch is evidence for the operator's next
-selection, not a promotion. Its cost column is quotable only loosely — the
+⚠ At the time the gene remained **on** because the deployment genome was
+operator-pinned (2026-08-24 to 2026-08-25); since then the batch rule decides
+it from the ranking's three batch columns, and this batch is not one of them. Its cost column is quotable only loosely — the
 batch shared the box with four `victory_eval` arms for its first minutes.
 
 **Still to read on the live seat:** the journal's *"Driving for a science

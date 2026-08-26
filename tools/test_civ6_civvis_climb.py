@@ -124,15 +124,108 @@ class MirrorFreshnessTests(unittest.TestCase):
     def test_ensure_mirror_always_starts_a_follower_from_this_checkout(self):
         """A live PID alone proves nothing about which revision it loaded."""
         with mock.patch.object(climb, "retire_mirror", return_value=[101, 202]) as retire, \
+             mock.patch.object(climb, "mirror_follower_environment",
+                               return_value={"CIVVIS_COMMIT": "a" * 40}) as environment, \
              mock.patch.object(climb, "_detach") as detach:
             climb.ensure_mirror()
 
         retire.assert_called_once_with()
+        environment.assert_called_once_with()
         detach.assert_called_once_with(
             [climb.sys.executable, "-u", str(climb.HERE / "follow.py")],
             climb.MIRROR_FOLLOW_LOG,
             "mirror",
+            {"CIVVIS_COMMIT": "a" * 40},
         )
+
+    def test_mirror_follower_promotes_only_a_verified_supervisor_stamp(self):
+        """The climb's replacement follower must keep the selected full SHA."""
+        commit = "a" * 40
+        with mock.patch.dict(climb.os.environ, {
+            climb.MIRROR_COMMIT_ENV: commit,
+            climb.MIRROR_COMMIT_TIME_ENV: "2026-08-26T00:00:00Z",
+            "CIVVIS_COMMIT": "stale",
+            "CIVVIS_COMMIT_TIME": "stale-time",
+        }, clear=True):
+            environment = climb.mirror_follower_environment()
+
+        self.assertEqual(environment, {
+            "CIVVIS_COMMIT": commit,
+            "CIVVIS_COMMIT_TIME": "2026-08-26T00:00:00Z",
+        })
+
+    def test_mirror_follower_drops_an_unverified_or_stale_stamp(self):
+        """A mirror cannot call an inherited lie a freshly built revision."""
+        with mock.patch.dict(climb.os.environ, {
+            climb.MIRROR_COMMIT_ENV: "d451c8e",
+            "CIVVIS_COMMIT": "f" * 40,
+            "CIVVIS_COMMIT_TIME": "stale-time",
+        }, clear=True):
+            environment = climb.mirror_follower_environment()
+
+        self.assertNotIn(climb.MIRROR_COMMIT_ENV, environment)
+        self.assertNotIn("CIVVIS_COMMIT", environment)
+        self.assertNotIn("CIVVIS_COMMIT_TIME", environment)
+
+
+class PopupClearOwnershipTests(unittest.TestCase):
+    """One interactive host owns one popup clearer for the visible Civ VI seat."""
+
+    def test_keeper_lock_requires_a_live_popup_keeper_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = Path(temporary) / "popup.lock"
+            lock.mkdir()
+            (lock / "pid").write_text("401")
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(
+                     climb, "run",
+                     return_value="/bin/zsh /tmp/civvis-popup-keeper.sh\n"):
+                self.assertEqual(climb.interactive_popup_keeper_pid(), 401)
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(climb, "run", return_value="/bin/zsh /tmp/other.sh\n"):
+                self.assertIsNone(climb.interactive_popup_keeper_pid())
+
+    def test_interactive_keeper_preserves_its_child_and_retires_the_batch_copy(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value={402}), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[402, 403]), \
+             mock.patch.object(climb, "process_running", return_value=False), \
+             mock.patch.object(climb.os, "kill") as kill, \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        kill.assert_called_once_with(403, climb.signal.SIGTERM)
+        detach.assert_not_called()
+
+    def test_interactive_keeper_prevents_a_new_batch_clearer_when_no_child_is_ready(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value=set()), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_not_called()
+
+    def test_missing_interactive_keeper_keeps_the_batch_fallback(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=None), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_called_once_with(
+            [climb.sys.executable, "-u", str(climb.HERE / "civ6_control" / "popup_clear.py"),
+             "--interval", climb.POPUP_CLEAR_INTERVAL, "--runs", str(climb.RUN_ROOT), "--log",
+             str(climb.RUN_ROOT.parent / "popup_clear.log")],
+            climb.RUN_ROOT.parent / "popup_clear.log", "popups",
+        )
+
+class PopupBackstopWiringTests(unittest.TestCase):
+    def test_climb_starts_the_popup_backstop_on_a_quarter_second_cadence(self):
+        self.assertEqual(climb.POPUP_CLEAR_INTERVAL, "0.25")
+        source = Path(climb.__file__).read_text()
+        self.assertIn('"--interval", POPUP_CLEAR_INTERVAL', source)
 
 
 class TeardownOwnershipTests(unittest.TestCase):
@@ -1740,6 +1833,12 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         cmd = climb.play_command(self._play_args(), "t",
                                  Path("orders.sqlite"), Path("civvis_orders"))
         self.assertNotIn("--no-peace-deterrence", cmd)
+
+    def test_every_attempt_bakes_the_fast_dialogue_timer(self):
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--dialogue-seconds")
+        self.assertEqual(cmd[at + 1], "0.25")
 
     def test_a_congress_control_batch_reaches_the_play_command(self):
         cmd = climb.play_command(

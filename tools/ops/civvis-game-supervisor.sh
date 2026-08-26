@@ -162,9 +162,12 @@ ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
 # A stricter restart rule for a position that is bad on all three strategic
 # standings, not merely on score: below this share of the score leader AND
 # behind the visible science and culture leaders for five turns after turn 100.
-# Unset keeps the policy off. The operator's requested 70 % lives in the
-# inherited login shell as CIVVIS_RESTART_BELOW_LEADER_RATIO=0.70.
-RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}
+# This is a deployment policy, so it must not depend on an interactive login
+# shell being inherited by the GUI host or launchd.  A named environment value
+# still overrides it for a deliberately configured batch (including 0 to turn
+# the player-level rule off), but every ordinary fresh-head verification game
+# receives the operator-requested 70 % threshold.
+RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.70}
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host
 # whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was
@@ -433,6 +436,12 @@ while true; do
     sleep 120
     continue
   fi
+  # Logs and the follower-runtime marker use the readable short revision, but
+  # the native mirror's /status reports its launch stamp. Keep the exact
+  # fetched SHA before shortening it so `ship` can prove the visible mirror is
+  # the same build that the supervisor just selected.
+  HEAD_REVISION=$HEAD_SHA
+  HEAD_COMMIT_TIME=$(git show -s --format=%cI HEAD 2>/dev/null || true)
   if [[ "$PIN" == "head" ]]; then
     ORIGIN_MAIN_SHA=$(git rev-parse origin/main 2>/dev/null || true)
     if [[ "$HEAD_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
@@ -445,11 +454,32 @@ while true; do
     sleep 60
     continue
   fi
-  HEAD_SHA=${HEAD_SHA:0:7}
+  HEAD_SHA=${HEAD_REVISION:0:7}
   if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
     say "build FAILED at $HEAD_SHA; retrying in 120s"
     sleep 120
     continue
+  fi
+  # A clean release build can take minutes.  Main may advance while it runs,
+  # so the checkout that was fresh before the build is not necessarily fresh
+  # when the UI begins a new game.  Re-fetch at this boundary: when it moved,
+  # leave this built-but-stale binary unused and rebuild the new exact head.
+  if [[ "$PIN" == "head" ]]; then
+    if ! git -c gc.auto=0 fetch --quiet origin main >>"$SUP" 2>&1; then
+      say "could not recheck origin/main after fresh build; refusing to launch a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+    ORIGIN_MAIN_AFTER_BUILD=$(git rev-parse origin/main 2>/dev/null || true)
+    if [[ ! "$ORIGIN_MAIN_AFTER_BUILD" =~ ^[0-9a-f]{40}$ ]]; then
+      say "could not resolve origin/main after fresh build; refusing to launch an unverified batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+    if [[ "$HEAD_REVISION" != "$ORIGIN_MAIN_AFTER_BUILD" ]]; then
+      say "origin/main advanced from ${HEAD_REVISION:0:7} to ${ORIGIN_MAIN_AFTER_BUILD:0:7} during fresh build; rebuilding exact head before launch"
+      continue
+    fi
   fi
 
   DIFFICULTY=$EXPLICIT_DIFFICULTY
@@ -497,7 +527,12 @@ while true; do
       sleep 2
     fi
     mkdir -p "$MIRROR_HOME"
-    ( cd "$REPO" && nohup python3 -u tools/follow.py \
+    # `civvis play --mirror` inherits these launch stamps through follow.py.
+    # It cannot infer the selected revision from a shared checkout, because
+    # that checkout advances in place while the mirror keeps serving.
+    ( cd "$REPO" && CIVVIS_COMMIT="$HEAD_REVISION" \
+        CIVVIS_COMMIT_TIME="$HEAD_COMMIT_TIME" \
+        nohup python3 -u tools/follow.py \
         > "$FOLLOW_LOG" 2>&1 & )
     print -r -- "$HEAD_SHA" > "$FOLLOW_REVISION_FILE.$$.tmp"
     mv -f "$FOLLOW_REVISION_FILE.$$.tmp" "$FOLLOW_REVISION_FILE"
@@ -516,6 +551,12 @@ while true; do
   # play log written after the mark can vouch for this cycle.
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
+  # The climb retires the follower above and starts its own fresh one before
+  # the attempt.  Carry the exact selected revision under mirror-only names;
+  # the climb promotes them only into that replacement follower, so the game
+  # controller never inherits the display server's provenance stamp.
+  CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
+  CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" \
       "${WITHOUT_ARGS[@]}" \

@@ -4,14 +4,14 @@
     "complete_seats": 144,
     "completion": 1.0,
     "partial": false,
-    "read": "screen complete · 144 of 144 intended seats (100.0%) · seeds 26083100..26083123 reserved",
+    "read": "screen complete · 144 of 144 intended seats (100.0%) · seeds 91006000..91006023 reserved",
     "seed_window": [
-      26083100,
-      26083123
+      91006000,
+      91006023
     ],
     "seed_window_played": [
-      26083100,
-      26083123
+      91006000,
+      91006023
     ],
     "target_games": 24,
     "target_seats": 144
@@ -22,123 +22,85 @@
     "time": "log of whole-game wall seconds, per game",
     "unit": "percent change per enabled major seat; positive is slower"
   },
+  "difficulty": null,
+  "drift": {
+    "batch": {
+      "culture": 0.0,
+      "diplomatic": 0.0,
+      "domination": 0.0,
+      "religious": 0.08333333333333333,
+      "science": 0.9166666666666666,
+      "score": 0.0,
+      "unfinished": 0.0
+    },
+    "games": 24,
+    "live_ladder": {
+      "games": 66,
+      "shares": {
+        "culture": 0.19696969696969696,
+        "diplomatic": 0.21212121212121213,
+        "science": 0.015151515151515152,
+        "score": 0.5757575757575758
+      },
+      "source": "docs/civ6_ladder.json"
+    },
+    "live_loss_census": {
+      "games": 72,
+      "shares": {
+        "culture": 0.375,
+        "diplomatic": 0.4444444444444444,
+        "domination": 0.013888888888888888,
+        "religious": 0.1111111111111111,
+        "science": 0.05555555555555555
+      },
+      "source": "docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md"
+    },
+    "unit": "share of games ended by each condition"
+  },
   "endings": {
     "by_kind": {
-      "culture": {
-        "games": 5,
-        "median_turn": 179,
-        "seats": 30,
-        "share": 0.20833333333333334,
-        "won_by_field": 0
-      },
       "religious": {
-        "games": 4,
-        "median_turn": 221,
-        "seats": 24,
-        "share": 0.16666666666666666,
+        "games": 2,
+        "median_turn": 169,
+        "seats": 12,
+        "share": 0.08333333333333333,
         "won_by_field": 0
       },
       "science": {
-        "games": 7,
-        "median_turn": 237,
-        "seats": 42,
-        "share": 0.2916666666666667,
-        "won_by_field": 0
-      },
-      "score": {
-        "games": 8,
-        "median_turn": 250,
-        "seats": 48,
-        "share": 0.3333333333333333,
+        "games": 22,
+        "median_turn": 183,
+        "seats": 132,
+        "share": 0.9166666666666666,
         "won_by_field": 0
       }
     },
     "games": 24,
     "lanes": {
-      "domestic_mean": 115.01388888888889,
-      "dvp_mean": 10.569444444444445,
+      "domestic_mean": 148.66666666666666,
+      "dvp_mean": 7.479166666666667,
       "dvp_required": 20,
-      "rival_dvp_mean": 12.493055555555555,
-      "rival_tourists_mean": 85.98611111111111,
+      "rival_dvp_mean": 9.541666666666666,
+      "rival_tourists_mean": 75.03472222222223,
       "seats_where_somebody_reached_the_threshold": 0.0,
-      "tourists_mean": 35.18055555555556
+      "tourists_mean": 37.145833333333336
     },
     "lost_to": {
-      "culture": 0.1736111111111111,
+      "culture": 0.0,
       "diplomatic": 0.0,
-      "religious": 0.1388888888888889,
-      "science": 0.24305555555555555
+      "religious": 0.06944444444444445,
+      "science": 0.7638888888888888
     },
     "unit": "games, and the seats of those games",
     "won_by_field": 120
   },
   "families": [
     {
-      "base": "escort-unstick",
-      "cells": [
-        {
-          "label": "off",
-          "seats": 0,
-          "share": 0.0,
-          "win": 0.0
-        },
-        {
-          "label": "escort-unstick",
-          "seats": 144,
-          "share": 0.16666666666666677,
-          "win": 0.16666666666666666
-        },
-        {
-          "label": "escort-unstick-2",
-          "seats": 0,
-          "share": 0.0,
-          "win": 0.0
-        }
-      ],
-      "contrasts": [
-        {
-          "a": "off",
-          "b": "escort-unstick",
-          "share_delta_pp": 16.666666666666664,
-          "share_se_pp": null,
-          "share_z": 0.0,
-          "win_delta_pp": 16.666666666666664,
-          "win_se_pp": null,
-          "win_z": 0.0
-        },
-        {
-          "a": "off",
-          "b": "escort-unstick-2",
-          "share_delta_pp": 0.0,
-          "share_se_pp": null,
-          "share_z": 0.0,
-          "win_delta_pp": 0.0,
-          "win_se_pp": null,
-          "win_z": 0.0
-        },
-        {
-          "a": "escort-unstick",
-          "b": "escort-unstick-2",
-          "share_delta_pp": -16.666666666666664,
-          "share_se_pp": null,
-          "share_z": 0.0,
-          "win_delta_pp": -16.666666666666664,
-          "win_se_pp": null,
-          "win_z": 0.0
-        }
-      ],
-      "versions": [
-        "escort-unstick",
-        "escort-unstick-2"
-      ]
-    },
-    {
       "base": "fog-honest",
       "cells": [
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666677,
+          "share": 0.16666666666666663,
           "win": 0.16666666666666666
         },
         {
@@ -190,75 +152,138 @@
         "fog-honest",
         "fog-honest-2"
       ]
+    },
+    {
+      "base": "solvency-first-trade-slot",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "solvency-first-trade-slot",
+          "seats": 144,
+          "share": 0.16666666666666663,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "solvency-first-trade-slot-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "solvency-first-trade-slot",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "solvency-first-trade-slot-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "solvency-first-trade-slot",
+          "b": "solvency-first-trade-slot-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "solvency-first-trade-slot",
+        "solvency-first-trade-slot-2"
+      ]
     }
   ],
   "family_wise_z": 1.9599628032746734,
   "games": 24,
   "genes": [
     {
-      "adjusted_pp": 2.7777777777777777,
-      "adjusted_se_pp": 5.9162309986039565,
-      "compute_cost_pct": -2.5099440659331047,
-      "compute_cost_se_pct": 3.2665644414336548,
+      "adjusted_pp": -3.145478374836169,
+      "adjusted_se_pp": 7.264685844379834,
+      "compute_cost_pct": -0.6103899616260805,
+      "compute_cost_se_pct": 2.4390010419621873,
       "cost_games": 24,
-      "n_off": 72,
-      "n_on": 72,
+      "n_off": 109,
+      "n_on": 35,
       "read": "~",
       "seats": 144,
-      "share_delta_pp": -1.6815496768895024,
-      "share_se_pp": 1.0806443929378138,
-      "share_z": -1.5560620014120297,
-      "tag": "lane-commit",
-      "time_cost_pct": -4.915759431423143,
-      "time_cost_se_pct": 5.6827874069660895,
-      "win_delta_pp": 2.7777777777777777,
-      "win_off": 0.1527777777777778,
-      "win_on": 0.18055555555555555,
-      "win_se_pp": 5.9162309986039565,
+      "share_delta_pp": -0.25877011456328647,
+      "share_resolves_pp": 3.3934041461851696,
+      "share_se_pp": 1.211930052208989,
+      "share_z": -0.21351901794301187,
+      "tag": "builder-supply-floor",
+      "time_cost_pct": -0.3619725888398368,
+      "time_cost_se_pct": 2.8843504107030946,
+      "win_delta_pp": -3.145478374836169,
+      "win_off": 0.1743119266055046,
+      "win_on": 0.14285714285714285,
+      "win_resolves_pp": 20.341120364263535,
+      "win_se_pp": 7.264685844379834,
       "win_tranches": [
         {
           "games": 24,
           "position": "latest",
           "seats": 144,
-          "win_delta_pp": 2.7777777777777777,
-          "win_se_pp": 5.9162309986039565,
-          "win_z": 0.4695181405920839
+          "win_delta_pp": -3.145478374836169,
+          "win_se_pp": 7.264685844379834,
+          "win_z": -0.43298202320332957
         }
       ],
-      "win_z": 0.4695181405920839
+      "win_z": -0.43298202320332957
     }
   ],
   "kind": "gene_screen_analysis",
-  "overall_share": 0.16666666666666677,
+  "overall_share": 0.16666666666666663,
   "overall_win": 0.16666666666666666,
   "profile": {
     "all_seats": true,
     "baseline": "best",
     "batch": {
-      "seed_first": 26083100,
-      "seed_last": 26083123,
+      "seed_first": 91006000,
+      "seed_last": 91006023,
       "target_games": 24,
       "target_seats": 144
     },
     "build": {
-      "binary_sha256": "dc4d8f946e0197f1671b0a1fc7b8d2360e82cf78be08f20e9ce099387260f316",
-      "commit": "047912c0917b5ddfc6ea78e8fe695a7d6a526a88",
-      "commit_source": "build-tree",
+      "binary_sha256": "eae503367041f61a24f818e7bd228b60d5cceb109a7cf3294dffd156f86b431c",
+      "commit": "",
+      "commit_source": "unstamped-tree-moved",
       "dirty": false,
-      "genes_sha256": "e07818e4d2d5c14e6996e0952852b2cbd7efe27b69b1db76c1de6098330c95d1"
+      "genes_sha256": "494059820c6eef349d4f44a0102c3c608b5427c8518fa04538fb8336cc7befc7"
     },
     "city_states": 9,
     "contested_field": "",
     "contested_field_genes": "",
     "design": "independent",
+    "difficulty": "emperor",
+    "difficulty_rotate": "",
     "families": [
-      [
-        "escort-unstick",
-        "escort-unstick-2"
-      ],
       [
         "fog-honest",
         "fog-honest-2"
+      ],
+      [
+        "solvency-first-trade-slot",
+        "solvency-first-trade-slot-2"
       ]
     ],
     "genes": [
@@ -273,17 +298,13 @@
       "peacetime-deterrence",
       "war-economy",
       "bounded-recovery",
-      "siege-tracks-wall",
       "siege-commitment",
-      "war-patience",
       "siege-is-progress",
-      "endgame-war-runway",
       "home-defense",
       "garrison-under-fire",
       "strike-opening",
       "recon-replacement",
       "barbarian-scouts-are-scouts",
-      "barbarian-hunt",
       "barbarian-bargain",
       "barbarian-ranged-answer",
       "civilian-rescue",
@@ -292,15 +313,11 @@
       "religion-sues-peace",
       "escort-unstick",
       "buildings-before-projects",
-      "wonder-ring-settle-value",
-      "settler-site-agreement",
       "settler-guard-holds",
       "stranded-settler-discount",
       "wide-map-capacity",
-      "housing-districts",
       "amenity-project-preemption",
       "amenity-district-path",
-      "governor-every-lane",
       "housing-research",
       "district-coverage",
       "slot-kind-tiebreak",
@@ -309,11 +326,8 @@
       "one-launch-pad",
       "settler-target-hysteresis",
       "culture-building-debt",
-      "culture-coverage",
-      "district-building-chain",
       "strategic-wonders",
       "builder-barbarian-safety",
-      "builder-worked-tile-priority",
       "apostle-promotion-by-role",
       "joint-tactics",
       "inquisition-on-threat",
@@ -324,7 +338,6 @@
       "religious-defence-scales",
       "guru-heals-the-corps",
       "religious-units-heal-first",
-      "condemn-under-congress",
       "spread-campaign-persists",
       "holy-site-where-the-threat-is",
       "enhancer-for-the-corps",
@@ -334,64 +347,81 @@
       "raid-pillage-prizes",
       "settler-threat-detour",
       "settle-sooner",
-      "contact-posture",
-      "district-lookahead-settle",
-      "priced-tile-purchase",
-      "science-payback-horizon",
       "science-multiplier-payoff",
       "research-tier-premium",
-      "campus-finishes-first",
-      "research-floor-holds",
-      "governor-victory-lanes",
-      "governor-expansion-lane",
       "one-shot-recovery",
-      "lane-congress-ballot",
-      "lane-congress-favor",
       "lane-great-people",
       "lane-policy-deck",
       "lane-culture-spending",
       "lane-space-race",
       "competition-victory-points",
-      "congress-banks-decided",
-      "congress-counter-votes",
-      "envoy-infrastructure",
+      "defensible-sites",
+      "elective-war-in-reach",
+      "expansion-pays-back",
+      "domination-city-count",
+      "unchosen-war-keeps-the-lane",
+      "rival-suzerainty-alarm",
+      "congress-counter-leader",
+      "science-chain-alarm",
+      "conversion-majority-alarm",
+      "culture-lane-forecast",
+      "diplomatic-lane-forecast",
+      "frontier-massing-alarm",
       "air-surge",
       "power-the-laboratory",
       "campus-adjacency-threshold",
-      "fifteenth-citizen",
-      "chain-tech-lookahead",
-      "research-grants-first",
-      "barbarian-capture-priority",
-      "coupled-expansion",
       "coordinated-finish",
-      "tactical-strategy",
       "unit-objective-memory",
       "pantheon-board",
       "maintenance-aware-deck",
-      "fortify-idle-units",
-      "naval-production-policy",
       "unit-cost-efficiency",
-      "builder-reward-survey",
       "settlement-gap-target",
       "price-the-suzerainty",
       "engine-faith-price",
       "promote-when-wounded",
       "district-planning",
-      "settle-plan-ahead",
-      "escort-unstick-2",
       "wonder-score-tally",
       "fog-honest",
       "fog-honest-2",
       "missionary-last-charge-explores",
       "missionary-evades-raiders",
-      "lane-commit"
+      "religious-veto-defence",
+      "deals-for-our-gain",
+      "deals-at-the-ceiling",
+      "no-free-passage",
+      "one-war-at-a-time",
+      "shoot-and-scoot",
+      "zoc-screen",
+      "pillage-to-heal",
+      "flip-nearby-city-states",
+      "lane-commit",
+      "settler-screen",
+      "pass-picket",
+      "solvency-first-trade-slot",
+      "city-campaign",
+      "campaign-pillage",
+      "settler-factory-coordination",
+      "naval-threat-triage",
+      "surprise-war-mobilization",
+      "science-victory-drive",
+      "expansion-schedule",
+      "growth-to-settle",
+      "order-retry",
+      "builder-tries-the-next-tile",
+      "government-ladder",
+      "chain-payback-window",
+      "upgrade-the-garrison",
+      "solvency-first-trade-slot-2",
+      "never-an-empty-queue",
+      "improvement-housing-value",
+      "builder-supply-floor"
     ],
     "height": 46,
     "kind": "header",
     "map": "continents",
     "native_competitions": false,
     "p_default_on": 0.75,
-    "p_on": 0.5,
+    "p_on": 0.25,
     "players": 6,
     "prior": [
       1.0,
@@ -409,13 +439,9 @@
       0.0,
       0.0,
       0.0,
-      0.0,
-      0.0,
-      0.0,
       1.0,
       1.0,
       1.0,
-      0.0,
       1.0,
       0.0,
       1.0,
@@ -426,13 +452,9 @@
       1.0,
       0.0,
       0.0,
-      0.0,
-      0.0,
       1.0,
       0.0,
-      0.0,
       1.0,
-      0.0,
       0.0,
       0.0,
       1.0,
@@ -443,22 +465,7 @@
       1.0,
       0.0,
       0.0,
-      0.0,
-      0.0,
-      0.0,
       1.0,
-      0.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      0.0,
-      0.0,
-      1.0,
-      0.0,
-      0.0,
-      0.0,
       0.0,
       1.0,
       1.0,
@@ -467,6 +474,24 @@
       1.0,
       1.0,
       0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
       0.0,
       0.0,
       0.0,
@@ -481,28 +506,18 @@
       0.0,
       1.0,
       0.0,
-      1.0,
-      0.0,
-      1.0,
-      0.0,
-      0.0,
-      0.0,
-      1.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
       0.0,
       0.0,
       1.0,
       0.0,
       1.0,
-      0.0,
-      0.0,
       1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
       0.0,
       0.0,
       1.0,
@@ -511,21 +526,43 @@
       0.0,
       0.0,
       0.0,
+      1.0,
       0.0,
       0.0,
       0.0,
       0.0,
       0.0,
-      0.5
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.25
     ],
     "randomize_civs": true,
+    "rivals": "",
     "screened": [
-      "lane-commit"
+      "builder-supply-floor"
     ],
     "speed": "online",
-    "start_seed": 26083100,
+    "start_seed": 91006000,
     "turns": 250,
     "victories": "science,culture,religious,diplomatic,domination,score",
+    "victory_mask": "",
     "width": 74
   },
   "reproducibility": {
@@ -533,6 +570,17 @@
     "unit": "seats",
     "windows": "newest first; whole games only"
   },
+  "resolution": {
+    "alpha": 0.05,
+    "expected_flags_by_chance": 0.0455,
+    "genes": 1,
+    "power": 0.8,
+    "read": "the smallest Δ this run could resolve at 80% power; a Δ below it is inside the run's own noise",
+    "share_pp": 3.3934041461851696,
+    "win_pp": 20.341120364263535
+  },
+  "rival_mix": null,
   "seats": 144,
-  "shape": "standard"
+  "shape": "standard",
+  "victory_masks": null
 }

@@ -295,6 +295,10 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
             "def retire_ladder_keepalive_job")[1],
             "install must actually call it")
 
+    def test_popup_keeper_chases_a_covered_dialogue_quarter_second(self):
+        source = (OPS / "civvis-popup-keeper.sh").read_text()
+        self.assertIn("--interval 0.25", source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,8 +1,8 @@
-<!-- Notes the heuristic gene ranking carries verbatim, under its table. Edit here, not in HEURISTIC_GENE_RANKING.md (generated). -->
+<!-- Notes the heuristic gene ranking carries verbatim, under its table. Edit here, not in GENE_HEURISTIC_RANKING.md (generated). -->
 
 ## Historical screen evidence and current selection
 
-The observations below remain useful, but they no longer implement a deployment rule. As of 2026-08-24, `OPERATOR_DEFAULT_ON` is the complete operator-pinned selection: a source refresh updates evidence only, while a default changes only through an explicit edit to that list. References to a promotion, veto, or deciding column describe the former process, not a current automatic action.
+The observations below remain useful, but they do not implement the deployment rule. Since 2026-08-25 the **batch rule** decides every default from the ranking's three batch columns (`tools/genes.py::batch_rule`; the README states it); between 2026-08-24 and 2026-08-25 the selection was an operator-pinned list (`OPERATOR_DEFAULT_ON`, now gone), and before that the win-column rules described here. References to a promotion, veto, or deciding column describe the former process, not a current automatic action.
 
 **The first standard-shape screen supplied the clearest evidence that legacy and standard screens are different instruments.** A 74x46 Continents / 9 CS / Online-250 all-seats foldover against the best-genome baseline -- 3,937 complete map pairs, **23,622 matched seat comparisons per gene**, seeds 141000000-141003936, source `b3ad9f00` -- is published in `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md` (PR #2323). It is recorded in `docs/gene_screens/2026-08-22-standard-10k-6p-allseats-23622-pairs.json`. `tools/test_genes.py::TheStandardScreen` checks the historical hand-read figures against that source, so the note and the evidence cannot drift apart. The screen predates the build stamp of #2331, so the ledger records it as `pre-fingerprint`; its gene set was verified by hand against the then-current registry.
 

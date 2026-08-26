@@ -1,10 +1,11 @@
-"""The operator-pinned gene ledger, its screen evidence, source precedence,
+"""The batch-rule gene ledger, its screen evidence, source precedence,
 and the generated files staying together with the recorded sources."""
 from __future__ import annotations
 
 import argparse
 import contextlib
 import io
+import itertools
 import json
 import math
 import re
@@ -25,53 +26,24 @@ ranking = genes
 
 PLAYERS = gene_ledger.SCREEN["players"]
 
-#: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-25.
-#: This is the exact list the agent plays. It retains the 36 selections that
-#: were already deployed, then adds the sixteen explicit operator promotions:
-#: `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`,
-#: `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, and
-#: `lane-great-people`, `one-launch-pad`, `civilian-rescue`,
-#: `missionary-evades-raiders`, `district-planning`,
-#: `missionary-last-charge-explores`, `settlement-gap-target`,
-#: `religious-defence-scales`, `lane-policy-deck`, and
-#: `science-multiplier-payoff`; then `science-victory-drive` and the four
-#: displayed-Diff promotions at or above +0.85%: `solvency-first-trade-slot`,
-#: `settler-factory-coordination`, `one-war-at-a-time`, and
-#: `religious-veto-defence`; then a second 2026-08-25 directive flipping
-#: sixteen more on: `flip-nearby-city-states`, `diplomatic-lane-forecast`,
-#: `barbarian-ranged-answer`, `army-target-weighs-enemy`,
-#: `research-tier-premium`, `naval-threat-triage`, `deals-for-our-gain`,
-#: `settler-screen`, `lane-space-race`, `enhancer-for-the-corps`,
-#: `settler-target-hysteresis`, `amenity-project-preemption`,
-#: `guru-heals-the-corps`, `no-free-passage`, `naval-recon`, and
-#: `home-defense` — six of them never screened, four of the ten that were
-#: reading a negative pooled *Diff*. Screen results remain evidence; they
-#: cannot move this tuple automatically.
-#: Changing it requires an intentional edit and PR note.
-DEPLOYED_GENOME_20260825 = (
-    "air-surge", "amenity-district-path", "amenity-project-preemption",
-    "apostle-promotion-by-role", "army-target-weighs-enemy", "barbarian-bargain",
-    "barbarian-ranged-answer", "barbarian-scouts-are-scouts", "bounded-recovery",
-    "buildings-before-projects", "camp-party", "civilian-rescue", "competition-victory-points",
-    "culture-building-debt", "deals-for-our-gain", "diplomatic-lane-forecast",
-    "district-planning", "early-contact-window", "engine-faith-price", "enhancer-for-the-corps",
-    "escort-unstick", "flip-nearby-city-states", "founder-temple", "great-person-housing",
-    "guru-heals-the-corps", "holy-lane-parity", "home-defense", "idle-faith-patronage",
-    "inquisition-on-threat", "lane-culture-spending", "lane-great-people", "lane-policy-deck",
-    "lane-space-race", "loyalty-rate-alarm", "maintenance-aware-deck",
-    "missionary-evades-raiders", "missionary-last-charge-explores", "naval-recon",
-    "naval-threat-triage", "no-free-passage", "one-launch-pad", "one-war-at-a-time",
-    "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty", "promote-when-wounded",
-    "raid-pillage-prizes", "recon-replacement", "recorded-tactical-step",
-    "relief-targets-the-siege", "religion-sues-peace", "religious-defence-scales",
-    "religious-units-heal-first", "religious-veto-defence", "research-tier-premium",
-    "science-multiplier-payoff", "science-victory-drive", "score-horizon", "settle-sooner",
-    "settlement-gap-target", "settler-factory-coordination", "settler-screen",
-    "settler-target-hysteresis", "settler-threat-detour", "slot-kind-tiebreak",
-    "solvency-first-trade-slot", "strike-opening", "theology-for-founders",
-    "unit-cost-efficiency", "unit-objective-memory", "war-economy", "war-reinforcement",
-    "wide-map-capacity",
-)
+def batch(genes: list[dict], **profile) -> dict:
+    """One reporting batch — what the batch rule reads. Built so that each
+    gene's cell in the ranking's batch column (`total_seat_batch_wins`: the
+    on arm's excess over chance scaled to 10,000 TOTAL seats) reads exactly
+    its `wins`: 10,000 seats, every one of them on the arm."""
+    data = analysis(genes, pairs=10_000, **profile)
+    data["seats"] = 10_000
+    return data
+
+
+def batch_files(tmp: str, batches: list[dict]) -> list[Path]:
+    """Write reporting batches newest first, as `build_ledger` takes them."""
+    paths = []
+    for i, data in enumerate(batches):
+        path = Path(tmp) / f"b{i}.json"
+        path.write_text(json.dumps(data))
+        paths.append(path)
+    return paths
 
 
 def analysis(genes: list[dict], pairs: int = 1000, family: float = 3.0, **profile) -> dict:
@@ -129,10 +101,9 @@ class Merging(unittest.TestCase):
                 path = Path(tmp) / f"s{i}.json"
                 path.write_text(json.dumps(data))
                 paths.append(path)
-            # These stand-in tags model evidence only; they deliberately do
-            # not inherit the repository's real pinned deployment selection.
-            return gene_ledger.build_ledger(paths, filter_known=False,
-                                            deployment_genome=())
+            # These stand-in tags model evidence only: no reporting batch
+            # prices them, so the batch rule reads every one as off.
+            return gene_ledger.build_ledger(paths, filter_known=False)
 
     def test_the_newest_screen_that_priced_a_gene_supplies_its_verdict(self):
         ledger = self.build([
@@ -154,14 +125,14 @@ class Merging(unittest.TestCase):
         self.assertEqual(by["d"]["verdict"], "hurts")
         self.assertEqual(
             [g["default_on"] for g in ledger["genes"]], [False, False, False, False],
-            "a verdict no longer turns a gene on: these have no win columns to clear the rule",
+            "a verdict never turns a gene on: no reporting batch priced these",
         )
         self.assertEqual(
             {key: ledger["counts"][key]
              for key in ("helps", "hurts", "unresolved", "default_on")},
             {"helps": 2, "hurts": 2, "unresolved": 0, "default_on": 0},
         )
-        self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
+        self.assertEqual(ledger["rules"]["deployment_policy"], "batch-rule")
         self.assertEqual(ledger["rules"]["deployment_genome"], [])
 
     def test_a_later_source_overrides_an_earlier_one_per_gene(self):
@@ -362,37 +333,142 @@ class OneShape(unittest.TestCase):
             self.assertIn(f"header.{field}", rs, field)
 
 
-class TheOperatorPinnedDefaults(unittest.TestCase):
-    """Screen statistics remain recorded, but selection comes from an explicit
-    list rather than a threshold, posterior, or pooled-difference rule."""
+class TheBatchRule(unittest.TestCase):
+    """⭐ THE BATCH RULE: the operator's words (2026-08-25) clause by clause,
+    and the ledger they decide. Sources supply evidence; the reporting
+    batches — the ranking's three batch columns — supply the default."""
 
-    def build(self, wins: list[int], deployment_genome=()):
+    def test_the_rule_clause_by_clause(self):
+        rule = gene_ledger.batch_rule
+        # 1. all three below −10 → remove; −10 itself is not below −10, and
+        #    two batches never remove.
+        self.assertEqual(rule([-11, -30, -12]), "remove")
+        self.assertEqual(rule([-10, -30, -12]), "off")
+        self.assertEqual(rule([-11, -30, None]), "off")
+        # 2. two or three negative → off, whatever the third reads.
+        self.assertEqual(rule([-4, 4, -3]), "off")
+        self.assertEqual(rule([200, -1, -1]), "off")
+        self.assertEqual(rule([-1, -1, None]), "off")
+        # 3. three positive → on, however small.
+        self.assertEqual(rule([1, 1, 1]), "on")
+        # 4. exactly two of three positive → on only above a mean of 7.
+        self.assertEqual(rule([-4, 23, 15]), "on")
+        self.assertEqual(rule([8, 5, -12]), "off")
+        self.assertEqual(rule([-5, 13, 13]), "off", "a mean of exactly 7 is not above 7")
+        self.assertEqual(rule([-4, 13, 13]), "on")
+        self.assertEqual(rule([0, 9, 34]), "on", "a zero is not negative")
+        self.assertEqual(rule([0, 0, 34]), "off", "one positive of three")
+        # 5. one or two batches, exactly one positive → on above a mean of 7.
+        self.assertEqual(rule([26, None, None]), "on")
+        self.assertEqual(rule([7, None, None]), "off", "7 is not above 7")
+        self.assertEqual(rule([16, -1, None]), "on")
+        self.assertEqual(rule([-33, 7, None]), "off")
+        self.assertEqual(rule([15, 0, None]), "on")
+        # 6. two batches both positive → on.
+        self.assertEqual(rule([16, 8, None]), "on")
+        self.assertEqual(rule([1, 1, None]), "on")
+        # 7. otherwise off: nothing priced, or zeros.
+        self.assertEqual(rule([None, None, None]), "off")
+        self.assertEqual(rule([]), "off")
+        self.assertEqual(rule([0, None, None]), "off")
+        self.assertEqual(rule([0, 0, 0]), "off")
+        self.assertEqual(rule([-5, None, None]), "off")
+        self.assertEqual((gene_ledger.BATCH_RULE_WINDOW, gene_ledger.BATCH_RULE_AVERAGE,
+                          gene_ledger.BATCH_RULE_REMOVE_BELOW), (3, 7, -10))
+
+    def build(self, batches: list[int | None], source_wins: list[int] = ()):
+        """A ledger for one gene `g` from its batch readings newest first
+        (`None` = the batch did not price it) and optional source columns."""
         with tempfile.TemporaryDirectory() as tmp:
             sources = []
-            for i, win in enumerate(wins):
+            for i, win in enumerate(source_wins):
                 path = Path(tmp) / f"s{i}.json"
                 path.write_text(json.dumps(analysis([{"tag": "g", "wins": win}])))
                 sources.append(path)
-            return gene_ledger.build_ledger(
-                sources, filter_known=False, deployment_genome=deployment_genome)
+            files = batch_files(tmp, [
+                batch([] if wins is None else [{"tag": "g", "wins": wins}])
+                for wins in batches
+            ])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                ledger = gene_ledger.build_ledger(
+                    sources, filter_known=False, reporting_batches=files)
+            ledger["stderr"] = err.getvalue()
+            return ledger
 
-    def test_measurements_do_not_automatically_change_a_pinned_gene(self):
-        on = self.build([-500, 20, 21], deployment_genome=("g",))["genes"][0]
-        off = self.build([500, 200, 100], deployment_genome=())["genes"][0]
-        self.assertTrue(on["default_on"])
-        self.assertFalse(off["default_on"])
-        self.assertEqual(on["wins_last_10k"], 21)
-        self.assertEqual(off["wins_last_10k"], 100)
+    def test_the_batches_decide_and_the_sources_are_evidence(self):
+        on = self.build([21, 20, 5], source_wins=[-500, -400])
+        off = self.build([-1, -2, 500], source_wins=[500, 200, 100])
+        self.assertTrue(on["genes"][0]["default_on"])
+        self.assertEqual(on["rules"]["deployment_genome"], ["g"])
+        self.assertEqual(on["rules"]["batch_columns"], {"g": [21, 20, 5]})
+        self.assertEqual(on["rules"]["batch_decisions"], {"g": "on"})
+        self.assertEqual(on["genes"][0]["wins_last_10k"], -400, "the sources' column is kept")
+        self.assertFalse(off["genes"][0]["default_on"])
+        self.assertEqual(off["rules"]["deployment_genome"], [])
+        self.assertEqual(off["genes"][0]["wins_last_10k"], 100)
+        self.assertEqual(on["counts"]["default_on"], 1)
+        self.assertEqual(off["counts"]["default_on"], 0)
+        self.assertEqual(on["rules"]["deployment_policy"], "batch-rule")
 
-    def test_the_pinned_list_rejects_unknown_tags_and_multiple_versions(self):
-        with self.assertRaises(SystemExit):
-            self.build([1], deployment_genome=("not-a-screenable-gene",))
+    def test_a_batch_that_did_not_price_the_gene_is_a_dash_not_a_zero(self):
+        # Newest first: the gene is new, priced by the last batch only.
+        fresh = self.build([26, None, None])
+        self.assertEqual(fresh["rules"]["batch_columns"], {"g": [26, None, None]})
+        self.assertEqual(fresh["rules"]["deployment_genome"], ["g"])
+        # The same reading in an older slot: it is the gene's only batch.
+        old = self.build([None, None, 26])
+        self.assertEqual(old["rules"]["batch_columns"], {"g": [None, None, 26]})
+        self.assertEqual(old["rules"]["deployment_genome"], ["g"])
+        two = self.build([-33, 7, None])
+        self.assertEqual(two["rules"]["deployment_genome"], [], "mean −13")
+
+    def test_a_gene_no_batch_priced_is_off_and_absent_from_the_columns(self):
+        ledger = self.build([None, None, None], source_wins=[500])
+        self.assertFalse(ledger["genes"][0]["default_on"])
+        self.assertEqual(ledger["rules"]["batch_columns"], {})
+        self.assertEqual(ledger["rules"]["batch_decisions"], {})
+        self.assertEqual(ledger["rules"]["removals_due"], [])
+        none = gene_ledger.build_ledger([], filter_known=False)
+        self.assertEqual(none["rules"]["deployment_genome"], [])
+
+    def test_a_gene_below_minus_ten_in_all_three_batches_is_due_for_removal(self):
+        ledger = self.build([-11, -40, -12], source_wins=[30])
+        self.assertEqual(ledger["rules"]["batch_decisions"], {"g": "remove"})
+        self.assertEqual(ledger["rules"]["removals_due"], ["g"])
+        self.assertFalse(ledger["genes"][0]["default_on"], "off while it waits to be cut")
+        self.assertIn("REMOVES g from the gene pool", ledger["stderr"])
+        kept = self.build([-11, -40, -10])
+        self.assertEqual(kept["rules"]["batch_decisions"], {"g": "off"})
+        self.assertEqual(kept["rules"]["removals_due"], [])
+        self.assertEqual(kept["stderr"], "")
+
+    def test_check_refuses_a_ledger_with_a_removal_due(self):
+        ledger = self.build([-11, -40, -12])
+        recorded = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        self.assertEqual(recorded["rules"]["removals_due"], [],
+                         "a gene the rule removes is still in the registry")
+        out = io.StringIO()
+        with unittest.mock.patch.object(gene_ledger, "rebuild_from_ledger", return_value=ledger), \
+             unittest.mock.patch.object(gene_ledger, "render_json",
+                                        return_value=gene_ledger.LEDGER_JSON.read_text()), \
+             unittest.mock.patch.object(gene_ledger, "render_rust", return_value=genes.rust_block_of(
+                 genes.REGISTRY_PATH.read_text(encoding="utf-8"))), \
+             unittest.mock.patch.object(gene_ledger, "render_parts", return_value=(
+                 genes.RANKING_MD.read_text(), genes.EVIDENCE_MD.read_text())), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(gene_ledger.main(["check"]), 1)
+        self.assertIn("REMOVES g from the gene pool", out.getvalue())
+
+    def test_a_batch_row_for_a_gene_the_registry_no_longer_has_decides_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "versions.json"
-            path.write_text(json.dumps(analysis([{"tag": "g"}, {"tag": "g-2"}])))
-            with self.assertRaises(SystemExit):
-                gene_ledger.build_ledger(
-                    [path], filter_known=False, deployment_genome=("g", "g-2"))
+            files = batch_files(tmp, [batch([{"tag": "no-such-gene", "wins": 50},
+                                             {"tag": "wide-map-capacity", "wins": 50}])])
+            ledger = gene_ledger.build_ledger([], reporting_batches=files)
+        self.assertNotIn("no-such-gene", ledger["rules"]["batch_columns"])
+        self.assertEqual(ledger["rules"]["batch_columns"]["wide-map-capacity"], [50, None, None])
+        self.assertEqual(ledger["rules"]["deployment_genome"], ["wide-map-capacity"])
+        self.assertEqual(ledger["genes"], [], "no source: no verdict rows, yet a default")
 
 
 class TheDifferenceEvidence(unittest.TestCase):
@@ -595,31 +671,48 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
         self.assertAlmostEqual(constant / math.sqrt(3600), 39.09, places=2)
 
 
-class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
-    """The deployment selection is a deliberate list, not an alternate
-    estimator or threshold configuration."""
+class TheDeploymentGenomeIsTheBatchRulesAnswer(unittest.TestCase):
+    """The checked-in ledger's selection is the rule over its recorded batch
+    columns, gene for gene, with each family collapsed to one version."""
 
-    def test_the_shipped_genome_is_the_recorded_operator_selection(self):
+    def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
-        self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
-        self.assertEqual(tuple(ledger["rules"]["deployment_genome"]),
-                         DEPLOYED_GENOME_20260825)
-        selected = set(DEPLOYED_GENOME_20260825)
+        rules = ledger["rules"]
+        self.assertEqual(rules["deployment_policy"], "batch-rule")
+        self.assertEqual(rules["removals_due"], [])
+        tags = gene_ledger.screenable_tags()
+        base_of = {tag: family[0] for family in gene_ledger.families_of(tags) for tag in family}
+        genome = set(rules["deployment_genome"])
+        self.assertEqual(sorted(genome), rules["deployment_genome"], "sorted, unique")
+        self.assertEqual(len(genome), ledger["counts"]["default_on"])
+        self.assertTrue(genome, "some gene clears the rule")
+        self.assertLess(len(genome), len(tags), "some gene does not")
+        for tag, columns in rules["batch_columns"].items():
+            self.assertIn(tag, tags)
+            self.assertEqual(len(columns), gene_ledger.BATCH_RULE_WINDOW)
+            self.assertEqual(rules["batch_decisions"][tag], gene_ledger.batch_rule(columns), tag)
+        self.assertEqual(set(rules["batch_columns"]), set(rules["batch_decisions"]))
+        rule_on = {tag for tag, call in rules["batch_decisions"].items() if call == "on"}
+        for tag in genome:
+            self.assertIn(tag, rule_on, f"{tag} ships but the rule does not turn it on")
+        for tag in rule_on:
+            if tag not in base_of:
+                self.assertIn(tag, genome, f"{tag}: the rule turns it on but it does not ship")
+        for family in gene_ledger.families_of(tags):
+            shipped = [tag for tag in family if tag in genome]
+            on = [tag for tag in family if tag in rule_on]
+            self.assertEqual(len(shipped), 1 if on else 0, family)
+            self.assertEqual(rules["family_heads"][family[0]]["rule_on"], on)
+            self.assertEqual(rules["family_heads"][family[0]]["ships"], shipped[0] if shipped else None)
         measured = {g["tag"] for g in ledger["genes"]}
-        self.assertEqual(
-            {g["tag"] for g in ledger["genes"] if g["default_on"]},
-            selected & measured,
-        )
-        self.assertEqual(ledger["counts"]["default_on"], 73)
-        self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
-                         gene_ledger.OPERATOR_PROMOTIONS_20260824
-                         + gene_ledger.OPERATOR_PROMOTIONS_20260825
-                         + gene_ledger.OPERATOR_PROMOTIONS_20260825_SECOND)
+        self.assertEqual({g["tag"] for g in ledger["genes"] if g["default_on"]}, genome & measured)
+        self.assertNotIn("operator_promotions", rules)
+        self.assertNotIn("authority", rules)
 
-    def test_the_ledger_records_evidence_without_redeciding_the_list(self):
+    def test_the_ledger_records_evidence_beside_the_answer(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         self.assertIn("posterior", ledger["rules"])
-        self.assertNotIn("authority", ledger["rules"])
+        self.assertIn("batch_rule", ledger["rules"])
         selected = set(ledger["rules"]["deployment_genome"])
         for gene in ledger["genes"]:
             self.assertIsInstance(gene["posterior_pp"], float, gene["tag"])
@@ -627,13 +720,18 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
             self.assertGreater(gene["posterior_se_pp"], 0.0, gene["tag"])
             self.assertEqual(gene["default_on"], gene["tag"] in selected, gene["tag"])
 
-    def test_rebuild_preserves_the_recorded_pinned_selection(self):
+    def test_rebuild_re_decides_the_same_selection(self):
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rebuilt = gene_ledger.rebuild_from_ledger(current)
         self.assertEqual(rebuilt["rules"]["deployment_genome"],
                          current["rules"]["deployment_genome"])
-        self.assertIn('pub(super) const DEPLOYMENT_POLICY: &str = "operator-pinned";',
-                      gene_ledger.render_rust(rebuilt))
+        self.assertEqual(rebuilt["rules"]["batch_columns"], current["rules"]["batch_columns"])
+        rust = gene_ledger.render_rust(rebuilt)
+        self.assertIn('pub(super) const DEPLOYMENT_POLICY: &str = "batch-rule";', rust)
+        self.assertIn("pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[", rust)
+        for tag, columns in current["rules"]["batch_columns"].items():
+            cells = ", ".join("None" if c is None else f"Some({c})" for c in columns)
+            self.assertIn(f'    ("{tag}", [{cells}]),', rust)
 
 
 class KnownTags(unittest.TestCase):
@@ -725,8 +823,8 @@ class TheGeneSetDerivation(unittest.TestCase):
                 ("strategic_wonders", "strategic-wonders", AdvancedAi::disable),
             ];
             pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
-                // The joint search: "decoy-four".
-                ("joint_tactics", "joint-tactics", AdvancedAi::enable),
+                // A second version: "decoy-four".
+                ("war_economy_2", "war-economy-2", AdvancedAi::enable),
             ];
         '''
         read = {"src/elo.rs": elo, "src/ai/advanced/treatments.rs": treatments}
@@ -738,7 +836,7 @@ class TheGeneSetDerivation(unittest.TestCase):
             return read[path]
         self.assertEqual(
             gene_ledger.gene_tags_from_sources(reader),
-            ["war-reinforcement", "come-ashore", "strategic-wonders", "joint-tactics"],
+            ["war-reinforcement", "come-ashore", "strategic-wonders", "war-economy-2"],
         )
 
     def test_the_registry_is_read_in_order_and_host_only_rows_stay_out(self):
@@ -750,7 +848,6 @@ class TheGeneSetDerivation(unittest.TestCase):
                 Gene { tag: "war-reinforcement", field: "war_reinforcement", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_war_reinforcement, disable: AdvancedAi::disable_war_reinforcement },
                 Gene { tag: "land-grab", field: "land_grab", kind: Kind::HostOnly, enable: AdvancedAi::enable_land_grab, disable: AdvancedAi::disable_land_grab },
                 Gene { tag: "strategic-wonders", field: "strategic_wonders", kind: Kind::Production, enable: AdvancedAi::enable_strategic_wonders, disable: AdvancedAi::disable_strategic_wonders },
-                Gene { tag: "joint-tactics", field: "joint_tactics", kind: Kind::HostOnlyOptIn, enable: AdvancedAi::enable_joint_tactics, disable: AdvancedAi::disable_joint_tactics },
                 Gene { tag: "war-economy-2", field: "war_economy_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_economy_2, disable: AdvancedAi::disable_war_economy_2 },
             ];
         '''
@@ -762,7 +859,7 @@ class TheGeneSetDerivation(unittest.TestCase):
             return read[path]
         self.assertEqual(
             gene_ledger.gene_tags_from_sources(reader),
-            ["war-reinforcement", "strategic-wonders", "joint-tactics", "war-economy-2"],
+            ["war-reinforcement", "strategic-wonders", "war-economy-2"],
         )
 
     def test_the_fingerprint_is_the_tags_newline_terminated(self):
@@ -784,7 +881,7 @@ class TheGeneSetDerivation(unittest.TestCase):
         # a gene under review would make this test a hostage to the next cull.
         self.assertIn("war-reinforcement", tags, "Kind::Repair")
         self.assertIn("strategic-wonders", tags, "Kind::Production")
-        self.assertIn("joint-tactics", tags, "Kind::HostOnlyOptIn")
+        self.assertIn("builder-barbarian-safety", tags, "Kind::OptIn")
         self.assertNotIn("land-grab", tags, "a plain host-only gene is never screened")
 
 
@@ -933,6 +1030,51 @@ class TheBuildGuard(unittest.TestCase):
         )
 
 
+class ContinuousBatchTiming(unittest.TestCase):
+    """Reporting headers use scheduler time, never inferred row timing."""
+
+    @staticmethod
+    def report() -> dict:
+        data = analysis([{"tag": "a"}])
+        data.update({"games": 3_000, "seats": 18_000})
+        data["continuous_batch_timing"] = {
+            "schema": "continuous_batch_timing/v1",
+            "started_at": "2026-08-25T10:00:00Z",
+            "completed_at": "2026-08-25T10:25:00Z",
+            "elapsed_seconds": 1_500,
+            "completed_games": 3_000,
+        }
+        return data
+
+    def test_reporting_record_preserves_verified_whole_batch_timing(self):
+        record = gene_ledger.source_record(Path("timed.json"), self.report())
+        self.assertEqual(record["continuous_batch_timing"], {
+            "schema": "continuous_batch_timing/v1",
+            "started_at": "2026-08-25T10:00:00Z",
+            "completed_at": "2026-08-25T10:25:00Z",
+            "elapsed_seconds": 1_500,
+            "completed_games": 3_000,
+        })
+        header = ranking.reporting_batch_header("Last Batch", {"meta": record, "rows": {}})
+        self.assertEqual(
+            header,
+            "Wins ± /10k total seats — Last Batch (n=18,000 total seats; 120.0 games/min)")
+
+    def test_timing_refuses_a_duration_that_disagrees_with_its_timestamps(self):
+        data = self.report()
+        data["continuous_batch_timing"]["elapsed_seconds"] = 1_499
+        with self.assertRaisesRegex(SystemExit, "does not match"):
+            gene_ledger.continuous_batch_timing_of(data)
+
+    def test_historical_batch_says_rate_not_recorded_instead_of_estimated(self):
+        header = ranking.reporting_batch_header(
+            "Prior Batch", {"meta": {"seats": 30_000}, "rows": {}})
+        self.assertEqual(
+            header,
+            "Wins ± /10k total seats — Prior Batch "
+            "(n=30,000 total seats; games/min=not recorded)")
+
+
 class PreFingerprintSources(unittest.TestCase):
     """The twenty sources recorded before 2026-08-23 carry no build block. They
     are grandfathered — the games are played, the artefacts are history — but
@@ -1051,7 +1193,7 @@ class TheHeaderFieldsMatch(unittest.TestCase):
 
 class GeneratedFiles(unittest.TestCase):
     """`docs/gene_ledger.json`, the verdict block at the end of
-    `src/ai/advanced/genes.rs` and `HEURISTIC_GENE_RANKING.md` are all derived
+    `src/ai/advanced/genes.rs` and `GENE_HEURISTIC_RANKING.md` are all derived
     from the sources the JSON records; none may drift."""
 
     def test_the_checked_in_ledger_reproduces_from_its_recorded_sources(self):
@@ -1063,23 +1205,27 @@ class GeneratedFiles(unittest.TestCase):
                          genes.rust_block_of(genes.REGISTRY_PATH.read_text()),
                          "the verdict block in genes.rs is stale: run tools/genes.py write")
         self.assertEqual(genes.render(ledger), genes.RANKING_MD.read_text(),
-                         "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write")
+                         "GENE_HEURISTIC_RANKING.md is stale: run tools/genes.py write")
+        self.assertEqual(genes.render_evidence(ledger), genes.EVIDENCE_MD.read_text(),
+                         "docs/GENE_RANKING_EVIDENCE.md is stale: run tools/genes.py write")
 
-    def test_display_batches_do_not_change_the_pinned_deployment_selection(self):
-        """A display-only screen refreshes evidence but never rewrites defaults."""
+    def test_the_reporting_batches_decide_the_selection_and_the_sources_do_not(self):
+        """The sources alone decide nothing: without a batch every gene is off."""
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
-        deployment_only = gene_ledger.build_ledger(
+        sources_only = gene_ledger.build_ledger(
             gene_ledger.sources_from_ledger(current),
             build_notes=gene_ledger.notes_from_ledger(current),
-            deployment_genome=gene_ledger.deployment_genome_of(current),
         )
         with_reporting = gene_ledger.rebuild_from_ledger(current)
+        self.assertEqual(sources_only["rules"]["deployment_genome"], [])
+        self.assertEqual(sources_only["rules"]["batch_columns"], {})
+        self.assertFalse(any(g["default_on"] for g in sources_only["genes"]))
+        self.assertTrue(any(g["default_on"] for g in with_reporting["genes"]))
         self.assertEqual(
-            [(g["tag"], g["default_on"]) for g in deployment_only["genes"]],
-            [(g["tag"], g["default_on"]) for g in with_reporting["genes"]],
+            [(g["tag"], g["verdict"], g["wins_last_10k"]) for g in sources_only["genes"]],
+            [(g["tag"], g["verdict"], g["wins_last_10k"]) for g in with_reporting["genes"]],
+            "the evidence columns are the sources' either way",
         )
-        self.assertEqual(gene_ledger.render_rust(deployment_only),
-                         gene_ledger.render_rust(with_reporting))
 
         reporting = ranking.load_reporting_batches(current)
         self.assertEqual(len(reporting), len(ranking.REPORTING_BATCH_LABELS))
@@ -1123,7 +1269,7 @@ class VersionedGenes(unittest.TestCase):
     highest performing version should be shown in the table and should be
     the gene default"*) — and a family holds at most three versions."""
 
-    def test_a_pinned_family_ships_its_head_by_tracked_wins(self):
+    def test_a_family_the_rule_turns_on_ships_its_head_by_tracked_wins(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s.json"
             path.write_text(json.dumps(analysis([
@@ -1132,56 +1278,79 @@ class VersionedGenes(unittest.TestCase):
                 {"tag": "g-3", "wins": -5},
                 {"tag": "other", "wins": 10},
             ])))
+            # Three positive batches turn on g, g-2 and other; g-3 reads
+            # negative twice.
+            files = batch_files(tmp, [
+                batch([{"tag": t, "wins": w} for t, w in
+                       (("g", 30), ("g-2", 10), ("g-3", -5), ("other", 3))]),
+                batch([{"tag": t, "wins": w} for t, w in
+                       (("g", 20), ("g-2", 10), ("g-3", -5), ("other", 3))]),
+                batch([{"tag": t, "wins": w} for t, w in
+                       (("g", 10), ("g-2", 10), ("g-3", 5), ("other", 3))]),
+            ])
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
-                ledger = gene_ledger.build_ledger(
-                    [path], filter_known=False, deployment_genome=("g", "other"))
-                # A ledger is rebuilt from the list it recorded — the head —
-                # and the head still ships (`rebuild_from_ledger` does this on
-                # the real registry; synthetic tags take the direct route).
-                rebuilt = gene_ledger.build_ledger(
-                    [path], filter_known=False,
-                    deployment_genome=gene_ledger.deployment_genome_of(ledger))
+                ledger = gene_ledger.build_ledger([path], filter_known=False,
+                                                  reporting_batches=files)
         by = {g["tag"]: g for g in ledger["genes"]}
-        self.assertFalse(by["g"]["default_on"], "the pinned name is not what ships")
+        self.assertFalse(by["g"]["default_on"], "the rule turns g on, but the head ships")
         self.assertTrue(by["g-2"]["default_on"], "the head by tracked wins ships")
         self.assertFalse(by["g-3"]["default_on"])
         self.assertTrue(by["other"]["default_on"])
         self.assertEqual(ledger["rules"]["deployment_genome"], ["g-2", "other"])
         self.assertEqual(ledger["counts"]["default_on"], 2)
+        self.assertEqual(ledger["rules"]["batch_decisions"],
+                         {"g": "on", "g-2": "on", "g-3": "off", "other": "on"})
         heads = ledger["rules"]["family_heads"]
-        self.assertEqual(heads["g"]["pinned"], "g")
+        self.assertEqual(heads["g"]["rule_on"], ["g", "g-2"])
         self.assertEqual(heads["g"]["head"], "g-2")
         self.assertEqual(heads["g"]["ships"], "g-2")
         self.assertEqual(sorted(heads["g"]["versions"]), ["g", "g-2", "g-3"])
         self.assertGreater(heads["g"]["versions"]["g-2"], heads["g"]["versions"]["g"])
-        self.assertIn("pinned as g but its head by tracked wins is g-2", err.getvalue())
+        self.assertEqual(err.getvalue(), "", "the head ships: nothing to say")
         self.assertIn('"g-2",', gene_ledger.render_rust(ledger))
-        # The recorded list rebuilds to itself, and the check reads the
-        # operator's list as families: `g` and `g-2` pin the same family.
-        self.assertEqual(rebuilt["rules"]["deployment_genome"], ["g-2", "other"])
-        self.assertEqual(rebuilt["rules"]["family_heads"]["g"]["pinned"], "g-2")
-        tags = ["g", "g-2", "g-3", "other"]
-        self.assertEqual(gene_ledger.pinned_families(("g-2", "other"), tags),
-                         gene_ledger.pinned_families(("g", "other"), tags))
-        self.assertNotEqual(gene_ledger.pinned_families(("g-2",), tags),
-                            gene_ledger.pinned_families(("g", "other"), tags))
 
-    def test_an_unpinned_family_ships_nothing_and_an_unpriced_pin_ships_as_named(self):
+    def test_a_head_the_rule_turns_off_yields_to_the_best_version_the_rule_turns_on(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.json"
+            path.write_text(json.dumps(analysis([
+                {"tag": "g", "wins": 40}, {"tag": "g-2", "wins": 70}, {"tag": "g-3", "wins": 50},
+            ])))
+            files = batch_files(tmp, [
+                batch([{"tag": "g", "wins": 30}, {"tag": "g-2", "wins": -10}, {"tag": "g-3", "wins": 9}]),
+                batch([{"tag": "g", "wins": 20}, {"tag": "g-2", "wins": -10}, {"tag": "g-3", "wins": 9}]),
+                batch([{"tag": "g", "wins": 10}, {"tag": "g-2", "wins": 50}, {"tag": "g-3", "wins": 9}]),
+            ])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                ledger = gene_ledger.build_ledger([path], filter_known=False,
+                                                  reporting_batches=files)
+        heads = ledger["rules"]["family_heads"]["g"]
+        self.assertEqual(heads["head"], "g-2", "still the head by tracked wins")
+        self.assertEqual(heads["rule_on"], ["g", "g-3"])
+        self.assertEqual(heads["ships"], "g-3", "the best version the rule turns on")
+        self.assertEqual(ledger["rules"]["deployment_genome"], ["g-3"])
+        self.assertIn("head by tracked wins is g-2", err.getvalue())
+        self.assertIn("g-3 ships", err.getvalue())
+
+    def test_a_family_the_rule_turns_off_ships_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s.json"
             path.write_text(json.dumps(analysis([{"tag": "g", "wins": 40}, {"tag": "g-2", "wins": 70}])))
-            ledger = gene_ledger.build_ledger([path], filter_known=False, deployment_genome=())
+            ledger = gene_ledger.build_ledger([path], filter_known=False)
         self.assertEqual(ledger["rules"]["deployment_genome"], [])
         self.assertEqual(ledger["rules"]["family_heads"]["g"],
-                         {"pinned": None, "head": "g-2", "ships": None,
+                         {"rule_on": [], "head": "g-2", "ships": None,
                           "versions": {"g": 0.4, "g-2": 0.7}})
-        # No version priced: the family head is unknown and the pin ships as
-        # written; the family record says so.
+        # No version priced by a source: the head is unknown and the version
+        # the rule turns on ships; the family record says so.
         self.assertEqual(gene_ledger.family_head(["g", "g-2"], {}), None)
         self.assertEqual(gene_ledger.resolve_family_heads(("g",), ["g", "g-2"], {}),
-                         (("g",), {"g": {"pinned": "g", "head": None, "ships": "g",
+                         (("g",), {"g": {"rule_on": ["g"], "head": None, "ships": "g",
                                          "versions": {"g": None, "g-2": None}}}))
+        # Two unpriced versions on: the higher version ships.
+        self.assertEqual(gene_ledger.resolve_family_heads(("g", "g-2", "h"), ["g", "g-2", "h"], {})[0],
+                         ("g-2", "h"))
         # Ties go to the higher version; an unpriced sibling never leads.
         self.assertEqual(gene_ledger.family_head(["g", "g-2", "g-3"], {"g": 0.5, "g-2": 0.5}), "g-2")
         self.assertEqual(gene_ledger.family_head(["g", "g-2", "g-3"], {"g": 0.9, "g-2": 0.5}), "g")
@@ -1197,13 +1366,13 @@ class VersionedGenes(unittest.TestCase):
             path.write_text(json.dumps(analysis(
                 [{"tag": t} for t in ("g", "g-2", "g-3", "g-4")])))
             with self.assertRaises(SystemExit):
-                gene_ledger.build_ledger([path], filter_known=False, deployment_genome=())
+                gene_ledger.build_ledger([path], filter_known=False)
         # The real registry honours the cap.
         gene_ledger.check_family_sizes(gene_ledger.screenable_tags())
 
     def test_versions_names_the_third_best_to_drop_before_a_fourth(self):
         ledger = {
-            "rules": {"family_heads": {"g": {"pinned": "g", "head": "g-2", "ships": "g-2"}}},
+            "rules": {"family_heads": {"g": {"rule_on": ["g", "g-2"], "head": "g-2", "ships": "g-2"}}},
             "genes": [
                 {"tag": "g", "win_diff_pp": 0.4},
                 {"tag": "g-2", "win_diff_pp": 0.7},
@@ -1219,7 +1388,7 @@ class VersionedGenes(unittest.TestCase):
             status = gene_ledger.print_versions(ledger, add="g")
         self.assertEqual(status, 1, "a full family refuses the add until one leaves")
         text = out.getvalue()
-        self.assertIn("g: 3 of 3 versions · pinned g · ships g-2 · head g-2", text)
+        self.assertIn("g: 3 of 3 versions · rule on g, g-2 · ships g-2 · head g-2", text)
         self.assertIn("1. v2 g-2", text)
         self.assertIn("drop v3 g-3 (third-best by tracked wins)", text)
         out = io.StringIO()
@@ -1238,7 +1407,7 @@ class VersionedGenes(unittest.TestCase):
             [["war-economy", "war-economy-2", "war-economy-3"]])
         self.assertEqual(gene_ledger.families_of(["a", "a-10", "a-9"]), [["a", "a-9", "a-10"]])
 
-    def test_family_annotation_never_rewrites_the_pinned_choice(self):
+    def test_family_annotation_never_rewrites_the_shipped_choice(self):
         genes = [
             {"tag": "war-economy", "default_on": True, "wins_last_10k": 40, "win_diff_pp": 0.4},
             {"tag": "war-economy-2", "default_on": False, "wins_last_10k": 70, "win_diff_pp": 0.7},
@@ -1255,14 +1424,11 @@ class VersionedGenes(unittest.TestCase):
         self.assertNotIn("family", by["other"], "a gene with no versions is not a family")
         self.assertTrue(by["other"]["default_on"])
 
-    def test_the_pinned_list_rejects_multiple_versions_of_a_family(self):
-        with self.assertRaises(SystemExit):
-            gene_ledger.normalize_deployment_genome(
-                ("g", "g-2"), allowed_tags={"g", "g-2"})
-        self.assertEqual(
-            gene_ledger.normalize_deployment_genome(("g-2",), allowed_tags={"g", "g-2"}),
-            ("g-2",),
-        )
+    def test_the_genome_never_carries_two_versions_of_a_family(self):
+        genome, record = gene_ledger.resolve_family_heads(
+            ("g", "g-2", "g-3"), ["g", "g-2", "g-3"], {"g": 0.4, "g-2": 0.7, "g-3": 0.1})
+        self.assertEqual(genome, ("g-2",))
+        self.assertEqual(record["g"]["ships"], "g-2")
         self.assertEqual(gene_ledger.tracked_wins({"wins_last_10k": 25}), 0.25,
                          "ranking order still falls back to the newest column")
 
@@ -1313,15 +1479,16 @@ class VersionedGenes(unittest.TestCase):
         self.assertIsNone(gene_ledger.family_rate_cells("g-2", tags, fresh, {}))
         self.assertEqual(gene_ledger.best_version_cell("g-2", tags, {}, {}), "—")
 
-    def test_the_explicit_version_is_emitted_in_the_generated_table(self):
+    def test_the_shipped_version_is_emitted_in_the_generated_table(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s.json"
             path.write_text(json.dumps(analysis([
                 {"tag": "g", "wz": 3.0, "wins": 40},
                 {"tag": "g-2", "wz": 3.5, "wins": 70},
             ])))
+            files = batch_files(tmp, [batch([{"tag": "g", "wins": -5}, {"tag": "g-2", "wins": 30}])])
             ledger = gene_ledger.build_ledger(
-                [path], filter_known=False, deployment_genome=("g-2",))
+                [path], filter_known=False, reporting_batches=files)
         by = {g["tag"]: g for g in ledger["genes"]}
         self.assertTrue(by["g-2"]["default_on"])
         self.assertFalse(by["g"]["default_on"])
@@ -1393,23 +1560,27 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertEqual(
             ranking.render(ledger),
             ranking.RANKING_MD.read_text(),
-            "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write",
+            "GENE_HEURISTIC_RANKING.md is stale: run tools/genes.py write",
+        )
+        self.assertEqual(
+            ranking.render_evidence(ledger),
+            ranking.EVIDENCE_MD.read_text(),
+            "docs/GENE_RANKING_EVIDENCE.md is stale: run tools/genes.py write",
         )
 
     def test_every_screenable_gene_is_visible(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         measured, _ = ranking.load_display_sources(ledger)
-        text = ranking.RANKING_MD.read_text()
+        table = ranking.RANKING_MD.read_text()
+        evidence = ranking.EVIDENCE_MD.read_text()
         for tag in ranking.screenable_tags():
             if tag in measured:
-                self.assertIn(f"`{tag}`", text, tag)
+                self.assertIn(f"`{tag}`", table, tag)
             else:
+                text = evidence
                 self.assertIn("## Awaiting measurement", text)
-                # An operator-pinned gene is on before its first screen
-                # (`science-victory-drive`, 2026-08-24); every other
-                # unmeasured gene is off.
-                default = "**on**" if tag in ranking.OPERATOR_DEFAULT_ON else "off"
-                self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
+                # No batch priced it, so the batch rule reads it as off.
+                self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
 
     def test_descriptions_come_from_the_toggle_docs(self):
         desc = ranking.descriptions()
@@ -1438,9 +1609,17 @@ class TheTableIsDerived(unittest.TestCase):
     def _versioned_tags(self) -> set[str]:
         """The ranked tags that belong to a versioned family — read from the
         tags themselves, not from the *Best version* cell, which reads `1`
-        for an unversioned gene as well as for a family whose original leads."""
-        tags = [cell(cells, "Gene").strip("`") for cells in self._ranked_rows()]
-        return {tag for family in gene_ledger.families_of(tags) for tag in family}
+        for an unversioned gene as well as for a family whose original leads.
+
+        ⚠ READ THE REGISTRY, NOT THE RANKED ROWS. `render()` decides a row is
+        versioned from `screenable_tags()`, and an unpriced version has no row
+        of its own — so a family whose `-2` has not been screened yet is
+        versioned in the table and unversioned here, and every rate cell in it
+        reads `v1 ...` against a pattern expecting none. Ten such families
+        arrived at once with the version-2 batch.
+        """
+        return {tag for family in gene_ledger.families_of(ranking.screenable_tags())
+                for tag in family}
 
     def test_diff_is_the_on_rate_minus_the_off_rate(self):
         """The column that replaced the pooled seat count (operator, 2026-08-22).
@@ -1639,7 +1818,7 @@ class TheTableIsDerived(unittest.TestCase):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         rows = ranking.resolutions(ledger)
         self.assertEqual(len(rows), len(ledger["sources"]))
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         for row in rows:
             # ⭐ The shape is printed beside the band because a `legacy` row is
             # a reading from the retired Pangaea instrument, not from the
@@ -1675,27 +1854,27 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertGreater(h1[1], s6[1], "h1 must carry more pairs")
         self.assertGreater(h1[2], s6[2], "yet h1 must resolve WIDER — the whole point")
         self.assertLess(h1[3], s6[3], "and at a lower pairing gain")
-        self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
+        self.assertIn("Pairing gain", ranking.EVIDENCE_MD.read_text())
 
 
-    def test_the_pinned_default_summary_is_the_only_text_ahead_of_the_table(self):
-        """The title gets one concise, generated policy before the table.
-
-        The long reference remains below the tables; this is the operator's
-        requested at-a-glance explanation of the *Default* column.
+    def test_the_operators_heading_is_the_only_text_ahead_of_the_table(self):
+        """The operator wrote the title and the column legend by hand on
+        2026-08-25 and renamed the file; the generator reproduces that text
+        verbatim so a regeneration never overwrites it. The long reference
+        remains below the tables.
         """
-        ledger = json.loads(ranking.LEDGER_JSON.read_text())
         lines = ranking.RANKING_MD.read_text().splitlines()
-        self.assertEqual(lines[0], "# The heuristic gene ranking")
-        self.assertEqual(lines[1], "")
+        heading = ranking.RANKING_HEADING
+        self.assertEqual(lines[: len(heading)], heading)
         self.assertEqual(
-            lines[2], ranking.default_on_summary(ledger),
-            "the heading summary must derive from the pinned deployment genome",
+            lines[0],
+            "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
         )
-        self.assertEqual(lines[3], "")
-        self.assertTrue(lines[4].startswith("| Rank | Gene |"), lines[4])
-        self.assertTrue(lines[5].startswith("|---:|"), lines[5])
-        self.assertTrue(lines[6].startswith("| 1 | `"), lines[6])
+        self.assertNotIn("Deployment default", "\n".join(lines[: len(heading)]))
+        table = len(heading)
+        self.assertTrue(lines[table].startswith("| Rank | Gene |"), lines[table])
+        self.assertTrue(lines[table + 1].startswith("|---:|"), lines[table + 1])
+        self.assertTrue(lines[table + 2].startswith("| 1 | `"), lines[table + 2])
 
     def test_the_reference_is_carried_under_the_tables_not_deleted(self):
         """Moving the preamble must not become dropping it.
@@ -1705,7 +1884,7 @@ class TheTableIsDerived(unittest.TestCase):
         each is asserted present, and after the last table rather than before
         the first.
         """
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         self.assertIn("## How to read this", text)
         for phrase in (
             "Reading the table",
@@ -1716,10 +1895,10 @@ class TheTableIsDerived(unittest.TestCase):
             "Regenerate with",
         ):
             self.assertIn(phrase, text, phrase)
-        self.assertLess(
-            text.index("| Rank | Gene |"),
-            text.index("## How to read this"),
-            "the reference must sit under the table, not over it",
+        self.assertNotIn(
+            "## How to read this",
+            ranking.RANKING_MD.read_text(),
+            "the ranking is the operator's heading and the table alone",
         )
         for heading in ("## Awaiting measurement", "## Removed from the code"):
             if heading in text:
@@ -1735,6 +1914,7 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         self.authoritative, _ = ranking.load_sources(self.ledger)
         self.measured, _ = ranking.load_display_sources(self.ledger)
         self.text = ranking.RANKING_MD.read_text()
+        self.evidence = ranking.EVIDENCE_MD.read_text()
 
     def _rows(self):
         lines = self.text.splitlines()
@@ -1777,9 +1957,9 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
 
     def test_nothing_the_posterior_publishes_decides_a_default(self):
         """★ The hard constraint of this change. The ranking's *Default*
-        column is the ledger's explicit operator selection, gene for gene."""
+        column is the batch rule's answer, gene for gene."""
         recorded = {g["tag"]: g for g in self.ledger["genes"]}
-        self.assertEqual(self.ledger["rules"]["deployment_policy"], "operator-pinned")
+        self.assertEqual(self.ledger["rules"]["deployment_policy"], "batch-rule")
         selected = set(self.ledger["rules"]["deployment_genome"])
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
@@ -1791,8 +1971,8 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
                 self.assertEqual(recorded[tag]["default_on"], tag in selected,
                                  cell(cells, "Gene"))
 
-    def test_unmeasured_pinned_genes_stay_on_in_the_rendered_ranking_and_list(self):
-        """An authoritative row is optional; the explicit selection is not."""
+    def test_a_gene_only_the_batches_priced_ships_on_in_the_ranking_and_the_list(self):
+        """An authoritative row is optional; the batch rule's answer is not."""
         recorded = {g["tag"] for g in self.ledger["genes"]}
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -1802,19 +1982,21 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
             cell(cells, "Gene").strip("`"): cell(cells, "Default")
             for cells in self._rows()
         }
-        for tag in ("missionary-evades-raiders", "missionary-last-charge-explores"):
-            self.assertNotIn(tag, recorded, tag)
+        batch_only = [tag for tag in self.ledger["rules"]["deployment_genome"]
+                      if tag not in recorded]
+        self.assertTrue(batch_only, "some gene is on from its batch columns alone")
+        for tag in batch_only:
             self.assertEqual(displayed[tag], "**on**", tag)
             self.assertRegex(list_rows, rf"(?m)^{re.escape(tag)}\s+.+\s+on\s+unmeasured$")
 
-    def test_the_evidence_section_marks_pinned_state_without_a_counterfactual_rule(self):
-        self.assertIn("## Evidence for future operator selections", self.text)
-        self.assertNotIn("## What the posterior would change", self.text)
+    def test_the_evidence_section_marks_the_default_without_a_counterfactual_rule(self):
+        self.assertIn("## Evidence beside the batch rule", self.evidence)
+        self.assertNotIn("## What the posterior would change", self.evidence)
         rows = ranking.evidence_table(self.ledger, self.authoritative)
         selected = set(self.ledger["rules"]["deployment_genome"])
         self.assertTrue(rows)
         for row in rows:
-            self.assertEqual(row["pinned"], row["tag"] in selected, row["tag"])
+            self.assertEqual(row["default_on"], row["tag"] in selected, row["tag"])
             self.assertIn(row["call"], {"on", "off", "unresolved"})
 
     def test_the_evidence_call_covers_every_priced_gene(self):
@@ -1823,15 +2005,15 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         self.assertEqual(len(rows), len(calls))
         self.assertGreater(calls.count("on"), 0)
         self.assertGreater(calls.count("unresolved"), calls.count("on"))
-        self.assertIn("### What the posterior resolves", self.text)
+        self.assertIn("### What the posterior resolves", self.evidence)
         for row in rows:
             if row["call"] != "unresolved":
                 self.assertIn(f"| `{row['tag']}` |", self.text, row["tag"])
 
     def test_the_shapes_are_published_apart(self):
-        self.assertIn("## The two shapes, apart", self.text)
-        self.assertIn("| standard |", self.text)
-        self.assertIn("| legacy |", self.text)
+        self.assertIn("## The two shapes, apart", self.evidence)
+        self.assertIn("| standard |", self.evidence)
+        self.assertIn("| legacy |", self.evidence)
         # Today every source is legacy; the file must say so rather than let a
         # reader take a Pangaea column for the deployment shape.
         shapes = {s["shape"] for s in self.ledger["sources"]}
@@ -1875,7 +2057,7 @@ class TheBoundarySet(unittest.TestCase):
         # test called it a defect. What the ranking actually claims is the
         # disagreement, not its sign.
         top = rows[0]
-        self.assertNotEqual(top["pinned"], top["posterior"]["effect"] > 0.0,
+        self.assertNotEqual(top["default_on"], top["posterior"]["effect"] > 0.0,
                             top["tag"])
 
     def test_a_bigger_arm_buys_more_and_resolves_more(self):
@@ -1903,12 +2085,12 @@ class TheBoundarySet(unittest.TestCase):
                  for r in ranking.boundary_table(self.ledger, self.measured)[0]}
         for tag in tags:
             self.assertLessEqual(needs[tag], ranking.FEASIBLE_ARM_PAIRS, tag)
-        self.assertIn("gene_screen --genes ", ranking.RANKING_MD.read_text())
+        self.assertIn("gene_screen --genes ", ranking.EVIDENCE_MD.read_text())
 
     def test_the_two_stage_arithmetic_is_recorded_where_it_will_be_read(self):
         """⚠ The efficient plan is two stage and NOT a partial foldover. The
         ranking says so; `docs/GENE_SCREEN.md` carries the arithmetic."""
-        self.assertIn("two stage", ranking.RANKING_MD.read_text())
+        self.assertIn("two stage", ranking.EVIDENCE_MD.read_text())
         screen = (ranking.ROOT / "docs" / "GENE_SCREEN.md").read_text()
         for phrase in ("two-stage", "±145", "partial", "blocked", "8× the games"):
             self.assertIn(phrase, screen, phrase)
@@ -1962,7 +2144,7 @@ class TheLaneGenes(unittest.TestCase):
         self.assertNotIn("wide-map-capacity", tags)
 
     def test_every_lane_gene_appears_with_its_axis(self):
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         self.assertIn("## Lane genes and the share axis", text)
         for tag in ranking.lane_tags():
             self.assertIn(f"| `{tag}` |", text, tag)
@@ -2087,7 +2269,7 @@ class TheStandardScreen(unittest.TestCase):
         window."""
         live_tags = {g["tag"] for g in self.ledger["genes"]}
         self.assertNotIn("governor-victory-lanes", live_tags)
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         self.assertIn("## Removed from the code", ranked)
         self.assertIn("| `governor-victory-lanes` |", ranked)
         cutoff = self.screen_row(
@@ -2129,7 +2311,7 @@ class TheStandardScreen(unittest.TestCase):
             "settle-plan-ahead",
         )
         live_tags = {gene["tag"] for gene in self.ledger["genes"]}
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         cutoff = json.loads(
             (gene_ledger.ROOT / "docs" / "gene_screens"
              / "2026-08-24-standard-continuous-38160-total-seats.json").read_text())
@@ -2138,13 +2320,11 @@ class TheStandardScreen(unittest.TestCase):
             self.assertNotIn(tag, live_tags)
             self.assertIn(f"| `{tag}` |", ranked)
             self.assertIn(tag, cutoff_tags)
-        reporting_notes = "\n".join(
-            str(batch.get("unverified", ""))
-            for batch in self.ledger["reporting_batches"]
-        )
-        self.assertIn("research-planning", reporting_notes)
-        self.assertIn("high-signal negative genes were deliberately removed",
-                      reporting_notes)
+        # The three display batches rotate as new completed batches arrive.
+        # The cull must remain auditable in generated historical evidence, not
+        # only in the build note of a display slot that can be evicted.
+        self.assertIn("research-planning", ranked)
+        self.assertIn("left the code", ranked)
 
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded
@@ -2176,7 +2356,7 @@ class TheStandardScreen(unittest.TestCase):
         # The harmful half was the only one that shipped, until g1 resolved
         # it off on 2026-08-23. The 2026-08-24 cull removes all three genes.
         live_tags = {g["tag"] for g in self.ledger["genes"]}
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         for tag in ("governor-victory-lanes", "governor-every-lane",
                     "governor-expansion-lane"):
             self.assertNotIn(tag, live_tags)
@@ -2211,7 +2391,7 @@ class TheStandardScreen(unittest.TestCase):
         self.assertIn("not a fallback policy", self.notes)
 
     def test_the_note_is_carried_into_the_published_ranking(self):
-        text = ranking.RANKING_MD.read_text()
+        text = ranking.EVIDENCE_MD.read_text()
         self.assertIn("23,622", text)
         self.assertIn("governor-victory-lanes", text)
         self.assertIn("## Removed from the code", text)
