@@ -8331,7 +8331,10 @@ mod tests {
         });
         let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
         assert_eq!(recon.game.difficulty, "king");
-        assert!(recon.game.is_human_seat(0), "the mirrored seat is the human");
+        assert!(
+            recon.game.is_human_seat(0),
+            "the mirrored seat is the human"
+        );
         let ours = recon.game.handicap_yield_pct(0);
         assert_eq!(
             (ours.production, ours.gold, ours.science),
@@ -13122,8 +13125,17 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "enforces_borders",
     ];
     const MINOR: &[&str] = &[
-        "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
-        "most_envoys", "cities", "units", "enforces_borders",
+        "player",
+        "civ",
+        "score",
+        "military",
+        "at_war",
+        "suzerain",
+        "envoys",
+        "most_envoys",
+        "cities",
+        "units",
+        "enforces_borders",
     ];
     const RELIGION: &[&str] = &["type", "founder", "beliefs"];
 
