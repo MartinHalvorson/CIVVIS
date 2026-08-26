@@ -98,7 +98,7 @@ fn a_medieval_arena_puts_nothing_but_orders_to_its_seats() {
     );
     // The tree still moves — a technology every five turns, the stock pace —
     // and it moves the same way for both sides, with nobody having chosen.
-    for seat in 0..2 {
+    for (seat, opening_civics) in opening_civics.iter().enumerate() {
         assert!(
             game.players[seat].techs.len() >= 8,
             "seat {seat} climbed the tree on its own: {} technologies",
@@ -106,7 +106,7 @@ fn a_medieval_arena_puts_nothing_but_orders_to_its_seats() {
         );
         assert!(
             game.players[seat].civic.is_none()
-                && game.players[seat].civics.len() == opening_civics[seat],
+                && game.players[seat].civics.len() == *opening_civics,
             "seat {seat} has no civics tree to climb"
         );
     }
