@@ -1140,6 +1140,26 @@ struct ExactAttackResult {
     eliminates_enemy_unit: bool,
 }
 
+/// What happened to the board an exact attack was measured on.
+///
+/// ★★★★ THE TACTICAL PICKER USED TO CLONE THE BOARD TWICE PER CANDIDATE AND
+/// APPLY THE SAME ACTION TO BOTH — once to price the attack and once to price
+/// the enemy's forcing reply. `Game::apply` is 13.2% of the main thread and
+/// `Vec::clone` under `speculative_clone` another 0.76% (2026-08-26 profile),
+/// and the second board was bit-for-bit the first. This says which of the
+/// three things happened to the one board that is now cloned, so the reply
+/// search can take it over instead of rebuilding it.
+enum AppliedAttack {
+    /// `action` applied cleanly; the board carries its result.
+    Applied,
+    /// The engine refused it. The reason is the diagnosis `note_illegal_attack`
+    /// records and used to be the reply path's alone to see.
+    Refused(String),
+    /// Not this unit's attack, so there was nothing to score and nothing was
+    /// applied. The reply path still prices it, so it applies it itself.
+    NotScored,
+}
+
 #[derive(Clone)]
 enum CityDistance {
     Cylinder(i32),
@@ -4588,6 +4608,13 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// The turn's fire is planned once from the engine's arithmetic: the
+    /// kills that can be finished, their shooters first in the unit order,
+    /// each biased toward its planned target. Opt-in gene `fire-plan`; see
+    /// `advanced/fire_plan.rs`.
+    fire_plan: bool,
+    /// This turn's plan; empty with the gene off. See `fire_plan`.
+    fire_plan_orders: fire_plan::FirePlan,
     /// Put a ceiling on how long a settler waits for an escort.
     ///
     /// ★★★★ THE THIRD CITY'S SETTLER IS STANDING STILL. The ladder abandons a
@@ -5595,6 +5622,11 @@ mod field_craft;
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
 
+/// The fire plan: this turn's kills, allocated once from the engine's own
+/// arithmetic, ordering the unit loop and biasing the attack scan. One
+/// opt-in gene; see `advanced/fire_plan.rs`.
+mod fire_plan;
+
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
 /// bill, and pillage with the movement the march does not use. Two opt-in
@@ -6332,6 +6364,8 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            fire_plan: false,
+            fire_plan_orders: fire_plan::FirePlan::default(),
             escort_patience_runs_out: false,
             encampment_seals_the_pass: false,
             first_builder_reserve: false,
@@ -29268,13 +29302,18 @@ impl AdvancedAi {
     /// cheap move ordering, while the final decision sees the seeded damage
     /// roll, kills, attacker survival, wall damage, district pillage, and an
     /// actual city transfer.
-    fn tactical_attack_result_owned(
-        mut after: Game,
+    /// Price an exact attack, and hand back the board it was measured on.
+    ///
+    /// Takes `&mut Game` rather than an owned one so the caller keeps the
+    /// applied board: see [`AppliedAttack`] for why that matters and
+    /// [`Self::forcing_reply_penalty_applied`] for what takes it over.
+    fn tactical_attack_result_in(
+        after: &mut Game,
         pid: usize,
         uid: u32,
         action: &Action,
         plan: &StrategicPlan,
-    ) -> ExactAttackResult {
+    ) -> (ExactAttackResult, AppliedAttack) {
         let target = match action {
             Action::Attack { unit, target }
             | Action::Ranged { unit, target }
@@ -29284,10 +29323,13 @@ impl AdvancedAi {
                 *target
             }
             _ => {
-                return ExactAttackResult {
-                    value: f64::NEG_INFINITY,
-                    eliminates_enemy_unit: false,
-                }
+                return (
+                    ExactAttackResult {
+                        value: f64::NEG_INFINITY,
+                        eliminates_enemy_unit: false,
+                    },
+                    AppliedAttack::NotScored,
+                )
             }
         };
         let priority_target = matches!(action, Action::PriorityTarget { .. });
@@ -29347,11 +29389,14 @@ impl AdvancedAi {
                 before.encampment_pillaged,
             )
         });
-        if after.apply(pid, action).is_err() {
-            return ExactAttackResult {
-                value: f64::NEG_INFINITY,
-                eliminates_enemy_unit: false,
-            };
+        if let Err(why) = after.apply(pid, action) {
+            return (
+                ExactAttackResult {
+                    value: f64::NEG_INFINITY,
+                    eliminates_enemy_unit: false,
+                },
+                AppliedAttack::Refused(why),
+            );
         }
 
         let attacker_loss = match after.units.get(&uid) {
@@ -29388,10 +29433,13 @@ impl AdvancedAi {
                 .is_some_and(|city| city.owner == pid);
             if captured {
                 if defer_capture {
-                    return ExactAttackResult {
-                        value: f64::NEG_INFINITY,
-                        eliminates_enemy_unit: false,
-                    };
+                    return (
+                        ExactAttackResult {
+                            value: f64::NEG_INFINITY,
+                            eliminates_enemy_unit: false,
+                        },
+                        AppliedAttack::Applied,
+                    );
                 }
                 value += 520.0
                     + pop.max(1) as f64 * 14.0
@@ -29424,10 +29472,24 @@ impl AdvancedAi {
                 value += 180.0;
             }
         }
-        ExactAttackResult {
-            value,
-            eliminates_enemy_unit,
-        }
+        (
+            ExactAttackResult {
+                value,
+                eliminates_enemy_unit,
+            },
+            AppliedAttack::Applied,
+        )
+    }
+
+    /// The score alone, for the callers that do not price a reply.
+    fn tactical_attack_result_owned(
+        mut after: Game,
+        pid: usize,
+        uid: u32,
+        action: &Action,
+        plan: &StrategicPlan,
+    ) -> ExactAttackResult {
+        Self::tactical_attack_result_in(&mut after, pid, uid, action, plan).0
     }
 
     fn tactical_attack_value_owned(
@@ -29619,29 +29681,44 @@ impl AdvancedAi {
             && g.can_pay_melee_entry(uid, target)
     }
 
-    fn forcing_reply_penalty_owned(
+    /// Price the enemy's forcing reply on a board an exact attack has already
+    /// produced, instead of on a second clone of the same world.
+    ///
+    /// ⚠ EXACT BY CONSTRUCTION, AND THE ARGUMENT IS SHORT: `Game::apply` is
+    /// the ONLY mutation `tactical_attack_result_in` makes — everything else
+    /// it touches is a read — so the board it hands back is bit-for-bit the
+    /// board `forcing_reply_penalty_owned` used to build by cloning again and
+    /// applying the same action. The three arms below reproduce that function's
+    /// behaviour case for case, including the refusal reason it reports and the
+    /// 135.0 it charges an attacker that did not survive its own attack.
+    fn forcing_reply_penalty_applied(
         work_pool: Option<Arc<WorkPool>>,
-        mut after: Game,
+        after: &mut Game,
+        applied: AppliedAttack,
         pid: usize,
         uid: u32,
         action: &Action,
     ) -> f64 {
-        if let Err(why) = after.apply(pid, action) {
-            // ⚠ The refusal reason is the whole diagnosis and it used to be
-            // thrown away. Measured on a replay of run
-            // `civvis-20260803T005930Z`, 45 of 87 declined attacks reached
-            // this line — the model rejecting an attack outright, not judging
-            // it bad — and 27 of those were a Field Cannon. `do_ranged`
-            // refuses for seven distinct reasons (embarked, siege moved,
-            // no moves, no attacks left, out of range, target not visible,
-            // line of sight blocked) and the journal could name none of them.
-            Self::note_illegal_attack(&why);
-            return 1_000.0;
+        match applied {
+            AppliedAttack::Refused(why) => {
+                Self::note_illegal_attack(&why);
+                return 1_000.0;
+            }
+            AppliedAttack::NotScored => {
+                // Nothing was applied, because there was no attack to score.
+                // This is the one arm that still pays an apply, and it is the
+                // arm that used to pay a clone as well.
+                if let Err(why) = after.apply(pid, action) {
+                    Self::note_illegal_attack(&why);
+                    return 1_000.0;
+                }
+            }
+            AppliedAttack::Applied => {}
         }
         if !after.units.contains_key(&uid) {
             return 135.0;
         }
-        Self::forcing_reply_penalty_from_position(work_pool.as_ref(), &after, pid, &[uid])
+        Self::forcing_reply_penalty_from_position(work_pool.as_ref(), after, pid, &[uid])
     }
 
     /// Price the strongest forcing reply from an already-resolved friendly
@@ -29707,10 +29784,19 @@ impl AdvancedAi {
         worst_reply
     }
 
+    /// Price a forcing reply against an untouched board, cloning and applying
+    /// the action here.
+    ///
+    /// The tactical picker no longer takes this route — it hands over the board
+    /// its own attack evaluation already applied — so this is the entry point
+    /// for a caller holding nothing but `&Game`. `AppliedAttack::NotScored` is
+    /// exactly that statement: nothing has been applied to this board yet.
     fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
-        Self::forcing_reply_penalty_owned(
+        let mut after = g.speculative_clone();
+        Self::forcing_reply_penalty_applied(
             self.work_pool.clone(),
-            g.speculative_clone(),
+            &mut after,
+            AppliedAttack::NotScored,
             pid,
             uid,
             action,
@@ -31161,21 +31247,20 @@ impl AdvancedAi {
             Some(pool) if candidates.len() > 1 => {
                 let inputs = candidates
                     .iter()
-                    .map(|(_, action)| {
-                        (g.speculative_clone(), g.speculative_clone(), action.clone())
-                    })
+                    .map(|(_, action)| (g.speculative_clone(), action.clone()))
                     .collect();
                 let plan = plan.clone();
                 let nested_pool = Arc::clone(pool);
-                pool.map_owned(inputs, move |(attack, reply, action)| {
-                    let attack =
-                        Self::tactical_attack_result_owned(attack, pid, uid, &action, &plan);
+                pool.map_owned(inputs, move |(mut board, action)| {
+                    let (attack, applied) =
+                        Self::tactical_attack_result_in(&mut board, pid, uid, &action, &plan);
                     (
                         attack.value,
                         attack.eliminates_enemy_unit,
-                        Self::forcing_reply_penalty_owned(
+                        Self::forcing_reply_penalty_applied(
                             Some(Arc::clone(&nested_pool)),
-                            reply,
+                            &mut board,
+                            applied,
                             pid,
                             uid,
                             &action,
@@ -31186,17 +31271,20 @@ impl AdvancedAi {
             _ => candidates
                 .iter()
                 .map(|(_, action)| {
-                    let attack = Self::tactical_attack_result_owned(
-                        g.speculative_clone(),
-                        pid,
-                        uid,
-                        action,
-                        plan,
-                    );
+                    let mut board = g.speculative_clone();
+                    let (attack, applied) =
+                        Self::tactical_attack_result_in(&mut board, pid, uid, action, plan);
                     (
                         attack.value,
                         attack.eliminates_enemy_unit,
-                        self.forcing_reply_penalty(g, pid, uid, action),
+                        Self::forcing_reply_penalty_applied(
+                            self.work_pool.clone(),
+                            &mut board,
+                            applied,
+                            pid,
+                            uid,
+                            action,
+                        ),
                     )
                 })
                 .collect(),
@@ -31220,6 +31308,11 @@ impl AdvancedAi {
                 score += 16.0;
             }
             if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
+                score += self.base.w.focus_fire * 10.0;
+            }
+            // `fire-plan`: the planned target gets the focus bias too; the
+            // exact decision below is unchanged. `None` with the gene off.
+            if self.fire_plan_target(uid) == Some(pos) {
                 score += self.base.w.focus_fire * 10.0;
             }
             let caution = group
@@ -32471,6 +32564,10 @@ impl AdvancedAi {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
         }
+        // `fire-plan`: this turn's kills, drawn once from the board the unit
+        // loop is about to play, so the shooters that finish them go first.
+        // Empty with the gene off. See `advanced/fire_plan.rs`.
+        self.plan_fire(g, pid);
         // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
         // once from the start-of-turn board so units planned in parallel
         // agree on them. Nothing is read with both genes off. See
@@ -32497,7 +32594,8 @@ impl AdvancedAi {
                 _ if spec.siege => 5,
                 _ => 6,
             };
-            (order, *uid)
+            // Zero for every unit with `fire-plan` off: the shipped key.
+            (self.fire_plan_rank(*uid), order, *uid)
         });
         let pool = self
             .work_pool

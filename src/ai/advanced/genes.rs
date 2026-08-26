@@ -1555,6 +1555,12 @@ pub const GENES: &[Gene] = &[
     // none — on `solvency-first-trade-slot`'s measured pattern (+4.65 pp for
     // ONE reserved slot, −2.80 for every slot).
     Gene { tag: "treasury-at-work-2", field: "treasury_at_work_2", kind: Kind::OptIn, enable: AdvancedAi::enable_treasury_at_work_2, disable: AdvancedAi::disable_treasury_at_work_2 },
+    // The removed joint search measured its value mostly in ordering: its
+    // static seed lost 700 kills on identical damage. The turn's kills are
+    // planned once from the engine's arithmetic (no clone), their shooters
+    // go first, ranged before the melee finisher, each biased toward its
+    // planned target; the exact attack decision is unchanged.
+    Gene { tag: "fire-plan", field: "fire_plan", kind: Kind::OptIn, enable: AdvancedAi::enable_fire_plan, disable: AdvancedAi::disable_fire_plan },
     // `culture-floor` / `gold-income-floor` (2026-08-26): the live King seat
     // `civvis-20260826T184456Z` reached t150 at 46% of the leader with 57
     // culture to the Aztec 183 (Gaul: 180 from ONE city), one wonder to

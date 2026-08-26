@@ -2913,6 +2913,23 @@ impl AdvancedAi {
         self.treasury_at_work_2 = false;
     }
 
+    // Filed here rather than under a marker: `test_treatment_append_points`
+    // reads every line under a marker as an entry and takes its first
+    // identifier, so a whole function files as `pub` and `self`.
+
+    /// The turn's fire is planned once from the engine's own arithmetic —
+    /// the kills that can be finished, their shooters first in the unit
+    /// order, ranged before the melee finisher, each biased toward its
+    /// planned target — without a clone. See `fire_plan`.
+    pub fn enable_fire_plan(&mut self) {
+        self.fire_plan = true;
+    }
+
+    /// The twin of `enable_fire_plan`.
+    pub fn disable_fire_plan(&mut self) {
+        self.fire_plan = false;
+    }
+
     /// `culture-floor`: a culture-yielding building is exempt from the Great
     /// Work veto and the Theatre Square is priced while the empire's culture
     /// a turn trails the strongest major's by the floor ratio. See
