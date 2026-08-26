@@ -264,18 +264,65 @@ class TheShapeComesFromTheScreen(unittest.TestCase):
 class TheReportSaysWhetherItCanBeTrusted(unittest.TestCase):
     """An unnamed leaf is a measurement failure and has to read as one."""
 
-    def test_a_folded_profile_warns_and_names_the_flag(self):
+    def test_a_folded_profile_says_no_flag_removes_it(self):
+        """The claim has to match the measurement. Five builds were tried and
+        the folded share stayed between 30.35% and 32.59%; a warning that sends
+        the next reader after a link flag would cost them the afternoon it
+        cost this one."""
         out = io.StringIO()
         profiler.report(parsed(), out=out)
         text = out.getvalue()
         self.assertIn("deduplicated_symbol", text)
-        self.assertIn("no_deduplicate", text)
+        self.assertIn("No build flag tried removes it", text)
+        self.assertIn("attributed by caller", text)
+
+    def test_the_folded_samples_are_credited_to_a_named_caller(self):
+        out = io.StringIO()
+        profiler.report(parsed(), out=out)
+        section = out.getvalue().split("== UNNAMED, BY CALLER")[1]
+        self.assertIn("flow_past", section)
+        self.assertIn("healing_step", section)
+        self.assertIn("total attributed", section)
+
+    def test_every_folded_sample_reaches_the_attribution(self):
+        """A third of the profile is at stake, so none of it may be dropped on
+        the way to the section that accounts for it."""
+        profile = parsed()
+        self.assertEqual(sum(profile.folded_by_caller().values()), 120)
+
+    def test_a_placeholder_under_a_placeholder_credits_the_nearest_real_name(self):
+        nested = SAMPLE.replace(
+            "              120 <deduplicated_symbol>  (in civvis) + 108,56  [0x1005,0x1006]",
+            "              120 <deduplicated_symbol>  (in civvis) + 108  [0x1005]\n"
+            "                120 <deduplicated_symbol>  (in civvis) + 56  [0x1006]")
+        found = profiler.Profile(nested, rustfilt=None).folded_by_caller(depth=1)
+        self.assertNotIn("deduplicated", " ".join(found))
+        self.assertEqual(sum(found.values()), 240)
+        self.assertEqual(found["game::Game::flow_past"], 240)
 
     def test_an_unfolded_profile_says_so_instead(self):
         clean_sample = SAMPLE.replace("<deduplicated_symbol>", "game::Game::nbrs")
         out = io.StringIO()
         profiler.report(profiler.Profile(clean_sample, rustfilt=None), out=out)
-        self.assertIn("every leaf in this profile has a name", out.getvalue())
+        text = out.getvalue()
+        self.assertIn("every leaf in this profile has a name", text)
+        self.assertNotIn("== UNNAMED, BY CALLER", text)
+
+    def test_a_parked_thread_is_never_the_largest_leaf(self):
+        """`sample` counts a blocked thread at full rate and prints ONE leaf
+        table for the whole process, so dividing it by the busiest thread put
+        `semaphore_wait_trap` at 100.00% on the first real report this tool
+        produced, and inflated every other row with it."""
+        idle = SAMPLE.replace("40 _pthread_cond_wait", "40 semaphore_wait_trap") \
+                     .replace("        <deduplicated_symbol>        120",
+                              "        semaphore_wait_trap        900\n"
+                              "        <deduplicated_symbol>        120")
+        profile = profiler.Profile(idle, rustfilt=None)
+        self.assertNotIn("semaphore_wait_trap", profile.working_self_time())
+        self.assertEqual(profile.working_total(), 620)
+        out = io.StringIO()
+        profiler.report(profile, out=out)
+        self.assertNotIn("semaphore_wait_trap", out.getvalue())
 
     def test_runtime_scaffolding_is_not_reported_as_a_hotspot(self):
         out = io.StringIO()
@@ -284,9 +331,14 @@ class TheReportSaysWhetherItCanBeTrusted(unittest.TestCase):
         self.assertNotIn("\n  99", inclusive)
         self.assertIn("healing_step", inclusive)
 
-    def test_the_link_flag_this_file_exists_for_is_the_one_the_build_uses(self):
+    def test_the_ineffective_flag_is_documented_as_ineffective(self):
+        """It is still passed — it is free and the linker accepts it — but the
+        file must not read as though it were the answer."""
+        source = (REPO / "tools" / "profile_civvis.py").read_text(encoding="utf-8")
         self.assertIn("-Wl,-no_deduplicate", profiler.NO_FOLD_RUSTFLAGS)
-        self.assertIn("link-arg", profiler.NO_FOLD_RUSTFLAGS)
+        self.assertIn("MEASURED INEFFECTIVE", source)
+        self.assertIn("32.54%", source, "the five-build table is the evidence "
+                                        "for that claim and has to stay with it")
 
     def test_the_profiling_build_never_overwrites_the_measured_binary(self):
         """`speed_ab.py` compares two binaries by path and would happily
@@ -297,3 +349,26 @@ class TheReportSaysWhetherItCanBeTrusted(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheEntryPointIsNotAHotspot(unittest.TestCase):
+    """A frame on every stack is the program, not a finding."""
+
+    def test_a_frame_on_essentially_every_stack_is_dropped(self):
+        out = io.StringIO()
+        profiler.report(parsed(), out=out)
+        inclusive = out.getvalue().split("== SELF")[0]
+        self.assertNotIn("::main", inclusive)
+        self.assertIn("healing_step", inclusive)
+
+    def test_the_rule_is_a_share_not_a_list_of_names(self):
+        """A renamed entry point must not reinstate the noise."""
+        renamed = SAMPLE.replace("6civvis4main", "6civvis11brand_new_e")
+        out = io.StringIO()
+        profiler.report(profiler.Profile(renamed, rustfilt=None), out=out)
+        self.assertNotIn("brand_new_e", out.getvalue().split("== SELF")[0])
+
+    def test_scaffolding_is_matched_after_demangling_not_before(self):
+        self.assertTrue(profiler.SCAFFOLD.match("rt::lang_start_internal"))
+        self.assertTrue(profiler.SCAFFOLD.match("sys::backtrace::x"))
+        self.assertFalse(profiler.SCAFFOLD.match("game::Game::flow_past"))

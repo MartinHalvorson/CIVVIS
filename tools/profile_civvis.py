@@ -1,32 +1,54 @@
 #!/usr/bin/env python3
-"""Sample the simulator and name every symbol, including the folded ones.
+"""Sample the simulator, and attribute the third of it that has no symbol.
 
-⚠⚠ **ELEVEN PERCENT OF THE MAIN THREAD HAD NO NAME.** A profile taken on
-2026-08-26 at `4b26eafb`, the screen's own shape, put `<deduplicated_symbol>`
-at the top of the self-time table with 11.2% — larger than any named leaf in
-the run and larger than the last four shipped optimizations put together. It is
-not a mystery function. It is the linker: identical-code folding merges
-functions with identical machine code into one address, `sample` resolves that
-address to the *first* name it finds, and every other caller of that body is
-reported under a placeholder. The fix is one link flag, and this file exists so
-that nobody has to remember it:
+⚠⚠ **THIRTY-ONE PERCENT OF THE RUNNING PROFILE HAS NO NAME, AND NO BUILD FLAG
+TRIED WOULD GIVE IT ONE.** `sample` reports those samples as
+`<deduplicated_symbol>`: identical machine code folded to one address, with one
+name kept. It is the largest single entry in every profile this repository has
+taken, larger than any named leaf, and every ranked hotspot list in
+`docs/SIMULATOR_PERFORMANCE.md` was drawn from the remaining two thirds.
 
-    RUSTFLAGS='-C link-arg=-Wl,-no_deduplicate'
+The obvious fix does not work, and the measurement is here so nobody repeats
+it. Five builds, one game each, seed 7311001 at the screen's shape, folded
+share of running samples:
 
-`docs/SIMULATOR_PERFORMANCE.md` is a long argument that a measurement taken
-with the wrong instrument is worse than no measurement, because it is acted on.
-Its own history has four entries where the profile pointed at the wrong thing —
-a 2.7% leaf that shipped as -0.67%, an `enemy_attack_envelopes` "504 samples,
-do not reach for it again" beside the same subsystem holding 32.7% inclusive, a
-hotspot that reads 1.42% on one map and 13.19% on another. An unnamed leaf is
-the same failure with the label filed off, and it is the largest one on the
-board today.
+    baseline (the `ci` profile as it ships)                    32.54%
+    -C link-arg=-Wl,-no_deduplicate                            31.10%
+    -C link-arg=-Wl,-no_deduplicate  -C strip=none             32.59%
+    CARGO_PROFILE_CI_STRIP=none                                31.59%
+    CARGO_PROFILE_CI_DEBUG=1  CARGO_PROFILE_CI_STRIP=none      30.35%
+
+`-no_deduplicate` is a real option — `ld: unknown options:` proves it, because
+a deliberately invented flag fails the link and this one does not — and it
+changes nothing here. Neither does keeping debug info, which quadruples the
+symbol table (35,810 to 114,047 entries) and still leaves 30%. Whatever merges
+these bodies is upstream of the link, and `-Z merge-functions=disabled` is
+nightly-only while this fleet is on stable.
+
+**So the answer is not a name, it is a caller.** A folded leaf still sits in the
+call graph with its parents intact, and the parent is named. Attributed that
+way, the missing third resolves immediately (seed 7311001, share of the busiest
+thread):
+
+    2.67%  tile_has_visibility_line  <- visible_tiles_from
+    2.17%  in_enemy_zoc_for          <- formation_enters_enemy_zoc
+    1.21%  can_enter_past            <- flow_past
+    1.20%  Vec::clone                <- Game::clone
+    0.63%  Vec::clone                <- speculative_clone
+
+That is sight, the movement flood, and whole-`Game` cloning — three of the four
+subsystems this file's ranked list already names, and the fourth line is the
+clone cost that had never appeared in a profile at all. **This tool prints that
+section on every run.** A profile that silently drops a third of itself is the
+instrument failure `docs/SIMULATOR_PERFORMANCE.md` keeps warning about, applied
+to the instrument.
 
 ## What this does that an ad-hoc `sample` invocation does not
 
-1. **Names folded symbols.** Builds into its own target directory with
-   `-Wl,-no_deduplicate` so identical bodies keep separate addresses. The
-   default build is left alone; nothing shipped changes.
+1. **Attributes the folded third.** Every `<deduplicated_symbol>` sample is
+   credited to its nearest *named* ancestor and printed as its own section, so
+   a profile accounts for all of itself rather than for the two thirds that
+   happen to carry names.
 2. **Samples the right process.** `/usr/bin/time ./civvis …` makes `time` the
    parent and `civvis` the child, and sampling the parent yields 20,000
    samples of `__sigsuspend`. This launches the binary directly and samples its
@@ -84,10 +106,11 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
 
-#: The link flag that gives every folded body its own address again. Identical
-#: code folding is a size optimization; it costs nothing to disable in a build
-#: whose only job is to be measured, and disabling it is the difference between
-#: an 11% unnamed leaf and a name.
+#: ⚠ MEASURED INEFFECTIVE, AND KEPT SO THAT THE NEXT READER DOES NOT RE-TRY IT.
+#: The table at the top of this file is five builds; this flag moved the folded
+#: share from 32.54% to 31.10%, which is noise. It is applied anyway because it
+#: costs nothing and the linker accepts it, but the tool's answer to folding is
+#: `folded_by_caller`, not this.
 NO_FOLD_RUSTFLAGS = "-C link-arg=-Wl,-no_deduplicate"
 
 #: A separate target directory, so a profiling build never becomes the binary
@@ -110,11 +133,28 @@ ALLOCATOR = re.compile(
     r"memmove|memcpy|memcmp|memset|bzero|malloc|free|realloc|"
     r"xzm_|nanov2|szone|_platform_")
 
-#: Runtime scaffolding every stack begins with. Reporting `main` at 99.9% is
-#: true and useless.
+#: Parked worker threads. `sample` counts a blocked thread at full rate, so a
+#: pool with one busy worker and one waiting one reports the wait as the
+#: largest leaf in the program — `semaphore_wait_trap` at 100% of the busy
+#: thread was the first line of the first report this tool ever printed.
+IDLE = re.compile(
+    r"semaphore_wait_trap|__psynch_cvwait|__sigsuspend|mach_msg2?_trap|"
+    r"__workq_kernreturn|kevent|poll|read$|_pthread_cond_wait")
+
+#: Runtime scaffolding every stack begins with, in demangled form — `NOISE`
+#: has already removed the `std::`/`core::` roots by the time a name is
+#: matched here, so patterns written against the mangled spelling silently
+#: match nothing.
 SCAFFOLD = re.compile(
-    r"^(start|main|civvis::main|std::rt::|core::ops::function::FnOnce::call_once|"
-    r"std::sys::backtrace|_?_rust_begin_short_backtrace|\?\?\?|dyld)")
+    r"^(start$|main$|rt::lang_start|sys::backtrace|ops::function::FnOnce|"
+    r"_?_rust_begin_short_backtrace|\?\?\?|dyld)")
+
+#: A frame on essentially every stack is the program, not a hotspot. The game
+#: loop — `run_structured_jobs`, `run_game`, `Ai::take_turn` — sits at 99.9%
+#: by construction and pushes the first real row off the top of the table.
+#: A share rather than a name list, so a renamed entry point cannot reinstate
+#: the noise (`AGENTS.md`: discover, never list).
+WHOLE_PROGRAM = 99.0
 
 #: What a profile must contain to be a profile of this program. A run that
 #: samples the wrong pid produces a perfectly well-formed call graph of
@@ -264,7 +304,14 @@ class Profile:
                 "'Call graph:' line; a report without one is usually a process "
                 "that exited before sampling began.")
         self.thread = max(self.threads, key=lambda one: one["count"])
+        #: Inclusive shares are per-thread: a call tree belongs to one thread.
         self.total = self.thread["count"]
+        #: ⚠ Self shares are NOT. `sample` prints one "Sort by top of stack"
+        #: table for the whole process, so dividing it by the busiest thread's
+        #: count reports a parked sibling thread at 100% and inflates every
+        #: other leaf by the same factor. The two denominators are different
+        #: numbers and the report labels which is which.
+        self.process_total = sum(one["count"] for one in self.threads)
         self.nodes = self.thread["nodes"]
 
     def name(self, symbol: str) -> str:
@@ -375,6 +422,40 @@ class Profile:
             stack.append((node_depth, symbol))
         return found
 
+    def working_self_time(self) -> collections.Counter:
+        """Self time with parked threads removed, so the shares are of work."""
+        return collections.Counter(
+            {symbol: count for symbol, count in self.self_time().items()
+             if not IDLE.search(symbol)})
+
+    def working_total(self) -> int:
+        """Samples the process spent running rather than waiting."""
+        return sum(self.working_self_time().values()) or self.process_total
+
+    def folded_by_caller(self, depth: int = 2) -> collections.Counter:
+        """Folded samples, credited to their nearest named ancestors.
+
+        ★ THIS IS THE TOOL'S ANSWER TO FOLDING. A `<deduplicated_symbol>` leaf
+        has lost its own name and kept every one of its parents, so the samples
+        are not unattributable — they are merely unlabelled, and the label the
+        caller supplies is the one a reader wants anyway (*which subsystem is
+        this?*, not *which monomorphization?*). Nested placeholders are skipped
+        when walking up, so a folded body called by a folded body is credited
+        to the nearest real name rather than to another placeholder.
+        """
+        found: collections.Counter = collections.Counter()
+        stack: List[Tuple[int, str]] = []
+        for node_depth, count, symbol in self.nodes:
+            while stack and stack[-1][0] >= node_depth:
+                stack.pop()
+            if "deduplicated_symbol" in symbol:
+                named = [self.name(one) for _, one in stack
+                         if "deduplicated_symbol" not in one]
+                chain = [shorten(one, 40) for one in named[-depth:]]
+                found[" \u2190 ".join(reversed(chain)) or "(no named caller)"] += count
+            stack.append((node_depth, symbol))
+        return found
+
     def folded(self) -> int:
         """Self samples the linker could not attribute to a name."""
         return sum(count for symbol, count in self.self_time().items()
@@ -392,46 +473,62 @@ class Profile:
 def report(profile: Profile, top: int = 40, parents: Optional[str] = None,
            out=sys.stdout) -> None:
     total = profile.total
+    working = profile.working_total()
     share = lambda count: 100.0 * count / total if total else 0.0
+    work_share = lambda count: 100.0 * count / working if working else 0.0
 
-    print("thread %s — %d samples on the busiest of %d"
-          % (profile.thread["name"][:52], total, len(profile.threads)), file=out)
+    print("thread %s\n  %d samples on the busiest of %d thread(s); %d running "
+          "process-wide (the rest are parked)"
+          % (profile.thread["name"][:52], total, len(profile.threads), working),
+          file=out)
 
     folded = profile.folded()
     if folded:
-        print("\n⚠ %.2f%% of self time is `<deduplicated_symbol>`: this binary was "
-              "linked WITH identical-code folding, so those samples have no name. "
-              "Rebuild with RUSTFLAGS='%s' — or run this tool without --read, "
-              "which does it for you." % (share(folded), NO_FOLD_RUSTFLAGS),
-              file=out)
+        print("\n\u26a0 %.2f%% of running self time is `<deduplicated_symbol>` \u2014 "
+              "identical bodies folded to one address. No build flag tried "
+              "removes it (see the table at the top of this file), so it is "
+              "attributed by caller below instead of dropped."
+              % work_share(folded), file=out)
     else:
         print("\nno folded symbols: every leaf in this profile has a name.",
               file=out)
 
-    print("\n== INCLUSIVE  (%% of thread; a symbol is never counted inside itself)",
+    print("\n== INCLUSIVE  (share of the busiest thread; never counted inside itself)",
           file=out)
     shown = 0
     for symbol, count in profile.inclusive().most_common():
         name = profile.name(symbol)
-        if SCAFFOLD.match(name) or "deduplicated_symbol" in name:
+        if (SCAFFOLD.match(name) or "deduplicated_symbol" in name
+                or share(count) >= WHOLE_PROGRAM):
             continue
         print("%7.2f%%  %s" % (share(count), shorten(name)), file=out)
         shown += 1
         if shown >= top:
             break
 
-    print("\n== SELF  (innermost frame; from sample's own leaf table)", file=out)
-    for symbol, count in profile.self_time().most_common(min(top, 25)):
-        print("%7.2f%%  %s" % (share(count), shorten(profile.name(symbol))), file=out)
+    print("\n== SELF  (share of RUNNING samples process-wide; sample's leaf table is "
+          "not per-thread)", file=out)
+    for symbol, count in profile.working_self_time().most_common(min(top, 25)):
+        print("%7.2f%%  %s" % (work_share(count), shorten(profile.name(symbol))),
+              file=out)
 
-    print("\n== ROLL-UPS", file=out)
+    by_caller = profile.folded_by_caller()
+    if by_caller:
+        print("\n== UNNAMED, BY CALLER  (share of the busiest thread; this is the "
+              "third of the profile a flat table drops)", file=out)
+        for chain, count in by_caller.most_common(min(top, 15)):
+            print("%7.2f%%  %s" % (share(count), chain), file=out)
+        print("%7.2f%%  \u2014 total attributed" % share(sum(by_caller.values())),
+              file=out)
+
+    print("\n== ROLL-UPS  (share of running samples)", file=out)
     print("%7.2f%%  allocator and libc memory primitives (malloc/free/memmove/"
-          "memcmp/memset)" % share(profile.allocator()), file=out)
-    print("%7.2f%%  unnamed, folded by the linker" % share(folded), file=out)
+          "memcmp/memset)" % work_share(profile.allocator()), file=out)
+    print("%7.2f%%  unnamed, folded by the linker" % work_share(folded), file=out)
 
     if parents:
-        print("\n== CALLERS OF /%s/  (nearest three frames, summed)" % parents,
-              file=out)
+        print("\n== CALLERS OF /%s/  (nearest three frames, summed, share of thread)"
+              % parents, file=out)
         found = profile.parents(parents, floor=max(1, total // 400))
         if not found:
             print("        (no stack matched)", file=out)
