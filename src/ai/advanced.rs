@@ -29817,28 +29817,19 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         });
-        // See `civilian_out_of_reach`: a guard the settler summoned keeps
-        // its tile, or closes on it, before any other military business.
-        if self.civilian_out_of_reach
-            && spec.class == "military"
+        // A bound guard's first obligation is to rejoin its Settler.  The
+        // default live shadow used to give this priority only while the pair
+        // was already stacked; after a host frame separated them, recovery or
+        // a military objective could spend the guard's turn and the bounded
+        // Settler wait eventually resumed the march unprotected.  The
+        // `civilian_out_of_reach` opt-in has always made that obligation
+        // unconditional.  `settler_guard_holds` is the shipped live repair,
+        // so its formationless shadow must do the same without changing the
+        // deployed genome.
+        if spec.class == "military"
             && self.settler_guards.values().any(|guard| *guard == uid)
-        {
-            if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
-                return acted;
-            }
-        }
-        // See `settler_guard_holds`: a bound guard sharing its settler's tile
-        // holds there before it heals or retreats — leaving is what exposes
-        // the civilian, and the settler's own step decides for the pair.
-        if self.settler_guard_holds_on()
-            && self.formationless_settler_escort()
-            && spec.class == "military"
-            && self.settler_guards.iter().any(|(settler, guard)| {
-                *guard == uid
-                    && g.units
-                        .get(settler)
-                        .is_some_and(|settler| settler.owner == pid && settler.pos == unit.pos)
-            })
+            && (self.civilian_out_of_reach
+                || (self.settler_guard_holds_on() && self.formationless_settler_escort()))
         {
             if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
                 return acted;

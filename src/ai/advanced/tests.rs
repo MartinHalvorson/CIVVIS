@@ -18264,6 +18264,57 @@ fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
     );
 }
 
+/// `settler_guard_holds` is the deployed live repair, so its bound guard must
+/// reclaim a separated Settler before recovery work.  The old priority only
+/// protected an already-stacked pair; a wounded guard one tile away fortified
+/// in the city, then the Settler's bounded wait expired and it marched alone.
+#[test]
+fn a_default_live_bound_guard_rejoins_before_healing() {
+    let (mut game, source, _target) = stacked_escort_fixture();
+    let field = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable tile beside the city");
+    let settler = game.spawn_test_unit("settler", 0, field);
+    let guard = game.spawn_test_unit("warrior", 0, source);
+    {
+        let guard = game.units.get_mut(&guard).unwrap();
+        guard.hp = 30;
+        guard.moves_left = 2.0;
+        guard.acted = false;
+        guard.fortified = false;
+    }
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(ai.settler_guard_holds, "the deployed repair is active");
+    assert!(
+        ai.live_formationless_settler_shadow,
+        "the live seat uses the shadow"
+    );
+    assert!(
+        !ai.civilian_out_of_reach,
+        "the default genome must not need the opt-in to keep this guard"
+    );
+    ai.settler_guards.insert(settler, guard);
+
+    let plan = stacked_escort_plan(&game);
+    assert!(ai.advanced_military_step(&mut game, 0, guard, &plan));
+    assert_eq!(
+        game.units[&guard].pos, game.units[&settler].pos,
+        "the bound guard closes before recovery can fortify it away"
+    );
+    assert_eq!(
+        game.units[&guard].hp, 30,
+        "the guard did not spend the turn healing"
+    );
+}
+
 #[test]
 fn a_settler_waits_for_its_guard_only_within_patience() {
     let (mut game, source, target) = stacked_escort_fixture();
