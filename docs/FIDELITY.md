@@ -2709,6 +2709,24 @@ both paths, beside `gold_per_turn`.
   `ready_turn` until the end turn instead. `spy_operation_actions` offers
   only missions in the host's menu when one crossed.
 
+**Verified against the recording.** `civvis-20260826T184456Z` predates the
+mod change, so every new key is absent and the mirror takes the fallback
+path: `civvis_orders --explain` built from the merge-base and from this
+change give byte-identical `[why]` lines, orders and notes at t33, t73 (the
+run's one live `UPGRADE`), t100 and t113 (a `SPY_GAIN_SOURCES`). The
+presence path was replayed by injecting the keys into one unit's `state`
+record: at t73 a `LOC_UNITCOMMAND_UPGRADE_NOT_ENOUGH_GOLD` block on Scout
+1441804 turns its `UPGRADE` into a `MOVE_TO` with nothing else in the turn
+changed, the same successor without a block leaves the orders identical,
+and at t113 `spy_operation: UNITOPERATION_SPY_GAIN_SOURCES` on Spy 3014668
+removes exactly its `SPY_GAIN_SOURCES` order (16 → 15) — the order that
+went out 18 times between t110 and t146 live. The deployed binary issues
+both and files `schema:unit.*` gaps for every new key. Three tests in
+`src/mirror.rs` pin the rules on both import paths:
+`the_hosts_upgrade_verdict_prices_the_lane_and_a_named_block_silences_it`,
+`a_spy_on_a_host_operation_is_not_retasked_and_the_hosts_menu_bounds_the_boards`,
+`the_hosts_bill_by_source_and_the_units_own_upkeep_replace_the_boards_sums`.
+
 **Carried, read by nothing yet.** `religious_strength` and `activity` reach
 `host_unit_facts` for `--dump-mirror` and the fidelity instruments. The
 host's religious figure is the displayed stat, like the exported `combat`,
