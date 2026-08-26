@@ -4416,6 +4416,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `culture-floor`: a culture building is exempt from the Great Work
+    /// veto and the Theatre Square is priced while the empire's culture
+    /// trails the strongest major's. See `advanced/yield_floors.rs`.
+    culture_floor: bool,
     /// Want as many cities as the map can seat, not as many as it has land
     /// for.
     ///
@@ -4677,6 +4681,10 @@ pub struct AdvancedAi {
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
     // ---- append: g-k ------------------------------------------------
+    /// `gold-income-floor`: Markets, Lighthouses, gold buildings and the
+    /// Commercial Hub or Harbor are priced by the income the empire is
+    /// short of the floor. See `advanced/yield_floors.rs`.
+    gold_income_floor: bool,
     /// `government-ladder-2`: keep climbing, and keep climbing longer while
     /// the field out-slots us. See `government_ladder_rung`.
     government_ladder_2: bool,
@@ -5138,6 +5146,9 @@ pub struct AdvancedAi {
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// The two yield-floor shortfalls, computed once a seat-turn. See
+    /// `advanced/yield_floors.rs`.
+    yield_floor_frame: RefCell<yield_floors::YieldFloorFrame>,
     /// The purchase reserve is one emergency defender plus ten turns of any
     /// recurring deficit, not `250 + 75` Gold per city. Opt-in gene
     /// `treasury-at-work`; see `advanced/gold_and_cards.rs`.
@@ -5625,6 +5636,13 @@ mod order_retry;
 /// pays for an item, from the operator's Gold-versus-production heuristic.
 /// Four opt-in genes; see `advanced/gold_and_cards.rs`.
 mod gold_and_cards;
+
+/// `culture-floor` and `gold-income-floor`: the Amphitheatre out from under
+/// the Great Work veto and the Theatre Square priced while culture trails
+/// the field; Markets, Lighthouses and the Commercial Hub priced by the
+/// income the empire is short. Two opt-in genes; see
+/// `advanced/yield_floors.rs`.
+mod yield_floors;
 
 /// `opening-warrior-recon` gives the starting Warrior the first move before
 /// the capital is founded; `settler-second-look` refreshes a Settler's cached
@@ -6285,6 +6303,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            culture_floor: false,
             city_target_meets_the_map: false,
             camp_tile_buyout: false,
             contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
@@ -6324,6 +6343,7 @@ impl AdvancedAi {
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
 
             // ---- append: g-k ----------------------------------------
+            gold_income_floor: false,
             government_ladder_2: false,
             government_capacity_fallback: false,
             improvement_housing_value: false,
@@ -6372,6 +6392,7 @@ impl AdvancedAi {
             siege_is_progress_2: false,
 
             // ---- append: t-z ----------------------------------------
+            yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
             treasury_at_work: false,
             treasury_at_work_2: false,
             war_needs_a_treasury: false,
@@ -22138,6 +22159,7 @@ impl AdvancedAi {
                     && self.victory_target != Some(VictoryTarget::Culture)
                     && great_work_vetoed
                     && !self.lane_lost
+                    && !self.culture_floor_lifts_veto(g, pid, spec)
                 {
                     return -10_000.0;
                 }
@@ -22368,6 +22390,8 @@ impl AdvancedAi {
                         + spec.effects.get("tourism").copied().unwrap_or(0.0) * 80.0
                         + nobel_peace_favor
                         + wartime_infrastructure_debt
+                        + self.culture_floor_building_bonus(g, pid, spec)
+                        + self.gold_floor_building_bonus(g, pid, *building, spec)
                         + if building == "monument" && g.turn < 120 {
                             240.0
                         } else {
@@ -22705,6 +22729,8 @@ impl AdvancedAi {
                     + effect_value
                     + development_penalty
                     + research_coverage
+                    + self.culture_floor_district_bonus(g, pid, family)
+                    + self.gold_floor_district_bonus(g, pid, family, district_count, city_count)
                     + self.science_drive_production_bonus(g, pid, cid, item)
                     // `encampment-seals-the-pass`: 0.0 with the gene off and
                     // for every other family. See `advanced/chokepoints.rs`.

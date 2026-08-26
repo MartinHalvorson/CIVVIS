@@ -186,6 +186,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 |
+| `culture-floor` | off (unmeasured) | `culture-floor`: a culture-yielding building is exempt from the Great Work veto and the Theatre Square is priced while the empire's culture a turn trails the strongest major's by the floor ratio. | 1 |
+| `gold-income-floor` | off (unmeasured) | `gold-income-floor`: Markets, Lighthouses, gold-yielding buildings and the Commercial Hub or Harbor are priced by the income the empire is short of two Gold a turn per city. | 1 |
 | `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 |
 | `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 |
 | `lane-release-when-hopeless` | off (unmeasured) | Stop paying a lost victory lane's premiums. | 1 |
