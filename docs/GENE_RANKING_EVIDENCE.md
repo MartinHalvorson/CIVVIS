@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 |
+| `early-archers` | off (unmeasured) | An Archer for every city, the frontier city first, while the world is Ancient and Classical, and Archery chased until a city can train one. | 1 |
 | `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 |
 | `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 |
 | `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 |

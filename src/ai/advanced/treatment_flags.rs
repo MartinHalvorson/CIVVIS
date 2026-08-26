@@ -2930,6 +2930,19 @@ impl AdvancedAi {
         self.fire_plan = false;
     }
 
+    /// An Archer for every city, the frontier city first, while the world
+    /// is Ancient and Classical, and Archery chased until a city can train
+    /// one. Filed here rather than under a marker: a whole function under
+    /// one reads as an entry. See `early_archers`.
+    pub fn enable_early_archers(&mut self) {
+        self.early_archers = true;
+    }
+
+    /// The twin of `enable_early_archers`.
+    pub fn disable_early_archers(&mut self) {
+        self.early_archers = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
