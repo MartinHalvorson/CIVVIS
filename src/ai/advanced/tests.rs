@@ -18376,6 +18376,64 @@ fn a_settler_waits_for_its_guard_only_within_patience() {
     }
 }
 
+/// A bounded escort wait avoids an opening freeze on quiet ground, but it
+/// must not expire into a route step a visible hostile can capture.  The
+/// previous rule released the second Settler of `civvis-20260826T054001Z`
+/// from a safe city tile while its guard was three tiles behind; a barbarian
+/// warrior then took it on turn 14.
+#[test]
+fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let next = game
+        .route_step(settler, target, 0)
+        .expect("fixture has a first route step");
+    let lagging =
+        game.wdisk(source, 3)
+            .into_iter()
+            .find(|position| {
+                game.wdist(source, *position) == 3
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a lagging guard post");
+    let guard = game.spawn_test_unit("warrior", 0, lagging);
+    let raider_post =
+        game.wdisk(next, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(next, *position) == 2
+                    && *position != lagging
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a raider two moves from the next step");
+    game.spawn_test_unit("warrior", 1, raider_post);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_formationless_settler_shadow();
+    ai.settler_targets.insert(settler, target);
+    ai.settler_guards.insert(settler, guard);
+    ai.guard_wait
+        .insert(settler, (game.turn - 1, STACKED_ESCORT_PATIENCE));
+    assert!(
+        ai.unstacked_settler_step_is_capturable(&game, 0, settler),
+        "the warrior can take the first route step before the distant guard arrives"
+    );
+
+    assert!(
+        ai.stacked_escort_pace(&mut game, 0, settler).is_some(),
+        "a close capture threat keeps the Settler waiting after its ordinary patience"
+    );
+    assert_eq!(
+        game.units[&settler].pos, source,
+        "the Settler holds on the safe city tile instead of marching into capture range"
+    );
+}
+
 /// A settler waiting for its guard on a threatened tile does not stand
 /// still — it steps toward the guard; on a quiet tile it waits as before.
 #[test]
