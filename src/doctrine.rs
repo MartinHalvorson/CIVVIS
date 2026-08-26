@@ -79,6 +79,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::ai::Ai;
 use crate::game::Game;
 use crate::hex;
@@ -102,7 +104,7 @@ const fn at(kind: &'static str, col: i32, row: i32) -> Deploy {
 
 /// What a brush paints onto a cell. The base of every board is flat grassland,
 /// so a position only writes what makes it that position.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Brush {
     /// Impassable. The wall of a defile, the crest that cannot be crossed.
     Mountain,
@@ -152,6 +154,169 @@ impl Position {
             .iter()
             .map(|deploy| rules.units.get(deploy.kind).map_or(0.0, |spec| spec.cost))
             .sum()
+    }
+}
+
+/// One unit of a board the arena can play: what it is, where it stands, and
+/// the state it carried when the board was taken.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Placed {
+    pub kind: String,
+    pub col: i32,
+    pub row: i32,
+    /// Hit points on deployment. A hand-built position deploys whole units;
+    /// a board captured from a game deploys the army as it stood.
+    #[serde(default = "whole")]
+    pub hp: i32,
+    #[serde(default)]
+    pub promotions: Vec<String>,
+}
+
+fn whole() -> i32 {
+    100
+}
+
+/// A board the arena can play, owned and serialisable: every hand-built
+/// [`Position`] converts to one, and [`capture_engagement`] takes one from a
+/// real game at the moment two armies first came within reach of each other.
+///
+/// The hand-built positions are a *curriculum* — eleven decisions worth being
+/// able to make. A captured engagement is a *sample* — the fights the
+/// controller actually gets into, on the ground it actually gets into them
+/// on, with the army it actually brought. A file of them is the distribution
+/// the curriculum was never meant to be, and it is what lets a tactical change
+/// be priced where its effect is instead of on a whole-game win rate that
+/// resolves fourteen kills a game. Written to JSON so a board taken on one
+/// machine replays on every other, which is the same guarantee `POSITIONS`
+/// gives by being source.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Engagement {
+    /// Stable identifier, used on the command line and in reports.
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Where the board came from: the general, or the seed and turn.
+    #[serde(default)]
+    pub provenance: String,
+    #[serde(default)]
+    pub problem: String,
+    #[serde(default)]
+    pub roles: [String; 2],
+    pub width: i32,
+    pub height: i32,
+    /// Turns of fighting before the ledger is read.
+    pub turns: u32,
+    #[serde(default)]
+    pub terrain: Vec<(Brush, Vec<(i32, i32)>)>,
+    /// River edges by cell, in the engine's six-edge order. A hand-built
+    /// position carries none — it fakes a river line with coast — but a
+    /// captured board keeps the real crossings, because the river penalty is
+    /// one of the terms the fighting turns on.
+    #[serde(default)]
+    pub rivers: Vec<((i32, i32), [bool; 6])>,
+    /// Forces in role order.
+    pub forces: [Vec<Placed>; 2],
+    /// Whether units recover on this board. Off is the arena's own rule and
+    /// the curriculum's: one engagement, permanent damage, a trade you win
+    /// stays won. On is a campaign: the unit that steps back is whole again
+    /// in a few turns, and preserving it is worth something. The two are
+    /// different questions, and a board says which it is asking.
+    #[serde(default)]
+    pub heal: bool,
+}
+
+impl From<&Position> for Engagement {
+    fn from(spec: &Position) -> Self {
+        Engagement {
+            id: spec.id.to_string(),
+            name: spec.name.to_string(),
+            provenance: spec.provenance.to_string(),
+            problem: spec.problem.to_string(),
+            roles: [spec.roles[0].to_string(), spec.roles[1].to_string()],
+            width: spec.width,
+            height: spec.height,
+            turns: spec.turns,
+            terrain: spec
+                .terrain
+                .iter()
+                .map(|(brush, cells)| (*brush, cells.to_vec()))
+                .collect(),
+            rivers: Vec::new(),
+            forces: [
+                spec.forces[0].iter().map(Placed::from).collect(),
+                spec.forces[1].iter().map(Placed::from).collect(),
+            ],
+            heal: false,
+        }
+    }
+}
+
+impl From<&Deploy> for Placed {
+    fn from(deploy: &Deploy) -> Self {
+        Placed {
+            kind: deploy.kind.to_string(),
+            col: deploy.col,
+            row: deploy.row,
+            hp: whole(),
+            promotions: Vec::new(),
+        }
+    }
+}
+
+impl Engagement {
+    /// Total production cost of one side's force; see [`Position::material`].
+    pub fn material(&self, role: usize, rules: &crate::rules::Rules) -> f64 {
+        self.forces[role]
+            .iter()
+            .map(|unit| {
+                rules
+                    .units
+                    .get(unit.kind.as_str())
+                    .map_or(0.0, |spec| spec.cost)
+            })
+            .sum()
+    }
+
+    /// Every hand-built position, as boards.
+    pub fn curriculum() -> Vec<Engagement> {
+        POSITIONS.iter().map(Engagement::from).collect()
+    }
+
+    /// Read a file of boards, as [`to_json`] writes it. Refuses a board that
+    /// asks for a unit the ruleset does not have or a cell off its own board,
+    /// so a typo fails here rather than seating half an army.
+    pub fn from_json(text: &str) -> Result<Vec<Engagement>, String> {
+        let boards: Vec<Engagement> =
+            serde_json::from_str(text).map_err(|error| format!("engagements: {error}"))?;
+        let rules = crate::rules::Rules::embedded();
+        for board in &boards {
+            if board.width < 4 || board.height < 4 || board.turns == 0 {
+                return Err(format!("{}: a board needs a size and a clock", board.id));
+            }
+            for (role, force) in board.forces.iter().enumerate() {
+                for unit in force {
+                    if !rules.units.contains_key(unit.kind.as_str()) {
+                        return Err(format!("{}: no unit `{}`", board.id, unit.kind));
+                    }
+                    if unit.col < 0
+                        || unit.col >= board.width
+                        || unit.row < 0
+                        || unit.row >= board.height
+                    {
+                        return Err(format!(
+                            "{}: role {role} places a {} off the board at {},{}",
+                            board.id, unit.kind, unit.col, unit.row
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(boards)
+    }
+
+    /// Write boards the way [`from_json`] reads them.
+    pub fn to_json(boards: &[Engagement]) -> String {
+        serde_json::to_string_pretty(boards).expect("engagements serialise")
     }
 }
 
@@ -992,6 +1157,18 @@ pub fn matched_position(
     name_b: &str,
     agent: &dyn Fn(&str, u64) -> Box<dyn Ai>,
 ) -> MatchedPosition {
+    matched_engagement(&Engagement::from(spec), seed, name_a, name_b, agent)
+}
+
+/// [`matched_position`] for any board — a converted position or a captured
+/// engagement.
+pub fn matched_engagement(
+    spec: &Engagement,
+    seed: u64,
+    name_a: &str,
+    name_b: &str,
+    agent: &dyn Fn(&str, u64) -> Box<dyn Ai>,
+) -> MatchedPosition {
     let mut out = MatchedPosition {
         seed,
         ..Default::default()
@@ -1046,12 +1223,12 @@ type Snapshot = BTreeMap<u32, Seen>;
 /// ledgers and the turns played, or `None` when the board could not seat the
 /// forces.
 fn play_position(
-    spec: &Position,
+    spec: &Engagement,
     seed: u64,
     seats: [&str; 2],
     agent: &dyn Fn(&str, u64) -> Box<dyn Ai>,
 ) -> Option<((DoctrineLedger, DoctrineLedger), u32)> {
-    let mut game = build(spec, seed)?;
+    let mut game = build_engagement(spec, seed)?;
     let mut ais: Vec<Box<dyn Ai>> = (0..2)
         .map(|pid| agent(seats[pid], seed.wrapping_add(pid as u64)))
         .collect();
@@ -1403,6 +1580,13 @@ fn split(
 /// `None` when a force could not be seated, which the caller reports rather
 /// than measuring a half-placed army.
 pub fn build(spec: &Position, seed: u64) -> Option<Game> {
+    build_engagement(&Engagement::from(spec), seed)
+}
+
+/// [`build`] for any board. A captured engagement also carries its river
+/// crossings, each unit's hit points and promotions, and whether the board
+/// heals.
+pub fn build_engagement(spec: &Engagement, seed: u64) -> Option<Game> {
     // The Battlefield script is what makes this an arena rather than a world:
     // permanently at war, no upkeep, and a side alive exactly as long as it
     // has a unit standing. Its generated terrain is discarded — every tile
@@ -1439,10 +1623,14 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             // can never end a position before the ledger's deadline does. A
             // position is read at `spec.turns` and never asks who "won", so
             // the two clocks must not be allowed to disagree.
-            turn_limit: *crate::setup::TacticsRules::TURN_LIMITS.last().expect("turn ladder"),
+            turn_limit: *crate::setup::TacticsRules::TURN_LIMITS
+                .last()
+                .expect("turn ladder"),
             // And no era choice: a position deploys its exact force by hand,
             // so a rolled or pooled era would re-arm the experiment.
             era: crate::setup::TacticsEra::Start,
+            // Healing is the board's own question; see `Engagement::heal`.
+            heal: spec.heal,
         },
         ..crate::game::GameOptions::new(2, spec.width, spec.height, seed, spec.turns + 8, 0)
     });
@@ -1462,8 +1650,8 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             tile.improvement = None;
         }
     }
-    for (brush, cells) in spec.terrain {
-        for (col, row) in *cells {
+    for (brush, cells) in &spec.terrain {
+        for (col, row) in cells {
             let pos = hex::offset_to_axial(*col, *row);
             let Some(tile) = g.map.tiles.get_mut(&pos) else {
                 continue;
@@ -1477,6 +1665,11 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             }
         }
     }
+    for ((col, row), edges) in &spec.rivers {
+        if let Some(tile) = g.map.tiles.get_mut(&hex::offset_to_axial(*col, *row)) {
+            tile.river_edges = *edges;
+        }
+    }
 
     // The muster: each unit takes the nearest usable tile to where the
     // position puts it, with a seeded nudge so repeated seeds are independent
@@ -1485,10 +1678,23 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
     // never collides with whatever else that seed drives.
     let mut rng = Rng::new(seed ^ 0xd0c7_5171_ae03_1f47);
     for (role, force) in spec.forces.iter().enumerate() {
-        for deploy in *force {
+        for deploy in force {
             let wanted = hex::offset_to_axial(deploy.col, deploy.row);
             let spot = muster(&g, wanted, &mut rng)?;
-            g.spawn_unit(deploy.kind, role, spot);
+            let uid = g.spawn_unit(&deploy.kind, role, spot);
+            // A captured board deploys the army as it stood: the hit points
+            // it had and the promotions it had earned. A hand-built position
+            // says nothing here and gets whole, unpromoted units, as before.
+            let earned: Vec<crate::name::Name> = deploy
+                .promotions
+                .iter()
+                .filter(|name| g.rules.promotions.get(name.as_str()).is_some())
+                .map(|name| crate::name::Name::new(name))
+                .collect();
+            if let Some(unit) = g.units.get_mut(&uid) {
+                unit.hp = deploy.hp.clamp(1, 100);
+                unit.promotions.extend(earned);
+            }
         }
     }
     g.record_contact(0, 1);
@@ -1523,6 +1729,317 @@ fn usable(g: &Game, pos: Pos) -> bool {
     g.map.get(pos).is_some_and(|tile| {
         !g.rules.is_water(tile) && g.rules.is_passable(tile) && g.units_at(pos).is_empty()
     })
+}
+
+/// The range at which a unit is part of an engagement rather than walking
+/// toward it — the contact zone's own threshold, and `note_arrivals`'.
+pub const CONTACT_RANGE: i32 = 2;
+
+/// Land military units of one player: what a captured board can seat. Ships
+/// and aircraft are left out — the arena's muster refuses water, and the
+/// engagement being captured is the one between the armies.
+fn land_army(g: &Game, pid: usize) -> Vec<&crate::game::Unit> {
+    g.units
+        .values()
+        .filter(|unit| unit.owner == pid)
+        .filter(|unit| {
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military" && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+        })
+        .collect()
+}
+
+/// Take the board around the contact between `a`'s army and `b`'s: every
+/// tile within `radius` of the units in contact, with its hills, cover,
+/// water, mountains and river crossings, and both sides' land units standing
+/// inside it as they stood — hit points and promotions included. `None` when
+/// the two armies are not within [`CONTACT_RANGE`] of each other, or when
+/// either side has fewer than two units in the window: one unit walking into
+/// an army is a casualty, not an engagement.
+///
+/// What a captured board loses, stated so nobody reads it as the whole
+/// game: cities (an arena founds none, and a siege is its own instrument),
+/// third parties (only the two armies are seated), improvements and
+/// resources (an arena has no economy), and anything outside the window.
+/// The board is played from role 0's perspective as `a` and role 1's as `b`,
+/// both roles by both agents, exactly like a hand-built position.
+pub fn capture_engagement(
+    g: &Game,
+    a: usize,
+    b: usize,
+    radius: i32,
+    turns: u32,
+    id: &str,
+) -> Option<Engagement> {
+    let ours = land_army(g, a);
+    let theirs = land_army(g, b);
+    let in_contact: Vec<Pos> = ours
+        .iter()
+        .filter(|unit| {
+            theirs
+                .iter()
+                .any(|foe| g.wdist(unit.pos, foe.pos) <= CONTACT_RANGE)
+        })
+        .chain(theirs.iter().filter(|foe| {
+            ours.iter()
+                .any(|unit| g.wdist(unit.pos, foe.pos) <= CONTACT_RANGE)
+        }))
+        .map(|unit| unit.pos)
+        .collect();
+    if in_contact.is_empty() {
+        return None;
+    }
+    // The medoid of the contact: the unit position nearest every other, so
+    // the window is centred on the fight and not on an outlier.
+    let centre = *in_contact.iter().min_by_key(|pos| {
+        (
+            in_contact
+                .iter()
+                .map(|other| g.wdist(**pos, *other))
+                .sum::<i32>(),
+            **pos,
+        )
+    })?;
+    let (centre_col, centre_row) = hex::axial_to_offset(centre.0, centre.1);
+    // The board is offset (column, row) with odd rows shifted, so a window
+    // keeps its geometry only if every row moves by an EVEN count — a shift
+    // of seven rows would put the units of an even row a half-hex off the
+    // units of an odd one. The centre therefore lands at `radius + 1` or one
+    // row further, whichever makes the shift even; columns shift freely. A
+    // cylinder's seam is unwrapped around the centre so a window across it
+    // stays whole.
+    let mut origin_row = centre_row - radius - 1;
+    if origin_row.rem_euclid(2) != 0 {
+        origin_row -= 1;
+    }
+    let width = 2 * radius + 3;
+    let height = centre_row - origin_row + radius + 2;
+    let seam = g
+        .map
+        .wraps_east_west()
+        .then_some(g.map.width)
+        .filter(|width| *width > 0);
+    let cell = |pos: Pos| -> Option<(i32, i32)> {
+        let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+        let mut dcol = col - centre_col;
+        if let Some(width) = seam {
+            dcol = (dcol + width / 2).rem_euclid(width) - width / 2;
+        }
+        let out = (dcol + radius + 1, row - origin_row);
+        (out.0 >= 0 && out.0 < width && out.1 >= 0 && out.1 < height).then_some(out)
+    };
+    let window = g.wdisk(centre, radius);
+    let mut strokes: BTreeMap<u8, Vec<(i32, i32)>> = BTreeMap::new();
+    let mut rivers = Vec::new();
+    for pos in &window {
+        let (Some(tile), Some(at)) = (g.map.get(*pos), cell(*pos)) else {
+            continue;
+        };
+        let mut brushes: Vec<Brush> = Vec::new();
+        if tile.terrain.as_str() == "mountain" {
+            brushes.push(Brush::Mountain);
+        } else if g.rules.is_water(tile) {
+            brushes.push(Brush::Water);
+        } else {
+            if tile.hills {
+                brushes.push(Brush::Hills);
+            }
+            match tile.feature.as_deref() {
+                Some("forest") | Some("jungle") => brushes.push(Brush::Forest),
+                Some("marsh") => brushes.push(Brush::Marsh),
+                _ => {}
+            }
+        }
+        for brush in brushes {
+            strokes.entry(brush as u8).or_default().push(at);
+        }
+        if tile.river_edges.iter().any(|edge| *edge) {
+            rivers.push((at, tile.river_edges));
+        }
+    }
+    let order = [
+        Brush::Mountain,
+        Brush::Hills,
+        Brush::Forest,
+        Brush::Water,
+        Brush::Marsh,
+    ];
+    let terrain: Vec<(Brush, Vec<(i32, i32)>)> = order
+        .iter()
+        .filter_map(|brush| strokes.remove(&(*brush as u8)).map(|cells| (*brush, cells)))
+        .collect();
+    let seat = |army: &[&crate::game::Unit]| -> Vec<Placed> {
+        army.iter()
+            .filter(|unit| g.wdist(unit.pos, centre) <= radius)
+            .filter_map(|unit| {
+                let (col, row) = cell(unit.pos)?;
+                Some(Placed {
+                    kind: unit.kind.to_string(),
+                    col,
+                    row,
+                    hp: unit.hp,
+                    promotions: unit
+                        .promotions
+                        .iter()
+                        .map(|name| name.to_string())
+                        .collect(),
+                })
+            })
+            .collect()
+    };
+    let forces = [seat(&ours), seat(&theirs)];
+    if forces.iter().any(|force| force.len() < 2) {
+        return None;
+    }
+    let rules = &g.rules;
+    let describe = |pid: usize, force: &[Placed]| {
+        let material: f64 = force
+            .iter()
+            .map(|unit| {
+                rules
+                    .units
+                    .get(unit.kind.as_str())
+                    .map_or(0.0, |spec| spec.cost)
+            })
+            .sum();
+        format!(
+            "seat {pid} ({}): {} units, {material:.0} material",
+            g.players[pid].civ,
+            force.len()
+        )
+    };
+    Some(Engagement {
+        id: id.to_string(),
+        name: format!("turn {} contact, seat {a} v seat {b}", g.turn),
+        provenance: format!(
+            "captured from a {}-player game, seed {}, turn {}",
+            g.players.len(),
+            g.seed,
+            g.turn
+        ),
+        problem: "The fight the controller actually got into, on the ground it got into it on, \
+                  with the army it brought."
+            .to_string(),
+        roles: [describe(a, &forces[0]), describe(b, &forces[1])],
+        width,
+        height,
+        turns,
+        terrain,
+        rivers,
+        forces,
+        heal: false,
+    })
+}
+
+/// The world a harvest plays and the window it captures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Harvest {
+    pub players: usize,
+    pub width: i32,
+    pub height: i32,
+    /// The last turn played.
+    pub turns: u32,
+    /// Tiles around the contact that make the board.
+    pub radius: i32,
+    /// The clock each captured board is read on.
+    pub window_turns: u32,
+    /// Turns before the same pair of players is captured again.
+    pub cooldown: u32,
+    /// Only engagements between two major civilizations. The barbarian seat
+    /// produces most contacts on most maps — a raid is the engagement the
+    /// live seat loses the most units to — but a file of wars is a
+    /// different distribution from a file of raids, and a run should say
+    /// which it is reading.
+    pub majors_only: bool,
+}
+
+impl Default for Harvest {
+    fn default() -> Self {
+        Harvest {
+            players: 4,
+            width: 60,
+            height: 38,
+            turns: 150,
+            radius: 7,
+            window_turns: 16,
+            cooldown: 25,
+            majors_only: false,
+        }
+    }
+}
+
+/// Play one world game with the deployed controller in every seat and take
+/// every engagement it produces: the first turn each pair of players at war
+/// has armies within [`CONTACT_RANGE`], and again once `cooldown` turns have
+/// passed for that pair — a long war is several engagements, a skirmish that
+/// never breaks contact is one. The barbarian seat is a player like any
+/// other here: a raid is an engagement too, and the one the live seat loses
+/// most units to.
+pub fn harvest_engagements(seed: u64, setup: &Harvest) -> Vec<Engagement> {
+    let Harvest {
+        players,
+        width,
+        height,
+        turns,
+        radius,
+        window_turns,
+        cooldown,
+        majors_only,
+    } = *setup;
+    let mut g = Game::new_with(crate::game::GameOptions::new(
+        players,
+        width,
+        height,
+        seed,
+        turns + 1,
+        0,
+    ));
+    let mut ais = crate::ai::AdvancedAi::fleet(&g);
+    g.set_fog_memory(false);
+    g.set_war_ledger(false);
+    let mut taken: BTreeMap<(usize, usize), u32> = BTreeMap::new();
+    let mut boards = Vec::new();
+    let mut last_turn = g.turn;
+    while g.winner.is_none() && g.turn <= turns {
+        let pid = g.current;
+        if pid < ais.len() {
+            ais[pid].take_turn(&mut g, pid);
+        }
+        if g.winner.is_none() && g.current == pid {
+            let _ = g.apply(pid, &crate::game::Action::EndTurn);
+        }
+        if g.turn == last_turn {
+            continue;
+        }
+        last_turn = g.turn;
+        let seats = g.players.len();
+        for a in 0..seats {
+            for b in (a + 1)..seats {
+                if !g.players[a].alive || !g.players[b].alive || !g.is_at_war(a, b) {
+                    continue;
+                }
+                if majors_only
+                    && [a, b]
+                        .iter()
+                        .any(|seat| g.players[*seat].is_barbarian || g.players[*seat].is_minor)
+                {
+                    continue;
+                }
+                if taken
+                    .get(&(a, b))
+                    .is_some_and(|since| g.turn.saturating_sub(*since) < cooldown)
+                {
+                    continue;
+                }
+                let id = format!("s{seed}-t{}-p{a}v{b}", g.turn);
+                if let Some(board) = capture_engagement(&g, a, b, radius, window_turns, &id) {
+                    boards.push(board);
+                    taken.insert((a, b), g.turn);
+                }
+            }
+        }
+    }
+    boards
 }
 
 /// The paired tests a position result is read through.
@@ -1574,8 +2091,7 @@ pub mod paired {
             return (differences.first().copied().unwrap_or(0.0), 0.0, 0.0, 1.0);
         }
         let mean = differences.iter().sum::<f64>() / n as f64;
-        let variance =
-            differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        let variance = differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
         let stderr = (variance / n as f64).sqrt();
         if stderr <= 0.0 {
             // No spread at all. A zero mean is the control's exact null and
@@ -1652,6 +2168,221 @@ pub mod paired {
 mod tests {
     use super::*;
     use crate::elo::builtin_ai;
+
+    /// A converted position must build the very board the position builds:
+    /// same tiles, same units, same hit points. The whole curriculum now
+    /// plays through the owned board, so this is what keeps every recorded
+    /// arena number comparable with the next one.
+    #[test]
+    fn a_converted_position_builds_the_same_board_as_the_position() {
+        for spec in POSITIONS {
+            let from_position = build(spec, 5).expect("buildable");
+            let from_board = build_engagement(&Engagement::from(spec), 5).expect("buildable");
+            let units = |g: &Game| -> Vec<(usize, String, Pos, i32)> {
+                let mut out: Vec<_> = g
+                    .units
+                    .values()
+                    .map(|unit| (unit.owner, unit.kind.to_string(), unit.pos, unit.hp))
+                    .collect();
+                out.sort();
+                out
+            };
+            assert_eq!(
+                units(&from_position),
+                units(&from_board),
+                "{} seats differ",
+                spec.id
+            );
+            for (pos, tile) in &from_position.map.tiles {
+                let other = from_board.map.get(*pos).expect("same board");
+                assert_eq!(
+                    tile.terrain, other.terrain,
+                    "{} terrain at {pos:?}",
+                    spec.id
+                );
+                assert_eq!(tile.hills, other.hills, "{} hills at {pos:?}", spec.id);
+                assert_eq!(
+                    tile.feature, other.feature,
+                    "{} feature at {pos:?}",
+                    spec.id
+                );
+            }
+            assert!(!from_board.tactics.heal, "the curriculum does not heal");
+        }
+    }
+
+    /// A file of boards reads back as the boards that were written, and a
+    /// board that names a unit the ruleset lacks is refused by name.
+    #[test]
+    fn engagements_round_trip_through_json_and_refuse_a_bad_unit() {
+        let boards = Engagement::curriculum();
+        let text = Engagement::to_json(&boards);
+        let back = Engagement::from_json(&text).expect("the curriculum reads back");
+        assert_eq!(back, boards);
+        let mut broken = boards[0].clone();
+        broken.forces[1][0].kind = "dragoon_of_nowhere".to_string();
+        let error = Engagement::from_json(&Engagement::to_json(&[broken])).unwrap_err();
+        assert!(error.contains("dragoon_of_nowhere"), "{error}");
+    }
+
+    /// A captured board keeps the geometry of the contact — every pairwise
+    /// distance between the seated units — along with each unit's hit
+    /// points, its promotions and the river crossings under it. Run over
+    /// several seeds so the contact's centre lands on odd rows as well as
+    /// even ones: the offset board shifts odd rows, and a window that moved
+    /// by an odd row count would bend every distance in it.
+    #[test]
+    fn a_captured_engagement_keeps_the_contacts_geometry_and_state() {
+        let mut spec = Engagement::from(position("the_reserve").expect("known"));
+        spec.forces[0][0].hp = 37;
+        spec.forces[0][0].promotions = vec!["battlecry".to_string()];
+        spec.rivers = vec![((9, 6), [true, false, false, false, false, false])];
+        let mut odd_centres = 0;
+        // Radius 12 covers the whole 24x14 board, so every unit of both
+        // lines is inside the window and the distance multisets compare
+        // whole; a tighter window would seat only the units near the
+        // contact, which is the point of a window but not of this test.
+        for seed in 1..=8u64 {
+            let mut g = build_engagement(&spec, seed).expect("buildable");
+            // Walk the two lines into contact before capturing.
+            let mut ais: Vec<Box<dyn Ai>> = (0..2)
+                .map(|pid| builtin_ai("advanced", seed + pid as u64))
+                .collect();
+            let mut board = None;
+            for _ in 0..24 {
+                if let Some(taken) = capture_engagement(&g, 0, 1, 12, 10, "test") {
+                    board = Some(taken);
+                    break;
+                }
+                let pid = g.current;
+                ais[pid].take_turn(&mut g, pid);
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+            let board = board.expect("the reserve comes into contact within a dozen turns");
+            let mut source: Vec<(usize, Pos, i32, usize)> = g
+                .units
+                .values()
+                .filter(|unit| unit.owner < 2)
+                .map(|unit| (unit.owner, unit.pos, unit.hp, unit.promotions.len()))
+                .collect();
+            source.sort();
+            let seated: usize = board.forces.iter().map(Vec::len).sum();
+            assert_eq!(
+                seated,
+                source.len(),
+                "seed {seed}: every unit in the window is seated"
+            );
+            let mut source_distances: Vec<i32> = Vec::new();
+            for i in 0..source.len() {
+                for j in (i + 1)..source.len() {
+                    source_distances.push(g.wdist(source[i].1, source[j].1));
+                }
+            }
+            source_distances.sort();
+            let placed: Vec<&Placed> = board.forces.iter().flatten().collect();
+            let mut board_distances: Vec<i32> = Vec::new();
+            for i in 0..placed.len() {
+                for j in (i + 1)..placed.len() {
+                    board_distances.push(hex::distance(
+                        hex::offset_to_axial(placed[i].col, placed[i].row),
+                        hex::offset_to_axial(placed[j].col, placed[j].row),
+                    ));
+                }
+            }
+            board_distances.sort();
+            let source_cells: Vec<(usize, (i32, i32))> = source
+                .iter()
+                .map(|unit| (unit.0, hex::axial_to_offset(unit.1 .0, unit.1 .1)))
+                .collect();
+            let board_cells: Vec<(i32, i32)> =
+                placed.iter().map(|unit| (unit.col, unit.row)).collect();
+            assert_eq!(
+                board_distances, source_distances,
+                "seed {seed}: the window bent a distance\nsource {source_cells:?}\nboard {board_cells:?}\nwraps {} width {}",
+                g.map.wraps_east_west(),
+                g.map.width
+            );
+            let wounded = board.forces[0].iter().find(|unit| unit.hp == 37);
+            if source.iter().any(|unit| unit.2 == 37) {
+                let wounded = wounded.expect("the wounded warrior is seated as wounded");
+                assert_eq!(wounded.promotions, vec!["battlecry".to_string()]);
+            }
+            if placed.iter().any(|unit| unit.row % 2 == 1) {
+                odd_centres += 1;
+            }
+            // The river under (9,6) is inside every window centred on the
+            // contact; it must have crossed with its edges.
+            assert!(
+                board.rivers.iter().any(|(_, edges)| edges[0]),
+                "seed {seed}: the river crossing was lost"
+            );
+            // And the board replays: it seats every unit it lists, wounded.
+            let replay = build_engagement(&board, 3).expect("a captured board builds");
+            assert_eq!(replay.units.len(), seated);
+            assert!(
+                replay.units.values().any(|unit| unit.hp == 37)
+                    || !source.iter().any(|unit| unit.2 == 37)
+            );
+        }
+        assert!(odd_centres > 0, "no seed exercised the odd-row shift");
+    }
+
+    /// Whether a board heals is the board's own question. The curriculum
+    /// keeps the arena rule — nothing recovers — and a board that asks for a
+    /// campaign gets the neutral rate everywhere.
+    #[test]
+    fn healing_is_the_boards_question() {
+        let spec = Engagement::from(position("the_reserve").expect("known"));
+        let frozen = build_engagement(&spec, 4).expect("buildable");
+        let uid = frozen.player_unit_ids(0)[0];
+        assert_eq!(
+            frozen.unit_heal_rate(uid),
+            0,
+            "the arena rule: permanent damage"
+        );
+        let campaign = build_engagement(&Engagement { heal: true, ..spec }, 4).expect("buildable");
+        let uid = campaign.player_unit_ids(0)[0];
+        assert!(campaign.unit_heal_rate(uid) > 0, "a healing board recovers");
+        assert!(
+            !crate::setup::TacticsRules::default().heal,
+            "off in the stock arena"
+        );
+        let without: crate::setup::TacticsRules =
+            serde_json::from_str(r#"{"cities":1,"production":0,"gold":0,"turns_per_tech":5}"#)
+                .expect("an old save reads");
+        assert!(
+            !without.heal,
+            "a save without the field played without healing"
+        );
+    }
+
+    /// The harvest runs a whole small game and every board it takes is one
+    /// the arena can read back and seat.
+    #[test]
+    fn a_harvest_produces_boards_the_arena_can_play() {
+        let small = Harvest {
+            players: 2,
+            width: 24,
+            height: 16,
+            turns: 60,
+            radius: 5,
+            window_turns: 8,
+            cooldown: 20,
+            majors_only: false,
+        };
+        let boards = harvest_engagements(17, &small);
+        let text = Engagement::to_json(&boards);
+        let back = Engagement::from_json(&text).expect("harvested boards read back");
+        assert_eq!(back, boards);
+        for board in &boards {
+            assert!(
+                board.forces.iter().all(|force| force.len() >= 2),
+                "{}",
+                board.id
+            );
+            assert!(build_engagement(board, 1).is_some(), "{} seats", board.id);
+        }
+    }
 
     /// Every position has to be buildable and has to seat every unit it asks
     /// for, or its numbers are measuring a force that is not the one written
@@ -1790,7 +2521,10 @@ mod tests {
     /// confident null.
     #[test]
     fn a_correlation_with_no_spread_is_nothing_rather_than_zero() {
-        assert!(paired::correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(), "too few pairs");
+        assert!(
+            paired::correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(),
+            "too few pairs"
+        );
         assert!(
             paired::correlation(&[1.0, 1.0, 1.0], &[1.0, 2.0, 3.0]).is_none(),
             "a constant x has no correlation, not a zero one"
@@ -1949,7 +2683,11 @@ mod tests {
             assert!(!result.skipped);
             assert_eq!(result.a.kills, result.b.losses, "{}", spec.id);
             assert_eq!(result.b.kills, result.a.losses, "{}", spec.id);
-            assert!((result.a.damage_dealt - result.b.damage_taken).abs() < 1e-9, "{}", spec.id);
+            assert!(
+                (result.a.damage_dealt - result.b.damage_taken).abs() < 1e-9,
+                "{}",
+                spec.id
+            );
             assert!(
                 (result.a.material_destroyed - result.b.material_lost).abs() < 1e-9,
                 "{}",
@@ -1994,10 +2732,16 @@ mod tests {
 
         let result = matched_position(&POSITIONS[0], 41, "advanced", "advanced", &builtin_ai);
         let profile = result.a.profile();
-        for share in [profile.focus, profile.ground, profile.screen, profile.contact] {
-            if let Some(value) = share {
-                assert!((0.0..=1.0).contains(&value), "share out of range: {value}");
-            }
+        for value in [
+            profile.focus,
+            profile.ground,
+            profile.screen,
+            profile.contact,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            assert!((0.0..=1.0).contains(&value), "share out of range: {value}");
         }
     }
 
@@ -2040,9 +2784,15 @@ mod tests {
     #[test]
     fn the_sign_test_does_not_overflow_into_a_confident_null() {
         let p = paired::sign_test(1_122, 317);
-        assert!(p.is_finite() && p < 1e-6, "overwhelming split reported p = {p}");
+        assert!(
+            p.is_finite() && p < 1e-6,
+            "overwhelming split reported p = {p}"
+        );
         assert!((paired::sign_test(0, 0) - 1.0).abs() < 1e-12);
-        assert!((paired::sign_test(5, 5) - 1.0).abs() < 1e-9, "an even split is p = 1");
+        assert!(
+            (paired::sign_test(5, 5) - 1.0).abs() < 1e-9,
+            "an even split is p = 1"
+        );
         // Either side of the exact/approximate switch, on the same shape.
         let exact = paired::sign_test(600, 400);
         let approximate = paired::sign_test(601, 400);

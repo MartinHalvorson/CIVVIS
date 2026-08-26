@@ -66,6 +66,11 @@ CANNOT_RUN_IN_CI = {
     "landing_battles.py":
         "Regenerates a file by building and serving the crate; the committed "
         "output is pinned by server.rs's string tests instead.",
+    "profile_civvis.py":
+        "Sampling needs /usr/bin/sample, which is macOS-only. Only the "
+        "sampling half: the parser, the demangler and the screen-shape "
+        "reader are pure text and tools/test_profile_civvis.py runs them on "
+        "every pull request through unittest discovery.",
 }
 
 

@@ -397,6 +397,100 @@ hard rather than one agent failing it. But an agent spending two-thirds of its
 damage on units that survive to heal is a lever, and `focus` is the column that
 found it.
 
+## Captured engagements, healing, and genes in the arena (2026-08-26)
+
+Three additions, each answering one of the limits stated below.
+
+### The positions are a curriculum; a captured file is the distribution
+
+```bash
+cargo run --release --bin doctrine_arena -- --capture --games 24 --out target/engagements.json
+cargo run --release --bin doctrine_arena -- --engagements target/engagements.json --list
+cargo run --release --bin doctrine_arena -- --engagements target/engagements.json \
+    --a advanced --b advanced --seeds 12          # the control, on the file too
+```
+
+`--capture` plays whole games (`--players 4 --width 60 --height 38 --turns
+150` by default, the deployed controller in every seat, the barbarian seat
+included) and takes every engagement they produce: the board at the moment two
+armies at war first come within two tiles of each other — the contact zone's
+own threshold — as every tile within a `--radius 7` window with its hills,
+cover, water, mountains and **river crossings**, and both sides' land units as
+they stood, **hit points and promotions included**. One capture per pair of
+players every `--cooldown 25` turns; a long war is several engagements. Each
+board is read over `--window-turns 16`.
+
+The file plays back with `--engagements` exactly like the hand-built
+positions — paired, roles swapped, the same ledger and profile — and `--list`
+describes it the same way. The difference is what the pooled row means. The
+positions were chosen to pose eleven different problems, so their pooled row
+is not a number; a captured file is a sample of the fights the controller
+actually gets into, on the ground it gets into them on, with the army it
+brought, and there the pooled row is the number.
+
+What a captured board loses, stated so it is not read as the whole game:
+cities (an arena founds none, and a siege is its own instrument), third
+parties (only the two armies are seated), improvements and resources (an
+arena has no economy), and everything outside the window. What it keeps that
+a hand-built position never had: real rivers (`Engagement::rivers` — a
+position fakes a river line with coast, and the +5 crossing penalty is a term
+the fighting turns on), wounded units, and earned promotions.
+
+Format: `Engagement` in `src/doctrine.rs`, one JSON array, written by
+`Engagement::to_json` and read by `Engagement::from_json`, which refuses a
+unit the ruleset lacks or a cell off the board. Every hand-built `Position`
+converts to one (`Engagement::curriculum()`), and
+`a_converted_position_builds_the_same_board_as_the_position` holds the
+conversion to the tile and the hit point, so every arena number recorded
+before this change is comparable with every one after it. The odd-row
+offset layout is kept by moving a window's rows by an even count only;
+`a_captured_engagement_keeps_the_contacts_geometry_and_state` asserts every
+pairwise distance survives the capture.
+
+### Healing is the board's question
+
+`--heal` turns recovery on for every board of a run; the same switch is
+`TacticsRules::heal` and `--tactics-heal` on `civvis soak`. Off is the arena's
+rule since the mode existed: one engagement, permanent damage, a trade you win
+stays won. On is a campaign: the neutral rate everywhere on a board with no
+territory, and the recovery step runs, so "pull the wounded unit back and put
+a fresh one in its place" can be measured at all. A doctrine that preserves
+units cannot be priced with healing off — a unit that steps back is simply
+absent — and the live seat's 0.18 kills per loss is a campaign number. Read
+both. They are different questions, and a board says which it is asking.
+
+### A seat can carry genes
+
+```bash
+cargo run --release --bin doctrine_arena -- --a advanced+close-as-a-body --b advanced --seeds 60
+cargo run --release --bin battle_bench -- --a advanced+fire-plan --b advanced --games 200
+```
+
+A seat is a built-in name or `advanced+<gene>+<gene>` (`civvis::elo::seat_spec`,
+`seat_ai`); `battle_bench` takes the same form. An unknown gene is refused by
+name rather than played as the control, because an arm that silently became
+the control would report a null indistinguishable from a real one. The `fires`
+column says whether the gene changed the play at all.
+
+### The gate for a tactical gene
+
+Recorded because the alternative culled a controller that won 99.6 % of its
+arena fights. The 35,148-seat whole-game screen read `joint-tactics` at
+−0.104 pp and removed it, and `docs/TACTICS.md` §7 records the same shape twice
+before: an 8.5× swing in measured combat quality, at 300 maps, and no movement
+in the win rate. A whole game resolves about fourteen kills and a 100-cell
+paired run resolves a 70/30 split. That instrument cannot see a tactical
+change, so it cannot be its gate. A tactical gene is read on:
+
+1. `battle_bench`, control then treatment — the paired swing, and `fires` > 0;
+2. `doctrine_arena` on the curriculum (read the rows, not the pool) and on a
+   captured file, healing off and healing on — the pooled swing on the file,
+   kills per loss, and the profile columns the gene claims to move;
+3. the live ledger's kills per loss and captures, once it has run there.
+
+The whole-game screen is then a **no-harm** check: a tactical gene that reads
+clearly worse there is stopped, and one that reads null is not culled for it.
+
 ## What this does not license
 
 The same two limits `src/skirmish.rs` states, and one more.

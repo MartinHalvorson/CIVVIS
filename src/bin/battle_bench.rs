@@ -16,7 +16,7 @@
 //! what it claims to cancel and no treatment number from the same harness can
 //! be believed.
 use civvis::ai::{run_game, Ai};
-use civvis::elo::{builtin_ai, BUILTIN_AIS};
+use civvis::elo::{seat_ai, seat_spec};
 use civvis::game::Game;
 use civvis::parallel::{default_jobs, map};
 use civvis::skirmish::{matched_skirmish, MatchedSkirmish, SkirmishLedger, SkirmishSetup};
@@ -39,8 +39,15 @@ fn text(args: &[String], key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+/// A seat is `name` or `name+gene+gene`; see `civvis::elo::seat_spec`.
 fn known_ai(name: &str) -> bool {
-    BUILTIN_AIS.contains(&name)
+    match seat_spec(name) {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!("{error}");
+            false
+        }
+    }
 }
 
 /// Two-sided sign test: the probability of a split at least this lopsided if
@@ -165,7 +172,7 @@ fn measure_cost(args: &[String], name: &str) {
                     } else {
                         "advanced"
                     };
-                    builtin_ai(pick, gseed.wrapping_add(pid as u64))
+                    seat_ai(pick, gseed.wrapping_add(pid as u64))
                 })
                 .collect();
             let started = Instant::now();
@@ -234,7 +241,7 @@ fn main() {
     let name_b = text(&args, "--b", "advanced");
     for name in [&name_a, &name_b] {
         if !known_ai(name) {
-            eprintln!("unknown agent `{name}`");
+            eprintln!("a seat is a built-in agent, or advanced+<gene>+<gene>");
             std::process::exit(2);
         }
     }
@@ -274,7 +281,7 @@ fn main() {
 
     let results: Vec<MatchedSkirmish> = map(games, jobs, |index| {
         let seed = start_seed + index as u64;
-        matched_skirmish(seed, &setup, &name_a, &name_b, &builtin_ai)
+        matched_skirmish(seed, &setup, &name_a, &name_b, &seat_ai)
     });
 
     let played: Vec<&MatchedSkirmish> = results.iter().filter(|row| !row.skipped).collect();
