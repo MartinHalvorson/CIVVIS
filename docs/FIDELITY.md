@@ -2613,6 +2613,13 @@ are not exported. `grievance_change_per_turn` crosses for the record and
 `--dump-mirror`; no decision reads it (the board's own decay runs in
 `Game::process_diplomacy`).
 
+**Verified against the recording.** `civvis-20260826T184456Z` predates the
+mod change, so every new key is absent and the mirror takes the fallback
+path: `civvis_orders --explain` built from the merge-base and from this
+change give byte-identical orders, `[why]` lines and notes at t33 (10
+orders, `denounced=Some(34)` on both — the permission fake) and at t100
+(11 orders, at war). The presence path is pinned by the tests.
+
 Five tests in `src/mirror.rs` pin the rules:
 `a_host_denouncement_and_its_grievances_land_on_the_board_and_a_neutral_export_clears_them`
 (DENOUNCED with 50 grievances against us → their ledger holds 50, the
