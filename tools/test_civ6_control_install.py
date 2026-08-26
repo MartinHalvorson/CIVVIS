@@ -213,8 +213,9 @@ class ProtectedInstallTest(unittest.TestCase):
 
         self.assertIn("local wallRadius = cfg.EmergencyWallRadius or 3;", source)
         self.assertIn(
-            "and ((damage ~= nil and damage > 0)\n"
-            "\t\t\t\t\tor (nearestEnemy ~= nil and nearestEnemy <= wallRadius)) then",
+            "local immediateThreat = maxWallDamage ~= nil and maxWallDamage <= 0\n"
+            "\t\t\tand ((damage ~= nil and damage > 0)\n"
+            "\t\t\t\tor (nearestEnemy ~= nil and nearestEnemy <= wallRadius));",
             source,
         )
         self.assertNotIn(
@@ -223,6 +224,26 @@ class ProtectedInstallTest(unittest.TestCase):
             "the unbounded enemy test must not come back",
         )
         self.assertIn("radius = wallRadius,", source)
+
+        # A wall that cannot finish before an already-queued defender is not
+        # an emergency defense.  The live Ostia loss at t61 came from replacing
+        # a one-turn Archer with Walls requiring four turns; the preserve path
+        # must run before the remembered build can replace that Archer.
+        self.assertIn(
+            'return city:GetBuildQueue():GetTurnsLeft();', source,
+        )
+        self.assertIn('return GameInfo.Units[current];', source)
+        self.assertIn(
+            'local finishingDefender = currentTurns >= 0 and currentTurns <= 1',
+            source,
+        )
+        self.assertIn('emit("emergency_defender_preserved", {', source)
+        self.assertIn('return true, "finishing_defender_preserved";', source)
+        self.assertLess(
+            source.index('if immediateThreat and finishingDefender then'),
+            source.index('civvisBuild[cityId] = resolved;'),
+            "the finishing defender must be preserved before the next-build memo can replace it",
+        )
 
         play = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
         self.assertIn('"EmergencyWallRadius": args.emergency_wall_radius,', play)
