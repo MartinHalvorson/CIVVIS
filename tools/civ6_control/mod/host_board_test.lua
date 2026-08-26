@@ -20,6 +20,9 @@
 --      count is reported;
 --  10. a refused settler move cannot draw its guard into a synthetic move;
 --  11. the `orders` event carries the cap and shadow counters.
+--  13. an unguarded new settler will not step from its city beside a visible
+--      barbarian scout, while invisible, non-scout, non-city, and proven-
+--      escort cases retain their ordinary movement.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -67,7 +70,8 @@ setmetatable(_G, { __index = function(_, k)
 	return stub()
 end })
 
-local host = { units = {}, ops = {}, cmds = {}, paths = {}, queued = {}, blocked = {} }
+local host = { units = {}, cities = {}, barbarians = {}, hidden = {}, ops = {}, cmds = {},
+               paths = {}, queued = {}, blocked = {} }
 local PID = 0
 local function unitObject(u)
 	return {
@@ -81,6 +85,12 @@ local function unitObject(u)
 		GetGreatPerson = function() return nil end,
 		GetFortifyTurns = function() return 0 end,
 		GetFormationUnitCount = function() return 1 end,
+	}
+end
+local function cityObject(c)
+	return {
+		GetX = function() return c.x end,
+		GetY = function() return c.y end,
 	}
 end
 UnitManager = {
@@ -127,7 +137,11 @@ local player = setmetatable({
 		table.sort(objs, function(a, b) return a.GetID() < b.GetID() end)
 		return { Members = members(objs) }
 	end,
-	GetCities = function() return { Members = members({}) } end,
+	GetCities = function()
+		local objs = {}
+		for _, c in pairs(host.cities) do objs[#objs + 1] = cityObject(c) end
+		return { Members = members(objs) }
+	end,
 	GetDiplomacy = function() return { IsAtWarWith = function() return false end } end,
 	GetScore = function() return 0 end,
 	GetTreasury = function() return { GetGoldBalance = function() return 0 end } end,
@@ -136,13 +150,21 @@ local player = setmetatable({
 Players = setmetatable({}, { __index = function(_, pid)
 	if pid == PID then return player end
 	return setmetatable({ IsBarbarian = function() return true end,
-		GetUnits = function() return { Members = members({}) } end,
+		GetUnits = function()
+			local objs = {}
+			for _, u in pairs(host.barbarians) do
+				if not u.gone then objs[#objs + 1] = unitObject(u) end
+			end
+			table.sort(objs, function(a, b) return a.GetID() < b.GetID() end)
+			return { Members = members(objs) }
+		end,
 		GetCities = function() return { Members = members({}) } end },
 		{ __index = function() return stub() end })
 end })
 PlayerManager = { GetAliveIDs = function() return { PID, 63 } end, GetAliveMajorIDs = function() return { PID } end }
 PlayersVisibility = setmetatable({}, { __index = function()
-	return { IsVisible = function() return true end, IsRevealed = function() return true end }
+	return { IsVisible = function(_, x, y) return not host.hidden[x .. ":" .. y] end,
+		IsRevealed = function() return true end }
 end })
 Game = { GetLocalPlayer = function() return PID end, GetCurrentGameTurn = function() return 7 end }
 
@@ -183,7 +205,8 @@ end
 local function has(line, needle) return line ~= nil and line:find(needle, 1, true) ~= nil end
 local function row(subject, verb, x, y) return { kind = "unit", subject = subject, verb = verb, x = x, y = y } end
 local function reset()
-	host.units, host.ops, host.cmds, host.paths, host.queued, host.blocked, LOG = {}, {}, {}, {}, {}, {}, {}
+	host.units, host.cities, host.barbarians, host.hidden, host.ops, host.cmds, host.paths,
+		host.queued, host.blocked, LOG = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 	config.SettlerEscortCapSync = nil
 	queue.reset(7); board.reset()
 end
@@ -367,6 +390,84 @@ check("one combat unit cancelled", #host.cmds, 1)
 check("it was the warrior, not the settler", host.cmds[1] and host.cmds[1].id, 14)
 check("cancel used UNITCOMMAND_CANCEL", host.cmds[1] and host.cmds[1].cmd, "UNITCOMMAND_CANCEL")
 check("queued_paths reported", has(lastEvent("queued_paths"), '"found":2') and has(lastEvent("queued_paths"), '"cancelled":1'), true)
+
+-- 13. The direct live-loss geometry is held: a new settler leaving a city for
+-- a tile adjacent to a visible barbarian scout cannot spend its opening turn
+-- there without a guard.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[30] = { id = 30, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[90] = { id = 90, kind = "UNIT_SCOUT", x = 2, y = 3, moves = 0 }
+host.paths["30:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(30, "MOVE_TO", 1, 2) })
+check("visible scout: setter stays in city", ops(30), "")
+check("visible scout: hold names setter and scout", has(lastEvent("settler_scout_capture_hold"), '"settler":30')
+	and has(lastEvent("settler_scout_capture_hold"), '"scout":90'), true)
+check("visible scout: order is an explicit held refusal", has(lastEvent("orders"), "settler_scout_capture_hold"), true)
+check("visible scout: orders count the held capture leg", has(lastEvent("orders"), '"settler_scout_capture_held":1'), true)
+
+-- The safety decision is made against the first host leg, not the far-away
+-- planner target.  This catches a queued route whose current cap ends beside
+-- the scout even though its intended city site is two turns away.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[36] = { id = 36, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[96] = { id = 96, kind = "UNIT_SCOUT", x = 2, y = 3, moves = 0 }
+host.paths["36:" .. plotIndex(1, 4)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2), plotIndex(1, 3), plotIndex(1, 4) },
+	turns = { 0, 1, 1, 2 } }
+host.paths["36:" .. plotIndex(1, 3)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2), plotIndex(1, 3) }, turns = { 0, 1, 1 } }
+applyOrders(player, PID, 7, { row(36, "MOVE_TO", 1, 4) })
+check("capped scout leg: setter stays in city", ops(36), "")
+check("capped scout leg: event distinguishes want from sent", has(lastEvent("settler_scout_capture_hold"), '"want":[1,4]')
+	and has(lastEvent("settler_scout_capture_hold"), '"sent":[1,3]'), true)
+
+-- The floor is not a broad civilian or barbarian policy: no city origin, an
+-- invisible scout, and a visible non-scout each preserve a normal move.
+reset()
+host.units[31] = { id = 31, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[91] = { id = 91, kind = "UNIT_SCOUT", x = 2, y = 3, moves = 0 }
+host.paths["31:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(31, "MOVE_TO", 1, 2) })
+check("non-city origin: setter still moves", ops(31), "UNITOPERATION_MOVE_TO@1,2")
+
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[32] = { id = 32, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[92] = { id = 92, kind = "UNIT_SCOUT", x = 2, y = 3, moves = 0 }
+host.hidden["2:3"] = true
+host.paths["32:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(32, "MOVE_TO", 1, 2) })
+check("invisible scout: setter still moves", ops(32), "UNITOPERATION_MOVE_TO@1,2")
+
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[33] = { id = 33, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[93] = { id = 93, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 0 }
+host.paths["33:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(33, "MOVE_TO", 1, 2) })
+check("non-scout: setter still moves", ops(33), "UNITOPERATION_MOVE_TO@1,2")
+
+-- A proven co-located escort may make the exact same leg, including the
+-- synthesized row from the existing host escort reconciliation.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[34] = { id = 34, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[35] = { id = 35, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[94] = { id = 94, kind = "UNIT_SCOUT", x = 2, y = 3, moves = 0 }
+host.paths["34:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+host.paths["35:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(34, "MOVE_TO", 1, 2) })
+check("proven escort: guard shares exposed leg", ops(35), "UNITOPERATION_MOVE_TO@1,2")
+check("proven escort: setter still moves", ops(34), "UNITOPERATION_MOVE_TO@1,2")
+check("proven escort: no scout capture hold", lastEvent("settler_scout_capture_hold"), nil)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
