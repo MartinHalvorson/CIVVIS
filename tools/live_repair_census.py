@@ -49,7 +49,7 @@ against a game that is still being played.
 
 The harness's early stop is not re-implemented here: `below_leader_score_reading`
 (the one rule left after 2026-08-26 — under 70 % of the leader's score after
-turn 100; it replaced #2319's three-axis reading) is imported from
+turn 150; it replaced #2319's three-axis reading) is imported from
 `tools/civ6_play.py` and fed the recorded events in file order, which is
 exactly what the live loop does. That section is a **check**.
 
@@ -344,7 +344,7 @@ def trade_reading(records: Iterable[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------
-# The early stop (below the leader's score after turn 100), replayed through
+# The early stop (below the leader's score after turn 150), replayed through
 # the harness's own function
 # --------------------------------------------------------------------------
 

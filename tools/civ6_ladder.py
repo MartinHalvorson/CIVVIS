@@ -747,7 +747,7 @@ def entry_from(summary: dict) -> dict:
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
         # The harness's own early-stop verdict (since 2026-08-26 the one rule:
-        # under 70 % of the leader's score after turn 100,
+        # under 70 % of the leader's score after turn 150,
         # `civ6_play.below_leader_score_reading`; older rows carry the retired
         # rules' verdicts verbatim). A row with `reason: "abandoned"` is a
         # loss the ladder chose not to play out, and the record preserves the

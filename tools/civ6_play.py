@@ -86,7 +86,7 @@ OPENING_TEMPO_TURN = 60
 # ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
 # request 2026-08-26: "scrap the early terminate rules that cut off civvis
 # verification games. start playing out full games each time for now. or
-# until we fall below 70% of the score of the leader after turn 100."
+# until we fall below 70% of the score of the leader after turn 150."
 #
 # Until then the harness carried four early stops, and on King they ended 73
 # of 81 games before the game could: the three-cities-by-turn-32 and
@@ -95,13 +95,13 @@ OPENING_TEMPO_TURN = 60
 # lived in the supervisor and was on even where the login shell unset it) and
 # the measured win-rate table behind the old abandon floor (#2174; off). All
 # four are gone. What remains is the operator's one rule, and it is a default
-# of the harness itself, not of a launcher: at or after turn 100, a score
+# of the harness itself, not of a launcher: at or after turn 150, a score
 # under 70 % of the leader's for LEADER_SCORE_PATIENCE consecutive readable
 # agent turns abandons the game.
 #
 # "The leader" is the best-scoring rival the seat has met — `rival_best` in
 # the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
-# majors the seat's diplomacy has met). A rival still unmet at turn 100 is
+# majors the seat's diplomacy has met). A rival still unmet at turn 150 is
 # invisible to the rule, which errs toward playing on.
 #
 # Patience is kept from the rules this replaces: score moves slowly, but a
@@ -111,7 +111,7 @@ OPENING_TEMPO_TURN = 60
 # — silence is not recovery. An abandoned game is filed as its own ending
 # (`reason: "abandoned"` with the verdict), never as a stall, a wedge or a
 # defeat.
-LEADER_SCORE_MIN_TURN = 100
+LEADER_SCORE_MIN_TURN = 150
 DEFAULT_LEADER_SCORE_RATIO = 0.70
 LEADER_SCORE_PATIENCE = 5
 
@@ -3271,7 +3271,7 @@ def _play(args: argparse.Namespace) -> int:
         if kind == "defeat":
             return bool(event.get("ours"))
         # And OUR decision that the game is lost — the operator's one rule:
-        # under 70 % of the leader's score after turn 100, five readable turns
+        # under 70 % of the leader's score after turn 150, five readable turns
         # running. See `below_leader_score_reading`.
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio

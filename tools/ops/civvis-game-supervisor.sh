@@ -151,8 +151,8 @@ VICTORY=${CIVVIS_VICTORY:-}
 # none; `tools/test_ops_ladder_objective.py` runs these lines under zsh.
 # The ONE early stop the ladder keeps (operator, 2026-08-26: "start playing
 # out full games each time for now. or until we fall below 70% of the score
-# of the leader after turn 100"): a score under this share of the leader's
-# (best met rival) for five readable turns at or after turn 100 abandons the
+# of the leader after turn 150"): a score under this share of the leader's
+# (best met rival) for five readable turns at or after turn 150 abandons the
 # game. The harness carries the same 0.70 default itself, so a GUI host that
 # never inherited a login shell plays the same policy; a named environment
 # value overrides it for a deliberately configured batch (0 plays every game
