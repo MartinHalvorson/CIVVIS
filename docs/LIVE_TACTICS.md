@@ -490,3 +490,18 @@ step → settle on the site, the first-run found refused by name without a
 keeps the old behaviour),
 `a_found_city_row_carries_the_site_the_walk_ends_on`,
 `assumed_seat_capabilities_are_named_and_checked`.
+
+## 13. The arena is the gate (2026-08-26)
+
+The joint-tactics search of §7 won 99.6 % of its arena fights and was removed
+on a whole-game screen that resolves fourteen kills a game. That is the wrong
+instrument for this subsystem, and it has now culled three tactical layers in
+a row. `docs/DOCTRINE_ARENA.md` ("Captured engagements, healing, and genes in
+the arena") records the instrument that replaces it as the gate for tactical
+genes: `doctrine_arena --capture` takes the engagements real games produce —
+the board at first contact, rivers, wounded units and promotions included —
+into a file the arena plays back paired and role-swapped; `--heal` makes
+recovery measurable (the arena never healed, so unit preservation was never
+priceable); and a seat is `advanced+<gene>`, so a gene is priced here before
+the whole-game screen prices what it is worth. The whole-game screen becomes a
+no-harm check for tactical genes, not their gate.

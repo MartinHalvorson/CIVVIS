@@ -272,6 +272,7 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
         unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
         fog: flag_or(args, "--tactics-fog", stock.fog),
         flag: flag_or(args, "--tactics-flag", stock.flag),
+        heal: flag_or(args, "--tactics-heal", stock.heal),
         // The command line's era is `--start-era`, which these flags leave
         // alone: a run's era is part of the experiment, not the economy.
         era: stock.era,
@@ -1869,6 +1870,14 @@ mod tests {
         let rules = tactics_rules(&flagged);
         assert!(rules.flag);
         assert_eq!(rules.cities, 0, "the flag replaces the city objective");
+
+        // Healing rides the same reader, and is off unless asked for.
+        assert!(!rules.heal, "an arena does not heal unless asked");
+        let healing = ["--tactics-heal".to_string()];
+        assert!(
+            tactics_rules(&healing).heal,
+            "--tactics-heal turns recovery on"
+        );
 
         // Clamped, not trusted: these reach the same sanitiser the server uses.
         let silly = [

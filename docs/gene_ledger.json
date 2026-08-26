@@ -1272,6 +1272,15 @@
           "solvency-first-trade-slot-2": null
         }
       },
+      "treasury-at-work": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "treasury-at-work": null,
+          "treasury-at-work-2": null
+        }
+      },
       "wonder-adjacent-sites": {
         "rule_on": [
           "wonder-adjacent-sites"
