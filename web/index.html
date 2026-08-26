@@ -502,9 +502,11 @@
   body.watching-tactics #warsec, body.watching-tactics #eventsec,
   body.watching-tactics #researchtrack, body.watching-tactics #civicstrack { display: none; }
   /* A battlefield has no empire to open screens on and nobody to deal with:
-     the Empire tabs, Diplomacy and Quick Deals are a world's launch buttons. */
+     the Empire tabs, Diplomacy, Quick Deals and the world hooks (Espionage,
+     City-States, Trade routes, Era progress, Reports) are a world's buttons.
+     The Rankings hook stays — on an arena it is the arena rail. */
   body.watching-tactics #launchtabs, body.watching-tactics #diplomacybtn,
-  body.watching-tactics #tradebtn { display: none; }
+  body.watching-tactics #tradebtn, body.watching-tactics #hooktabs { display: none; }
   /* A <details> hands its children to an internal content box, so the panel
      inside it only inherits the extra height if that box is told to grow
      too. Browsers without ::details-content simply keep the log at its
