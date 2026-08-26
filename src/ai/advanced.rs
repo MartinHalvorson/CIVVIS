@@ -29751,6 +29751,12 @@ impl AdvancedAi {
     /// its own attack evaluation already applied — so this is the entry point
     /// for a caller holding nothing but `&Game`. `AppliedAttack::NotScored` is
     /// exactly that statement: nothing has been applied to this board yet.
+    ///
+    /// Kept deliberately, and currently called by nothing: #2578 moved the one
+    /// caller onto the applied form and left this as the `&Game` door. CI holds
+    /// `src/` at zero rustc warnings, so the choice has to be stated rather
+    /// than left to whoever next reads the build log.
+    #[allow(dead_code)]
     fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
         let mut after = g.speculative_clone();
         Self::forcing_reply_penalty_applied(
