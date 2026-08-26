@@ -2554,6 +2554,65 @@ Each line names where to start.
     closed deals; `civ6_mirror_check.py` labels a wonder in production
     `('building', …)` because `production_item_name` maps every `BUILDING_`
     prefix the same way, a vocabulary mismatch and not a board error.
+    **Repaired 2026-08-26 (PR #2593)**: the flag is gone and the docstring
+    names the published decider the tool falls back to; a wonder in
+    production maps to `('wonder', …)`; `live_divergence.py` finds its binary
+    through `--bin`, `$CIVVIS_LIVE_DIVERGENCE_BIN`, the cargo dirs and the
+    published runtimes, and the binary was built and run on this game (the
+    row below, 302 frames, 148 comparable turns, no threshold breached).
+    What the run did NOT give: `combat_damage` still has no pairs, and the
+    reason is not an export field. `combat_pairs` looks BOTH sides of a
+    `combat` event up in `mirror.uid_of`, and `rebuild_from_state` keys that
+    map from `state.units` only — the seat's own units — so the foreign side
+    of every fight (110 of the 184 combats were unit-vs-unit with ids and
+    `damage_to_defender`; 73 had both units in the turn's last frame) never
+    resolves. Recording the Civ VI ids of `hostiles[]` and `rivals[].units[]`
+    when the mirror plants them is the missing link, in `src/mirror.rs`.
+    `tourism` is missing an export field: the state carries the seat's
+    cumulative `domestic_tourists`/`foreign_tourists` and each rival's
+    `tourism` (`other:GetStats():GetTourism()`, the mod at line 6633) but
+    never the seat's own per-turn figure. `deal_outcome` is neither: the four
+    `deal_closed` events carry `gave`, `gold`, `gold_per_turn`, `worth` and
+    `floor`; the bin counts them and does not price them.
+
+### Measured: the host refuses a city's second strike, and the board asks for one every replan frame (2026-08-26)
+
+`orders.sqlite` (`kind='city_strike'`, 66 rows) joined with the `orders`
+event of the same `(turn, frame)` attributes every refusal exactly — no frame
+mixed applied and refused strikes — and the `state` record of that frame
+gives the city and the target. Range is Civ VI's 2; the target is looked up
+at the order's plot in `hostiles[]`, `rivals[].units[]` and `minors[].units[]`.
+
+| cause | refused (31) | applied (35) |
+|---|---:|---:|
+| issued on a replan frame (frame ≥ 1) | 31 | 1 |
+| the same city was already ordered to strike on an earlier frame of the turn | **31** | 0 |
+| … and that earlier (frame-0) strike was applied and hit (target HP fell) | **31** | 0 |
+| city has no walls (`BUILDING_WALLS`/`CASTLE`/`STAR_FORT`/`TSIKHE`) | 0 | 0 |
+| `wall_damage` ≥ 50 % (`COMBAT_CITY_RANGED_DAMAGE_THRESHOLD` = 50) | 21 | 21 |
+| walls at 0 HP | 0 | 0 |
+| target farther than 2 tiles | 0 | 0 |
+| target absent from the export (not visible) | 0 | 0 |
+| target a civilian, or its owner not at war | 0 | 0 |
+
+One cause, and it is the board's. `Game::city_can_strike` is `wall_hp > 0 &&
+!struck`, and `struck` is set only when a strike is APPLIED on the board; the
+decider plans each frame on a throwaway clone, so the authoritative mirror's
+city has `struck = false` on every replan frame of the turn and the AI issues
+the strike again. The host's answer is
+`CityManager.CanStartCommand(city, CityCommandTypes.RANGE_ATTACK)`
+(`Base/Assets/UI/WorldView/CityBannerManager.lua:1555`, `CanRangeAttack`;
+`WorldInput.lua:2545` asks it before `RequestCommand`, and so does the mod at
+`city_strike`), which refuses the second strike of the turn; the export has
+no per-city "attacks remaining" (a unit's `attacks_remaining` crosses, a
+city's does not). The 26 `order_failed target_unharmed` verdicts on
+`city_strike` are the same re-issues, judged honestly. Two readings the table
+also settles: `COMBAT_CITY_RANGED_DAMAGE_THRESHOLD` is not a strike gate —
+Arpinum fired at 87, 92 and 97 % wall damage and the target's HP fell each
+time — and no frame-0 strike was refused. Over the last five control runs the
+refusal is 75 of 161 (`docs/fidelity/QUEUE.md`). The fix is PR #2594:
+`civvis_orders` keeps the strikes it ordered this turn per host city, like the
+repair cooldown, and spends them on every board built for the turn.
 
 ### How to re-measure
 
