@@ -4764,14 +4764,6 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
-    /// Put the first Holy Site at the front of the district order while the
-    /// Great Prophet race is still winnable.
-    ///
-    /// Carried down to `BasicAi::race_for_a_religion`, where the district order
-    /// actually lives. Written because `skip-the-prophet-race` measured
-    /// **-12.1 pp**: forcing non-founding is expensive, so the ~quarter of
-    /// seats that never found one are losing something worth having.
-    race_for_a_religion: bool,
     /// The religious defence grows with how much of a rival's religious
     /// victory is already done — the civilizations it holds and how close
     /// it is to half of ours — naming and targeting that faith from half a
@@ -6013,7 +6005,6 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
-            race_for_a_religion: false,
             religious_veto_defence: false,
             pass_picket: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
@@ -32222,7 +32213,6 @@ impl AdvancedAi {
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
         self.base.science_building_first = self.science_building_first;
-        self.base.race_for_a_religion = self.race_for_a_religion;
         if self.base.minor || self.base.barb {
             self.base.take_turn(g, pid);
             return;

@@ -220,10 +220,9 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | `never-an-empty-queue-2` | off (unmeasured) | Fill an idle turn with something that is not a soldier, or leave it idle. | — |
 | `opening-warrior-recon` | off (unmeasured) | Before the first city, move a nearby Warrior before the Settler and choose the city site from the terrain the Warrior has now revealed. | 1 |
 | `power-the-laboratory-2` | off (unmeasured) | A building whose powered half would be switched on the day it stands — the city is powered and stays powered with the building's own demand — is priced with that half, so the Lab, Stock Exchange and Factory in already-powered cities stop being bought without it. | 1 |
-| `race-for-a-religion` | off (unmeasured) | An adaptive seat stops racing for a Great Prophet: the race costs more science than the religion returns. | 1 |
 | `rapid-city-expansion` | off (unmeasured) | Run the screenable native expansion curve: rapid safe settlement first, then a conquest posture only after the practical frontier is exhausted. | 1 |
 | `recovery-reads-the-war` | off (unmeasured) | Measure the Recovery power gap against the war we are actually fighting. | 1 |
-| `science-building-first` | off (unmeasured) | `AdvancedAi::science_building_first`; opt-in gene `science-building-first`. | 1 |
+| `science-building-first` | off (unmeasured) | An adaptive seat stops racing for a Great Prophet: the race costs more science than the religion returns. | 1 |
 | `settler-guard-holds-2` | off (unmeasured) | A settler's bound guard is no protection when two visible hostiles that can reach the tile each match its strength, not only when one is 1.5× it. | 1 |
 | `settler-second-look` | off (unmeasured) | After a Settler's first move, discard only its disposable cached site while movement remains, so the next leg can use its new sight. | 1 |
 | `settler-target-hysteresis-2` | off (unmeasured) | A settle site one settler drops for danger is set aside for every own settler for the same window, so a second settler does not march to the tile the first just fled. | 1 |

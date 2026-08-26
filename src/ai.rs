@@ -2109,28 +2109,6 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `science-building-first`.
     pub(crate) science_building_first: bool,
-    /// Put the FIRST Holy Site at the front of the district order while the
-    /// Great Prophet race is still winnable.
-    ///
-    /// The race is finite and it is decided by who accumulates points first.
-    /// `d_holy` sits third in `DISTRICT_PRIORITY` behind Campus and Commercial
-    /// Hub, so an empire that means to found a religion routinely reserves its
-    /// site late and loses the slot: about **a quarter of seats finish with no
-    /// religion at all**.
-    ///
-    /// Measured 2026-08-25, and this gene exists because the OPPOSITE gene
-    /// failed. `skip-the-prophet-race` forced non-founding and cost
-    /// **-12.1 pp** — so a founded religion is worth a great deal here, and the
-    /// seats that miss one are leaving it on the table. See
-    /// [[civvis-twelve-genes-that-measured-null]].
-    ///
-    /// Narrow by construction: it lifts one family, only while this empire has
-    /// NO religion, NO site already reserved, and the race is still open. The
-    /// moment any of those stops holding it is inert, and the reservation logic
-    /// below still caps the empire at one site.
-    ///
-    /// Set from `AdvancedAi` by the opt-in gene `race-for-a-religion`.
-    pub(crate) race_for_a_religion: bool,
     /// Choose the pantheon from the land this empire actually holds, instead of
     /// from a fixed order.
     ///
@@ -4402,7 +4380,6 @@ impl BasicAi {
             pursue_religion: true,
             skip_prophet_race: false,
             science_building_first: false,
-            race_for_a_religion: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -4806,7 +4783,6 @@ impl BasicAi {
             pursue_religion: true,
             skip_prophet_race: false,
             science_building_first: false,
-            race_for_a_religion: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -10806,33 +10782,7 @@ impl BasicAi {
                 *weight *= 1.0 - depth * (have / total);
             }
         }
-        // `race-for-a-religion`: the first site, and only while it can still
-        // win a slot. See the flag's doc comment. Applied AFTER the sort and as
-        // a move rather than a weight bump — `sort_by` is stable, so merely
-        // tying the lane leader leaves the lane leader in front.
-        let race_the_site = self.race_for_a_religion
-            && !self.minor
-            && g.players[pid].religion.is_none()
-            && g.religions_founded() < g.max_religions()
-            && !g.cities.values().any(|other| {
-                other.owner == pid
-                    && (other
-                        .districts
-                        .keys()
-                        .any(|district| g.district_family(*district) == "holy_site")
-                        || matches!(
-                            other.queue.first(),
-                            Some(Item::District { district, .. })
-                                if g.district_family(*district) == "holy_site"
-                        ))
-            });
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        if race_the_site {
-            if let Some(at) = dpri.iter().position(|(family, _)| *family == "holy_site") {
-                let entry = dpri.remove(at);
-                dpri.insert(0, entry);
-            }
-        }
         for (family, _) in dpri {
             if family == "holy_site" && g.players[pid].religion.is_none() {
                 // `skip-the-prophet-race`: never open the tab. See the flag's
@@ -18430,80 +18380,6 @@ mod tests {
             .find(|unit| unit.owner == 0 && unit.kind == "missionary")
             .expect("the same Holy Site can buy once its majority is ours");
         assert_eq!(missionary.religion.as_deref(), Some("Home Faith"));
-    }
-
-    #[test]
-    fn racing_for_a_religion_puts_the_first_holy_site_ahead_of_the_lane() {
-        // The finite Prophet race is decided by who banks points first, and
-        // `d_holy` sits third behind Campus and Commercial Hub. This pins the
-        // lift, and — just as importantly — pins that it switches itself off
-        // the moment the empire already has a site.
-        let mut game = Game::new_full(
-            1,
-            24,
-            16,
-            crate::rng::fixture_seed("HOLYSITE", 91_773),
-            120,
-            0,
-            false,
-        );
-        let settler = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        let capital = game.player_city_ids(0)[0];
-        for tech in ["astrology", "writing"] {
-            game.players[0].techs.insert(Name::new(tech));
-        }
-        game.cities
-            .get_mut(&capital)
-            .unwrap()
-            .buildings
-            .push(crate::name!("monument"));
-
-        let family = |ai: &BasicAi, game: &Game| -> Option<String> {
-            match ai.pick_item(game, 0, capital, 2, 2, 2, 2, 10, 5, 5, 5) {
-                Some(Item::District { ref district, .. }) => {
-                    Some(game.district_family(district).to_string())
-                }
-                _ => None,
-            }
-        };
-
-        let mut treated = BasicAi::new();
-        assert!(
-            !treated.race_for_a_religion,
-            "off unless the advanced bridge asks for it"
-        );
-        treated.race_for_a_religion = true;
-        assert_eq!(
-            family(&treated, &game).as_deref(),
-            Some("holy_site"),
-            "while the race is open and nothing is reserved, the site leads"
-        );
-
-        // Reserve the site, and the lift must retire — the empire is capped at
-        // one site before it founds, so a second lift would be pure delay.
-        let center = game.cities[&capital].pos;
-        let plot = game.cities[&capital]
-            .owned_tiles
-            .iter()
-            .copied()
-            .find(|position| *position != center)
-            .unwrap();
-        game.map.tiles.get_mut(&plot).unwrap().district = Some(crate::name!("holy_site"));
-        game.cities
-            .get_mut(&capital)
-            .unwrap()
-            .districts
-            .insert(crate::name!("holy_site"), plot);
-        assert_ne!(
-            family(&treated, &game).as_deref(),
-            Some("holy_site"),
-            "one site is the whole of the treatment"
-        );
     }
 
     #[test]

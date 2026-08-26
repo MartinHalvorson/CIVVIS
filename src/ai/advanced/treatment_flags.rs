@@ -2623,17 +2623,6 @@ impl AdvancedAi {
 
     /// An adaptive seat stops racing for a Great Prophet: the race costs more
     /// science than the religion returns. See
-    /// `AdvancedAi::race_for_a_religion`; opt-in gene
-    /// `race-for-a-religion`.
-    pub fn enable_race_for_a_religion(&mut self) {
-        self.race_for_a_religion = true;
-    }
-
-    /// The twin of `enable_race_for_a_religion`.
-    pub fn disable_race_for_a_religion(&mut self) {
-        self.race_for_a_religion = false;
-    }
-
     /// `AdvancedAi::science_building_first`; opt-in gene
     /// `science-building-first`.
     pub fn enable_science_building_first(&mut self) {
