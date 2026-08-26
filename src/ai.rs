@@ -5894,13 +5894,22 @@ impl BasicAi {
     }
 
     /// Spend as much of this turn's legal path as possible reaching chosen
-    /// recovery ground. `Game::reachable` and `Game::path_to` share the exact
-    /// movement rules, so this can take a wounded unit all the way into a
-    /// nearby city rather than stopping one tile short for no tactical reason.
+    /// recovery ground. `Game::reachable` and `Game::path_to` decide the same
+    /// movement, so this can take a wounded unit all the way into a nearby
+    /// city rather than stopping one tile short for no tactical reason.
     fn move_to_evacuation_tile(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
         let Some(path) = g.path_to(uid, target) else {
             return false;
         };
+        // ★★★ A WOUNDED UNIT LEAVES CONTACT THROUGH ITS OWN LINE, which is a
+        // crossing and not a sequence of steps: `MoveTo` is the only action
+        // that may execute one (see `Game::entry_at`), and stepping it a
+        // `Move` at a time stops the casualty dead on the tile its relief is
+        // standing on. This is the front-line rotation the old rule made
+        // impossible, so it is the first thing to check here.
+        if path.iter().any(|step| !g.can_stop(uid, *step)) {
+            return self.path_walk_to(g, pid, uid, target);
+        }
         let mut moved = false;
         for step in path {
             if !g.can_move(uid, step) || !self.tactical_apply_move(g, pid, uid, step) {
@@ -11664,6 +11673,26 @@ impl BasicAi {
         self.path_move_inner(g, pid, uid, to, false)
     }
 
+    /// Order a whole walk rather than one step, for a destination the unit can
+    /// only reach by crossing one of its own units.
+    ///
+    /// `Action::MoveTo` is the only action that may execute such a path — see
+    /// [`Game::entry_at`]: Civilization VI checks the stacking layer at the
+    /// end of a move, so the crossing is legal and no single `Move` onto the
+    /// friendly tile ever is. The backtrack and livelock bookkeeping is the
+    /// same as an ordinary step's, recorded against the tile walked from.
+    pub(crate) fn path_walk_to(&self, g: &mut Game, pid: usize, uid: u32, to: Pos) -> bool {
+        let from = g.units[&uid].pos;
+        if !self.path_step_allowed(g, uid, from, to, false) {
+            return false;
+        }
+        if g.apply(pid, &Action::MoveTo { unit: uid, to }).is_err() {
+            return false;
+        }
+        self.record_path_step(g, uid, from);
+        true
+    }
+
     fn path_move_inner(
         &self,
         g: &mut Game,
@@ -11673,8 +11702,38 @@ impl BasicAi {
         allow_livelock_retread: bool,
     ) -> bool {
         let from = g.units[&uid].pos;
+        if !self.path_step_allowed(g, uid, from, to, allow_livelock_retread) {
+            return false;
+        }
+        // Settlers use the shared route-order tool exposed to network clients
+        // and learned agents. The AI has already selected and validated this
+        // adjacent step, so it remains behaviorally identical to Move without
+        // making every military step pay for route reconstruction.
+        let movement = if g.units[&uid].kind == "settler" {
+            Action::MoveTo { unit: uid, to }
+        } else {
+            Action::Move { unit: uid, to }
+        };
+        if g.apply(pid, &movement).is_err() {
+            return false;
+        }
+        self.record_path_step(g, uid, from);
+        true
+    }
+
+    /// Every refusal a pathed move owes to the controller rather than to the
+    /// rules: a minor leaving its defense area, a same-turn reversal, and a
+    /// route that keeps re-proposing a tile the unit has been standing on.
+    fn path_step_allowed(
+        &self,
+        g: &Game,
+        uid: u32,
+        from: Pos,
+        to: Pos,
+        allow_livelock_retread: bool,
+    ) -> bool {
         if self.minor && (!self.barb || !self.barbarian_tactics) {
-            let Some(home) = Self::minor_home(g, pid) else {
+            let Some(home) = Self::minor_home(g, g.units[&uid].owner) else {
                 return false;
             };
             let from_home = g.wdist(home, from);
@@ -11714,27 +11773,18 @@ impl BasicAi {
         if !allow_livelock_retread && self.retreads_a_loop(uid, to) {
             return false;
         }
-        // Settlers use the shared route-order tool exposed to network clients
-        // and learned agents. The AI has already selected and validated this
-        // adjacent step, so it remains behaviorally identical to Move without
-        // making every military step pay for route reconstruction.
-        let movement = if g.units[&uid].kind == "settler" {
-            Action::MoveTo { unit: uid, to }
-        } else {
-            Action::Move { unit: uid, to }
-        };
-        if g.apply(pid, &movement).is_err() {
-            return false;
-        }
-        {
-            let mut trails = self.last_path_step_from.borrow_mut();
-            let entry = trails.entry(uid).or_insert((g.turn, Vec::new()));
-            if entry.0 != g.turn {
-                *entry = (g.turn, Vec::new());
-            }
-            entry.1.push(from);
-        }
         true
+    }
+
+    /// Remember the tile a pathed move left, which is what the same-turn
+    /// reversal guard reads.
+    fn record_path_step(&self, g: &Game, uid: u32, from: Pos) {
+        let mut trails = self.last_path_step_from.borrow_mut();
+        let entry = trails.entry(uid).or_insert((g.turn, Vec::new()));
+        if entry.0 != g.turn {
+            *entry = (g.turn, Vec::new());
+        }
+        entry.1.push(from);
     }
 
     /// Settlers have a persistent, path-checked destination, so follow that
@@ -11810,20 +11860,34 @@ impl BasicAi {
 
         // The common case above stays as cheap as the original greedy AI;
         // invoke A* only when no legal neighbor makes geometric progress.
-        let next = match g.route_step(uid, target, stop_range) {
-            Some(p) if g.can_move(uid, p) => p,
-            _ => return false,
-        };
-        if self.path_move(g, pid, uid, next) {
-            return true;
+        if let Some(next) = g
+            .route_step(uid, target, stop_range)
+            .filter(|p| g.can_move(uid, *p))
+        {
+            if self.path_move(g, pid, uid, next) {
+                return true;
+            }
+            // A peer can take the A* tile first; sidestep at equal distance so
+            // a marching column keeps flowing around the blockage.
+            for p in g.nbrs(cur) {
+                if g.wdist(p, target) == g.wdist(cur, target)
+                    && g.can_move(uid, p)
+                    && self.path_move(g, pid, uid, p)
+                {
+                    return true;
+                }
+            }
         }
-        // A peer can take the A* tile first; sidestep at equal distance so
-        // a marching column keeps flowing around the blockage.
-        for p in g.nbrs(cur) {
-            if g.wdist(p, target) == g.wdist(cur, target)
-                && g.can_move(uid, p)
-                && self.path_move(g, pid, uid, p)
-            {
+        // ★★★★ EVERYTHING ABOVE ASKS FOR A TILE THIS UNIT MAY BE LEFT
+        // STANDING ON, AND A COLUMN IN A DEFILE HAS NONE: each unit's only
+        // improving neighbour holds the one in front of it. Civilization VI
+        // moves that unit through its own column and stops it beyond — see
+        // `Game::entry_at` — which is one order and not one step, so it is
+        // reached here and never by the greedy loop above. Deliberately last:
+        // the unit is otherwise standing still this turn, so this replaces a
+        // hold and never a march anybody already chose.
+        if let Some(dest) = g.pass_through_destination(uid, target, stop_range) {
+            if self.path_walk_to(g, pid, uid, dest) {
                 return true;
             }
         }
