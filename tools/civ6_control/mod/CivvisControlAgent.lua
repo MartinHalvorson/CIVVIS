@@ -6323,6 +6323,102 @@ local function exportState(player, pid, turn, frame)
 			};
 		end
 		local progress = unitProgress(unit);
+		-- ★★★ THE HOST'S OWN UPGRADE VERDICT, MAINTENANCE, ACTIVITY AND SPY
+		-- STATE, ONE-TO-ONE (docs/FIDELITY.md, "The one-to-one map", item 9).
+		-- The board derived every one of these from its own rules: `UPGRADE`
+		-- was 933 refusals over the 08-04/08-05 runs because the board's
+		-- successor, territory and price rules disagreed with the host's, and
+		-- `SPY_GAIN_SOURCES` was refused 195 of 862 times in one run because
+		-- the board re-tasked a Spy the host already had on an operation.
+		--
+		-- Upgrade, the shipped UnitPanel.lua:470-483 read: the loose
+		-- `CanStartCommand(pUnit, UPGRADE, true, true)` returns the results
+		-- table whose `UnitCommandResults.UNIT_TYPE` names the successor, the
+		-- strict `(false, true)` says whether it can start NOW, and
+		-- `pUnit:GetUpgradeCost()` is the bill. The strict call's
+		-- `FAILURE_REASONS` is the table `upgradeUnit` already reads; its
+		-- first entry crosses as `upgrade_blocked_reason`, and a block the
+		-- host would not name crosses as "unnamed" so the verdict still
+		-- stands. A unit with no successor at all exports none of the three.
+		local upgradeTo, upgradeCost, upgradeBlocked = nil, nil, nil;
+		try(function()
+			local hash = CMD["UNITCOMMAND_UPGRADE"];
+			if hash == nil then return; end
+			local now, strict = UnitManager.CanStartCommand(unit, hash, false, true);
+			local ever, loose = UnitManager.CanStartCommand(unit, hash, true, true);
+			if ever ~= true and now ~= true then return; end
+			local keys = UnitCommandResults;
+			local kind = nil;
+			if keys ~= nil then
+				if type(strict) == "table" then kind = strict[keys.UNIT_TYPE]; end
+				if kind == nil and type(loose) == "table" then
+					kind = loose[keys.UNIT_TYPE];
+				end
+			end
+			local target = kind ~= nil and GameInfo.Units[kind] or nil;
+			upgradeTo = target ~= nil and target.UnitType or nil;
+			upgradeCost = unit:GetUpgradeCost();
+			if now == true then return; end
+			local reasons = (keys ~= nil and type(strict) == "table")
+				and strict[keys.FAILURE_REASONS] or nil;
+			upgradeBlocked = (type(reasons) == "table" and reasons[1] ~= nil)
+				and tostring(reasons[1]) or "unnamed";
+		end);
+		-- Activity: `UnitManager.GetActivityType`, the WorldTracker.lua:544
+		-- status read — SLEEP, HOLD (skip turn), OPERATION (a Spy on a
+		-- mission, UnitPanel.lua:2147), AWAKE. Named through the enum, never
+		-- the raw integer, for the same reason `CivvisMilitaryFormation` is.
+		local activity = try(function()
+			local kind = UnitManager.GetActivityType(unit);
+			if kind == nil then return nil; end
+			for _, label in ipairs({ "SLEEP", "HOLD", "OPERATION", "AWAKE",
+			                         "HEAL", "SENTRY", "INTERCEPT", "MISSION" }) do
+				if ActivityTypes["ACTIVITY_" .. label] == kind then
+					return string.lower(label);
+				end
+			end
+			return tostring(kind);
+		end, nil);
+		-- Spy: `GetSpyOperation()` is -1 when idle, else the UnitOperations
+		-- row (EspionageOverview.lua:659-676, with `GetSpyOperationEndTurn`).
+		-- The missions the host would let an IDLE Spy start from the city it
+		-- stands in are the EspionageChooser.lua:199-213 loop — counterspy in
+		-- our own city, `CategoryInUI == "OFFENSIVESPY"` in anyone else's —
+		-- names only. ⚠ nil, not `{}`, when there are none (see
+		-- `great_person_points`), and nil when the Spy is busy: the mirror
+		-- filters the board's mission menu only on a list with entries.
+		local spyOperation, spyEnds, spyMissions = nil, nil, nil;
+		if name == "UNIT_SPY" then
+			try(function()
+				local op = unit:GetSpyOperation();
+				if op == nil or op == -1 then return; end
+				local opRow = GameInfo.UnitOperations[op];
+				spyOperation = opRow ~= nil and opRow.OperationType or tostring(op);
+				spyEnds = unit:GetSpyOperationEndTurn();
+			end);
+			if spyOperation == nil then
+				spyMissions = try(function()
+					local here = Map.GetPlot(unit:GetX(), unit:GetY());
+					local city = Cities.GetPlotPurchaseCity(here);
+					if city == nil then return nil; end
+					local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
+					local ours = city:GetOwner() == pid;
+					local names = {};
+					for operation in GameInfo.UnitOperations() do
+						local wanted = (ours
+							and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
+							or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
+						if wanted and UnitManager.CanStartOperation(
+								unit, operation.Hash, cityPlot, false, true) == true then
+							names[#names + 1] = operation.OperationType;
+						end
+					end
+					if #names == 0 then return nil; end
+					table.sort(names);
+					return names;
+				end, nil);
+			end
+		end
 		CivvisLedger.kinds[tostring(try(function() return unit:GetID(); end, -1))] = name;
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
@@ -6387,6 +6483,25 @@ local function exportState(player, pid, turn, frame)
 			-- SelectedUnit read). The mirror plans a frame's second strike only
 			-- for units that still have one.
 			attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
+			-- The host's upgrade verdict: see the block above `units[#units + 1]`.
+			-- `upgrade_to` is the successor's UnitType, `upgrade_cost` the Gold
+			-- the host would charge, `upgrade_blocked_reason` present exactly
+			-- when a successor exists and the command cannot start this turn.
+			upgrade_to = upgradeTo,
+			upgrade_cost = upgradeCost,
+			upgrade_blocked_reason = upgradeBlocked,
+			-- `UnitManager.GetUnitMaintenance(unitHash)`: the per-type bill the
+			-- shipped ReportScreen.lua:324 sums and ToolTipHelper.lua:705 prints.
+			maintenance = try(function()
+				return row ~= nil and UnitManager.GetUnitMaintenance(row.Hash) or nil;
+			end, nil),
+			-- UnitPanel.lua:2257 and :2242, the panel's own stat reads.
+			religious_strength = try(function() return unit:GetReligiousStrength(); end, nil),
+			max_moves = try(function() return unit:GetMaxMoves(); end, nil),
+			activity = activity,
+			spy_operation = spyOperation,
+			spy_operation_end_turn = spyEnds,
+			spy_missions_available = spyMissions,
 			great_person = greatPerson,
 		};
 	end);
@@ -7350,6 +7465,21 @@ local function exportState(player, pid, turn, frame)
 		gold_per_turn = try(function()
 			local treasury = player:GetTreasury();
 			return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
+		end, nil),
+		-- The bill by source, the TopPanel's own breakdown
+		-- (ToolTipHelper_PlayerYields.lua:26-30): `GetUnitMaintenance`,
+		-- `GetBuildingMaintenance` and `GetDistrictMaintenance` on the
+		-- treasury. The board simulates its own bill from its rules for every
+		-- plan it prices; these let the mirrored seat's forecast carry the
+		-- host's components instead. Same nil-not-0 rule as `gold_per_turn`.
+		unit_maintenance_total = try(function()
+			return player:GetTreasury():GetUnitMaintenance();
+		end, nil),
+		building_maintenance_total = try(function()
+			return player:GetTreasury():GetBuildingMaintenance();
+		end, nil),
+		district_maintenance_total = try(function()
+			return player:GetTreasury():GetDistrictMaintenance();
 		end, nil),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
 		-- ★★★★ FAITH PER TURN, THE TOP BAR'S OWN FIGURE. `GetFaithYield()` is
