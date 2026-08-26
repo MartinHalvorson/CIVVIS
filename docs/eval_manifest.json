@@ -1,20 +1,20 @@
 {
   "coverage": {
-    "named": 36,
+    "named": 37,
     "never_named": 0,
     "never_named_treatments": [],
-    "withholdable": 36
+    "withholdable": 37
   },
   "derived": {
     "firaxis_only_count": 28,
-    "live_bridge_count": 64,
-    "native_engine_repair_count": 36,
-    "withholdable_live_count": 36
+    "live_bridge_count": 65,
+    "native_engine_repair_count": 37,
+    "withholdable_live_count": 37
   },
   "genome_coverage": {
-    "capability_toggles": 227,
+    "capability_toggles": 230,
     "measured_by_a_screen": 73,
-    "reachable_as_a_gene": 176,
+    "reachable_as_a_gene": 179,
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 51,
     "unreachable_toggles": [
@@ -156,7 +156,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 36,
+      "declared_count": 37,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -193,11 +193,12 @@
         "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
-        "culture-building-debt"
+        "culture-building-debt",
+        "barbarian-settler-capture"
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 21,
+      "declared_count": 22,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -219,7 +220,8 @@
         "barbarian-ranged-answer",
         "naval-recon",
         "camp-party",
-        "religion-sues-peace"
+        "religion-sues-peace",
+        "barbarian-settler-capture"
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
@@ -256,7 +258,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 64,
+      "declared_count": 65,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -321,7 +323,8 @@
         "expansion-pantheon",
         "expansion-hall",
         "opening-settler-waits",
-        "escort-patience-runs-out"
+        "escort-patience-runs-out",
+        "barbarian-settler-capture"
       ]
     }
   },

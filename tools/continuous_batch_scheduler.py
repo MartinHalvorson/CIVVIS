@@ -57,6 +57,16 @@ PUBLICATION_GENERATED_FILES = (
     "GENE_HEURISTIC_RANKING.md",
     "docs/GENE_RANKING_EVIDENCE.md",
     "src/ai/advanced/genes.rs",
+    # ⚠ Added 2026-08-26 after #2584 made `genes.py write` record the compute
+    # bill in the same command that moves the genome. The guard below is
+    # fail-closed, so from that merge until this one EVERY continuous batch
+    # publication on EVERY machine refused with "publishing a report would
+    # change an unexpected path: tools/genome_cost_floor.json". That is the
+    # guard working; what failed is that this tuple is maintained by hand in
+    # one file while the writer lives in another.
+    # `the_guard_knows_every_path_genes_py_write_records` now derives the
+    # expected set from the writers' own path constants instead.
+    "tools/genome_cost_floor.json",
 )
 STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000

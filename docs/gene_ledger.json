@@ -1005,6 +1005,7 @@
     "operator_default_on": [
       "apostle-promotion-by-role",
       "army-target-weighs-enemy",
+      "barbarian-settler-capture",
       "boost-wait-research",
       "builder-supply-floor",
       "buildings-before-projects",
@@ -1071,6 +1072,7 @@
       "barbarian-bargain",
       "barbarian-ranged-answer",
       "barbarian-scouts-are-scouts",
+      "barbarian-settler-capture",
       "blind-objective-units",
       "boost-wait-research",
       "builder-supply-floor",
@@ -1177,6 +1179,15 @@
         "versions": {
           "chain-payback-window": null,
           "chain-payback-window-2": null
+        }
+      },
+      "coastal-city-sites": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "coastal-city-sites": null,
+          "coastal-city-sites-2": null
         }
       },
       "district-coverage": {
@@ -1670,7 +1681,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 83
+    "default_on": 84
   },
   "genes": [
     {

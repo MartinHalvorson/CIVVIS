@@ -163,7 +163,11 @@ class TheHistoryIsTheRankingsOwn(unittest.TestCase):
         display = genome_cost.history(ledger)
         deployed = set(ledger["rules"]["deployment_genome"])
         self.assertLess(len(deployed & set(authoritative)), len(deployed))
-        self.assertEqual(deployed - set(display), set())
+        # A gene the operator pinned on before any batch priced it has no
+        # display history yet; `PINNED_BEFORE_PRICING` names each one, and
+        # its row leaves the day a batch column exists.
+        unpriced = set(gene_ledger_tool.PINNED_BEFORE_PRICING)
+        self.assertEqual(deployed - set(display) - unpriced, set())
 
     def test_the_newest_reading_with_a_cost_wins(self):
         rows = [{"compute_cost_pct": 1.0, "compute_cost_se_pct": 0.1,
