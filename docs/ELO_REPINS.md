@@ -1770,3 +1770,46 @@ moves from v23's 18,797 decisions and `0x728b_8a78_d941_5de3` to **18,557 and
 `0x441a_fc9a_dfdb_76ba`** across its five profiles. The shipped ruleset
 fingerprint moves with `data/disasters.json`, to
 `fnv1a64:fbd69339f1ba4e2b`.
+
+## v25 (2026-08-26) — a unit may walk through its own units
+
+Civilization VI checks the stacking layer at the **end** of a move, not at
+every step. A unit crosses a tile held by its own unit of the same layer when
+it has the Movement to leave again, and may not finish there. CIVVIS asked that
+question at every hex, through a single boolean — `Game::can_enter` — that
+answered both "may this unit step onto that tile" and "may it be left standing
+there". Every flood, path and route in the engine consumed it, so a friendly
+unit was a wall: no column filed through a defile, no front line rotated, no
+route was planned through the army occupying it, and the reachability overlay
+stopped at our own units.
+
+Reference basis: the in-game
+[Civilopedia "Movement" entry](https://www.civilopedia.net/en-US/standard-rules/concepts/movement_3/),
+and the shipped end-turn blocker `ENDTURN_BLOCKING_STACKED_UNITS`, which this
+repository's own bridge already handles (`docs/CIV6_COMPUTER_CONTROL.md`) and
+which exists precisely because units are allowed to be stacked mid-turn. The
+whole rule, and what is deliberately not modelled, is written down in
+`docs/MOVEMENT.md` and pinned test by test in
+`src/game/movement_rule_tests.rs`.
+
+This is a shared-engine rules correction and not a controller treatment: no
+gene can keep it away from `legacy()`, because what is *legal* changed. Every
+seat plays by it.
+
+**It moves the anchor by four decisions.** `Game::entry_at` now answers
+`Blocked` / `Pass` / `Stop`; floods and paths expand on the crossing question
+and offer only the stopping one; `Action::MoveTo` executes a walk that crosses
+and anchors on the last tile the unit could legally be left on. `BasicAi`
+reaches its pass-through walk **last**, after every ordinary step has been
+refused, so it replaces a hold rather than a march — which is why five profiles
+and roughly eighteen thousand decisions move so little. It goes from v24's
+18,557 decisions and `0x441a_fc9a_dfdb_76ba` to **18,553 and
+`0x14b8_c800_4f26_5e5b`**. The shipped ruleset fingerprint does not move: no
+`data/*.json` changed.
+
+⚠ Worth recording beside the re-pin, because it is the reason this entry is
+dated 2026-08-26 and not two years earlier: **no instrument in this repository
+could have found it.** Gene screens, the Elo ladder, the Tactics bench and the
+doctrine arena all play both arms under the same rules, so a missing rule
+cancels out of the control and the treatment identically. It was found by a
+person playing the Tactics arena. See `docs/AI_GAPS.md` and `docs/FIDELITY.md`.

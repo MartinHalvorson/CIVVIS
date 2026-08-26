@@ -1428,3 +1428,45 @@ table|check|floors` prints kind × applied % × top reasons over the last runs
 and ratchets a per-kind applied-rate floor in `tools/actuation_floors.json`
 (floors only rise) — read it before calling a lane "decided badly" when it was
 in fact refused.
+
+## A rule error is invisible to every instrument here (2026-08-26)
+
+CIVVIS refused to move a unit through a tile held by one of its own units. The
+shipped game checks the stacking layer at the **end** of a move; this engine
+asked at every step, so a friendly unit was a wall in every flood, path and
+route. Fixed, pinned and sourced in `docs/MOVEMENT.md` and
+`src/game/movement_rule_tests.rs`.
+
+**What it did to the AI.** No unit could file through its own column, so a
+front line could not rotate a damaged unit out of contact, a march could not
+push through a defile its own vanguard occupied, and `approach_reach` — the
+candidate generator behind every tactical line — never offered a stand on the
+far side of our own units. `AdvancedAi::walk_to_stand` executed an
+`approach_reach` path one `Move` at a time, which stops dead on a friendly
+tile; it now orders the walk with `MoveTo`.
+
+⚠ **And why nothing here found it in roughly 2,400 pull requests.** Every
+instrument in this repository compares CIVVIS against CIVVIS:
+
+- Gene screens, the Elo ladder, the Tactics bench and the doctrine arena all
+  play both arms under the same rules. A missing rule cancels out of the
+  control and the treatment identically, so no A/B can see one, however large.
+  The whole `docs/TACTICS.md` programme was tuned inside this wall.
+- The one decision-diff study in this file — "the divergence is overwhelmingly
+  movement — 164 of 280 first differences" — compared a fog-honest CIVVIS
+  controller against an omniscient CIVVIS controller. Both were walled.
+- The refusal census counts refused `move` actions (1,569 of 56,538) with no
+  bucket for *why*, so "refused because one of ours was standing there" was
+  never a number anybody could look at. Bucketing movement refusals by cause —
+  `own_unit`, `foreign_unit`, `zoc`, `border`, `mp`, `terrain` — is the
+  measurement that would have surfaced this, and is now the natural companion
+  to the per-kind actuation table above.
+- The outcome gap that *was* visible (HoF kill:loss 0.18 against Firaxis 1.71)
+  pointed at the tactical layer, and attention went to orders-per-turn, invented
+  movement points and roads. Never to whether the legal move set was right.
+
+The general form, worth stating because it will produce the next one: **an
+instrument that plays both arms under the same rules measures controllers, not
+rules.** Rules are measured against the shipped game or not at all — see the
+open item in `docs/FIDELITY.md` on verifying legality in both directions across
+the live bridge.
