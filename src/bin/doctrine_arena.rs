@@ -2,10 +2,17 @@
 //! answered them.
 //!
 //! `battle_bench` asks one question — two identical armies six tiles apart in
-//! open ground — very precisely. This asks seven different ones, each a board
+//! open ground — very precisely. This asks eleven different ones, each a board
 //! painted from an engagement that made a general's reputation, and reports
 //! both who won the trade and *how* they fought. See `src/doctrine.rs` for the
 //! positions and what the pairing does and does not license.
+//!
+//! It also plays boards taken from real games. `--capture` runs whole games
+//! with the deployed controller in every seat and writes every engagement
+//! they produce — the board at the moment two armies first came within reach,
+//! ground and river crossings and wounded units included — to a file that
+//! `--engagements` plays back exactly like the hand-built positions. The
+//! positions are a curriculum; the captured file is the distribution.
 //!
 //! ```bash
 //! cargo run --release --bin doctrine_arena -- --list
@@ -13,23 +20,33 @@
 //! cargo run --release --bin doctrine_arena -- --a advanced --b basic --seeds 60
 //! cargo run --release --bin doctrine_arena -- --position the_defile --a advanced --b basic
 //! cargo run --release --bin doctrine_arena -- --profile advanced --seeds 20
+//! cargo run --release --bin doctrine_arena -- --capture --games 24 --out target/engagements.json
+//! cargo run --release --bin doctrine_arena -- --engagements target/engagements.json \
+//!     --a advanced+close-as-a-body --b advanced --seeds 12
+//! cargo run --release --bin doctrine_arena -- --engagements target/engagements.json --heal \
+//!     --a advanced --b advanced_v1
 //! ```
 //!
 //! **Run the control.** `--a advanced --b advanced` must report a paired mean
 //! of exactly 0.00 on every position, with zero seeds diverging. That is what
 //! says a treatment number from this harness is the agent rather than the
 //! position's own asymmetry.
+//!
+//! A seat is a built-in agent name, or `name+gene+gene` for the deployed
+//! controller with the named genes switched on (`civvis::elo::seat_spec`), so
+//! a tactical gene is priced here — where its effect is — before the
+//! whole-game screen prices what the effect is worth.
 use civvis::doctrine::{
-    matched_position, paired, position, DoctrineLedger, DoctrineProfile, MatchedPosition, Position,
-    POSITIONS,
+    harvest_engagements, matched_engagement, paired, DoctrineLedger, DoctrineProfile, Engagement,
+    MatchedPosition,
 };
-use civvis::elo::{builtin_ai, BUILTIN_AIS};
+use civvis::elo::{seat_ai, seat_spec};
 use civvis::parallel::{default_jobs, map};
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
         .position(|arg| arg == key)
-        .and_then(|index| args.get(index + 1))
+        .and_then(|value| args.get(value + 1))
         .and_then(|value| value.parse().ok())
         .unwrap_or(default)
 }
@@ -42,8 +59,16 @@ fn text(args: &[String], key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
-fn known_ai(name: &str) -> bool {
-    BUILTIN_AIS.contains(&name)
+/// Validate a seat, or say why not and stop. A seat is `name` or
+/// `name+gene+gene`; an unknown name or gene is refused rather than played as
+/// something else, because an arm that silently became the control would
+/// report a null indistinguishable from a real one.
+fn seat_or_exit(spec: &str) {
+    if let Err(error) = seat_spec(spec) {
+        eprintln!("{error}");
+        eprintln!("a seat is a built-in agent, or advanced+<gene>+<gene>");
+        std::process::exit(2);
+    }
 }
 
 /// A profile field as a column, or a dash when the engagement gave nothing to
@@ -93,20 +118,37 @@ fn merged(ledgers: impl Iterator<Item = DoctrineLedger>) -> DoctrineLedger {
     out
 }
 
-fn describe() {
-    println!("The doctrine arena: {} positions.", POSITIONS.len());
+/// Kills per loss, or a dash when nothing was lost — the exchange ratio the
+/// live seat's Hall of Fame is read in, so an arena number and a live number
+/// are the same kind of number.
+fn exchange(ledger: &DoctrineLedger) -> String {
+    if ledger.losses == 0 {
+        "--".to_string()
+    } else {
+        format!("{:.2}", ledger.kills as f64 / ledger.losses as f64)
+    }
+}
+
+fn describe(boards: &[Engagement]) {
+    println!("The doctrine arena: {} boards.", boards.len());
     let rules = civvis::rules::Rules::embedded();
-    for spec in POSITIONS {
+    for spec in boards {
         println!();
         println!("{}  --  {}", spec.id, spec.name);
         println!("  {}", spec.provenance);
         println!("  {}", spec.problem);
         println!(
-            "  board {}x{}, {} turns",
-            spec.width, spec.height, spec.turns
+            "  board {}x{}, {} turns{}",
+            spec.width,
+            spec.height,
+            spec.turns,
+            if spec.heal { ", healing on" } else { "" }
         );
         for role in 0..2 {
-            let force: Vec<&str> = spec.forces[role].iter().map(|unit| unit.kind).collect();
+            let force: Vec<&str> = spec.forces[role]
+                .iter()
+                .map(|unit| unit.kind.as_str())
+                .collect();
             println!(
                 "  role {role}: {}  [{} units, {:.0} material]",
                 spec.roles[role],
@@ -118,18 +160,18 @@ fn describe() {
     }
 }
 
-/// One agent against itself across every position, reported as a doctrine
+/// One agent against itself across every board, reported as a doctrine
 /// fingerprint. There is no treatment here and no p — this says how the agent
 /// fights each problem, which is the thing to read before deciding what to
 /// change about it.
-fn profile_run(name: &str, seeds: usize, start_seed: u64, jobs: usize) {
-    println!("doctrine_arena --profile {name}: {seeds} seeds a position");
+fn profile_run(boards: &[Engagement], name: &str, seeds: usize, start_seed: u64, jobs: usize) {
+    println!("doctrine_arena --profile {name}: {seeds} seeds a board");
     println!("no treatment and no p -- this is a description of how one agent fights");
     println!();
     println!("{:<24}{:<22}{PROFILE_HEADER}", "position", "role (swing)");
-    for spec in POSITIONS {
+    for spec in boards {
         let results: Vec<MatchedPosition> = map(seeds, jobs, |index| {
-            matched_position(spec, start_seed + index as u64, name, name, &builtin_ai)
+            matched_engagement(spec, start_seed + index as u64, name, name, &seat_ai)
         });
         let played: Vec<&MatchedPosition> = results.iter().filter(|row| !row.skipped).collect();
         if played.is_empty() {
@@ -141,7 +183,7 @@ fn profile_run(name: &str, seeds: usize, start_seed: u64, jobs: usize) {
             let swing = ledger.material_swing() / played.len() as f64;
             println!(
                 "{:<24}{}",
-                if role == 0 { spec.id } else { "" },
+                if role == 0 { spec.id.as_str() } else { "" },
                 profile_row(&format!("role {role} ({swing:+.0})"), ledger.profile()),
             );
         }
@@ -175,10 +217,15 @@ fn profile_run(name: &str, seeds: usize, start_seed: u64, jobs: usize) {
 ///
 /// Per seed: how much more of its force each agent had up at first contact
 /// than the other, against how much material it went on to win by.
-fn correlate(name_a: &str, name_b: &str, seeds: usize, start_seed: u64, jobs: usize) {
-    println!(
-        "doctrine_arena --correlate: {name_a} against {name_b}, {seeds} seeds a position"
-    );
+fn correlate(
+    boards: &[Engagement],
+    name_a: &str,
+    name_b: &str,
+    seeds: usize,
+    start_seed: u64,
+    jobs: usize,
+) {
+    println!("doctrine_arena --correlate: {name_a} against {name_b}, {seeds} seeds a board");
     println!(
         "per seed, the vanguard each agent got up at first contact less the other's, \
          against the material it won by"
@@ -190,9 +237,9 @@ fn correlate(name_a: &str, name_b: &str, seeds: usize, start_seed: u64, jobs: us
     );
     let mut pooled_x: Vec<f64> = Vec::new();
     let mut pooled_y: Vec<f64> = Vec::new();
-    for spec in POSITIONS {
+    for spec in boards {
         let results: Vec<MatchedPosition> = map(seeds, jobs, |index| {
-            matched_position(spec, start_seed + index as u64, name_a, name_b, &builtin_ai)
+            matched_engagement(spec, start_seed + index as u64, name_a, name_b, &seat_ai)
         });
         let mut xs: Vec<f64> = Vec::new();
         let mut ys: Vec<f64> = Vec::new();
@@ -274,8 +321,72 @@ fn share_text(present: bool, value: f64) -> String {
     }
 }
 
-/// One position, both agents, the roles swapped. Returns the paired
-/// differences and the merged ledgers for the report.
+/// Play whole games and write every engagement they produce.
+fn capture(args: &[String], start_seed: u64, jobs: usize) {
+    let games = number(args, "--games", 12).max(1) as usize;
+    let players = number(args, "--players", 4).clamp(2, 12) as usize;
+    let width = number(args, "--width", 60).max(20) as i32;
+    let height = number(args, "--height", 38).max(14) as i32;
+    let turns = number(args, "--turns", 150).max(10) as u32;
+    let radius = number(args, "--radius", 7).clamp(3, 12) as i32;
+    let window_turns = number(args, "--window-turns", 16).max(2) as u32;
+    let cooldown = number(args, "--cooldown", 25).max(1) as u32;
+    let out = text(args, "--out", "target/engagements.json");
+    println!(
+        "doctrine_arena --capture: {games} game(s) of {players} players on {width}x{height} to turn \
+         {turns}, every contact captured on a radius-{radius} window read over {window_turns} \
+         turns, one capture per pair every {cooldown} turns"
+    );
+    let harvested: Vec<Vec<Engagement>> = map(games, jobs, |index| {
+        harvest_engagements(
+            start_seed + index as u64,
+            players,
+            width,
+            height,
+            turns,
+            radius,
+            window_turns,
+            cooldown,
+        )
+    });
+    let boards: Vec<Engagement> = harvested.into_iter().flatten().collect();
+    let rules = civvis::rules::Rules::embedded();
+    println!();
+    println!(
+        "{:<24}{:>6}{:>8}{:>10}{:>8}{:>10}",
+        "board", "turn", "units 0", "material", "units 1", "material"
+    );
+    for spec in &boards {
+        println!(
+            "{:<24}{:>6}{:>8}{:>10.0}{:>8}{:>10.0}",
+            spec.id,
+            spec.name
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("?"),
+            spec.forces[0].len(),
+            spec.material(0, &rules),
+            spec.forces[1].len(),
+            spec.material(1, &rules)
+        );
+    }
+    if let Some(parent) = std::path::Path::new(&out).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::write(&out, Engagement::to_json(&boards)) {
+        Ok(()) => println!(
+            "\n{} engagement(s) from {games} game(s) written to {out}; play them with --engagements {out}",
+            boards.len()
+        ),
+        Err(error) => {
+            eprintln!("could not write {out}: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// One board, both agents, the roles swapped. Returns the paired differences
+/// and the merged ledgers for the report.
 struct Outcome {
     played: usize,
     skipped: usize,
@@ -288,7 +399,7 @@ struct Outcome {
 }
 
 fn run_position(
-    spec: &Position,
+    spec: &Engagement,
     name_a: &str,
     name_b: &str,
     seeds: usize,
@@ -296,7 +407,7 @@ fn run_position(
     jobs: usize,
 ) -> Outcome {
     let results: Vec<MatchedPosition> = map(seeds, jobs, |index| {
-        matched_position(spec, start_seed + index as u64, name_a, name_b, &builtin_ai)
+        matched_engagement(spec, start_seed + index as u64, name_a, name_b, &seat_ai)
     });
     let played: Vec<&MatchedPosition> = results.iter().filter(|row| !row.skipped).collect();
     // The fires-check. Two agents that played identically on every seed
@@ -329,52 +440,71 @@ fn run_position(
     }
 }
 
+/// The boards a run plays: the hand-built curriculum, or a captured file.
+fn boards_from(args: &[String]) -> Vec<Engagement> {
+    let file = text(args, "--engagements", "");
+    let mut boards = if file.is_empty() {
+        Engagement::curriculum()
+    } else {
+        let text = std::fs::read_to_string(&file).unwrap_or_else(|error| {
+            eprintln!("could not read {file}: {error}");
+            std::process::exit(2);
+        });
+        Engagement::from_json(&text).unwrap_or_else(|error| {
+            eprintln!("{file}: {error}");
+            std::process::exit(2);
+        })
+    };
+    if args.iter().any(|arg| arg == "--heal") {
+        for board in &mut boards {
+            board.heal = true;
+        }
+    }
+    boards
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|arg| arg == "--list") {
-        describe();
-        return;
-    }
     let seeds = number(&args, "--seeds", 24).max(1) as usize;
     let start_seed = number(&args, "--start-seed", 5_100_000) as u64;
     let jobs = number(&args, "--jobs", default_jobs() as i64).max(1) as usize;
 
+    if args.iter().any(|arg| arg == "--capture") {
+        capture(&args, start_seed, jobs);
+        return;
+    }
+
+    let boards = boards_from(&args);
+    if args.iter().any(|arg| arg == "--list") {
+        describe(&boards);
+        return;
+    }
+
     if args.iter().any(|arg| arg == "--correlate") {
         let name_a = text(&args, "--a", "advanced");
         let name_b = text(&args, "--b", "basic");
-        for name in [&name_a, &name_b] {
-            if !known_ai(name) {
-                eprintln!("unknown agent `{name}`");
-                std::process::exit(2);
-            }
-        }
-        correlate(&name_a, &name_b, seeds, start_seed, jobs);
+        seat_or_exit(&name_a);
+        seat_or_exit(&name_b);
+        correlate(&boards, &name_a, &name_b, seeds, start_seed, jobs);
         return;
     }
 
     let profile_only = text(&args, "--profile", "");
     if !profile_only.is_empty() {
-        if !known_ai(&profile_only) {
-            eprintln!("unknown agent `{profile_only}`");
-            std::process::exit(2);
-        }
-        profile_run(&profile_only, seeds, start_seed, jobs);
+        seat_or_exit(&profile_only);
+        profile_run(&boards, &profile_only, seeds, start_seed, jobs);
         return;
     }
 
     let name_a = text(&args, "--a", "advanced");
     let name_b = text(&args, "--b", "basic");
-    for name in [&name_a, &name_b] {
-        if !known_ai(name) {
-            eprintln!("unknown agent `{name}`");
-            std::process::exit(2);
-        }
-    }
+    seat_or_exit(&name_a);
+    seat_or_exit(&name_b);
     let wanted = text(&args, "--position", "");
-    let chosen: Vec<&Position> = if wanted.is_empty() {
-        POSITIONS.iter().collect()
+    let chosen: Vec<&Engagement> = if wanted.is_empty() {
+        boards.iter().collect()
     } else {
-        match position(&wanted) {
+        match boards.iter().find(|spec| spec.id == wanted) {
             Some(spec) => vec![spec],
             None => {
                 eprintln!("unknown position `{wanted}`; --list names them all");
@@ -384,8 +514,9 @@ fn main() {
     };
 
     println!(
-        "doctrine_arena: {name_a} vs {name_b}, {} position(s), {seeds} seeds x2 role swaps",
-        chosen.len()
+        "doctrine_arena: {name_a} vs {name_b}, {} board(s), {seeds} seeds x2 role swaps{}",
+        chosen.len(),
+        if chosen.iter().any(|spec| spec.heal) { ", healing on" } else { "" }
     );
     println!("paired material swing, {name_a} less {name_b}, one number per seed");
     println!();
@@ -396,7 +527,7 @@ fn main() {
 
     let mut totals: Vec<f64> = Vec::new();
     let mut silent: Vec<&str> = Vec::new();
-    let mut outcomes: Vec<(&Position, Outcome)> = Vec::new();
+    let mut outcomes: Vec<(&Engagement, Outcome)> = Vec::new();
     for spec in &chosen {
         let outcome = run_position(spec, &name_a, &name_b, seeds, start_seed, jobs);
         let wins = outcome.differences.iter().filter(|d| **d > 0.0).count();
@@ -416,7 +547,7 @@ fn main() {
             );
         }
         if outcome.diverged == 0 {
-            silent.push(spec.id);
+            silent.push(spec.id.as_str());
         }
         totals.extend(outcome.differences.iter().copied());
         outcomes.push((spec, outcome));
@@ -433,16 +564,30 @@ fn main() {
             format!("{wins}/{losses}"),
             ""
         );
+        let a = merged(outcomes.iter().map(|(_, outcome)| outcome.a.clone()));
+        let b = merged(outcomes.iter().map(|(_, outcome)| outcome.b.clone()));
+        println!(
+            "{:<20}{name_a} {} kills / {} lost (kills per loss {}), {name_b} {} kills / {} lost ({})",
+            "",
+            a.kills,
+            a.losses,
+            exchange(&a),
+            b.kills,
+            b.losses,
+            exchange(&b)
+        );
         println!();
         println!(
-            "The pooled row treats every position as one experiment, which they are not: \
-             they were chosen to pose different problems, and an agent that is much better \
-             at one and worse at another can pool to nothing. Read the rows."
+            "The pooled row treats every board as one experiment, which the curriculum is not: \
+             its positions were chosen to pose different problems, and an agent that is much \
+             better at one and worse at another can pool to nothing. Read the rows. A file of \
+             captured engagements is a sample of one distribution, and there the pooled row \
+             is the number."
         );
     }
 
     println!();
-    println!("How each side fought. Role 0 and role 1 are the two sides of each position;");
+    println!("How each side fought. Role 0 and role 1 are the two sides of each board;");
     println!("both agents play both, so a row pair says which side of the problem each is");
     println!("better at.");
     for (spec, outcome) in &outcomes {
@@ -473,8 +618,13 @@ fn main() {
             );
         }
         println!(
-            "  totals: {name_a} {} kills / {} lost, {name_b} {} kills / {} lost",
-            outcome.a.kills, outcome.a.losses, outcome.b.kills, outcome.b.losses
+            "  totals: {name_a} {} kills / {} lost ({}), {name_b} {} kills / {} lost ({})",
+            outcome.a.kills,
+            outcome.a.losses,
+            exchange(&outcome.a),
+            outcome.b.kills,
+            outcome.b.losses,
+            exchange(&outcome.b)
         );
     }
 
@@ -482,7 +632,7 @@ fn main() {
         println!();
         println!(
             "NO DIVERGENCE on {}. The two agents played identically there, so those rows \
-             measured nothing about either. A p from a position that never fired is the \
+             measured nothing about either. A p from a board that never fired is the \
              harness talking.",
             silent.join(", ")
         );

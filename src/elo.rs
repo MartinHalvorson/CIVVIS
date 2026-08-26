@@ -100,6 +100,54 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     }
 }
 
+/// A seat written as `name+gene+gene`: a built-in agent with the named genes
+/// switched on. `advanced` alone is the deployed controller with every opt-in
+/// off — what the doctrine arena and the skirmish bench have always seated —
+/// and `advanced+close-as-a-body` is that controller with one gene on, so a
+/// tactical gene can be priced where its effect is before the whole-game
+/// screen prices what it is worth. Only the two `AdvancedAi` names take
+/// genes. An unknown name or gene is an error rather than a fallback: a typo
+/// that produced an identical arm would read as a null and look exactly like
+/// a real one.
+pub fn seat_spec(spec: &str) -> Result<(&str, Vec<&'static crate::ai::Gene>), String> {
+    let mut parts = spec.split('+');
+    let name = parts.next().unwrap_or("");
+    if !BUILTIN_AIS.contains(&name) {
+        return Err(format!("unknown agent `{name}`"));
+    }
+    let mut genes = Vec::new();
+    for tag in parts {
+        if !matches!(name, "advanced" | "advanced_v1") {
+            return Err(format!(
+                "`{name}` takes no genes; only advanced and advanced_v1 do"
+            ));
+        }
+        let gene = crate::ai::gene(tag)
+            .ok_or_else(|| format!("unknown gene `{tag}` in `{spec}`; gene_screen --list names them"))?;
+        genes.push(gene);
+    }
+    Ok((name, genes))
+}
+
+/// [`builtin_ai`] for a `name+gene+gene` seat; see [`seat_spec`]. Panics on a
+/// spec `seat_spec` refuses, so validate at the command line rather than in a
+/// worker.
+pub fn seat_ai(spec: &str, seed: u64) -> Box<dyn Ai> {
+    let (name, genes) = seat_spec(spec).unwrap_or_else(|error| panic!("{error}"));
+    if genes.is_empty() {
+        return builtin_ai(name, seed);
+    }
+    let mut ai = if name == "advanced_v1" {
+        AdvancedAi::legacy()
+    } else {
+        AdvancedAi::new()
+    };
+    for gene in genes {
+        (gene.enable)(&mut ai);
+    }
+    Box::new(ai)
+}
+
 /// `builtin_ai` for a seat that has to cross a thread: the server's session
 /// lives behind a lock, so its agents are `Box<dyn Ai + Send>`.
 pub fn builtin_send_ai(name: &str, seed: u64) -> Box<dyn Ai + Send> {
@@ -263,6 +311,30 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
 
 #[cfg(test)]
 mod tests {
+    /// A seat is a built-in name, or the deployed controller plus named
+    /// genes. Anything else is refused by name rather than played as the
+    /// control.
+    #[test]
+    fn a_seat_names_its_genes_and_refuses_what_it_does_not_know() {
+        let (name, genes) = super::seat_spec("advanced").expect("plain");
+        assert_eq!((name, genes.len()), ("advanced", 0));
+        let tag = crate::ai::GENES
+            .iter()
+            .find(|gene| gene.opt_in())
+            .map(|gene| gene.tag)
+            .expect("an opt-in gene exists");
+        let with_gene = format!("advanced+{tag}");
+        let (name, genes) = super::seat_spec(&with_gene).expect("with a gene");
+        assert_eq!(name, "advanced");
+        assert_eq!(genes.iter().map(|gene| gene.tag).collect::<Vec<_>>(), vec![tag]);
+        assert!(super::seat_spec("advanced+no-such-gene").err().expect("refused").contains("no-such-gene"));
+        assert!(super::seat_spec(&format!("basic+{tag}")).err().expect("refused").contains("takes no genes"));
+        assert!(super::seat_spec("nobody").err().expect("refused").contains("unknown agent"));
+        // And the seat plays: a boxed agent comes back for both shapes.
+        let _ = super::seat_ai("advanced", 1);
+        let _ = super::seat_ai(&format!("advanced+{tag}"), 1);
+    }
+
     use super::*;
     use std::fs;
 
