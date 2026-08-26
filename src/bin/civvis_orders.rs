@@ -4724,11 +4724,7 @@ fn target_harmed(
 /// says `dest_impassable` is a fact, and "the unit is where it was" is an
 /// inference that reads the same for a refusal, an exhausted allowance and
 /// an order the mod never issued.
-fn move_refusal_reason(
-    evidence: &[serde_json::Value],
-    turn: u32,
-    unit: i64,
-) -> Option<String> {
+fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> Option<String> {
     let event = evidence.iter().find(|event| {
         event.get("kind").and_then(|k| k.as_str()) == Some("move_refused")
             && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
