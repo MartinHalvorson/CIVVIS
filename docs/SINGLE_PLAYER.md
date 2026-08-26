@@ -144,11 +144,13 @@ comes from:
 | Civ 6 | Its anchor | Here |
 |-------|-----------|------|
 | `TopPanel.xml` | one 29px strip, yields left, turn and menu right | `#civtop` |
-| `LaunchBar.xml` | horizontal, upper left: tech tree, civics tree, Government, Religion, Great People, Great Works | `#launchbar` |
+| `LaunchBar.xml` | horizontal, upper left, under the standings masthead: tech tree, civics tree, Government, Religion, Great People, Great Works, Climate, Governors, History | `#launchbar` |
+| `PartialScreenHooks.xml` | horizontal, upper right, read right to left: Reports, Era progress, Trade routes, City-States, Espionage — then Diplomacy, Quick Deals and ☗ | `#hooksbar` |
 | `WorldTracker.xml` | under the launch bar: research, then civics | `#worldtracker` |
 | `MinimapPanel.xml` | `Anchor="L,B"` | `.minimap-frame` |
-| `UnitPanel.xml` | `Anchor="R,B"` | `#ubar` |
-| `NotificationPanel.xml` | `Anchor="R,B"`, stack growth up | `#notify` |
+| `ActionPanel.xml` | `Anchor="R,B"`: End Turn, with what it is waiting on and the choices that settle it | `#actionpanel` |
+| `UnitPanel.xml` | `Anchor="R,B" Offset="172,0"`, inboard of the corner | `#ubar` |
+| `NotificationPanel.xml` | `Anchor="R,B"`, stack growth up out of the corner | `#notify` |
 
 The switch is one class, `body.civ6-frame`, set from the engine's own
 `spectate` flag so it cannot drift from what the server thinks; everything
@@ -176,16 +178,47 @@ had no hook for at all: research was a `<select>` in a settings drawer. The
 ring is the fraction of the current study that is done, so a glance at the bar
 answers "how far into this tech am I" without opening anything.
 
-**What the played seat does *not* take from Civilization VI is the deck.**
-#2275 took Civ 6's judgement whole: the standings masthead and the arena rail
-went behind the launch bar's ☗, the command deck folded away, and End Turn
-moved out to `ActionPanel.xml`'s bottom-right corner. That is right for the
-game Civ 6 is and wrong for what this one is — the standings and the arena's
-figures are this client's own instrument, and a game here is played next to
-them. So a played world opens with the masthead across the sky, the rail down
-the right, the deck open on the left, and End Turn, the auto-play controls and
-the transport all still inside it. `#actionpanel` is gone; the lower-right
-corner is `UnitPanel.xml`'s alone.
+**What the played seat does *not* take from Civilization VI is the
+laboratory's instrument.** #2275 took Civ 6's judgement whole: the standings
+masthead and the arena rail went behind the launch bar's ☗ and the command
+deck folded away. That is right for the game Civ 6 is and wrong for what this
+one is — the standings and the arena's figures are this client's own
+instrument, and a game here is played next to them. So a played world opens
+with the masthead across the sky under the yield strip, the launch bar and
+the hooks *under* the masthead, the arena rail down the right under the
+hooks, and the deck open on the left with the setup, the auto-play controls
+and every setting in it — Start new game first, then who plays the seat and
+for how long.
+
+**The turn is played from the corner.** End Turn stands in
+`ActionPanel.xml`'s bottom-right corner, and above it the corner says what
+the turn is waiting on and lays out the choices that would settle it: the
+techs that could be researched, the civics, what an idle city could build,
+the units still wanting orders, a proposal's Accept and Reject, a Congress
+vote, an age's dedications. Every one of them is one of the engine's own
+legal actions, posted exactly as the tree, the city screen and the deck
+already post it — the corner constructs nothing and can decide nothing — and
+the last row opens the whole screen for the choices that did not fit. The
+selected unit stands inboard of the corner, where `UnitPanel.xml` offsets it,
+and the notification rail climbs from the corner to the foot of the bars. The
+deck no longer carries End Turn at all: "Choose research" is read off the map,
+where the research is.
+
+**The launch bar and the hooks are that game's two bars.** The launch bar
+runs the nine screens `LaunchBar.xml` runs — the two trees, Government,
+Religion, Great People, Great Works, Climate, Governors, History — and the
+hooks bar runs `PartialScreenHooks.xml`'s five, read right to left as that
+game reads them: Reports (the Cities report `F8` already opened), Era
+progress, Trade routes, City-States, Espionage, with Diplomacy, Quick Deals
+and ☗ beyond them. Four of those screens did not exist before this: Great
+Works (every piece the empire holds, and every slot its buildings and
+wonders carry, by city — the observation now ships `great_work_pieces`),
+Climate (the world's phase and points, this empire's share of the carbon,
+and the storms and droughts in sight), History (the seat's own event log as
+a timeline, newest turn first), and Era Progress (the age, the era score
+against both thresholds, dedications taken and the one a new age is waiting
+for). All four are tabs of the Empire panel, so they share its cards, its
+badges and its keyboard.
 
 ☗ still folds the report away for a look at the map, and ☰ still folds the
 deck. Both answers are kept, under keys of their own — `civvis-solo-rankings-v1`
@@ -230,12 +263,13 @@ printing six zeroes about a civilization that is not there; the world tracker
 and the two tree hooks go with them. It is the same test the standings columns
 already use, `worldStandingsInPlay()`.
 
-Auto-play folds away under the button. It is this project's own addition to
-that corner and a real one — handing your seat to a *named* agent is
-most of why a laboratory has a play mode at all — but it is not a thing a
-player reaches for every turn, and Civ 6's corner holds one control. It opens
-by itself while an agent is playing, because the controls that take the seat
-back cannot be the ones folded away.
+Auto-play stays in the deck, under Start new game. It is this project's own
+addition and a real one — handing your seat to a *named* agent is most of why
+a laboratory has a play mode at all — but it is not a thing a player reaches
+for every turn, so it does not compete with End Turn for the corner. Its
+button says how long the loan is, "Auto-play 10 turns", and follows the
+picker beside it; "All" is the turns the game has left, and a game with no
+cap runs until stopped.
 
 ## The watched world keeps the laboratory
 

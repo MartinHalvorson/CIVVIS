@@ -670,6 +670,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 })
                 .collect::<serde_json::Map<_, _>>(),
             "great_people": p.great_people,
+            // Every Great Work this empire holds, as the piece it is — kind,
+            // the era it was made in, who made it — so the Great Works
+            // screen can say what the collection is rather than how big.
+            "great_work_pieces": p.great_work_pieces,
             "era_score": p.era_score,
             "normal_age_threshold": p.normal_age_threshold,
             "golden_age_threshold": p.golden_age_threshold,

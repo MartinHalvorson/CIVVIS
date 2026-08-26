@@ -10104,8 +10104,9 @@ impl Game {
         // walking it back — so the mode's own victory condition, last army
         // standing, was never reached. Permanent damage is also what makes
         // the tactics matter: a trade you win stays won, and focusing fire on
-        // one defender is worth doing.
-        if self.is_arena() {
+        // one defender is worth doing. A board that asks for a campaign
+        // (`TacticsRules::heal`) gets the neutral rate everywhere instead.
+        if self.is_arena() && !self.tactics.heal {
             return 0;
         }
         // Nothing recovers in fallout. A blast that only cost yields would make
