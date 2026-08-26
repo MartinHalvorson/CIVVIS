@@ -8077,6 +8077,274 @@ mod tests {
         );
     }
 
+    /// Run civvis-20260826T184456Z: 122 military `MOVE_TO`s into a
+    /// non-suzerain city-state's land, 4 % arrived; 36 into a city-state we
+    /// were Suzerain of, 51 % arrived. The city was in view every time, so the
+    /// fogged seal never applied and `has_open_borders` read a civic the
+    /// board never fills.
+    #[test]
+    fn a_city_states_visible_land_is_shut_until_suzerainty_war_or_no_border() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 7), owned(5, 7, 7)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 40,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        state.minors.push(StateMinor {
+            player: 7,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            suzerain: -1,
+            cities: vec![StateCity {
+                id: 70,
+                name: "Kabul".to_string(),
+                x: 5,
+                y: 7,
+                pop: 3,
+                ..StateCity::default()
+            }],
+            ..StateMinor::default()
+        });
+        let theirs = crate::hex::offset_to_axial(5, 6);
+        let scout_of = |mirror: &LiveMirror| {
+            *mirror
+                .game
+                .player_unit_ids(0)
+                .first()
+                .expect("the scout is on the board")
+        };
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert!(
+            !mirror.game.closed_borders.contains(&theirs),
+            "attributed ground is not the fogged seal's business"
+        );
+        assert!(
+            !mirror.game.can_move(scout_of(&mirror), theirs),
+            "a city-state we do not hold shuts its land to a scout, exactly as \
+             the host did 118 times in one game"
+        );
+
+        state.minors[0].suzerain = 0;
+        state.turn = 41;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_move(scout_of(&mirror), theirs),
+            "the Suzerain walks through"
+        );
+
+        state.minors[0].suzerain = -1;
+        state.minors[0].at_war = true;
+        state.turn = 42;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_move(scout_of(&mirror), theirs),
+            "war opens the ground"
+        );
+
+        state.minors[0].at_war = false;
+        state.minors[0].enforces_borders = Some(false);
+        state.turn = 43;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_move(scout_of(&mirror), theirs),
+            "a city-state without Early Empire has no border to enforce"
+        );
+
+        state.minors[0].enforces_borders = Some(true);
+        state.turn = 44;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            !mirror.game.can_move(scout_of(&mirror), theirs),
+            "and the border returns the turn the host reports it"
+        );
+    }
+
+    /// The same game: 37 military steps into a rival's closed border with its
+    /// city in view, 0 arrived; 7 of 11 arrived once at war. And the seat
+    /// that shuts the most visible ground is the one the passage-purchase
+    /// lane should be paying, which only fogged ground used to name.
+    #[test]
+    fn a_rivals_visible_land_is_shut_without_a_grant_and_named_for_the_buy_lane() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 50,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(5, 7, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 50,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: false,
+            cities: vec![StateCity {
+                id: 30,
+                name: "Mbanza Kongo".to_string(),
+                x: 5,
+                y: 7,
+                pop: 5,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+        let theirs = crate::hex::offset_to_axial(5, 6);
+        let scout_of = |mirror: &LiveMirror| {
+            *mirror
+                .game
+                .player_unit_ids(0)
+                .first()
+                .expect("the scout is on the board")
+        };
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert!(
+            !mirror.game.closed_borders.contains(&theirs),
+            "ground attributed to a visible city is gated by diplomacy, not sealed"
+        );
+        assert!(
+            !mirror.game.can_move(scout_of(&mirror), theirs),
+            "no grant, no war: the host refused every one of 37 such steps"
+        );
+        assert_eq!(
+            mirror.game.sealed_border_owners.get(&1).copied(),
+            Some(2),
+            "the rival shutting two visible plots is on the buy lane's list, \
+             got {:?}",
+            mirror.game.sealed_border_owners
+        );
+
+        state.rivals[0].open_borders = Some(true);
+        state.turn = 51;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_move(scout_of(&mirror), theirs),
+            "a bought grant opens the visible border too"
+        );
+        assert!(
+            mirror.game.sealed_border_owners.is_empty(),
+            "and retires the purchase trigger, got {:?}",
+            mirror.game.sealed_border_owners
+        );
+
+        state.rivals[0].open_borders = Some(false);
+        state.rivals[0].enforces_borders = Some(false);
+        state.turn = 52;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_move(scout_of(&mirror), theirs),
+            "a rival that has not reached Early Empire has no border yet"
+        );
+        assert!(
+            mirror.game.sealed_border_owners.is_empty(),
+            "nothing to buy from a seat with no border, got {:?}",
+            mirror.game.sealed_border_owners
+        );
+
+        state.rivals[0].enforces_borders = Some(true);
+        state.rivals[0].at_war = true;
+        state.turn = 53;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_move(scout_of(&mirror), theirs),
+            "war opens it — the repair must not seal our own invasion out"
+        );
+    }
+
+    /// `tools/civ6_yield_drift.py` on run civvis-20260826T184456Z: the
+    /// model's production and gold read 1.20× the host's, science, culture
+    /// and faith 1.08×, food 1.00× — King's `ai_yield_pct` to the digit,
+    /// paid to the one seat the host never pays it to.
+    #[test]
+    fn the_mirrored_seat_is_the_human_and_takes_no_ai_handicap() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 10,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 10,
+            ..StateSnapshot::default()
+        };
+        state.seat.difficulty = "DIFFICULTY_KING".to_string();
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 2,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            ..StateRival::default()
+        });
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(recon.game.difficulty, "king");
+        assert!(recon.game.is_human_seat(0), "the mirrored seat is the human");
+        let ours = recon.game.handicap_yield_pct(0);
+        assert_eq!(
+            (ours.production, ours.gold, ours.science),
+            (0.0, 0.0, 0.0),
+            "the human takes no yield handicap at King"
+        );
+        let theirs = recon.game.handicap_yield_pct(1);
+        assert!(
+            theirs.production > 0.0 && theirs.science > 0.0,
+            "the rival seats keep the AI bonus the host pays them, got {theirs:?}"
+        );
+    }
+
     #[test]
     fn sync_discards_units_that_only_civvis_simulated_from_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -10627,6 +10895,15 @@ pub struct StateRival {
     /// ground the planner can actually use. `None` on an older export.
     #[serde(default)]
     pub open_borders: Option<bool>,
+    /// Whether this rival holds Early Empire, i.e. whether its border is
+    /// enforced at all (`CIVIC_ENFORCE_BORDERS`). Without it anyone may walk
+    /// through; with it only war, a grant, or an alliance opens the ground.
+    /// The mirror writes it onto the seat as `Player::borders_enforced`.
+    /// `None` on an older export — read as ENFORCED, the measured rule: run
+    /// civvis-20260826T184456Z sent 37 military steps into a rival's closed
+    /// border and none arrived.
+    #[serde(default)]
+    pub enforces_borders: Option<bool>,
     /// How many technologies this rival has finished, or `-1` if the host
     /// could not be asked.
     ///
@@ -10711,6 +10988,13 @@ pub struct StateMinor {
     pub at_war: bool,
     #[serde(default = "minus_one")]
     pub suzerain: i32,
+    /// Whether this city-state holds Early Empire and so enforces its border
+    /// against everyone but its Suzerain (and whoever is at war with it).
+    /// `None` on an older export — read as ENFORCED: run
+    /// civvis-20260826T184456Z sent 122 military steps into non-suzerain
+    /// city-state land and 4 % arrived, against 51 % where we were Suzerain.
+    #[serde(default)]
+    pub enforces_borders: Option<bool>,
     #[serde(default)]
     pub envoys: i64,
     #[serde(default)]
@@ -12749,6 +13033,10 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "faith_sources", "science",
         "culture", "public_stats", "score", "dvp", "favor", "congress_dvp",
         "spy_capacity",
+        // Consumed since the stockpile import (`seat.strategic_resources`) and
+        // absent here until 2026-08-26, so every live state record filed a
+        // `schema:state.strategic_resources` gap that was not one.
+        "strategic_resources",
         "foreign_tourists", "domestic_tourists",
         "military",
         "trade_capacity",
@@ -12828,10 +13116,14 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "science_projects",
         "foreign_tourists",
         "domestic_tourists",
+        // Both border fields: `open_borders` had crossed since the buy lane
+        // shipped and filed `schema:rival.open_borders` on every live turn.
+        "open_borders",
+        "enforces_borders",
     ];
     const MINOR: &[&str] = &[
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
-        "most_envoys", "cities", "units",
+        "most_envoys", "cities", "units", "enforces_borders",
     ];
     const RELIGION: &[&str] = &["type", "founder", "beliefs"];
 
@@ -16525,6 +16817,18 @@ pub fn rebuild_from_state(
     {
         game.difficulty = difficulty;
     }
+    // ★★★★ THE MIRRORED SEAT IS THE HUMAN. The difficulty ladder pays its
+    // yield, combat, experience and era-boost handicaps to the AI seats and
+    // withholds them from the human, and on the host the seat this board
+    // plans for IS the human. Nothing here ever said so, so every mirrored
+    // board paid seat 0 King's own AI bonus: measured over the 150 turns of
+    // run civvis-20260826T184456Z with `tools/civ6_yield_drift.py`, the
+    // model's city production, gold read exactly 1.20× the host's and science,
+    // culture and faith 1.08× — `ai_yield_pct` to the digit, food untouched
+    // because food is never handicapped — in 288 of 299 persistent episodes.
+    // The board's corrected totals hid it; every plan the seat priced on its
+    // own model was priced in a currency 8–20 % richer than the host pays.
+    game.human_seats.insert(0);
 
     if let Some(map_script) = civvis_map_script(&state.seat.map) {
         game.map_script = map_script;
@@ -17175,6 +17479,13 @@ pub fn rebuild_from_state(
         } else {
             game.players[owner].open_borders_until.remove(&0);
         }
+        // Whether their border exists at all. `has_open_borders` used to read
+        // the rival's Early Empire off a civic tree this board never fills,
+        // and so answered "free passage" for every rival whose city was in
+        // view — the fogged seal below never applied to attributed ground.
+        // Assigned, not extended, like the grant: an older export without the
+        // key reads as enforced, the conservative answer and the measured one.
+        game.players[owner].borders_enforced = Some(rival.enforces_borders.unwrap_or(true));
         for city in &rival.cities {
             if let Some(cid) = plant_city(&mut game, owner, city) {
                 if city.id > 0 {
@@ -17225,6 +17536,13 @@ pub fn rebuild_from_state(
         } else {
             game.at_war.remove(&bond);
         }
+        // A city-state's land is shut to everyone but its Suzerain once it
+        // holds Early Empire. `has_open_borders` asks suzerainty only AFTER
+        // it has asked whether the border exists, and on this board the
+        // civic that creates it was never modelled — so a met city-state
+        // whose city we could see read as open ground, and the planner sent
+        // scouts, warriors and trebuchets through it turn after turn.
+        game.players[owner].borders_enforced = Some(minor.enforces_borders.unwrap_or(true));
         for city in &minor.cities {
             if let Some(cid) = plant_city(&mut game, owner, city) {
                 if city.id > 0 {
@@ -17566,6 +17884,23 @@ fn apply_territory(
                     && nearest.is_some_and(|(_, distance)| distance >= CIV6_CITY_OWNERSHIP_REACH)
                 {
                     unseen_major.insert(pos);
+                }
+                // Attributed ground is gated by `can_enter` through
+                // `has_open_borders`, which now reads the host's own Early
+                // Empire answer (`Player::borders_enforced`) — no seal needed.
+                // The passage-purchase lane still has to know WHO shuts how
+                // much: a major whose border we can see and cannot cross is
+                // exactly the seat Open Borders is bought from, and until now
+                // only fogged ground made that list.
+                if is_major(seat) && !game.is_at_war(0, seat) && game.enforces_borders(seat) {
+                    let granted = game
+                        .players
+                        .get(seat)
+                        .and_then(|p| p.open_borders_until.get(&0))
+                        .is_some_and(|until| *until > game.turn);
+                    if !granted {
+                        *sealed_by.entry(seat).or_insert(0) += 1;
+                    }
                 }
                 assign.push((pos, owner));
             } else if seat != 0 {
@@ -18841,6 +19176,10 @@ impl LiveMirror {
             } else {
                 self.game.players[owner].open_borders_until.remove(&0);
             }
+            // See `rebuild_from_state`: the host's own Early Empire answer,
+            // re-read from every export.
+            self.game.players[owner].borders_enforced =
+                Some(rival.enforces_borders.unwrap_or(true));
             for city in &rival.cities {
                 if !snapshot.is_revealed((city.x, city.y)) {
                     continue;
@@ -18936,6 +19275,9 @@ impl LiveMirror {
             } else {
                 self.game.at_war.remove(&(0, owner));
             }
+            // See `rebuild_from_state`: the city-state's own border, re-read.
+            self.game.players[owner].borders_enforced =
+                Some(minor.enforces_borders.unwrap_or(true));
             for city in &minor.cities {
                 if !snapshot.is_revealed((city.x, city.y)) {
                     continue;
