@@ -91,11 +91,26 @@ aircraft, and for anything belonging to another player.
 
 ## What is not modelled
 
-- **Formation swaps.** A linked escort moves as one unit with its charge;
-  exchanging half of a formation is refused rather than approximated.
-- **The host's own swap operation** is not yet driven over the Civilization VI
+Stated exactly, because a half-shipped affordance described as shipped is how
+the defect above survived for so long.
+
+- **Swap is engine and protocol only.** `Action::Swap` is legal, tested and
+  refused correctly, and any client or controller may send it. It is **not**
+  enumerated by `Game::legal_actions`, so learned agents never see it; it has
+  no button in the browser; and no controller yet chooses one. A
+  `swap-rotation` gene — pull the damaged front-liner back for the healthy
+  unit behind it — is the obvious next use and belongs to its own PR, with its
+  own screen.
+- **The host's own swap operation** is not driven over the Civilization VI
   bridge, so a swap is a CIVVIS-side decision only. Two `MOVE_TO` orders cannot
   emulate one: the first is refused.
+- **Formation swaps.** A linked escort moves as one unit with its charge;
+  exchanging half of a formation is refused rather than approximated.
+- **`route_step` still plans around our own units on its first step.** Its
+  eighty-odd callers keep the old contract — the tile it returns is one the
+  unit may stand on. The crossing case is answered by
+  `Game::pass_through_destination` instead, which both the controller and
+  `/route` reach only when the ordinary router has nothing.
 
 ## Why nothing caught it
 
