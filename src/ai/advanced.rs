@@ -24629,6 +24629,51 @@ impl AdvancedAi {
         self.live_formationless_settler_shadow
     }
 
+    /// Whether a visible hostile can capture the Settler's next ordinary
+    /// route step before its unstacked guard can protect it.  This deliberately
+    /// does not treat the Settler's current city tile as safe enough to release
+    /// the guard: leaving that city for a tile a warrior can reach is exactly
+    /// how `civvis-20260826T054001Z` lost its second Settler on turn 14.
+    fn unstacked_settler_step_is_capturable(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(target) = self.settler_targets.get(&uid).copied() else {
+            return false;
+        };
+        let Some(next) = g
+            .route_step(uid, target, 0)
+            .filter(|next| g.can_move(uid, *next))
+        else {
+            return false;
+        };
+        let coastal = g.nbrs(next).iter().any(|neighbour| {
+            g.map
+                .get(*neighbour)
+                .is_some_and(|tile| g.rules.is_water(tile))
+        });
+        g.units.values().any(|unit| {
+            if unit.owner == pid
+                || !g.is_at_war(pid, unit.owner)
+                || !g.unit_visible_to(unit.id, pid)
+            {
+                return false;
+            }
+            let spec = &g.rules.units[unit.kind];
+            let domain = spec.domain.as_deref();
+            if spec.class != "military"
+                || domain == Some("air")
+                || (domain == Some("sea") && !coastal)
+            {
+                return false;
+            }
+            if self.barbarian_scouts_are_scouts
+                && g.players[unit.owner].is_barbarian
+                && spec.promotion_class == "recon"
+            {
+                return false;
+            }
+            g.wdist(unit.pos, next) <= spec.moves.ceil() as i32
+        })
+    }
+
     /// The settler half of `stacked_escort`: keep a guard bound, and hold
     /// position — briefly and boundedly — when the guard has fallen off the
     /// pair.
@@ -24773,11 +24818,15 @@ impl AdvancedAi {
             waited.saturating_add(1)
         };
         self.guard_wait.insert(uid, (g.turn, waited));
-        if waited > STACKED_ESCORT_PATIENCE {
+        if waited > STACKED_ESCORT_PATIENCE
+            && !self.unstacked_settler_step_is_capturable(g, pid, uid)
+        {
             // The guard is livelocked or refused. It keeps chasing, but the
             // settler stops paying for it; the counter stays saturated until
             // the guard actually re-stacks, so waiting and marching cannot
-            // oscillate.
+            // oscillate. A visibly capturable next step is different: holding
+            // on the current tile is safer than spending the Settler merely to
+            // break that livelock.
             return None;
         }
         // ★★★★ WAITING IS ONLY SAFE ON A SAFE TILE. Run civvis-20260815T230003Z:
