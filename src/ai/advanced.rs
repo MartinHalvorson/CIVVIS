@@ -254,10 +254,10 @@ const FOREIGN_BORDER_RADIUS: i32 = 3;
 const FOREIGN_BORDER_TILE_PENALTY: f64 = 4.0;
 /// The most the border term may take off a site.
 const FOREIGN_BORDER_PENALTY_CAP: f64 = 40.0;
-/// The fourth ring around a visible city-state City Center. It is the first
-/// legally settleable ring, but still leaves a new, undefended city exposed if
-/// that city-state later follows a hostile Suzerain into war.
-const CITY_STATE_SETTLEMENT_BUFFER: i32 = 4;
+/// The sixth ring around a visible city-state City Center. A city-state's
+/// mobile siege stack can still reach and take an un-walled frontier city from
+/// the fifth and sixth rings after a hostile Suzerain calls it to war.
+const CITY_STATE_SETTLEMENT_BUFFER: i32 = 6;
 
 /// How much of the game's progress the live race adds to its wonder bonus: the
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
@@ -23337,9 +23337,10 @@ impl AdvancedAi {
         (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
-    /// The one extra legal founding ring beside a visible city-state is not a
+    /// The first six legal founding rings beside a visible city-state are not a
     /// safe frontier. A rival Suzerain can turn the city-state hostile without
-    /// warning, and an un-walled pop-one city has no time to prepare a defence.
+    /// warning, then use the city-state's mobile siege stack to take an
+    /// un-walled colony before it can prepare a defence.
     ///
     /// This is part of the standard `settlement_safety` policy rather than an
     /// opt-in defence gene: it prevents the exposed city from being founded,
