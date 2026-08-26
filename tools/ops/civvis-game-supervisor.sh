@@ -460,6 +460,27 @@ while true; do
     sleep 120
     continue
   fi
+  # A clean release build can take minutes.  Main may advance while it runs,
+  # so the checkout that was fresh before the build is not necessarily fresh
+  # when the UI begins a new game.  Re-fetch at this boundary: when it moved,
+  # leave this built-but-stale binary unused and rebuild the new exact head.
+  if [[ "$PIN" == "head" ]]; then
+    if ! git -c gc.auto=0 fetch --quiet origin main >>"$SUP" 2>&1; then
+      say "could not recheck origin/main after fresh build; refusing to launch a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+    ORIGIN_MAIN_AFTER_BUILD=$(git rev-parse origin/main 2>/dev/null || true)
+    if [[ ! "$ORIGIN_MAIN_AFTER_BUILD" =~ ^[0-9a-f]{40}$ ]]; then
+      say "could not resolve origin/main after fresh build; refusing to launch an unverified batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+    if [[ "$HEAD_REVISION" != "$ORIGIN_MAIN_AFTER_BUILD" ]]; then
+      say "origin/main advanced from ${HEAD_REVISION:0:7} to ${ORIGIN_MAIN_AFTER_BUILD:0:7} during fresh build; rebuilding exact head before launch"
+      continue
+    fi
+  fi
 
   DIFFICULTY=$EXPLICIT_DIFFICULTY
   if [[ -z "$DIFFICULTY" ]]; then
