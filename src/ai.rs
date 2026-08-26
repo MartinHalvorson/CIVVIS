@@ -8302,6 +8302,59 @@ impl BasicAi {
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
+            // The live land-grab policy already opens two Settler seats from
+            // the first city, but the opening book used to spend its next
+            // Builder/Warrior slot before `pick_item` could fill that second
+            // seat. On an Online-speed host that left city three walking out
+            // of Rome at turn 29 and missing the turn-32 opening gate. Ask
+            // the ordinary governor first while the first Settler is already
+            // on the board: it retains every population, local-barbarian,
+            // repair, and military-floor refusal, and leaves the book intact
+            // whenever a Settler is not the safe choice.
+            if self.land_grab
+                && !self.minor
+                && !self.barb
+                && n_cities == 1
+                && settlers > 0
+                && g.cities[cid].is_capital
+                && self.book_pos < 4
+            {
+                let opening_major_war = g.players.iter().any(|player| {
+                    player.id != pid
+                        && player.alive
+                        && !player.is_minor
+                        && !player.is_barbarian
+                        && g.is_at_war(pid, player.id)
+                });
+                if !opening_major_war {
+                    let opening_item = self.pick_item(
+                        g,
+                        pid,
+                        *cid,
+                        n_cities,
+                        settlers,
+                        builders,
+                        traders,
+                        siege_support,
+                        military,
+                        melee,
+                        ranged,
+                    );
+                    if matches!(
+                        &opening_item,
+                        Some(Item::Unit { unit }) if unit == "settler"
+                    ) {
+                        let item = opening_item.expect("the matched opening item is a Settler");
+                        if g.apply(pid, &Action::Produce { city: *cid, item }).is_ok() {
+                            settlers += 1;
+                            think!(self.journal, Cities, Decision,
+                                   "{} keeps the opening Settler pipeline filled", g.cities[cid].name;
+                                   "one Settler is already walking, the peaceful land-grab policy has a second open seat, and the remaining opening book waits");
+                            continue;
+                        }
+                    }
+                }
+            }
             // chess-style opening book: scripted first capital builds
             if !self.minor && !self.barb && g.cities[cid].is_capital && self.book_pos < 4 {
                 let mut played = false;
@@ -17921,6 +17974,114 @@ mod tests {
         assert!(
             !is_settler(ask(&game, &treated, 3, 0)),
             "and stops when a settler can no longer repay"
+        );
+    }
+
+    /// The live land-grab already allows two Settlers from one city, but the
+    /// scripted opening previously made its next Builder wait for the first
+    /// walker to found. Keep the book for ordinary controllers and unsafe
+    /// cases, while letting the live opening fill its authorized second slot.
+    #[test]
+    fn land_grab_fills_the_opening_settler_pipeline_before_book_filler() {
+        let board = || {
+            let mut game = Game::new_full(
+                2,
+                24,
+                16,
+                crate::rng::fixture_seed("OPENINGPIPE", 91_780),
+                250,
+                0,
+                false,
+            );
+            let founding = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: founding })
+                .unwrap();
+            let capital = game.player_city_ids(0)[0];
+            let home = game.cities[&capital].pos;
+            game.cities.get_mut(&capital).unwrap().pop = 2;
+            game.turn = 14;
+            // One Settler is already travelling; the Warrior and Scout keep
+            // the ordinary governor's military and recon checks satisfied.
+            game.spawn_unit("settler", 0, home);
+            game.spawn_unit("warrior", 0, home);
+            game.spawn_unit("scout", 0, home);
+            game
+        };
+        let capital = |game: &Game| game.player_city_ids(0)[0];
+        let head = |game: &Game| game.cities[&capital(game)].queue.first().cloned();
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let opening = |ai: &mut BasicAi| {
+            // The next original book slot is a Builder. A high city target
+            // keeps the live two-Settler pipeline materially open.
+            ai.book_pos = 2;
+            ai.w.open2 = 2.0;
+            ai.w.city_target = 8.0;
+        };
+
+        let mut stock = BasicAi::new();
+        opening(&mut stock);
+        let mut ordinary = board();
+        stock.cities(&mut ordinary, 0);
+        assert_eq!(
+            head(&ordinary),
+            Some(builder.clone()),
+            "without the live land-grab policy, the opening book stays unchanged"
+        );
+
+        let mut live = BasicAi::new();
+        opening(&mut live);
+        live.enable_land_grab();
+        let mut treated = board();
+        live.cities(&mut treated, 0);
+        assert_eq!(
+            head(&treated),
+            Some(settler),
+            "the first walking Settler opens the already-authorized second slot"
+        );
+        assert_eq!(
+            live.book_pos, 2,
+            "the deferred Builder remains the next book slot"
+        );
+
+        // The bypass does not force a Settler below the host's legal
+        // population floor: in that case the original book continues.
+        let mut low_pop = board();
+        low_pop.cities.get_mut(&capital(&low_pop)).unwrap().pop = 1;
+        let mut guarded = BasicAi::new();
+        opening(&mut guarded);
+        guarded.enable_land_grab();
+        guarded.enable_host_settler_pop();
+        guarded.cities(&mut low_pop, 0);
+        assert_eq!(
+            head(&low_pop),
+            Some(builder.clone()),
+            "the normal Settler population safety gate remains authoritative"
+        );
+
+        // An opening at war never jumps ahead of its defensive book slot.
+        let mut wartime = board();
+        wartime.record_contact(0, 1);
+        wartime.current = 0;
+        wartime
+            .apply(0, &Action::DeclareWar { player: 1 })
+            .expect("the fixture majors can declare war");
+        let mut defended = BasicAi::new();
+        opening(&mut defended);
+        defended.enable_land_grab();
+        defended.cities(&mut wartime, 0);
+        assert_eq!(
+            head(&wartime),
+            Some(builder),
+            "a major war keeps the defensive opening book in control"
         );
     }
 
