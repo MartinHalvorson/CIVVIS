@@ -254,6 +254,10 @@ const FOREIGN_BORDER_RADIUS: i32 = 3;
 const FOREIGN_BORDER_TILE_PENALTY: f64 = 4.0;
 /// The most the border term may take off a site.
 const FOREIGN_BORDER_PENALTY_CAP: f64 = 40.0;
+/// The fourth ring around a visible city-state City Center. It is the first
+/// legally settleable ring, but still leaves a new, undefended city exposed if
+/// that city-state later follows a hostile Suzerain into war.
+const CITY_STATE_SETTLEMENT_BUFFER: i32 = 4;
 
 /// How much of the game's progress the live race adds to its wonder bonus: the
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
@@ -23333,6 +23337,35 @@ impl AdvancedAi {
         (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
+    /// The one extra legal founding ring beside a visible city-state is not a
+    /// safe frontier. A rival Suzerain can turn the city-state hostile without
+    /// warning, and an un-walled pop-one city has no time to prepare a defence.
+    ///
+    /// This is part of the standard `settlement_safety` policy rather than an
+    /// opt-in defence gene: it prevents the exposed city from being founded,
+    /// while preserving fog honesty and the frozen legacy controller.
+    fn city_state_settlement_exclusion(
+        &self,
+        g: &Game,
+        pid: usize,
+        visible: &TileBits,
+    ) -> BTreeSet<Pos> {
+        if !self.settlement_safety {
+            return BTreeSet::new();
+        }
+        g.cities
+            .values()
+            .filter(|city| {
+                city.owner != pid
+                    && g.sees(visible, city.pos)
+                    && g.players.get(city.owner).is_some_and(|player| {
+                        player.alive && player.is_minor && !player.is_barbarian
+                    })
+            })
+            .flat_map(|city| g.wdisk(city.pos, CITY_STATE_SETTLEMENT_BUFFER))
+            .collect()
+    }
+
     fn settlement_route_risk(
         &self,
         g: &Game,
@@ -23888,6 +23921,7 @@ impl AdvancedAi {
             .values()
             .flat_map(|city| g.wdisk(city.pos, 3))
             .collect::<BTreeSet<_>>();
+        let city_state_exclusion = self.city_state_settlement_exclusion(g, pid, &visible);
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -23909,6 +23943,7 @@ impl AdvancedAi {
                     || !g.rules.is_passable(tile)
                     || g.tile_is_natural_wonder(tile)
                     || city_exclusion.contains(&pos)
+                    || city_state_exclusion.contains(&pos)
                     || tile
                         .owner_city
                         .is_some_and(|cid| g.cities[&cid].owner != pid)
