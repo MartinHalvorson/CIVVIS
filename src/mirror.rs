@@ -4057,7 +4057,10 @@ mod tests {
         assert!((fix.food - 1.0).abs() < 1e-9, "{fix:?}");
         assert!((fix.production - 3.0).abs() < 1e-9, "{fix:?}");
         let paid = recon.game.workable_tile_yields(fertile_pos);
-        assert!((paid.food - 3.0).abs() < 1e-9, "the board pays what the host pays: {paid:?}");
+        assert!(
+            (paid.food - 3.0).abs() < 1e-9,
+            "the board pays what the host pays: {paid:?}"
+        );
         assert!((paid.production - 3.0).abs() < 1e-9, "{paid:?}");
 
         let wild_pos = crate::hex::offset_to_axial(7, 5);
@@ -4110,8 +4113,16 @@ mod tests {
                 pop: 1,
                 loyalty: 100.0,
                 worked: Some(vec![
-                    StateWorkedPlot { x: 5, y: 4, yields: Some(host_center) },
-                    StateWorkedPlot { x: 6, y: 4, yields: Some(host_worked) },
+                    StateWorkedPlot {
+                        x: 5,
+                        y: 4,
+                        yields: Some(host_center),
+                    },
+                    StateWorkedPlot {
+                        x: 6,
+                        y: 4,
+                        yields: Some(host_worked),
+                    },
                 ]),
                 center_yields: Some(host_center),
                 ..StateCity::default()
@@ -4154,7 +4165,10 @@ mod tests {
                 plots: vec![center],
             },
         ]);
-        assert!(!snapshot.is_current((6, 5)), "the turn-20 record is not current");
+        assert!(
+            !snapshot.is_current((6, 5)),
+            "the turn-20 record is not current"
+        );
         assert!(snapshot.is_current((5, 4)));
         let state = StateSnapshot {
             turn: 60,
@@ -15878,7 +15892,9 @@ fn apply_observed_plot_yields(game: &mut crate::game::Game, snapshot: &Snapshot)
             continue;
         };
         let pos = crate::hex::offset_to_axial(x, y);
-        let Some(tile) = game.map.get(pos) else { continue };
+        let Some(tile) = game.map.get(pos) else {
+            continue;
+        };
         if tile.district.is_some()
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
@@ -15905,9 +15921,16 @@ fn apply_observed_plot_yields(game: &mut crate::game::Game, snapshot: &Snapshot)
         // disagreements keeps this map the size of the problem — and makes it
         // readable as "the plots the host and CIVVIS do not agree on", which is
         // what `tools/civ6_yield_drift.py` wants from it.
-        if [delta.food, delta.production, delta.gold, delta.science, delta.culture, delta.faith]
-            .iter()
-            .all(|value| value.abs() < 1e-9)
+        if [
+            delta.food,
+            delta.production,
+            delta.gold,
+            delta.science,
+            delta.culture,
+            delta.faith,
+        ]
+        .iter()
+        .all(|value| value.abs() < 1e-9)
         {
             continue;
         }

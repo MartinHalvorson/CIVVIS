@@ -1593,9 +1593,11 @@ fn tile_json(
     // Live tiles only, for the same reason as `appeal` and `adjacency` above: a
     // remembered tile is a copy of what the seat once saw, and the engine's
     // answer is about the plot as it stands now.
-    let yields = (live && g.map.tiles.contains_key(&tile.pos))
-        .then(|| json!(g.workable_tile_yields(tile.pos)))
-        .unwrap_or(Value::Null);
+    let yields = if live && g.map.tiles.contains_key(&tile.pos) {
+        json!(g.workable_tile_yields(tile.pos))
+    } else {
+        Value::Null
+    };
     json!({
         "pos": [tile.pos.0, tile.pos.1],
         "terrain": tile.terrain,

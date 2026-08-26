@@ -293,7 +293,10 @@ fn an_eruption_leaves_production_fertility_and_not_only_food() {
         .iter()
         .filter(|position| game.map.tiles[*position].disaster_food > 0.0)
         .collect();
-    assert!(!fertile.is_empty(), "a certain eruption fertilises its ring");
+    assert!(
+        !fertile.is_empty(),
+        "a certain eruption fertilises its ring"
+    );
     for position in fertile {
         assert_eq!(
             game.map.tiles[position].disaster_production, 1.0,
@@ -326,7 +329,10 @@ fn production_fertility_is_rolled_apart_from_food_fertility() {
         .iter()
         .filter(|position| game.map.tiles[*position].disaster_production > 0.0)
         .collect();
-    assert!(!enriched.is_empty(), "Production fertility does not need a Food roll");
+    assert!(
+        !enriched.is_empty(),
+        "Production fertility does not need a Food roll"
+    );
     for position in &enriched {
         assert_eq!(
             game.map.tiles[*position].disaster_food, 0.0,
@@ -368,7 +374,10 @@ fn the_shipped_fertility_table_is_what_the_ruleset_carries() {
     }
     for id in ["tornado", "drought"] {
         let spec = &game.rules.disasters[id];
-        assert!(spec.fertility_chance.iter().all(|chance| *chance == 0.0), "{id}");
+        assert!(
+            spec.fertility_chance.iter().all(|chance| *chance == 0.0),
+            "{id}"
+        );
         assert!(
             spec.fertility_production_chance
                 .iter()
@@ -419,7 +428,10 @@ fn unclaimed_ground_still_pays_the_fertility_a_disaster_left_on_it() {
 
     // And the ground stops paying while it is under fallout, whoever holds it.
     game.map.tiles.get_mut(&position).unwrap().fallout_until = game.turn + 5;
-    assert_eq!(game.modeled_tile_yields(position), crate::rules::Yields::default());
+    assert_eq!(
+        game.modeled_tile_yields(position),
+        crate::rules::Yields::default()
+    );
 }
 
 #[test]
