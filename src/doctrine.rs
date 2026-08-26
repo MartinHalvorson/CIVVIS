@@ -268,7 +268,12 @@ impl Engagement {
     pub fn material(&self, role: usize, rules: &crate::rules::Rules) -> f64 {
         self.forces[role]
             .iter()
-            .map(|unit| rules.units.get(unit.kind.as_str()).map_or(0.0, |spec| spec.cost))
+            .map(|unit| {
+                rules
+                    .units
+                    .get(unit.kind.as_str())
+                    .map_or(0.0, |spec| spec.cost)
+            })
             .sum()
     }
 
@@ -293,7 +298,11 @@ impl Engagement {
                     if !rules.units.contains_key(unit.kind.as_str()) {
                         return Err(format!("{}: no unit `{}`", board.id, unit.kind));
                     }
-                    if unit.col < 0 || unit.col >= board.width || unit.row < 0 || unit.row >= board.height {
+                    if unit.col < 0
+                        || unit.col >= board.width
+                        || unit.row < 0
+                        || unit.row >= board.height
+                    {
                         return Err(format!(
                             "{}: role {role} places a {} off the board at {},{}",
                             board.id, unit.kind, unit.col, unit.row
@@ -1614,7 +1623,9 @@ pub fn build_engagement(spec: &Engagement, seed: u64) -> Option<Game> {
             // can never end a position before the ledger's deadline does. A
             // position is read at `spec.turns` and never asks who "won", so
             // the two clocks must not be allowed to disagree.
-            turn_limit: *crate::setup::TacticsRules::TURN_LIMITS.last().expect("turn ladder"),
+            turn_limit: *crate::setup::TacticsRules::TURN_LIMITS
+                .last()
+                .expect("turn ladder"),
             // And no era choice: a position deploys its exact force by hand,
             // so a rolled or pooled era would re-arm the experiment.
             era: crate::setup::TacticsEra::Start,
@@ -1764,12 +1775,15 @@ pub fn capture_engagement(
     let theirs = land_army(g, b);
     let in_contact: Vec<Pos> = ours
         .iter()
-        .filter(|unit| theirs.iter().any(|foe| g.wdist(unit.pos, foe.pos) <= CONTACT_RANGE))
-        .chain(
+        .filter(|unit| {
             theirs
                 .iter()
-                .filter(|foe| ours.iter().any(|unit| g.wdist(unit.pos, foe.pos) <= CONTACT_RANGE)),
-        )
+                .any(|foe| g.wdist(unit.pos, foe.pos) <= CONTACT_RANGE)
+        })
+        .chain(theirs.iter().filter(|foe| {
+            ours.iter()
+                .any(|unit| g.wdist(unit.pos, foe.pos) <= CONTACT_RANGE)
+        }))
         .map(|unit| unit.pos)
         .collect();
     if in_contact.is_empty() {
@@ -1777,14 +1791,15 @@ pub fn capture_engagement(
     }
     // The medoid of the contact: the unit position nearest every other, so
     // the window is centred on the fight and not on an outlier.
-    let centre = *in_contact
-        .iter()
-        .min_by_key(|pos| {
-            (
-                in_contact.iter().map(|other| g.wdist(**pos, *other)).sum::<i32>(),
-                **pos,
-            )
-        })?;
+    let centre = *in_contact.iter().min_by_key(|pos| {
+        (
+            in_contact
+                .iter()
+                .map(|other| g.wdist(**pos, *other))
+                .sum::<i32>(),
+            **pos,
+        )
+    })?;
     let (centre_col, centre_row) = hex::axial_to_offset(centre.0, centre.1);
     // The board is offset (column, row) with odd rows shifted, so a window
     // keeps its geometry only if every row moves by an EVEN count — a shift
@@ -1799,7 +1814,11 @@ pub fn capture_engagement(
     }
     let width = 2 * radius + 3;
     let height = centre_row - origin_row + radius + 2;
-    let seam = g.map.wraps_east_west().then_some(g.map.width).filter(|width| *width > 0);
+    let seam = g
+        .map
+        .wraps_east_west()
+        .then_some(g.map.width)
+        .filter(|width| *width > 0);
     let cell = |pos: Pos| -> Option<(i32, i32)> {
         let (col, row) = hex::axial_to_offset(pos.0, pos.1);
         let mut dcol = col - centre_col;
@@ -1859,7 +1878,11 @@ pub fn capture_engagement(
                     col,
                     row,
                     hp: unit.hp,
-                    promotions: unit.promotions.iter().map(|name| name.to_string()).collect(),
+                    promotions: unit
+                        .promotions
+                        .iter()
+                        .map(|name| name.to_string())
+                        .collect(),
                 })
             })
             .collect()
@@ -1872,7 +1895,12 @@ pub fn capture_engagement(
     let describe = |pid: usize, force: &[Placed]| {
         let material: f64 = force
             .iter()
-            .map(|unit| rules.units.get(unit.kind.as_str()).map_or(0.0, |spec| spec.cost))
+            .map(|unit| {
+                rules
+                    .units
+                    .get(unit.kind.as_str())
+                    .map_or(0.0, |spec| spec.cost)
+            })
             .sum();
         format!(
             "seat {pid} ({}): {} units, {material:.0} material",
@@ -1883,7 +1911,12 @@ pub fn capture_engagement(
     Some(Engagement {
         id: id.to_string(),
         name: format!("turn {} contact, seat {a} v seat {b}", g.turn),
-        provenance: format!("captured from a {}-player game, seed {}, turn {}", g.players.len(), g.seed, g.turn),
+        provenance: format!(
+            "captured from a {}-player game, seed {}, turn {}",
+            g.players.len(),
+            g.seed,
+            g.turn
+        ),
         problem: "The fight the controller actually got into, on the ground it got into it on, \
                   with the army it brought."
             .to_string(),
@@ -2043,8 +2076,7 @@ pub mod paired {
             return (differences.first().copied().unwrap_or(0.0), 0.0, 0.0, 1.0);
         }
         let mean = differences.iter().sum::<f64>() / n as f64;
-        let variance =
-            differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        let variance = differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
         let stderr = (variance / n as f64).sqrt();
         if stderr <= 0.0 {
             // No spread at all. A zero mean is the control's exact null and
@@ -2140,12 +2172,25 @@ mod tests {
                 out.sort();
                 out
             };
-            assert_eq!(units(&from_position), units(&from_board), "{} seats differ", spec.id);
+            assert_eq!(
+                units(&from_position),
+                units(&from_board),
+                "{} seats differ",
+                spec.id
+            );
             for (pos, tile) in &from_position.map.tiles {
                 let other = from_board.map.get(*pos).expect("same board");
-                assert_eq!(tile.terrain, other.terrain, "{} terrain at {pos:?}", spec.id);
+                assert_eq!(
+                    tile.terrain, other.terrain,
+                    "{} terrain at {pos:?}",
+                    spec.id
+                );
                 assert_eq!(tile.hills, other.hills, "{} hills at {pos:?}", spec.id);
-                assert_eq!(tile.feature, other.feature, "{} feature at {pos:?}", spec.id);
+                assert_eq!(
+                    tile.feature, other.feature,
+                    "{} feature at {pos:?}",
+                    spec.id
+                );
             }
             assert!(!from_board.tactics.heal, "the curriculum does not heal");
         }
@@ -2185,7 +2230,9 @@ mod tests {
         for seed in 1..=8u64 {
             let mut g = build_engagement(&spec, seed).expect("buildable");
             // Walk the two lines into contact before capturing.
-            let mut ais: Vec<Box<dyn Ai>> = (0..2).map(|pid| builtin_ai("advanced", seed + pid as u64)).collect();
+            let mut ais: Vec<Box<dyn Ai>> = (0..2)
+                .map(|pid| builtin_ai("advanced", seed + pid as u64))
+                .collect();
             let mut board = None;
             for _ in 0..24 {
                 if let Some(taken) = capture_engagement(&g, 0, 1, 12, 10, "test") {
@@ -2205,7 +2252,11 @@ mod tests {
                 .collect();
             source.sort();
             let seated: usize = board.forces.iter().map(Vec::len).sum();
-            assert_eq!(seated, source.len(), "seed {seed}: every unit in the window is seated");
+            assert_eq!(
+                seated,
+                source.len(),
+                "seed {seed}: every unit in the window is seated"
+            );
             let mut source_distances: Vec<i32> = Vec::new();
             for i in 0..source.len() {
                 for j in (i + 1)..source.len() {
@@ -2228,7 +2279,8 @@ mod tests {
                 .iter()
                 .map(|unit| (unit.0, hex::axial_to_offset(unit.1 .0, unit.1 .1)))
                 .collect();
-            let board_cells: Vec<(i32, i32)> = placed.iter().map(|unit| (unit.col, unit.row)).collect();
+            let board_cells: Vec<(i32, i32)> =
+                placed.iter().map(|unit| (unit.col, unit.row)).collect();
             assert_eq!(
                 board_distances, source_distances,
                 "seed {seed}: the window bent a distance\nsource {source_cells:?}\nboard {board_cells:?}\nwraps {} width {}",
@@ -2252,7 +2304,10 @@ mod tests {
             // And the board replays: it seats every unit it lists, wounded.
             let replay = build_engagement(&board, 3).expect("a captured board builds");
             assert_eq!(replay.units.len(), seated);
-            assert!(replay.units.values().any(|unit| unit.hp == 37) || !source.iter().any(|unit| unit.2 == 37));
+            assert!(
+                replay.units.values().any(|unit| unit.hp == 37)
+                    || !source.iter().any(|unit| unit.2 == 37)
+            );
         }
         assert!(odd_centres > 0, "no seed exercised the odd-row shift");
     }
@@ -2265,15 +2320,25 @@ mod tests {
         let spec = Engagement::from(position("the_reserve").expect("known"));
         let frozen = build_engagement(&spec, 4).expect("buildable");
         let uid = frozen.player_unit_ids(0)[0];
-        assert_eq!(frozen.unit_heal_rate(uid), 0, "the arena rule: permanent damage");
+        assert_eq!(
+            frozen.unit_heal_rate(uid),
+            0,
+            "the arena rule: permanent damage"
+        );
         let campaign = build_engagement(&Engagement { heal: true, ..spec }, 4).expect("buildable");
         let uid = campaign.player_unit_ids(0)[0];
         assert!(campaign.unit_heal_rate(uid) > 0, "a healing board recovers");
-        assert!(!crate::setup::TacticsRules::default().heal, "off in the stock arena");
+        assert!(
+            !crate::setup::TacticsRules::default().heal,
+            "off in the stock arena"
+        );
         let without: crate::setup::TacticsRules =
             serde_json::from_str(r#"{"cities":1,"production":0,"gold":0,"turns_per_tech":5}"#)
                 .expect("an old save reads");
-        assert!(!without.heal, "a save without the field played without healing");
+        assert!(
+            !without.heal,
+            "a save without the field played without healing"
+        );
     }
 
     /// The harvest runs a whole small game and every board it takes is one
@@ -2294,7 +2359,11 @@ mod tests {
         let back = Engagement::from_json(&text).expect("harvested boards read back");
         assert_eq!(back, boards);
         for board in &boards {
-            assert!(board.forces.iter().all(|force| force.len() >= 2), "{}", board.id);
+            assert!(
+                board.forces.iter().all(|force| force.len() >= 2),
+                "{}",
+                board.id
+            );
             assert!(build_engagement(board, 1).is_some(), "{} seats", board.id);
         }
     }
@@ -2436,7 +2505,10 @@ mod tests {
     /// confident null.
     #[test]
     fn a_correlation_with_no_spread_is_nothing_rather_than_zero() {
-        assert!(paired::correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(), "too few pairs");
+        assert!(
+            paired::correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(),
+            "too few pairs"
+        );
         assert!(
             paired::correlation(&[1.0, 1.0, 1.0], &[1.0, 2.0, 3.0]).is_none(),
             "a constant x has no correlation, not a zero one"
@@ -2595,7 +2667,11 @@ mod tests {
             assert!(!result.skipped);
             assert_eq!(result.a.kills, result.b.losses, "{}", spec.id);
             assert_eq!(result.b.kills, result.a.losses, "{}", spec.id);
-            assert!((result.a.damage_dealt - result.b.damage_taken).abs() < 1e-9, "{}", spec.id);
+            assert!(
+                (result.a.damage_dealt - result.b.damage_taken).abs() < 1e-9,
+                "{}",
+                spec.id
+            );
             assert!(
                 (result.a.material_destroyed - result.b.material_lost).abs() < 1e-9,
                 "{}",
@@ -2640,7 +2716,12 @@ mod tests {
 
         let result = matched_position(&POSITIONS[0], 41, "advanced", "advanced", &builtin_ai);
         let profile = result.a.profile();
-        for share in [profile.focus, profile.ground, profile.screen, profile.contact] {
+        for share in [
+            profile.focus,
+            profile.ground,
+            profile.screen,
+            profile.contact,
+        ] {
             if let Some(value) = share {
                 assert!((0.0..=1.0).contains(&value), "share out of range: {value}");
             }
@@ -2686,9 +2767,15 @@ mod tests {
     #[test]
     fn the_sign_test_does_not_overflow_into_a_confident_null() {
         let p = paired::sign_test(1_122, 317);
-        assert!(p.is_finite() && p < 1e-6, "overwhelming split reported p = {p}");
+        assert!(
+            p.is_finite() && p < 1e-6,
+            "overwhelming split reported p = {p}"
+        );
         assert!((paired::sign_test(0, 0) - 1.0).abs() < 1e-12);
-        assert!((paired::sign_test(5, 5) - 1.0).abs() < 1e-9, "an even split is p = 1");
+        assert!(
+            (paired::sign_test(5, 5) - 1.0).abs() < 1e-9,
+            "an even split is p = 1"
+        );
         // Either side of the exact/approximate switch, on the same shape.
         let exact = paired::sign_test(600, 400);
         let approximate = paired::sign_test(601, 400);

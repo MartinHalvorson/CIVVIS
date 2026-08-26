@@ -122,8 +122,9 @@ pub fn seat_spec(spec: &str) -> Result<(&str, Vec<&'static crate::ai::Gene>), St
                 "`{name}` takes no genes; only advanced and advanced_v1 do"
             ));
         }
-        let gene = crate::ai::gene(tag)
-            .ok_or_else(|| format!("unknown gene `{tag}` in `{spec}`; gene_screen --list names them"))?;
+        let gene = crate::ai::gene(tag).ok_or_else(|| {
+            format!("unknown gene `{tag}` in `{spec}`; gene_screen --list names them")
+        })?;
         genes.push(gene);
     }
     Ok((name, genes))
@@ -326,10 +327,22 @@ mod tests {
         let with_gene = format!("advanced+{tag}");
         let (name, genes) = super::seat_spec(&with_gene).expect("with a gene");
         assert_eq!(name, "advanced");
-        assert_eq!(genes.iter().map(|gene| gene.tag).collect::<Vec<_>>(), vec![tag]);
-        assert!(super::seat_spec("advanced+no-such-gene").err().expect("refused").contains("no-such-gene"));
-        assert!(super::seat_spec(&format!("basic+{tag}")).err().expect("refused").contains("takes no genes"));
-        assert!(super::seat_spec("nobody").err().expect("refused").contains("unknown agent"));
+        assert_eq!(
+            genes.iter().map(|gene| gene.tag).collect::<Vec<_>>(),
+            vec![tag]
+        );
+        assert!(super::seat_spec("advanced+no-such-gene")
+            .err()
+            .expect("refused")
+            .contains("no-such-gene"));
+        assert!(super::seat_spec(&format!("basic+{tag}"))
+            .err()
+            .expect("refused")
+            .contains("takes no genes"));
+        assert!(super::seat_spec("nobody")
+            .err()
+            .expect("refused")
+            .contains("unknown agent"));
         // And the seat plays: a boxed agent comes back for both shapes.
         let _ = super::seat_ai("advanced", 1);
         let _ = super::seat_ai(&format!("advanced+{tag}"), 1);

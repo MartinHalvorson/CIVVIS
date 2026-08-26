@@ -190,15 +190,21 @@ fn profile_run(boards: &[Engagement], name: &str, seeds: usize, start_seed: u64,
     }
     println!();
     println!("concentr.  own units near the contact less enemy units near it, per contact turn");
-    println!("disper.    mean distance between own units, per turn -- low is a body that moves as one");
+    println!(
+        "disper.    mean distance between own units, per turn -- low is a body that moves as one"
+    );
     println!("arrival    spread in turns of when each unit first reached the enemy -- low is 'fight united'");
-    println!("foot       the same, over 2-move units alone: separates a slow line from fast cavalry");
+    println!(
+        "foot       the same, over 2-move units alone: separates a slow line from fast cavalry"
+    );
     println!("absent     share of the force that never reached the enemy at all");
     println!("vanguard   share of the force in contact on the turn contact FIRST occurred");
     println!("envelop.   enemy units taken from two or more sides at once, per contact turn");
     println!("focus      share of damage dealt that landed on enemies that died");
     println!("ground     share of own unit-turns on hills or in cover");
-    println!("screen     share of own ranged unit-turns with a friendly between them and the enemy");
+    println!(
+        "screen     share of own ranged unit-turns with a friendly between them and the enemy"
+    );
     println!("contact    share of turns on which the two forces were within two tiles");
     println!();
     println!("The figure beside each role is that role's mean material swing per seed.");
@@ -246,8 +252,7 @@ fn correlate(
         let mut clean = 0.0f64;
         let mut counted = 0.0f64;
         for row in results.iter().filter(|row| !row.skipped) {
-            let (Some(va), Some(vb)) = (row.a.profile().vanguard, row.b.profile().vanguard)
-            else {
+            let (Some(va), Some(vb)) = (row.a.profile().vanguard, row.b.profile().vanguard) else {
                 continue;
             };
             xs.push(va - vb);
@@ -347,8 +352,9 @@ fn capture(args: &[String], start_seed: u64, jobs: usize) {
         setup.window_turns,
         setup.cooldown
     );
-    let harvested: Vec<Vec<Engagement>> =
-        map(games, jobs, |index| harvest_engagements(start_seed + index as u64, &setup));
+    let harvested: Vec<Vec<Engagement>> = map(games, jobs, |index| {
+        harvest_engagements(start_seed + index as u64, &setup)
+    });
     let boards: Vec<Engagement> = harvested.into_iter().flatten().collect();
     let rules = civvis::rules::Rules::embedded();
     println!();
@@ -360,10 +366,7 @@ fn capture(args: &[String], start_seed: u64, jobs: usize) {
         println!(
             "{:<24}{:>6}{:>8}{:>10.0}{:>8}{:>10.0}",
             spec.id,
-            spec.name
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or("?"),
+            spec.name.split_whitespace().nth(1).unwrap_or("?"),
             spec.forces[0].len(),
             spec.material(0, &rules),
             spec.forces[1].len(),
@@ -516,7 +519,11 @@ fn main() {
     println!(
         "doctrine_arena: {name_a} vs {name_b}, {} board(s), {seeds} seeds x2 role swaps{}",
         chosen.len(),
-        if chosen.iter().any(|spec| spec.heal) { ", healing on" } else { "" }
+        if chosen.iter().any(|spec| spec.heal) {
+            ", healing on"
+        } else {
+            ""
+        }
     );
     println!("paired material swing, {name_a} less {name_b}, one number per seed");
     println!();
@@ -599,9 +606,8 @@ fn main() {
         for role in 0..2 {
             let a = &outcome.a_by_role[role];
             let b = &outcome.b_by_role[role];
-            let per_seed = |ledger: &DoctrineLedger| {
-                ledger.material_swing() / outcome.played.max(1) as f64
-            };
+            let per_seed =
+                |ledger: &DoctrineLedger| ledger.material_swing() / outcome.played.max(1) as f64;
             println!(
                 "  {}",
                 profile_row(

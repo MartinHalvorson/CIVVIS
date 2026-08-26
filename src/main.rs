@@ -1874,7 +1874,10 @@ mod tests {
         // Healing rides the same reader, and is off unless asked for.
         assert!(!rules.heal, "an arena does not heal unless asked");
         let healing = ["--tactics-heal".to_string()];
-        assert!(tactics_rules(&healing).heal, "--tactics-heal turns recovery on");
+        assert!(
+            tactics_rules(&healing).heal,
+            "--tactics-heal turns recovery on"
+        );
 
         // Clamped, not trusted: these reach the same sanitiser the server uses.
         let silly = [
