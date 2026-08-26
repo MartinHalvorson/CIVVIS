@@ -15,11 +15,11 @@
   "toggles": {
     "adjacent_camp_clear": {
       "group": "already-on",
-      "reason": "On by default in `BasicAi::new`, so an `enable_*` opt-in row would be on in BOTH arms of every pair and screen as exactly inert \u2014 the zero-width failure this repository's fires gate exists to catch. Withholding it is the `legacy()` anchor's route, not an opt-in row."
+      "reason": "On by default in `BasicAi::new`, so an `enable_*` opt-in row would be on in BOTH arms of every pair and screen as exactly inert — the zero-width failure this repository's fires gate exists to catch. Withholding it is the `legacy()` anchor's route, not an opt-in row."
     },
     "amenity_districts": {
       "group": "production-on",
-      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` \u2014 and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: the baseline governor may build the district that repairs an Amenity deficit."
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: the baseline governor may build the district that repairs an Amenity deficit."
     },
     "bank_envoys": {
       "group": "live-bridge-row",
@@ -27,7 +27,7 @@
     },
     "barbarian_heretic_hunt": {
       "group": "already-on",
-      "reason": "On by default in `BasicAi::new` (the barbarian seat hunts religious units, operator directive 2026-08-24), so an `enable_*` opt-in row would be on in BOTH arms of every pair and screen as exactly inert. It is a treatment of the WORLD \u2014 the barbarian seat's controller, not a major's genome \u2014 withheld on the `legacy()` anchor exactly as `adjacent_camp_clear` is; the two seat genes it motivates (`missionary-evades-raiders`, `missionary-last-charge-explores`) are the rows the screen prices."
+      "reason": "On by default in `BasicAi::new` (the barbarian seat hunts religious units, operator directive 2026-08-24), so an `enable_*` opt-in row would be on in BOTH arms of every pair and screen as exactly inert. It is a treatment of the WORLD — the barbarian seat's controller, not a major's genome — withheld on the `legacy()` anchor exactly as `adjacent_camp_clear` is; the two seat genes it motivates (`missionary-evades-raiders`, `missionary-last-charge-explores`) are the rows the screen prices."
     },
     "battlefront_observation": {
       "group": "configured-on",
@@ -35,7 +35,7 @@
     },
     "camp_bounty": {
       "group": "does-not-fire",
-      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. Clearing a camp is a peacetime errand worth sending for, not only something a unit does when a camp is already in its way. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win \u0394, score-share \u0394 and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/camp-bounty.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. Clearing a camp is a peacetime errand worth sending for, not only something a unit does when a camp is already in its way. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/camp-bounty.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
     },
     "counter_in_lane": {
       "group": "live-bridge-row",
@@ -69,6 +69,10 @@
       "group": "live-bridge-row",
       "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: raise the city target one rung per era instead of per ninety standard turns. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
     },
+    "escort_patience_runs_out": {
+      "group": "host-only",
+      "reason": "The whole branch sits inside `stacked_escort_pace`, gated by `formationless_settler_escort()` -> the host-only `live_formationless_settler_shadow`, so a native board never reaches it and a screen row would be zero-width by construction. It is a `Kind::HostOnly` gene rather than an unwired toggle: the live ladder prices it directly against `three_cities_by_turn_32`, which fires on 45% of King games."
+    },
     "expansion_before_prophet": {
       "group": "live-bridge-row",
       "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: the third city comes before the Holy Site. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
@@ -83,7 +87,7 @@
     },
     "explore_commit": {
       "group": "production-on",
-      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` \u2014 and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: committed exploration goals; `FIRAXIS_ONLY_TREATMENTS`' own reason for it is that production already carries it."
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: committed exploration goals; `FIRAXIS_ONLY_TREATMENTS`' own reason for it is that production already carries it."
     },
     "explore_dead_targets": {
       "group": "host-only",
@@ -103,7 +107,7 @@
     },
     "great_work_veto_by_district": {
       "group": "does-not-fire",
-      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. For a lane that is not Culture the Great Work veto boundary is the Theater Square, not any Great Work slot. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win \u0394, score-share \u0394 and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/great-work-veto-by-district.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. For a lane that is not Culture the Great Work veto boundary is the Theater Square, not any Great Work slot. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/great-work-veto-by-district.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
     },
     "host_settler_pop": {
       "group": "host-only",
@@ -111,7 +115,7 @@
     },
     "hut_collection": {
       "group": "production-on",
-      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` \u2014 and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: walk an explorer onto a reachable tribal village instead of marching past."
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: walk an explorer onto a reachable tribal village instead of marching past."
     },
     "land_grab": {
       "group": "live-bridge-row",
@@ -119,7 +123,7 @@
     },
     "legal_tactical_candidates": {
       "group": "production-on",
-      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` \u2014 and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: drop engine-illegal attack candidates before scoring, so a doomed order cannot shadow a legal one."
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: drop engine-illegal attack candidates before scoring, so a doomed order cannot shadow a legal one."
     },
     "live_bridge": {
       "group": "bundle",
@@ -155,7 +159,7 @@
     },
     "open_water_navy": {
       "group": "production-on",
-      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` \u2014 and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: build hulls only where there is open water \u2014 promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`), so switching it off is the opposite of a null change."
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: build hulls only where there is open water — promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`), so switching it off is the opposite of a null change."
     },
     "opening_settler_waits": {
       "group": "live-bridge-row",
@@ -179,7 +183,7 @@
     },
     "sea_answers": {
       "group": "does-not-fire",
-      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A sea threat gets a sea answer: a naval raider counts toward the decision that builds hulls. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win \u0394, score-share \u0394 and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/sea-answers.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A sea threat gets a sea answer: a naval raider counts toward the decision that builds hulls. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/sea-answers.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
     },
     "settlement_safety": {
       "group": "configured-on",
@@ -187,7 +191,7 @@
     },
     "settler_founds_when_stalled": {
       "group": "does-not-fire",
-      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A Settler that has stalled founds where it stands. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win \u0394, score-share \u0394 and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/settler-founds-when-stalled.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A Settler that has stalled founds where it stands. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/settler-founds-when-stalled.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
     },
     "solvent_faith_army": {
       "group": "live-bridge-row",
@@ -211,7 +215,7 @@
     },
     "village_seeking": {
       "group": "production-on",
-      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` \u2014 and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: detour toward a charted village outside this turn's reach."
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: detour toward a charted village outside this turn's reach."
     }
   }
 }

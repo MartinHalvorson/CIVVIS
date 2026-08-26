@@ -2880,14 +2880,29 @@ impl AdvancedAi {
         self.moksha_defends_the_faithless = false;
     }
 
+    /// Put a ceiling on how long a settler waits for an escort. See
+    /// `escort_patience_runs_out`.
+    pub fn enable_escort_patience_runs_out(&mut self) {
+        self.escort_patience_runs_out = true;
+    }
+
+    /// The twin of `enable_escort_patience_runs_out`.
+    pub fn disable_escort_patience_runs_out(&mut self) {
+        self.escort_patience_runs_out = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
+
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
+
     // ---- append: l-o ------------------------------------------------
+
     // ---- append: p-r ------------------------------------------------
+
     // ---- append: s-s ------------------------------------------------
 
     // ---- append: t-z ------------------------------------------------
