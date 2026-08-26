@@ -5867,13 +5867,22 @@ impl BasicAi {
     }
 
     /// Spend as much of this turn's legal path as possible reaching chosen
-    /// recovery ground. `Game::reachable` and `Game::path_to` share the exact
-    /// movement rules, so this can take a wounded unit all the way into a
-    /// nearby city rather than stopping one tile short for no tactical reason.
+    /// recovery ground. `Game::reachable` and `Game::path_to` decide the same
+    /// movement, so this can take a wounded unit all the way into a nearby
+    /// city rather than stopping one tile short for no tactical reason.
     fn move_to_evacuation_tile(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
         let Some(path) = g.path_to(uid, target) else {
             return false;
         };
+        // ★★★ A WOUNDED UNIT LEAVES CONTACT THROUGH ITS OWN LINE, which is a
+        // crossing and not a sequence of steps: `MoveTo` is the only action
+        // that may execute one (see `Game::entry_at`), and stepping it a
+        // `Move` at a time stops the casualty dead on the tile its relief is
+        // standing on. This is the front-line rotation the old rule made
+        // impossible, so it is the first thing to check here.
+        if path.iter().any(|step| !g.can_stop(uid, *step)) {
+            return self.path_walk_to(g, pid, uid, target);
+        }
         let mut moved = false;
         for step in path {
             if !g.can_move(uid, step) || !self.tactical_apply_move(g, pid, uid, step) {
