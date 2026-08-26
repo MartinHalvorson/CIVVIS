@@ -786,14 +786,23 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
         self.assertAlmostEqual(constant / math.sqrt(3600), 39.09, places=2)
 
 
-class TheDeploymentGenomeIsTheBatchRulesAnswer(unittest.TestCase):
-    """The checked-in ledger's selection is the rule over its recorded batch
-    columns, gene for gene, with each family collapsed to one version."""
+class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
+    """The checked-in ledger's selection follows its recorded policy.
+
+    A normal publication derives defaults from its recorded batch columns;
+    a reporting-only rotation deliberately retains the already selected
+    genome.  Both records must preserve the same one-version-per-family
+    invariant and expose the batch-rule reading as evidence.
+    """
 
     def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
-        self.assertEqual(rules["deployment_policy"], "batch-rule+operator-pins")
+        policy = rules["deployment_policy"]
+        self.assertIn(policy, {
+            gene_ledger.DEPLOYMENT_POLICY,
+            gene_ledger.RETAINED_DEPLOYMENT_POLICY,
+        })
         self.assertEqual(rules["removals_due"], [])
         tags = gene_ledger.screenable_tags()
         base_of = {tag: family[0] for family in gene_ledger.families_of(tags) for tag in family}
@@ -808,16 +817,24 @@ class TheDeploymentGenomeIsTheBatchRulesAnswer(unittest.TestCase):
             self.assertEqual(rules["batch_decisions"][tag], gene_ledger.batch_rule(columns), tag)
         self.assertEqual(set(rules["batch_columns"]), set(rules["batch_decisions"]))
         pins = set(rules["operator_default_on"])
-        # ⭐ A pin is on above the rule's answer, which `batch_decisions` keeps.
+        self.assertTrue(pins <= genome, "operator-selected defaults must ship")
+        # ⭐ A normal publication takes the batch rule's answer plus pins.
+        # A reporting-only publication instead retains the selection that
+        # entered the rotation, while still recording the same rule reading.
         rule_on = {tag for tag, call in rules["batch_decisions"].items() if call == "on"}
-        default_on = rule_on | pins
-        for tag in genome:
-            self.assertIn(tag, default_on,
-                          f"{tag} ships but neither the rule nor a pin turns it on")
-        for tag in default_on:
-            if tag not in base_of:
-                self.assertIn(tag, genome,
-                              f"{tag}: the rule or a pin turns it on but it does not ship")
+        if policy == gene_ledger.DEPLOYMENT_POLICY:
+            default_on = rule_on | pins
+            for tag in genome:
+                self.assertIn(tag, default_on,
+                              f"{tag} ships but neither the rule nor a pin turns it on")
+            for tag in default_on:
+                if tag not in base_of:
+                    self.assertIn(tag, genome,
+                                  f"{tag}: the rule or a pin turns it on but it does not ship")
+        else:
+            default_on = genome
+            self.assertTrue(genome <= set(tags),
+                            "a retained selection omits tags removed from the registry")
         for family in gene_ledger.families_of(tags):
             shipped = [tag for tag in family if tag in genome]
             on = [tag for tag in family if tag in default_on]
@@ -840,14 +857,18 @@ class TheDeploymentGenomeIsTheBatchRulesAnswer(unittest.TestCase):
             self.assertGreater(gene["posterior_se_pp"], 0.0, gene["tag"])
             self.assertEqual(gene["default_on"], gene["tag"] in selected, gene["tag"])
 
-    def test_rebuild_re_decides_the_same_selection(self):
+    def test_rebuild_preserves_the_same_selection_and_policy(self):
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rebuilt = gene_ledger.rebuild_from_ledger(current)
         self.assertEqual(rebuilt["rules"]["deployment_genome"],
                          current["rules"]["deployment_genome"])
         self.assertEqual(rebuilt["rules"]["batch_columns"], current["rules"]["batch_columns"])
         rust = gene_ledger.render_rust(rebuilt)
-        self.assertIn('pub(super) const DEPLOYMENT_POLICY: &str = "batch-rule+operator-pins";', rust)
+        self.assertIn(
+            "pub(super) const DEPLOYMENT_POLICY: &str = "
+            + json.dumps(current["rules"]["deployment_policy"]) + ";",
+            rust,
+        )
         self.assertIn("pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[", rust)
         for tag, columns in current["rules"]["batch_columns"].items():
             cells = ", ".join("None" if c is None else f"Some({c})" for c in columns)
@@ -2082,10 +2103,13 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
                             ranking.probability_cell(tight))
 
     def test_nothing_the_posterior_publishes_decides_a_default(self):
-        """★ The hard constraint of this change. The ranking's *Default*
-        column is the batch rule's answer, gene for gene."""
+        """★ The hard constraint: the ranking's *Default* column is the
+        checked-in selection, gene for gene."""
         recorded = {g["tag"]: g for g in self.ledger["genes"]}
-        self.assertEqual(self.ledger["rules"]["deployment_policy"], "batch-rule+operator-pins")
+        self.assertIn(self.ledger["rules"]["deployment_policy"], {
+            gene_ledger.DEPLOYMENT_POLICY,
+            gene_ledger.RETAINED_DEPLOYMENT_POLICY,
+        })
         selected = set(self.ledger["rules"]["deployment_genome"])
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
@@ -2116,7 +2140,13 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
             self.assertRegex(list_rows, rf"(?m)^{re.escape(tag)}\s+.+\s+on\s+unmeasured$")
 
     def test_the_evidence_section_marks_the_default_without_a_counterfactual_rule(self):
-        self.assertIn("## Evidence beside the batch rule", self.evidence)
+        policy = self.ledger["rules"]["deployment_policy"]
+        heading = (
+            "## Evidence beside the retained deployment selection"
+            if policy == gene_ledger.RETAINED_DEPLOYMENT_POLICY
+            else "## Evidence beside the batch rule"
+        )
+        self.assertIn(heading, self.evidence)
         self.assertNotIn("## What the posterior would change", self.evidence)
         rows = ranking.evidence_table(self.ledger, self.authoritative)
         selected = set(self.ledger["rules"]["deployment_genome"])
