@@ -14338,8 +14338,9 @@ impl BasicAi {
         // battle waiting for hit points that never come — permanently out of
         // a fight it is still perfectly able to influence. On a battlefield a
         // damaged unit fights on, and the fact that it is damaged is exactly
-        // why the enemy is coming for it.
-        if g.is_arena() {
+        // why the enemy is coming for it. A board that heals is a campaign,
+        // and recovery is exactly the thing it exists to measure.
+        if g.is_arena() && !g.tactics.heal {
             self.recovering_units.remove(&uid);
             return None;
         }
