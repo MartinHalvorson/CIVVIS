@@ -5098,6 +5098,14 @@ pub struct AdvancedAi {
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// The purchase reserve is one emergency defender plus ten turns of any
+    /// recurring deficit, not `250 + 75` Gold per city. Opt-in gene
+    /// `treasury-at-work`; see `advanced/gold_and_cards.rs`.
+    treasury_at_work: bool,
+    /// `treasury_at_work`, and one under-bought compounding asset — the
+    /// empire's first Builder, then a Monument where a city has none — is
+    /// bought ahead of the purchase argmax. Opt-in gene `treasury-at-work-2`.
+    treasury_at_work_2: bool,
     /// Do not start a war the treasury cannot pay for.
     ///
     /// ★★★★ THE SEAT DECLARED AT ZERO GOLD. Live King seat
@@ -6323,6 +6331,8 @@ impl AdvancedAi {
             siege_is_progress_2: false,
 
             // ---- append: t-z ----------------------------------------
+            treasury_at_work: false,
+            treasury_at_work_2: false,
             war_needs_a_treasury: false,
             upgrade_the_garrison: false,
             wonder_adjacent_sites: false,
@@ -16510,6 +16520,12 @@ impl AdvancedAi {
         } else {
             reserve
         };
+        // `treasury-at-work`: the reserve is what one emergency costs plus
+        // what a deficit would drain before it can be corrected, not a flat
+        // sum that grows with every city founded. `stock` comes back
+        // unchanged while both versions are off. See
+        // `advanced/gold_and_cards.rs`.
+        let reserve = self.working_treasury_reserve(g, pid, reserve);
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -16521,13 +16537,20 @@ impl AdvancedAi {
         // for. See `advanced/camp_buyout.rs`.
         let bought_out_an_outpost =
             self.camp_tile_buyout && self.camp_tile_buyout_purchase(g, pid, reserve);
+        // `treasury-at-work-2`: one under-bought compounding asset — the
+        // empire's first Builder, then a Monument where a city has none —
+        // is bought ahead of the argmax below, out of the same reserve, and
+        // like the outpost buy it does not end the turn's spending. Exact
+        // no-op while the version is off.
+        let bought_a_first_asset =
+            self.treasury_at_work_2 && self.young_empire_purchase(g, pid, reserve);
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
         } else {
             1
         };
-        let mut purchased = bought_out_an_outpost;
+        let mut purchased = bought_out_an_outpost || bought_a_first_asset;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;
@@ -16838,6 +16861,12 @@ impl AdvancedAi {
         // need itself to be meaningful before converting a deep treasury into
         // more bodies on the map.
         if matches!(item, Item::Unit { .. }) && production_score < 120.0 {
+            return None;
+        }
+        // `treasury-at-work`: a treasury at work stays solvent — a unit
+        // whose upkeep would take the recurring budget below zero is not
+        // bought. Always true while the family is off.
+        if !self.treasury_purchase_stays_solvent(g, pid, item) {
             return None;
         }
         let mut after = g.speculative_clone();

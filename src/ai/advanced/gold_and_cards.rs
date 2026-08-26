@@ -64,10 +64,62 @@
 //! Each gene is byte-identical when off: every multiplier reads exactly 1.0
 //! (and `x * 1.0`, `x / (p * 1.0)` are exact in IEEE arithmetic), and the
 //! emergency branch is not consulted.
+//!
+//! ## The treasury genes (2026-08-26)
+//!
+//! The live King seat `civvis-20260826T164105Z` held 286 Gold at turn 36 on
+//! +7 a turn and had bought nothing in 36 turns; the 130 live runs of the
+//! three days before it banked 250–330 Gold by turn 50 and made 0–3 Gold
+//! purchases in their first 100 turns. Not one `purchase` order reached the
+//! host in the opening of any of them. The cause is the reserve in
+//! `advanced_gold_spending`: `250 + 75` Gold per city under Expansion
+//! (`300 + 75` under Diplomacy and Culture), and a purchase must leave the
+//! whole of it behind — so with one city the seat needs 325 Gold *plus* the
+//! price, and with five 625 plus the price, while a Settler costs 160 and a
+//! Builder 100 at Online speed. The only Gold purchases in the whole census
+//! were made under Recovery's `75 + 25`, and the journal wrote "above a
+//! reserve of 150–175" on every one of them. `BasicAi::spend_gold`'s far
+//! smaller `100 + 25` runs only while the four-build opening book is in play,
+//! when the bank is still under 100.
+//!
+//! 5. **`treasury-at-work`** — the reserve is what an emergency costs plus
+//!    what a deficit would drain before it can be corrected: the Gold price
+//!    of the dearest land ranged unit some city can build now (the dearest
+//!    land melee unit failing that, [`FALLBACK_DEFENDER_PRICE`] failing
+//!    both) plus [`DEFICIT_COVER_TURNS`] turns of any recurring deficit,
+//!    never below `war_treasury_floor`'s appointed bill. It scales with the
+//!    era through the defender's price and with insolvency through the
+//!    deficit; it does not scale with the number of cities, which is the
+//!    number that made the shipped reserve unreachable. A treasury at work
+//!    also stays solvent: a unit whose upkeep would take the recurring
+//!    budget below zero is not bought (`unit_purchase_keeps_solvent`), so
+//!    the open reserve cannot buy the empire into the bankruptcy the King
+//!    autopsy of `civvis-20260826T112920Z` recorded from turn 85.
+//! 6. **`treasury-at-work-2`** — the same reserve, and before the purchase
+//!    argmax runs, one under-bought compounding asset is bought outright in
+//!    the city producing the least: a Builder whenever the empire has none
+//!    and there is tile work, otherwise a Monument for a city without one.
+//!    One a turn, at the working reserve. This is
+//!    `solvency-first-trade-slot`'s measured pattern — reserving ONE Trader
+//!    priced +4.65 pp, reserving every slot −2.80 — applied to the two
+//!    assets the argmax prices lowest against a Settler.
+//!
+//! Replayed over turns 16–52 of the live run above (`--serve --fresh-board`,
+//! every other turn): the stock decider issues one purchase (a Scout at
+//! t46); `treasury-at-work` issues thirteen (Archers and Warriors for the
+//! threatened cities, a Settler at t40, a Granary at t50) at a reserve of
+//! 70 (Slinger) then 120 (Archer) Gold; version two sixteen, the Builder in
+//! the weakest city first. A fresh-board replay cannot carry a purchase
+//! forward, so those counts say the genes bind, not what a game spends.
+//!
+//! Both are exact no-ops while off: the reserve helper returns the stock
+//! value untouched and the ladder is not consulted.
 
 use super::{AdvancedAi, CITY_MAX_HP};
-use crate::game::{Game, Item};
+use crate::ai::BasicAi;
+use crate::game::{Action, Game, Item};
 use crate::name::Name;
+use crate::think;
 
 /// Share of a card's Production bonus the governor turns into item value: a
 /// +50% card raises a positive value by 25%.
@@ -86,6 +138,17 @@ pub const YOUNG_CITY_PREMIUM: f64 = 0.5;
 pub const EMERGENCY_RECENT_TURNS: u32 = 4;
 /// How near a hostile military unit must stand for the native emergency.
 pub const EMERGENCY_RADIUS: i32 = 3;
+/// `treasury-at-work`: turns of a recurring deficit the working reserve
+/// keeps in the bank, so a purchase never turns a deficit into bankruptcy
+/// before the deck or the army can be corrected.
+pub const DEFICIT_COVER_TURNS: f64 = 10.0;
+/// `treasury-at-work`: the Standard-speed Gold price of one emergency
+/// defender when no city can name one — an Archer's 60 Production at the
+/// shipped ×4 Gold purchase rate. Scaled by the game speed where it is used.
+pub const FALLBACK_DEFENDER_PRICE: f64 = 240.0;
+/// The Gold purchase rate per point of Production, the shipped
+/// `GOLD_PURCHASE_MULTIPLIER` `unit_purchase_cost_for_formation` applies.
+const GOLD_PER_PRODUCTION: f64 = 4.0;
 
 /// The premium a purchase earns in a city producing `here` when the empire's
 /// best city produces `best`. Exactly 1.0 at or above the best city.
@@ -95,6 +158,19 @@ pub fn young_city_premium_from(here: f64, best: f64) -> f64 {
     }
     let deficit = (1.0 - here / best).clamp(0.0, 1.0);
     1.0 + YOUNG_CITY_PREMIUM * deficit
+}
+
+/// The working reserve: one emergency defender at `defender` Gold plus
+/// [`DEFICIT_COVER_TURNS`] turns of any recurring deficit in `gold_per_turn`,
+/// never below `war_floor`, the appointed war's upgrade bill.
+pub fn working_treasury_reserve_from(defender: f64, gold_per_turn: f64, war_floor: f64) -> f64 {
+    (defender + DEFICIT_COVER_TURNS * (-gold_per_turn).max(0.0)).max(war_floor)
+}
+
+/// Whether a unit costing `maintenance` a turn leaves a recurring budget of
+/// `gold_per_turn` at or above zero.
+pub fn unit_purchase_keeps_solvent(gold_per_turn: f64, maintenance: f64) -> bool {
+    maintenance <= 0.0 || gold_per_turn - maintenance >= 0.0
 }
 
 impl AdvancedAi {
@@ -196,6 +272,162 @@ impl AdvancedAi {
             .map(|unit| Item::Unit {
                 unit: Name::new(&unit),
             })
+    }
+}
+
+impl AdvancedAi {
+    /// `treasury-at-work`: the reserve `advanced_gold_spending` keeps back,
+    /// given the plan's stock reserve. Returns `stock` untouched while both
+    /// versions are off.
+    pub(super) fn working_treasury_reserve(&self, g: &Game, pid: usize, stock: f64) -> f64 {
+        if !(self.treasury_at_work || self.treasury_at_work_2) {
+            return stock;
+        }
+        let defender = self
+            .emergency_defender_price(g, pid)
+            .unwrap_or_else(|| g.game_speed.scale(FALLBACK_DEFENDER_PRICE));
+        working_treasury_reserve_from(
+            defender,
+            g.players[pid].gold_per_turn,
+            self.war_treasury_floor(g, pid),
+        )
+    }
+
+    /// `treasury-at-work`: whether buying `item` leaves the recurring budget
+    /// at or above zero. Always true while the family is off, and for
+    /// anything that is not a unit with upkeep.
+    pub(super) fn treasury_purchase_stays_solvent(&self, g: &Game, pid: usize, item: &Item) -> bool {
+        if !(self.treasury_at_work || self.treasury_at_work_2) {
+            return true;
+        }
+        let unit = match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => unit,
+            _ => return true,
+        };
+        let maintenance = g.rules.units.get(unit).map_or(0.0, |spec| spec.maintenance);
+        unit_purchase_keeps_solvent(g.players[pid].gold_per_turn, maintenance)
+    }
+
+    /// The Gold price of the dearest land ranged unit some city of `pid` can
+    /// build now, else the dearest land melee unit; `None` with no city or
+    /// nothing military unlocked. Priced at the shipped ×4 rate on the
+    /// speed-scaled Production cost, deliberately without the per-city
+    /// purchase-slot rule: the reserve is for the city that will be
+    /// attacked, not the one whose garrison stands on the centre today.
+    fn emergency_defender_price(&self, g: &Game, pid: usize) -> Option<f64> {
+        let cities = g.player_city_ids(pid);
+        let mut ranged: Option<f64> = None;
+        let mut melee: Option<f64> = None;
+        for (name, spec) in g.rules.units.iter() {
+            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+                continue;
+            }
+            let item = Item::Unit { unit: name.clone() };
+            if !cities.iter().any(|cid| g.can_produce(pid, *cid, &item)) {
+                continue;
+            }
+            let price = g.item_cost_for(pid, &item) * GOLD_PER_PRODUCTION;
+            let best = if spec.has_ranged_attack() {
+                &mut ranged
+            } else {
+                &mut melee
+            };
+            *best = Some(best.map_or(price, |dearest| dearest.max(price)));
+        }
+        ranged.or(melee)
+    }
+
+    /// `treasury-at-work-2`: buy one under-bought compounding asset ahead of
+    /// the purchase argmax — a Builder whenever the empire has none (on the
+    /// map or at the head of a queue) and there is tile work, otherwise a
+    /// Monument for a city that has none — in the city producing the least,
+    /// leaving `reserve` in the bank. At most one purchase a turn; false when
+    /// nothing qualifies or clears the reserve.
+    pub(super) fn young_empire_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
+        let counts = self.counts(g, pid);
+        let mut cities = g.player_city_ids(pid);
+        cities.sort_by(|left, right| {
+            g.city_yields(*left)
+                .production
+                .total_cmp(&g.city_yields(*right).production)
+                .then(left.cmp(right))
+        });
+        let bank = g.players[pid].gold;
+        let city_name = |g: &Game, cid: u32| {
+            g.cities
+                .get(&cid)
+                .map(|city| city.name.clone())
+                .unwrap_or_else(|| "the empire".to_string())
+        };
+        if counts.builders == 0 && BasicAi::has_builder_work(g, pid) {
+            let builder = Item::Unit {
+                unit: crate::name!("builder"),
+            };
+            for cid in &cities {
+                let Some(price) = g.unit_purchase_cost(pid, *cid, "builder", "gold") else {
+                    continue;
+                };
+                if bank + f64::EPSILON < reserve + price || g.purchase_is_blocked(*cid, &builder) {
+                    continue;
+                }
+                let action = Action::Buy {
+                    city: *cid,
+                    unit: crate::name!("builder"),
+                    formation: 0,
+                    currency: "gold".to_string(),
+                };
+                if g.apply(pid, &action).is_err() {
+                    continue;
+                }
+                if self.journal().wants(crate::reasoning::Level::Decision) {
+                    let name = city_name(g, *cid);
+                    let left = g.players[pid].gold - reserve;
+                    think!(self.journal(), Economy, Decision,
+                        "Buying a builder for {name}, the empire having none";
+                        "{price:.0} Gold in the city producing the least; {left:.0} left \
+                         above a working reserve of {reserve:.0}");
+                }
+                return true;
+            }
+        }
+        let monument = Item::Building {
+            building: crate::name!("monument"),
+        };
+        for cid in &cities {
+            let city = &g.cities[cid];
+            if city.buildings.iter().any(|building| building == "monument")
+                || matches!(
+                    city.queue.first(),
+                    Some(Item::Building { building }) if building == "monument"
+                )
+            {
+                continue;
+            }
+            let Some(price) = g.building_purchase_cost(pid, *cid, "monument", "gold") else {
+                continue;
+            };
+            if bank + f64::EPSILON < reserve + price || g.purchase_is_blocked(*cid, &monument) {
+                continue;
+            }
+            let action = Action::BuyBuilding {
+                city: *cid,
+                building: crate::name!("monument"),
+                currency: "gold".to_string(),
+            };
+            if g.apply(pid, &action).is_err() {
+                continue;
+            }
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let name = city_name(g, *cid);
+                let left = g.players[pid].gold - reserve;
+                think!(self.journal(), Economy, Decision,
+                    "Buying a monument for {name}";
+                    "{price:.0} Gold for a city without one; {left:.0} left above a \
+                     working reserve of {reserve:.0}");
+            }
+            return true;
+        }
+        false
     }
 }
 
@@ -388,5 +620,158 @@ mod tests {
             !on.native_city_emergency(&g, 0, city),
             "no hostile near, no emergency"
         );
+    }
+
+    #[test]
+    fn the_treasury_genes_ship_off_and_toggle() {
+        let ai = AdvancedAi::new();
+        assert!(!ai.treasury_at_work, "an opt-in ships off");
+        assert!(!ai.treasury_at_work_2, "an opt-in ships off");
+        let mut ai = AdvancedAi::new();
+        ai.enable_treasury_at_work();
+        ai.enable_treasury_at_work_2();
+        assert!(ai.treasury_at_work && ai.treasury_at_work_2);
+        ai.disable_treasury_at_work();
+        ai.disable_treasury_at_work_2();
+        assert!(!ai.treasury_at_work && !ai.treasury_at_work_2);
+    }
+
+    #[test]
+    fn the_working_reserve_is_a_defender_plus_ten_turns_of_deficit() {
+        // Solvent: the defender alone, whatever the surplus.
+        assert_eq!(working_treasury_reserve_from(120.0, 7.0, 0.0), 120.0);
+        assert_eq!(working_treasury_reserve_from(120.0, 0.0, 0.0), 120.0);
+        // Insolvent: ten turns of the deficit on top.
+        assert_eq!(working_treasury_reserve_from(120.0, -8.0, 0.0), 200.0);
+        // An appointed war's bill is a floor, never an addend.
+        assert_eq!(working_treasury_reserve_from(120.0, -8.0, 500.0), 500.0);
+        assert_eq!(working_treasury_reserve_from(120.0, 7.0, 119.0), 120.0);
+    }
+
+    #[test]
+    fn a_unit_purchase_must_keep_the_recurring_budget_at_or_above_zero() {
+        assert!(unit_purchase_keeps_solvent(7.0, 1.0));
+        assert!(unit_purchase_keeps_solvent(1.0, 1.0));
+        assert!(!unit_purchase_keeps_solvent(0.0, 1.0));
+        assert!(!unit_purchase_keeps_solvent(-3.0, 1.0));
+        // Free upkeep is always solvent, however deep the deficit.
+        assert!(unit_purchase_keeps_solvent(-30.0, 0.0));
+
+        let (mut g, _city) = board();
+        let archer = Item::Unit {
+            unit: crate::name!("archer"),
+        };
+        let upkeep = g.rules.units["archer"].maintenance;
+        assert!(upkeep > 0.0, "an Archer costs upkeep in the shipped rules");
+        let monument = Item::Building {
+            building: crate::name!("monument"),
+        };
+        // Off: never consulted.
+        g.players[0].gold_per_turn = -30.0;
+        assert!(AdvancedAi::new().treasury_purchase_stays_solvent(&g, 0, &archer));
+        // On: the unit is declined at a deficit and allowed with the income
+        // to carry it; a building is never a unit.
+        let mut ai = AdvancedAi::new();
+        ai.enable_treasury_at_work();
+        assert!(!ai.treasury_purchase_stays_solvent(&g, 0, &archer));
+        assert!(ai.treasury_purchase_stays_solvent(&g, 0, &monument));
+        g.players[0].gold_per_turn = upkeep;
+        assert!(ai.treasury_purchase_stays_solvent(&g, 0, &archer));
+        g.players[0].gold_per_turn = upkeep - 0.5;
+        assert!(!ai.treasury_purchase_stays_solvent(&g, 0, &archer));
+    }
+
+    #[test]
+    fn off_the_reserve_is_the_stock_value_and_on_it_is_a_defender() {
+        let (g, _city) = board();
+        let ai = AdvancedAi::new();
+        assert_eq!(ai.working_treasury_reserve(&g, 0, 325.0), 325.0, "off: untouched");
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_treasury_at_work();
+        let reserve = ai.working_treasury_reserve(&g, 0, 325.0);
+        // A fresh capital can build a Slinger, the ancient ranged unit, and
+        // the reserve is exactly its Gold price: no city count anywhere.
+        let slinger = Item::Unit {
+            unit: crate::name!("slinger"),
+        };
+        assert!(g.can_produce(0, g.player_city_ids(0)[0], &slinger));
+        let expected = g.item_cost_for(0, &slinger) * GOLD_PER_PRODUCTION;
+        assert!(expected > 0.0);
+        assert_eq!(reserve, expected, "one ranged defender, {reserve} vs {expected}");
+        assert!(reserve < 325.0, "far below the plan's 250 + 75 per city");
+
+        // Version two shares the reserve law.
+        let mut v2 = AdvancedAi::new();
+        v2.enable_treasury_at_work_2();
+        assert_eq!(v2.working_treasury_reserve(&g, 0, 325.0), expected);
+    }
+
+    #[test]
+    fn a_deficit_raises_the_working_reserve_by_ten_turns_of_it() {
+        let (mut g, _city) = board();
+        let mut ai = AdvancedAi::new();
+        ai.enable_treasury_at_work();
+        let solvent = ai.working_treasury_reserve(&g, 0, 325.0);
+        g.players[0].gold_per_turn = -6.0;
+        let insolvent = ai.working_treasury_reserve(&g, 0, 325.0);
+        assert_eq!(insolvent, solvent + DEFICIT_COVER_TURNS * 6.0);
+    }
+
+    #[test]
+    fn without_a_city_the_reserve_is_the_scaled_fallback_defender() {
+        let g = Game::new(2, 24, 16, 71, 250, 0);
+        assert!(g.player_city_ids(0).is_empty());
+        let mut ai = AdvancedAi::new();
+        ai.enable_treasury_at_work();
+        assert_eq!(
+            ai.working_treasury_reserve(&g, 0, 325.0),
+            g.game_speed.scale(FALLBACK_DEFENDER_PRICE)
+        );
+    }
+
+    #[test]
+    fn version_two_buys_the_first_builder_then_a_monument_and_never_the_reserve() {
+        let (mut g, city) = board();
+        let mut ai = AdvancedAi::new();
+        ai.enable_treasury_at_work_2();
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        // A building already in the queue is not for sale, and the fresh
+        // capital is seeded with its Monument: clear both so the fixture
+        // has one to want.
+        let capital = g.cities.get_mut(&city).unwrap();
+        capital.queue.clear();
+        capital.buildings.retain(|building| building != "monument");
+        let builder_price = g.unit_purchase_cost(0, city, "builder", "gold").expect("a builder is buyable");
+        let monument_price = g.building_purchase_cost(0, city, "monument", "gold").expect("a monument is buyable");
+        let reserve = 100.0;
+
+        // Short of the reserve by one Gold: nothing is bought.
+        g.players[0].gold = reserve + builder_price - 1.0;
+        assert!(!ai.young_empire_purchase(&mut g, 0, reserve));
+        assert_eq!(g.players[0].gold, reserve + builder_price - 1.0);
+
+        // At the reserve: the empire's first Builder, one purchase a turn.
+        g.players[0].gold = reserve + builder_price + monument_price;
+        assert!(ai.young_empire_purchase(&mut g, 0, reserve));
+        let builders = g
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|uid| g.units[uid].kind == "builder")
+            .count();
+        assert_eq!(builders, 1, "one Builder bought");
+        assert!(g.players[0].gold >= reserve, "the reserve is never spent");
+        assert!(!g.cities[&city].buildings.iter().any(|b| b == "monument"), "one a turn");
+
+        // Next turn, with a Builder on the map, the Monument.
+        assert!(ai.young_empire_purchase(&mut g, 0, reserve));
+        assert!(g.cities[&city].buildings.iter().any(|b| b == "monument"));
+        assert!(g.players[0].gold >= reserve);
+        // Nothing under-bought remains: the ladder stands down.
+        g.players[0].gold = 10_000.0;
+        assert!(!ai.young_empire_purchase(&mut g, 0, reserve));
+        let _ = builder;
     }
 }

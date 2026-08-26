@@ -2880,6 +2880,28 @@ impl AdvancedAi {
         self.moksha_defends_the_faithless = false;
     }
 
+    /// Keep one emergency defender and ten turns of deficit in the bank,
+    /// not 250 + 75 Gold a city. See `treasury_at_work`.
+    pub fn enable_treasury_at_work(&mut self) {
+        self.treasury_at_work = true;
+    }
+
+    /// The twin of `enable_treasury_at_work`.
+    pub fn disable_treasury_at_work(&mut self) {
+        self.treasury_at_work = false;
+    }
+
+    /// The working reserve, and the first Builder or a missing Monument
+    /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
+    pub fn enable_treasury_at_work_2(&mut self) {
+        self.treasury_at_work_2 = true;
+    }
+
+    /// The twin of `enable_treasury_at_work_2`.
+    pub fn disable_treasury_at_work_2(&mut self) {
+        self.treasury_at_work_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
