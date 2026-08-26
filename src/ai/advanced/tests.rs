@@ -34259,8 +34259,14 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
 
     let doorstep = (18, 10);
     let beyond = (17, 10);
-    assert_eq!(game.wdist(doorstep, city_state_pos), CITY_STATE_SETTLEMENT_BUFFER);
-    assert_eq!(game.wdist(beyond, city_state_pos), CITY_STATE_SETTLEMENT_BUFFER + 1);
+    assert_eq!(
+        game.wdist(doorstep, city_state_pos),
+        CITY_STATE_SETTLEMENT_BUFFER
+    );
+    assert_eq!(
+        game.wdist(beyond, city_state_pos),
+        CITY_STATE_SETTLEMENT_BUFFER + 1
+    );
 
     // Make the exact fourth-ring tile the only otherwise ordinary settlement
     // candidate. This exercises the candidate filter, not merely its set.
@@ -34275,8 +34281,11 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
         tile.wonder = None;
     }
     game.players[0].explored.extend(positions.iter().copied());
-    game.blocked_city_sites
-        .extend(positions.into_iter().filter(|position| *position != doorstep));
+    game.blocked_city_sites.extend(
+        positions
+            .into_iter()
+            .filter(|position| *position != doorstep),
+    );
 
     let live = AdvancedAi::new();
     let visible = live.battlefront_visibility(&game, 0);
@@ -34295,7 +34304,10 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
     );
     let legacy_sites = AdvancedAi::legacy().settle_ranking(&game, 0, (10, 10), 8);
     assert_eq!(
-        legacy_sites.iter().map(|(position, _)| *position).collect::<Vec<_>>(),
+        legacy_sites
+            .iter()
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>(),
         vec![doorstep],
         "the frozen controller exposes the legal fourth-ring site"
     );
