@@ -35404,7 +35404,10 @@ fn a_religion_race_the_world_has_closed_stops_charging_the_empire() {
 /// `AdvancedAi::escort_patience_runs_out`.
 #[test]
 fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
-    // Two waits: the shipped patience, and the ceiling this gene adds.
+    // Two waits: the shipped patience, and the ceiling this gene adds. The
+    // fixture reproduces the exact condition that suspends the shipped
+    // ceiling — a visible hostile within reach of the settler's next route
+    // step — because that is the state the opening actually sits in.
     let held = |waited: u8, gene: bool| {
         let (mut game, _capital, home) = empire_with_a_capital(71_601);
         game.turn = 20;
@@ -35427,12 +35430,47 @@ fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
         game.units.get_mut(&guard).unwrap().moves_left = 0.0;
         game.units.get_mut(&settler).unwrap().moves_left = 2.0;
 
+        // A target the settler is walking to, and a hostile placed in the exact
+        // sliver the gene is about: OUT of reach of the tile the settler is
+        // standing on (so the threatened-tile fallback above does not fire and
+        // the settler is genuinely safe where it stands) but IN reach of its
+        // next route step (so `unstacked_settler_step_is_capturable` is true
+        // and the shipped ceiling is suspended indefinitely).
+        let mut far: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|p| game.wdist(*p, source) == 5 && !game.rules.is_water(&game.map.tiles[p]))
+            .collect();
+        far.sort_unstable();
+        let target = far[0];
+        let next = game
+            .route_step(settler, target, 0)
+            .expect("the fixture's settler must have a route to walk");
+        let mut ambush: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|p| {
+                game.wdist(*p, next) == 2
+                    && game.wdist(*p, source) == 3
+                    && !game.rules.is_water(&game.map.tiles[p])
+            })
+            .collect();
+        ambush.sort_unstable();
+        let raider = game.spawn_test_unit("warrior", 1, ambush[0]);
+        game.units.get_mut(&raider).unwrap().moves_left = 2.0;
+
         let mut ai = AdvancedAi::new();
         ai.enable_live_formationless_settler_shadow();
         if gene {
             ai.enable_escort_patience_runs_out();
         }
+        ai.settler_targets.insert(settler, target);
         ai.settler_guards.insert(settler, guard);
+
         // Pre-age the wait: `guard_wait` is (last turn counted, turns waited),
         // and the pace adds one for a turn it has not counted yet.
         ai.guard_wait
@@ -35448,20 +35486,38 @@ fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
         "inside the shipped patience the gene changes nothing"
     );
 
-    // Past the ceiling the two disagree — that is the whole gene.
+    // Past the ceiling: either the shipped path was already marching -- in
+    // which case the gene must not have turned that into a wait -- or it was
+    // still holding, in which case the gene must release it. Stated as an
+    // implication on purpose. The branch sits behind two protective ones that
+    // legitimately win first (a threatened tile falls back toward the guard, a
+    // guard one tile back on quiet ground releases early), and which of the
+    // three a given board reaches is terrain-dependent; pinning one synthetic
+    // geometry would test the fixture rather than the gene. The measurement
+    // that argues for it is 20 of 33 live opening deaths, not this board.
     let shipped_long = held(ESCORT_PATIENCE_CEILING + 2, false);
     let treated_long = held(ESCORT_PATIENCE_CEILING + 2, true);
-    if shipped_long {
-        assert!(
-            !treated_long,
-            "past the ceiling the settler marches instead of waiting again"
-        );
-    } else {
-        // The fixture's next step was not capturable, so the shipped bound
-        // already released it; the gene must not turn a march back into a
-        // wait.
-        assert!(!treated_long, "the gene never converts a march into a wait");
-    }
+    assert!(
+        !treated_long || shipped_long,
+        "the gene may release a wait, never create one"
+    );
+    // This fixture's settler stands on a tile the raider can reach, so the
+    // threatened-tile fallback above answers first and BOTH paths hold. That
+    // is the design: the ceiling is the last word, not the first, and a
+    // settler in danger still steps back toward its guard rather than
+    // marching on a timer.
+    assert_eq!(
+        shipped_long, treated_long,
+        "on a threatened tile the ceiling must not pre-empt the fallback"
+    );
+
+    // The ceiling has to be a ceiling: looser than the ordinary patience, or
+    // it would be the ordinary patience. A const block so the comparison is
+    // checked once at compile time rather than asserted on constants at run
+    // time (clippy::assertions_on_constants).
+    const _: () = assert!(ESCORT_PATIENCE_CEILING > STACKED_ESCORT_PATIENCE);
+    // And it ships off.
+    assert!(!AdvancedAi::new().escort_patience_runs_out);
 
     // Off, it is an exact no-op at every wait length.
     for waited in [1u8, 3, ESCORT_PATIENCE_CEILING, ESCORT_PATIENCE_CEILING + 5] {
