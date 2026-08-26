@@ -1547,15 +1547,26 @@ class MeleeStrikeCarriesTheAttackModifierTest(unittest.TestCase):
 
     def test_the_attack_verb_sets_param_modifiers_before_requesting_move_to(self) -> None:
         source = self._agent_source()
-        block = source.split('if verb == "MOVE_TO" or verb == "ATTACK" then', 1)[1]
+        block = source.split(
+            'if verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE" then', 1
+        )[1]
         block = block.split('local moved = operate(', 1)[0]
 
         self.assertIn("CivvisLedger.attackModifiers()", block)
         self.assertIn("params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers", block)
-        # The modifier belongs to ATTACK alone: a plain MOVE_TO that carried it
-        # would attack whatever happened to be standing on the destination.
-        guard = block.split('if verb == "ATTACK" then', 1)[1]
+        # The modifier belongs to ATTACK and CAPTURE alone: a plain MOVE_TO
+        # that carried it would attack whatever happened to be standing on
+        # the destination. CAPTURE is the same modifier for a move onto an
+        # enemy civilian (a bare MOVE_TO walks next to it and stops — 65
+        # sent, 0 captures across the 273 live runs that carried #2075).
+        before_guard, guard = block.split('if verb == "ATTACK" or verb == "CAPTURE" then', 1)
+        self.assertNotIn("PARAM_MODIFIERS", before_guard)
         self.assertIn("PARAM_MODIFIERS", guard)
+        # Only a strike is entered in the ledger: a capture produces no combat
+        # to match it against.
+        outside_strike, strike = guard.split('if verb == "ATTACK" then', 1)
+        self.assertNotIn("CivvisLedger.strike(", outside_strike)
+        self.assertIn("CivvisLedger.strike(", strike)
 
     def test_the_modifier_resolves_the_shipped_pair_and_survives_their_absence(self) -> None:
         source = self._agent_source()

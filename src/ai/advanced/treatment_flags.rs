@@ -2956,8 +2956,21 @@ impl AdvancedAi {
         self.screen_the_shooters = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
+    /// A settler in the barbarians' hands is taken back: exempt from the
+    /// duplicate-settler guard, first among adjacent captures, pursued out to
+    /// `BARBARIAN_SETTLER_PURSUIT_RADIUS`. Gene `barbarian-settler-capture`;
+    /// the flag lives on `BasicAi`, whose `military_step` and
+    /// `capture_adjacent_civilian` read it.
+    pub fn enable_barbarian_settler_capture(&mut self) {
+        self.base.barbarian_settler_capture = true;
+    }
 
+    /// The twin of `enable_barbarian_settler_capture`.
+    pub fn disable_barbarian_settler_capture(&mut self) {
+        self.base.barbarian_settler_capture = false;
+    }
+
+    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
     // ---- append: e-f ------------------------------------------------
