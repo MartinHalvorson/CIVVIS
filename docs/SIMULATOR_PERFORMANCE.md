@@ -2815,3 +2815,41 @@ play, which changes how long the game runs and how expensive its turns are.
 class (`compute_enemy_attack_envelopes` calls split on `BasicAi::minor`/`barb`
 is the obvious one), and treat any clock reading of a length-changing treatment
 as a mixture until both arms are shown to complete the same number of turns.
+
+### ⚠ Addendum, same day: the +7.12% two sections up was load, and the counter was right
+
+The entry on the tactical picker's double clone reports **+7.12% per completed
+turn at load 62** with its own resolution at ±12.60%, calls it *not seen rather
+than not there*, and rests its claim on a counter instead — 3,391 clones and
+3,391 applies removed per game, predicting "a few tenths of a percent".
+
+Re-measured once the fleet went quiet, on **eight fresh seeds** so nothing is
+reused from the first run:
+
+```
+seeds 7311011..7311018 (8 pairs), 6p 74x46 9CS 250t online continents
+load average 2.84 at start, 10.07 peak, 3.77 at end
+baseline    306.97s user CPU /  1757 turns = 0.174711 s/turn
+candidate   308.24s user CPU /  1757 turns = 0.175436 s/turn
+-0.50% per completed turn (median of 8 pairs) — same game on every seed
+pooled +0.42% per turn; this run resolves +/-5.71%
+```
+
+**Median −0.50%, pooled +0.42%, both inside half a percent of zero and inside
+the run's own resolution.** That is the counter's prediction, met. The +7.12%
+was the host, and the honest reading of both runs together is: the change is
+exact, it removes 9.28% of the simulator's speculative clones, and its effect on
+the clock is smaller than this fleet can measure.
+
+Two things worth keeping from the pair of readings:
+
+- **The absolute moved by more than the effect being hunted.** The same
+  baseline binary at the same shape read 0.220999 s/turn at load 62 and
+  **0.174711 s/turn at load 2.84** — a 21% swing from the host alone, on a
+  quantity a third of a percent was being sought in. `docs/speed_ledger.json`'s
+  conditions block says exactly this; here it is again, from a change whose
+  true size sits under the noise.
+- **The exactness claim never wavered.** *Same game on every seed* on both
+  runs, fourteen paired 250-turn games in total, at load 62 and at load 2.84.
+  A report digest does not care what else the machine is doing, which is why it
+  is the half of a paired run worth quoting when the timing is not.
