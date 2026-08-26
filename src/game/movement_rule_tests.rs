@@ -201,8 +201,7 @@ fn the_first_free_step_never_lands_on_a_friend() {
     let mover = g.spawn_unit("settler", 0, start);
     g.spawn_unit("settler", 0, middle);
     g.begin_turn(0);
-    g.units.get_mut(&mover).expect("the mover").moves_left =
-        g.unit_max_moves(mover).min(1.0);
+    g.units.get_mut(&mover).expect("the mover").moves_left = g.unit_max_moves(mover).min(1.0);
 
     assert!(
         !g.reachable(mover).contains(&middle),
@@ -559,6 +558,9 @@ fn the_controller_files_a_column_through_a_defile() {
         g.units[&rear].moves_left, 0.0,
         "and it paid a movement point for every tile, crossings included"
     );
-    assert_eq!(g.units[&middle_unit].pos, line[1], "the column does not shuffle");
+    assert_eq!(
+        g.units[&middle_unit].pos, line[1],
+        "the column does not shuffle"
+    );
     assert_eq!(g.units[&front].pos, line[2]);
 }

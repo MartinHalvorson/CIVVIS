@@ -24912,12 +24912,7 @@ impl Game {
     /// step has already been refused, so the unit is boxed in and its
     /// reachable set is small. A cap here would silently drop the far end of a
     /// long column.
-    pub fn pass_through_destination(
-        &self,
-        uid: u32,
-        target: Pos,
-        stop_range: i32,
-    ) -> Option<Pos> {
+    pub fn pass_through_destination(&self, uid: u32, target: Pos, stop_range: i32) -> Option<Pos> {
         let cur = self.units.get(&uid)?.pos;
         let here = self.wdist(cur, target);
         if here <= stop_range {
@@ -25850,7 +25845,13 @@ impl Game {
     /// on the same stacking layer is walked through and never landed on. Ask
     /// [`Game::can_stop`] before offering one of these as a destination —
     /// [`Game::reachable`] is the filtered form.
-    fn flow_past(&self, uid: u32, start: Pos, moves: f64, through_units: bool) -> BTreeMap<Pos, f64> {
+    fn flow_past(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        through_units: bool,
+    ) -> BTreeMap<Pos, f64> {
         let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return BTreeMap::new();
@@ -25986,18 +25987,16 @@ impl Game {
             return Err("a linked unit cannot swap".into());
         }
         let (mover_kind, peer_kind) = (self.units[&uid].kind, self.units[&other].kind);
-        if !self.shares_stacking_layer(
-            &self.rules.units[mover_kind],
-            &self.rules.units[peer_kind],
-        ) {
+        if !self.shares_stacking_layer(&self.rules.units[mover_kind], &self.rules.units[peer_kind])
+        {
             // Nothing to exchange: units on different layers already share a
             // tile, so the mover may simply move.
             return Err("those units do not share a stacking layer".into());
         }
         if [from, to].iter().any(|pos| {
-            self.unit_ids_at(*pos).iter().any(|id| {
-                self.rules.units[self.units[id].kind].domain.as_deref() == Some("air")
-            })
+            self.unit_ids_at(*pos)
+                .iter()
+                .any(|id| self.rules.units[self.units[id].kind].domain.as_deref() == Some("air"))
         }) {
             // Based aircraft belong to the tile, not to the unit carrying
             // them, and a swap would leave them under somebody else.

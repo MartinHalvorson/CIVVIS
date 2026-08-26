@@ -26,6 +26,10 @@ use crate::Pos;
 
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
+///
+/// Packed by hand and kept that way: eighty-six short strings one to a line
+/// is eighty-six lines of nothing, and every append would rewrite the block.
+#[rustfmt::skip]
 #[cfg(feature = "closed-experiments")]
 pub const KINDS: [&str; 86] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",

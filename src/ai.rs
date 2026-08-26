@@ -11858,7 +11858,6 @@ impl BasicAi {
         false
     }
 
-
     fn settle_value(&self, g: &Game, pos: Pos) -> f64 {
         let mut total = 0.0;
         for p in g.wdisk(pos, 1) {
