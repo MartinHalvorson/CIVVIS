@@ -33619,6 +33619,66 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() 
     );
 }
 
+/// A guard below the shared survival floor is not a reason to leave its
+/// Settler inside a Barbarian's capture reach.  This is the narrow
+/// reconstruction of civvis-20260826T205933Z t24: a 27-HP Warrior shared
+/// the Settler's tile, two Barbarians removed it, and then captured the
+/// civilian.  The default policy already says that a sub-40 guard cannot
+/// hold; every civilian-safety path must honor that same definition.
+#[test]
+fn a_wounded_stacked_guard_does_not_cancel_the_settlers_barbarian_escape() {
+    let (mut game, _city, home) = barbarian_field(71_027);
+    for unit in game.player_unit_ids(0) {
+        if game.rules.units[game.units[&unit].kind].class == "military" {
+            game.remove_unit(unit);
+        }
+    }
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let guard = game.spawn_test_unit("warrior", 0, start);
+    game.units.get_mut(&guard).unwrap().hp = STACKED_GUARD_MIN_HP - 1;
+    let raider_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| {
+            open_land(&game, *pos)
+                && game
+                    .reachable(settler)
+                    .into_iter()
+                    .any(|escape| game.wdist(escape, *pos) >= 3)
+        })
+        .expect("an adjacent raider with a safe two-step escape");
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    assert!(ai.settler_guard_holds && ai.civilian_out_of_reach);
+    ai.settler_guards.insert(settler, guard);
+    let reach = ai.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the weakly guarded Settler is inside the Barbarian's capture reach"
+    );
+    assert!(
+        !ai.civilian_safe_at(&game, 0, settler, start, &reach),
+        "a bound guard below {STACKED_GUARD_MIN_HP} HP cannot cancel the escape"
+    );
+    assert_eq!(
+        ai.civilian_flee_step(&mut game, 0, settler),
+        Some(true),
+        "the safety pass takes the available full-turn escape"
+    );
+    let after = game.units[&settler].pos;
+    assert_ne!(after, start, "the Settler leaves the doomed stack");
+    assert!(
+        !reach.covers(&game, after),
+        "the escape leaves the Warrior's capture reach: {after:?}"
+    );
+}
+
 /// The route step into a raider's reach is refused: a settler one tile short
 /// of it either sidesteps to safe ground or holds, and never ends its turn
 /// where the Warrior could stand next turn.
