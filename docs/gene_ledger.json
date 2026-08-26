@@ -924,25 +924,25 @@
       "deals-for-our-gain",
       "early-contact-window",
       "elective-war-in-reach",
-      "elective-war-yields-to-a-lane",
       "engine-faith-price",
       "escort-unstick",
       "flip-nearby-city-states",
       "founder-temple",
       "frontier-massing-alarm",
-      "government-ladder",
       "great-person-housing",
       "idle-faith-patronage",
       "lane-great-people",
       "lane-space-race",
-      "loyalty-rate-alarm",
       "maintenance-aware-deck",
-      "missionary-evades-raiders",
-      "never-an-empty-queue",
+      "missionary-last-charge-explores",
+      "naval-recon",
+      "no-free-passage",
       "one-war-at-a-time",
       "opportunistic-war",
       "price-the-suzerainty",
+      "promote-when-wounded",
       "raid-pillage-prizes",
+      "recorded-tactical-step",
       "religious-veto-defence",
       "research-tier-premium",
       "science-multiplier-payoff",
@@ -954,6 +954,7 @@
       "settler-screen",
       "slot-kind-tiebreak",
       "solvency-first-trade-slot",
+      "strike-opening",
       "unit-objective-memory",
       "war-reinforcement",
       "wide-map-capacity"
@@ -1008,20 +1009,20 @@
         }
       },
       "naval-recon": {
-        "rule_on": [],
+        "rule_on": [
+          "naval-recon"
+        ],
         "head": "naval-recon",
-        "ships": null,
+        "ships": "naval-recon",
         "versions": {
           "naval-recon": -0.045836,
           "naval-recon-2": null
         }
       },
       "never-an-empty-queue": {
-        "rule_on": [
-          "never-an-empty-queue"
-        ],
+        "rule_on": [],
         "head": null,
-        "ships": "never-an-empty-queue",
+        "ships": null,
         "versions": {
           "never-an-empty-queue": null,
           "never-an-empty-queue-2": null
@@ -1449,7 +1450,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 48
+    "default_on": 49
   },
   "genes": [
     {
@@ -3075,7 +3076,7 @@
     {
       "tag": "loyalty-rate-alarm",
       "verdict": "helps",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 5,
       "wins_prior_10k": 38,
       "wins_third_10k": 40,
@@ -3165,7 +3166,7 @@
     {
       "tag": "naval-recon",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": -20,
       "wins_third_10k": 16,
@@ -3525,7 +3526,7 @@
     {
       "tag": "promote-when-wounded",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 7,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -3660,7 +3661,7 @@
     {
       "tag": "recorded-tactical-step",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 11,
       "wins_prior_10k": 18,
       "wins_third_10k": 30,
@@ -4425,7 +4426,7 @@
     {
       "tag": "strike-opening",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 1,
       "wins_prior_10k": 4,
       "wins_third_10k": 17,
