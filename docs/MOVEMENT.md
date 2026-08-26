@@ -97,10 +97,13 @@ the defect above survived for so long.
 - **Swap is engine and protocol only.** `Action::Swap` is legal, tested and
   refused correctly, and any client or controller may send it. It is **not**
   enumerated by `Game::legal_actions`, so learned agents never see it; it has
-  no button in the browser; and no controller yet chooses one. A
-  `swap-rotation` gene — pull the damaged front-liner back for the healthy
-  unit behind it — is the obvious next use and belongs to its own PR, with its
-  own screen.
+  no button in the browser. **The `swap-rotation` gene (2026-08-26,
+  `src/ai/advanced/swap_rotation.rs`, opt-in and off) is the first controller
+  to choose one**: a unit in contact and at or below `withdraw_hp` trades
+  places with an adjacent melee friend 25 hp healthier and further from the
+  enemy. Measured positive on four instruments and significant on none; see
+  `docs/LIVE_TACTICS.md` §18, which also records that the value is in not
+  opening the line rather than in the healing.
 - **The host's own swap operation** is not driven over the Civilization VI
   bridge, so a swap is a CIVVIS-side decision only. Two `MOVE_TO` orders cannot
   emulate one: the first is refused.

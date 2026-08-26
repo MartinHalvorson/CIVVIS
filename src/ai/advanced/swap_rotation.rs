@@ -34,11 +34,16 @@
 //! - one rotation per unit per turn, and the engine refuses anything its own
 //!   rules forbid, so the gene never has to reproduce them.
 //!
-//! ⚠ **Healing has to be on for this to be worth anything**, and on a
-//! Tactics arena it is off by default: nothing recovers there, so a unit
-//! rotated out is simply a unit that left the fight. `--heal` (2026-08-26)
-//! is what makes rotation measurable at all, and the arena numbers for this
-//! gene are read with it on. In a world game healing is always on.
+//! ⚠ **The healing is not where the value is, and that was worth finding
+//! out.** This gene was written expecting to need `--heal`: nothing recovers
+//! on a Tactics arena, so a unit rotated out looked like a unit that had
+//! simply left the fight. Measured both ways on the same forty seeds, the
+//! curriculum reads **+15.6 ± 11.3 a seed with healing on and +14.4 ± 9.6
+//! with it off** — the same number. The wounded unit does not have to come
+//! back for the rotation to pay. What pays is that the tile stays held: the
+//! swap is the one action in the engine that takes a unit out of the line
+//! without opening it, and the alternative — recovery walking it away — is a
+//! hole whether or not anything heals.
 //!
 //! `Kind::OptIn`, off in `AdvancedAi::new()` and `legacy()`, byte-identical
 //! when off. Priced on the arena first; the whole-game screen is the
