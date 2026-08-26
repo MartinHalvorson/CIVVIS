@@ -13523,7 +13523,7 @@ local function applyOrders(player, pid, turn, rows)
 
 	emit("orders", {
 		turn = turn, frame = awaiting.frame or 0, source = "civvis",
-		seen = #rows - shadowRows - deferred - verdicts,
+		seen = #rows - deferred - verdicts - shadowRows,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		seen_by = seenByKind, refused_by = refusedByKind,
 		deferred = deferred,
