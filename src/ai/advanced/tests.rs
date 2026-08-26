@@ -19157,8 +19157,8 @@ fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        !deployed.settler_threat_detour,
-        "demoted by the 2026-08-25 operator directive; the ledger leaves it off"
+        deployed.settler_threat_detour,
+        "pinned on by the 2026-08-26 operator directive; the ledger turns it on"
     );
     let enable = GENES
         .iter()

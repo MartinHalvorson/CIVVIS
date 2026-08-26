@@ -619,7 +619,7 @@ advantage was variance — it bought precision per game — and the operator cho
 randomness over it so that no gene is ever measured against a structured
 background.
 
-## The gene ledger: the deployment genome follows the batch rule, under the operator's pins
+## The gene ledger: the deployment genome follows the batch rule, under the operator's two lists
 
 ⭐ **Since 2026-08-25 every default is decided by the batch rule** (operator,
 verbatim: *"if the last 3 batches all report a positive ± wins/10k, we should
@@ -653,24 +653,36 @@ are history: the dated notes below preserve how earlier selections were made,
 not a current rule. Win columns, *Diff*, posterior intervals, verdicts and
 score share remain evidence beside the rule's answer.
 
-⭐ **Above the rule, the operator's pins** (operator, 2026-08-26, verbatim:
-*"idle-faith-patronage, buildings-before-projects, deals-for-our-gain,
-founder-temple, lane-great-people, army-target-weighs-enemy,
-research-tier-premium, settler-screen, early-contact-window should all default
-on"*). `tools/genes.py::OPERATOR_DEFAULT_ON` names the genes that default
-**on** whatever their batch columns read; `build_ledger` records them as
-`rules.operator_default_on`, generates them as
-`src/ai/advanced/genes.rs::OPERATOR_DEFAULT_ON`, and
-`the_operator_pins_ship_above_the_rule` holds the two together. The rule's own
-answer for a pinned gene stays in `rules.batch_decisions`, so a pin is
-published as an override rather than dissolved into the genome — read that
-field for what the rule says today, never a comment. A pin moves a default
-only:
-it cannot hold a gene the rule removes from the pool (`genes.py write` refuses
-that outright), and it cannot turn a gene off. The 2026-08-24 to 2026-08-25
-pinned list (`OPERATOR_DEFAULT_ON`, 36 → 52 → 57 → 73 → 64 genes across five
-directives) was the whole selection; this one is nine names above a rule that
-decides everything else.
+⭐ **Above the rule, the operator's two lists.**
+`tools/genes.py::OPERATOR_DEFAULT_ON` names the genes that default **on**
+whatever their batch columns read, and `OPERATOR_DEFAULT_OFF` (operator,
+2026-08-26) names the genes that default **off** the same way. `build_ledger`
+records them as `rules.operator_default_on` / `rules.operator_default_off`,
+generates them as `src/ai/advanced/genes.rs::OPERATOR_DEFAULT_ON` /
+`OPERATOR_DEFAULT_OFF`, and `the_operator_pins_ship_above_the_rule` and
+`the_operator_holds_stay_out_of_the_genome` hold the two languages together.
+The rule's own answer for a named gene stays in `rules.batch_decisions`, so
+the operator's selection is published as an override rather than dissolved
+into the genome — read that field for what the rule says today, never a
+comment. A pin or a hold moves a default only: neither can hold a gene the
+rule removes from the pool (`genes.py write` refuses that outright), and no
+gene may be named by both lists (an overlap is refused at import). The
+2026-08-24 to 2026-08-25 pinned list (`OPERATOR_DEFAULT_ON`, 36 → 52 → 57 →
+73 → 64 genes across five directives) was the whole selection; these two are
+names above a rule that decides everything else.
+
+⭐ **A hold is the only thing that takes a gene out of a retained selection.**
+Under `operator-retained-selection` a reporting rotation carries the recorded
+genome forward, so the rule reading a gene `off` does not remove it — four of
+the five genes held off on 2026-08-26 read `off` and shipped anyway. Adding
+the tag to `OPERATOR_DEFAULT_OFF` is what takes it out, under either policy.
+
+⭐ **Moving a versioned family's ship.** Pin the version you want on and hold
+the one you want off: on 2026-08-26 `settler-target-hysteresis-2` joined
+`OPERATOR_DEFAULT_ON` and `settler-target-hysteresis` joined
+`OPERATOR_DEFAULT_OFF`, and the family still ships exactly one version. Do not
+try to move it by pinning both — the one-version-per-family check refuses
+that, correctly.
 
 ⚠ **Do not write a batch reading into a comment.** The first version of this
 paragraph said all nine read `off`, which was true for the eight hours between
@@ -681,18 +693,23 @@ wrong by the next tournament and no test can catch it. State the invariant —
 a pin ships whatever the rule reads — and leave the numbers to
 `rules.batch_decisions` and the ranking's columns, which are regenerated.
 
-**Pinning a default.** Add the tag to `OPERATOR_DEFAULT_ON` (sorted), run
-`python3 tools/genes.py write && python3 tools/genes.py check`, then
-`cargo test --lib` — a pin naming a gene the registry does not screen is a
-hard error, and a test that asserts the old default fails and is updated to
-the new reality. Unpinning is the same edit in reverse: the gene falls back to
-whatever the rule reads from its columns.
+**Pinning or holding a default.** Add the tag to `OPERATOR_DEFAULT_ON` or
+`OPERATOR_DEFAULT_OFF` (each sorted), run `python3 tools/genes.py write &&
+python3 tools/genes.py check`, then `cargo test --lib` — a name the registry
+does not screen is a hard error, and a test that asserts the old default fails
+and is updated to the new reality. Expect *behavioural* tests to move too, not
+only registration ones: a gene turned on changes what `assess` answers on the
+same board (`the_live_seat_does_not_open_an_elective_war` had to withhold
+`unchosen-war-keeps-the-lane` to keep reading the branch it is about).
+Removing a name is the same edit in reverse: the gene falls back to whatever
+the rule reads from its columns — or, under a retained selection, to whatever
+the recorded genome carried.
 
 - **`docs/gene_ledger.json`** records the screen profile and measurements for
   every gene, the `deployment_policy` (`batch-rule+operator-pins`), the
   `batch_columns` the rule read and its `batch_decisions` per gene, the
-  `operator_default_on` pins above it, the resulting
-  `deployment_genome`, and `removals_due`. The generated
+  `operator_default_on` pins and `operator_default_off` holds above it, the
+  resulting `deployment_genome`, and `removals_due`. The generated
   `src/ai/advanced/genes.rs::DEPLOYMENT_GENOME` / `BATCH_COLUMNS` and
   `src/ai/advanced/gene_ledger.rs` re-derive and apply the same answer.
   `python3 tools/genes.py write` regenerates the JSON, Rust block, and
@@ -706,12 +723,12 @@ whatever the rule reads from its columns.
   (`conflict`) and a gene no screen has measured. Past the family-wise bar is
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
   leave three on. The newest screen that priced the gene supplies the verdict.
-- **The deployment policy.** The batch rule above and the operator's pins,
-  and nothing else: no source-column threshold, pooled-*Diff* veto or
+- **The deployment policy.** The batch rule above and the operator's two
+  lists, and nothing else: no source-column threshold, pooled-*Diff* veto or
   posterior fallback. A screenable tag is on exactly when it appears in
   `deployment_genome`, which is the rule's answer plus `operator_default_on`
-  with each family collapsed to the one version that ships; all other
-  screenable tags are off.
+  and minus `operator_default_off`, with each family collapsed to the one
+  version that ships; all other screenable tags are off.
 - **Applying the deployment genome.** `AdvancedAi::enable_live_bridge` and
   `enable_engine_repairs` end with `apply_gene_ledger`: every selected live or
   production treatment is enabled and every unselected screenable treatment is
@@ -1255,8 +1272,8 @@ tables remain interpretable. `AUTHORITY`, the column threshold, and the
 pooled-*Diff* veto are no longer configuration or deployment behavior, and
 neither is the 2026-08-24 operator-pinned list that replaced them. The
 current policy is the batch rule documented above (*The gene ledger*), under
-the nine names the operator pins on; no statistical setting can throw a switch
-or move a default. Read the remaining analysis as evidence about the old
+the names the operator pins on and holds off; no statistical setting can throw
+a switch or move a default. Read the remaining analysis as evidence about the old
 selection processes, not a current decision procedure.
 
 ⭐ **First, the thing the switch is not.** The columns rule reads the *newest*
@@ -1359,7 +1376,8 @@ more games".
 ### Using this evidence now
 
 The selection changes when the batch rule re-reads a new batch, or when the
-operator adds or drops a name in `OPERATOR_DEFAULT_ON`. Read the win, *Diff*,
+operator adds or drops a name in `OPERATOR_DEFAULT_ON` or
+`OPERATOR_DEFAULT_OFF`. Read the win, *Diff*,
 posterior, shape and lane evidence together to understand a flip and to decide
 where to spend games: a straddling interval is a reason to run more games,
 never a reason to edit an unpinned default by hand, and never an automatic
