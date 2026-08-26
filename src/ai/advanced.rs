@@ -9596,6 +9596,13 @@ impl AdvancedAi {
         // and land is not the same thing as somewhere to put a city.
         let desired_cities = if self.city_target_meets_the_map {
             let room = self.map_settlement_room(g, pid, &expansion_origins, desired_cities);
+            // ⚠ THE CAP MUST NEVER CLOSE THE OPENING. `room` and `has_site`
+            // read the same scanner at the same radius, so a site the shipped
+            // expansion arms can see is always at least one seat here. Saying
+            // so out loud makes the failure mode that would matter -- a young
+            // empire capped to the cities it already holds while good land
+            // sits beside it -- unrepresentable rather than merely unlikely.
+            let room = room.max(usize::from(has_site));
             desired_cities.min(cities.len() + room)
         } else {
             desired_cities
@@ -12065,7 +12072,9 @@ impl AdvancedAi {
         let behind = g
             .players
             .iter()
-            .filter(|rival| rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian)
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
             .any(|rival| rival.government.as_deref().map_or(0, &capacity) > ours);
         let window = if behind {
             GOVERNMENT_LADDER_BEHIND_WINDOW
@@ -24404,13 +24413,7 @@ impl AdvancedAi {
     /// twice. The walk stops as soon as it has counted `wanted` of them: the
     /// only question asked here is whether the target is reachable, and the
     /// scan is the expensive part of `assess`.
-    fn map_settlement_room(
-        &self,
-        g: &Game,
-        pid: usize,
-        origins: &[Pos],
-        wanted: usize,
-    ) -> usize {
+    fn map_settlement_room(&self, g: &Game, pid: usize, origins: &[Pos], wanted: usize) -> usize {
         if wanted == 0 || origins.is_empty() {
             return 0;
         }
