@@ -24669,23 +24669,46 @@ function drawQuickDeals() {
 // routes, espionage. Each is a screen you open, decide in, and close. The
 // engine has offered every one of these to seat 0 since v0.6; this is the
 // bar and the screens, built over the same legal actions the agents use.
+// Every icon here has to be a glyph the text fonts actually have, so that it
+// takes the bar's gold (see the note over `.launch` in the stylesheet): an
+// emoji paints as a white sticker among gold marks.
 const EMPIRE_TABS = [
   {id: "cities", icon: "⌂", name: "Cities"},
   {id: "government", icon: "♜", name: "Government"},
   {id: "religion", icon: "☼", name: "Religion"},
   {id: "people", icon: "★", name: "Great People"},
+  {id: "works", icon: "▣", name: "Great Works"},
+  {id: "climate", icon: "☂", name: "Climate"},
   {id: "governors", icon: "⚑", name: "Governors"},
+  {id: "history", icon: "◷", name: "History"},
+  {id: "era", icon: "✦", name: "Era Progress"},
   {id: "states", icon: "◈", name: "City-States"},
   {id: "trade", icon: "⇄", name: "Trade"},
   {id: "spies", icon: "◐", name: "Espionage"},
 ];
-// The launch bar's order is Civilization VI's, so a hand that already knows
-// where Government is finds it in the same place. The Empire panel still
-// *opens* on Cities — that is a different question, and `docs/SINGLE_PLAYER.md`
-// says why: past three or four cities, clicking each one on the map to learn
-// what it is building stops being navigation and becomes a chore.
-const LAUNCH_BAR_ORDER = ["government", "religion", "people", "cities",
-                          "governors", "states", "trade", "spies"];
+// The launch bar's order is Civilization VI's (`LaunchBar.xml`, after the two
+// trees: Government, Religion, Great People, Great Works, Climate, Governors,
+// History), so a hand that already knows where Government is finds it in the
+// same place. The Empire panel still *opens* on Cities — that is a different
+// question, and `docs/SINGLE_PLAYER.md` says why: past three or four cities,
+// clicking each one on the map to learn what it is building stops being
+// navigation and becomes a chore.
+const LAUNCH_BAR_ORDER = ["government", "religion", "people", "works",
+                          "climate", "governors", "history"];
+// Civ 6's partial-screen hooks (`PartialScreenHooks.xml`) stand upper right
+// and read right to left: World Rankings — the Reports button here, which
+// opens the Cities report the way `F8` already does — Era progress, the Trade
+// Route overview, City-States, Espionage. Written left to right, as the bar
+// lays them out.
+const HOOK_BAR = [
+  {tab: "spies"},
+  {tab: "states"},
+  {tab: "trade", name: "Trade Routes",
+   sense: "Trade Routes — every route this empire runs and the capacity for more"},
+  {tab: "era", sense: "Era Progress — era score, the age ahead, and dedications"},
+  {tab: "cities", icon: "▤", name: "Reports",
+   sense: "Reports — every city's status, and the rest of the empire's screens"},
+];
 let empireTab = "cities";
 
 // One of the two tree hooks: the launch button Civ 6 rings with a meter of
@@ -24746,6 +24769,8 @@ function empireBadge(tab) {
       return Math.max(0, (me.trade_capacity || 0) - (me.routes || []).length);
     case "spies":
       return legalFor("assign_spy").length + legalFor("promote_spy").length;
+    case "era":
+      return legalFor("choose_dedication").length;
     default: return 0;
   }
 }
@@ -24767,16 +24792,17 @@ function drawLaunchBar() {
   if (!state) { bar.classList.remove("on"); return; }
   bar.classList.add("on");
   const tabs = document.getElementById("launchtabs");
+  const hooks = document.getElementById("hooktabs");
   // A spectator holds no seat, so every empire screen behind this bar refuses
   // it — `openEmpire` returns on SPEC — and none of them is drawn rather than
   // being offered and going dead under the hand. What a watcher can actually
   // use is what stays: the two trees of the civilization it is following, in
-  // `LaunchBar.xml`'s own leading position, and the rankings report. The
-  // foreign-affairs pair is hidden by the stylesheet, which is where the rest
-  // of the arrangement's visibility already lives.
+  // `LaunchBar.xml`'s own leading position. The hooks bar is the played
+  // seat's alone; the stylesheet keeps it off a watched world.
   if (SPEC) {
     if (tabs) tabs.innerHTML = arrangementSeat() !== null && worldStandingsInPlay()
       ? launchTreeHook("science") + launchTreeHook("culture") : "";
+    if (hooks) hooks.innerHTML = "";
     const report = document.getElementById("rankingsbtn");
     if (report) report.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
     return;
@@ -24784,20 +24810,27 @@ function drawLaunchBar() {
   // Civilization VI's launch bar leads with the two trees, each ringed by the
   // meter of what it is studying, and only then reaches the empire's standing
   // screens (`LaunchBar.xml`: Science, Culture, Government, Religion, Great
-  // People, Great Works). CIVVIS's own screens follow that order and keep the
-  // ones Civ 6 hangs elsewhere — Cities, Governors, City-States, Espionage —
-  // behind them rather than inventing a second bar for them.
+  // People, Great Works, Climate, Governors, History). The reports and the
+  // rooms where the empire deals with anyone else are that game's
+  // partial-screen hooks, upper right, and go on the other bar. An arena has
+  // no empire behind it and so no screens: both bars go empty.
   const empireWorld = worldStandingsInPlay();
-  if (tabs) tabs.innerHTML =
-    (empireWorld ? launchTreeHook("science") + launchTreeHook("culture") : "") +
-    LAUNCH_BAR_ORDER.map(id => EMPIRE_TABS.find(tab => tab.id === id))
-      .filter(Boolean).map(tab => {
+  const hook = (tab, icon, name, sense) => {
     const badge = empireBadge(tab.id);
-    const title = `${tab.name}${badge ? ` — ${badge} waiting` : ""}`;
+    const title = `${sense || name}${badge ? ` — ${badge} waiting` : ""}`;
     return `<button class="launch" onclick="openEmpire('${tab.id}')" ` +
-      `title="${title}" aria-label="${tab.name}">${tab.icon}` +
+      `title="${escapeAttr(title)}" aria-label="${escapeAttr(name)}">${icon}` +
       (badge ? `<span class="launch-badge">${badge}</span>` : "") + `</button>`;
-  }).join("");
+  };
+  if (tabs) tabs.innerHTML = !empireWorld ? "" :
+    launchTreeHook("science") + launchTreeHook("culture") +
+    LAUNCH_BAR_ORDER.map(id => EMPIRE_TABS.find(tab => tab.id === id))
+      .filter(Boolean).map(tab => hook(tab, tab.icon, tab.name)).join("");
+  if (hooks) hooks.innerHTML = !empireWorld ? "" :
+    HOOK_BAR.map(entry => {
+      const tab = EMPIRE_TABS.find(candidate => candidate.id === entry.tab);
+      return tab ? hook(tab, entry.icon || tab.icon, entry.name || tab.name, entry.sense) : "";
+    }).join("");
   // Same "waiting for you" count the empire tabs carry: a proposal nobody has
   // answered, and every offer another table would sign right now.
   setLaunchBadge("diplomacybtn", legalFor("accept_deal").length,
@@ -24825,7 +24858,11 @@ function drawLaunchBar() {
 //                       turn, menu and Civilopedia from the right.
 //    LaunchBar.xml      horizontal, upper left: the tech tree and the civics
 //                       tree first — each ringed by its own progress meter —
-//                       then Government, Religion, Great People, Great Works.
+//                       then Government, Religion, Great People, Great Works,
+//                       Climate, Governors, History.
+//    PartialScreenHooks horizontal, upper right, read right to left: World
+//                       Rankings (Reports), Era progress, Trade routes,
+//                       City-States, Espionage.
 //    WorldTracker.xml   under the launch bar: the research panel, then the
 //                       civic panel.
 //    MinimapPanel.xml   `Anchor="L,B"` — the minimap is bottom left.
@@ -24869,13 +24906,17 @@ function arrangementSeat() {
   return Number.isInteger(state.view_player) ? state.view_player : null;
 }
 
-// End Turn, the auto-play controls and the transport are markup in the command
-// deck, and they stay there. #2275 moved End Turn out to Civilization VI's
-// bottom-right corner and #2382 moved the transport out beside it; the deck is
-// open in both seats now, so the corner they were moved to held one control
-// away from the panel that holds every other one. The corner is gone with
-// them — what the arrangement still contributes is the yield strip, the launch
-// bar, the world tracker and where the map's own furniture stands.
+// End Turn stands in Civilization VI's bottom-right corner, `#actionpanel`,
+// with what the turn is waiting on and the choices that would settle it laid
+// over it (`paintActionCorner`); the selected unit stands inboard of it. The
+// auto-play controls and the transport are markup in the command deck and
+// stay there: who plays the seat when it is not you is a standing choice, not
+// a thing a player reaches for every turn. #2275 moved End Turn out and #2399
+// moved it back into the deck; this is the corner again, now that it says
+// more than one word.
+//
+// Both corner boxes publish their height so the notification rail and the
+// arena rail can stand off whichever is taller.
 function publishSoloHeight(element, property) {
   const area = document.getElementById("maparea");
   if (!area || !element) return;
@@ -25549,9 +25590,163 @@ function empireSpies() {
     empireGrid(cards, "You have trained no spies. Build them once Diplomatic Service is in."));
 }
 
+// ------------------------------------------------------------ great works
+// Civ 6's Great Works screen: what the empire holds, by kind, with who made
+// each piece and when, and where a work could be housed — every slot the
+// empire's buildings and wonders carry, by city. The engine keeps the pieces
+// themselves (`great_work_pieces`); the counts are theirs by kind.
+function empireGreatWorks() {
+  const me = state.me || {};
+  const seat = state.player ?? 0;
+  const pieces = Array.isArray(me.great_work_pieces) ? me.great_work_pieces : [];
+  const held = {};
+  for (const piece of pieces) held[piece.kind] = (held[piece.kind] || 0) + 1;
+  const kinds = Object.entries(held).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const player = (state.players || [])[seat] || {};
+  const tourism = Math.round(Number(player.tourism_per_turn) || 0);
+  const collection = kinds.map(([kind, count]) => {
+    const own = pieces.filter(piece => piece.kind === kind);
+    const lines = own.slice(0, 6).map(piece =>
+      `${escapeAttr(titleCase(piece.creator || "unknown"))} · ` +
+      `${titleCase(ERA_NAMES[piece.era] || "ancient")} era`);
+    if (own.length > 6) lines.push(`+${own.length - 6} more`);
+    return empireCard({title: `${tradeItemIcon(kind)} ${escapeAttr(titleCase(kind))}`,
+      kind: `${count} held`, note: lines.join("<br>")});
+  });
+  const housing = state.cities.filter(city => city.owner === seat).map(city => {
+    const slots = {};
+    const add = spec => {
+      for (const [kind, count] of Object.entries((spec && spec.great_work_slots) || {}))
+        slots[kind] = (slots[kind] || 0) + count;
+    };
+    for (const building of city.buildings || []) add(RULES.buildings && RULES.buildings[building]);
+    for (const wonder of city.wonders || []) add(RULES.wonders && RULES.wonders[wonder]);
+    const line = Object.entries(slots)
+      .map(([kind, count]) => `${count} ${titleCase(kind)}`).join(" · ");
+    return line ? empireCard({title: escapeAttr(city.name), kind: "Slots", note: line}) : null;
+  }).filter(Boolean);
+  return empireGroup("Collection",
+      `${pieces.length} work${pieces.length === 1 ? "" : "s"} · ${tourism} tourism per turn`,
+      empireGrid(collection, "No Great Works yet. Great Writers, Artists and Musicians " +
+        "create them; relics and artifacts are found.")) +
+    empireGroup("Housing", `${housing.length} cit${housing.length === 1 ? "y" : "ies"} with slots`,
+      empireGrid(housing, "No building with a Great Work slot yet — a Palace, an " +
+        "Amphitheater, a Temple or a Museum holds one."));
+}
+
+// ---------------------------------------------------------------- climate
+// Civ 6's Climate screen (Gathering Storm): the world's phase and what is
+// driving it, this empire's share of the carbon, and the weather in sight.
+function empireClimate() {
+  const me = state.me || {};
+  const phase = Math.round(Number(state.climate_phase) || 0);
+  const points = Math.round(Number(state.climate_points) || 0);
+  const intensity = Math.round((Number(state.disaster_intensity) || 0) * 10) / 10;
+  const mine = Number(me.co2_emissions) || 0;
+  const world = Number(me.global_co2) || 0;
+  const share = world > 0 ? Math.round(100 * mine / world) : 0;
+  const fuel = Math.round(Number(me.power_fuel_consumed) || 0);
+  const overview = [
+    empireCard({title: `Phase ${phase}`, kind: "Climate change",
+      note: `${points} climate points banked · disaster intensity ${intensity}`}),
+    empireCard({title: `${compactStat(world)} CO₂`, kind: "Lifetime emissions, every civilization",
+      note: `${compactStat(mine)} of it yours (${share}%) · ${fuel} fuel burned for power`}),
+  ];
+  const go = pos => `<button onclick='centerOn([${pos.join(",")}]);draw();closeEmpire()'>Go there</button>`;
+  const weather = (state.storms || []).map(storm => empireCard({
+      title: escapeAttr(titleCase(storm.kind || "storm")), kind: "Storm",
+      note: `Severity ${storm.severity} · at ${(storm.pos || []).join(",")} · until turn ${storm.ends}`,
+      actions: Array.isArray(storm.pos) ? [go(storm.pos)] : []}))
+    .concat((state.droughts || []).map(drought => {
+      const tiles = Array.isArray(drought.tiles) ? drought.tiles : [];
+      return empireCard({title: "Drought", kind: "Drought",
+        note: `Severity ${drought.severity} · ${tiles.length} tile${tiles.length === 1 ? "" : "s"}` +
+          ` · until turn ${drought.ends}`,
+        actions: tiles.length && Array.isArray(tiles[0]) ? [go(tiles[0])] : []});
+    }));
+  return empireGroup("The world's climate",
+      "Phases advance as the world burns fuel, and each one hits harder",
+      empireGrid(overview, "")) +
+    empireGroup("Weather in sight", `${weather.length} event${weather.length === 1 ? "" : "s"}`,
+      empireGrid(weather, "Clear skies over everything you can see."));
+}
+
+// ---------------------------------------------------------------- history
+// Civ 6's History screen is the timeline of Historic Moments. The record here
+// is the engine's own event log for this seat — the entries the deck's event
+// log holds — gathered by turn, newest first, under the era score they earned.
+function empireHistory() {
+  const me = state.me || {};
+  const events = [...eventsFor(state)].sort((a, b) => b.turn - a.turn);
+  const byTurn = new Map();
+  for (const event of events) {
+    if (!byTurn.has(event.turn)) byTurn.set(event.turn, []);
+    byTurn.get(event.turn).push(event);
+  }
+  const cards = [...byTurn.entries()].slice(0, 60).map(([turn, list]) => {
+    const placed = list.find(event => Array.isArray(event.pos));
+    return empireCard({title: `Turn ${turn}`,
+      kind: list.length === 1 ? escapeAttr(list[0].category || "Moment") : `${list.length} moments`,
+      note: list.map(event =>
+        `${event.icon || NOTICE_ICONS[event.category] || "◆"} ${escapeAttr(event.text)}`).join("<br>"),
+      actions: placed
+        ? [`<button onclick='centerOn([${placed.pos.join(",")}]);draw();closeEmpire()'>Go there</button>`]
+        : []});
+  });
+  const score = Math.round(Number(me.era_score) || 0);
+  return empireGroup("Timeline",
+    `${events.length} recorded moment${events.length === 1 ? "" : "s"} · era score ${score}`,
+    empireGrid(cards, "Nothing has happened to you yet. Found a city."));
+}
+
+// ----------------------------------------------------------- era progress
+// Civ 6's Era Progress screen: the age this empire is in, its era score
+// against the two thresholds ahead, the dedications it has taken, and the
+// dedication a new age is waiting for. `data/dedications.json` carries each
+// one's Normal-Age and Golden-Age text.
+function empireEra() {
+  const me = state.me || {};
+  const score = Math.round(Number(me.era_score) || 0);
+  const normal = Math.round(Number(me.normal_age_threshold) || 0);
+  const golden = Math.round(Number(me.golden_age_threshold) || 0);
+  const era = titleCase(ERA_NAMES[state.world_era] || "ancient");
+  const heading = score >= golden ? "Golden Age" : score >= normal ? "Normal Age" : "Dark Age";
+  const cap = Math.max(1, golden, score);
+  const pct = value => Math.min(100, Math.round(100 * value / cap));
+  const meter = `<div class="era-meter"><i style="width:${pct(score)}%"></i>` +
+    `<b style="left:${pct(normal)}%" title="Normal Age from ${normal}"></b>` +
+    `<b style="left:${pct(golden)}%" title="Golden Age from ${golden}"></b></div>` +
+    `<div class="empire-card-note">${score} era score · Dark below ${normal} · ` +
+    `Normal from ${normal} · Golden from ${golden}</div>`;
+  const overview = [empireCard({title: `${titleCase(me.age || "normal")} Age`, kind: `${era} Era`,
+    note: `Heading for a ${heading}` + meter})];
+  const specs = (RULES && RULES.dedications) || {};
+  const words = name => {
+    const spec = specs[name] || {};
+    const age = String(me.age || "").toLowerCase();
+    return spec[age === "golden" || age === "heroic" ? "golden" : "normal"] || spec.normal ||
+      Object.entries(spec.triggers || {})
+        .map(([trigger, pay]) => `+${pay} ${titleCase(trigger)}`).join(" · ");
+  };
+  const taken = (me.dedications || []).map(name => empireCard({
+    title: `✦ ${escapeAttr(titleCase(name))}`, kind: "Dedicated", note: escapeAttr(words(name))}));
+  const choices = legalFor("choose_dedication").map(action => empireCard({
+    title: `✦ ${escapeAttr(titleCase(action.dedication))}`, kind: "Available",
+    note: escapeAttr(words(action.dedication)), actions: [empireAct(action, "Dedicate", "primary")]}));
+  const pending = Number(me.dedication_choices) || 0;
+  return empireGroup("This age", "Era score decides the age that follows", empireGrid(overview, "")) +
+    (choices.length || pending
+      ? empireGroup("Choose a dedication", `${pending} to choose`,
+          empireGrid(choices, "Nothing to choose until the next age begins."))
+      : "") +
+    empireGroup("Dedications", `${taken.length} taken`,
+      empireGrid(taken, "No dedication yet — an age is dedicated when it begins."));
+}
+
 const EMPIRE_BUILDERS = {
   cities: empireCities,
   government: empireGovernment, religion: empireReligion, people: empireGreatPeople,
+  works: empireGreatWorks, climate: empireClimate, history: empireHistory, era: empireEra,
   governors: empireGovernors, states: empireCityStates, trade: empireTrade, spies: empireSpies,
 };
 function drawEmpire() {
@@ -27820,7 +28015,9 @@ function drawSide(force = true) {
   const dealReplies = state.legal_actions.filter(a => a.type === "accept_deal" || a.type === "reject_deal");
   const gs = document.getElementById("govsec");
   const fullMapSpectator = SPEC && (state.view_player === null || state.view_player === undefined);
-  if (!fullMapSpectator && (SPEC || govs.length || me.government || dedications.length || societies.length || congressVotes.length || aidActions.length || activeEmergencies.length || levies.length || dealReplies.length)) {
+  // A battlefield has no government, no Congress and no deals: the section
+  // is the empire's and an arena never shows it, whoever is watching.
+  if (!fullMapSpectator && !watchingBattlefield() && (SPEC || govs.length || me.government || dedications.length || societies.length || congressVotes.length || aidActions.length || activeEmergencies.length || levies.length || dealReplies.length)) {
     gs.style.display = "block";
     // Anarchy is a government of sorts: no slots, no yields, and no second
     // change until the waiting government takes power.
@@ -28065,7 +28262,9 @@ function boostRequirement(spec) {
   return `${titleCase(trigger)}${count > 1 ? ` · ${count}` : ""}`;
 }
 function openTree(kind) {
-  if (!RULES || !state) return;
+  // A battlefield's research is a pace the engine keeps for both sides
+  // alike, and it has no civics tree at all, so neither tree opens there.
+  if (!RULES || !state || watchingBattlefield()) return;
   treeKind = kind;
   const specs = kind === "techs" ? RULES.techs : RULES.civics;
   const known = new Set(kind === "techs" ? state.me.techs : state.me.civics);
@@ -31299,27 +31498,31 @@ function standingNotices() {
   if (!state || SPEC) return [];
   const me = state.me, out = [];
   const legal = type => state.legal_actions.filter(a => a.type === type);
-  for (const act of legal("recruit_great_person"))
+  // The empire's own notices — Great People, faith, policies, governors,
+  // envoys — belong to a world. A battlefield has none of those and never
+  // says otherwise, whatever a seat's counters happen to read.
+  const empire = !watchingBattlefield();
+  for (const act of empire ? legal("recruit_great_person") : [])
     out.push({kind: `gp:${act.kind}`, icon: "★", tone: "good", topic: act.kind,
       label: `${titleCase(act.kind)} may be recruited`,
       detail: "A Great Person is yours for the claiming."});
-  if (legal("choose_pantheon").length)
+  if (empire && legal("choose_pantheon").length)
     out.push({kind: "pantheon", icon: "☼", tone: "good", topic: "pantheon",
       label: "A pantheon may be founded",
       detail: "Your faith is enough to adopt a belief."});
-  if (me.prophet_pending)
+  if (empire && me.prophet_pending)
     out.push({kind: "prophet", icon: "☼", tone: "good", topic: "prophet",
       label: "A Great Prophet awaits", detail: "Found a religion with them."});
   const slots = Object.values(me.policy_slots || {}).reduce((a, b) => a + b, 0);
-  if (slots > (me.policies || []).length && legal("slot_policy").length)
+  if (empire && slots > (me.policies || []).length && legal("slot_policy").length)
     out.push({kind: "policy", icon: "⚿", tone: "good", topic: "policy",
       label: "An empty policy slot",
       detail: `${slots - me.policies.length} card slot(s) unfilled.`});
-  if (me.governor_titles_available > 0)
+  if (empire && me.governor_titles_available > 0)
     out.push({kind: "governor", icon: "♜", tone: "good", topic: "governor",
       label: "A Governor title is unspent",
       detail: `${me.governor_titles_available} title(s) available.`});
-  if (me.envoys_free > 0)
+  if (empire && me.envoys_free > 0)
     out.push({kind: "envoy", icon: "◈", tone: "good", topic: "envoy",
       label: "Envoys are waiting",
       detail: `${me.envoys_free} envoy(s) to send to a city-state.`});
@@ -31398,7 +31601,15 @@ function noticeDismiss(index, event) {
 }
 let noticeChips = [];
 
+// One pass for everything the turn loop owns: the notification rail and the
+// End Turn button, then the corner around the button, then the auto-play
+// button's own count of what "all" is now.
 function drawTurnLoop() {
+  drawTurnButton();
+  paintActionCorner();
+  syncAutoplayLabel();
+}
+function drawTurnButton() {
   const rail = document.getElementById("notify");
   const button = document.getElementById("endturn");
   if (!state || SPEC) { rail.classList.remove("on"); return; }
@@ -31452,6 +31663,177 @@ function drawTurnLoop() {
       (next.hint ? `<span class="endturn-hint">${escapeAttr(next.hint)}</span>` : "")
     : "Next turn";
   button.title = next ? next.detail : "Everything is settled. End your turn.";
+}
+
+// ---------------------------------------------------------- action corner
+//
+// Civ 6's action panel says what the turn is waiting on. This one also lays
+// the choices that would settle it under that line, so a research, a civic,
+// a production or a proposal is one click from the corner rather than a
+// screen away. Every option is one of the engine's own legal actions posted
+// unchanged — the same `pickTree`, `send` and city calls the tree, the deck
+// and the city screen make — so the corner cannot disagree with the engine
+// about what is legal, and cannot decide anything by itself. The first dozen
+// are shown and the last row opens the whole screen.
+const ACTION_OPTION_CAP = 12;
+let actionHeadHtml = null, actionOptionsHtml = null;
+function actionOption({icon, name, note, onclick, cls = "", title = ""}) {
+  return `<button class="action-option${cls ? ` ${cls}` : ""}" type="button" ` +
+    `onclick="${escapeAttr(onclick)}"${title ? ` title="${escapeAttr(title)}"` : ""}>` +
+    `<span class="action-option-icon">${icon}</span>` +
+    `<span class="action-option-name">${name}</span>` +
+    `<span class="action-option-note">${note}</span></button>`;
+}
+function actionMore(total, onclick, label) {
+  return actionOption({icon: "▸", name: escapeAttr(label), cls: "action-more-btn",
+    note: total > ACTION_OPTION_CAP ? `all ${total}` : "open", onclick});
+}
+function selectUnitById(id) {
+  const unit = (state.units || []).find(candidate => candidate.id === id);
+  if (!unit) return;
+  sel = unit; selCity = null;
+  centerOn(unit.pos);
+  draw(); drawSide(); drawUbar(); drawTurnLoop();
+}
+function actionOptionsFor(next) {
+  if (!next || !RULES) return "";
+  const me = state.me || {};
+  const kind = String(next.kind);
+  if (kind === "research" || kind === "civic") {
+    const science = kind === "research";
+    const tree = science ? "techs" : "civics";
+    const specs = (science ? RULES.techs : RULES.civics) || {};
+    const perTurn = Number((me.yields || {})[science ? "science" : "culture"]) || 0;
+    const boosted = (science ? me.boosted_techs : me.boosted_civics) || [];
+    const names = legalFor(kind).map(a => science ? a.tech : a.civic).filter(n => specs[n]);
+    names.sort((a, b) => specs[a].cost - specs[b].cost || a.localeCompare(b));
+    return names.slice(0, ACTION_OPTION_CAP).map(n => {
+      const cost = science ? techCost(n) : civicCost(n);
+      const has = boosted.includes(n);
+      const turns = perTurn > 0 ? Math.max(1, Math.ceil(cost / perTurn)) : null;
+      return actionOption({icon: science ? "⌬" : "❦",
+        name: escapeAttr(titleCase(n)) + (has ? ` <span class="boost">⚡</span>` : ""),
+        note: `${Math.round(cost)} · ${turns ? `${turns}t` : "∞"}`,
+        onclick: `pickTree(${JSON.stringify(tree)},${JSON.stringify(n)})`,
+        title: `${titleCase(n)} — ${Math.round(cost)} ${science ? "science" : "culture"}` +
+          (has ? ", boosted" : "")});
+    }).join("") + actionMore(names.length, `openTree(${JSON.stringify(tree)})`,
+      science ? "Technology tree" : "Civics tree");
+  }
+  if (kind.startsWith("produce:")) {
+    const cityId = Number(kind.slice("produce:".length));
+    const city = state.cities.find(candidate => candidate.id === cityId);
+    const perTurn = Number(((city || {}).yields || {}).production) || 0;
+    const seen = new Map();
+    for (const action of state.legal_actions) {
+      if (action.type !== "produce" || action.city !== cityId) continue;
+      const key = itemKey(action.item);
+      if (!seen.has(key)) seen.set(key, {item: action.item, sites: []});
+      seen.get(key).sites.push(action);
+    }
+    const entries = [...seen.values()].sort((a, b) => itemCost(a.item) - itemCost(b.item));
+    const screen = `openCityScreen(${cityId})`;
+    return entries.slice(0, ACTION_OPTION_CAP).map(entry => {
+      const cost = itemCost(entry.item);
+      const turns = turnsFor(cost, perTurn, 0);
+      const several = entry.sites.length > 1;
+      const name = titleCase(itemName(entry.item));
+      return actionOption({icon: entry.item.unit ? "⚔" : prodGlyph(entry.item),
+        name: escapeAttr(name) + (several ? ` <small>${entry.sites.length} sites</small>` : ""),
+        note: `${Math.round(cost)} ⚙ · ${turns === Infinity ? "—" : `${turns}t`}`,
+        onclick: several ? screen : `send(${JSON.stringify(entry.sites[0])})`,
+        title: several ? "Several tiles could take it — choose one in the city screen"
+          : `Produce ${name} in ${city ? city.name : "this city"}`});
+    }).join("") + actionMore(entries.length, screen, `${city ? city.name : "City"} — city screen`);
+  }
+  if (kind === "units") {
+    const waiting = unitsNeedingOrders();
+    return waiting.slice(0, ACTION_OPTION_CAP).map(unit => actionOption({icon: "⚑",
+      name: escapeAttr(titleCase(unit.type)) + (unit.level > 1 ? ` <small>★${unit.level}</small>` : ""),
+      note: `${Math.round(unit.hp)} hp · ${Math.round(unit.moves_left * 10) / 10} mp · ${unit.pos.join(",")}`,
+      onclick: `selectUnitById(${unit.id})`, cls: sel && sel.id === unit.id ? "primary" : "",
+      title: "Select this unit — its orders are on the unit panel"})).join("") +
+      (waiting.length > ACTION_OPTION_CAP
+        ? `<div class="action-more">+${waiting.length - ACTION_OPTION_CAP} more waiting</div>` : "");
+  }
+  if (kind === "deal") {
+    const replies = state.legal_actions.filter(a => a.type === "accept_deal" || a.type === "reject_deal");
+    const deals = new Map();
+    for (const reply of replies) {
+      if (!deals.has(reply.deal)) deals.set(reply.deal, []);
+      deals.get(reply.deal).push(reply);
+    }
+    let h = "";
+    for (const [id, actions] of deals) {
+      const pending = (state.pending_deals || []).find(deal => deal.id === id);
+      const from = pending && state.players[pending.from]
+        ? `${state.players[pending.from].civ} proposes` : `Proposal #${id}`;
+      const terms = pending ? dealWords(pending) : "";
+      h += `<div class="action-sub">${escapeAttr(from)}${terms ? ` — ${escapeAttr(terms)}` : ""}</div>` +
+        actions.map(action => actionOption({icon: action.type === "accept_deal" ? "✔" : "✕",
+          name: action.type === "accept_deal" ? "Accept" : "Reject", note: `#${id}`,
+          onclick: `send(${JSON.stringify(action)})`,
+          cls: action.type === "accept_deal" ? "primary" : ""})).join("");
+    }
+    return h + actionMore(0, "openDiplomacy()", "Diplomacy");
+  }
+  if (kind === "congress") {
+    const votes = legalFor("congress_vote").filter((vote, index, all) =>
+      all.findIndex(other => other.resolution === vote.resolution && other.choice === vote.choice) === index);
+    return votes.slice(0, ACTION_OPTION_CAP).map(action => actionOption({icon: "⚖",
+      name: `${escapeAttr(titleCase(action.resolution))}: ${escapeAttr(titleCase(action.choice))}`,
+      note: `${action.votes} vote${action.votes === 1 ? "" : "s"}`,
+      onclick: `send(${JSON.stringify(action)})`})).join("") +
+      actionMore(votes.length, `openEmpire("government")`, "Government");
+  }
+  if (kind === "dedication") {
+    const picks = legalFor("choose_dedication");
+    const specs = (RULES && RULES.dedications) || {};
+    return picks.slice(0, ACTION_OPTION_CAP).map(action => actionOption({icon: "✦",
+      name: escapeAttr(titleCase(action.dedication)), note: `${titleCase(me.age || "new")} age`,
+      onclick: `send(${JSON.stringify(action)})`,
+      title: (specs[action.dedication] || {}).normal || ""})).join("") +
+      actionMore(picks.length, `openEmpire("era")`, "Era progress");
+  }
+  if (kind === "capture") return `<div class="action-more">Decide in the dialog over the map.</div>`;
+  return "";
+}
+function paintActionCorner() {
+  const panel = document.getElementById("actionpanel");
+  const head = document.getElementById("actionhead");
+  const options = document.getElementById("actionoptions");
+  if (!panel || !head || !options) return;
+  if (!civ6Frame()) {
+    if (actionHeadHtml !== "") { actionHeadHtml = ""; head.innerHTML = ""; }
+    if (actionOptionsHtml !== "") { actionOptionsHtml = ""; options.innerHTML = ""; }
+    publishSoloHeight(panel, "--solo-action-height");
+    return;
+  }
+  const over = gameFinished(state);
+  const eliminated = state.players[0] && state.players[0].alive === false;
+  const blockers = turnBlockers();
+  const next = blockers.find(b => b.kind !== "capture") || blockers[0] || null;
+  let eyebrow = "Next action", title, sub;
+  if (autoplaying && !over && !eliminated) {
+    eyebrow = "Auto-play"; title = "An agent is playing"; sub = "Stop it to take the seat back.";
+  } else if (over || eliminated) {
+    eyebrow = "This game";
+    title = eliminated && !over ? "Your civilization has fallen" : "The game is over";
+    sub = "Start another from the deck.";
+  } else if (next) {
+    title = `${next.icon} ${escapeAttr(next.label)}`; sub = next.detail || "";
+  } else {
+    title = "Nothing is waiting"; sub = "Everything is settled — end your turn.";
+  }
+  const headHtml = `<span class="action-eyebrow">${eyebrow}</span>` +
+    `<span class="action-title">${title}</span>` +
+    (sub ? `<span class="action-sub">${escapeAttr(sub)}</span>` : "");
+  if (headHtml !== actionHeadHtml) { actionHeadHtml = headHtml; head.innerHTML = headHtml; }
+  // Rebuilt only when it reads differently: this runs after every action, and
+  // a list that is re-laid-out under the pointer loses its scroll and its hover.
+  const list = next && !autoplaying && !over && !eliminated ? actionOptionsFor(next) : "";
+  if (list !== actionOptionsHtml) { actionOptionsHtml = list; options.innerHTML = list; }
+  publishSoloHeight(panel, "--solo-action-height");
 }
 function advanceTurn(force = false) {
   if (!state || SPEC) return;
@@ -32037,6 +32419,7 @@ function fillStrategies(rules) {
   const wanted = [remembered, rules.seat_strategy]
     .find(name => name && roster.some(entry => entry.name === name));
   select.value = wanted || roster[0].name;
+  syncAutoplayLabel();
 }
 // "All" is the turns this game has left. A continued game deliberately has no
 // cap, so use a stop-button-sized horizon: a next-victory run will finish when
@@ -32047,6 +32430,20 @@ function autoplayRequest() {
   const cap = +(state || {}).turn_limit || +(state || {}).max_turns || 0;
   const left = Math.max(1, cap - (+(state || {}).turn || 0) + 1);
   return pick === "all" ? left : Math.min(+pick, left);
+}
+// The button says how long the seat goes on loan for — "Auto-play 10 turns"
+// — so what pressing it does is read off the button, not off the picker
+// beside it. "All" is the turns this game has left; a game with no cap runs
+// until stopped. A run in progress owns the button and says so itself.
+function syncAutoplayLabel() {
+  const button = document.getElementById("autoplaybtn");
+  if (!button || autoplaying) return;
+  const pick = (document.getElementById("autoplayturns") || {}).value || "1";
+  const unbounded = pick === "all" && !!state && (state.turn_limit ?? state.max_turns) === null;
+  const turns = state ? autoplayRequest() : (pick === "all" ? null : +pick);
+  button.textContent = unbounded ? "▶▶ Auto-play until stopped"
+    : turns ? `▶▶ Auto-play ${turns} turn${turns === 1 ? "" : "s"}`
+    : "▶▶ Auto-play all turns";
 }
 function setAutoplayNote(text) {
   const note = document.getElementById("autoplaynote");
@@ -32109,7 +32506,6 @@ async function autoplay(turns) {
   if (autoplaying) { autoplayStop = true; return; }
   const button = document.getElementById("autoplaybtn");
   const bar = document.getElementById("autoplaybar");
-  const label = button.textContent;
   const strategy = (document.getElementById("autoplaystrategy") || {}).value || "";
   try { if (strategy) localStorage.setItem(AUTOPLAY_STRATEGY_KEY, strategy); } catch (e) {}
   autoplaying = true; autoplayStop = false;
@@ -32152,15 +32548,32 @@ async function autoplay(turns) {
     // this only keeps the abandoned request from surfacing a second time as an
     // unhandled rejection.
     if (inFlight) inFlight.catch(() => {});
-    button.textContent = label;
     if (bar) bar.classList.remove("running");
     for (const field of ["autoplaystrategy", "autoplayturns"])
       document.getElementById(field).disabled = false;
     autoplaying = false; autoplayStop = false;
+    syncAutoplayLabel();
     drawTurnLoop();
   }
 }
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
+document.getElementById("autoplayturns").onchange = () => syncAutoplayLabel();
+syncAutoplayLabel();
+// The two corner boxes publish their height whenever it changes — an option
+// list that grows, a unit panel that appears — so the rails above them
+// follow without waiting for the next observation.
+{
+  const corner = typeof ResizeObserver === "function"
+    ? new ResizeObserver(() => {
+        publishSoloHeight(document.getElementById("actionpanel"), "--solo-action-height");
+        publishSoloHeight(document.getElementById("ubar"), "--solo-unit-height");
+      })
+    : null;
+  if (corner) for (const id of ["actionpanel", "ubar"]) {
+    const element = document.getElementById(id);
+    if (element) corner.observe(element);
+  }
+}
 document.getElementById("tradebtn").onclick = () => openTrade();
 // The setup/Civilization VI controller lives in app_setup.js. It remains a
 // classic script so the existing inline event attributes and renderer helpers

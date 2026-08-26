@@ -2173,3 +2173,14 @@ for, and `--victory-mask` and `--difficulty` are the two knobs that move it.
   default.
 - Not the deployment regime. Firaxis-only flags are excluded by construction;
   the live ladder (`docs/CIV6_LADDER.md`) prices those.
+
+## Tactical genes are priced in the arena first (2026-08-26)
+
+A gene whose whole effect is on how units fight cannot be read by this
+screen: a whole game resolves about fourteen kills, and the 35,148-seat
+reading that removed `joint-tactics` (−0.104 pp) sat beside an arena result
+of 99.6 % and a doubled exchange ratio. For such a gene the arena is the gate
+— `battle_bench` and `doctrine_arena` with the seat written `advanced+<gene>`,
+on the curriculum and on a captured engagement file, healing off and on — and
+this screen is the no-harm check afterwards. `docs/DOCTRINE_ARENA.md` ("The
+gate for a tactical gene") states the reading.

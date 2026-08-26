@@ -522,6 +522,9 @@ mod governor_runtime_tests;
 mod action_family_tests;
 
 #[cfg(test)]
+mod arena_only_the_fighting_tests;
+
+#[cfg(test)]
 mod envoy_contact_tests;
 
 #[cfg(test)]
@@ -4655,6 +4658,68 @@ pub enum Action {
     EndTurn,
 }
 
+impl Action {
+    /// Whether this is a decision of the empire game rather than of the
+    /// fighting — a technology or civic to study, a government to form, a
+    /// deal to strike, a ballot to cast, an envoy, a governor, a religion.
+    ///
+    /// A Tactics arena is decided by the fighting and by nothing else, so
+    /// none of these exist there: they are not enumerated for any seat and
+    /// [`Game::apply`] refuses them, so a player on an arena is never asked
+    /// for anything but orders and an AI that would choose its own research
+    /// or sue for its own peace gets the same answer. Research on an arena
+    /// is a pace the engine keeps for both sides alike
+    /// (`Game::arena_auto_research`), and a captured city is simply kept
+    /// (`Game::capture_city`) rather than put to its captor.
+    ///
+    /// Orders — moving, attacking, fortifying, promoting, upgrading, forming
+    /// a corps, striking from a city — stay, as does what a city may build
+    /// when the arena grants the Production to build it with.
+    pub fn off_the_battlefield(&self) -> bool {
+        matches!(
+            self,
+            Action::Research { .. }
+                | Action::Civic { .. }
+                | Action::DeclareWar { .. }
+                | Action::DeclareWarWithCasusBelli { .. }
+                | Action::MakePeace { .. }
+                | Action::Denounce { .. }
+                | Action::SendDelegation { .. }
+                | Action::SendEmbassy { .. }
+                | Action::ProposeDefensivePact { .. }
+                | Action::ProposeJointWar { .. }
+                | Action::RequestPromise { .. }
+                | Action::DemandGold { .. }
+                | Action::ProposeDeal { .. }
+                | Action::AcceptDeal { .. }
+                | Action::RejectDeal { .. }
+                | Action::Trade { .. }
+                | Action::CongressVote { .. }
+                | Action::AssignSpy { .. }
+                | Action::SpyMission { .. }
+                | Action::PromoteSpy { .. }
+                | Action::ChooseDedication { .. }
+                | Action::Government { .. }
+                | Action::SlotPolicy { .. }
+                | Action::UnslotPolicy { .. }
+                | Action::TradeRoute { .. }
+                | Action::SendEnvoy { .. }
+                | Action::LevyMilitary { .. }
+                | Action::RecruitGreatPerson { .. }
+                | Action::PatronizeGreatPerson { .. }
+                | Action::ChoosePantheon { .. }
+                | Action::ChooseSecretSociety { .. }
+                | Action::AssignGovernor { .. }
+                | Action::AppointGovernor { .. }
+                | Action::ReassignGovernor { .. }
+                | Action::PromoteGovernor { .. }
+                | Action::FoundReligion { .. }
+                | Action::FoundCorporation { .. }
+                | Action::MoveProduct { .. }
+        )
+    }
+}
+
 fn gold_s() -> String {
     "gold".to_string()
 }
@@ -5038,6 +5103,13 @@ impl ActionFamilies {
     /// result while omitting unit orders, purchases and empire management.
     pub const CHEAP: ActionFamilies = ActionFamilies(497);
     pub const ALL: ActionFamilies = ActionFamilies(511);
+    /// The empire game: everything a Tactics arena switches off. A
+    /// battlefield seats no government, religion, Great People, envoys,
+    /// trade or corporations, holds no Congress, and has nothing to
+    /// negotiate — its two sides are at war from the first turn and stay
+    /// there — so `legal_actions` never enumerates these on an arena and
+    /// [`Game::apply`] refuses them there. See [`Action::off_the_battlefield`].
+    pub const OFF_THE_BATTLEFIELD: ActionFamilies = ActionFamilies(8 | 16 | 32 | 64 | 256);
 
     pub fn has(self, family: ActionFamilies) -> bool {
         self.0 & family.0 == family.0
@@ -7162,6 +7234,14 @@ impl Game {
             }
         }
         g.open_in_start_era();
+        // Each side of an arena is studying something from its first turn:
+        // the arena chooses its own research, identically for both — after
+        // the start era has dealt the techs the choice is made from.
+        if g.is_arena() {
+            for seat in 0..num_players {
+                g.arena_auto_research(seat);
+            }
+        }
         g.refresh_great_person_offers();
         g.refresh_all_visibility();
         g
@@ -7725,6 +7805,30 @@ impl Game {
             return 0.0;
         }
         cost / f64::from(pace)
+    }
+
+    /// Pick an arena side's next technology for it.
+    ///
+    /// Research on a battlefield is a pace, not a decision. `turns_per_tech`
+    /// says how often the tree moves, and it moves the same way for both
+    /// sides — the cheapest technology either can reach, ties broken by
+    /// name — so the two armies stay armed alike and nobody is ever asked
+    /// to choose. Runs at the top of a side's turn before the pace is paid,
+    /// so the Science lands on a technology rather than in overflow, and
+    /// once when the arena is built, so a side is studying something from
+    /// its first turn. A pace of 0 freezes the tree and picks nothing.
+    fn arena_auto_research(&mut self, pid: usize) {
+        if self.tactics.turns_per_tech == 0 || self.players[pid].research.is_some() {
+            return;
+        }
+        let pick = self.available_techs(pid).into_iter().min_by(|a, b| {
+            self.tech_cost(a.as_str())
+                .total_cmp(&self.tech_cost(b.as_str()))
+                .then_with(|| a.cmp(b))
+        });
+        if let Some(tech) = pick {
+            self.begin_research(pid, tech.as_str());
+        }
     }
 
     /// What an arena grants one side each turn, over and above whatever its
@@ -10104,8 +10208,9 @@ impl Game {
         // walking it back — so the mode's own victory condition, last army
         // standing, was never reached. Permanent damage is also what makes
         // the tactics matter: a trade you win stays won, and focusing fire on
-        // one defender is worth doing.
-        if self.is_arena() {
+        // one defender is worth doing. A board that asks for a campaign
+        // (`TacticsRules::heal`) gets the neutral rate everywhere instead.
+        if self.is_arena() && !self.tactics.heal {
             return 0;
         }
         // Nothing recovers in fallout. A blast that only cost yields would make
@@ -32667,6 +32772,16 @@ impl Game {
         if self.is_arena() && !self.arena_allows_production(item) {
             return false;
         }
+        // And nothing at all while the arena grants no Production to build
+        // it with — the stock arena since the grants went to zero. A city
+        // that will never finish anything has no business asking its player
+        // to choose what it builds every turn; raise the grant and the
+        // fighting-units menu is back. `arena_allows_production` stays the
+        // roster rule, so a unique-units match still reads its roster
+        // whatever the grant.
+        if self.is_arena() && self.tactics.production == 0 {
+            return false;
+        }
         let blocked = Self::production_block_key(item);
         if self
             .blocked_production
@@ -33134,7 +33249,11 @@ impl Game {
             }
         }
         for (name, spec) in &self.rules.districts {
-            if !spec.buildable
+            // The sites below are validated by hand rather than through
+            // `can_produce`, so the arena's answer is stated here as well:
+            // a battlefield builds no districts.
+            if self.is_arena()
+                || !spec.buildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec
                     .unique_to
@@ -33549,6 +33668,19 @@ impl Game {
         if !capture_actions.is_empty() {
             return capture_actions;
         }
+        // A battlefield is decided by the fighting. The empire game around
+        // a war — governments and policies, governors, religion, Great
+        // People, envoys and trade routes, deals, the ballots of a Congress
+        // that never convenes here, declarations against a rival the arena
+        // already has at war — is never put to a seat on an arena, so a
+        // player there is asked for orders and nothing else. Research and
+        // civics are handled below: the arena picks its own research
+        // (`arena_auto_research`) and pays no Culture at all.
+        let families = if self.is_arena() {
+            families.without(ActionFamilies::OFF_THE_BATTLEFIELD)
+        } else {
+            families
+        };
         let p = &self.players[pid];
         let want_core = families.has(ActionFamilies::CORE);
         let want_units = families.has(ActionFamilies::UNITS);
@@ -34133,12 +34265,12 @@ impl Game {
                     });
                 }
             }
-            if p.research.is_none() {
+            if p.research.is_none() && !self.is_arena() {
                 for t in self.available_techs(pid) {
                     acts.push(Action::Research { tech: Name::new(&t) });
                 }
             }
-            if p.civic.is_none() {
+            if p.civic.is_none() && !self.is_arena() {
                 for c in self.available_civics(pid) {
                     acts.push(Action::Civic { civic: Name::new(&c) });
                 }
@@ -35069,6 +35201,13 @@ impl Game {
         let capture_actions = self.pending_city_capture_actions(pid);
         if !capture_actions.is_empty() && !capture_actions.contains(action) {
             return Err("resolve the captured city's fate first".into());
+        }
+        // The empire game is off on a battlefield, for every seat alike —
+        // refused here as well as left out of `legal_actions`, so an AI that
+        // picks its own research or sues for its own peace gets the same
+        // answer a player would. See `Action::off_the_battlefield`.
+        if self.is_arena() && action.off_the_battlefield() {
+            return Err("not on a battlefield: an arena is decided by the fighting".into());
         }
         // An ordinary unit step cannot alter connected resources, ownership,
         // resource-reveal prerequisites, or Suzerain status. A tribal village
@@ -39613,12 +39752,26 @@ impl Game {
     }
 
     fn do_research(&mut self, pid: usize, tech: &str) -> Result<(), String> {
+        // Not a seat's decision on an arena: the tree is climbed the same
+        // way by both sides, cheapest technology first, and nobody is asked
+        // — see `arena_auto_research`.
+        if self.is_arena() {
+            return Err("an arena researches on its own".into());
+        }
         if self.players[pid].research.is_some() {
             return Err("already researching".into());
         }
         if !self.available_techs(pid).iter().any(|t| t == tech) {
             return Err("tech unavailable".into());
         }
+        self.begin_research(pid, tech);
+        Ok(())
+    }
+
+    /// Put a technology under study: banked overflow and any eureka the
+    /// side has earned go on the new node. The caller has checked that
+    /// nothing is being studied and that the technology is open.
+    fn begin_research(&mut self, pid: usize, tech: &str) {
         let cost = self.tech_cost(tech);
         let p = &mut self.players[pid];
         p.research = Some(tech.to_string());
@@ -39628,10 +39781,13 @@ impl Game {
         if self.players[pid].boosted_techs.contains(&Name::new(tech)) {
             self.players[pid].research_progress += f * cost;
         }
-        Ok(())
     }
 
     fn do_civic(&mut self, pid: usize, civic: &str) -> Result<(), String> {
+        // An arena pays no Culture and has no civics tree to spend it on.
+        if self.is_arena() {
+            return Err("an arena has no civics tree".into());
+        }
         if self.players[pid].civic.is_some() {
             return Err("already working a civic".into());
         }
@@ -45415,6 +45571,13 @@ impl Game {
         if self.is_finished() {
             return;
         }
+        // A battlefield seats no Congress. Its two sides are at war from
+        // the first turn and have nothing to legislate over — and a ballot
+        // every thirty turns was what stopped a Medieval-or-later arena's
+        // End Turn button dead on "Vote in the Congress".
+        if self.is_arena() {
+            return;
+        }
         self.close_native_competition();
         self.active_congress_effects
             .retain(|effect| effect.expires > self.turn);
@@ -45494,7 +45657,8 @@ impl Game {
     }
 
     fn request_city_capture_emergency(&mut self, target: usize, city: u32, defeated: usize) {
-        if self.world_era < 2
+        if self.is_arena()
+            || self.world_era < 2
             || self.players[target].is_minor
             || self.players[target].is_barbarian
             || self
@@ -45770,6 +45934,10 @@ impl Game {
     }
 
     fn process_emergencies(&mut self) {
+        // No Congress, no Emergencies: a battlefield has nobody to convene.
+        if self.is_arena() {
+            return;
+        }
         self.share_emergency_visibility();
         let expired: Vec<(u32, bool)> = self
             .active_emergencies
@@ -47685,6 +47853,11 @@ impl Game {
             return;
         }
         self.check_boosts(pid);
+        // Before the yields below are paid, so the arena's Science lands on
+        // a technology rather than in overflow.
+        if self.is_arena() {
+            self.arena_auto_research(pid);
+        }
         self.process_trade_deals(pid);
         // Before the ordinary accumulation, so a turn's cargo is subject to
         // the same stockpile ceiling as a turn's mining rather than sitting
@@ -49989,6 +50162,14 @@ impl Game {
     /// conqueror chooses the city's fate.
     fn capture_city(&mut self, cid: u32, new_owner: usize) {
         self.transfer_city(cid, new_owner, true);
+        // A battlefield puts no verdict to the captor. There is no reason to
+        // raze the objective and nobody to liberate it for, so the city is
+        // kept the moment it falls and the battle goes on — or ends, if that
+        // was the other side's last stand — without "Keep city?" ever
+        // stopping the turn.
+        if self.is_arena() {
+            let _ = self.do_keep_city(new_owner, cid);
+        }
     }
 
     fn transfer_city(&mut self, cid: u32, new_owner: usize, conquest: bool) {
