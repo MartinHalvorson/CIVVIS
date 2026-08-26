@@ -210,7 +210,10 @@ impl AdvancedAi {
         if unit.owner != pid
             || unit.pos != pos
             || g.rules.units[unit.kind].class != "military"
-            || matches!(g.rules.units[unit.kind].domain.as_deref(), Some("sea" | "air"))
+            || matches!(
+                g.rules.units[unit.kind].domain.as_deref(),
+                Some("sea" | "air")
+            )
         {
             return false;
         }
@@ -218,18 +221,11 @@ impl AdvancedAi {
             return true;
         }
         unit.hp >= STACKED_GUARD_MIN_HP
-            && !self.guard_outmatched_at(
-                g,
-                pid,
-                unit,
-                pos,
-                &self.battlefront_visibility(g, pid),
-            )
+            && !self.guard_outmatched_at(g, pid, unit, pos, &self.battlefront_visibility(g, pid))
     }
 
     fn civilian_guarded_at(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
-        if g
-            .city_at(pos)
+        if g.city_at(pos)
             .is_some_and(|city| g.cities[&city].owner == pid)
         {
             return true;
