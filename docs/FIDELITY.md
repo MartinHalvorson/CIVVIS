@@ -2528,6 +2528,50 @@ a test pins that the human takes no yield handicap and the rivals keep theirs.
   the `STATE` schema allowlist, so every live record filed a
   `schema:state.strategic_resources` gap that was not one.
 
+### Shipped: what the board knows about each rival, one-to-one (item 8, PR #2592)
+
+What the `rivals[]` record carried about a met major before this: `techs`
+and `civics` as COUNTS (the mod loops `GameInfo.Technologies()` /
+`GameInfo.Civics()` with `HasTech` / `HasCivic` and sums), the aggregate
+tourist pair, `dvp`, `military`, the space-race milestones, and one bit of
+its civic tree — `enforces_borders`, exported because the board could not
+derive it. No religion, no per-rival tourists, no Era Score, no routes. So
+on the mirrored board a rival's era, unit roster and border were guesses;
+the religion lane of the victory tracker counted a rival converted only
+from the rival cities the seat happened to have seen; and a rival's route
+income was CIVVIS's guess from a bare city.
+
+Every accessor is one the shipped World Rankings screen calls on OTHER
+players, quoted rather than recalled — the seat learns nothing a player at
+the keyboard could not read there:
+
+| key (`rivals[]`) | accessor | shipped line | where the board reads it |
+|---|---|---|---|
+| `tech_names`, `civic_names` | the same `HasTech`/`HasCivic` loops, collected | `CivvisControlAgent.lua` counts | ASSIGNED onto the rival seat's `Player::techs`/`civics` (`apply_rival_tree`, both import paths). `Game::player_era`, the unit roster and `Game::enforces_borders` (Early Empire's `open_borders` tree effect) now read a rival as they read a native player. `enforces_borders` stays the override: the bit when it crossed, else the tree when it crossed, else enforced. |
+| `techs_researched` | `GetStats():GetNumTechsResearched()` | `WorldRankings.lua:55` (`g_victoryData.VICTORY_TECHNOLOGY`) | wins `ObservedPublicEmpireStats::techs` over the loop count → `VictoryRaces::techs` |
+| `military_no_treasury` | `GetStats():GetMilitaryStrengthWithoutTreasury()` | `WorldRankings.lua:27` (`VICTORY_CONQUEST`) | `ObservedPublicEmpireStats::military_no_treasury` → standings (`obs.rs`), beside the ribbon figure `military` that folds the treasury in. No decision reads it yet. |
+| `cities_following_religion` (and ours at top level) | `GetStats():GetNumCitiesFollowingReligion()` | `WorldRankings.lua:44` (`VICTORY_RELIGIOUS`) | `Game::cities_following_religion` → `VictoryRaces::cities_following_religion`, `obs.rs` `religious.cities_following` |
+| `religion` | `GetReligion():GetReligionInMajorityOfCities()` → `GameInfo.Religions[i].ReligionType` | `WorldRankings.lua:2049` — the exact test the religion tab runs to mark a civilization converted | `Game::observed_majority_religion` → `Game::majority_religion_of` / `civ_follows_religion`, read by `victory_races` (`converted_civs`), `religious_conversion_tally` and `conversion_majority_pressure` in `ai/advanced.rs` — the victory-threat and denial logic. Without the key the board counts its own cities by the engine's `following × 2 > cities` rule, as before. |
+| `tourists_visiting_us` | `Players[pid]:GetCulture():GetTouristsFrom(otherId)` — tourists visiting US from this rival | `WorldRankings.lua:1766` (the culture tab's "Visiting us" column) | `Game::observed_visiting_tourists[(0, rival)]` → `visiting_tourists_from`, the per-rival term `foreign_tourists` and `domestic_tourists` sum when the aggregate is absent |
+| `era_score` | `Game.GetEras():GetPlayerCurrentScore(otherId)` | the top-level `era_score` accessor | `Player::era_score` on the rival seat, the slot `apply_player_ages` fills for ours; `obs.rs` standings |
+| `trade_routes[]` `{origin_x, origin_y, destination_x, destination_y, destination_player}` | `city:GetTrade():GetOutgoingRoutes()` per rival city, kept only when BOTH ends stand on revealed ground | `TradeOverview.lua:60-78, 319-323` | `restore_rival_outgoing_routes` seats each as a route the origin's seat owns in `game.routes` when both cities are on the board (skipped otherwise; a route into our city that `incoming_routes` already seated is not doubled). Runs after `restore_active_trade_routes`, which clears `game.routes`. |
+
+Every key is under `try(…, nil)` and `#[serde(default)]`: an older export
+(the recording that predates this mod, `civvis-20260826T184456Z`) reads
+exactly as before — verified by replaying t33 and t100 against the deployed
+binary. Three mirror tests pin the rules on both import paths and the
+missing-key case (`a_rivals_tree_by_name_seats_its_civics_and_derives_its_border`,
+`a_rivals_religion_lane_reads_the_hosts_majority_and_city_count`,
+`a_rivals_tourists_era_score_and_routes_reach_the_board`).
+
+Not reached: nothing in `src/ai` compares Era Scores across seats or reads
+the per-pair tourist term directly (only the sums do), so those two land
+where the existing readers already look and wait for a decision that wants
+them; `military_no_treasury` reaches the standings only. The mod still
+exports a rival's cities only when their plot is revealed, so the host's
+`cities_following_religion` and `religion` are the first rival facts that
+cover ground the seat has never seen.
+
 ### The map, ranked — the queue for the next passes
 
 What the audit found and this change does not touch, most valuable first.
@@ -2563,10 +2607,11 @@ Each line names where to start.
 7. **Climate, CO2, sea level and disaster forecasts** — zero `GameClimate`
    calls in the mod; `cl` (coastal lowland) is exported with no phase to read
    it against.
-8. **Religious-victory progress per rival**
+8. ~~**Religious-victory progress per rival**
    (`GetStats():GetNumCitiesFollowingReligion`), **rival techs and civics as
    names** (counts cross today), rival trade routes, rival religion, tourists
-   we send each rival.
+   we send each rival.~~ **Shipped** (PR #2592, see "what the board knows
+   about each rival" above).
 9. **Unit upgrade availability and cost** (`GetUpgradeCost`,
    `CanStartCommand(UPGRADE)`), **per-unit maintenance**, religious strength,
    spy mission state and available missions.
