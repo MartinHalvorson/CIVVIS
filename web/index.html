@@ -501,6 +501,10 @@
      them; an arena side's research reads inline in its battle plan. */
   body.watching-tactics #warsec, body.watching-tactics #eventsec,
   body.watching-tactics #researchtrack, body.watching-tactics #civicstrack { display: none; }
+  /* A battlefield has no empire to open screens on and nobody to deal with:
+     the Empire tabs, Diplomacy and Quick Deals are a world's launch buttons. */
+  body.watching-tactics #launchtabs, body.watching-tactics #diplomacybtn,
+  body.watching-tactics #tradebtn { display: none; }
   /* A <details> hands its children to an internal content box, so the panel
      inside it only inherits the extra height if that box is told to grow
      too. Browsers without ::details-content simply keep the log at its
@@ -5211,7 +5215,7 @@
             <option value="120">120 · relentless</option>
           </select></label>
           <label class="small">Turns per technology<span class="setup-info" style="cursor:help;opacity:.7"
-            title="How long a side spends on whatever it is researching, in any era. Science is set as a pace rather than a figure because a technology costs some seventeen times more late in the tree than at the start, so a flat yield would flood the opening and stall later. There is no civics tree and no policies: an arena is decided by the fighting."> ⓘ</span><select id="tacticsturnspertech" style="margin-top:4px">
+            title="How often the technology tree moves, in any era. The arena climbs it on its own — the cheapest technology open to it, identically for both sides — so nobody is ever asked to choose research. Science is set as a pace rather than a figure because a technology costs some seventeen times more late in the tree than at the start, so a flat yield would flood the opening and stall later. There is no civics tree and no policies: an arena is decided by the fighting."> ⓘ</span><select id="tacticsturnspertech" style="margin-top:4px">
             <option value="0">Never · frozen at the start era</option>
             <option value="3">3 · rapid</option>
             <option value="5" selected>5 · steady</option>

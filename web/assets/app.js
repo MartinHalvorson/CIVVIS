@@ -27820,7 +27820,9 @@ function drawSide(force = true) {
   const dealReplies = state.legal_actions.filter(a => a.type === "accept_deal" || a.type === "reject_deal");
   const gs = document.getElementById("govsec");
   const fullMapSpectator = SPEC && (state.view_player === null || state.view_player === undefined);
-  if (!fullMapSpectator && (SPEC || govs.length || me.government || dedications.length || societies.length || congressVotes.length || aidActions.length || activeEmergencies.length || levies.length || dealReplies.length)) {
+  // A battlefield has no government, no Congress and no deals: the section
+  // is the empire's and an arena never shows it, whoever is watching.
+  if (!fullMapSpectator && !watchingBattlefield() && (SPEC || govs.length || me.government || dedications.length || societies.length || congressVotes.length || aidActions.length || activeEmergencies.length || levies.length || dealReplies.length)) {
     gs.style.display = "block";
     // Anarchy is a government of sorts: no slots, no yields, and no second
     // change until the waiting government takes power.
@@ -28065,7 +28067,9 @@ function boostRequirement(spec) {
   return `${titleCase(trigger)}${count > 1 ? ` · ${count}` : ""}`;
 }
 function openTree(kind) {
-  if (!RULES || !state) return;
+  // A battlefield's research is a pace the engine keeps for both sides
+  // alike, and it has no civics tree at all, so neither tree opens there.
+  if (!RULES || !state || watchingBattlefield()) return;
   treeKind = kind;
   const specs = kind === "techs" ? RULES.techs : RULES.civics;
   const known = new Set(kind === "techs" ? state.me.techs : state.me.civics);
@@ -31299,27 +31303,31 @@ function standingNotices() {
   if (!state || SPEC) return [];
   const me = state.me, out = [];
   const legal = type => state.legal_actions.filter(a => a.type === type);
-  for (const act of legal("recruit_great_person"))
+  // The empire's own notices — Great People, faith, policies, governors,
+  // envoys — belong to a world. A battlefield has none of those and never
+  // says otherwise, whatever a seat's counters happen to read.
+  const empire = !watchingBattlefield();
+  for (const act of empire ? legal("recruit_great_person") : [])
     out.push({kind: `gp:${act.kind}`, icon: "★", tone: "good", topic: act.kind,
       label: `${titleCase(act.kind)} may be recruited`,
       detail: "A Great Person is yours for the claiming."});
-  if (legal("choose_pantheon").length)
+  if (empire && legal("choose_pantheon").length)
     out.push({kind: "pantheon", icon: "☼", tone: "good", topic: "pantheon",
       label: "A pantheon may be founded",
       detail: "Your faith is enough to adopt a belief."});
-  if (me.prophet_pending)
+  if (empire && me.prophet_pending)
     out.push({kind: "prophet", icon: "☼", tone: "good", topic: "prophet",
       label: "A Great Prophet awaits", detail: "Found a religion with them."});
   const slots = Object.values(me.policy_slots || {}).reduce((a, b) => a + b, 0);
-  if (slots > (me.policies || []).length && legal("slot_policy").length)
+  if (empire && slots > (me.policies || []).length && legal("slot_policy").length)
     out.push({kind: "policy", icon: "⚿", tone: "good", topic: "policy",
       label: "An empty policy slot",
       detail: `${slots - me.policies.length} card slot(s) unfilled.`});
-  if (me.governor_titles_available > 0)
+  if (empire && me.governor_titles_available > 0)
     out.push({kind: "governor", icon: "♜", tone: "good", topic: "governor",
       label: "A Governor title is unspent",
       detail: `${me.governor_titles_available} title(s) available.`});
-  if (me.envoys_free > 0)
+  if (empire && me.envoys_free > 0)
     out.push({kind: "envoy", icon: "◈", tone: "good", topic: "envoy",
       label: "Envoys are waiting",
       detail: `${me.envoys_free} envoy(s) to send to a city-state.`});
