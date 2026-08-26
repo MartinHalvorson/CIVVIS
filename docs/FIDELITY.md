@@ -2393,6 +2393,182 @@ interleaving rather than transition rules, so the rest of the competitive
 ruleset layers on after the sequential clone is exact. See
 [COMPETITIVE.md](COMPETITIVE.md) for the tournament-specific boundary.
 
+## The one-to-one map: what the host knows, what crosses, what the board reads (2026-08-26)
+
+The operator's standing brief is that every feature of the live verification
+game be mapped one-to-one onto the CIVVIS board, so that a decision taken on
+the board is the decision the full state supports. This section is the audit
+that brief produced on run `civvis-20260826T184456Z` (King, 150 turns,
+abandoned under the 70 % rule), in three passes — the key-level map of what
+the mod exports against what `src/mirror.rs` consumes, the inventory of host
+state the mod never asks for, and the existing instruments run on the game —
+plus one measurement none of the instruments made: **the host's verdict on
+every order the board issued.**
+
+### Measured: the border the host enforces and the board walked through
+
+`orders.sqlite` holds every `MOVE_TO` the decider issued; the next `state`
+export says where the unit stood. Joining the two, per target-tile owner:
+
+| target tile | military `MOVE_TO`s | did not move | arrived |
+|---|---:|---:|---:|
+| city-state land, we are **not** Suzerain | 122 | **91 %** | 4 % |
+| city-state land, we **are** Suzerain | 27 | 33 % | 51 % |
+| rival land, no Open Borders, at peace | 37 | **86 %** | 0 % |
+| rival land, at war | 8 | 62 % | 25 % |
+| unowned | 187 | 40 % | 43 % |
+| our own | 87 | 47 % | 36 % |
+
+Scouts, Warriors, Skirmishers and Trebuchets, turn after turn, into ground
+the host does not let them enter. 168 of the game's 288 `did_not_move`
+verdicts are this one rule.
+
+The rule, off the install: `LOC_CIVIC_EARLY_EMPIRE_DESCRIPTION` — "Unlocks
+the abilities to **enforce borders** and grant Open Borders"; `CivicModifiers`
+attaches `CIVIC_ENFORCE_BORDERS` to `CIVIC_EARLY_EMPIRE`; the Open Borders
+concept page — "Without this agreement, entering another leader's territory
+is an act of war, except with Religious Units"; `TypeTags` gives
+`ABILITY_RELIGIOUS_ENTER_FOREIGN_LANDS` to `CLASS_RELIGIOUS` (Missionary,
+Apostle, Guru) and `ABILITY_ARCHAEOLOGIST_ENTER_FOREIGN_LANDS` to the
+Archaeologist, and to nothing else. A city-state's border is the same civic,
+opened only to its Suzerain.
+
+The engine had all of it — `Game::unit_has_territory_access` asks ownership,
+war, the religious exception and `has_open_borders`. What it did not have was
+the premise: `has_open_borders` answers *open* whenever the territory owner
+lacks the `open_borders` tree effect, the correct rule that a civilization
+without Early Empire has no border — and **a mirrored board never fills a
+rival's or a city-state's civic tree**, so every foreign seat whose city was
+in view read as pre-Early-Empire ground. The fogged seal
+(`Game::closed_borders`) covers only ground whose owning city is unseen; the
+moment the city came into view the seal handed over to a gate that always
+said yes. The comment above that seal even records why it refused to consult
+`has_open_borders`; nobody carried the reason across to the attributed arm.
+
+Shipped: the mod exports `enforces_borders` (`GetCulture():HasCivic(Early
+Empire)`, the accessor the mod already uses to count a rival's civics) for
+every rival and city-state; the mirror writes it onto the seat as
+`Player::borders_enforced`, re-read from every export; `Game::enforces_borders`
+prefers it to the civic tree, and `has_open_borders` asks that. An export
+without the key reads as enforced — the conservative answer and the measured
+one. Ground attributed to a visible major that shuts us out now also counts
+toward `sealed_border_owners`, so the passage-purchase lane can pay the seat
+that actually blocks the road instead of only the one whose city is in fog.
+Three tests pin the four openings — Suzerain, war, a grant, no border yet.
+
+The rest of the `did_not_move` column is not one rule: frame-1/2 re-orders
+for units that already spent their moves (`fr2` orders inside our own land
+fail 53 %), barbarian zone of control (`zoc_adj` on 24 of the 141 unexplained
+home-land non-moves — see LIVE_TACTICS.md on the pinned walker), cliffs (6),
+and a fortified unit re-ordered to move (29). Each is measurable the same way.
+
+### Measured: the mirrored seat paid itself the AI's handicap
+
+`tools/civ6_yield_drift.py` on the same run: 299 persistent city-yield
+episodes, **288 of them model-high**, and the ratios are constant across every
+city and population — production and gold **×1.20**, science, culture and
+faith **×1.08**, food **×1.00**. That is `data/difficulties.json` King
+`ai_yield_pct` to the digit, food exempt because food is never handicapped.
+`Game::handicap_yield_pct` withholds the bonus from `human_seats`, and no
+mirror path ever put seat 0 there: on the board the seat this project plays
+was an AI seat at King, paid the bonus the host pays only to its rivals. The
+board's corrected totals hid it (`apply_observed_host_metrics` is a delta to
+the host's number); every plan the seat priced on its own model — payback
+windows, buy-versus-build, turns to a wonder — was priced in a currency 8–20 %
+richer than the host pays. Shipped: `rebuild_from_state` marks seat 0 human;
+a test pins that the human takes no yield handicap and the rivals keep theirs.
+
+### Shipped beside those two
+
+- **The tile delta's change key** was `owner × 1024 + feature`, so a Farm
+  finished, a Mine pillaged, a road laid, a district placed or completed, a
+  wonder finished, a barbarian camp planted or cleared re-sent nothing until
+  the next full sweep (`TileExportEvery`, 4 on the ladder, 25 by default). The
+  signature now carries improvement, pillage, route, route pillage, district,
+  district completion and wonder. The camp case is the expensive one: camps
+  reach `Game::barb_camps` from `im` alone.
+- `strategic_resources` was consumed by the stockpile import and missing from
+  the `STATE` schema allowlist, so every live record filed a
+  `schema:state.strategic_resources` gap that was not one.
+
+### The map, ranked — the queue for the next passes
+
+What the audit found and this change does not touch, most valuable first.
+Each line names where to start.
+
+1. **Diplomatic state and grievances, both ways.** Not exported at all:
+   `GetDiplomaticAI():GetDiplomaticStateIndex`, `GetGrievancesAgainst`,
+   `GetGrievanceChangePerTurn`, alliance type/level, `GetVisibilityOn`,
+   promises. Every war, peace and denounce decision is made blind;
+   `can_declare` says legal, not ruinous. The mod runs in the InGame context
+   (`CivvisControl.modinfo`, `AddUserInterfaces`), the same context as
+   `DiplomacyActionView.lua`, so every accessor is reachable.
+2. **The buildable and purchasable menus with costs.** `BuildQueue:CanProduce`
+   and `CityGold:GetPurchaseCost` are called only inside the mod's own
+   chooser and purchase actuator, never exported; the board decides
+   production, the highest-frequency decision there is, from its own
+   catalogue and learns legality from refusals.
+3. **Free Cities units cross with no hp and no strength** (`addUnitsOf`,
+   id/x/y/player/type only) and the mirror plants every `hostiles[]` entry on
+   the barbarian seat regardless of `player`. The army that took four cities
+   in `civvis-20260802T064240Z` is mirrored as full-health barbarians.
+4. **Amani's envoys are counted twice.** The host's `envoys` for a city-state
+   already includes the Ambassador's +2; the mirror seeds that raw number and
+   `Game::envoys_at` adds `city_state_envoys` again. La Venta at t150: host 7
+   (a tie, no Suzerain), board 9 (ours). The planner then stops sending envoys
+   to a suzerainty it does not hold.
+5. **Model tile yields on flood- and eruption-fertilised plots read 1–2 Food
+   and 1–2 Production low** from t55 on — 970 worked-tile disagreements on 27
+   plots, 24 of them floodplains. The board is corrected (#2566); the model's
+   own valuation of those plots is not.
+6. **City ranged strikes are refused 47 % of the time** (31 of 66 issued).
+   The board's strike legality is wrong twice as often as it is right.
+7. **Climate, CO2, sea level and disaster forecasts** — zero `GameClimate`
+   calls in the mod; `cl` (coastal lowland) is exported with no phase to read
+   it against.
+8. **Religious-victory progress per rival**
+   (`GetStats():GetNumCitiesFollowingReligion`), **rival techs and civics as
+   names** (counts cross today), rival trade routes, rival religion, tourists
+   we send each rival.
+9. **Unit upgrade availability and cost** (`GetUpgradeCost`,
+   `CanStartCommand(UPGRADE)`), **per-unit maintenance**, religious strength,
+   spy mission state and available missions.
+10. **Gold per turn by source** (unit, building, district maintenance;
+    `ToolTipHelper_PlayerYields.lua`), trade-route destination options with
+    projected yields (`TradeRouteChooser.lua`), city-state quests
+    (`QuestsManager`), district adjacency previews at candidate plots
+    (`plot:GetAdjacencyYield`), plot appeal.
+11. **Exported and never read**: per-plot `ri` (the one river bit the Lua
+    says is not derivable from `rv`), `w`, `i`, `fw`; unit `embarked`,
+    `queued_dest`, `hostiles[].player`; 26 city housing/amenity/growth
+    breakdown fields; the emergencies' `members`, `goals`, `score_sources`;
+    and whole event kinds — `gp`, `unit_lost`, `wc_outcome`, `wc_vote`,
+    `envoy`, `deal_response`, `governor_assignment` — that nothing in `src/`
+    opens. A field that crosses and is not read is the cheapest kind of gap
+    and the easiest to mistake for coverage.
+12. **The instruments themselves**: `civ6_yield_drift.py` hardcodes
+    `--strategy auto`, which the deployed binary now refuses (#2357) — it
+    needs the flag dropped; `live_divergence` has never had a binary built on
+    this host, so the `tourism`, `combat_damage` and `deal_outcome` rows have
+    read "no pairs" on every run while this one carried 184 combats and 4
+    closed deals; `civ6_mirror_check.py` labels a wonder in production
+    `('building', …)` because `production_item_name` maps every `BUILDING_`
+    prefix the same way, a vocabulary mismatch and not a board error.
+
+### How to re-measure
+
+The border table is one join: `orders.sqlite` (`kind='unit' and
+verb='MOVE_TO'`, keyed by turn, frame, subject) against the `state` record of
+the same turn and frame for the unit's position and the first later record
+for where it ended, with the target plot's `o` resolved through
+`state.rivals[].player` / `state.minors[].player` and the `open_borders`,
+`at_war`, `suzerain` flags of that seat. Key the `state` records by
+`(turn, frame)` — a replan frame re-exports state mid-turn, and keying by turn
+alone reads a frame-0 order against a frame-2 position. The handicap is
+`tools/civ6_yield_drift.py` with the ratio, not the difference, read off the
+episode table: a constant ratio across cities is a multiplier, and King's is
+the only one with production and gold at 1.20 and the rest at 1.08.
+
 <!-- live-divergence:begin -->
 ## Measured divergence: the engine's next turn against the game's
 
