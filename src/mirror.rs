@@ -8067,7 +8067,7 @@ mod tests {
             "and runs the host's DenounceTimeLimit (+1, DiplomacyActionView.lua:1500)"
         );
         assert!(
-            game.players[1].denounced_until.get(&0).is_none(),
+            !game.players[1].denounced_until.contains_key(&0),
             "a denounce turn of 0 on their side means they did not denounce us"
         );
         assert_eq!(
@@ -8076,7 +8076,7 @@ mod tests {
             "50 grievances against us sit on THEIR ledger under our seat"
         );
         assert!(
-            game.players[0].grievances.get(&1).is_none(),
+            !game.players[0].grievances.contains_key(&1),
             "and none on ours: one signed balance per pair"
         );
         assert!(
@@ -8108,9 +8108,9 @@ mod tests {
         mirror.sync(&snapshot, &state, 0);
         let game = &mirror.game;
         assert_eq!(game.relationship_state(0, 1), "neutral");
-        assert!(game.players[0].denounced_until.get(&1).is_none());
-        assert!(game.players[0].denounced_since.get(&1).is_none());
-        assert!(game.players[1].grievances.get(&0).is_none());
+        assert!(!game.players[0].denounced_until.contains_key(&1));
+        assert!(!game.players[0].denounced_since.contains_key(&1));
+        assert!(!game.players[1].grievances.contains_key(&0));
         assert!(game.alliance_with(0, 1).is_none() && !game.are_friends(0, 1));
     }
 
@@ -8293,14 +8293,14 @@ mod tests {
         let game = &mirror.game;
         assert!(game.diplomatic_mission_to(0, 1).is_none());
         assert!(game.diplomatic_mission_to(1, 0).is_none());
-        assert!(game.players[0].promises.get(&1).is_none());
-        assert!(game.players[1].promises.get(&0).is_none());
+        assert!(!game.players[0].promises.contains_key(&1));
+        assert!(!game.players[1].promises.contains_key(&0));
         assert!(
-            game.players[0].observed_visibility.get(&1).is_none(),
+            !game.players[0].observed_visibility.contains_key(&1),
             "a reading the host would not give falls back to the derivation"
         );
         assert_eq!(game.diplomatic_visibility(1, 0), 0.0);
-        assert!(game.players[0].open_borders_until.get(&1).is_none());
+        assert!(!game.players[0].open_borders_until.contains_key(&1));
     }
 
     /// ⚠ The old mod exports no `diplomatic_state`: the `can_declare`
@@ -8339,7 +8339,7 @@ mod tests {
         state.turn = 41;
         state.rivals[0].can_declare = false;
         mirror.sync(&snapshot, &state, 0);
-        assert!(mirror.game.players[0].denounced_until.get(&1).is_none());
+        assert!(!mirror.game.players[0].denounced_until.contains_key(&1));
 
         // A NEUTRAL export with the permission keeps the fake alive.
         state.turn = 42;
