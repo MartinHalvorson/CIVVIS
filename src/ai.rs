@@ -3862,11 +3862,11 @@ impl BasicAi {
         if g.barb_pid.is_none() {
             return false;
         }
-        if g
+        let camp_in_reach = g
             .barb_camps
             .keys()
-            .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS)
-        {
+            .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS);
+        if camp_in_reach {
             return true;
         }
         g.units.values().any(|unit| {
@@ -13355,14 +13355,13 @@ impl BasicAi {
                         .is_some_and(|home| g.wdist(home, u.pos) <= MINOR_DEFENSE_RADIUS))
                 && self.barbarian_target_allowed_for_controller(g, uid, u.pos)
             {
-                if Some(u.owner) == g.barb_pid {
-                    if !near_home(u.pos)
+                if Some(u.owner) == g.barb_pid
+                    && (!near_home(u.pos)
                         || self.exchange_score(g, uid, u.pos, ranged)
                             <= self.attack_threshold(g, uid, u.pos)
-                        || !self.barbarian_raider_counts_as_threat(g, pid, u)
-                    {
-                        continue;
-                    }
+                        || !self.barbarian_raider_counts_as_threat(g, pid, u))
+                {
+                    continue;
                 }
                 let d = g.wdist(pos, u.pos);
                 if best.map(|b| (d, u.pos) < b).unwrap_or(true) {
