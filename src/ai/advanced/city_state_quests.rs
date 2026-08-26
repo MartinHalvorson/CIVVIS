@@ -29,9 +29,13 @@
 //!   `send_trade_route`. The same Trader goes somewhere slightly different.
 //! - **`quest-camp-errand`** — the camp errand (`BasicAi::camp_bounty_target`)
 //!   prefers the exact outpost a `clear_barbarian_camp` quest names over a
-//!   nearer unnamed one, and will walk to it from up to
-//!   [`QUEST_CAMP_EXTRA_REACH`] tiles beyond the home ring the errand
-//!   normally stops at — the named camp is the one that pays.
+//!   nearer unnamed one. ⚠ A PREFERENCE, NOT A REACH, and the first probe is
+//!   why: an earlier form also walked six tiles beyond the errand's home ring
+//!   for a named camp and read **HURTS ** (win −15.8 pp, z −3.71) over 24
+//!   games — the one gene of the four that spent rather than reordered, and
+//!   the seat paid for the soldiers it sent out of position. The errand's own
+//!   radius, war gate, claim ledger and exchange threshold still decide which
+//!   camps are eligible; a named camp outside them is not chased.
 //! - **`quest-boost`** — a `trigger_tech_boost` or `trigger_civic_boost`
 //!   quest is paid by whatever completes that boost, so the Envoy rides on
 //!   the same trigger table `eureka-chasing-production` reads
@@ -95,11 +99,6 @@ pub(super) const QUEST_PRODUCTION_CAP: f64 = 400.0;
 /// (a good route is ~30–60, the alliance premium 45), not the production
 /// scale, so the Envoy is priced against it at this fraction.
 pub(super) const QUEST_TRADE_ROUTE_SCALE: f64 = 0.25;
-/// `quest_camp_errand`: how far beyond the errand's usual home radius a
-/// soldier will walk for the outpost a quest names by position. Civilization
-/// VI looks five tiles from the city-state for the camp it names, so a named
-/// camp is routinely just outside a ring drawn around our own cities.
-pub(crate) const QUEST_CAMP_EXTRA_REACH: i32 = 6;
 
 /// Every city-state currently asking `pid` for `kind`, with its quest. The
 /// engine stores one quest per pair, so this is at most one row per met
@@ -723,7 +722,7 @@ mod tests {
                 .expect("open ground at the distance")
         };
         let near = open(&game, 3);
-        let far = open(&game, 6);
+        let far = open(&game, 5);
         for camp in [near, far] {
             game.barb_camps.insert(camp, game.turn + 1_000);
             game.map.tiles.get_mut(&camp).unwrap().improvement =
@@ -742,7 +741,9 @@ mod tests {
 
     /// ★★ THE ERRAND GOES TO THE CAMP THAT PAYS. Civilization VI names one
     /// outpost and pays for that one; the stock errand takes the nearest camp
-    /// and would clear the wrong one all game.
+    /// and would clear the wrong one all game. Both camps here are inside the
+    /// errand's own radius: the gene reorders what it would already do, and
+    /// never sends the hunter past the ring.
     #[test]
     fn the_camp_errand_walks_past_a_nearer_camp_to_the_one_that_pays() {
         let (mut game, pid, minor, near, far, hunter) = two_camps(90_180);
