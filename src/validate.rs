@@ -215,6 +215,10 @@ fn world_events(check: &mut Check) {
         for (name, len) in [
             ("pillage_chance", spec.pillage_chance.len()),
             ("fertility_chance", spec.fertility_chance.len()),
+            (
+                "fertility_production_chance",
+                spec.fertility_production_chance.len(),
+            ),
             ("population_loss", spec.population_loss.len()),
             ("radius", spec.radius.len()),
         ] {

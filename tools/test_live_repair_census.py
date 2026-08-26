@@ -131,9 +131,10 @@ class TheTradeLedgerSeparatesOneRefusalFromTwo(unittest.TestCase):
 
 
 class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
-    """⚠ Not a transcription. `behind_all_metrics_reading` is imported from
-    `tools/civ6_play.py` and fed the recorded stream in file order, which is
-    what `_play`'s `finished()` does with the live one."""
+    """⚠ Not a transcription. `below_leader_score_reading` — the one early stop
+    left after 2026-08-26 — is imported from `tools/civ6_play.py` and fed the
+    recorded stream in file order, which is what `_play`'s `finished()` does
+    with the live one."""
 
     def _behind(self, turn: int) -> list[dict]:
         return [
@@ -143,17 +144,13 @@ class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
              "score": 100, "rival_best": 1000},
         ]
 
-    def test_it_fires_only_after_the_patience_window(self):
-        patience = census.civ6_play.BEHIND_ALL_METRICS_PATIENCE
-        floor = census.civ6_play.BEHIND_ALL_METRICS_MIN_TURN
-        short = [r for t in range(floor, floor + patience - 1)
-                 for r in self._behind(t)]
-        self.assertFalse(census.restart_reading(short, 0.70, {})["fired"],
-                         f"{patience - 1} readings is one short of the patience")
-        verdict = census.restart_reading(
-            short + self._behind(floor + patience - 1), 0.70, {})
+    def test_it_fires_on_the_first_qualifying_reading(self):
+        floor = census.civ6_play.LEADER_SCORE_MIN_TURN
+        self.assertFalse(census.restart_reading(
+            self._behind(floor - 1), 0.70, {})["fired"])
+        verdict = census.restart_reading(self._behind(floor), 0.70, {})
         self.assertTrue(verdict["fired"])
-        self.assertEqual(verdict["fire_turn"], floor + patience - 1)
+        self.assertEqual(verdict["fire_turn"], floor)
 
     def test_a_disabled_ratio_never_fires(self):
         records = [r for t in range(100, 130) for r in self._behind(t)]

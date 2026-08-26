@@ -5916,9 +5916,29 @@ fn main() {
                     .as_ref()
                     .map(|placed| format!("\"{}\"", placed.district.as_str()))
                     .unwrap_or_else(|| "null".to_string());
+                // What the board PAYS this plot, and what the host said it
+                // pays. The dump named every row of the ruleset either side
+                // reads and not the one number they are read for, so the
+                // mapping could be verified tile by tile while the yields
+                // derived from it went unchecked — which is how disaster
+                // fertility stayed invisible on the board for as long as it
+                // did. `ty` is `Game::workable_tile_yields`; `hy` is the
+                // export's own `Plot:GetYield` tuple where the sweep carried
+                // one, so `ty` minus `hy` is the residual to explain.
+                //
+                // ⚠ `ty`, not `y`: `y` is this plot's row coordinate three
+                // fields to the left, and a duplicate key in one JSON object
+                // silently keeps whichever a reader saw last.
+                let paid = serde_json::to_string(&game.workable_tile_yields(pos))
+                    .unwrap_or_else(|_| "null".to_string());
+                let host = exported
+                    .and_then(civvis::mirror::Plot::host_yields)
+                    .map(|yields| serde_json::to_string(&yields).unwrap_or_else(|_| "null".into()))
+                    .unwrap_or_else(|| "null".to_string());
                 plots.push(format!(
                     "{{\"x\":{},\"y\":{},\"t\":\"{}\",\"h\":{},\"w\":{},\"f\":{},\"r\":{},\
-                     \"im\":{},\"d\":{},\"df\":{},\"wo\":{},\"p\":{},\"own\":{},\"res\":{}}}",
+                     \"im\":{},\"d\":{},\"df\":{},\"wo\":{},\"p\":{},\"own\":{},\"res\":{},\
+                     \"ty\":{},\"hy\":{}}}",
                     x,
                     y,
                     tile.terrain.as_str(),
@@ -5933,6 +5953,8 @@ fn main() {
                     tile.pillaged,
                     owner.map(|o| o == 0).unwrap_or(false),
                     resolved,
+                    paid,
+                    host,
                 ));
             }
         }
@@ -11313,6 +11335,7 @@ mod tests {
             wo: None,
             rt: None,
             rp: false,
+            yl: None,
         }
     }
 

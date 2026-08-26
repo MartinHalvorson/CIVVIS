@@ -746,11 +746,12 @@ def entry_from(summary: dict) -> dict:
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
-        # The harness's own early-stop verdict: either the measured expected
-        # win-rate floor (`civ6_play.ABANDON_CELLS`) or the explicit
-        # score/science/culture restart policy. A row with `reason:
-        # "abandoned"` is a loss the ladder chose not to play out, and the
-        # record preserves the exact rule and standing that made that choice.
+        # The harness's own early-stop verdict (since 2026-08-26 the one rule:
+        # under 70 % of the leader's score after turn 150,
+        # `civ6_play.below_leader_score_reading`; older rows carry the retired
+        # rules' verdicts verbatim). A row with `reason: "abandoned"` is a
+        # loss the ladder chose not to play out, and the record preserves the
+        # exact rule and standing that made that choice.
         "abandoned": summary.get("abandoned"),
         "applied_pct": applied_pct(summary),
         # The return codes' rate beside the verified one; see `orders_ledger`.

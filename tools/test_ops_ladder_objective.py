@@ -122,9 +122,9 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         it reached the climb as ONE argument, `--victory science`, which
         argparse rejects as unrecognized. The victory form had never been
         exercised; the abandon floor was, 2026-08-19 17:00Z, and four starts
-        in a row played nothing. The three-axis score restart is different:
-        it is a required deployment policy at 0.70, even when a GUI host did
-        not inherit a login-shell environment. Run the script's OWN knob lines
+        in a row played nothing. The leader-score line is different: it is
+        the one early stop left (2026-08-26), a deployment policy at 0.70
+        even when a GUI host did not inherit a login-shell environment. Run the script's OWN knob lines
         and the flag lines of its climb invocation under zsh, with and without
         operator overrides, and read the words that come out."""
         if shutil.which("zsh") is None:
@@ -134,30 +134,26 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
             self.skipTest("zsh is not installed here")
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         knob_lines = [line for line in source.splitlines()
-                      if re.match(r"^(VICTORY|ABANDON_BELOW|RESTART_BELOW_LEADER_RATIO)=\$\{CIVVIS_", line)]
-        self.assertEqual(len(knob_lines), 3, knob_lines)
+                      if re.match(r"^(VICTORY|RESTART_BELOW_LEADER_RATIO)=\$\{CIVVIS_", line)]
+        self.assertEqual(len(knob_lines), 2, knob_lines)
         invocation = EveryLadderLoopCanAskForTheRungAndTheLane._invocation(source)
         flag_lines = [line.strip().rstrip("\\").strip()
                       for line in invocation.splitlines()
                       if ":+--" in line]
-        self.assertEqual(len(flag_lines), 3, invocation)
+        self.assertEqual(len(flag_lines), 2, invocation)
         script = "\n".join(knob_lines) + (
             "\nfor w in " + " ".join(flag_lines) + "; do print -r -- \"$w\"; done\n")
         for knobs, expected in (
             ({}, ["--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_VICTORY": "science"},
              ["--victory", "science", "--restart-below-leader-ratio", "0.70"]),
-            ({"CIVVIS_ABANDON_BELOW_WIN_RATE": "0.05"},
-             ["--abandon-below-win-rate", "0.05",
-              "--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
              ["--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0"},
              ["--restart-below-leader-ratio", "0"]),
-            ({"CIVVIS_VICTORY": "culture", "CIVVIS_ABANDON_BELOW_WIN_RATE": "0.1",
+            ({"CIVVIS_VICTORY": "culture",
               "CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
-             ["--victory", "culture", "--abandon-below-win-rate", "0.1",
-              "--restart-below-leader-ratio", "0.70"]),
+             ["--victory", "culture", "--restart-below-leader-ratio", "0.70"]),
         ):
             with self.subTest(knobs=knobs):
                 env = {k: v for k, v in os.environ.items()
