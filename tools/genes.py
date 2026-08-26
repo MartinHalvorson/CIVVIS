@@ -216,11 +216,12 @@ the interval. Every gene gets `posterior_pp`, `posterior_se_pp` and, in
 
 It is **published, not in force**. The deployment policy is the
 `batch-rule+operator-pins`: the three batch columns decide every gene the
-operator has not pinned on by name in `OPERATOR_DEFAULT_ON`, the ledger
-records the columns and the rule's own answer beside the evidence — a pinned
-gene keeps its `off` under `rules.batch_decisions` — and Rust re-derives the
-same answer from the same columns and the same pins, so nothing else can
-silently rewrite what the agent plays.
+operator has not named by hand in `OPERATOR_DEFAULT_ON` (on) or
+`OPERATOR_DEFAULT_OFF` (off), the ledger records the columns and the rule's
+own answer beside the evidence — a pinned gene keeps the rule's reading under
+`rules.batch_decisions` — and Rust re-derives the same answer from the same
+columns and the same pins, so nothing else can silently rewrite what the
+agent plays.
 
 The posterior remains useful evidence: it makes uncertainty and disagreement
 visible when the operator reads a flip. It is not an alternative authority.
@@ -501,8 +502,9 @@ DIFF_PLACES = 6
 #: columns — *Last Batch*, *Prior Batch*, *Third Batch*: the ± wins per
 #: 10,000 total seats each fixed reporting batch read for the gene, newest
 #: first (`total_seat_batch_wins`) — through `batch_rule`, and by nothing
-#: else except `OPERATOR_DEFAULT_ON`, the genes the operator names on by
-#: hand. `python3 tools/genes.py write` re-decides every unpinned default when
+#: else except the operator's two hand-written lists,
+#: `OPERATOR_DEFAULT_ON` and `OPERATOR_DEFAULT_OFF`.
+#: `python3 tools/genes.py write` re-decides every unpinned default when
 #: a batch enters; `check` refuses a ledger that still carries a gene the rule
 #: says must leave the pool. Every default that is not a pin is changed by
 #: playing more games.
@@ -514,15 +516,17 @@ RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: ⭐ THE OPERATOR'S PINS — genes that default **on** whatever their batch
 #: columns read. The 2026-08-26 selected defaults extend this list; the
 #: retained deployment selection separately excludes `raid-pillage-prizes`.
-#: For the versioned `settler-target-hysteresis` family, v1 is the ledger's
-#: highest tracked version (v2 has no pooled record), so only v1 is pinned.
-#: A pin moves a default only: it cannot keep a gene the rule removes from the
-#: pool (`build_ledger` refuses that), and it cannot turn a gene off. Nothing
-#: derives this list; it is the operator's, by name.
+#: For the versioned `settler-target-hysteresis` family the operator moved the
+#: ship from v1 to v2 (2026-08-26): `settler-target-hysteresis-2` is pinned on
+#: here and v1 is held off below, so the family still ships exactly one
+#: version. A pin moves a default only: it cannot keep a gene the rule removes
+#: from the pool (`build_ledger` refuses that). Nothing derives this list; it
+#: is the operator's, by name.
 OPERATOR_DEFAULT_ON = (
     "apostle-promotion-by-role",
     "army-target-weighs-enemy",
     "boost-wait-research",
+    "builder-supply-floor",
     "buildings-before-projects",
     "buy-what-cards-cannot-boost",
     "camp-party",
@@ -536,6 +540,7 @@ OPERATOR_DEFAULT_ON = (
     "district-planning",
     "early-contact-window",
     "elective-war-yields-to-a-lane",
+    "enhancer-for-the-corps",
     "expansion-schedule",
     "founder-temple",
     "gold-for-the-young-city",
@@ -545,19 +550,52 @@ OPERATOR_DEFAULT_ON = (
     "lane-great-people",
     "loyalty-rate-alarm",
     "missionary-evades-raiders",
+    "native-emergency-purchase",
     "naval-threat-triage",
     "never-an-empty-queue",
     "one-launch-pad",
+    "pantheon-board",
+    "quest-boost",
     "quest-trade-route",
     "recon-replacement",
+    "relief-targets-the-siege",
+    "religious-units-heal-first",
     "research-tier-premium",
+    "rival-suzerainty-alarm",
+    "science-chain-alarm",
     "settler-screen",
-    "settler-target-hysteresis",
+    "settler-target-hysteresis-2",
+    "settler-threat-detour",
     "stranded-settler-discount",
+    "unchosen-war-keeps-the-lane",
     "unit-cost-efficiency",
+    "unit-objective-memory",
     "wonder-adjacent-sites",
     "wonder-score-tally",
 )
+
+#: ⭐ THE OPERATOR'S HOLDS — genes that default **off** whatever their batch
+#: columns read (operator, 2026-08-26). The mirror of `OPERATOR_DEFAULT_ON`,
+#: and the only thing that can take a gene out of a retained selection. Like a
+#: pin it decides a default and nothing else: the rule's own answer stays
+#: published under `rules.batch_decisions`, and a gene the rule removes from
+#: the pool is still cut. Nothing derives this list either; it is the
+#: operator's, by name.
+OPERATOR_DEFAULT_OFF = (
+    "congress-counter-leader",
+    "one-war-at-a-time",
+    "science-multiplier-payoff",
+    "settler-factory-coordination",
+    "settler-target-hysteresis",
+)
+
+#: A gene is named by at most one of the two lists — the pair is one selection,
+#: not a precedence puzzle, so an overlap is a mistake rather than a rule to
+#: resolve.
+_PINNED_BOTH_WAYS = sorted(set(OPERATOR_DEFAULT_ON) & set(OPERATOR_DEFAULT_OFF))
+if _PINNED_BOTH_WAYS:
+    raise SystemExit("genes: " + ", ".join(_PINNED_BOTH_WAYS) + " is named both on and "
+                     "off by the operator; a gene belongs to one list")
 #: The rule reads at most this many batches — the ranking's three columns.
 BATCH_RULE_WINDOW = 3
 #: A gene whose batches are not all positive ships only when their mean
@@ -828,29 +866,38 @@ def batch_columns(batches: list, tag: str) -> list:
     return (columns + [None] * BATCH_RULE_WINDOW)[:BATCH_RULE_WINDOW]
 
 
+def named_defaults(names: tuple[str, ...], pinnable: set[str], strict: bool,
+                   what: str) -> tuple[str, ...]:
+    """The tags of one operator list this ledger can name, sorted.
+
+    `pinnable` is the tag set a pin may name — the screenable registry for
+    real generation, and only the tags a fixture's own batches priced for a
+    synthetic one, so the real pins do not leak into a fixture built over
+    stand-in tags. `strict` is on for real generation (`filter_known`), where
+    a pin naming a gene the registry does not screen is a hard error rather
+    than a silent no-op."""
+    named = tuple(sorted(tag for tag in names if tag in pinnable))
+    if strict:
+        unknown = sorted(set(names) - set(named))
+        if unknown:
+            raise SystemExit(
+                f"genes: the operator's {what} name " + ", ".join(unknown)
+                + ", which this registry does not screen; a pin is a gene's tag "
+                  "(`python3 tools/genes.py list`)")
+    return named
+
+
 def operator_pins(pinnable: set[str], decisions: dict[str, str], strict: bool,
                   enforce_removals: bool = True) -> tuple[str, ...]:
     """⭐ THE OPERATOR'S PINS as this ledger will record them: the tags of
     `OPERATOR_DEFAULT_ON` this ledger can pin, sorted.
 
-    `pinnable` is the tag set a pin may name — the screenable registry for
-    real generation, and only the tags a fixture's own batches priced for a
-    synthetic one, so the real pins do not leak into a fixture built over
-    stand-in tags. `decisions` is the batch rule's answer for each priced tag.
-    `strict` is on for real generation (`filter_known`), where a pin naming a
-    gene the registry does not screen is a hard error rather than a silent
-    no-op. A pin over a gene the rule REMOVES from the pool is refused in
-    either mode when the batch rule is authoritative: the pin decides a
-    default, never whether the code exists. A reporting-only rotation retains
-    the selected code instead, so its historical batch rows cannot cull it."""
-    pins = tuple(sorted(tag for tag in OPERATOR_DEFAULT_ON if tag in pinnable))
-    if strict:
-        unknown = sorted(set(OPERATOR_DEFAULT_ON) - set(pins))
-        if unknown:
-            raise SystemExit(
-                "genes: the operator's pinned defaults name " + ", ".join(unknown)
-                + ", which this registry does not screen; a pin is a gene's tag "
-                  "(`python3 tools/genes.py list`)")
+    `decisions` is the batch rule's answer for each priced tag. A pin over a
+    gene the rule REMOVES from the pool is refused in either mode when the
+    batch rule is authoritative: the pin decides a default, never whether the
+    code exists. A reporting-only rotation retains the selected code instead,
+    so its historical batch rows cannot cull it."""
+    pins = named_defaults(OPERATOR_DEFAULT_ON, pinnable, strict, "pinned defaults")
     cut = [tag for tag in pins if decisions.get(tag) == "remove"]
     if cut and enforce_removals:
         raise SystemExit(
@@ -861,9 +908,21 @@ def operator_pins(pinnable: set[str], decisions: dict[str, str], strict: bool,
     return pins
 
 
+def operator_holds(pinnable: set[str], strict: bool) -> tuple[str, ...]:
+    """⭐ THE OPERATOR'S HOLDS as this ledger will record them: the tags of
+    `OPERATOR_DEFAULT_OFF` this ledger can hold off, sorted.
+
+    A hold needs no `decisions`: whatever the rule reads, the answer is off,
+    and a gene the rule removes from the pool is off by both routes at once —
+    the removal is still reported, and `check` still fails until the code is
+    cut."""
+    return named_defaults(OPERATOR_DEFAULT_OFF, pinnable, strict, "held-off defaults")
+
+
 def retain_deployment_genome(retained: tuple[str, ...], *, allowed: set[str],
                              family_tags: list[str], wins_by_tag: dict[str, float],
-                             pinned: tuple[str, ...]) -> tuple[tuple[str, ...], dict[str, dict]]:
+                             pinned: tuple[str, ...],
+                             held: tuple[str, ...] = ()) -> tuple[tuple[str, ...], dict[str, dict]]:
     """Keep an operator-selected genome stable while reporting rows rotate.
 
     A reporting batch describes a historical tournament. It may replace a
@@ -871,8 +930,12 @@ def retain_deployment_genome(retained: tuple[str, ...], *, allowed: set[str],
     set. Tags that have actually left the registry are omitted rather than
     carried into the generated table. A retained selection still has the same
     one-version-per-family invariant as the normal deployment genome.
+
+    The operator's own two lists are the exception, and the only one: a `held`
+    tag leaves the retained selection and a `pinned` tag joins it, because
+    those are the operator selecting rather than a batch reinterpreting.
     """
-    requested = set(retained) | set(pinned)
+    requested = (set(retained) | set(pinned)) - set(held)
     missing = sorted(requested - allowed)
     if missing:
         print("gene ledger: omitted retained defaults no longer in the registry: "
@@ -1523,8 +1586,10 @@ def resolve_family_heads(rule_on: tuple[str, ...], tags: list[str],
         if ships:
             chosen.add(ships)
         if ships and head and ships != head:
+            why = ("the operator holds it off" if head in OPERATOR_DEFAULT_OFF
+                   else "the batch rule turns it off")
             print(f"gene ledger: family {family[0]}'s head by tracked wins is {head} "
-                  f"({wins_by_tag[head]:+.2f} pp) but the batch rule turns it off; "
+                  f"({wins_by_tag[head]:+.2f} pp) but {why}; "
                   f"{ships} ships", file=sys.stderr)
     return tuple(sorted(chosen)), record
 
@@ -1731,9 +1796,13 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     # ⭐ THE OPERATOR'S PINS sit above the rule: a named gene ships on whatever
     # its columns read. `decisions` keeps the rule's own answer, so the ledger
     # publishes the override rather than hiding it inside the genome.
+    pinnable = allowed if filter_known else set(columns_by_tag)
     pinned = operator_pins(
-        allowed if filter_known else set(columns_by_tag), decisions, filter_known,
+        pinnable, decisions, filter_known,
         enforce_removals=deployment_policy == DEPLOYMENT_POLICY)
+    # ⭐ AND THE OPERATOR'S HOLDS sit above both: a named gene is off whatever
+    # the rule reads and whatever a retained selection carried.
+    held = operator_holds(pinnable, filter_known)
     # ⭐ A family the rule turns on ships ONE version — its head by tracked
     # wins when the rule turns the head on, else the best version the rule
     # turns on; and no family may hold more than MAX_VERSIONS.
@@ -1741,14 +1810,14 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     check_family_sizes(family_tags)
     wins_by_tag = {tag: pooled_win_diff_pp(record) for tag, record in arms.items() if record}
     if deployment_policy == DEPLOYMENT_POLICY:
-        default_on = tuple(sorted(set(rule_on) | set(pinned)))
+        default_on = tuple(sorted((set(rule_on) | set(pinned)) - set(held)))
         selected, family_heads = resolve_family_heads(default_on, family_tags, wins_by_tag)
     elif deployment_policy == RETAINED_DEPLOYMENT_POLICY:
         if retained_deployment_genome is None:
             raise SystemExit("genes: operator-retained-selection needs a recorded deployment genome")
         selected, family_heads = retain_deployment_genome(
             retained_deployment_genome, allowed=allowed, family_tags=family_tags,
-            wins_by_tag=wins_by_tag, pinned=pinned)
+            wins_by_tag=wins_by_tag, pinned=pinned, held=held)
     else:
         raise SystemExit(f"genes: unknown deployment policy {deployment_policy!r}")
 
@@ -1825,12 +1894,13 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "default_on": (
                 "batch-rule+operator-pins: exactly the tags in deployment_genome are on, and "
                 "that list is batch_rule's answer over every screenable gene plus "
-                "operator_default_on, families collapsed to the version that ships; every "
-                "other screenable tag is off"
+                "operator_default_on and minus operator_default_off, families collapsed to "
+                "the version that ships; every other screenable tag is off"
                 if deployment_policy == DEPLOYMENT_POLICY else
                 "operator-retained-selection: exactly the tags in deployment_genome are on; "
-                "a reporting-only batch refresh retains that selected set while its batch "
-                "columns remain published evidence"
+                "a reporting-only batch refresh retains that selected set, less the tags in "
+                "operator_default_off and plus the tags in operator_default_on, while its "
+                "batch columns remain published evidence"
             ),
             "batch_rule": "read over the reporting batches that priced the gene, newest first, "
                           "at most batch_rule_window of them, each reading the ranking's wins "
@@ -1848,16 +1918,18 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "batch_decisions": decisions,
             "removals_due": removals_due if deployment_policy == DEPLOYMENT_POLICY else [],
             "operator_default_on": list(pinned),
+            "operator_default_off": list(held),
             "operator_pins": (
-                "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, "
-                "2026-08-26); they remain in the retained deployment_genome, while "
-                "batch_decisions records what the batch rule would say as evidence"
+                "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and "
+                "OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained "
+                "deployment_genome and the held ones are out of it, while batch_decisions "
+                "records what the batch rule would say as evidence"
                 if deployment_policy == RETAINED_DEPLOYMENT_POLICY else
-                "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, "
-                "2026-08-26); each is in deployment_genome whatever its batch columns "
-                "read, and batch_decisions still records what the rule alone would have "
-                "said. A pin moves a default only: it cannot hold a gene the rule removes "
-                "from the pool, and it cannot turn a gene off"
+                "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and "
+                "OPERATOR_DEFAULT_OFF, 2026-08-26); a pinned gene is in deployment_genome "
+                "and a held gene is out of it whatever their batch columns read, and "
+                "batch_decisions still records what the rule alone would have said. A pin "
+                "moves a default only: it cannot hold a gene the rule removes from the pool"
             ),
             "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every "
                          "screen's on-off difference on the win column's scale, each weighted "
@@ -1884,13 +1956,14 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "posterior_shapes": list(POSTERIOR_SHAPES),
             "deployment_policy_meaning": (
                 "the batch rule decides default_on from batch_columns for every gene "
-                "operator_default_on does not name, and a named gene is on; "
-                "`tools/genes.py write` re-decides every unpinned default when a reporting "
-                "batch enters, and `check` fails while removals_due names a gene still in "
-                "the registry"
+                "neither operator list names; a gene in operator_default_on is on and a "
+                "gene in operator_default_off is off; `tools/genes.py write` re-decides "
+                "every unpinned default when a reporting batch enters, and `check` fails "
+                "while removals_due names a gene still in the registry"
                 if deployment_policy == DEPLOYMENT_POLICY else
-                "a reporting-only table refresh retains the preceding deployment_genome; "
-                "the new batch columns are evidence and cannot change a default"
+                "a reporting-only table refresh retains the preceding deployment_genome, "
+                "less operator_default_off and plus operator_default_on; the new batch "
+                "columns are evidence and cannot change a default"
             ),
         },
         "sources": recorded,
@@ -1953,7 +2026,7 @@ def render_rust(ledger: dict) -> str:
         [
             "// together, and `the_default_follows_the_batch_rule` re-derives every `default_on`",
             "// below from `BATCH_COLUMNS` through `gene_ledger::batch_rule`, above",
-            "// `OPERATOR_DEFAULT_ON`.",
+            "// `OPERATOR_DEFAULT_ON` and `OPERATOR_DEFAULT_OFF`.",
         ]
     )
     genome_description = (
@@ -1964,7 +2037,8 @@ def render_rust(ledger: dict) -> str:
         if retained else
         [
             "/// The screenable genes that ship on — the batch rule's answer plus the",
-            "/// operator's pins, one version per family: the deployment genome.",
+            "/// operator's pins and less the operator's holds, one version per family:",
+            "/// the deployment genome.",
         ]
     )
     pin_description = (
@@ -1977,6 +2051,20 @@ def render_rust(ledger: dict) -> str:
             "/// ⭐ The genes the operator named on by hand. Each is in",
             "/// `DEPLOYMENT_GENOME` whatever its `BATCH_COLUMNS` read, and the rule's",
             "/// own answer for it is still what `batch_rule` returns.",
+        ]
+    )
+    hold_description = (
+        [
+            "/// ⭐ The genes the operator named OFF by hand — the mirror of",
+            "/// `OPERATOR_DEFAULT_ON`. Each is out of the retained `DEPLOYMENT_GENOME`;",
+            "/// their batch-rule readings remain evidence.",
+        ]
+        if retained else
+        [
+            "/// ⭐ The genes the operator named OFF by hand — the mirror of",
+            "/// `OPERATOR_DEFAULT_ON`. Each is out of `DEPLOYMENT_GENOME` whatever its",
+            "/// `BATCH_COLUMNS` read, and the rule's own answer for it is still what",
+            "/// `batch_rule` returns.",
         ]
     )
     batch_description = (
@@ -2013,6 +2101,12 @@ def render_rust(ledger: dict) -> str:
         "#[rustfmt::skip]",
         "pub(super) const OPERATOR_DEFAULT_ON: &[&str] = &[",
         *(f"    {json.dumps(tag)}," for tag in rules["operator_default_on"]),
+        "];",
+        "",
+        *hold_description,
+        "#[rustfmt::skip]",
+        "pub(super) const OPERATOR_DEFAULT_OFF: &[&str] = &[",
+        *(f"    {json.dumps(tag)}," for tag in rules["operator_default_off"]),
         "];",
         "",
         *batch_description,

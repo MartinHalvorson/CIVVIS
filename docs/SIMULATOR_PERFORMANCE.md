@@ -2603,3 +2603,116 @@ primitives 12.9%**, unnamed-but-now-attributed 32.5%.
    1.61%, both of which are the ring lookup inside `wdist`. `can_enter_past`
    still re-asks `wdist(from, pos) != 1` for a neighbour its caller just
    enumerated (rank 5 of the 2026-08-21 list, never taken).
+
+## 2026-08-26 (later) — the tactical picker cloned the board twice and applied the same action to both
+
+The entry above this one attributes the profile's unnamed third by caller, and
+two of the lines it produced had never appeared in a profile in this file:
+
+    1.43%  Vec::clone  <-  Game::clone
+    0.76%  Vec::clone  <-  speculative_clone
+
+That is the tactical evaluator, and reading it led straight to the cause.
+`plan_tactical_orders` scored every candidate action like this:
+
+```rust
+let inputs = candidates.iter()
+    .map(|(_, action)| (g.speculative_clone(), g.speculative_clone(), action.clone()))
+    .collect();
+pool.map_owned(inputs, move |(attack, reply, action)| {
+    let attack = Self::tactical_attack_result_owned(attack, pid, uid, &action, &plan);
+    (attack.value, attack.eliminates_enemy_unit,
+     Self::forcing_reply_penalty_owned(pool, reply, pid, uid, &action))
+})
+```
+
+**Two whole-`Game` clones per candidate, and both of them apply the same
+action.** `tactical_attack_result_owned` calls `after.apply(pid, action)` to
+price the attack; `forcing_reply_penalty_owned`'s first statement is
+`after.apply(pid, action)` to price the enemy's answer to it. The engine is
+deterministic, so the second board was bit-for-bit the first. The serial arm
+did the same thing one line further down.
+
+### The fix, and why it is exact
+
+`Game::apply` is the **only** mutation `tactical_attack_result_owned` makes —
+everything else it touches is a read (`units_at`, `city_at`, `encampment_at`,
+field reads for the before-snapshot) — so the board it finishes with *is* the
+board the reply search was rebuilding. It now takes `&mut Game` and reports
+what happened to it:
+
+```rust
+enum AppliedAttack { Applied, Refused(String), NotScored }
+fn tactical_attack_result_in(after: &mut Game, ..) -> (ExactAttackResult, AppliedAttack)
+fn forcing_reply_penalty_applied(pool, after: &mut Game, applied, pid, uid, action) -> f64
+```
+
+The three arms reproduce the old function case for case: `Refused` carries the
+reason `note_illegal_attack` records and returns 1,000.0; `NotScored` — the
+action was not this unit's attack, so nothing was applied and nothing was
+scored — applies it here, which is the one arm that still pays an apply and is
+exactly the arm that used to pay a clone as well; `Applied` goes straight to
+`forcing_reply_penalty_from_position`. The 135.0 charged to an attacker that
+did not survive its own attack is unchanged and is now charged in one place.
+
+⚠ `forcing_reply_penalty` — the `&Game` entry point eight tests use — stays,
+and now routes through `AppliedAttack::NotScored`, so those tests exercise the
+new path rather than a retired one.
+
+### The measurement
+
+**The clock could not read it, and the counter could.**
+
+Six paired games, seeds 7311001..7311006, 6p 74x46 9 city-states 250 turns
+online Continents, both arms built in one worktree from one base:
+
+    load average 62.64 at start, 62.64 peak, 24.77 at end
+    baseline    295.03s user CPU /  1335 turns = 0.220999 s/turn
+    candidate   317.53s user CPU /  1335 turns = 0.237847 s/turn
+    +7.12% per completed turn (median of 6 pairs)
+        — same game on every seed
+    spread: IQR 20.82pp over [-12.22%, +24.95%]; this run resolves +/-12.60%
+
+⚠⚠ **THAT +7.12% IS NOT A READING, AND THE RUN SAYS SO ITSELF.** Its own
+resolution is +/-12.60% — the verdict is *not seen*, not *not there* — and the
+load average was 62 because a `cargo test` of this very branch was running
+beside it. The 2026-08-23 entry above already wrote the rule this breaks: at
+this scale on a busy fleet, **stop planning to resolve it with a clock;
+instrument the work instead, and quote the clock only for its report-digest
+verdict.** That verdict is the half worth keeping and it does not care about
+load: *same game on every seed*, six paired 250-turn games. The change is exact.
+
+So the result is a counter, taken with `AtomicU64`s on `speculative_clone` and
+`Game::apply` over one whole standard-shape game (seed 7311001):
+
+| per game | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| `speculative_clone` calls | 36,533 | 33,142 | **-3,391 (-9.28%)** |
+| `Game::apply` calls | 144,027 | 140,636 | **-3,391 (-2.35%)** |
+
+**Exactly 3,391 of each**, which is the change's own arithmetic reported back:
+one clone and one apply per tactical candidate, and the tactical picker scores
+3,391 candidates in a 250-turn game. Nine percent of every speculative clone in
+the simulator was a second copy of a board that already existed.
+
+⚠ **Do not read that as a nine-percent speed-up.** The profile above puts
+`Vec::clone` under `Game::clone` and `speculative_clone` together at 2.19% of
+the thread and `Game::apply` at 13.2% inclusive, so removing 9.28% of the
+clones and 2.35% of the applies predicts a few tenths of a percent — real,
+permanent, and **below what any clock on this fleet resolves**. The honest
+claim is the counter and the digest, not a percentage.
+
+### What this does not do
+
+It halves the clones in the tactical picker; it does not touch the reply
+search's own cost. `forcing_reply_penalty_owned` was 14.3% of the main thread
+inclusive in the profile above, and `forcing_reply_line` recurses and clones a
+`Game` per line inside that. **That machinery still has no gene row, no
+evaluator arm and no depth constant** — the shape of #2059, named in the entry
+above and unchanged by this. Registering it is blocked today rather than
+undone: a `Kind::Production` row would make `ledger_default_on` answer
+`Some(false)` and switch a shipped behaviour off at deployment (the trap
+`genes.rs` documents for the other six), so the row and either a measurement or
+an operator pin have to land together — and `tools/genes.py`,
+`docs/gene_ledger.json` and the ranking are being regenerated by two open pull
+requests as this is written.
