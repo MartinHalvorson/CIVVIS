@@ -7693,6 +7693,26 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("const tacticsWorld = isBattlefieldMapScript(st.map?.script);"));
         assert!(EMBEDDED_INDEX
             .contains("document.body.classList.toggle(\"watching-tactics\", tacticsWorld);"));
+        // A battlefield is decided by the fighting, so the empire's screens
+        // and notices stay off it: no Empire tabs, Diplomacy or Quick Deals
+        // in the launch bar, no government section, neither tree, and none
+        // of the standing notices about Great People, faith, policies,
+        // governors or envoys. What a seat is *asked* is the engine's rule
+        // (`Action::off_the_battlefield`); this is the client not
+        // second-guessing it.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.watching-tactics #launchtabs, body.watching-tactics #diplomacybtn,\n  \
+             body.watching-tactics #tradebtn, body.watching-tactics #hooksbar #hooktabs { display: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (!RULES || !state || watchingBattlefield()) return;"));
+        assert!(EMBEDDED_INDEX.contains("const empire = !watchingBattlefield();"));
+        assert!(EMBEDDED_INDEX
+            .contains("for (const act of empire ? legal(\"recruit_great_person\") : [])"));
+        assert!(EMBEDDED_INDEX.contains("if (empire && me.envoys_free > 0)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "The arena climbs it on its own — the cheapest technology open to it, \
+             identically for both sides — so nobody is ever asked to choose research."
+        ));
         // Retiring the open card hands its room to the dossier rather than
         // leaving the whole deck folded shut.
         assert!(EMBEDDED_INDEX
@@ -11930,7 +11950,8 @@ fetchpriority=\"high\""
         );
         assert!(!EMBEDDED_INDEX
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
-        assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (!fullMapSpectator && !watchingBattlefield() && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
         assert!(EMBEDDED_INDEX.contains(
             "class=\"diplomacy-rank\" data-hud-col=\"rank\" title=\"Score rank ${rank}\">#${rank}"
