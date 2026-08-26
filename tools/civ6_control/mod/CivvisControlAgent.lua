@@ -12955,13 +12955,15 @@ end;
 CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         escort_cap_unresolved = 0, escort_shadow_injected = 0,
 	                         escort_shadow_applied = 0, escort_shadow_refused = 0,
-	                         escort_shadow_held = 0 }, escortHolds = {} };
+	                         escort_shadow_held = 0,
+	                         settler_scout_capture_held = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
 	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                     escort_cap_unresolved = 0, escort_shadow_injected = 0,
 	                     escort_shadow_applied = 0, escort_shadow_refused = 0,
-	                     escort_shadow_held = 0 };
+	                     escort_shadow_held = 0,
+	                     settler_scout_capture_held = 0 };
 	CivvisBoard.escortHolds = {};
 end;
 
@@ -13147,6 +13149,135 @@ CivvisBoard.syncCappedSettlerEscorts = function(pid, turn, rows)
 	end
 end;
 
+-- A live host observed the new Rome settler leave its city for a tile beside a
+-- visible barbarian scout, then disappear before the next state export
+-- (civvis-20260826T153014Z, turn 10).  Do not turn that one observation into a
+-- general claim about every scout's behaviour.  Instead, keep this bridge
+-- floor deliberately narrow: when an unguarded settler starts on one of our
+-- cities and its *actual host leg* would end adjacent to a visible barbarian
+-- UNIT_SCOUT, hold the leg for this turn.
+--
+-- The actual leg is read through `UnitManager.GetMoveToPathEx`, the same host
+-- path query the shipped WorldInput.lua uses to draw a unit route
+-- (Base/Assets/UI/WorldInput.lua:961).  A co-located combat unit that the host
+-- has proved can share that leg remains a valid escort.  This is an actuation
+-- floor, not a genome or route-selection policy: the planner still owns the
+-- destination and can retry it after the immediate capture geometry clears.
+CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
+	local player = try(function() return Players[pid]; end, nil);
+	if player == nil then return; end
+	local cities = {};
+	eachCity(player, function(city)
+		local x = tonumber(try(function() return city:GetX(); end, nil));
+		local y = tonumber(try(function() return city:GetY(); end, nil));
+		if x ~= nil and y ~= nil then cities[x .. ":" .. y] = true; end
+	end);
+	if next(cities) == nil then return; end
+
+	local visible = function(x, y)
+		return try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) == true;
+	end
+	local scouts = {};
+	pcall(function()
+		for _, otherId in ipairs(PlayerManager.GetAliveIDs() or {}) do
+			if otherId ~= pid then
+				local other = Players[otherId];
+				local barbarian = other ~= nil
+					and try(function() return other:IsBarbarian(); end, false) == true;
+				if barbarian then
+					eachUnit(other, function(unit)
+						if unitTypeName(unit) ~= "UNIT_SCOUT" then return; end
+						local x = tonumber(try(function() return unit:GetX(); end, nil));
+						local y = tonumber(try(function() return unit:GetY(); end, nil));
+						if x ~= nil and y ~= nil and visible(x, y) then
+							scouts[#scouts + 1] = {
+								id = tonumber(try(function() return unit:GetID(); end, nil)), x = x, y = y,
+							};
+						end
+					end);
+				end
+			end
+		end
+	end);
+	if #scouts == 0 then return; end
+
+	-- `syncCappedSettlerEscorts` runs immediately before this floor.  It has
+	-- already inserted or rewritten a guard row only when the host can prove
+	-- that guard reaches the setter's exact leg.  Recheck that proof here for
+	-- explicit rows too, rather than treating an intended guard route as cover.
+	local function guardedLeg(settlerId, fromX, fromY, sentX, sentY)
+		local guarded = false;
+		eachUnit(player, function(candidate)
+			if guarded or not CivvisBoard.isCombatEscort(candidate) then return; end
+			local guardId = tonumber(try(function() return candidate:GetID(); end, nil));
+			local guardX = tonumber(try(function() return candidate:GetX(); end, nil));
+			local guardY = tonumber(try(function() return candidate:GetY(); end, nil));
+			if guardId == nil or guardId == settlerId or guardX ~= fromX or guardY ~= fromY then return; end
+			local ordered = false;
+			for _, row in ipairs(rows) do
+				if tostring(row.kind or "") == "unit" and tonumber(row.subject) == guardId
+						and tostring(row.verb or "") == "MOVE_TO"
+						and tonumber(row.x) == sentX and tonumber(row.y) == sentY then
+					ordered = true;
+					break;
+				end
+			end
+			if ordered and CivvisBoard.reachesThisTurn(candidate, sentX, sentY) then
+				guarded = true;
+			end
+		end);
+		return guarded;
+	end
+
+	local held = {};
+	for _, row in ipairs(rows) do
+		local settlerId = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and settlerId ~= nil and wantX ~= nil and wantY ~= nil and held[settlerId] == nil then
+			local settler = liveUnit(pid, settlerId);
+			if settler ~= nil and unitTypeName(settler) == "UNIT_SETTLER" then
+				local fromX = tonumber(try(function() return settler:GetX(); end, nil));
+				local fromY = tonumber(try(function() return settler:GetY(); end, nil));
+				if fromX ~= nil and fromY ~= nil and cities[fromX .. ":" .. fromY] then
+					local capped = CivvisBoard.capToTurn(settler, wantX, wantY);
+					if capped ~= false then
+						local sentX, sentY = wantX, wantY;
+						if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
+						if CivvisBoard.reachesThisTurn(settler, sentX, sentY)
+								and not guardedLeg(settlerId, fromX, fromY, sentX, sentY) then
+							for _, scout in ipairs(scouts) do
+								local distance = tonumber(try(function()
+									return Map.GetPlotDistance(sentX, sentY, scout.x, scout.y);
+								end, -1)) or -1;
+								if distance == 1 then
+									held[settlerId] = scout;
+									CivvisBoard.stats.settler_scout_capture_held =
+										CivvisBoard.stats.settler_scout_capture_held + 1;
+									emit("settler_scout_capture_hold", {
+										turn = turn, settler = settlerId,
+										from = { fromX, fromY }, want = { wantX, wantY }, sent = { sentX, sentY },
+										scout = scout.id, scout_pos = { scout.x, scout.y },
+									});
+									break;
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	-- A planner may send a follow-up MOVE_TO for the same setter.  Mark each
+	-- one, so the queue cannot turn a held first leg into the same exposed walk.
+	for _, row in ipairs(rows) do
+		if held[tonumber(row.subject)] ~= nil and tostring(row.kind or "") == "unit"
+				and tostring(row.verb or "") == "MOVE_TO" then
+			row._civvis_settler_scout_hold = true;
+		end
+	end
+end;
+
 -- Cancel queued paths on combat units at the start of our turn, and report
 -- how many units entered the turn with one at all.
 CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
@@ -13319,6 +13450,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- applied.  A host-only shadow row is deliberately outside the CIVVIS order
 	-- counts and verdict: it is an actuation safety repair, not a new decision.
 	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
+	CivvisBoard.holdVisibleScoutCaptureLegs(pid, turn, rows);
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -13374,6 +13506,14 @@ local function applyOrders(player, pid, turn, rows)
 		local subject = tonumber(row.subject);
 		local shadow = row._civvis_escort_shadow == true;
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		-- This move is still a CIVVIS decision and must remain in the order
+		-- accounting.  The bridge declined only its exposed host hand-off; emit
+		-- the named refusal instead of silently deleting a planned expansion leg.
+		if row._civvis_settler_scout_hold == true then
+			countRefusal(kind, "settler_scout_capture_hold");
+			ordered[index] = true;
+			return false, "settler_scout_capture_hold";
+		end
 		local fromX, fromY;
 		local watched = (kind == "unit" and verb == "MOVE_TO"
 			and subject ~= nil and wantX ~= nil and wantY ~= nil);
@@ -13618,6 +13758,9 @@ local function applyOrders(player, pid, turn, rows)
 		escort_shadow_applied = CivvisBoard.stats.escort_shadow_applied,
 		escort_shadow_refused = CivvisBoard.stats.escort_shadow_refused,
 		escort_shadow_held = CivvisBoard.stats.escort_shadow_held,
+		-- Settler legs held because their actual host destination was adjacent
+		-- to a visible barbarian scout and no proven guard could share it.
+		settler_scout_capture_held = CivvisBoard.stats.settler_scout_capture_held,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
