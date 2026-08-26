@@ -40,15 +40,17 @@
 //! what ships. A gene the rule removes fails `genes.py check` (and
 //! `no_gene_is_due_for_removal` here) until its code is cut.
 //!
-//! ⭐ ABOVE THE RULE, THE OPERATOR'S PINS (operator, 2026-08-26): the genes
-//! named in `tools/genes.py::OPERATOR_DEFAULT_ON`, generated here as
-//! `OPERATOR_DEFAULT_ON` (read here by `operator_pins`), ship **on** whatever their batch
-//! columns read. `batch_rule` still answers for them — the ledger's
-//! `rules.batch_decisions` records the `off` the columns alone would have
-//! given — so a pin is visible as an override rather than dissolved into the
-//! genome. A pin moves a default only: it cannot hold a gene the rule removes
-//! from the pool, and it cannot turn a gene off. Every default that is not a
-//! pin changes by playing more games.
+//! ⭐ ABOVE THE RULE, THE OPERATOR'S TWO LISTS (operator, 2026-08-26): the
+//! genes named in `tools/genes.py::OPERATOR_DEFAULT_ON`, generated here as
+//! `OPERATOR_DEFAULT_ON` (read by `operator_pins`), ship **on** whatever
+//! their batch columns read; the genes named in `OPERATOR_DEFAULT_OFF`
+//! (read by `operator_holds`) ship **off** the same way. `batch_rule` still
+//! answers for both — the ledger's `rules.batch_decisions` records what the
+//! columns alone would have given — so the operator's selection is visible as
+//! an override rather than dissolved into the genome. A pin or a hold moves a
+//! default only: neither can keep a gene the rule removes from the pool, and
+//! no gene is named by both lists. Every default that is neither pinned nor
+//! held changes by playing more games.
 //!
 //! ⭐ WITHIN A FAMILY (operator, 2026-08-23, restated 2026-08-25): every
 //! version (`<base>-<n>`) is judged by the rule on its own row, and a family
@@ -182,7 +184,8 @@ pub struct GeneVerdict {
 /// rows at the end of `genes.rs`, written by `python3 tools/genes.py write`.
 mod table {
     pub(super) use super::super::genes::{
-        BATCH_COLUMNS, DEPLOYMENT_GENOME, DEPLOYMENT_POLICY, OPERATOR_DEFAULT_ON, VERDICTS as ROWS,
+        BATCH_COLUMNS, DEPLOYMENT_GENOME, DEPLOYMENT_POLICY, OPERATOR_DEFAULT_OFF,
+        OPERATOR_DEFAULT_ON, VERDICTS as ROWS,
     };
 }
 
@@ -267,7 +270,7 @@ pub fn deployment_policy() -> &'static str {
 }
 
 /// Whether a tag is in the deployment genome the batch rule and the
-/// operator's pins decided.
+/// operator's two lists decided.
 pub fn deployment_default_on(tag: &str) -> bool {
     table::DEPLOYMENT_GENOME.contains(&tag)
 }
@@ -283,6 +286,18 @@ pub fn operator_pinned_on(tag: &str) -> bool {
     table::OPERATOR_DEFAULT_ON.contains(&tag)
 }
 
+/// ⭐ The genes the operator named OFF by hand, in generated order — the
+/// mirror of [`operator_pins`]. Each ships off whatever [`batch_rule`] reads
+/// from its [`batch_columns`].
+pub fn operator_holds() -> &'static [&'static str] {
+    table::OPERATOR_DEFAULT_OFF
+}
+
+/// Whether the operator held this tag off above the batch rule.
+pub fn operator_pinned_off(tag: &str) -> bool {
+    table::OPERATOR_DEFAULT_OFF.contains(&tag)
+}
+
 /// The ledger's row for a published tag, if the screens have measured it.
 pub fn ledger_verdict(tag: &str) -> Option<&'static GeneVerdict> {
     table::ROWS.iter().find(|row| row.tag == tag)
@@ -296,8 +311,9 @@ pub fn screenable(tag: &str) -> bool {
 }
 
 /// Whether a gene is on in the deployment genome the batch rule and the
-/// operator's pins decided. A screenable tag neither the rule turns on nor
-/// the operator pins is off, whether or not a batch has priced it. `None` for
+/// operator's two lists decided. A screenable tag the operator holds off, or
+/// that neither the rule turns on nor the operator pins on, is off, whether
+/// or not a batch has priced it. `None` for
 /// a gene the screen cannot price (the Firaxis-only flags), which the bundle
 /// leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
@@ -442,6 +458,17 @@ mod tests {
         for (json_tag, rust_tag) in pins.iter().zip(table::OPERATOR_DEFAULT_ON) {
             assert_eq!(json_tag.as_str(), Some(*rust_tag));
         }
+        let holds = json["rules"]["operator_default_off"]
+            .as_array()
+            .expect("operator_default_off array");
+        assert_eq!(
+            holds.len(),
+            table::OPERATOR_DEFAULT_OFF.len(),
+            "the JSON ledger and the generated table hold different operator holds"
+        );
+        for (json_tag, rust_tag) in holds.iter().zip(table::OPERATOR_DEFAULT_OFF) {
+            assert_eq!(json_tag.as_str(), Some(*rust_tag));
+        }
         let columns = json["rules"]["batch_columns"]
             .as_object()
             .expect("batch_columns object");
@@ -573,16 +600,19 @@ mod tests {
                     "{tag}: only a screenable gene has batch columns"
                 );
                 let call = batch_rule(columns);
-                // ⭐ A pin is on above the rule's answer, which `call` still is.
-                let on = call == BatchRule::On || operator_pinned_on(tag);
+                // ⭐ A pin is on and a hold is off above the rule's answer,
+                // which `call` still is.
+                let on =
+                    (call == BatchRule::On || operator_pinned_on(tag)) && !operator_pinned_off(tag);
                 let family = family_base(tag);
                 if family == *tag {
                     assert_eq!(
                         genome.contains(tag),
                         on,
-                        "{tag}: {columns:?} reads {call:?} (pinned: {}), but the generated genome \
-                         disagrees",
-                        operator_pinned_on(tag)
+                        "{tag}: {columns:?} reads {call:?} (pinned on: {}, held off: {}), but the \
+                         generated genome disagrees",
+                        operator_pinned_on(tag),
+                        operator_pinned_off(tag)
                     );
                 } else if on {
                     rule_on_by_family.entry(family).or_default().push(tag);
@@ -606,6 +636,10 @@ mod tests {
                     batch_columns(tag).map(batch_rule) == Some(BatchRule::On)
                         || operator_pinned_on(tag),
                     "{tag} ships but neither the rule nor an operator pin turns it on"
+                );
+                assert!(
+                    !operator_pinned_off(tag),
+                    "{tag} ships but the operator holds it off"
                 );
                 assert_eq!(
                     ledger_default_on(tag),
@@ -705,6 +739,42 @@ mod tests {
             pins.iter().all(|tag| batch_columns(tag).is_some()),
             "every pin is priced today; a pin over an unpriced gene ships on its name alone"
         );
+    }
+
+    /// ⭐ THE OPERATOR'S HOLDS: each named gene stays out of the genome
+    /// whatever its columns read, the rule's own answer for it is still
+    /// published, and no gene is named by both lists.
+    #[test]
+    fn the_operator_holds_stay_out_of_the_genome() {
+        let holds = operator_holds();
+        let mut sorted = holds.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted, holds, "the operator's holds are sorted and unique");
+        for tag in holds {
+            assert!(
+                screenable(tag),
+                "{tag} is held off but the screen cannot price it; a hold is a screenable \
+                 gene's tag"
+            );
+            assert!(
+                operator_pinned_off(tag),
+                "{tag} is in the hold list but operator_pinned_off says otherwise"
+            );
+            assert!(
+                !operator_pinned_on(tag),
+                "{tag} is named both on and off by the operator; a gene belongs to one list"
+            );
+            assert!(
+                !deployment_default_on(tag),
+                "{tag} is held off but ships anyway"
+            );
+            assert_eq!(
+                ledger_default_on(tag),
+                Some(false),
+                "{tag} is held off but the runtime ledger turns it on"
+            );
+        }
     }
 
     /// ★ The rule's one action the tool cannot take itself: a gene below −10

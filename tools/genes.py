@@ -1586,8 +1586,10 @@ def resolve_family_heads(rule_on: tuple[str, ...], tags: list[str],
         if ships:
             chosen.add(ships)
         if ships and head and ships != head:
+            why = ("the operator holds it off" if head in OPERATOR_DEFAULT_OFF
+                   else "the batch rule turns it off")
             print(f"gene ledger: family {family[0]}'s head by tracked wins is {head} "
-                  f"({wins_by_tag[head]:+.2f} pp) but the batch rule turns it off; "
+                  f"({wins_by_tag[head]:+.2f} pp) but {why}; "
                   f"{ships} ships", file=sys.stderr)
     return tuple(sorted(chosen)), record
 
