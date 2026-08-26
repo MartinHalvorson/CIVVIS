@@ -259,18 +259,6 @@ pub const GENES: &[Gene] = &[
     // siege and captured, two on the capital tile without ever moving, one city
     // until t80, score 140 against a best rival's 416. The tournament controller
     // stays frozen so its recorded ladders remain comparable.
-    // ⚠ And once it CAN want the defenders, something has to send them. Measured
-    // on run `civvis-20260803T005930Z` (Kongo, 154 turns): **116 of 154 turns had
-    // a hostile standing inside or beside our own territory**, including a
-    // full-health Crossbowman parked four tiles from two cities, unmoved and
-    // unengaged, for 21 consecutive turns, while the whole seven-unit army stood
-    // eight tiles away on a war front that had taken nothing in 75 turns. The
-    // cause is `nearest_enemy` ranking targets by distance FROM THE ASKING UNIT,
-    // which for a deployed army is always the enemy's cities. The tournament
-    // controller stays frozen so its recorded ladders remain comparable.
-    // Holding one. Barbarians take 7.0 major cities a game, 65% of
-    // everything a major loses.
-    Gene { tag: "home-defense", field: "home_defense", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_home_defense, disable: AdvancedAi::disable_home_defense },
     // The other half of the same three-defeat measurement: the capital that
     // fell bleeding with an empty hostile list. See garrison_under_fire.
     Gene { tag: "garrison-under-fire", field: "garrison_under_fire", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_garrison_under_fire, disable: AdvancedAi::disable_garrison_under_fire },
@@ -1252,7 +1240,7 @@ pub const GENES: &[Gene] = &[
     // A camp's Scout reports the nearest major settlement it sees and the
     // camp raises its party against that report, so a camp nearer a rival's
     // city than ours raids the rival -- and five deliberate clears (the
-    // adjacent clear, the camp errand, the home-defence threat list, the
+    // adjacent clear, the camp errand, the barbarian-response threat list, the
     // near-home chase, the presence alarm) took it down anyway, each
     // measuring distance from OUR cities only. The envoy scorer and the
     // alliance partner score likewise read a city-state's or a major's place
@@ -1368,7 +1356,6 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "flip-nearby-city-states",
     "frontier-massing-alarm",
     "great-person-housing",
-    "home-defense",
     "lane-space-race",
     "maintenance-aware-deck",
     "missionary-last-charge-explores",
@@ -1448,7 +1435,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("growth-to-settle", [Some(-16), None, None]),
     ("holy-lane-parity", [Some(4), Some(-11), Some(-15)]),
     ("holy-site-where-the-threat-is", [Some(-22), Some(0), Some(7)]),
-    ("home-defense", [Some(21), Some(15), Some(-3)]),
     ("housing-research", [Some(-11), Some(-5), Some(-16)]),
     ("idle-faith-patronage", [Some(17), Some(17), Some(-18)]),
     ("lane-culture-spending", [Some(-7), Some(0), Some(-7)]),
@@ -1543,7 +1529,6 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "great-person-housing", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(38), wins_prior_10k: Some(94), win_diff_pp: Some(1.583612), posterior_pp: Some(84.173107), posterior_se_pp: Some(10.509873), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.499, win_z: 3.464, share_delta_pp: 0.375, share_z: 4.121, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "holy-lane-parity", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(5), wins_prior_10k: Some(19), win_diff_pp: Some(0.623541), posterior_pp: Some(32.349037), posterior_se_pp: Some(19.66726), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.185, win_z: 0.421, share_delta_pp: -0.184, share_z: -1.997, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "holy-site-where-the-threat-is", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(19), wins_prior_10k: Some(-19), win_diff_pp: Some(-0.031224), posterior_pp: Some(-1.100691), posterior_se_pp: Some(19.032158), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.391, win_z: 1.034, share_delta_pp: -0.088, share_z: -1.141, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "home-defense", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(10), wins_prior_10k: Some(-18), win_diff_pp: Some(-0.186727), posterior_pp: Some(-9.870974), posterior_se_pp: Some(8.311435), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.211, win_z: 0.556, share_delta_pp: 0.101, share_z: 1.259, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "housing-research", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-5), wins_prior_10k: Some(-17), win_diff_pp: Some(-0.009393), posterior_pp: Some(0.465459), posterior_se_pp: Some(11.264612), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.107, win_z: -0.282, share_delta_pp: -0.004, share_z: -0.048, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "idle-faith-patronage", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-1), wins_prior_10k: Some(39), win_diff_pp: Some(0.505304), posterior_pp: Some(25.778142), posterior_se_pp: Some(7.31643), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.056, win_z: -0.127, share_delta_pp: 0.148, share_z: 1.622, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-culture-spending", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(9), wins_prior_10k: Some(8), win_diff_pp: Some(0.172513), posterior_pp: Some(8.564803), posterior_se_pp: Some(12.159394), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.187, win_z: 0.486, share_delta_pp: -0.01, share_z: -0.13, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },

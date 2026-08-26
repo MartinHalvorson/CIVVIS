@@ -2378,7 +2378,7 @@ pub struct AdvancedAi {
     /// With this on, the elective branch — both its arms — yields to the
     /// branches after it. The ancient rush, victory denial, an emergency
     /// objective, the timed power-spike plan, "already at war" and every
-    /// home-defence treatment are untouched. Firaxis-only: it prices the
+    /// barbarian-response treatment is untouched. Firaxis-only: it prices the
     /// Settler seat's measured record, and CIVVIS-vs-CIVVIS wars are the ones
     /// the branch was written for. Off for ordinary and frozen controllers.
     pub no_elective_war: bool,
@@ -5387,11 +5387,11 @@ impl AdvancedAi {
         // 2026-08-01 composite. `plan_city_target` stays: the land-aware plan
         // is a different mechanism and is not what was measured here.
         ai.plan_city_target = true;
-        // ⚠ The remaining war flags — `siege_muster`, `home_defense`, and
+        // ⚠ The remaining war flags — `siege_muster` and
         // `unit_objective_memory` — were REMOVED on
         // 2026-08-14. "Make sure the larger empire can actually hold what it
         // founds" was the justification for turning them on here; withholding
-        // all three measured +32/+34 over two disjoint 400-map deployment runs
+        // the bundle measured +32/+34 over two disjoint 400-map deployment runs
         // with all six victories (seeds 10800000/11000000, sign p=0.0039 and
         // p=0.0019, e-process crossed at map 134), and the promotion matrix at
         // 600 pairs on the corrected gate returned **PASS**: deployment-online
@@ -5405,14 +5405,11 @@ impl AdvancedAi {
         // on the lanes that win. Third instance of the largest gains coming
         // from removing work (`city_target_floor` −41, this bundle).
         //
-        // The live bridge still enables `home-defense` as a registered
-        // treatment for real-game play; the live delta from this removal is
-        // the unit-tactics pair, which measured null on its own (+11,
-        // p=0.3185, seed 11500000). `advanced_war_half` in `src/elo.rs`
-        // re-adds the survivors as a treatment so the axis stays measurable.
+        // `advanced_war_half` in `src/elo.rs` re-adds the surviving
+        // unit-tactics treatment so the axis stays measurable.
         // ⚠ `siege-muster` stood here too until #2235 removed it from the
         // code; `advanced_war_half` no longer carries it and neither does the
-        // bridge, so the war half is now two flags, not three.
+        // bridge, so the war half is now one flag.
         //
         // The tribal-village pickup is an economy prize (techs, boosts, builders,
         // envoys, era score), not war machinery, and an unclaimed one is
@@ -29844,20 +29841,17 @@ impl AdvancedAi {
         //
         // The filter above deliberately keeps the barbarian seat out of the
         // campaign machinery — a camp is not a war objective. But this same
-        // list feeds the attack scan, `home_defense_objective`,
+        // list feeds the attack scan, `barbarian_response_objective`,
         // `nearest_enemy` and the tactical step, so excluding barbarians here
         // left every one of those layers blind to raiders: with no major war
         // on, `enemies` was empty and each soldier took the peacetime path
         // while barbarians pillaged home districts unanswered (observed on
         // live run `civvis-20260807T172510Z`, turns 40+, six idle military
-        // units). The ordinary `home_defense` flag is not the right switch for
-        // this routine: barbarian defense must remain active during peace.
+        // units). Barbarian response must remain active during peace.
         //
         // Admit the barbarian seat exactly when it has a presence within
         // `HOME_THREAT_RADIUS` of one of our cities. `nearest_enemy`'s own
-        // near-home and exchange-score gates keep the chase bounded. Normal
-        // major-war home defense remains flag-gated; the barbarian response
-        // below is deliberately independent of that arm.
+        // near-home and exchange-score gates keep the chase bounded.
         // No `alive` test on the seat: a barbarian player holds no cities, so
         // on several rosters it reads `alive = false` while its raiders are
         // very much on the board. The presence check is the liveness test.
@@ -29946,7 +29940,7 @@ impl AdvancedAi {
             // the Basic fallback, whose wander produces the incidental
             // clears the barbarian-ledger baseline counted. A couple of
             // claimed hunters convert nearby camps into gold, era score,
-            // and boost progress instead. Deliberately NOT the home-defense
+            // and boost progress instead. Deliberately NOT the barbarian-response
             // path (that machinery prices a camp as a threat of strength
             // 0.0 and lost its native slot for hovering beside raiders):
             // the errand prices a camp as income, behind the same exchange
@@ -30437,17 +30431,12 @@ impl AdvancedAi {
             }
         }
 
-        // Holding a threatened city outranks the campaign march, and the
-        // homeland gets first claim on this unit before the offensive does.
-        // This mirrors the Basic military step's precedence exactly — that
-        // path had both calls and this one had neither, so a production seat
-        // (which routes every military unit through here) watched raiders
-        // pillage its home districts while its army staged on a border it was
-        // not even at war across. `garrison_step` and `home_defense_objective`
-        // both self-gate on `home_defense` and budget their responders. Normal
-        // major-war home defense keeps that measured shape, while the dedicated
-        // barbarian response below is independent of the flag. A responder the
-        // homeland claims marches: the
+        // Holding a city against a nearby barbarian outranks the campaign march.
+        // A production seat (which routes every military unit through here)
+        // otherwise watched raiders pillage its home districts while its army
+        // staged on a border it was not even at war across. The dedicated
+        // response budgets its responders, and a responder it claims marches:
+        // the
         // wartime mover below holds a unit outside the enemy's
         // move-and-attack reach, right for a front, wrong for a raider, which
         // it hovers two tiles from forever while the districts burn. Close
@@ -30462,11 +30451,7 @@ impl AdvancedAi {
         if strategic_barbarian_response {
             if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
                 let barb_only = [barb];
-                let garrisoned = if self.base.home_defense {
-                    self.base.garrison_step(g, pid, uid, &barb_only)
-                } else {
-                    self.base.barbarian_garrison_step(g, pid, uid, &barb_only)
-                };
+                let garrisoned = self.base.barbarian_garrison_step(g, pid, uid, &barb_only);
                 if garrisoned {
                     return true;
                 }
@@ -30477,12 +30462,9 @@ impl AdvancedAi {
                 if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
                     return true;
                 }
-                let threat = if self.base.home_defense {
-                    self.base.home_defense_objective(g, pid, uid, &barb_only)
-                } else {
-                    self.base
-                        .barbarian_home_defense_objective(g, pid, uid, &barb_only)
-                };
+                let threat = self
+                    .base
+                    .barbarian_response_objective(g, pid, uid, &barb_only);
                 if let Some(threat) = threat {
                     if g.wdist(unit.pos, threat) > radius
                         && self.base.step_toward(g, pid, uid, threat)

@@ -51,7 +51,7 @@
 //!    [`CONTESTED_LAND_FRONTIER_RADIUS`] of a met major's city is a frontier
 //!    city: its first Walls are worth [`CONTESTED_LAND_FRONTIER_WALLS`] more
 //!    in `production_value`, and in peacetime it wants a garrison when no
-//!    unit stands on it (`BasicAi::garrison_assignments_inner`, below any
+//!    unit stands on it (`BasicAi::garrison_assignments`, below any
 //!    live pressure and nearest-to-the-neighbour first). Neither needs the
 //!    posture: a frontier city outmatched needs its walls most.
 //! 6. **When the contested land runs out**, no candidate carries a credit
