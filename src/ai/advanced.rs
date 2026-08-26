@@ -4289,7 +4289,7 @@ pub struct AdvancedAi {
     /// 2.8 -> 10.7 beakers by turn 62 and finished the game at 12.3, having
     /// gained 1.6 in 188 turns. The second city never built a Campus at all.
     ///
-    /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
+    /// Off in [`AdvancedAi::legacy`] and in the test-only `pre_policy_envoy` so an
     /// evaluator control can measure it; on in the promoted production agent.
     pub research_economy: bool,
     /// Let the research chooser aim at the tech that raises the housing ceiling.
@@ -5631,6 +5631,12 @@ impl AdvancedAi {
     /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
     /// controls. It intentionally retains the Legacy deck and leaves both
     /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
+    ///
+    /// ⚠ Test-only, and gated so it says so. Its three callers are all in
+    /// `advanced/tests.rs`, so a non-test build compiled it into a standing
+    /// `dead_code` warning — one more line of noise for every reader to learn
+    /// to scroll past, in a build whose other warnings are worth reading.
+    #[cfg(test)]
     pub(crate) fn pre_policy_envoy() -> AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
     }

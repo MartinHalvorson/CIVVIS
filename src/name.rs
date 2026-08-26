@@ -117,7 +117,7 @@ impl Name {
     ///
     /// This takes a lock and hashes, so it belongs at the edges — loading a
     /// ruleset, reading a save, parsing a command line. Hot code should carry
-    /// a `Name` it was given, or use [`name!`](crate::name) for a literal,
+    /// a `Name` it was given, or use [`name!`](macro@crate::name) for a literal,
     /// which interns once and then costs an atomic load.
     pub fn new(text: &str) -> Name {
         if let Some(id) = registry()

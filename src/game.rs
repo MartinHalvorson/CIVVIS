@@ -586,7 +586,7 @@ pub struct ExoplanetTarget {
     /// The trip, in light-years.
     pub light_years: f64,
     /// How habitable it is thought to be. This is what the expedition aims
-    /// for, because the distance costs nothing (see [`Game::exoplanet_pace`]).
+    /// for, because the distance costs nothing (see [`Game::advance_exoplanet`]).
     pub grade: u8,
 }
 
