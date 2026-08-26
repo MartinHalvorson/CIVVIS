@@ -564,3 +564,42 @@ fn the_controller_files_a_column_through_a_defile() {
     );
     assert_eq!(g.units[&front].pos, line[2]);
 }
+
+// ----------------------------------------------------------------------- T14
+
+/// The affordance a browser's "go there" and a controller's march both need,
+/// asked directly: where does a unit walk when the way forward is blocked by
+/// nothing but its own column?
+///
+/// The negative half is the load-bearing one. This must stay silent on an
+/// ordinary march, or it stops being a pass-through and becomes a second,
+/// quieter mover competing with the router.
+#[test]
+fn the_pass_through_destination_answers_only_when_our_own_are_in_the_way() {
+    let (mut g, start, _) = plain_board(6601);
+    let (middle, beyond) = straight_line(&g, start);
+    let mover = g.spawn_unit("warrior", 0, start);
+    g.begin_turn(0);
+
+    assert_eq!(
+        g.pass_through_destination(mover, beyond, 0),
+        None,
+        "open ground is the router's business, not this one's"
+    );
+
+    let friend = g.spawn_unit("warrior", 0, middle);
+    assert_eq!(
+        g.pass_through_destination(mover, beyond, 0),
+        Some(beyond),
+        "with one of ours in the way the answer is the tile past it"
+    );
+
+    // A rival's unit is not a crossing, so there is nothing to answer.
+    g.remove_unit(friend);
+    g.spawn_unit("warrior", 1, middle);
+    assert_eq!(
+        g.pass_through_destination(mover, beyond, 0),
+        None,
+        "a foreign unit blocks the step itself; walking through it is not on offer"
+    );
+}
