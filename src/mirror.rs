@@ -15292,17 +15292,20 @@ fn apply_host_maintenance(game: &mut crate::game::Game, state: &StateSnapshot) {
     }
 }
 
+/// One seat 0 Spy as `seat_live_spies` reads it off the mirrored unit.
+struct LiveSpySeat {
+    id: u32,
+    level: i64,
+    promotions: std::collections::BTreeSet<String>,
+    city: Option<u32>,
+    mission: Option<crate::game::SpyMission>,
+    ready_turn: u32,
+}
+
 fn seat_live_spies(game: &mut crate::game::Game) {
     game.spies.retain(|_, spy| spy.owner != 0);
     let turn = game.turn;
-    let live: Vec<(
-        u32,
-        i64,
-        std::collections::BTreeSet<String>,
-        Option<u32>,
-        Option<crate::game::SpyMission>,
-        u32,
-    )> = game
+    let live: Vec<LiveSpySeat> = game
         .units
         .values()
         .filter(|unit| unit.owner == 0 && unit.kind == "spy")
@@ -15342,20 +15345,29 @@ fn seat_live_spies(game: &mut crate::game::Game) {
                 (Some(_), None) => (None, ends),
                 (None, _) => (None, 0),
             };
-            (
-                unit.id,
-                (unit.level - 1).max(0) as i64,
-                unit.promotions
+            LiveSpySeat {
+                id: unit.id,
+                level: (unit.level - 1).max(0) as i64,
+                promotions: unit
+                    .promotions
                     .iter()
                     .map(|name| name.to_string())
                     .collect(),
                 city,
                 mission,
                 ready_turn,
-            )
+            }
         })
         .collect();
-    for (id, level, promotions, city, mission, ready_turn) in live {
+    for LiveSpySeat {
+        id,
+        level,
+        promotions,
+        city,
+        mission,
+        ready_turn,
+    } in live
+    {
         let spy = game.spies.entry(id).or_insert_with(|| crate::game::Spy {
             id,
             owner: 0,
