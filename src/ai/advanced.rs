@@ -254,10 +254,10 @@ const FOREIGN_BORDER_RADIUS: i32 = 3;
 const FOREIGN_BORDER_TILE_PENALTY: f64 = 4.0;
 /// The most the border term may take off a site.
 const FOREIGN_BORDER_PENALTY_CAP: f64 = 40.0;
-/// The fourth ring around a visible city-state City Center. It is the first
-/// legally settleable ring, but still leaves a new, undefended city exposed if
-/// that city-state later follows a hostile Suzerain into war.
-const CITY_STATE_SETTLEMENT_BUFFER: i32 = 4;
+/// The sixth ring around a visible city-state City Center. A city-state's
+/// mobile siege stack can still reach and take an un-walled frontier city from
+/// the fifth and sixth rings after a hostile Suzerain calls it to war.
+const CITY_STATE_SETTLEMENT_BUFFER: i32 = 6;
 
 /// How much of the game's progress the live race adds to its wonder bonus: the
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
@@ -4335,6 +4335,18 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// A boost already in hand is worth the turns of research it saves, not a
+    /// flat credit. Opt-in gene `boost-first-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_first_research: bool,
+    /// A node the empire would finish before the eureka it is still owed can
+    /// land waits its turn. Opt-in gene `boost-wait-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_wait_research: bool,
+    /// A node is worth the boosts it makes chaseable: the quarry Masonry wants
+    /// needs Mining first. Opt-in gene `boost-unlock-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_unlock_research: bool,
     /// The Gold purchase scorer prices a build at its card-boosted rate, so
     /// items a slotted card discounts lose purchase priority to items no card
     /// touches. Opt-in gene `buy-what-cards-cannot-boost`; see
@@ -5230,6 +5242,11 @@ mod civilian_safety;
 /// `advanced/deity_habits.rs`.
 mod deity_habits;
 
+/// Boost-aware research: research what is already boosted, wait out an
+/// eureka a short node would outrun, and buy the permission the other
+/// triggers need. Three opt-in genes; see `advanced/boost_research.rs`.
+mod boost_research;
+
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -5967,6 +5984,9 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            boost_first_research: false,
+            boost_wait_research: false,
+            boost_unlock_research: false,
             buy_what_cards_cannot_boost: false,
             build_what_cards_boost: false,
             amenity_project_preemption_2: false,
@@ -12671,11 +12691,12 @@ impl AdvancedAi {
 
     fn tech_value(&self, g: &Game, pid: usize, tech: &str, strategy: GrandStrategy) -> f64 {
         let spec = &g.rules.techs[tech];
-        let mut value = if g.players[pid].boosted_techs.contains(&Name::new(tech)) {
-            28.0
-        } else {
-            0.0
-        };
+        // The whole opinion about boosts: the credit for one in hand, the wait
+        // for one nearly earned, and the credit for the boosts this node makes
+        // chaseable. With the three boost genes off this is the flat 28 for a
+        // boost in hand and nothing otherwise, exactly as before. See
+        // `advanced/boost_research.rs`.
+        let mut value = self.boost_research_value(g, pid, tech, true);
         for (name, unit) in &g.rules.units {
             if unit.tech.as_deref() == Some(tech)
                 && unit
@@ -12890,16 +12911,18 @@ impl AdvancedAi {
         // Discount by opportunity cost so a flashy late-era unlock does not
         // stall several cheaper advances. Square root still lets a genuinely
         // transformative breakthrough win the comparison.
-        (value + 35.0) / spec.cost.max(10.0).sqrt()
+        //
+        // A boost in hand is a discount on THIS divisor, not a term above it:
+        // the node costs `1 - frac` of its printed price, so the score it buys
+        // is this one times `1 / (1 - frac).sqrt()`. One with
+        // `boost_first_research` off. See `advanced/boost_research.rs`.
+        (value + 35.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, tech, true)
     }
 
     fn civic_value(&self, g: &Game, pid: usize, civic: &str, strategy: GrandStrategy) -> f64 {
         let spec = &g.rules.civics[civic];
-        let mut value = if g.players[pid].boosted_civics.contains(&Name::new(civic)) {
-            28.0
-        } else {
-            0.0
-        };
+        // The civic half of the same term; see `advanced/boost_research.rs`.
+        let mut value = self.boost_research_value(g, pid, civic, false);
         for building in g
             .rules
             .buildings
@@ -12962,7 +12985,8 @@ impl AdvancedAi {
             "drama_poetry" => 55.0,
             _ => 0.0,
         };
-        (value + 32.0) / spec.cost.max(10.0).sqrt()
+        // The civic half of the same discount; see `advanced/boost_research.rs`.
+        (value + 32.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, civic, false)
     }
 
     fn incoming_deal_value(
@@ -23433,9 +23457,10 @@ impl AdvancedAi {
         (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
-    /// The one extra legal founding ring beside a visible city-state is not a
+    /// The first six legal founding rings beside a visible city-state are not a
     /// safe frontier. A rival Suzerain can turn the city-state hostile without
-    /// warning, and an un-walled pop-one city has no time to prepare a defence.
+    /// warning, then use the city-state's mobile siege stack to take an
+    /// un-walled colony before it can prepare a defence.
     ///
     /// This is part of the standard `settlement_safety` policy rather than an
     /// opt-in defence gene: it prevents the exposed city from being founded,

@@ -186,6 +186,9 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `amenity-project-preemption-2` | off (unmeasured) | An amenity crisis repair is bought with Gold when the treasury covers it, so the Science plan's repeatable project keeps its queue; only a district or an unaffordable building still pauses the project. | 1 |
+| `boost-first-research` | off (unmeasured) | Scale a node whose boost is already in hand by what the discount buys under the value function's own cost divisor. | 1 |
+| `boost-unlock-research` | off (unmeasured) | Credit a technology or civic with the boosts it makes chaseable by unlocking what their triggers need. | 1 |
+| `boost-wait-research` | off (unmeasured) | Take a node the empire would finish before its own eureka lands after that eureka, not before it. | 1 |
 | `build-what-cards-boost` | off (unmeasured) | Lean the city production governor toward items the slotted policy deck makes cheap, by half the card's bonus. | 1 |
 | `builder-supply-floor` | off (unmeasured) | Keep one Builder per city while there is still land to improve, priced where it can win the queue. | 1 |
 | `buy-what-cards-cannot-boost` | off (unmeasured) | Price a Gold purchase at the build's card-boosted rate, so items a slotted card discounts lose purchase priority to items no card touches. | 1 |
