@@ -35276,3 +35276,120 @@ fn a_war_that_takes_nothing_and_cannot_be_paid_for_sues_for_peace() {
         "a paid-for campaign that is still landing blows is not interrupted"
     );
 }
+
+/// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
+/// Congress vote count reads `plan.strategy`, the posture of the turn the
+/// session happens to sit on, not `victory_target`, the lane the seat is
+/// actually playing. Live King seat `civvis-20260826T112920Z` was assigned
+/// Diplomacy for 248 turns, held that posture on 66 of them, and cast one
+/// vote on thirteen of twenty-five ballots while banking Favor it never
+/// spent. See `AdvancedAi::lane_votes_its_favor`.
+#[test]
+fn the_assigned_diplomatic_lane_votes_the_favor_it_is_holding() {
+    let mut game = Game::new_full(2, 28, 18, 91_301, 1_000, 0, false);
+    game.current = 0;
+    game.players[0].diplomatic_favor = 220.0;
+    let affordable = game.congress_affordable_votes(0);
+    assert!(
+        affordable > 1,
+        "the fixture must hold enough Favor for the question to mean something: {affordable}"
+    );
+
+    // The posture the live seat was in for most of its Congress sessions.
+    let mut shipped = AdvancedAi::new();
+    shipped.victory_target = Some(VictoryTarget::Diplomacy);
+    assert_eq!(
+        shipped.congress_ballot_size(&game, 0, GrandStrategy::Recovery),
+        1,
+        "shipped: a Recovery posture casts one vote however much Favor is banked"
+    );
+    assert_eq!(
+        shipped.congress_ballot_size(&game, 0, GrandStrategy::Diplomacy),
+        affordable,
+        "shipped: only a Diplomacy posture spends the Favor"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Diplomacy);
+    ai.enable_lane_votes_its_favor();
+    assert_eq!(
+        ai.congress_ballot_size(&game, 0, GrandStrategy::Recovery),
+        affordable,
+        "the assigned lane votes its Favor whatever this turn's posture is"
+    );
+
+    // A seat that was never assigned the lane is untouched: the gene reads
+    // the assignment, not the bank balance.
+    let mut science = AdvancedAi::new();
+    science.victory_target = Some(VictoryTarget::Science);
+    science.enable_lane_votes_its_favor();
+    assert_eq!(
+        science.congress_ballot_size(&game, 0, GrandStrategy::Recovery),
+        1,
+        "another lane's seat keeps the shipped ballot"
+    );
+
+    // Off, it is an exact no-op.
+    ai.disable_lane_votes_its_favor();
+    assert_eq!(
+        ai.congress_ballot_size(&game, 0, GrandStrategy::Recovery),
+        1
+    );
+}
+
+/// ★★★★ THE RACE IS OVER AND THE SEAT IS STILL PAYING THE ENTRY FEE. Once
+/// `religions_founded()` reaches `max_religions()` with none of them ours, no
+/// prophet this empire ever recruits can found anything. Live King seat
+/// `civvis-20260826T112920Z`: four religions on a Small map capped at four,
+/// none of them Rome's, and the seat finished holding a Holy Site, 228
+/// Prophet points, two Missionaries and 6,329 unspendable Faith. See
+/// `AdvancedAi::religion_race_is_closed`.
+#[test]
+fn a_religion_race_the_world_has_closed_stops_charging_the_empire() {
+    // The live shape: six majors on a map whose cap the rivals fill.
+    let mut game = Game::new_full(6, 74, 46, 91_302, 250, 0, false);
+    game.current = 0;
+    let cap = game.max_religions();
+    assert!(
+        cap > 0 && cap < game.players.len(),
+        "the fixture needs a cap the rivals can fill without us: {cap}"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Diplomacy);
+    ai.enable_religion_race_is_closed();
+    assert!(
+        !ai.religion_race_closed_for(&game, 0),
+        "an open race is not closed"
+    );
+
+    // `religions_founded` counts the players holding one, so filling the cap
+    // means the rivals took every seat at the table.
+    for rival in 1..=cap {
+        game.players[rival].religion = Some(format!("faith_{rival}"));
+    }
+    assert!(
+        game.religions_founded() >= cap,
+        "the cap is reached: {} of {cap}",
+        game.religions_founded()
+    );
+    assert!(
+        ai.religion_race_closed_for(&game, 0),
+        "every religion founded and none of them ours is a closed race"
+    );
+
+    // An empire that DID found one is untouched — it has a prize to defend.
+    game.players[0].religion = Some("faith_ours".to_string());
+    assert!(
+        !ai.religion_race_closed_for(&game, 0),
+        "our own religion is not a closed race"
+    );
+    game.players[0].religion = None;
+
+    // Off, it is an exact no-op.
+    ai.disable_religion_race_is_closed();
+    assert!(
+        !ai.religion_race_closed_for(&game, 0),
+        "off, the race is never read as closed"
+    );
+}
