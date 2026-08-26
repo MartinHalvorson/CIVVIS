@@ -132,7 +132,7 @@ class Merging(unittest.TestCase):
              for key in ("helps", "hurts", "unresolved", "default_on")},
             {"helps": 2, "hurts": 2, "unresolved": 0, "default_on": 0},
         )
-        self.assertEqual(ledger["rules"]["deployment_policy"], "batch-rule")
+        self.assertEqual(ledger["rules"]["deployment_policy"], "batch-rule+operator-pins")
         self.assertEqual(ledger["rules"]["deployment_genome"], [])
 
     def test_a_later_source_overrides_an_earlier_one_per_gene(self):
@@ -409,7 +409,7 @@ class TheBatchRule(unittest.TestCase):
         self.assertEqual(off["genes"][0]["wins_last_10k"], 100)
         self.assertEqual(on["counts"]["default_on"], 1)
         self.assertEqual(off["counts"]["default_on"], 0)
-        self.assertEqual(on["rules"]["deployment_policy"], "batch-rule")
+        self.assertEqual(on["rules"]["deployment_policy"], "batch-rule+operator-pins")
 
     def test_a_batch_that_did_not_price_the_gene_is_a_dash_not_a_zero(self):
         # Newest first: the gene is new, priced by the last batch only.
@@ -467,8 +467,123 @@ class TheBatchRule(unittest.TestCase):
             ledger = gene_ledger.build_ledger([], reporting_batches=files)
         self.assertNotIn("no-such-gene", ledger["rules"]["batch_columns"])
         self.assertEqual(ledger["rules"]["batch_columns"]["wide-map-capacity"], [50, None, None])
-        self.assertEqual(ledger["rules"]["deployment_genome"], ["wide-map-capacity"])
+        self.assertEqual(
+            ledger["rules"]["deployment_genome"],
+            sorted({"wide-map-capacity", *gene_ledger.OPERATOR_DEFAULT_ON}),
+            "the one batch row the registry still has, plus the operator's pins",
+        )
         self.assertEqual(ledger["genes"], [], "no source: no verdict rows, yet a default")
+
+
+class TheOperatorPins(unittest.TestCase):
+    """⭐ THE OPERATOR'S PINS (2026-08-26): nine genes named on by hand, above
+    the batch rule. The pin moves the default and nothing else — the rule's own
+    answer stays published, a pin cannot rescue a gene the rule removes from
+    the pool, and a pin naming a gene the registry does not screen is a hard
+    error rather than a silent no-op."""
+
+    def build(self, batches: list[int | None], pins: tuple[str, ...]):
+        """A ledger for one gene `g` from its batch readings, newest first,
+        built with `pins` standing in for `OPERATOR_DEFAULT_ON`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            files = batch_files(tmp, [
+                batch([] if wins is None else [{"tag": "g", "wins": wins}])
+                for wins in batches
+            ])
+            with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_ON", pins):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    return gene_ledger.build_ledger(
+                        [], filter_known=False, reporting_batches=files)
+
+    def test_a_pinned_gene_ships_and_the_rule_still_says_off(self):
+        # The nine's own shape: two positive batches, a negative third, a mean
+        # no higher than 7 — clause 4 reads off.
+        columns = [8, 5, -12]
+        self.assertEqual(gene_ledger.batch_rule(columns), "off")
+        off = self.build(columns, pins=())
+        self.assertEqual(off["rules"]["deployment_genome"], [])
+        self.assertEqual(off["rules"]["operator_default_on"], [])
+        on = self.build(columns, pins=("g",))
+        self.assertEqual(on["rules"]["deployment_genome"], ["g"])
+        self.assertEqual(on["rules"]["operator_default_on"], ["g"])
+        self.assertEqual(on["rules"]["batch_decisions"], {"g": "off"},
+                         "the pin is published as an override, not as agreement")
+        self.assertEqual(on["counts"]["default_on"], 1)
+        self.assertEqual(on["rules"]["deployment_policy"], "batch-rule+operator-pins")
+
+    def test_a_pin_cannot_hold_a_gene_the_rule_removes_from_the_pool(self):
+        self.assertEqual(gene_ledger.batch_rule([-11, -40, -12]), "remove")
+        with self.assertRaises(SystemExit) as caught:
+            self.build([-11, -40, -12], pins=("g",))
+        self.assertIn("a pin cannot keep a gene the rule cuts", str(caught.exception))
+
+    def test_a_pin_the_registry_does_not_screen_is_a_hard_error(self):
+        allowed = {"kept"}
+        self.assertEqual(
+            gene_ledger.operator_pins(allowed, {"kept": "off"}, strict=False), ())
+        with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_ON", ("no-such-gene",)):
+            with self.assertRaises(SystemExit) as caught:
+                gene_ledger.operator_pins(allowed, {}, strict=True)
+        self.assertIn("no-such-gene", str(caught.exception))
+        with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_ON", ("kept",)):
+            self.assertEqual(
+                gene_ledger.operator_pins(allowed, {"kept": "off"}, strict=True), ("kept",))
+
+    def test_the_checked_in_pins_are_the_nine_the_operator_named(self):
+        ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        rules = ledger["rules"]
+        pins = rules["operator_default_on"]
+        self.assertEqual(pins, sorted(gene_ledger.OPERATOR_DEFAULT_ON))
+        self.assertEqual(len(pins), 9)
+        screenable = set(gene_ledger.screenable_tags())
+        genome = set(rules["deployment_genome"])
+        for tag in pins:
+            self.assertIn(tag, screenable, tag)
+            self.assertIn(tag, genome, f"{tag} is pinned on but does not ship")
+            self.assertNotEqual(rules["batch_decisions"].get(tag), "remove", tag)
+        # Today every pin is a real override; a later batch may agree with one.
+        self.assertEqual(
+            [tag for tag in pins if rules["batch_decisions"].get(tag) == "off"], pins)
+
+
+class RetainedReportingDefaults(unittest.TestCase):
+    """A completed report batch refreshes evidence without silently selecting
+    a new live genome. The old batch rule remains recorded beside it, so an
+    explicit later selection decision has the same evidence available."""
+
+    def test_a_reporting_only_rotation_keeps_the_selected_on_off_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.json"
+            source.write_text(json.dumps(analysis([{"tag": "g"}, {"tag": "h"}])))
+            reports = batch_files(tmp, [
+                batch([{"tag": "g", "wins": -20}, {"tag": "h", "wins": 20}]),
+                batch([{"tag": "g", "wins": -21}, {"tag": "h", "wins": 21}]),
+                batch([{"tag": "g", "wins": -22}, {"tag": "h", "wins": 22}]),
+            ])
+            # Synthetic tags stand in for real registry genes, so the checked-in
+            # operator pins must not leak into this fixture.
+            with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_ON", ()):
+                with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    ledger = gene_ledger.build_ledger(
+                        [source], filter_known=False, reporting_batches=reports,
+                        deployment_policy=gene_ledger.RETAINED_DEPLOYMENT_POLICY,
+                        retained_deployment_genome=("g",))
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(ledger["rules"]["deployment_policy"],
+                         gene_ledger.RETAINED_DEPLOYMENT_POLICY)
+        self.assertEqual(ledger["rules"]["deployment_genome"], ["g"])
+        self.assertEqual(ledger["rules"]["batch_decisions"], {"g": "remove", "h": "on"})
+        self.assertEqual(ledger["rules"]["removals_due"], [])
+        by_tag = {row["tag"]: row for row in ledger["genes"]}
+        self.assertTrue(by_tag["g"]["default_on"], "retained on stays on")
+        self.assertFalse(by_tag["h"]["default_on"], "new positive evidence stays evidence")
+
+    def test_a_retained_family_cannot_ship_two_versions(self):
+        with self.assertRaises(SystemExit) as caught:
+            gene_ledger.retain_deployment_genome(
+                ("g", "g-2"), allowed={"g", "g-2"}, family_tags=["g", "g-2"],
+                wins_by_tag={}, pinned=())
+        self.assertIn("multiple versions", str(caught.exception))
 
 
 class TheDifferenceEvidence(unittest.TestCase):
@@ -678,7 +793,7 @@ class TheDeploymentGenomeIsTheBatchRulesAnswer(unittest.TestCase):
     def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
-        self.assertEqual(rules["deployment_policy"], "batch-rule")
+        self.assertEqual(rules["deployment_policy"], "batch-rule+operator-pins")
         self.assertEqual(rules["removals_due"], [])
         tags = gene_ledger.screenable_tags()
         base_of = {tag: family[0] for family in gene_ledger.families_of(tags) for tag in family}
@@ -692,15 +807,20 @@ class TheDeploymentGenomeIsTheBatchRulesAnswer(unittest.TestCase):
             self.assertEqual(len(columns), gene_ledger.BATCH_RULE_WINDOW)
             self.assertEqual(rules["batch_decisions"][tag], gene_ledger.batch_rule(columns), tag)
         self.assertEqual(set(rules["batch_columns"]), set(rules["batch_decisions"]))
+        pins = set(rules["operator_default_on"])
+        # ⭐ A pin is on above the rule's answer, which `batch_decisions` keeps.
         rule_on = {tag for tag, call in rules["batch_decisions"].items() if call == "on"}
+        default_on = rule_on | pins
         for tag in genome:
-            self.assertIn(tag, rule_on, f"{tag} ships but the rule does not turn it on")
-        for tag in rule_on:
+            self.assertIn(tag, default_on,
+                          f"{tag} ships but neither the rule nor a pin turns it on")
+        for tag in default_on:
             if tag not in base_of:
-                self.assertIn(tag, genome, f"{tag}: the rule turns it on but it does not ship")
+                self.assertIn(tag, genome,
+                              f"{tag}: the rule or a pin turns it on but it does not ship")
         for family in gene_ledger.families_of(tags):
             shipped = [tag for tag in family if tag in genome]
-            on = [tag for tag in family if tag in rule_on]
+            on = [tag for tag in family if tag in default_on]
             self.assertEqual(len(shipped), 1 if on else 0, family)
             self.assertEqual(rules["family_heads"][family[0]]["rule_on"], on)
             self.assertEqual(rules["family_heads"][family[0]]["ships"], shipped[0] if shipped else None)
@@ -727,7 +847,7 @@ class TheDeploymentGenomeIsTheBatchRulesAnswer(unittest.TestCase):
                          current["rules"]["deployment_genome"])
         self.assertEqual(rebuilt["rules"]["batch_columns"], current["rules"]["batch_columns"])
         rust = gene_ledger.render_rust(rebuilt)
-        self.assertIn('pub(super) const DEPLOYMENT_POLICY: &str = "batch-rule";', rust)
+        self.assertIn('pub(super) const DEPLOYMENT_POLICY: &str = "batch-rule+operator-pins";', rust)
         self.assertIn("pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[", rust)
         for tag, columns in current["rules"]["batch_columns"].items():
             cells = ", ".join("None" if c is None else f"Some({c})" for c in columns)
@@ -1210,16 +1330,22 @@ class GeneratedFiles(unittest.TestCase):
                          "docs/GENE_RANKING_EVIDENCE.md is stale: run tools/genes.py write")
 
     def test_the_reporting_batches_decide_the_selection_and_the_sources_do_not(self):
-        """The sources alone decide nothing: without a batch every gene is off."""
+        """The sources alone decide nothing: without a batch only the operator's
+        pins are on, because a pin does not read a batch column at all."""
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
         sources_only = gene_ledger.build_ledger(
             gene_ledger.sources_from_ledger(current),
             build_notes=gene_ledger.notes_from_ledger(current),
         )
         with_reporting = gene_ledger.rebuild_from_ledger(current)
-        self.assertEqual(sources_only["rules"]["deployment_genome"], [])
+        pins = sorted(gene_ledger.OPERATOR_DEFAULT_ON)
+        self.assertEqual(sources_only["rules"]["deployment_genome"], pins)
         self.assertEqual(sources_only["rules"]["batch_columns"], {})
-        self.assertFalse(any(g["default_on"] for g in sources_only["genes"]))
+        self.assertEqual(
+            sorted(g["tag"] for g in sources_only["genes"] if g["default_on"]),
+            [tag for tag in pins if tag in {g["tag"] for g in sources_only["genes"]}],
+            "no batch: the sources turn nothing on and only the pins are left",
+        )
         self.assertTrue(any(g["default_on"] for g in with_reporting["genes"]))
         self.assertEqual(
             [(g["tag"], g["verdict"], g["wins_last_10k"]) for g in sources_only["genes"]],
@@ -1959,7 +2085,7 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         """★ The hard constraint of this change. The ranking's *Default*
         column is the batch rule's answer, gene for gene."""
         recorded = {g["tag"]: g for g in self.ledger["genes"]}
-        self.assertEqual(self.ledger["rules"]["deployment_policy"], "batch-rule")
+        self.assertEqual(self.ledger["rules"]["deployment_policy"], "batch-rule+operator-pins")
         selected = set(self.ledger["rules"]["deployment_genome"])
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")

@@ -254,6 +254,10 @@ const FOREIGN_BORDER_RADIUS: i32 = 3;
 const FOREIGN_BORDER_TILE_PENALTY: f64 = 4.0;
 /// The most the border term may take off a site.
 const FOREIGN_BORDER_PENALTY_CAP: f64 = 40.0;
+/// The sixth ring around a visible city-state City Center. A city-state's
+/// mobile siege stack can still reach and take an un-walled frontier city from
+/// the fifth and sixth rings after a hostile Suzerain calls it to war.
+const CITY_STATE_SETTLEMENT_BUFFER: i32 = 6;
 
 /// How much of the game's progress the live race adds to its wonder bonus: the
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
@@ -1389,6 +1393,10 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// Chokepoint readings are shared by every gene that asks for one in an
+    /// acting turn, on the same terms as `settlement_atlas` above. See
+    /// `advanced/chokepoints.rs`.
+    narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -4327,6 +4335,18 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// A boost already in hand is worth the turns of research it saves, not a
+    /// flat credit. Opt-in gene `boost-first-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_first_research: bool,
+    /// A node the empire would finish before the eureka it is still owed can
+    /// land waits its turn. Opt-in gene `boost-wait-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_wait_research: bool,
+    /// A node is worth the boosts it makes chaseable: the quarry Masonry wants
+    /// needs Mining first. Opt-in gene `boost-unlock-research`; see
+    /// `advanced/boost_research.rs`.
+    boost_unlock_research: bool,
     /// The Gold purchase scorer prices a build at its card-boosted rate, so
     /// items a slotted card discounts lose purchase priority to items no card
     /// touches. Opt-in gene `buy-what-cards-cannot-boost`; see
@@ -4502,7 +4522,32 @@ pub struct AdvancedAi {
     /// `advanced/civilian_safety.rs`.
     civilian_out_of_reach: bool,
 
+    /// A settle site is worth more when the ground its own borders will
+    /// cover holds a mountain pass, an isthmus neck or a strait. Opt-in gene
+    /// `chokepoint-siting`; see `advanced/chokepoints.rs`.
+    chokepoint_siting: bool,
+    /// A city center is a naval passage its owner alone may use, so a site on
+    /// the strip of land between two seas joins them for our fleet and for
+    /// nobody else's. Opt-in gene `canal-city`; see `advanced/chokepoints.rs`.
+    canal_city: bool,
+    /// Gold buys the plot that closes a passage somebody else could use:
+    /// territory is a wall at peace, and `BuyPlot` is the only lever the seat
+    /// has over where a border goes. Opt-in gene `chokepoint-claim`; see
+    /// `advanced/chokepoints.rs`.
+    chokepoint_claim: bool,
+    /// A surplus soldier — or a hull, for a strait — holds the gate on the
+    /// approach to one of our cities and fortifies there. Opt-in gene
+    /// `chokepoint-garrison`; see `advanced/chokepoints.rs`.
+    chokepoint_garrison: bool,
+    /// This turn's gates and who holds them; empty with the gene off. See
+    /// `advanced/chokepoints.rs`.
+    chokepoint_gates: chokepoints::GatePlan,
+
     // ---- append: e-f ------------------------------------------------
+    /// An Encampment on a pass is a wall no foreign unit may ever enter, so
+    /// the district lands on the gate rather than on the next free plot.
+    /// Opt-in gene `encampment-seals-the-pass`; see `advanced/chokepoints.rs`.
+    encampment_seals_the_pass: bool,
     /// Reserve the FIRST Builder ahead of ordinary production, the way
     /// `solvency-first-trade-slot` reserves the first trade slot.
     ///
@@ -4732,6 +4777,19 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// The production queue pays the Envoy a city-state has promised for the
+    /// unit or district family its quest names. Opt-in gene
+    /// `quest-production`; see `advanced/city_state_quests.rs`.
+    quest_production: bool,
+    /// A Trader's destination score carries the Envoy a city-state asking us
+    /// for a trade route will pay for one. Opt-in gene `quest-trade-route`;
+    /// see `advanced/city_state_quests.rs`.
+    quest_trade_route: bool,
+    /// Whatever completes the Eureka or Inspiration a city-state named is
+    /// worth the Envoy it pays — the Envoy, not the research the sibling
+    /// eureka gene prices. Opt-in gene `quest-boost`; see
+    /// `advanced/city_state_quests.rs`.
+    quest_boost: bool,
     /// The religious defence grows with how much of a rival's religious
     /// victory is already done — the civilizations it holds and how close
     /// it is to half of ours — naming and targeting that faith from half a
@@ -4761,6 +4819,44 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// Build a science building before one that makes no science.
+    ///
+    /// Carried down to `BasicAi::science_building_first`, which is where the
+    /// build order actually lives: `BasicAi::pick_item` makes 77.8% of this
+    /// empire's builds, and a gene that only reprices `production_value`
+    /// reaches the other 22%. See that flag for the regime argument.
+    science_building_first: bool,
+    /// An adaptive seat stops racing for a Great Prophet, because the race
+    /// costs more science than the religion returns.
+    ///
+    /// ★★★★ EVERY ADAPTIVE SEAT PURSUES A RELIGION, AND NOTHING WEIGHS IT
+    /// AGAINST THE RACE IT COMPETES WITH. `take_turn_inner` sets
+    /// `base.pursue_religion` from `active_victory_target.is_none()` — and a
+    /// screen seat has no explicit target, so the answer is always yes. It
+    /// gates the Holy Site's society choice, the pending-Prophet claim and the
+    /// faith purchase pass alike.
+    ///
+    /// MEASURED over this branch's 12,000-seat probe (seeds 95000000.., 89% of
+    /// games ending on a SCIENCE victory at median turn 185): seats that
+    /// founded a religion won **14.5%** (n=8,000) against **20.9%** (n=4,000)
+    /// for seats that did not — a 6.4 pp gap on a binary two thirds of seats
+    /// perform, against a 16.7% base rate. It survives stratification by
+    /// empire size and the gap WIDENS with it, which is what an opportunity
+    /// cost looks like: −2.4 pp at five cities, −4.5 at six, −8.8 at seven,
+    /// −16.3 at eight. Founders carry five fewer techs at the end (median 62
+    /// against 67), and the 160 religious victories they win do not cover it.
+    ///
+    /// ⚠ The selection runs the RIGHT way. A seat that chased a Prophet and
+    /// was beaten to it spent the faith and the Holy Site anyway and lands in
+    /// the "did not found" group — so that group is contaminated with wasted
+    /// investment and still wins more. Suppressing the race entirely should
+    /// therefore beat 20.9%, not merely reach it.
+    ///
+    /// Byzantium's `taxis` and an explicit Religion target both keep the race;
+    /// this only removes the unconditional yes. Opt-in gene
+    /// `skip-the-prophet-race`.
+    skip_the_prophet_race: bool,
+
     /// Version 2 of `solvency-first-trade-slot`: reserve EVERY empty trade
     /// slot the empire can actually use, not only the first.
     ///
@@ -5146,6 +5242,11 @@ mod civilian_safety;
 /// `advanced/deity_habits.rs`.
 mod deity_habits;
 
+/// Boost-aware research: research what is already boosted, wait out an
+/// eureka a short node would outrun, and buy the permission the other
+/// triggers need. Three opt-in genes; see `advanced/boost_research.rs`.
+mod boost_research;
+
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -5204,6 +5305,12 @@ mod recon_disruption;
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
 
+/// Chokepoint control: the pass, the strait, the city center that is a canal
+/// only we may use, the plot that closes a passage with our border, the
+/// Encampment no foreign unit may ever enter, and the soldier who holds the
+/// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
+mod chokepoints;
+
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
@@ -5239,6 +5346,12 @@ mod gold_and_cards;
 /// target after its first movement leg. Two opt-in genes; see
 /// `advanced/opening_settlement.rs`.
 mod opening_settlement;
+
+/// Four opt-in genes that play the city-state quests the engine has been
+/// paying an Envoy for since #430 and no controller has ever read:
+/// `quest-production`, `quest-trade-route`, `quest-camp-errand` and
+/// `quest-boost`. See `advanced/city_state_quests.rs`.
+pub(crate) mod city_state_quests;
 
 /// `wonder-adjacent-sites` prices a settle site beside a natural wonder the
 /// way the engine pays it; `wonder-ring-recon` sends an explorer to the
@@ -5700,6 +5813,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
+            narrows_atlas: RefCell::new(chokepoints::NarrowsAtlas::default()),
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
@@ -5870,6 +5984,9 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            boost_first_research: false,
+            boost_wait_research: false,
+            boost_unlock_research: false,
             buy_what_cards_cannot_boost: false,
             build_what_cards_boost: false,
             amenity_project_preemption_2: false,
@@ -5891,12 +6008,19 @@ impl AdvancedAi {
             district_planning: false,
             civilian_out_of_reach: false,
 
+            chokepoint_siting: false,
+            canal_city: false,
+            chokepoint_claim: false,
+            chokepoint_garrison: false,
+            chokepoint_gates: chokepoints::GatePlan::default(),
+
             city_campaign: false,
             campaign: None,
             campaign_pillage: false,
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            encampment_seals_the_pass: false,
             first_builder_reserve: false,
             first_research_building_reserve: false,
             expansion_schedule: false,
@@ -5926,12 +6050,17 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            quest_production: false,
+            quest_trade_route: false,
+            quest_boost: false,
             religious_veto_defence: false,
             pass_picket: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_building_first: false,
+            skip_the_prophet_race: false,
             solvency_first_trade_slot_2: false,
             settler_screen: false,
             settler_second_look: false,
@@ -12562,11 +12691,12 @@ impl AdvancedAi {
 
     fn tech_value(&self, g: &Game, pid: usize, tech: &str, strategy: GrandStrategy) -> f64 {
         let spec = &g.rules.techs[tech];
-        let mut value = if g.players[pid].boosted_techs.contains(&Name::new(tech)) {
-            28.0
-        } else {
-            0.0
-        };
+        // The whole opinion about boosts: the credit for one in hand, the wait
+        // for one nearly earned, and the credit for the boosts this node makes
+        // chaseable. With the three boost genes off this is the flat 28 for a
+        // boost in hand and nothing otherwise, exactly as before. See
+        // `advanced/boost_research.rs`.
+        let mut value = self.boost_research_value(g, pid, tech, true);
         for (name, unit) in &g.rules.units {
             if unit.tech.as_deref() == Some(tech)
                 && unit
@@ -12781,16 +12911,18 @@ impl AdvancedAi {
         // Discount by opportunity cost so a flashy late-era unlock does not
         // stall several cheaper advances. Square root still lets a genuinely
         // transformative breakthrough win the comparison.
-        (value + 35.0) / spec.cost.max(10.0).sqrt()
+        //
+        // A boost in hand is a discount on THIS divisor, not a term above it:
+        // the node costs `1 - frac` of its printed price, so the score it buys
+        // is this one times `1 / (1 - frac).sqrt()`. One with
+        // `boost_first_research` off. See `advanced/boost_research.rs`.
+        (value + 35.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, tech, true)
     }
 
     fn civic_value(&self, g: &Game, pid: usize, civic: &str, strategy: GrandStrategy) -> f64 {
         let spec = &g.rules.civics[civic];
-        let mut value = if g.players[pid].boosted_civics.contains(&Name::new(civic)) {
-            28.0
-        } else {
-            0.0
-        };
+        // The civic half of the same term; see `advanced/boost_research.rs`.
+        let mut value = self.boost_research_value(g, pid, civic, false);
         for building in g
             .rules
             .buildings
@@ -12853,7 +12985,8 @@ impl AdvancedAi {
             "drama_poetry" => 55.0,
             _ => 0.0,
         };
-        (value + 32.0) / spec.cost.max(10.0).sqrt()
+        // The civic half of the same discount; see `advanced/boost_research.rs`.
+        (value + 32.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, civic, false)
     }
 
     fn incoming_deal_value(
@@ -15958,7 +16091,12 @@ impl AdvancedAi {
                         .and_then(|name| g.rules.features.get(name))
                         .is_some_and(|feature| feature.natural_wonder) as u8 as f64
                         * 320.0;
-                    let base_score = yields + resource + wonder - cost * 0.70;
+                    // `chokepoint-claim`: a border is a wall at peace, and
+                    // this buy is the only lever the seat has over where one
+                    // goes. 0.0 with the gene off. See
+                    // `advanced/chokepoints.rs`.
+                    let gate = self.chokepoint_plot_bonus(g, pid, *pos);
+                    let base_score = yields + resource + wonder + gate - cost * 0.70;
                     // Use adjacency as a cheap shortlist signal. Exact site
                     // legality and full production value are evaluated below
                     // for only the strongest four plots, avoiding a full game
@@ -21955,6 +22093,9 @@ impl AdvancedAi {
                     + development_penalty
                     + research_coverage
                     + self.science_drive_production_bonus(g, pid, cid, item)
+                    // `encampment-seals-the-pass`: 0.0 with the gene off and
+                    // for every other family. See `advanced/chokepoints.rs`.
+                    + self.encampment_seal_bonus(g, pid, family.as_str(), *pos)
             }
             Item::Repair { repair, .. } => {
                 if repair == "district" {
@@ -22359,8 +22500,16 @@ impl AdvancedAi {
         }
         // `eureka_chasing_production`: the boost this item completes, on the
         // raw scale. See `advanced/deity_habits.rs`.
+        //
+        // `quest_production` / `quest_boost`: the Envoy a city-state pays for
+        // this item — for being the unit or district it named, or for
+        // completing the boost it named. A different price on the same items
+        // as the line above, and independent of it. See
+        // `advanced/city_state_quests.rs`.
         let raw = if raw > 0.0 {
             raw + self.eureka_production_premium(g, pid, item)
+                + self.quest_production_premium(g, pid, item, plan.strategy)
+                + self.quest_boost_premium(g, pid, item, plan.strategy)
         } else {
             raw
         };
@@ -22933,6 +23082,11 @@ impl AdvancedAi {
         if self.defensible_sites {
             value += self.defensibility(g, pid, pos);
         }
+        // `chokepoint-siting` / `canal-city`: the gates this city's own
+        // ground would hold, and the two seas its center would join. Both
+        // return 0.0 with their gene off. See `advanced/chokepoints.rs`.
+        value += self.chokepoint_site_bonus(g, pid, pos);
+        value += self.canal_city_bonus(g, pid, pos);
         value
     }
 
@@ -23301,6 +23455,36 @@ impl AdvancedAi {
             })
             .count();
         (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
+    }
+
+    /// The first six legal founding rings beside a visible city-state are not a
+    /// safe frontier. A rival Suzerain can turn the city-state hostile without
+    /// warning, then use the city-state's mobile siege stack to take an
+    /// un-walled colony before it can prepare a defence.
+    ///
+    /// This is part of the standard `settlement_safety` policy rather than an
+    /// opt-in defence gene: it prevents the exposed city from being founded,
+    /// while preserving fog honesty and the frozen legacy controller.
+    fn city_state_settlement_exclusion(
+        &self,
+        g: &Game,
+        pid: usize,
+        visible: &TileBits,
+    ) -> BTreeSet<Pos> {
+        if !self.settlement_safety {
+            return BTreeSet::new();
+        }
+        g.cities
+            .values()
+            .filter(|city| {
+                city.owner != pid
+                    && g.sees(visible, city.pos)
+                    && g.players.get(city.owner).is_some_and(|player| {
+                        player.alive && player.is_minor && !player.is_barbarian
+                    })
+            })
+            .flat_map(|city| g.wdisk(city.pos, CITY_STATE_SETTLEMENT_BUFFER))
+            .collect()
     }
 
     fn settlement_route_risk(
@@ -23858,6 +24042,7 @@ impl AdvancedAi {
             .values()
             .flat_map(|city| g.wdisk(city.pos, 3))
             .collect::<BTreeSet<_>>();
+        let city_state_exclusion = self.city_state_settlement_exclusion(g, pid, &visible);
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -23879,6 +24064,7 @@ impl AdvancedAi {
                     || !g.rules.is_passable(tile)
                     || g.tile_is_natural_wonder(tile)
                     || city_exclusion.contains(&pos)
+                    || city_state_exclusion.contains(&pos)
                     || tile
                         .owner_city
                         .is_some_and(|cid| g.cities[&cid].owner != pid)
@@ -25658,7 +25844,13 @@ impl AdvancedAi {
         }
         // `eureka_chasing_builder`: the boost this improvement on this tile
         // earns. See `advanced/deity_habits.rs`.
-        value + self.eureka_builder_premium(g, pos, improvement)
+        // `quest_boost`: the Envoy a city-state pays for the Eureka or
+        // Inspiration this improvement completes — beside the research the
+        // line above prices, and independent of it. See
+        // `advanced/city_state_quests.rs`.
+        value
+            + self.eureka_builder_premium(g, pos, improvement)
+            + self.quest_boost_builder_premium(g, pos, improvement, strategy)
     }
 
     /// The few military unique improvements are not Builder choices, so their
@@ -26626,6 +26818,9 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> f64 {
         let mut value = self.yield_value(g.trade_route_yields(pid, city.id), strategy);
+        // `quest_trade_route`: the Envoy a city-state asking us for a route
+        // pays for one. See `advanced/city_state_quests.rs`.
+        value += self.quest_trade_route_premium(g, pid, city.owner, strategy);
         if let Some(alliance) = g.alliance_with(pid, city.owner) {
             let mut yields = Yields::default();
             match alliance.kind.as_str() {
@@ -30021,6 +30216,14 @@ impl AdvancedAi {
             if let Some(acted) = self.recon_disruption_step(g, pid, uid) {
                 return acted;
             }
+            // `chokepoint-garrison`: the gate on the approach to one of our
+            // cities, held by a body nothing above wanted. Deliberately the
+            // same tail and the same reason as the picket above; see the
+            // header of `advanced/chokepoints.rs` for why it is not a
+            // wartime stand.
+            if let Some(acted) = self.chokepoint_garrison_step(g, pid, uid) {
+                return acted;
+            }
             return self.base.military_step(g, pid, uid);
         }
         // Combat can change occupancy, local power and the best focus target.
@@ -31458,6 +31661,10 @@ impl AdvancedAi {
         // agree on them. Nothing is read with both genes off. See
         // `advanced/recon_disruption.rs`.
         self.recon_disruption_plan(g, pid);
+        // `chokepoint-garrison`: this turn's gates and their garrisons, drawn
+        // once from the same board and for the same reason. Nothing is read
+        // with the gene off. See `advanced/chokepoints.rs`.
+        self.chokepoint_gate_plan(g, pid);
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| !settled_first.contains(uid) && Some(*uid) != opening_recon_warrior);
         ids.sort_by_key(|uid| {
@@ -32081,9 +32288,21 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
+        // See `skip_the_prophet_race`: an adaptive seat pursues a religion
+        // unconditionally, and in this regime that trade is measured negative.
         self.base.pursue_religion = g.has_ability(pid, "taxis")
-            || active_victory_target.is_none()
-            || active_victory_target == Some(VictoryTarget::Religion);
+            || active_victory_target == Some(VictoryTarget::Religion)
+            || (active_victory_target.is_none() && !self.skip_the_prophet_race);
+        // The prize and the entry fee are two different gates. Clearing
+        // `pursue_religion` alone discards the winnings while still paying for
+        // the Holy Site that contests the race, so carry the flag down to the
+        // reservation as well — but never against a seat whose own lane is
+        // Religion, and never for Kongo, whose Taxis ability makes the faith
+        // economy unconditional.
+        self.base.skip_prophet_race = self.skip_the_prophet_race
+            && !g.has_ability(pid, "taxis")
+            && active_victory_target != Some(VictoryTarget::Religion);
+        self.base.science_building_first = self.science_building_first;
         if self.base.minor || self.base.barb {
             self.base.take_turn(g, pid);
             return;

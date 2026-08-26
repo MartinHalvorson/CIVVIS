@@ -95,6 +95,12 @@ sources and reporting batches, and refuses a ledger whose rule says a gene
 must leave the pool; the same check is `tools/test_genes.py`'s
 `GeneratedFiles` suite.
 
+A reporting-only table rotation may instead use
+`--preserve-deployment-defaults --reporting-batch ...`: its completed batch
+refreshes the evidence columns and preserves the already selected on/off
+genome. This explicit mode is what the continuous tournament scheduler uses,
+so publishing a historical batch cannot silently change live behavior.
+
 Deployment policy (mirrored in `src/ai/advanced/gene_ledger.rs`):
 
 - ⭐ THE BATCH RULE, `batch_rule`, read newest batch first over the batches
@@ -209,10 +215,12 @@ the interval. Every gene gets `posterior_pp`, `posterior_se_pp` and, in
 `GENE_HEURISTIC_RANKING.md`, a 95% interval and `P(effect > 0)`.
 
 It is **published, not in force**. The deployment policy is the
-`batch-rule`: the three batch columns decide, the ledger records the columns
-and the rule's answer beside the evidence, and Rust re-derives the same
-answer from the same columns, so nothing else can silently rewrite what the
-agent plays.
+`batch-rule+operator-pins`: the three batch columns decide every gene the
+operator has not pinned on by name in `OPERATOR_DEFAULT_ON`, the ledger
+records the columns and the rule's own answer beside the evidence — a pinned
+gene keeps its `off` under `rules.batch_decisions` — and Rust re-derives the
+same answer from the same columns and the same pins, so nothing else can
+silently rewrite what the agent plays.
 
 The posterior remains useful evidence: it makes uncertainty and disagreement
 visible when the operator reads a flip. It is not an alternative authority.
@@ -487,16 +495,45 @@ Z_BAR = 2.0
 PER = 10_000
 DIFF_PLACES = 6
 
-#: ⭐ THE DEPLOYMENT GENOME FOLLOWS THE BATCH RULE (operator, 2026-08-25).
+#: ⭐ THE DEPLOYMENT GENOME FOLLOWS THE BATCH RULE (operator, 2026-08-25),
+#: WITH THE OPERATOR'S PINS ABOVE IT (operator, 2026-08-26).
 #: Every screenable gene's default is decided by the ranking's three batch
 #: columns — *Last Batch*, *Prior Batch*, *Third Batch*: the ± wins per
 #: 10,000 total seats each fixed reporting batch read for the gene, newest
 #: first (`total_seat_batch_wins`) — through `batch_rule`, and by nothing
-#: else. `python3 tools/genes.py write` re-decides every default when a batch
-#: enters; `check` refuses a ledger that still carries a gene the rule says
-#: must leave the pool. There is no operator list: a default is changed by
+#: else except `OPERATOR_DEFAULT_ON`, the genes the operator names on by
+#: hand. `python3 tools/genes.py write` re-decides every unpinned default when
+#: a batch enters; `check` refuses a ledger that still carries a gene the rule
+#: says must leave the pool. Every default that is not a pin is changed by
 #: playing more games.
-DEPLOYMENT_POLICY = "batch-rule"
+DEPLOYMENT_POLICY = "batch-rule+operator-pins"
+#: A reporting-only publication policy. The operator asked that a table
+#: rotation retain the already selected genome; the batch rows remain evidence
+#: but cannot silently flip treatments while a historical batch is published.
+RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
+#: ⭐ THE OPERATOR'S PINS — genes that default **on** whatever their batch
+#: columns read. Operator, 2026-08-26, verbatim: *"idle-faith-patronage,
+#: buildings-before-projects, deals-for-our-gain, founder-temple,
+#: lane-great-people, army-target-weighs-enemy, research-tier-premium,
+#: settler-screen, early-contact-window should all default on"*.
+#: The rule reads all nine as **off** at clause 4 — each is positive in the
+#: two newest batches and negative in the third, and none of the nine means
+#: more than `BATCH_RULE_AVERAGE` — so the ledger records the rule's answer
+#: under `rules.batch_decisions` and the pin beside it, and the two never
+#: pretend to agree. A pin moves a default only: it cannot keep a gene the
+#: rule removes from the pool (`build_ledger` refuses that), and it cannot
+#: turn a gene off. Nothing derives this list; it is the operator's, by name.
+OPERATOR_DEFAULT_ON = (
+    "army-target-weighs-enemy",
+    "buildings-before-projects",
+    "deals-for-our-gain",
+    "early-contact-window",
+    "founder-temple",
+    "idle-faith-patronage",
+    "lane-great-people",
+    "research-tier-premium",
+    "settler-screen",
+)
 #: The rule reads at most this many batches — the ranking's three columns.
 BATCH_RULE_WINDOW = 3
 #: A gene whose batches are not all positive ships only when their mean
@@ -765,6 +802,67 @@ def batch_columns(batches: list, tag: str) -> list:
         for batch in batches
     ]
     return (columns + [None] * BATCH_RULE_WINDOW)[:BATCH_RULE_WINDOW]
+
+
+def operator_pins(pinnable: set[str], decisions: dict[str, str], strict: bool,
+                  enforce_removals: bool = True) -> tuple[str, ...]:
+    """⭐ THE OPERATOR'S PINS as this ledger will record them: the tags of
+    `OPERATOR_DEFAULT_ON` this ledger can pin, sorted.
+
+    `pinnable` is the tag set a pin may name — the screenable registry for
+    real generation, and only the tags a fixture's own batches priced for a
+    synthetic one, so the real pins do not leak into a fixture built over
+    stand-in tags. `decisions` is the batch rule's answer for each priced tag.
+    `strict` is on for real generation (`filter_known`), where a pin naming a
+    gene the registry does not screen is a hard error rather than a silent
+    no-op. A pin over a gene the rule REMOVES from the pool is refused in
+    either mode when the batch rule is authoritative: the pin decides a
+    default, never whether the code exists. A reporting-only rotation retains
+    the selected code instead, so its historical batch rows cannot cull it."""
+    pins = tuple(sorted(tag for tag in OPERATOR_DEFAULT_ON if tag in pinnable))
+    if strict:
+        unknown = sorted(set(OPERATOR_DEFAULT_ON) - set(pins))
+        if unknown:
+            raise SystemExit(
+                "genes: the operator's pinned defaults name " + ", ".join(unknown)
+                + ", which this registry does not screen; a pin is a gene's tag "
+                  "(`python3 tools/genes.py list`)")
+    cut = [tag for tag in pins if decisions.get(tag) == "remove"]
+    if cut and enforce_removals:
+        raise SystemExit(
+            "genes: the batch rule removes " + ", ".join(cut) + " from the gene pool "
+            f"(below {BATCH_RULE_REMOVE_BELOW} wins/10k in all {BATCH_RULE_WINDOW} "
+            "batches), and a pin cannot keep a gene the rule cuts; drop it from "
+            "OPERATOR_DEFAULT_ON or cut the gene")
+    return pins
+
+
+def retain_deployment_genome(retained: tuple[str, ...], *, allowed: set[str],
+                             family_tags: list[str], wins_by_tag: dict[str, float],
+                             pinned: tuple[str, ...]) -> tuple[tuple[str, ...], dict[str, dict]]:
+    """Keep an operator-selected genome stable while reporting rows rotate.
+
+    A reporting batch describes a historical tournament. It may replace a
+    display column, but it must not reinterpret a previously selected default
+    set. Tags that have actually left the registry are omitted rather than
+    carried into the generated table. A retained selection still has the same
+    one-version-per-family invariant as the normal deployment genome.
+    """
+    requested = set(retained) | set(pinned)
+    missing = sorted(requested - allowed)
+    if missing:
+        print("gene ledger: omitted retained defaults no longer in the registry: "
+              + ", ".join(missing), file=sys.stderr)
+    selected = tuple(sorted(requested & allowed))
+    for family in families_of(family_tags):
+        shipped = [tag for tag in family if tag in selected]
+        if len(shipped) > 1:
+            raise SystemExit(
+                f"genes: retained deployment selection has multiple versions of {family[0]} on: "
+                + ", ".join(shipped))
+    # With at most one retained version per family, the resolver keeps the
+    # exact selection and only supplies the normal audit record for the table.
+    return resolve_family_heads(selected, family_tags, wins_by_tag)
 
 
 def direct_arm_constant(sources: list[dict]) -> tuple[float, str] | None:
@@ -1370,7 +1468,8 @@ def family_head(family: list[str], wins_by_tag: dict[str, float]) -> str | None:
 def resolve_family_heads(rule_on: tuple[str, ...], tags: list[str],
                          wins_by_tag: dict[str, float]) -> tuple[tuple[str, ...], dict[str, dict]]:
     """A family the batch rule turns on ships ONE version. `rule_on` is every
-    tag the rule turned on, versions included; the family ships its head —
+    tag the rule turned on or the operator pinned on, versions included; the
+    family ships its head —
     the priced version with the highest tracked wins — when the rule turns
     the head on, else the best version by tracked wins among those the rule
     turns on (ties to the higher version). Returns the resolved deployment
@@ -1503,15 +1602,17 @@ def annotate_families(genes: list[dict]) -> None:
 def build_ledger(sources: list[Path], filter_known: bool = True,
                  build_notes: dict[str, str] | None = None,
                  reporting_batches: list[Path] | None = None,
-                 reporting_build_notes: dict[str, str] | None = None) -> dict:
+                 reporting_build_notes: dict[str, str] | None = None,
+                 deployment_policy: str = DEPLOYMENT_POLICY,
+                 retained_deployment_genome: tuple[str, ...] | None = None) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
     Sources are recorded oldest-first, and a later one overrides an earlier one
     per gene. `filter_known=False` keeps every tag (synthetic tests).
 
-    ⭐ `default_on` is decided by `batch_rule` from the `reporting_batches`
-    — the ranking's three batch columns — and recorded with the columns and
-    the answer per gene so `check` and the Rust mirror re-derive the same
-    selection.
+    The normal policy derives `default_on` from the batch rule plus explicit
+    pins. `operator-retained-selection` is for reporting-only table rotation:
+    it keeps the recorded deployment genome and treats incoming batch rows as
+    evidence only.
 
     `build_notes` maps a source's file name to the reason its build check was
     waived, and is what makes `--unverified-build` a *recorded* escape rather
@@ -1598,18 +1699,34 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     decisions = {tag: batch_rule(cols) for tag, cols in columns_by_tag.items()}
     rule_on = tuple(sorted(tag for tag, call in decisions.items() if call == "on"))
     removals_due = sorted(tag for tag, call in decisions.items() if call == "remove")
-    if removals_due:
+    if removals_due and deployment_policy == DEPLOYMENT_POLICY:
         print("gene ledger: ⚠ the batch rule REMOVES " + ", ".join(removals_due)
               + f" from the gene pool (below {BATCH_RULE_REMOVE_BELOW} in all "
               f"{BATCH_RULE_WINDOW} batches); `genes.py check` fails until the code is cut",
               file=sys.stderr)
+    # ⭐ THE OPERATOR'S PINS sit above the rule: a named gene ships on whatever
+    # its columns read. `decisions` keeps the rule's own answer, so the ledger
+    # publishes the override rather than hiding it inside the genome.
+    pinned = operator_pins(
+        allowed if filter_known else set(columns_by_tag), decisions, filter_known,
+        enforce_removals=deployment_policy == DEPLOYMENT_POLICY)
     # ⭐ A family the rule turns on ships ONE version — its head by tracked
     # wins when the rule turns the head on, else the best version the rule
     # turns on; and no family may hold more than MAX_VERSIONS.
     family_tags = sorted(allowed | set(measures))
     check_family_sizes(family_tags)
     wins_by_tag = {tag: pooled_win_diff_pp(record) for tag, record in arms.items() if record}
-    selected, family_heads = resolve_family_heads(rule_on, family_tags, wins_by_tag)
+    if deployment_policy == DEPLOYMENT_POLICY:
+        default_on = tuple(sorted(set(rule_on) | set(pinned)))
+        selected, family_heads = resolve_family_heads(default_on, family_tags, wins_by_tag)
+    elif deployment_policy == RETAINED_DEPLOYMENT_POLICY:
+        if retained_deployment_genome is None:
+            raise SystemExit("genes: operator-retained-selection needs a recorded deployment genome")
+        selected, family_heads = retain_deployment_genome(
+            retained_deployment_genome, allowed=allowed, family_tags=family_tags,
+            wins_by_tag=wins_by_tag, pinned=pinned)
+    else:
+        raise SystemExit(f"genes: unknown deployment policy {deployment_policy!r}")
 
     genes = []
     for tag in sorted(measures):
@@ -1681,9 +1798,16 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "win_diff": "the pooled on rate minus the pooled off rate in percentage points, "
                         "over every screen that priced the gene, each weighted by its on-arm seats "
                         "- the ranking's `Diff`, the whole on-off difference",
-            "default_on": "batch-rule: exactly the tags in deployment_genome are on, and that "
-                          "list is batch_rule's answer over every screenable gene, families "
-                          "collapsed to the version that ships; every other screenable tag is off",
+            "default_on": (
+                "batch-rule+operator-pins: exactly the tags in deployment_genome are on, and "
+                "that list is batch_rule's answer over every screenable gene plus "
+                "operator_default_on, families collapsed to the version that ships; every "
+                "other screenable tag is off"
+                if deployment_policy == DEPLOYMENT_POLICY else
+                "operator-retained-selection: exactly the tags in deployment_genome are on; "
+                "a reporting-only batch refresh retains that selected set while its batch "
+                "columns remain published evidence"
+            ),
             "batch_rule": "read over the reporting batches that priced the gene, newest first, "
                           "at most batch_rule_window of them, each reading the ranking's wins "
                           "+- per 10,000 total seats: (1) three batches all below "
@@ -1698,27 +1822,52 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "batch_rule_remove_below": BATCH_RULE_REMOVE_BELOW,
             "batch_columns": columns_by_tag,
             "batch_decisions": decisions,
-            "removals_due": removals_due,
+            "removals_due": removals_due if deployment_policy == DEPLOYMENT_POLICY else [],
+            "operator_default_on": list(pinned),
+            "operator_pins": (
+                "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, "
+                "2026-08-26); they remain in the retained deployment_genome, while "
+                "batch_decisions records what the batch rule would say as evidence"
+                if deployment_policy == RETAINED_DEPLOYMENT_POLICY else
+                "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, "
+                "2026-08-26); each is in deployment_genome whatever its batch columns "
+                "read, and batch_decisions still records what the rule alone would have "
+                "said. A pin moves a default only: it cannot hold a gene the rule removes "
+                "from the pool, and it cannot turn a gene off"
+            ),
             "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every "
                          "screen's on-off difference on the win column's scale, each weighted "
                          "by its own standard error and the between-screen variance carried in "
                          "the interval; posterior_pp is the pooled effect and posterior_se_pp "
                          "its standard error, both in wins per 10,000 on-arm seats",
-            "deployment_policy": DEPLOYMENT_POLICY,
+            "deployment_policy": deployment_policy,
             "deployment_genome": list(selected),
-            "versions": "every version is judged by the batch rule on its own row; a family "
-                        "with a version on ships one version - the family head (the priced "
-                        "version with the highest tracked wins, win_diff, ties to the higher "
-                        "version) when the rule turns the head on, else the best version by "
-                        "tracked wins the rule turns on - and deployment_genome records that "
-                        f"version; a family holds at most {MAX_VERSIONS} versions, the "
-                        "third-best leaves before a fourth is added",
+            "versions": (
+                "every version's batch-rule reading remains recorded on its own row; this "
+                "reporting-only rotation retains the already selected version, one per "
+                f"family, while a family still holds at most {MAX_VERSIONS} versions and a "
+                "fourth requires a cull of the third-best"
+                if deployment_policy == RETAINED_DEPLOYMENT_POLICY else
+                "every version is judged by the batch rule on its own row; a family with a "
+                "version on ships one version - the family head (the priced version with the "
+                "highest tracked wins, win_diff, ties to the higher version) when the rule "
+                "turns the head on, else the best version by tracked wins the rule turns on "
+                "- and deployment_genome records that "
+                f"version; a family holds at most {MAX_VERSIONS} versions, the third-best "
+                "leaves before a fourth is added"
+            ),
             "family_heads": family_heads,
             "posterior_shapes": list(POSTERIOR_SHAPES),
-            "deployment_policy_meaning": "the batch rule decides default_on from batch_columns; "
-                                         "`tools/genes.py write` re-decides every default when a "
-                                         "reporting batch enters, and `check` fails while "
-                                         "removals_due names a gene still in the registry",
+            "deployment_policy_meaning": (
+                "the batch rule decides default_on from batch_columns for every gene "
+                "operator_default_on does not name, and a named gene is on; "
+                "`tools/genes.py write` re-decides every unpinned default when a reporting "
+                "batch enters, and `check` fails while removals_due names a gene still in "
+                "the registry"
+                if deployment_policy == DEPLOYMENT_POLICY else
+                "a reporting-only table refresh retains the preceding deployment_genome; "
+                "the new batch columns are evidence and cannot change a default"
+            ),
         },
         "sources": recorded,
         "reporting_batches": reporting,
@@ -1766,31 +1915,83 @@ GENERATED_END = "// ═══ END GENERATED ═══"
 
 
 def render_rust(ledger: dict) -> str:
-    """The verdict block for `genes.rs`: the deployment genome the batch rule
-    decided, the batch columns it read, and one `GeneVerdict` per priced gene
-    with its observational evidence."""
+    """The verdict block for `genes.rs`: the deployment genome, the displayed
+    batch columns, and one `GeneVerdict` per priced gene with its observational
+    evidence."""
     rules = ledger["rules"]
+    retained = rules["deployment_policy"] == RETAINED_DEPLOYMENT_POLICY
+    provenance = (
+        [
+            "// together; this reporting-only publication retains `DEPLOYMENT_GENOME`.",
+            "// `BATCH_COLUMNS` remain published evidence and do not decide defaults.",
+        ]
+        if retained else
+        [
+            "// together, and `the_default_follows_the_batch_rule` re-derives every `default_on`",
+            "// below from `BATCH_COLUMNS` through `gene_ledger::batch_rule`, above",
+            "// `OPERATOR_DEFAULT_ON`.",
+        ]
+    )
+    genome_description = (
+        [
+            "/// The screenable genes retained from the selected deployment genome,",
+            "/// one version per family.",
+        ]
+        if retained else
+        [
+            "/// The screenable genes that ship on — the batch rule's answer plus the",
+            "/// operator's pins, one version per family: the deployment genome.",
+        ]
+    )
+    pin_description = (
+        [
+            "/// ⭐ The genes the operator named on by hand. They remain in the",
+            "/// retained `DEPLOYMENT_GENOME`; their batch-rule readings remain evidence.",
+        ]
+        if retained else
+        [
+            "/// ⭐ The genes the operator named on by hand. Each is in",
+            "/// `DEPLOYMENT_GENOME` whatever its `BATCH_COLUMNS` read, and the rule's",
+            "/// own answer for it is still what `batch_rule` returns.",
+        ]
+    )
+    batch_description = (
+        [
+            "/// Every screenable gene a reporting batch priced, with its three batch",
+            "/// columns newest first — wins ± per 10,000 total seats in the ranking's",
+            "/// *Last*, *Prior* and *Third Batch* columns. They remain evidence while",
+            "/// this reporting-only publication retains the selected defaults.",
+        ]
+        if retained else
+        [
+            "/// Every screenable gene a reporting batch priced, with its three batch",
+            "/// columns newest first — wins ± per 10,000 total seats in the ranking's",
+            "/// *Last*, *Prior* and *Third Batch* columns, `None` where that batch did",
+            "/// not price the gene. What `batch_rule` reads.",
+        ]
+    )
     lines = [
         GENERATED_BEGIN,
         "//",
         "// Source: docs/gene_ledger.json (the same tool writes both); `genes.py check` holds them",
-        "// together, and `the_default_follows_the_batch_rule` re-derives every `default_on`",
-        "// below from `BATCH_COLUMNS` through `gene_ledger::batch_rule`.",
+        *provenance,
         "",
         "/// The policy that supplies every `default_on` below.",
         f"pub(super) const DEPLOYMENT_POLICY: &str = {json.dumps(rules['deployment_policy'])};",
         "",
-        "/// The screenable genes the batch rule turns on, one version per family:",
-        "/// the deployment genome.",
+        *genome_description,
         "#[rustfmt::skip]",
         "pub(super) const DEPLOYMENT_GENOME: &[&str] = &[",
         *(f"    {json.dumps(tag)}," for tag in rules["deployment_genome"]),
         "];",
         "",
-        "/// Every screenable gene a reporting batch priced, with its three batch",
-        "/// columns newest first — wins ± per 10,000 total seats in the ranking's",
-        "/// *Last*, *Prior* and *Third Batch* columns, `None` where that batch did",
-        "/// not price the gene. What `batch_rule` reads.",
+        *pin_description,
+        "#[rustfmt::skip]",
+        "pub(super) const OPERATOR_DEFAULT_ON: &[&str] = &[",
+        *(f"    {json.dumps(tag)}," for tag in rules["operator_default_on"]),
+        "];",
+        "",
+        *batch_description,
         "#[rustfmt::skip]",
         f"pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; {BATCH_RULE_WINDOW}])] = &[",
         *(
@@ -2002,11 +2203,18 @@ def notes_from_ledger(ledger: dict) -> dict[str, str]:
 def rebuild_from_ledger(ledger: dict) -> dict:
     """Re-derive a ledger from its recorded sources and reporting batches,
     carrying its own build exceptions back in so `check` reproduces the record
-    — defaults included, since the batches decide them."""
+    — including an operator-retained deployment selection when the reporting
+    batch was evidence-only."""
+    rules = ledger.get("rules", {})
+    policy = rules.get("deployment_policy", DEPLOYMENT_POLICY)
+    retained = (tuple(rules.get("deployment_genome", ()))
+                if policy == RETAINED_DEPLOYMENT_POLICY else None)
     return build_ledger(sources_from_ledger(ledger),
                         build_notes=notes_from_ledger(ledger),
                         reporting_batches=reporting_batches_from_ledger(ledger),
-                        reporting_build_notes=reporting_batch_notes_from_ledger(ledger))
+                        reporting_build_notes=reporting_batch_notes_from_ledger(ledger),
+                        deployment_policy=policy,
+                        retained_deployment_genome=retained)
 
 
 def sources_from_ledger(ledger: dict) -> list[Path]:
@@ -2459,19 +2667,21 @@ def cost_cell(history: list[dict], value: str, uncertainty: str) -> str:
 
 def evidence_sections(ledger: dict, measured: dict[str, list[dict]],
                       desc: dict[str, str]) -> list[str]:
-    """The evidence tables beside the batch rule's answer.
-
-    None of these statistics is a deployment rule: the three batch columns
-    decide every default through `batch_rule`.
-    """
+    """The evidence tables beside the recorded deployment selection."""
     rows = evidence_table(ledger, measured)
     decided_on = [r for r in rows if r["call"] == "on"]
     decided_off = [r for r in rows if r["call"] == "off"]
     straddle = [r for r in rows if r["call"] == "unresolved"]
-    lines = [
-        "",
-        "## Evidence beside the batch rule",
-        "",
+    retained = ledger["rules"]["deployment_policy"] == RETAINED_DEPLOYMENT_POLICY
+    heading = ("## Evidence beside the retained deployment selection" if retained
+               else "## Evidence beside the batch rule")
+    policy_explanation = (
+        "This is a reporting-only publication: the selected deployment genome is retained "
+        "while the completed batch refreshes the table. Its three batch columns, win columns, "
+        "pooled *Diff*, posterior, and score-share readings are published evidence only; none "
+        "of them changes a default. A later explicit selection decision can use the same "
+        "evidence without a table rotation silently rewriting the live genome."
+        if retained else
         "The deployment genome follows the batch rule (operator, 2026-08-25): a gene's three "
         "batch columns in `GENE_HEURISTIC_RANKING.md` decide its default — all three positive, "
         "or two of three with a mean above +7, turns it on; two or three negative turns it "
@@ -2479,7 +2689,13 @@ def evidence_sections(ledger: dict, measured: dict[str, list[dict]],
         "is above +7, or when both of two are positive; below −10 in all three removes it from "
         "the gene pool; anything else is off. The win columns, pooled *Diff*, posterior, and "
         "score-share readings below are evidence beside that answer, not a second rule; a new "
-        "batch re-decides every default when it enters (`python3 tools/genes.py write`).",
+        "batch re-decides every default when it enters (`python3 tools/genes.py write`)."
+    )
+    lines = [
+        "",
+        heading,
+        "",
+        policy_explanation,
         "",
         "*Posterior (95% CI)* is a random-effects (DerSimonian\u2013Laird) inverse-variance "
         "pool of every screen's on\u2212off difference on the win column's scale. It weights each "
@@ -2587,6 +2803,11 @@ def boundary_section(ledger: dict, measured: dict[str, list[dict]]) -> list[str]
     """The straddlers, ranked by what one direct arm would buy, with the
     `--genes` list an operator can paste."""
     rows, arm = boundary_table(ledger, measured)
+    retained = ledger["rules"]["deployment_policy"] == RETAINED_DEPLOYMENT_POLICY
+    default_context = (
+        "the evidence likes that the retained genome holds off"
+        if retained else "the evidence likes that the batch rule holds off"
+    )
     lines = [
         "",
         "## Where a direct arm pays: the boundary genes",
@@ -2613,7 +2834,7 @@ def boundary_section(ledger: dict, measured: dict[str, list[dict]]) -> list[str]
         f"*Buys* is the expected value of one direct arm of **{fmt_int(ARM_PAIRS)} seat "
         "pairs**, in wins per 10,000 on-arm seats, read against the gene's **default** "
         "state \u2014 so a gene the evidence likes and the genome already plays has little "
-        "to buy, and a gene the evidence likes that the batch rule holds off has the whole "
+        "to buy, and a gene " + default_context + " has the whole "
         "effect to buy. *Pairs to resolve* is how many matched seat pairs that arm needs "
         "before the combined interval clears zero, if it reads the gene's current pooled "
         f"effect. Both are sized from `{name}`, the widest single-gene arm this "
@@ -2725,6 +2946,90 @@ def render_parts(ledger: dict) -> tuple[str, str]:
     for tag in selected:
         verdict.setdefault(tag, {"default_on": True})
     reg = registry()
+    retained = ledger["rules"]["deployment_policy"] == RETAINED_DEPLOYMENT_POLICY
+
+    if retained:
+        default_authority = (
+            "the retained deployment selection (`docs/gene_ledger.json`, "
+            "`rules.deployment_genome`): the selected genome decides, and every batch "
+            "column remains evidence."
+        )
+        pins_reference = (
+            "**Selected defaults.** This reporting-only publication keeps the prior "
+            "on/off selection, including the operator-named genes: "
+            + ", ".join(f"`{tag}`" for tag in ledger["rules"]["operator_default_on"])
+            + ". The batch rule's readings remain visible in `rules.batch_decisions`, "
+              "but do not change a default during table rotation."
+        )
+        versioned_reference = (
+            "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
+            "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
+            "*on* is the seats that played that version, and every other seat — off, or a "
+            "sibling version on — is its *off*. *Best version* names the family's head "
+            "(`1` is the original) on every row of the family: the priced version with the "
+            "highest tracked wins (pooled *Diff*), ties to the higher version. A retained "
+            "selection keeps its chosen version on its row alone; every version's batch rule "
+            "reading remains evidence. A versioned row's *Total (on)* and *Total (off)* cells "
+            "show the best two versions' rates side by side, best first, each with its own `n`. "
+            "A gene with no versions is its own original and reads `1`; `—` marks a family none "
+            "of whose versions is priced yet. A family holds at most three versions; before a "
+            "fourth is added the third-best by tracked wins leaves the code "
+            "(`python3 tools/genes.py versions`)."
+        )
+        batch_provenance = (
+            "**Batch provenance.** The newest displayed batch is the completed current-standard "
+            "6-major Continents screen (74×46, nine city-states, Online speed through turn 250, "
+            "all six victory lanes, shuffled civilizations and best-genome baseline). Its "
+            "completed seats are the newest displayed evidence column. Older displayed batches "
+            "remain visible for comparison; none changes the retained defaults."
+        )
+        posterior_authority = "the retained deployment selection does."
+        footer_authority = (
+            "are published evidence; this reporting-only rotation retains the selected "
+            "deployment defaults._"
+        )
+    else:
+        default_authority = (
+            "the batch rule's answer read off the three batch columns "
+            "(`docs/gene_ledger.json`, `rules.batch_rule`): the batches decide, and every "
+            "other column is evidence."
+        )
+        pins_reference = "**The operator's pins.** " + (
+            "The operator names these genes **on** by hand, above the rule: "
+            + ", ".join(f"`{tag}`" for tag in ledger["rules"]["operator_default_on"])
+            + ". Their *Default* reads **on** whatever their batch columns say, and "
+              "`rules.batch_decisions` in the ledger still records what the rule alone "
+              "would have answered. Every other row's *Default* is the rule's."
+            if ledger["rules"]["operator_default_on"] else
+            "None: every *Default* below is the batch rule's own answer.")
+        versioned_reference = (
+            "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
+            "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
+            "*on* is the seats that played that version, and every other seat — off, or a "
+            "sibling version on — is its *off*. *Best version* names the family's head "
+            "(`1` is the original) on every row of the family: the priced version with the "
+            "highest tracked wins (pooled *Diff*), ties to the higher version. Every version is "
+            "judged by the batch rule on its own row; a family with a version on ships its head "
+            "when the rule turns the head on, else the best version the rule turns on, and "
+            "*Default* is **on** on that row alone. A versioned row's "
+            "*Total (on)* and *Total (off)* cells show the best two versions' rates side by "
+            "side, best first, each with its own `n`. A gene with no versions is its own "
+            "original and reads `1`; `—` marks a family none of whose versions is priced "
+            "yet. A family holds at most three versions; before a fourth is added the third-best by "
+            "tracked wins leaves the code (`python3 tools/genes.py versions`)."
+        )
+        batch_provenance = (
+            "**Batch provenance.** The newest displayed batch is the completed current-standard "
+            "6-major Continents screen (74×46, nine city-states, Online speed through turn 250, "
+            "all six victory lanes, shuffled civilizations and best-genome baseline). Its "
+            "completed seats are the newest of the three batch columns the rule reads, so a "
+            "batch entering re-decides every default. Older displayed batches remain visible "
+            "as the rule's prior and third readings."
+        )
+        posterior_authority = "the three batch columns do."
+        footer_authority = (
+            "are the wins-per-ten-thousand-total-seat readings the batch rule decides them from._"
+        )
 
     rows = []
     unmeasured = []
@@ -2755,25 +3060,13 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
         "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
         "and retain their real per-gene on/off seat counts in every row. *Diff* is that display "
-        "total's on rate minus off rate, in percentage points. *Default* is the batch rule's "
-        "answer read off the three batch columns (`docs/gene_ledger.json`, `rules.batch_rule`): "
-        "the batches decide, and every other column is evidence. Screenable genes "
+        "total's on rate minus off rate, in percentage points. *Default* is "
+        + default_authority + " Screenable genes "
         "awaiting every displayed measurement are listed separately below without a rank.",
         "",
-        "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
-        "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
-        "*on* is the seats that played that version, and every other seat — off, or a "
-        "sibling version on — is its *off*. *Best version* names the family's head "
-        "(`1` is the original) on every row of the family: the priced version with the "
-        "highest tracked wins (pooled *Diff*), ties to the higher version. Every version is "
-        "judged by the batch rule on its own row; a family with a version on ships its head "
-        "when the rule turns the head on, else the best version the rule turns on, and "
-        "*Default* is **on** on that row alone. A versioned row's "
-        "*Total (on)* and *Total (off)* cells show the best two versions' rates side by "
-        "side, best first, each with its own `n`. A gene with no versions is its own "
-        "original and reads `1`; `—` marks a family none of whose versions is priced "
-        "yet. A family holds at most three versions; before a fourth is added the third-best by "
-        "tracked wins leaves the code (`python3 tools/genes.py versions`).",
+        pins_reference,
+        "",
+        versioned_reference,
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected "
         "count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's "
@@ -2781,12 +3074,7 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "games or seats. The independent latest batch can have unequal on/off arms, which is "
         "why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row.",
         "",
-        "**Batch provenance.** The newest displayed batch is the completed current-standard "
-        "6-major Continents screen (74×46, nine city-states, Online speed through turn 250, "
-        "all six victory lanes, shuffled civilizations and best-genome baseline). Its "
-        "completed seats are the newest of the three batch columns the rule reads, so a "
-        "batch entering re-decides every default. Older displayed batches remain visible "
-        "as the rule's prior and third readings.",
+        batch_provenance,
         "",
         "**What each screen resolves.** The median gene’s column standard error "
         f"times {POWER_80} — a two-sided 5% test at 80% power. Judge a column against "
@@ -2824,8 +3112,8 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "disjoint seeds). The pooled point and its 95% interval are printed per gene in the "
         "evidence sections below; the newest screen's score-share contrast (*Share \u0394pp "
         "(z)*) is printed in the lane table, where a lane gene that cannot pay on the win "
-        "axis at 250 turns shows its evidence. **P(>0) does not decide a default**; the "
-        "three batch columns do.",
+        "axis at 250 turns shows its evidence. **P(>0) does not decide a default**; "
+        + posterior_authority,
         "",
         "**Cost.** Positive is slower; negative is faster. *cost (compute)* is the "
         "on/off percent change in wall seconds per completed turn, while *cost (time)* "
@@ -2906,12 +3194,19 @@ def render_parts(ledger: dict) -> tuple[str, str]:
     lines += evidence_sections(ledger, authoritative_measured, desc)
 
     if unmeasured:
+        unmeasured_explanation = (
+            "These screenable genes have no on/off result, so they receive no rank. Their "
+            "displayed default remains the retained selection rather than an inference from "
+            "this reporting batch."
+            if retained else
+            "These screenable genes have no on/off result, so they receive no rank, and "
+            "the batch rule reads them as off until a batch prices them."
+        )
         lines += [
             "",
             "## Awaiting measurement",
             "",
-            "These screenable genes have no on/off result, so they receive no rank, and "
-            "the batch rule reads them as off until a batch prices them.",
+            unmeasured_explanation,
             "",
             "| Gene | Default | Description | Best version |",
             "|---|---|---|---:|",
@@ -2966,7 +3261,7 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         f"_Generated by `tools/genes.py` from the ledger's sources: {sources}. "
         + (f"The fixed display batches are: {reporting_sources}. " if reporting_sources else "")
         + "The deployment defaults live in `docs/gene_ledger.json`; the table's batch cells "
-        "are the wins-per-ten-thousand-total-seat readings the batch rule decides them from._",
+        + footer_authority,
         "",
     ]
     return ranking, "\n".join(lines)
@@ -3036,6 +3331,11 @@ def _add_source_args(ap: argparse.ArgumentParser) -> None:
         "--reporting-batch", action="append", default=[], metavar="FILE",
         help=("newest-first report-only batch for the ranking's three display columns; "
               "does not change deployment defaults"),
+    )
+    ap.add_argument(
+        "--preserve-deployment-defaults", action="store_true",
+        help=("record this reporting-batch rotation as evidence only and retain the "
+              "current deployment genome"),
     )
     ap.add_argument(
         "--reporting-unverified-build", metavar="REASON", default=None,
@@ -3125,11 +3425,24 @@ def main(argv=None) -> int:
     entered_reporting = [Path(path).resolve() for path in args.reporting_batch]
     if args.reporting_unverified_build and not entered_reporting:
         raise SystemExit("--reporting-unverified-build requires --reporting-batch FILE")
+    if args.preserve_deployment_defaults and not entered_reporting:
+        raise SystemExit("--preserve-deployment-defaults requires --reporting-batch FILE")
+    if args.preserve_deployment_defaults and current is None:
+        raise SystemExit("--preserve-deployment-defaults needs an existing deployment genome")
     reporting = latest_reporting_batches(entered_reporting, recorded_reporting)
     reporting_notes = dict(recorded_reporting_notes)
     if args.reporting_unverified_build:
         for path in entered_reporting:
             reporting_notes[path.name] = args.reporting_unverified_build
+    current_rules = (current or {}).get("rules", {})
+    if args.preserve_deployment_defaults:
+        deployment_policy = RETAINED_DEPLOYMENT_POLICY
+        retained_deployment_genome = tuple(current_rules.get("deployment_genome", ()))
+    else:
+        deployment_policy = current_rules.get("deployment_policy", DEPLOYMENT_POLICY)
+        retained_deployment_genome = (
+            tuple(current_rules.get("deployment_genome", ()))
+            if deployment_policy == RETAINED_DEPLOYMENT_POLICY else None)
     if getattr(args, "sources", None):
         notes: dict[str, str] = {}
         # New sources are appended to the ones the ledger already records.
@@ -3139,14 +3452,18 @@ def main(argv=None) -> int:
         paths = recorded + [p for p in entered if p not in recorded]
         ledger = build_ledger(paths, build_notes={**recorded_notes, **notes},
                               reporting_batches=reporting,
-                              reporting_build_notes=reporting_notes)
+                              reporting_build_notes=reporting_notes,
+                              deployment_policy=deployment_policy,
+                              retained_deployment_genome=retained_deployment_genome)
     else:
         if current is None:
             raise SystemExit("no existing ledger; provide at least one source")
         ledger = build_ledger(sources_from_ledger(current),
                               build_notes=notes_from_ledger(current),
                               reporting_batches=reporting,
-                              reporting_build_notes=reporting_notes)
+                              reporting_build_notes=reporting_notes,
+                              deployment_policy=deployment_policy,
+                              retained_deployment_genome=retained_deployment_genome)
     LEDGER_JSON.write_text(render_json(ledger))
     REGISTRY_PATH.write_text(registry_with_block(render_rust(ledger)), encoding="utf-8")
     ranking, evidence = render_parts(ledger)

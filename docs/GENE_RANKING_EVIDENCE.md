@@ -18,13 +18,13 @@ Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**
 | `barbarian-scouts-are-scouts` | +30 [+8, +51] | 99.6% | 5 | off | **on** |
 | `bounded-recovery` | +31 [+14, +48] | 100.0% | 5 | off | **on** |
 | `buildings-before-projects` | +28 [+5, +51] | 99.2% | 5 | on | **on** |
-| `culture-building-debt` | +26 [+1, +51] | 97.8% | 2 | off | **on** |
+| `culture-building-debt` | +26 [+1, +51] | 97.8% | 2 | on | **on** |
 | `engine-faith-price` | +63 [+25, +101] | 99.9% | 1 | on | **on** |
 | `escort-unstick` | +32 [+8, +57] | 99.5% | 5 | on | **on** |
 | `founder-temple` | +19 [+1, +38] | 97.8% | 4 | on | **on** |
 | `great-person-housing` | +84 [+64, +105] | 100.0% | 3 | on | **on** |
-| `idle-faith-patronage` | +26 [+11, +40] | 100.0% | 4 | off | **on** |
-| `loyalty-rate-alarm` | +40 [+22, +58] | 100.0% | 5 | on | **on** |
+| `idle-faith-patronage` | +26 [+11, +40] | 100.0% | 4 | on | **on** |
+| `loyalty-rate-alarm` | +40 [+22, +58] | 100.0% | 5 | off | **on** |
 | `maintenance-aware-deck` | +61 [+24, +99] | 99.9% | 1 | on | **on** |
 | `opportunistic-war` | +48 [+20, +76] | 100.0% | 3 | on | **on** |
 | `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | off | **on** |
@@ -143,7 +143,9 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `one-shot-recovery` | -2 [-25, +22] | 43.7% | off | +1.1 | 5,846,162 |
 | `blind-objective-units` | +0 [-16, +16] | 51.4% | off | +1.1 | 245,127,417 |
 | `unit-objective-memory` | +10 [-28, +47] | 69.7% | on | +1.1 | 201,764 |
-| `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | on | +0.9 | 1,036,197,883 |
+| `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | off | +1.0 | 1,036,197,883 |
+| `science-multiplier-payoff` | +6 [-24, +35] | 64.5% | on | +0.9 | 639,181 |
+| `blind-objective-units` | +0 [-16, +16] | 51.4% | on | +0.8 | 245,127,417 |
 | `research-tier-premium` | +10 [-24, +43] | 71.2% | on | +0.7 | 208,314 |
 | `settlement-gap-target` | +14 [-23, +52] | 77.5% | on | +0.5 | 87,669 |
 | `lane-great-people` | +13 [-22, +48] | 77.0% | on | +0.4 | 103,314 |
@@ -151,8 +153,8 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `competition-victory-points` | +16 [-19, +50] | 81.3% | on | +0.2 | 67,501 |
 | `army-target-weighs-enemy` | +5 [-16, +25] | 67.3% | on | +0.2 | 903,207 |
 | `early-contact-window` | +8 [-16, +31] | 73.8% | on | +0.1 | 318,670 |
-| `naval-recon` | -3 [-19, +13] | 35.6% | off | +0.1 | 2,174,265 |
-| `lane-policy-deck` | +13 [-16, +42] | 80.9% | on | +0.1 | 103,406 |
+| `settler-guard-holds` | +3 [-13, +19] | 65.5% | on | +0.1 | 1,871,682 |
+| `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | on | +0.0 | 126,996 |
 | `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
 | `camp-party` | +22 [-3, +47] | 96.1% | on | +0.0 | 8,154 |
 | `war-reinforcement` | +17 [-4, +37] | 94.7% | on | +0.0 | 24,014 |
@@ -174,7 +176,7 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | Lane gene | Default | ± Wins / 10k seats | Share Δpp (z) | Posterior (95% CI) | Status |
 |---|---|---:|---|---:|---|
 | `lane-great-people` | **on** | +33 | +0.10 (z +1.26) ~ | +13 [-22, +48] | unresolved |
-| `lane-policy-deck` | **on** | +29 | +0.08 (z +1.07) ~ | +13 [-16, +42] | unresolved |
+| `lane-policy-deck` | off | +29 | +0.08 (z +1.07) ~ | +13 [-16, +42] | unresolved |
 | `lane-culture-spending` | off | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
@@ -185,10 +187,56 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
+| `amenity-project-preemption-2` | off (unmeasured) | An amenity crisis repair is bought with Gold when the treasury covers it, so the Science plan's repeatable project keeps its queue; only a district or an unaffordable building still pauses the project. | 1 |
+| `boost-first-research` | off (unmeasured) | Scale a node whose boost is already in hand by what the discount buys under the value function's own cost divisor. | 1 |
+| `boost-unlock-research` | off (unmeasured) | Credit a technology or civic with the boosts it makes chaseable by unlocking what their triggers need. | 1 |
+| `boost-wait-research` | off (unmeasured) | Take a node the empire would finish before its own eureka lands after that eureka, not before it. | 1 |
 | `build-what-cards-boost` | off (unmeasured) | Lean the city production governor toward items the slotted policy deck makes cheap, by half the card's bonus. | 1 |
 | `buy-what-cards-cannot-boost` | off (unmeasured) | Price a Gold purchase at the build's card-boosted rate, so items a slotted card discounts lose purchase priority to items no card touches. | 1 |
+| `camp-tile-buyout` | off (unmeasured) | Buy the plot a Barbarian Outpost stands on for the city inside whose three rings it sits, when being rid of the outpost is worth more than the plot's quote. | 1 |
+| `campus-adjacency-threshold-2` | off (unmeasured) | A settle site with a plot in its first three rings that could host a Campus at raw Science adjacency 4 is worth 15% more, so the multiplier's threshold is bought where it is decided — at city siting — and not only priced at the district. | 1 |
+| `canal-city` | off (unmeasured) | Value a settle site on a one-tile land bridge by the sea detour its city center would save. | 1 |
+| `chain-payback-window` | off (unmeasured) | Price the science and culture chain debts by whether the building can still repay, not by how much of the clock is left. | — |
+| `chain-payback-window-2` | off (unmeasured) | Price the cheap rung of a district chain by payback and leave the whole district on the clock. | — |
+| `chokepoint-claim` | off (unmeasured) | Buy the plot that closes a passage a rival could walk or sail through. | 1 |
+| `chokepoint-garrison` | off (unmeasured) | Hold the gate on the approach to one of our cities with a surplus soldier or hull. | 1 |
+| `chokepoint-siting` | off (unmeasured) | Value a settle site by the passes and straits its own borders would cover. | 1 |
+| `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | 1 |
+| `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | 1 |
+| `coalition-before-war` | off (unmeasured) | Recruit the target's neighbours before an elective war: alliances, envoys to its city-states and joint-war invitations at the strike. | 1 |
+| `contested-land-first` | off (unmeasured) | Claim the ground between us and the nearest neighbours first while the army can hold it, waive the border provocation there, and wall and garrison the frontier. | 1 |
+| `district-coverage-2` | off (unmeasured) | The district coverage term falls to a quarter of the bred weight for a family every city already holds, not half, pushing the lever further in the direction that paid score share. | 1 |
+| `elective-war-yields-to-a-lane` | off (unmeasured) | Stop a war we choose from taking the grand strategy while our own victory lane is live. | 1 |
+| `encampment-seals-the-pass` | off (unmeasured) | Site the Encampment on the pass, a tile no foreign unit may ever enter. | 1 |
+| `enemy-of-my-enemy` | off (unmeasured) | Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival. | 1 |
+| `eureka-chasing-builder` | off (unmeasured) | An improvement that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
+| `eureka-chasing-production` | off (unmeasured) | A unit, building or district that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
+| `first-builder-reserve` | off (unmeasured) | Reserve the first Builder ahead of ordinary production, the way `solvency-first-trade-slot` reserves the first trade slot. | 1 |
+| `first-research-building-reserve` | off (unmeasured) | Reserve the cheapest Campus building a city owes ahead of ordinary production. | 1 |
 | `gold-for-the-young-city` | off (unmeasured) | Pay a Gold purchase premium in a city producing less than the empire's best city, proportional to the deficit. | 1 |
 | `native-emergency-purchase` | off (unmeasured) | Buy Walls or a land defender for a city that lost health to a strike within four turns with a hostile unit near, spending through the reserve. | 1 |
+| `naval-recon-2` | off (unmeasured) | Two peacetime naval eyes instead of one while unseen water remains, so the second coast is charted while the first Galley is still out. | 1 |
+| `never-an-empty-queue` | off (unmeasured) | Build the best real candidate instead of standing idle when nothing clears the ordinary production bar. | — |
+| `never-an-empty-queue-2` | off (unmeasured) | Fill an idle turn with something that is not a soldier, or leave it idle. | — |
+| `opening-warrior-recon` | off (unmeasured) | Before the first city, move a nearby Warrior before the Settler and choose the city site from the terrain the Warrior has now revealed. | 1 |
+| `power-the-laboratory-2` | off (unmeasured) | A building whose powered half would be switched on the day it stands — the city is powered and stays powered with the building's own demand — is priced with that half, so the Lab, Stock Exchange and Factory in already-powered cities stop being bought without it. | 1 |
+| `quest-boost` | off (unmeasured) | Prices the Envoy on whatever completes the Eureka or Inspiration a city-state asked for. | 1 |
+| `quest-camp-errand` | off (unmeasured) | Runs the camp errand against the outpost a city-state named, from further out than the usual ring. | 1 |
+| `quest-production` | off (unmeasured) | Pays the Envoy a city-state's quest promises on the unit or district family it asked for. | 1 |
+| `quest-trade-route` | off (unmeasured) | Sends the Trader to the city-state that is asking us for a trade route, for the Envoy. | 1 |
+| `rapid-city-expansion` | off (unmeasured) | Run the screenable native expansion curve: rapid safe settlement first, then a conquest posture only after the practical frontier is exhausted. | 1 |
+| `recovery-reads-the-war` | off (unmeasured) | Measure the Recovery power gap against the war we are actually fighting. | 1 |
+| `science-building-first` | off (unmeasured) | An adaptive seat stops racing for a Great Prophet: the race costs more science than the religion returns. | 1 |
+| `settler-guard-holds-2` | off (unmeasured) | A settler's bound guard is no protection when two visible hostiles that can reach the tile each match its strength, not only when one is 1.5× it. | 1 |
+| `settler-second-look` | off (unmeasured) | After a Settler's first move, discard only its disposable cached site while movement remains, so the next leg can use its new sight. | 1 |
+| `settler-target-hysteresis-2` | off (unmeasured) | A settle site one settler drops for danger is set aside for every own settler for the same window, so a second settler does not march to the tile the first just fled. | 1 |
+| `siege-is-progress-2` | off (unmeasured) | The first turn an own land unit stands within two tiles of an at-war city resets the war-fatigue clock once for that city, so a campaign still walking to its target is not offered away as stalled. | 1 |
+| `skip-the-prophet-race` | off (unmeasured) | `AdvancedAi::skip_the_prophet_race`; opt-in gene `skip-the-prophet-race`. | 1 |
+| `solvency-first-trade-slot-2` | off (unmeasured) | Reserve every empty trade route slot the empire can use, not only the first. | 1 |
+| `upgrade-the-garrison` | off (unmeasured) | Modernize the standing army before the discretionary purchase pass spends the treasury, while a major war is being fought. | 1 |
+| `wonder-adjacent-sites` | off (unmeasured) | Price a settle site the way the engine pays it beside a natural wonder: the wonder's projected yields on every neighbouring work tile and a capped credit for the amenity, appeal, Holy Site adjacency and era score no yield table shows. | — |
+| `wonder-adjacent-sites-2` | off (unmeasured) | The projection plus a small flat credit per wonder tile in the footprint, capped at a river's worth. | — |
+| `wonder-ring-recon` | off (unmeasured) | Send an explorer to the unseen ring of a natural wonder within settling range of an own city before it picks a frontier, so a site beside the wonder exists to be priced. | 1 |
 
 ## Removed from the code
 
@@ -269,6 +317,8 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 ## How to read this
 
 Every screenable heuristic gene on the Advanced controller, ranked by the displayed pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch header carries its actual player-seat count and whole-batch average games/minute once; a historical artifact without scheduler timing says `not recorded` rather than guessing from its rows. Cells show the enabled arm's excess projected to 10,000 **total** player seats, where a six-player chance expectation is 1,667 wins. A dash means that batch did not screen the gene. The *Total* win-rate columns pool the displayed observations and retain their real per-gene on/off seat counts in every row. *Diff* is that display total's on rate minus off rate, in percentage points. *Default* is the batch rule's answer read off the three batch columns (`docs/gene_ledger.json`, `rules.batch_rule`): the batches decide, and every other column is evidence. Screenable genes awaiting every displayed measurement are listed separately below without a rank.
+
+**The operator's pins.** The operator names these genes **on** by hand, above the rule: `army-target-weighs-enemy`, `buildings-before-projects`, `deals-for-our-gain`, `early-contact-window`, `founder-temple`, `idle-faith-patronage`, `lane-great-people`, `research-tier-premium`, `settler-screen`. Their *Default* reads **on** whatever their batch columns say, and `rules.batch_decisions` in the ledger still records what the rule alone would have answered. Every other row's *Default* is the rule's.
 
 **Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` (`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's *on* is the seats that played that version, and every other seat — off, or a sibling version on — is its *off*. *Best version* names the family's head (`1` is the original) on every row of the family: the priced version with the highest tracked wins (pooled *Diff*), ties to the higher version. Every version is judged by the batch rule on its own row; a family with a version on ships its head when the rule turns the head on, else the best version the rule turns on, and *Default* is **on** on that row alone. A versioned row's *Total (on)* and *Total (off)* cells show the best two versions' rates side by side, best first, each with its own `n`. A gene with no versions is its own original and reads `1`; `—` marks a family none of whose versions is priced yet. A family holds at most three versions; before a fourth is added the third-best by tracked wins leaves the code (`python3 tools/genes.py versions`).
 

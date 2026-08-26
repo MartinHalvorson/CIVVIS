@@ -2290,6 +2290,111 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
+    /// Scale a node whose boost is already in hand by what the discount buys
+    /// under the value function's own cost divisor. `tech_value` and
+    /// `civic_value` both end `(value + k) / cost.sqrt()`, so a node costing
+    /// `1 - frac` of its printed price scores `1 / (1 - frac).sqrt()` times as
+    /// much — 1.29 at the shipped 40%, capped. See
+    /// [`AdvancedAi::boost_in_hand_scale`]. Opt-in gene
+    /// `boost-first-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_first_research(&mut self) {
+        self.boost_first_research = true;
+    }
+
+    /// The twin of `enable_boost_first_research`.
+    pub fn disable_boost_first_research(&mut self) {
+        self.boost_first_research = false;
+    }
+
+    /// Take a node the empire would finish before its own eureka lands after
+    /// that eureka, not before it. The engine credits a boost mid-research
+    /// onto a node still being worked, and never onto one already finished, so
+    /// only a short node loses its discount outright. See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// `boost-wait-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_wait_research(&mut self) {
+        self.boost_wait_research = true;
+    }
+
+    /// The twin of `enable_boost_wait_research`.
+    pub fn disable_boost_wait_research(&mut self) {
+        self.boost_wait_research = false;
+    }
+
+    /// Credit a technology or civic with the boosts it makes chaseable by
+    /// unlocking what their triggers need. The quarry Masonry's eureka wants
+    /// needs Mining first, Machinery's three Archers need Archery, and nothing
+    /// ever bought the permission. See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// `boost-unlock-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_unlock_research(&mut self) {
+        self.boost_unlock_research = true;
+    }
+
+    /// The twin of `enable_boost_unlock_research`.
+    pub fn disable_boost_unlock_research(&mut self) {
+        self.boost_unlock_research = false;
+    }
+
+    /// Pays the Envoy a city-state's quest promises on the unit or district family it asked for.
+    /// The production queue reads the outstanding `train_unit_type` and
+    /// `zone_district_type` quests and prices the item the city-state named
+    /// at the seat's own Envoy value, scaled by what that city-state's next
+    /// Envoy buys. A reorder of the queue, never an addition to it. Opt-in
+    /// gene `quest-production`; see `advanced/city_state_quests.rs`.
+    /// Operator request, 2026-08-26.
+    pub fn enable_quest_production(&mut self) {
+        self.quest_production = true;
+    }
+    /// The twin of `enable_quest_production`.
+    pub fn disable_quest_production(&mut self) {
+        self.quest_production = false;
+    }
+
+    /// Sends the Trader to the city-state that is asking us for a trade route, for the Envoy.
+    /// The destination score carries the Envoy an outstanding
+    /// `send_trade_route` quest pays, on any of that city-state's cities, so
+    /// the ordinary yield terms still choose between them. Opt-in gene
+    /// `quest-trade-route`; see `advanced/city_state_quests.rs`. Operator
+    /// request, 2026-08-26.
+    pub fn enable_quest_trade_route(&mut self) {
+        self.quest_trade_route = true;
+    }
+    /// The twin of `enable_quest_trade_route`.
+    pub fn disable_quest_trade_route(&mut self) {
+        self.quest_trade_route = false;
+    }
+
+    /// Runs the camp errand against the outpost a city-state named, from further out than the usual ring.
+    /// A `clear_barbarian_camp` quest names one outpost within five tiles of
+    /// the city-state, and clearing any other one does not pay; the errand
+    /// prefers the named camp over a nearer unnamed one and admits it from
+    /// beyond the home radius it normally stops at. Opt-in gene
+    /// `quest-camp-errand`; see `advanced/city_state_quests.rs`. Operator
+    /// request, 2026-08-26.
+    pub fn enable_quest_camp_errand(&mut self) {
+        self.base.quest_camp_errand = true;
+    }
+    /// The twin of `enable_quest_camp_errand`.
+    pub fn disable_quest_camp_errand(&mut self) {
+        self.base.quest_camp_errand = false;
+    }
+
+    /// Prices the Envoy on whatever completes the Eureka or Inspiration a city-state asked for.
+    /// A `trigger_tech_boost` or `trigger_civic_boost` quest is paid by the
+    /// trigger, so the Envoy rides on the same boost table
+    /// `eureka-chasing-production` reads — as the Envoy, beside that gene's
+    /// research and independent of it. Opt-in gene `quest-boost`; see
+    /// `advanced/city_state_quests.rs`. Operator request, 2026-08-26.
+    pub fn enable_quest_boost(&mut self) {
+        self.quest_boost = true;
+    }
+    /// The twin of `enable_quest_boost`.
+    pub fn disable_quest_boost(&mut self) {
+        self.quest_boost = false;
+    }
+
     /// Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival.
     /// A camp is the rival's when a major we are not allied with has a
     /// city strictly nearer it than any of ours and it sits outside our
@@ -2376,6 +2481,75 @@ impl AdvancedAi {
     /// The twin of `enable_native_emergency_purchase`.
     pub fn disable_native_emergency_purchase(&mut self) {
         self.native_emergency_purchase = false;
+    }
+
+    // The five chokepoint toggles are filed ABOVE the markers: the
+    // append-point check reads a method line's first identifier, so a
+    // `pub fn` under a marker is read as the entry `pub`.
+    /// Value a settle site by the passes and straits its own borders would
+    /// cover. A border refuses entry to anyone without Open Borders, so the
+    /// ground a city claims is ground a rival cannot cross. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::chokepoint_site_bonus`].
+    pub fn enable_chokepoint_siting(&mut self) {
+        self.chokepoint_siting = true;
+    }
+
+    /// The twin of `enable_chokepoint_siting`.
+    pub fn disable_chokepoint_siting(&mut self) {
+        self.chokepoint_siting = false;
+    }
+
+    /// Value a settle site on a one-tile land bridge by the sea detour its
+    /// city center would save. A city center is a naval passage no foreign
+    /// hull may enter, at peace or at war. Off in production; opted into by
+    /// name. See [`AdvancedAi::canal_city_bonus`].
+    pub fn enable_canal_city(&mut self) {
+        self.canal_city = true;
+    }
+
+    /// The twin of `enable_canal_city`.
+    pub fn disable_canal_city(&mut self) {
+        self.canal_city = false;
+    }
+
+    /// Buy the plot that closes a passage a rival could walk or sail through.
+    /// `expand_borders` is the engine's own influence picker and takes no
+    /// advice, so the buy is the whole lever. Off in production; opted into by
+    /// name. See [`AdvancedAi::chokepoint_plot_bonus`].
+    pub fn enable_chokepoint_claim(&mut self) {
+        self.chokepoint_claim = true;
+    }
+
+    /// The twin of `enable_chokepoint_claim`.
+    pub fn disable_chokepoint_claim(&mut self) {
+        self.chokepoint_claim = false;
+    }
+
+    /// Site the Encampment on the pass, a tile no foreign unit may ever
+    /// enter. `can_enter_past` refuses an unpillaged foreign Encampment with
+    /// no war, alliance or Open Borders exception. Off in production; opted
+    /// into by name. See [`AdvancedAi::encampment_seal_bonus`].
+    pub fn enable_encampment_seals_the_pass(&mut self) {
+        self.encampment_seals_the_pass = true;
+    }
+
+    /// The twin of `enable_encampment_seals_the_pass`.
+    pub fn disable_encampment_seals_the_pass(&mut self) {
+        self.encampment_seals_the_pass = false;
+    }
+
+    /// Hold the gate on the approach to one of our cities with a surplus
+    /// soldier or hull. Nothing foreign may enter a tile one of our military
+    /// units stands on. Off in production; opted into by name. See
+    /// [`AdvancedAi::chokepoint_garrison_step`].
+    pub fn enable_chokepoint_garrison(&mut self) {
+        self.chokepoint_garrison = true;
+    }
+
+    /// The twin of `enable_chokepoint_garrison`.
+    pub fn disable_chokepoint_garrison(&mut self) {
+        self.chokepoint_garrison = false;
     }
 
     // Append points, one per name range: a new treatment goes under the range
@@ -2580,6 +2754,32 @@ impl AdvancedAi {
     /// The twin of `enable_contested_land_first`.
     pub fn disable_contested_land_first(&mut self) {
         self.base.contested_land_first = false;
+    }
+
+    /// An adaptive seat stops racing for a Great Prophet: the race costs more
+    /// science than the religion returns. See
+    /// `AdvancedAi::science_building_first`; opt-in gene
+    /// `science-building-first`.
+    pub fn enable_science_building_first(&mut self) {
+        self.science_building_first = true;
+    }
+
+    /// The twin of `enable_science_building_first`.
+    pub fn disable_science_building_first(&mut self) {
+        self.science_building_first = false;
+    }
+
+    /// `AdvancedAi::skip_the_prophet_race`; opt-in gene
+    /// `skip-the-prophet-race`. Filed above the markers with the other
+    /// toggles, because the append-point check reads a line's first
+    /// identifier and every one of these starts `pub`.
+    pub fn enable_skip_the_prophet_race(&mut self) {
+        self.skip_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_skip_the_prophet_race`.
+    pub fn disable_skip_the_prophet_race(&mut self) {
+        self.skip_the_prophet_race = false;
     }
 
     // ---- append: a-b ------------------------------------------------

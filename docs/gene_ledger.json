@@ -20,7 +20,7 @@
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
     "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one source, (win_on - 1/players) * 10000; last, prior and third are the three most recent sources that priced the gene, newest first, so a new source shifts last to prior and prior to third; they are published evidence - the default reads batch_columns, not these",
     "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its on-arm seats - the ranking's `Diff`, the whole on-off difference",
-    "default_on": "batch-rule: exactly the tags in deployment_genome are on, and that list is batch_rule's answer over every screenable gene, families collapsed to the version that ships; every other screenable tag is off",
+    "default_on": "batch-rule+operator-pins: exactly the tags in deployment_genome are on, and that list is batch_rule's answer over every screenable gene plus operator_default_on, families collapsed to the version that ships; every other screenable tag is off",
     "batch_rule": "read over the reporting batches that priced the gene, newest first, at most batch_rule_window of them, each reading the ranking's wins +- per 10,000 total seats: (1) three batches all below batch_rule_remove_below -> remove the gene from the pool; (2) two or three batches negative -> off; (3) three batches all positive -> on; (4) three batches, exactly two positive, mean > batch_rule_average -> on; (5) one or two batches, exactly one positive, mean > batch_rule_average -> on; (6) two batches both positive -> on; (7) otherwise off - no batch, or a zero, is neither positive nor negative",
     "batch_rule_window": 3,
     "batch_rule_average": 7,
@@ -894,21 +894,34 @@
       "wonder-score-tally": "off"
     },
     "removals_due": [],
+    "operator_default_on": [
+      "army-target-weighs-enemy",
+      "buildings-before-projects",
+      "deals-for-our-gain",
+      "early-contact-window",
+      "founder-temple",
+      "idle-faith-patronage",
+      "lane-great-people",
+      "research-tier-premium",
+      "settler-screen"
+    ],
+    "operator_pins": "the genes the operator named on by hand (genes.py OPERATOR_DEFAULT_ON, 2026-08-26); each is in deployment_genome whatever its batch columns read, and batch_decisions still records what the rule alone would have said. A pin moves a default only: it cannot hold a gene the rule removes from the pool, and it cannot turn a gene off",
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
-    "deployment_policy": "batch-rule",
+    "deployment_policy": "batch-rule+operator-pins",
     "deployment_genome": [
       "air-surge",
       "amenity-project-preemption",
       "army-target-weighs-enemy",
       "barbarian-bargain",
+      "barbarian-ranged-answer",
+      "barbarian-scouts-are-scouts",
+      "blind-objective-units",
+      "builder-tries-the-next-tile",
       "buildings-before-projects",
-      "camp-party",
-      "campaign-pillage",
-      "chain-payback-window",
-      "civilian-out-of-reach",
-      "coalition-before-war",
       "competition-victory-points",
-      "defensible-sites",
+      "congress-counter-leader",
+      "culture-building-debt",
+      "deals-for-our-gain",
       "early-contact-window",
       "elective-war-in-reach",
       "elective-war-yields-to-a-lane",
@@ -919,9 +932,8 @@
       "frontier-massing-alarm",
       "government-ladder",
       "great-person-housing",
-      "guru-heals-the-corps-2",
+      "idle-faith-patronage",
       "lane-great-people",
-      "lane-policy-deck",
       "lane-space-race",
       "loyalty-rate-alarm",
       "maintenance-aware-deck",
@@ -933,11 +945,14 @@
       "raid-pillage-prizes",
       "religious-veto-defence",
       "research-tier-premium",
+      "science-multiplier-payoff",
       "science-victory-drive",
       "settle-sooner",
       "settlement-gap-target",
+      "settler-factory-coordination",
+      "settler-guard-holds",
       "settler-screen",
-      "settler-target-hysteresis",
+      "slot-kind-tiebreak",
       "solvency-first-trade-slot",
       "unit-objective-memory",
       "war-reinforcement",
@@ -1069,7 +1084,7 @@
       "standard",
       "legacy"
     ],
-    "deployment_policy_meaning": "the batch rule decides default_on from batch_columns; `tools/genes.py write` re-decides every default when a reporting batch enters, and `check` fails while removals_due names a gene still in the registry"
+    "deployment_policy_meaning": "the batch rule decides default_on from batch_columns for every gene operator_default_on does not name, and a named gene is on; `tools/genes.py write` re-decides every unpinned default when a reporting batch enters, and `check` fails while removals_due names a gene still in the registry"
   },
   "sources": [
     {
@@ -1437,7 +1452,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 45
+    "default_on": 49
   },
   "genes": [
     {
@@ -2838,7 +2853,7 @@
     {
       "tag": "idle-faith-patronage",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -1,
       "wins_prior_10k": 39,
       "wins_third_10k": 36,
