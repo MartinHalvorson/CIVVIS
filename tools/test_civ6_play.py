@@ -144,6 +144,12 @@ class TermTakesTheBrainWithIt(unittest.TestCase):
 
 
 class Civ6PlayTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # Every production harness is a fresh process; reset its equivalent
+        # cache between unit tests so each geometry contract observes its own
+        # mocked display result.
+        civ6_play._desktop_size_cache = None
+
     def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
         """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
         which also holds the evidence that moved it off `science`. This asserts
@@ -471,6 +477,14 @@ class Civ6PlayTest(unittest.TestCase):
         with patch.object(civ6_play.subprocess, "run",
                           return_value=SimpleNamespace(stdout="1728,1117", returncode=0)):
             self.assertEqual(civ6_play.desktop_size(), (1728, 1117))
+
+    def test_desktop_size_reuses_one_verified_measurement_for_the_run(self) -> None:
+        """Setup OCR must not repeatedly start a slow AppKit interpreter."""
+        with patch.object(civ6_play.subprocess, "run",
+                          return_value=SimpleNamespace(stdout="1728,1117", returncode=0)) as run:
+            self.assertEqual(civ6_play.desktop_size(), (1728, 1117))
+            self.assertEqual(civ6_play.desktop_size(), (1728, 1117))
+        run.assert_called_once()
 
     def test_desktop_size_refuses_an_unreadable_answer(self) -> None:
         """None means 'leave the window alone' — never a guess."""
