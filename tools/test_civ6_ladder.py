@@ -229,14 +229,15 @@ class LiveArmAttributionTests(unittest.TestCase):
 class AnAbandonedRowIsALossTheLadderChoseNotToPlayOut(unittest.TestCase):
     """An early-stop policy is a loss the ladder chose not to play out.
 
-    The verdict must retain whether it was the measured expected-win rule or
-    the operator's all-three-standings restart rule, or the ledger reads a
+    The verdict must retain which rule stopped the game (today's leader-score
+    line, or one of the retired rules on an older row), or the ledger reads a
     deliberately stopped game as a wedge.
     """
 
     def test_the_verdict_rides_the_entry_and_the_outcome_column_names_it(self) -> None:
-        verdict = {"turn": 124, "score": 300, "rival_best": 500,
-                   "expected_win_rate": 0.0278, "floor": 0.05,
+        verdict = {"rule": "below_leader_score", "turn": 124, "score": 300,
+                   "rival_best": 500, "score_ratio": 0.6,
+                   "score_ratio_ceiling": 0.70, "min_turn": 150,
                    "consecutive_turns": 5}
         entry = civ6_ladder.entry_from({
             "tag": "civvis-ab", "difficulty": "DIFFICULTY_CHIEFTAIN",
@@ -253,12 +254,11 @@ class AnAbandonedRowIsALossTheLadderChoseNotToPlayOut(unittest.TestCase):
         self.assertIn("`abandoned` means the harness stopped under a recorded early-stop", text)
         self.assertIn("science and culture leaders", text)
 
-    def test_a_three_signal_restart_verdict_is_kept_verbatim(self) -> None:
-        verdict = {"rule": "score_science_culture_deficit", "turn": 104,
+    def test_a_below_leader_score_verdict_is_kept_verbatim(self) -> None:
+        verdict = {"rule": "below_leader_score", "turn": 104,
                    "score": 69, "rival_best": 100, "score_ratio": 0.69,
-                   "score_ratio_ceiling": 0.70, "science": 9,
-                   "rival_best_science": 10, "culture": 8,
-                   "rival_best_culture": 10, "consecutive_turns": 5}
+                   "score_ratio_ceiling": 0.70, "min_turn": 150,
+                   "consecutive_turns": 5}
         entry = civ6_ladder.entry_from({
             "tag": "civvis-restart", "configured": True, "last_turn": 104,
             "last_score": 69, "reason": "abandoned", "abandoned": verdict,

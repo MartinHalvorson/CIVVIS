@@ -149,24 +149,15 @@ VICTORY=${CIVVIS_VICTORY:-}
 # at 17:00Z, and four starts in a row played nothing. So the flag and its
 # value are two expansions, `${VAR:+--flag} ${VAR:+"$VAR"}`, each one word or
 # none; `tools/test_ops_ladder_objective.py` runs these lines under zsh.
-# The floor under a game's expected win rate, below which the harness stops
-# playing it out (`civ6_play.ABANDON_CELLS`: the ladder's own measured table;
-# 0/34 of the live games that were under three quarters of the best rival's
-# score for five turns past turn 120 ever won). Unset means every game is
-# played to its end. Operator request 2026-08-19: "ok to abandon games early
-# if expected win rate <5%" — set `CIVVIS_ABANDON_BELOW_WIN_RATE=0.05` in the
-# login shell the launcher inherits (~/.zprofile on this host, beside
-# CIVVIS_DIFFICULTY), and an abandoned game is filed as `abandoned`, never as
-# a stall or a defeat.
-ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
-# A stricter restart rule for a position that is bad on all three strategic
-# standings, not merely on score: below this share of the score leader AND
-# behind the visible science and culture leaders for five turns after turn 100.
-# This is a deployment policy, so it must not depend on an interactive login
-# shell being inherited by the GUI host or launchd.  A named environment value
-# still overrides it for a deliberately configured batch (including 0 to turn
-# the player-level rule off), but every ordinary fresh-head verification game
-# receives the operator-requested 70 % threshold.
+# The ONE early stop the ladder keeps (operator, 2026-08-26: "start playing
+# out full games each time for now. or until we fall below 70% of the score
+# of the leader after turn 150"): a score under this share of the leader's
+# (best met rival) on any readable turn at or after turn 150 immediately
+# abandons the game. The harness carries the same 0.70 default itself, so a
+# GUI host that never inherited a login shell plays the same policy; a named
+# environment value overrides it for a deliberately configured batch (0 plays
+# every game out). The opening restarts and the measured win-rate floor that
+# used to sit beside this knob are gone (#2505, #2319, #2174).
 RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.70}
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host
@@ -563,7 +554,6 @@ while true; do
       "${WITH_ARGS[@]}" \
       "${TIMEOUT_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
-      ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
