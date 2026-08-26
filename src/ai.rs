@@ -3815,10 +3815,10 @@ impl BasicAi {
             .units
             .values()
             .filter(|unit| Self::is_barbarian_raider(g, unit))
+            .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
             .filter(|unit| {
                 !naval_threat_triage || Self::naval_raider_can_deal_serious_damage(g, pid, unit)
             })
-            .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
             .count();
         let camps = g
             .barb_camps
@@ -3862,15 +3862,19 @@ impl BasicAi {
         if g.barb_pid.is_none() {
             return false;
         }
-        g.units.values().any(|unit| {
-            Self::is_barbarian_raider(g, unit)
-                && (!naval_threat_triage
-                    || Self::naval_raider_can_deal_serious_damage(g, pid, unit))
-                && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
-        }) || g
+        let camp_in_reach = g
             .barb_camps
             .keys()
-            .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS)
+            .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS);
+        if camp_in_reach {
+            return true;
+        }
+        g.units.values().any(|unit| {
+            Self::is_barbarian_raider(g, unit)
+                && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+                && (!naval_threat_triage
+                    || Self::naval_raider_can_deal_serious_damage(g, pid, unit))
+        })
     }
 
     #[cfg(test)]
@@ -9984,8 +9988,8 @@ impl BasicAi {
         let mut melee = 0usize;
         for unit in g.units.values().filter(|unit| {
             Self::is_barbarian_raider(g, unit)
-                && self.barbarian_raider_counts_as_threat(g, pid, unit)
                 && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+                && self.barbarian_raider_counts_as_threat(g, pid, unit)
         }) {
             if g.rules.units[unit.kind].has_ranged_attack() {
                 ranged += 1;
@@ -10011,8 +10015,8 @@ impl BasicAi {
             .units
             .values()
             .filter(|unit| Self::is_barbarian_raider(g, unit))
-            .filter(|unit| self.barbarian_raider_counts_as_threat(g, pid, unit))
             .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
+            .filter(|unit| self.barbarian_raider_counts_as_threat(g, pid, unit))
             .count();
         let wanted: usize = if raiders >= 2 { 2 } else { 1 };
         wanted.saturating_sub(Self::barbarian_local_defenders(g, pid, city))
@@ -12778,11 +12782,11 @@ impl BasicAi {
                 .filter(|enemy| enemy_ids.contains(&enemy.owner))
                 .filter(|enemy| g.rules.units[enemy.kind].class == "military")
                 .filter(|enemy| !Self::is_barbarian_scout(g, enemy.id))
+                .filter(|enemy| g.wdist(enemy.pos, city.pos) <= GARRISON_ALERT_RADIUS)
                 .filter(|enemy| {
                     Some(enemy.owner) != g.barb_pid
                         || self.barbarian_raider_counts_as_threat(g, pid, enemy)
                 })
-                .filter(|enemy| g.wdist(enemy.pos, city.pos) <= GARRISON_ALERT_RADIUS)
                 .map(|enemy| effective_strength(g.unit_strength(enemy, true), enemy.hp))
                 .sum();
             if pressure <= 0.0 {
@@ -12934,15 +12938,18 @@ impl BasicAi {
         }
         let near_home =
             |pos: Pos, radius: i32| my_cities.iter().any(|city| g.wdist(pos, *city) <= radius);
-        g.units.values().any(|unit| {
-            Self::is_barbarian_raider(g, unit)
-                && (!naval_threat_triage
-                    || Self::naval_raider_can_deal_serious_damage(g, pid, unit))
-                && near_home(unit.pos, HOME_THREAT_RADIUS)
-        }) || g.barb_camps.keys().any(|camp| {
+        if g.barb_camps.keys().any(|camp| {
             near_home(*camp, camp_radius)
                 && !(leave_neighbours_camps
                     && Self::camp_is_a_neighbours_problem_inner(g, pid, *camp))
+        }) {
+            return true;
+        }
+        g.units.values().any(|unit| {
+            Self::is_barbarian_raider(g, unit)
+                && near_home(unit.pos, HOME_THREAT_RADIUS)
+                && (!naval_threat_triage
+                    || Self::naval_raider_can_deal_serious_damage(g, pid, unit))
         })
     }
 
@@ -12975,12 +12982,14 @@ impl BasicAi {
             return false;
         }
         let frames = (g.player_vision_now(pid), g.visibility_viewers(pid));
+        let range = g.unit_attack_range(uid);
         g.units.values().any(|target| {
             Some(target.owner) == g.barb_pid
                 && Self::is_barbarian_raider(g, target)
                 && g.rules.units[target.kind].domain.as_deref() == Some("sea")
-                && !Self::naval_raider_can_deal_serious_damage(g, pid, target)
+                && g.wdist(shooter.pos, target.pos) <= range
                 && g.ranged_order_is_legal(pid, uid, target.pos, &frames.0, &frames.1)
+                && !Self::naval_raider_can_deal_serious_damage(g, pid, target)
         })
     }
 
@@ -13058,13 +13067,16 @@ impl BasicAi {
             if !enemy_ids.contains(&enemy.owner)
                 || g.rules.units[enemy.kind].class != "military"
                 || Self::is_barbarian_scout(g, enemy.id)
-                || (Some(enemy.owner) == g.barb_pid
-                    && !self.barbarian_raider_counts_as_threat(g, pid, enemy))
             {
                 continue;
             }
             let distance = home_distance(enemy.pos);
             if distance > HOME_THREAT_RADIUS {
+                continue;
+            }
+            if Some(enemy.owner) == g.barb_pid
+                && !self.barbarian_raider_counts_as_threat(g, pid, enemy)
+            {
                 continue;
             }
             let strength = effective_strength(g.unit_strength(enemy, true), enemy.hp);
@@ -13343,14 +13355,11 @@ impl BasicAi {
                         .is_some_and(|home| g.wdist(home, u.pos) <= MINOR_DEFENSE_RADIUS))
                 && self.barbarian_target_allowed_for_controller(g, uid, u.pos)
             {
-                if Some(u.owner) == g.barb_pid && !self.barbarian_raider_counts_as_threat(g, pid, u)
-                {
-                    continue;
-                }
                 if Some(u.owner) == g.barb_pid
                     && (!near_home(u.pos)
                         || self.exchange_score(g, uid, u.pos, ranged)
-                            <= self.attack_threshold(g, uid, u.pos))
+                            <= self.attack_threshold(g, uid, u.pos)
+                        || !self.barbarian_raider_counts_as_threat(g, pid, u))
                 {
                     continue;
                 }
