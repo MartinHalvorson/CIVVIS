@@ -2680,6 +2680,11 @@ pub struct BasicAi {
     /// answered. Opt-in gene `enemy-of-my-enemy`; see
     /// `advanced/enemy_of_my_enemy.rs`.
     pub(crate) enemy_of_my_enemy: bool,
+    /// The camp errand prefers the exact Barbarian Outpost a city-state's
+    /// quest named — the only one whose clearing pays its Envoy — over a
+    /// nearer unnamed camp, and reaches further out for it. Opt-in gene
+    /// `quest-camp-errand`; see `advanced/city_state_quests.rs`.
+    pub(crate) quest_camp_errand: bool,
     /// Claim the ground between us and the nearest neighbours first while
     /// the army can hold it, waive the border provocation there, and wall
     /// and garrison the frontier cities. The flag lives here because the
@@ -4384,6 +4389,7 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             enemy_of_my_enemy: false,
+            quest_camp_errand: false,
             contested_land_first: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
@@ -4594,8 +4600,16 @@ impl BasicAi {
             .values()
             .filter(|(_, claimant)| *claimant != uid)
             .count();
-        let mut best: Option<(i32, Pos)> = None;
+        // `quest_camp_errand`: among the camps this errand would already run,
+        // the one a city-state named is the one that pays an Envoy. A
+        // PREFERENCE, not a reach: the errand's own radius, war gate, claim
+        // ledger and exchange threshold all still decide which camps are
+        // eligible, and a named camp outside them is not chased. Off, `named`
+        // is always false and the ordering below is unchanged. See
+        // `advanced/city_state_quests.rs`.
+        let mut best: Option<(bool, i32, Pos)> = None;
         for camp in g.barb_camps.keys() {
+            let named = self.quest_camp_is_named(g, pid, *camp);
             match self.camp_bounty_claims.get(camp) {
                 // Another unit already runs this camp's errand.
                 Some((_, claimant)) if *claimant != uid => continue,
@@ -4618,11 +4632,13 @@ impl BasicAi {
             if self.exchange_score(g, uid, *camp, ranged) <= self.attack_threshold(g, uid, *camp) {
                 continue;
             }
-            if best.map(|b| (d, *camp) < b).unwrap_or(true) {
-                best = Some((d, *camp));
+            // `!named` first: a named camp sorts ahead of every unnamed one,
+            // and among equals the nearest still wins.
+            if best.map(|b| (!named, d, *camp) < b).unwrap_or(true) {
+                best = Some((!named, d, *camp));
             }
         }
-        let (_, camp) = best?;
+        let (_, _, camp) = best?;
         self.camp_bounty_claims.insert(camp, (turn, uid));
         Some(camp)
     }
@@ -4784,6 +4800,7 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             enemy_of_my_enemy: false,
+            quest_camp_errand: false,
             contested_land_first: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,

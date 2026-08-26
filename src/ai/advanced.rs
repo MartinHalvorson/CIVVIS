@@ -4732,6 +4732,19 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// The production queue pays the Envoy a city-state has promised for the
+    /// unit or district family its quest names. Opt-in gene
+    /// `quest-production`; see `advanced/city_state_quests.rs`.
+    quest_production: bool,
+    /// A Trader's destination score carries the Envoy a city-state asking us
+    /// for a trade route will pay for one. Opt-in gene `quest-trade-route`;
+    /// see `advanced/city_state_quests.rs`.
+    quest_trade_route: bool,
+    /// Whatever completes the Eureka or Inspiration a city-state named is
+    /// worth the Envoy it pays — the Envoy, not the research the sibling
+    /// eureka gene prices. Opt-in gene `quest-boost`; see
+    /// `advanced/city_state_quests.rs`.
+    quest_boost: bool,
     /// The religious defence grows with how much of a rival's religious
     /// victory is already done — the civilizations it holds and how close
     /// it is to half of ours — naming and targeting that faith from half a
@@ -5239,6 +5252,12 @@ mod gold_and_cards;
 /// target after its first movement leg. Two opt-in genes; see
 /// `advanced/opening_settlement.rs`.
 mod opening_settlement;
+
+/// Four opt-in genes that play the city-state quests the engine has been
+/// paying an Envoy for since #430 and no controller has ever read:
+/// `quest-production`, `quest-trade-route`, `quest-camp-errand` and
+/// `quest-boost`. See `advanced/city_state_quests.rs`.
+pub(crate) mod city_state_quests;
 
 /// `wonder-adjacent-sites` prices a settle site beside a natural wonder the
 /// way the engine pays it; `wonder-ring-recon` sends an explorer to the
@@ -5926,6 +5945,9 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            quest_production: false,
+            quest_trade_route: false,
+            quest_boost: false,
             religious_veto_defence: false,
             pass_picket: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
@@ -22359,8 +22381,16 @@ impl AdvancedAi {
         }
         // `eureka_chasing_production`: the boost this item completes, on the
         // raw scale. See `advanced/deity_habits.rs`.
+        //
+        // `quest_production` / `quest_boost`: the Envoy a city-state pays for
+        // this item — for being the unit or district it named, or for
+        // completing the boost it named. A different price on the same items
+        // as the line above, and independent of it. See
+        // `advanced/city_state_quests.rs`.
         let raw = if raw > 0.0 {
             raw + self.eureka_production_premium(g, pid, item)
+                + self.quest_production_premium(g, pid, item, plan.strategy)
+                + self.quest_boost_premium(g, pid, item, plan.strategy)
         } else {
             raw
         };
@@ -25658,7 +25688,13 @@ impl AdvancedAi {
         }
         // `eureka_chasing_builder`: the boost this improvement on this tile
         // earns. See `advanced/deity_habits.rs`.
-        value + self.eureka_builder_premium(g, pos, improvement)
+        // `quest_boost`: the Envoy a city-state pays for the Eureka or
+        // Inspiration this improvement completes — beside the research the
+        // line above prices, and independent of it. See
+        // `advanced/city_state_quests.rs`.
+        value
+            + self.eureka_builder_premium(g, pos, improvement)
+            + self.quest_boost_builder_premium(g, pos, improvement, strategy)
     }
 
     /// The few military unique improvements are not Builder choices, so their
@@ -26626,6 +26662,9 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> f64 {
         let mut value = self.yield_value(g.trade_route_yields(pid, city.id), strategy);
+        // `quest_trade_route`: the Envoy a city-state asking us for a route
+        // pays for one. See `advanced/city_state_quests.rs`.
+        value += self.quest_trade_route_premium(g, pid, city.owner, strategy);
         if let Some(alliance) = g.alliance_with(pid, city.owner) {
             let mut yields = Yields::default();
             match alliance.kind.as_str() {

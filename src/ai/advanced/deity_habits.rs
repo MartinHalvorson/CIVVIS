@@ -308,7 +308,7 @@ impl AdvancedAi {
 
     /// Does `improvement` connect `resource` — the resource's own improvement
     /// or one whose resource list names it — as `Game::boost_met` reads it?
-    fn improvement_connects(g: &Game, improvement: &str, resource: &str) -> bool {
+    pub(super) fn improvement_connects(g: &Game, improvement: &str, resource: &str) -> bool {
         g.rules
             .resources
             .get(resource)
