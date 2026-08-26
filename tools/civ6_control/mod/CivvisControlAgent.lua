@@ -6895,6 +6895,78 @@ local function exportState(player, pid, turn, frame)
 				most_envoys = influence ~= nil and try(function()
 					return influence:GetMostTokensReceived();
 				end, 0) or 0,
+				-- ★★★ WHO ELSE HOLDS ENVOYS HERE, AND HOW MANY. `envoys` and
+				-- `most_envoys` said ours and the leader's; the board seeded a
+				-- rival's delegation as the minimum that elects the Suzerain the
+				-- host names, so it could never tell one envoy from five, nor
+				-- see that it stood one short of taking a city-state. The
+				-- shipped panel reads every alive major's count off the same
+				-- object (Base/Assets/UI/PartialScreens/CityStates.lua:1458
+				-- `GetTokensReceived(iInfluencePlayer)`). Every major, zeros
+				-- included, so a lapsed delegation clears; a list rather than a
+				-- map because `encode` writes an empty table as `[]`.
+				envoys_by_player = influence ~= nil and try(function()
+					local out = {};
+					for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+						out[#out + 1] = {
+							player = otherId,
+							envoys = try(function() return influence:GetTokensReceived(otherId); end, 0) or 0,
+						};
+					end
+					return out;
+				end, nil) or nil,
+				-- ★★★ WHAT THE CITY-STATE IS ASKING US FOR. The board rolled its
+				-- own quest for every pair from its own hash and paid itself the
+				-- Envoy when its model said so; the host's actual request never
+				-- crossed, so the `quest-*` genes priced a request nobody made.
+				-- CityStates.lua:257-266 is the accessor set:
+				-- `HasActiveQuestFromPlayer` over `GameInfo.Quests()`, then
+				-- `GetActiveQuestName` / `GetActiveQuestDescription` (both
+				-- already localized text; the panel prints them as they are).
+				-- The host names the quest's TARGET only inside that
+				-- description (`LOC_QUEST_TRAIN_UNIT_TYPE_INSTANCE_DESCRIPTION`
+				-- is "Train {1_UnitName} military unit"), so the target type is
+				-- the row of the quest's own family whose localized name occurs
+				-- in it, longest match first (Warrior Monk over Warrior). nil
+				-- when the manager is absent; an empty list is a city-state
+				-- asking nothing.
+				quests = try(function()
+					local manager = Game.GetQuestsManager();
+					if manager == nil then return nil; end
+					local out = {};
+					for questInfo in GameInfo.Quests() do
+						if manager:HasActiveQuestFromPlayer(pid, mid, questInfo.Index) then
+							local description = try(function()
+								return tostring(manager:GetActiveQuestDescription(pid, mid, questInfo.Index));
+							end, "") or "";
+							local family = ({
+								QUEST_TRAIN_UNIT_TYPE = { "Units", "UnitType" },
+								QUEST_ZONE_DISTRICT_TYPE = { "Districts", "DistrictType" },
+								QUEST_TRIGGER_TECH_BOOST = { "Technologies", "TechnologyType" },
+								QUEST_TRIGGER_CIVIC_BOOST = { "Civics", "CivicType" },
+								QUEST_RECRUIT_GREAT_PERSON_CLASS = { "GreatPersonClasses", "GreatPersonClassType" },
+							})[questInfo.QuestType];
+							local target, best = nil, 0;
+							if family ~= nil and description ~= "" then
+								for row in GameInfo[family[1]]() do
+									local name = try(function() return Locale.Lookup(row.Name); end, nil);
+									if type(name) == "string" and #name > best
+										and description:find(name, 1, true) then
+										target, best = row[family[2]], #name;
+									end
+								end
+							end
+							out[#out + 1] = {
+								type = questInfo.QuestType,
+								target = target,
+								name = try(function()
+									return tostring(manager:GetActiveQuestName(pid, mid, questInfo.Index));
+								end, nil),
+							};
+						end
+					end
+					return out;
+				end, nil),
 				suzerain = influence ~= nil and try(function()
 					return influence:GetSuzerain();
 				end, -1) or -1,
@@ -7633,6 +7705,108 @@ local function exportState(player, pid, turn, frame)
 			local status = Game.GetWorldCongress():GetMeetingStatus();
 			return status and tonumber(status.TurnsLeft) or nil;
 		end, nil),
+		-- ★★★★ THE CLIMATE, WHICH THE BOARD HAS NEVER CARRIED. `cl` (the
+		-- coastal-lowland band) has crossed per plot since the yield export
+		-- with no phase to read it against: the mirror's `climate_phase` sat
+		-- at 0 on every live turn, so the Flood Barrier price, the clean-power
+		-- premium and the flooding of the very bands `cl` was exported for
+		-- all ran under a pre-industrial sky. Every accessor is the one the
+		-- shipped ClimateScreen calls (DLC/Expansion2/UI/Additions/
+		-- ClimateScreen.lua:128 `GetTotalCO2Footprint`, :399
+		-- `GetPlayerCO2Footprint(id, false)`, :410 `GetTemperatureChange`,
+		-- :425/:428/:440 the storm, flood and drought percent chances, :445
+		-- `GetTilesFlooded`, :447 `GetNextSeaLevelRiseTurns`, :1046
+		-- `GetClimateChangeLevel`). Each field is guarded on its own, so a
+		-- ruleset missing one accessor still sends the rest; the whole object
+		-- is nil where `GameClimate` is absent or answers nothing (⚠ never an
+		-- empty table: `encode` writes that as `[]`, which is not an object).
+		climate = try(function()
+			if GameClimate == nil then return nil; end
+			local out = {
+				level = try(function() return GameClimate.GetClimateChangeLevel(); end, nil),
+				temperature = try(function() return GameClimate.GetTemperatureChange(); end, nil),
+				co2_total = try(function() return GameClimate.GetTotalCO2Footprint(); end, nil),
+				co2_ours = try(function() return GameClimate.GetPlayerCO2Footprint(pid, false); end, nil),
+				sea_level_turns = try(function() return GameClimate.GetNextSeaLevelRiseTurns(); end, nil),
+				tiles_flooded = try(function() return GameClimate.GetTilesFlooded(); end, nil),
+				storm_pct = try(function() return GameClimate.GetStormPercentChance(); end, nil),
+				flood_pct = try(function() return GameClimate.GetFloodPercentChance(); end, nil),
+				drought_pct = try(function() return GameClimate.GetDroughtPercentChance(); end, nil),
+			};
+			for _ in pairs(out) do return out; end
+			return nil;
+		end, nil),
+		-- ★★★★ WHERE A TRADER COULD GO AND WHAT EACH ROUTE WOULD PAY, priced
+		-- by the host. `trade_routes[].yields` has carried the host's figure
+		-- for ACTIVE routes; the choice of the NEXT route was priced by the
+		-- model alone, which cannot see a destination's districts in fog
+		-- (Ostia -> Stockholm read "+1 Science", run civvis-20260816T233226Z
+		-- t177+). The shipped chooser's own legality and yield calls
+		-- (Base/Assets/UI/Choosers/TradeRouteChooser.lua:227 `CanStartRoute`,
+		-- :864 `CalculateOriginYieldFromPotentialRoute`) over every city of
+		-- every player from each of our cities, only while a route slot is
+		-- open (`GetOutgoingRouteCapacity` above the active count, the gate
+		-- under which a Trader can start one at all), the 12 richest per
+		-- origin so the record stays bounded. Yields are summed the way the
+		-- active-route export sums them (route + path + modifiers under the
+		-- international multiplier). nil when nothing can be started.
+		route_options = try(function()
+			local trade = player:GetTrade();
+			if trade == nil then return nil; end
+			local capacity = trade:GetOutgoingRouteCapacity() or 0;
+			if capacity <= #tradeRoutes then return nil; end
+			local manager = Game.GetTradeManager();
+			if manager == nil then return nil; end
+			local names = { food = "FOOD", production = "PRODUCTION", gold = "GOLD", science = "SCIENCE", culture = "CULTURE", faith = "FAITH" };
+			local out = {};
+			for _, origin in player:GetCities():Members() do
+				local originID = origin:GetID();
+				local options = {};
+				for _, other in ipairs(Game.GetPlayers() or {}) do
+					local otherId = try(function() return other:GetID(); end, -1);
+					pcall(function()
+						for _, city in other:GetCities():Members() do
+							local cityID = city:GetID();
+							if not (otherId == pid and cityID == originID)
+								and manager:CanStartRoute(pid, originID, otherId, cityID) then
+								local fromRoute = manager:CalculateOriginYieldsFromPotentialRoute(pid, originID, otherId, cityID);
+								if type(fromRoute) == "table" then
+									local fromPath = manager:CalculateOriginYieldsFromPath(pid, originID, otherId, cityID);
+									local fromModifiers = manager:CalculateOriginYieldsFromModifiers(pid, originID, otherId, cityID);
+									local yields, total = {}, 0;
+									for key, tag in pairs(names) do
+										local index = YieldTypes[tag];
+										if index ~= nil then
+											local sum = (fromRoute[index + 1] or 0)
+												+ ((type(fromPath) == "table" and fromPath[index + 1]) or 0)
+												+ ((type(fromModifiers) == "table" and fromModifiers[index + 1]) or 0);
+											local mult = otherId ~= pid and trade:GetInternationalYieldModifier(index) or 1;
+											if type(mult) ~= "number" or mult <= 0 then mult = 1; end
+											yields[key] = sum * mult;
+											total = total + yields[key];
+										end
+									end
+									options[#options + 1] = {
+										origin = originID,
+										origin_x = origin:GetX(), origin_y = origin:GetY(),
+										dest = cityID, dest_player = otherId,
+										dest_x = city:GetX(), dest_y = city:GetY(),
+										yields = yields, total = total,
+									};
+								end
+							end
+						end
+					end);
+				end
+				table.sort(options, function(a, b) return a.total > b.total; end);
+				for i = 1, math.min(12, #options) do
+					options[i].total = nil;
+					out[#out + 1] = options[i];
+				end
+			end
+			if #out == 0 then return nil; end
+			return out;
+		end, nil),
 		-- Great Person POINTS, not the Great People already earned. The planner
 		-- prices every district project against the live race -- how close we
 		-- are to the next Scientist, and how close the leading rival is -- and
@@ -8198,7 +8372,12 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 							local district = CityManager.GetDistrictAt(x, y);
 							return district ~= nil and district:IsComplete();
 						end, false) and 1 or 0) .. ":"
-						.. (try(function() return plot:GetWonderType(); end, -1) or -1);
+						.. (try(function() return plot:GetWonderType(); end, -1) or -1) .. ":"
+						-- Appeal moves when a NEIGHBOUR changes and sight moves
+						-- every turn; both join the signature so the record the
+						-- board reads between sweeps is this turn's.
+						.. (try(function() return plot:GetAppeal(); end, 0) or 0) .. ":"
+						.. (try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) and 1 or 0);
 				end
 				local key = y * width + x;
 				local changed = mark ~= nil and (full or known[key] ~= mark);
@@ -8285,6 +8464,26 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						-- ★★★ APPEAL, AS THE HOST COUNTS IT. The board derived appeal
+						-- from its own six neighbours and could not see a wonder's
+						-- +2 in fog, a Governor's promotion or a rival's district;
+						-- Neighborhood housing, Seaside and Ski Resorts and
+						-- National Parks are all priced on it. The shipped
+						-- PlotToolTip reads `plot:GetAppeal()` (Base/Assets/UI/
+						-- ToolTips/PlotToolTip.lua:641) and `IsNationalPark`
+						-- (:743). Sent on every revealed plot; absent only when the
+						-- read fails, so the mirror keeps its derivation there.
+						ap = try(function() return plot:GetAppeal(); end, nil),
+						np = try(function() return plot:IsNationalPark() and true or nil; end, nil),
+						-- ★★★ IN SIGHT NOW, not merely revealed once. `IsRevealed`
+						-- gates the record; the board re-derived sight from its own
+						-- radii on a reconstructed map and disagreed with the host
+						-- on the tiles that mattered (`Game::host_observed`). The
+						-- same call the shipped combat preview makes
+						-- (Base/Assets/UI/Civ6Common.lua:115). true or absent.
+						vis = try(function()
+							return PlayersVisibility[pid]:IsVisible(x, y) and true or nil;
+						end, nil),
 						-- ★★★★ THE ROAD. Never exported; the mirror wrote `road = 0`
 						-- everywhere and priced every march across roadless ground.
 						-- Sent by name (`GameInfo.Routes`), nil where none stands.

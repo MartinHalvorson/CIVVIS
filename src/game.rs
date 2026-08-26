@@ -5873,6 +5873,25 @@ pub struct Game {
     /// perfect vision of the entire world.
     #[serde(default)]
     pub host_observed: BTreeSet<Pos>,
+    /// Appeal as the host counts it, per plot (`Plot:GetAppeal` off the tile
+    /// export). [`Game::tile_appeal`] prefers it to the derivation from the
+    /// six neighbours the board can see; empty on a native game.
+    #[serde(default)]
+    pub observed_appeal: BTreeMap<Pos, i32>,
+    /// What the host says a route a Trader could START would pay its origin,
+    /// keyed by (origin, destination) — the shipped TradeRouteChooser's own
+    /// `CalculateOriginYield…` sum, exported while a route slot is open.
+    /// Distinct from [`Game::observed_route_yields`], which is for ACTIVE
+    /// routes and stands in for the model inside `city_yields`; this one is
+    /// read by the trader-destination chooser. Empty on a native game.
+    #[serde(default)]
+    pub observed_route_options: BTreeMap<(u32, u32), crate::rules::Yields>,
+    /// The host's climate readings beyond the phase itself: the world's CO2,
+    /// the temperature, the sea-level and disaster forecasts
+    /// (`GameClimate`, the shipped ClimateScreen's reads). `None` on a native
+    /// game or an export without it.
+    #[serde(default)]
+    pub observed_climate: Option<ObservedClimate>,
     /// Ground a HOST holds for somebody else and will not let this seat's units
     /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
     ///
@@ -6075,6 +6094,33 @@ pub struct Storm {
     pub ends: u32,
 }
 
+/// The host's climate readings a mirrored board carries beside its phase —
+/// `GameClimate` as the shipped ClimateScreen reads it. Each field is `None`
+/// where the accessor was missing on the host's ruleset.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ObservedClimate {
+    /// Degrees above the starting baseline (`GetTemperatureChange`).
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    /// Every civilization's CO2 together (`GetTotalCO2Footprint`), which
+    /// [`Game::global_co2_emissions`] prefers to the board's own sum.
+    #[serde(default)]
+    pub co2_total: Option<f64>,
+    /// Turns until the next sea-level rise (`GetNextSeaLevelRiseTurns`).
+    #[serde(default)]
+    pub sea_level_turns: Option<i64>,
+    /// Tiles the sea has flooded so far (`GetTilesFlooded`).
+    #[serde(default)]
+    pub tiles_flooded: Option<i64>,
+    /// Per-turn percent chance of a storm, a river flood and a drought.
+    #[serde(default)]
+    pub storm_pct: Option<f64>,
+    #[serde(default)]
+    pub flood_pct: Option<f64>,
+    #[serde(default)]
+    pub drought_pct: Option<f64>,
+}
+
 /// A drought in progress. Droughts are the longest-lived disaster, so the
 /// tiles they cover are remembered until the rain returns.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -6223,6 +6269,12 @@ struct GameSer {
     observed_great_work_housing: Option<BTreeMap<u32, BTreeMap<String, usize>>>,
     #[serde(default)]
     observed_route_yields: Vec<((u32, u32), crate::rules::Yields)>,
+    #[serde(default)]
+    observed_route_options: Vec<((u32, u32), crate::rules::Yields)>,
+    #[serde(default)]
+    observed_appeal: Vec<(Pos, i32)>,
+    #[serde(default)]
+    observed_climate: Option<ObservedClimate>,
     #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -6411,6 +6463,9 @@ impl From<GameSer> for Game {
             observed_route_posts: s.observed_route_posts.into_iter().collect(),
             observed_great_work_housing: s.observed_great_work_housing,
             observed_route_yields: s.observed_route_yields.into_iter().collect(),
+            observed_route_options: s.observed_route_options.into_iter().collect(),
+            observed_appeal: s.observed_appeal.into_iter().collect(),
+            observed_climate: s.observed_climate,
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
@@ -6619,6 +6674,9 @@ impl From<Game> for GameSer {
             observed_route_posts: g.observed_route_posts.into_iter().collect(),
             observed_great_work_housing: g.observed_great_work_housing,
             observed_route_yields: g.observed_route_yields.into_iter().collect(),
+            observed_route_options: g.observed_route_options.into_iter().collect(),
+            observed_appeal: g.observed_appeal.into_iter().collect(),
+            observed_climate: g.observed_climate,
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
@@ -6708,6 +6766,7 @@ impl Game {
         self.observed_route_posts.clear();
         self.observed_great_work_housing = None;
         self.observed_route_yields.clear();
+        self.observed_route_options.clear();
         self.observed_city_worked_tiles.clear();
         self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
@@ -7052,6 +7111,9 @@ impl Game {
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
+            observed_appeal: BTreeMap::new(),
+            observed_route_options: BTreeMap::new(),
+            observed_climate: None,
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
@@ -19281,6 +19343,15 @@ impl Game {
     }
 
     pub fn global_co2_emissions(&self) -> f64 {
+        // A mirrored board carries the host's world total; its rivals'
+        // emissions never cross, so the sum below would be ours alone.
+        if let Some(total) = self
+            .observed_climate
+            .as_ref()
+            .and_then(|climate| climate.co2_total)
+        {
+            return total.max(0.0);
+        }
         self.players
             .iter()
             .map(|player| player.co2_emissions)
@@ -19413,6 +19484,45 @@ impl Game {
             tile.coastal_lowland = 0;
             tile.flooded = false;
             tile.submerged = true;
+        }
+    }
+
+    /// Carry the host's climate-change level onto a mirrored board. The level
+    /// is the phase; the bands it has flooded follow the shipped
+    /// `CoastalLowlands` table (`COASTAL_LOWLAND_1M` floods at
+    /// `RANDOM_EVENT_SEA_LEVEL_RISE2`, 2M at RISE3, 3M at RISE5 — the same
+    /// rows [`Game::apply_climate_phase`] runs), marked without the damage,
+    /// the population loss and the moments a native rise books, because the
+    /// host booked those itself and the export already shows their result. A
+    /// band the host has SUBMERGED crosses as coast on the plot record and
+    /// keeps no lowland type, so only flooding is marked here. A city whose
+    /// Flood Barrier stands keeps its ground, as the host's does.
+    pub(crate) fn mirror_set_climate_phase(&mut self, phase: u8) {
+        self.climate_phase = phase.min(7);
+        let flooded_bands: Vec<u8> = [(2u8, 1u8), (3, 2), (5, 3)]
+            .iter()
+            .filter(|(at, _)| self.climate_phase >= *at)
+            .map(|(_, band)| *band)
+            .collect();
+        let positions: Vec<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                tile.coastal_lowland > 0
+                    && !tile.submerged
+                    && !tile.flooded
+                    && flooded_bands.contains(&tile.coastal_lowland)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        for position in positions {
+            if self.lowland_has_barrier(position) {
+                continue;
+            }
+            if let Some(tile) = self.map.tiles.get_mut(&position) {
+                tile.flooded = true;
+            }
         }
     }
 
@@ -26683,6 +26793,13 @@ impl Game {
     }
 
     fn tile_appeal_uncached(&self, position: Pos) -> i32 {
+        // The host's own count where the export carried one. The derivation
+        // below reads the six neighbours the board can see; the host's
+        // reads the ones it has, fog included, plus every modifier the model
+        // does not carry.
+        if let Some(appeal) = self.observed_appeal.get(&position) {
+            return *appeal;
+        }
         let Some(tile) = self.map.get(position) else {
             return 0;
         };

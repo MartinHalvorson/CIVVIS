@@ -35753,3 +35753,70 @@ fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
         );
     }
 }
+
+/// The host's projection for a (origin, destination) pair — exported while a
+/// route slot is open — is what the trader chooser prices for that pair; the
+/// model's own route yields stand everywhere else, and the premiums on top
+/// are the board's own either way.
+#[test]
+fn a_host_priced_route_option_is_what_the_trader_chooser_prices() {
+    let mut game = Game::new_full(2, 18, 10, 79_002, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let origin = game.player_city_ids(0)[0];
+    let destination = game.player_city_ids(1)[0];
+    let ai = AdvancedAi::new();
+    let strategy = GrandStrategy::Conquest;
+    let model = ai.trade_route_destination_value_from(
+        &game,
+        0,
+        Some(origin),
+        &game.cities[&destination],
+        strategy,
+    );
+    assert_eq!(
+        model,
+        ai.trade_route_destination_value(&game, 0, &game.cities[&destination], strategy),
+        "without a host projection the origin changes nothing"
+    );
+    let host = crate::rules::Yields {
+        gold: 12.0,
+        science: 6.0,
+        ..Default::default()
+    };
+    game.observed_route_options
+        .insert((origin, destination), host);
+    let priced = ai.trade_route_destination_value_from(
+        &game,
+        0,
+        Some(origin),
+        &game.cities[&destination],
+        strategy,
+    );
+    let expected = model - ai.yield_value(game.trade_route_yields(0, destination), strategy)
+        + ai.yield_value(host, strategy);
+    assert!(
+        (priced - expected).abs() < 1e-9,
+        "the host's yields replace the model's for the pair: {priced} vs {expected}"
+    );
+    assert_eq!(
+        ai.trade_route_destination_value_from(
+            &game,
+            0,
+            Some(origin + 1_000),
+            &game.cities[&destination],
+            strategy,
+        ),
+        model,
+        "another origin is not priced by this pair's projection"
+    );
+}
