@@ -8,8 +8,8 @@
 //! so a camp whose nearest major city is a rival's raids the rival, not us —
 //! and five deliberate clears took it down anyway: the adjacent clear
 //! (`clear_adjacent_empty_barbarian_camp`), the camp errand
-//! (`camp_bounty_target`), the home-defence threat list
-//! (`home_defense_objective_inner`), the near-home chase (`nearest_enemy`)
+//! (`camp_bounty_target`), the barbarian-response threat list
+//! (`barbarian_response_objective`), the near-home chase (`nearest_enemy`)
 //! and the presence alarm that admits the barbarian seat to the enemy list
 //! at all (`barbarian_presence_at_home_inner`). Each measured the camp's
 //! distance from OUR cities only. Likewise the envoy scorer's place term
@@ -490,7 +490,7 @@ mod tests {
     }
 
     /// The adjacent clear, the errand-free chase, the presence alarm and the
-    /// home-defence threat list all leave the rival's camp; with the gene off
+    /// barbarian-response threat list all leave the rival's camp; with the gene off
     /// the same unit walks in.
     #[test]
     fn the_rivals_camp_is_left_standing_by_every_clear() {
@@ -562,13 +562,13 @@ mod tests {
         );
         assert_eq!(
             ai.base
-                .barbarian_home_defense_objective(&game, 0, warrior, &[barb]),
+                .barbarian_response_objective(&game, 0, warrior, &[barb]),
             None
         );
         assert_eq!(
             stock
                 .base
-                .barbarian_home_defense_objective(&game, 0, warrior, &[barb]),
+                .barbarian_response_objective(&game, 0, warrior, &[barb]),
             Some(camp)
         );
     }

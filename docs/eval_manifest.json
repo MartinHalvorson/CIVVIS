@@ -1,20 +1,20 @@
 {
   "coverage": {
-    "named": 37,
+    "named": 36,
     "never_named": 0,
     "never_named_treatments": [],
-    "withholdable": 37
+    "withholdable": 36
   },
   "derived": {
     "firaxis_only_count": 27,
-    "live_bridge_count": 64,
-    "native_engine_repair_count": 37,
-    "withholdable_live_count": 37
+    "live_bridge_count": 63,
+    "native_engine_repair_count": 36,
+    "withholdable_live_count": 36
   },
   "genome_coverage": {
-    "capability_toggles": 199,
-    "measured_by_a_screen": 74,
-    "reachable_as_a_gene": 149,
+    "capability_toggles": 198,
+    "measured_by_a_screen": 73,
+    "reachable_as_a_gene": 148,
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 50,
     "unreachable_toggles": [
@@ -155,7 +155,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 37,
+      "declared_count": 36,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -169,7 +169,6 @@
         "war-economy",
         "bounded-recovery",
         "siege-commitment",
-        "home-defense",
         "garrison-under-fire",
         "strike-opening",
         "recon-replacement",
@@ -197,7 +196,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 22,
+      "declared_count": 21,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -211,7 +210,6 @@
         "war-economy",
         "bounded-recovery",
         "siege-commitment",
-        "home-defense",
         "garrison-under-fire",
         "strike-opening",
         "recon-replacement",
@@ -256,7 +254,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 64,
+      "declared_count": 63,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -270,7 +268,6 @@
         "war-economy",
         "bounded-recovery",
         "siege-commitment",
-        "home-defense",
         "garrison-under-fire",
         "strike-opening",
         "recon-replacement",
