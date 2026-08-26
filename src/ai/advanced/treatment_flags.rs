@@ -2869,6 +2869,17 @@ impl AdvancedAi {
         self.religion_race_is_closed = false;
     }
 
+    /// Put Moksha first for a religionless empire under conversion. See
+    /// `moksha_defends_the_faithless`.
+    pub fn enable_moksha_defends_the_faithless(&mut self) {
+        self.moksha_defends_the_faithless = true;
+    }
+
+    /// The twin of `enable_moksha_defends_the_faithless`.
+    pub fn disable_moksha_defends_the_faithless(&mut self) {
+        self.moksha_defends_the_faithless = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------

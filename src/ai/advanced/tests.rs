@@ -35393,3 +35393,99 @@ fn a_religion_race_the_world_has_closed_stops_charging_the_empire() {
         "off, the race is never read as closed"
     );
 }
+
+/// ★★★★ THE ONLY COUNTER IS RANKED LAST. `governor_priority` reads the grand
+/// strategy and nothing else, so an empire with no religion of its own ranks
+/// Moksha -- whose `citadel_of_god` is the only thing in the ruleset that
+/// stops a foreign faith taking a city it holds -- sixth of seven under
+/// Expansion and seventh under Diplomacy. Live King seat
+/// `civvis-20260826T112920Z` spent fifteen governor titles on Amani, Victor,
+/// Pingala and Reyna while eleven of its twelve cities converted. See
+/// `AdvancedAi::moksha_defends_the_faithless`.
+#[test]
+fn a_religionless_empire_under_conversion_raises_moksha_first() {
+    let (mut game, capital, _home) = empire_with_a_capital(71_701);
+    // A rival founds a faith and presses it into our capital: this is exactly
+    // what `home_conversion_threat` reads.
+    game.players[1].religion = Some("faith_theirs".to_string());
+    {
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.pressure.insert("faith_theirs".to_string(), 400.0);
+        city.atheist_pressure = 0.0;
+    }
+    assert!(
+        game.players[0].religion.is_none(),
+        "the fixture's empire founded nothing"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_moksha_defends_the_faithless();
+    assert!(
+        ai.home_conversion_threat(&game, 0).is_some(),
+        "the fixture must present a live conversion threat"
+    );
+
+    // Shipped: Moksha is last under Diplomacy and sixth under Expansion.
+    let shipped_diplomacy = AdvancedAi::governor_priority(GrandStrategy::Diplomacy);
+    assert_eq!(
+        shipped_diplomacy.last(),
+        Some(&"moksha"),
+        "the shipped Diplomacy list ranks the only counter dead last"
+    );
+
+    for strategy in [
+        GrandStrategy::Diplomacy,
+        GrandStrategy::Expansion,
+        GrandStrategy::Recovery,
+        GrandStrategy::Science,
+    ] {
+        let order = ai.governor_priority_for(&game, 0, strategy);
+        assert_eq!(
+            order.first(),
+            Some(&"moksha"),
+            "a religionless empire under conversion raises Moksha first on {strategy:?}"
+        );
+        // Nothing is dropped or duplicated — it is a reordering.
+        let shipped = AdvancedAi::governor_priority(strategy);
+        assert_eq!(order.len(), shipped.len(), "no governor is lost");
+        for name in shipped {
+            assert!(order.contains(name), "{name} survives the reorder");
+        }
+    }
+
+    // An empire with a faith of its own has Missionaries, Apostles and
+    // Inquisitors it can actually buy; it keeps the shipped order.
+    game.players[0].religion = Some("faith_ours".to_string());
+    assert_eq!(
+        ai.governor_priority_for(&game, 0, GrandStrategy::Diplomacy),
+        shipped_diplomacy.to_vec(),
+        "an empire that founded a religion is untouched"
+    );
+    game.players[0].religion = None;
+
+    // No threat, no reorder: the gene reads the board, not a preference.
+    {
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 200.0;
+    }
+    assert!(ai.home_conversion_threat(&game, 0).is_none());
+    assert_eq!(
+        ai.governor_priority_for(&game, 0, GrandStrategy::Diplomacy),
+        shipped_diplomacy.to_vec(),
+        "with nobody converting us the shipped order stands"
+    );
+
+    // Off, it is an exact no-op even with the threat live.
+    {
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.pressure.insert("faith_theirs".to_string(), 400.0);
+        city.atheist_pressure = 0.0;
+    }
+    ai.disable_moksha_defends_the_faithless();
+    assert_eq!(
+        ai.governor_priority_for(&game, 0, GrandStrategy::Diplomacy),
+        shipped_diplomacy.to_vec(),
+        "off, the shipped order is returned unchanged"
+    );
+}
