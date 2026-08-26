@@ -1393,6 +1393,10 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// Chokepoint readings are shared by every gene that asks for one in an
+    /// acting turn, on the same terms as `settlement_atlas` above. See
+    /// `advanced/chokepoints.rs`.
+    narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -4518,7 +4522,32 @@ pub struct AdvancedAi {
     /// `advanced/civilian_safety.rs`.
     civilian_out_of_reach: bool,
 
+    /// A settle site is worth more when the ground its own borders will
+    /// cover holds a mountain pass, an isthmus neck or a strait. Opt-in gene
+    /// `chokepoint-siting`; see `advanced/chokepoints.rs`.
+    chokepoint_siting: bool,
+    /// A city center is a naval passage its owner alone may use, so a site on
+    /// the strip of land between two seas joins them for our fleet and for
+    /// nobody else's. Opt-in gene `canal-city`; see `advanced/chokepoints.rs`.
+    canal_city: bool,
+    /// Gold buys the plot that closes a passage somebody else could use:
+    /// territory is a wall at peace, and `BuyPlot` is the only lever the seat
+    /// has over where a border goes. Opt-in gene `chokepoint-claim`; see
+    /// `advanced/chokepoints.rs`.
+    chokepoint_claim: bool,
+    /// A surplus soldier — or a hull, for a strait — holds the gate on the
+    /// approach to one of our cities and fortifies there. Opt-in gene
+    /// `chokepoint-garrison`; see `advanced/chokepoints.rs`.
+    chokepoint_garrison: bool,
+    /// This turn's gates and who holds them; empty with the gene off. See
+    /// `advanced/chokepoints.rs`.
+    chokepoint_gates: chokepoints::GatePlan,
+
     // ---- append: e-f ------------------------------------------------
+    /// An Encampment on a pass is a wall no foreign unit may ever enter, so
+    /// the district lands on the gate rather than on the next free plot.
+    /// Opt-in gene `encampment-seals-the-pass`; see `advanced/chokepoints.rs`.
+    encampment_seals_the_pass: bool,
     /// Reserve the FIRST Builder ahead of ordinary production, the way
     /// `solvency-first-trade-slot` reserves the first trade slot.
     ///
@@ -5276,6 +5305,12 @@ mod recon_disruption;
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
 
+/// Chokepoint control: the pass, the strait, the city center that is a canal
+/// only we may use, the plot that closes a passage with our border, the
+/// Encampment no foreign unit may ever enter, and the soldier who holds the
+/// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
+mod chokepoints;
+
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
@@ -5778,6 +5813,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
+            narrows_atlas: RefCell::new(chokepoints::NarrowsAtlas::default()),
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
@@ -5972,12 +6008,19 @@ impl AdvancedAi {
             district_planning: false,
             civilian_out_of_reach: false,
 
+            chokepoint_siting: false,
+            canal_city: false,
+            chokepoint_claim: false,
+            chokepoint_garrison: false,
+            chokepoint_gates: chokepoints::GatePlan::default(),
+
             city_campaign: false,
             campaign: None,
             campaign_pillage: false,
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            encampment_seals_the_pass: false,
             first_builder_reserve: false,
             first_research_building_reserve: false,
             expansion_schedule: false,
@@ -16048,7 +16091,12 @@ impl AdvancedAi {
                         .and_then(|name| g.rules.features.get(name))
                         .is_some_and(|feature| feature.natural_wonder) as u8 as f64
                         * 320.0;
-                    let base_score = yields + resource + wonder - cost * 0.70;
+                    // `chokepoint-claim`: a border is a wall at peace, and
+                    // this buy is the only lever the seat has over where one
+                    // goes. 0.0 with the gene off. See
+                    // `advanced/chokepoints.rs`.
+                    let gate = self.chokepoint_plot_bonus(g, pid, *pos);
+                    let base_score = yields + resource + wonder + gate - cost * 0.70;
                     // Use adjacency as a cheap shortlist signal. Exact site
                     // legality and full production value are evaluated below
                     // for only the strongest four plots, avoiding a full game
@@ -22045,6 +22093,9 @@ impl AdvancedAi {
                     + development_penalty
                     + research_coverage
                     + self.science_drive_production_bonus(g, pid, cid, item)
+                    // `encampment-seals-the-pass`: 0.0 with the gene off and
+                    // for every other family. See `advanced/chokepoints.rs`.
+                    + self.encampment_seal_bonus(g, pid, family.as_str(), *pos)
             }
             Item::Repair { repair, .. } => {
                 if repair == "district" {
@@ -23031,6 +23082,11 @@ impl AdvancedAi {
         if self.defensible_sites {
             value += self.defensibility(g, pid, pos);
         }
+        // `chokepoint-siting` / `canal-city`: the gates this city's own
+        // ground would hold, and the two seas its center would join. Both
+        // return 0.0 with their gene off. See `advanced/chokepoints.rs`.
+        value += self.chokepoint_site_bonus(g, pid, pos);
+        value += self.canal_city_bonus(g, pid, pos);
         value
     }
 
@@ -30209,6 +30265,14 @@ impl AdvancedAi {
             if let Some(acted) = self.recon_disruption_step(g, pid, uid) {
                 return acted;
             }
+            // `chokepoint-garrison`: the gate on the approach to one of our
+            // cities, held by a body nothing above wanted. Deliberately the
+            // same tail and the same reason as the picket above; see the
+            // header of `advanced/chokepoints.rs` for why it is not a
+            // wartime stand.
+            if let Some(acted) = self.chokepoint_garrison_step(g, pid, uid) {
+                return acted;
+            }
             return self.base.military_step(g, pid, uid);
         }
         // Combat can change occupancy, local power and the best focus target.
@@ -31646,6 +31710,10 @@ impl AdvancedAi {
         // agree on them. Nothing is read with both genes off. See
         // `advanced/recon_disruption.rs`.
         self.recon_disruption_plan(g, pid);
+        // `chokepoint-garrison`: this turn's gates and their garrisons, drawn
+        // once from the same board and for the same reason. Nothing is read
+        // with the gene off. See `advanced/chokepoints.rs`.
+        self.chokepoint_gate_plan(g, pid);
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| !settled_first.contains(uid) && Some(*uid) != opening_recon_warrior);
         ids.sort_by_key(|uid| {
