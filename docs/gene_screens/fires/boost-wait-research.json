@@ -4,14 +4,14 @@
     "complete_seats": 144,
     "completion": 1.0,
     "partial": false,
-    "read": "screen complete · 144 of 144 intended seats (100.0%) · seeds 26082540..26082563 reserved",
+    "read": "screen complete · 144 of 144 intended seats (100.0%) · seeds 26082640..26082663 reserved",
     "seed_window": [
-      26082540,
-      26082563
+      26082640,
+      26082663
     ],
     "seed_window_played": [
-      26082540,
-      26082563
+      26082640,
+      26082663
     ],
     "target_games": 24,
     "target_seats": 144
@@ -29,8 +29,8 @@
       "diplomatic": 0.0,
       "domination": 0.0,
       "religious": 0.20833333333333334,
-      "science": 0.625,
-      "score": 0.16666666666666666,
+      "science": 0.6666666666666666,
+      "score": 0.125,
       "unfinished": 0.0
     },
     "games": 24,
@@ -61,41 +61,41 @@
     "by_kind": {
       "religious": {
         "games": 5,
-        "median_turn": 210,
+        "median_turn": 182,
         "seats": 30,
         "share": 0.20833333333333334,
         "won_by_field": 0
       },
       "science": {
-        "games": 15,
-        "median_turn": 233,
-        "seats": 90,
-        "share": 0.625,
+        "games": 16,
+        "median_turn": 228,
+        "seats": 96,
+        "share": 0.6666666666666666,
         "won_by_field": 0
       },
       "score": {
-        "games": 4,
+        "games": 3,
         "median_turn": 250,
-        "seats": 24,
-        "share": 0.16666666666666666,
+        "seats": 18,
+        "share": 0.125,
         "won_by_field": 0
       }
     },
     "games": 24,
     "lanes": {
-      "domestic_mean": 123.14583333333333,
-      "dvp_mean": 10.944444444444445,
+      "domestic_mean": 119.55555555555556,
+      "dvp_mean": 10.493055555555555,
       "dvp_required": 20,
-      "rival_dvp_mean": 13.104166666666666,
-      "rival_tourists_mean": 73.51388888888889,
+      "rival_dvp_mean": 12.541666666666666,
+      "rival_tourists_mean": 71.90277777777777,
       "seats_where_somebody_reached_the_threshold": 0.0,
-      "tourists_mean": 33.65277777777778
+      "tourists_mean": 32.166666666666664
     },
     "lost_to": {
       "culture": 0.0,
       "diplomatic": 0.0,
       "religious": 0.1736111111111111,
-      "science": 0.5208333333333334
+      "science": 0.5555555555555556
     },
     "unit": "games, and the seats of those games",
     "won_by_field": 120
@@ -165,38 +165,38 @@
   "games": 24,
   "genes": [
     {
-      "adjusted_pp": -6.417112299465244,
-      "adjusted_se_pp": 6.782860199992855,
-      "compute_cost_pct": 10.403581184199698,
-      "compute_cost_se_pct": 5.272152136032794,
+      "adjusted_pp": -0.6851270339708837,
+      "adjusted_se_pp": 7.046063256710533,
+      "compute_cost_pct": -6.46783370841267,
+      "compute_cost_se_pct": 7.061908727484983,
       "cost_games": 24,
-      "n_off": 110,
-      "n_on": 34,
+      "n_off": 113,
+      "n_on": 31,
       "read": "~",
       "seats": 144,
-      "share_delta_pp": -1.9198855251895575,
-      "share_resolves_pp": 3.323106922057831,
-      "share_se_pp": 1.1868239007349397,
-      "share_z": -1.6176667187108973,
+      "share_delta_pp": 1.8349551386135254,
+      "share_resolves_pp": 4.4187066957802745,
+      "share_se_pp": 1.578109534207241,
+      "share_z": 1.1627552453355592,
       "tag": "boost-wait-research",
-      "time_cost_pct": 3.426650817728299,
-      "time_cost_se_pct": 7.542722391075099,
-      "win_delta_pp": -6.417112299465244,
-      "win_off": 0.18181818181818182,
-      "win_on": 0.11764705882352941,
-      "win_resolves_pp": 18.992008559979993,
-      "win_se_pp": 6.782860199992855,
+      "time_cost_pct": -4.742788837834777,
+      "time_cost_se_pct": 9.602172272036741,
+      "win_delta_pp": -0.6851270339708837,
+      "win_off": 0.168141592920354,
+      "win_on": 0.16129032258064516,
+      "win_resolves_pp": 19.728977118789494,
+      "win_se_pp": 7.046063256710533,
       "win_tranches": [
         {
           "games": 24,
           "position": "latest",
           "seats": 144,
-          "win_delta_pp": -6.417112299465244,
-          "win_se_pp": 6.782860199992855,
-          "win_z": -0.9460776295333353
+          "win_delta_pp": -0.6851270339708837,
+          "win_se_pp": 7.046063256710533,
+          "win_z": -0.09723543615910375
         }
       ],
-      "win_z": -0.9460776295333353
+      "win_z": -0.09723543615910375
     }
   ],
   "kind": "gene_screen_analysis",
@@ -206,14 +206,14 @@
     "all_seats": true,
     "baseline": "best",
     "batch": {
-      "seed_first": 26082540,
-      "seed_last": 26082563,
+      "seed_first": 26082640,
+      "seed_last": 26082663,
       "target_games": 24,
       "target_seats": 144
     },
     "build": {
-      "binary_sha256": "26ee01d1b2a86565d8bc21dccd7a6a4df74a98cf3a23b0bc9a5f0332c73469fd",
-      "commit": "30049c6176b1476b9633c11d147f163ec36a36d9",
+      "binary_sha256": "f6ee63523c1f3a187579129d3d2b1e3b75cc6ce63025fc5b8bf81de483da51c6",
+      "commit": "fca65270ffa019a02790b56c887dff17d875e81a",
       "commit_source": "env",
       "dirty": false,
       "genes_sha256": "b13198142e6d71e080cb14152428273c05eb3b944157f63e67ede3d259f6b394"
@@ -513,7 +513,7 @@
       "boost-wait-research"
     ],
     "speed": "online",
-    "start_seed": 26082540,
+    "start_seed": 26082640,
     "turns": 250,
     "victories": "science,culture,religious,diplomatic,domination,score",
     "victory_mask": "",
@@ -530,8 +530,8 @@
     "genes": 1,
     "power": 0.8,
     "read": "the smallest Δ this run could resolve at 80% power; a Δ below it is inside the run's own noise",
-    "share_pp": 3.323106922057831,
-    "win_pp": 18.992008559979993
+    "share_pp": 4.4187066957802745,
+    "win_pp": 19.728977118789494
   },
   "rival_mix": null,
   "seats": 144,

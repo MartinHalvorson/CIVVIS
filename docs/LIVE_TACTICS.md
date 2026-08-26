@@ -1,18 +1,17 @@
 # Unit movement and combat on the live seat: the pipeline, its leaks, the program
 
-2026-08-19. Companion to `docs/TACTICS.md` (the engine's tactical search and
-its bench) and `docs/CIV6_COMPUTER_CONTROL.md` (the order channel). This
-document is about the *other* half of fighting a real Civilization VI game:
-what happens to a tactical decision between `AdvancedAi` and the host board,
-where the value leaks, and the ranked program that closes the leaks. Each step
-of the program lands as its own PR and appends its measured result here; a
-step that is not yet measured says so.
+2026-08-19. Companion to `src/ai/advanced.rs` (the engine's native tactical
+path) and `docs/CIV6_COMPUTER_CONTROL.md` (the order channel). This document
+is about the *other* half of fighting a real Civilization VI game: what happens
+to a tactical decision between `AdvancedAi` and the host board, where the value
+leaks, and the ranked program that closes the leaks. Each step of the program
+lands as its own PR and appends its measured result here; a step that is not
+yet measured says so.
 
 ## 1. What the record says
 
-The engine's tactical brain is strong: on the Tactics arena the joint search
-beats the frozen `advanced_v1` controller **99.6 %** of the time in pure
-combat (`docs/closed/TACTICS_BASELINE.md`). The live seat does not get that strength.
+The engine's native tactical path makes one unit's decision at a time. The live
+seat does not get a separate combat controller.
 The host's own Hall of Fame for the twelve finished live games of 2026-08-01/02
 has our seat losing **343 units and killing 61** (0.18 kills per loss) while
 the sixty Firaxis-AI seats in the same games ran **1.71** the other way, at
@@ -33,19 +32,18 @@ Trace one wartime turn from the brain to the board:
 2. **Mirror rebuild** hands every unit its *full* movement (`mirror_unit_moves`)
    whatever the host already spent on a queued path; Civ 6 city-centre stacking
    drops units the engine's stacking law cannot seat (`tile_taken`).
-3. **One CIVVIS turn on a clone of the mirror.** The joint search plans units
-   within ≤3 tiles of contact, one turn deep, with clairvoyant rolls; the
-   per-unit picker attacks only from the tile the unit stands on; `route_step`
-   prices every edge at 1 and, beyond the first step, ignores units, ZOC and
-   cliffs. No friendly pass-through, no swap — a friendly in the way is a hold.
+3. **One CIVVIS turn on a clone of the mirror.** The per-unit picker attacks
+   only from the tile the unit stands on; `route_step` prices every edge at 1
+   and, beyond the first step, ignores units, ZOC and cliffs. No friendly
+   pass-through, no swap — a friendly in the way is a hold.
 4. **Translate and coalesce.** `coalesce_unit_paths` collapsed a unit's walk to
    its furthest hex and **deferred the first non-move and everything after it
    to the next turn** — every ATTACK, RANGE_ATTACK, FORTIFY or PILLAGE that
-   followed a step. The joint search's lines are `[Move, Attack]`
-   (`tactics.rs`), so on the bridge they executed as a step: the unit walked
-   into contact and stood there, unstruck, through the enemy's turn. Only the
-   finishing volley (`live_finishing_candidates`) sent approach+blow as one
-   `MOVE_TO` onto the defender, and only for proved kills on wounded units.
+   followed a step. A move followed by an action therefore executed as a step:
+   the unit walked into contact and stood there, unstruck, through the enemy's
+   turn. Only the finishing volley (`live_finishing_candidates`) sent
+   approach+blow as one `MOVE_TO` onto the defender, and only for proved kills
+   on wounded units.
    `Action::Pillage`, Heal, Alert, swap and formation combine were not
    translated at all.
 5. **Lua applies the list, sequentially, open-loop.** Every order is gated on
@@ -62,15 +60,14 @@ Trace one wartime turn from the brain to the board:
 |---|---|---|---|
 | 1 | **Sequenced, closed-loop actuation** — per-unit order queues in the mod with tick-level readback, proved approach+blow as one host order, no explore hand-off inside an engagement, Pillage translated; later a mid-turn combat frame | one order per unit per turn; step-then-strike losing the strike; the host scattering held units | share of planned strikes landing the same turn; hover share; Hall-of-Fame exchange ratio |
 | 2 | **Host-grounded planning board** — seat-turn-start movement, embarked and ZOC state, front-line terrain and roads every turn, the host's own reachable set, engine parity for pass-through/swap/stacking, refusals consumed as facts | invented MP; stale front; the 12.5 % of MOVE_TOs that never moved; "next tile refuses the unit" holds | arrival ledger (planned vs actual), no-op share |
-| 3 | **Engagement-window planner** — `tactics.rs` grown to own every unit within R of contact, lines from `reachable()`, two of our turns deep, expected-value combat, city-assault terms | one-turn horizon; approach from four tiles out; the 60 % one-city arena regime | `battle_bench` + a city-assault cell in `tactics_bench`; live captures |
 | 4 | **Operational choreography** — army plan with per-unit ETAs, go/no-go on the muster ring, siege as ring → walls → capture, wounded rotation | piecemeal arrival; sieges walked away | first live capture; arrival spread |
 | 5 | **Live tactical ledger + replay bench** — kill/loss/combat/capture events, hostile ids, predicted-vs-actual per order, Hall-of-Fame per run, offline replay of recorded frames | the reconstruction this document had to do by hand | the next report cites the ledger |
 
 Everything is bridge-scoped: the native controller keeps its rating anchor,
-and the whole-game evidence that tactical quality does not move native Elo
-(`docs/TACTICS.md` §6–7) is left undisturbed. Do not re-attempt the recorded
+and historical whole-game evidence did not justify carrying a more expensive
+tactical controller in the native evaluator. Do not re-attempt the recorded
 nulls: the adjacent-support term, `tile_defense_bonus` in the closed-form
-reply, budget above the knee in the current line space, promoting bridge war
+reply, budget above the knee in the former line space, promoting bridge war
 repairs natively, alpha-beta/MCTS over raw actions.
 
 ## 4. Step 1 — sequenced unit orders (this change)
@@ -203,19 +200,11 @@ runs should be read for `move_capped` / `move_no_reach` on `orders`,
 `queued_paths`, `moves_short` in the decide notes, and the arrival ledger's
 did-not-move share (12.5 % before).
 
-## 7. Step 3, first cut — the joint search reaches as far as the unit does
+## 7. Retired engagement-window planner
 
-The engagement-window planner grows in steps; this is the first: approach
-lines from the engine's exact reach flood instead of two hand-built steps
-(`docs/TACTICS.md` §17). Measured on `battle_bench` at 300 paired seeds a cell
-on two disjoint blocks: the four foot compositions hold within one standard
-error; the two mounted compositions gain (cavalry +398 → +476 and +352 → +410;
-mounted medieval +496 → +590 and +601 → +622), because a four-move unit's
-third and fourth hexes now exist for our own lines as they already did for
-the enemy's reply. Still ahead in this step: the window (units four-plus tiles
-out with no strike this turn), a second ply for set-up lines, expected-value
-combat for the host's rolls, and the city-assault terms the one-city arena
-regime measures.
+The `joint-tactics` search and its reach-line companion were removed on
+2026-08-25 after the 35,148-seat screen read a −0.104 pp win difference. The
+native and live paths both retain their ordinary per-unit tactical behavior.
 
 ## 8. Step 1, second cut — the mid-turn combat frame (flag-gated, default off)
 
@@ -268,7 +257,6 @@ brain-side withholds in `withheld`. Read a comparison with
 | 6 · tiles delta | `TileDelta` (on) | `--no-tile-delta` — revealed ground crosses only with the `TileExportEvery` sweep, as before | `mod_arms.TileDelta` |
 | 2 · moves capped to this turn's leg, trusted movement | `CapMovesToReach` (on) | `--no-cap-moves-to-reach` — also stops the seat advertising `moves_at_turn_start`, so the mirror returns to the full allowance | `mod_arms.CapMovesToReach` |
 | 2 · queued paths cancelled at turn start | `CancelQueuedPaths` (on) | `--no-cancel-queued-paths` | `mod_arms.CancelQueuedPaths` |
-| 3 · joint search reach lines | `joint_reach_lines` (on wherever the joint search runs) | live: `--without joint-reach-lines` (`live_without_joint_reach_lines` arm); bench/arena: `advanced_joint_tactics_geometric` seats the pre-§17 portfolio — measured to reproduce the old figure exactly (cavalry +398.0 on block 7,200,000) | `withheld` (live) / the arm name |
 | 5 · strike preview | `StrikePreview` (on) | `--no-strike-preview` — `strike` events carry no prediction | `mod_arms.StrikePreview` |
 
 Pillage translation, the tactical ledger's events and the export of ids,
@@ -279,11 +267,7 @@ decisions, and stay on.
 ledger (step 1); `move_capped`, `move_no_reach`, `queued_paths`, `moves_short`
 and the did-not-move share (step 2); the ledger's kills per loss, damage
 dealt/taken and the hover share (all); `combat_frame` /
-`combat_frame_timeout` and the ladder's `applied_pct` (1b). The bench pair for
-step 3 is `battle_bench --a advanced_joint_tactics --b
-advanced_joint_tactics_geometric` (cavalry cell, 300 seeds, block 7,200,000:
-**+59.0 ± 17.1**, sign p = 0.0023), and `tactics_bench` seats both arms on the
-arena regimes.
+`combat_frame_timeout` and the ladder's `applied_pct` (1b).
 
 ## 10. Step 4, first cut — arrive together (`arrival-waves`, opt-in, off)
 
@@ -300,11 +284,10 @@ names this document had not connected to it. The pre-war ETA and go/no-go
 are `WarPlan` (`war_package_status`: `staged_bodies`, `fourth_one_turn_away`
 from `war_staging_route_for_unit`) and `campaign_staged_for_war` (three
 bodies on the 3..=5 ring, a melee capturer, local strength ≥ 1.05); the
-ring and the walls are the joint evaluator's own terms (a melee blow on a
-city is worth +520 only at ≤ 40 hp with the wall down, `tactics.rs`
-`strike_prior`; wall damage is priced at 1.35×); the ring is `rush_siege_step`
-for a rush and `siege_role` / `siege_tracks_wall` / `siege_commitment` /
-`siege_is_progress` for a campaign; wounded rotation is the per-unit
+ring and walls have explicit campaign and siege terms; the ring is
+`rush_siege_step` for a rush and `siege_role` / `siege_tracks_wall` /
+`siege_commitment` / `siege_is_progress` for a campaign; wounded rotation is
+the per-unit
 `withdraw_hp` recovery step and the group `Recover` posture. All of those
 are live-bridge treatments already and all of them are in the screen below.
 

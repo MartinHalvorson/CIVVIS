@@ -1381,10 +1381,10 @@ fn zoc_stops_combatants_but_cavalry_ignores_and_rivers_block_it() {
     assert!(!g.in_enemy_zoc(0, ring[0]));
 }
 
-/// The joint tactical search builds its approach lines from this reading:
-/// real step costs and paths, and a zone of control that stops the walk but
-/// not the blow — the flood keeps the movement the unit arrives with, unlike
-/// `reachable`'s "can it move on" answer.
+/// Tactical rules build approach lines from this reading: real step costs and
+/// paths, and a zone of control that stops the walk but not the blow — the
+/// flood keeps the movement the unit arrives with, unlike `reachable`'s
+/// "can it move on" answer.
 #[test]
 fn approach_reach_keeps_movement_for_a_blow_inside_zoc_and_stops_the_walk_there() {
     let (mut g, enemy_pos, ring) = controlled_game(310);

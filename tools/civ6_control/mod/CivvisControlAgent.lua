@@ -10876,6 +10876,27 @@ local function applyOrder(player, pid, row, turn)
 		end
 		verb = resolved;
 		local cityId = tonumber(subject) or -1;
+		-- The first expansion Settler is a commitment, not a provisional queue
+		-- suggestion.  CIVVIS receives a fresh board every turn and can otherwise
+		-- replace it with a newly preferred Scout before either item completes.
+		-- Keep that one-city opening intact; later cities and a repeated Settler
+		-- request retain the ordinary ability to change production.
+		local currentOpening = try(function()
+			local q = city:GetBuildQueue();
+			return q and q:GetCurrentProductionTypeHash() or 0;
+		end, 0) or 0;
+		local settlerRow = GameInfo.Types["UNIT_SETTLER"];
+		if currentOpening ~= 0 and settlerRow ~= nil
+				and currentOpening == settlerRow.Hash and resolved ~= "UNIT_SETTLER" then
+			local cityCount = 0;
+			eachCity(player, function() cityCount = cityCount + 1; end);
+			if cityCount == 1 then
+				emit("opening_settler_preserved", {
+					turn = turn, city = cityId, requested = resolved,
+				});
+				return false, "opening_settler_in_progress";
+			end
+		end
 		civvisBuild[cityId] = resolved;
 		-- A live city can go from healthy to lost between two CIVVIS boards.  If
 		-- the engine says an unwalled city is already damaged or has a visible
@@ -12474,8 +12495,7 @@ end
 -- where the unit STOOD, not from `a`. `civvis_orders::coalesce_unit_paths`
 -- answered that by sending a unit's walk and deferring every later order to the
 -- next frame — correct causally, and it deferred every strike that follows a
--- step. The joint tactical search's lines are literally `[Move, Attack]`
--- (`src/ai/tactics.rs`), so on this bridge they executed as a step: the unit
+-- step. A move followed by an action therefore executed as a step: the unit
 -- walked into contact and stood there, unstruck, for the enemy's whole turn.
 -- Measured on run civvis-20260803T005930Z: 7 melee ATTACK orders against 1546
 -- MOVE_TO in 188 turns of war; 622 of 1787 military unit-turns hovering 2-4

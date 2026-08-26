@@ -114,7 +114,7 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
         self.assertIn('${VICTORY:+--victory} ${VICTORY:+"$VICTORY"}', source)
-        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}",
+        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.70}",
                       source)
 
     def test_the_supervisors_optional_flags_reach_the_climb_as_words(self):
@@ -122,9 +122,11 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         it reached the climb as ONE argument, `--victory science`, which
         argparse rejects as unrecognized. The victory form had never been
         exercised; the abandon floor was, 2026-08-19 17:00Z, and four starts
-        in a row played nothing. Run the script's OWN knob lines and the
-        optional-flag lines of its climb invocation under zsh, with and
-        without the knobs, and read the words that come out."""
+        in a row played nothing. The three-axis score restart is different:
+        it is a required deployment policy at 0.70, even when a GUI host did
+        not inherit a login-shell environment. Run the script's OWN knob lines
+        and the flag lines of its climb invocation under zsh, with and without
+        operator overrides, and read the words that come out."""
         if shutil.which("zsh") is None:
             # The supervisor is a zsh script and only ever runs on the macOS
             # hosts that have it; the literal pin above is the guard on a
@@ -142,12 +144,16 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         script = "\n".join(knob_lines) + (
             "\nfor w in " + " ".join(flag_lines) + "; do print -r -- \"$w\"; done\n")
         for knobs, expected in (
-            ({}, []),
-            ({"CIVVIS_VICTORY": "science"}, ["--victory", "science"]),
+            ({}, ["--restart-below-leader-ratio", "0.70"]),
+            ({"CIVVIS_VICTORY": "science"},
+             ["--victory", "science", "--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_ABANDON_BELOW_WIN_RATE": "0.05"},
-             ["--abandon-below-win-rate", "0.05"]),
+             ["--abandon-below-win-rate", "0.05",
+              "--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
              ["--restart-below-leader-ratio", "0.70"]),
+            ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0"},
+             ["--restart-below-leader-ratio", "0"]),
             ({"CIVVIS_VICTORY": "culture", "CIVVIS_ABANDON_BELOW_WIN_RATE": "0.1",
               "CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
              ["--victory", "culture", "--abandon-below-win-rate", "0.1",
@@ -331,6 +337,62 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                         sync.index('checkout --quiet --detach origin/main'))
         self.assertLess(sync.index('checkout --quiet --detach origin/main'),
                         sync.index('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"'))
+
+    def test_the_supervisor_rechecks_head_after_the_fresh_build(self):
+        """A release build is long enough for `main` to move underneath it.
+
+        The old guard only compared the checkout to `origin/main` *before*
+        compiling.  In the observed handoff, a merge landed during that build,
+        so the next game began from the now-stale binary.  The final fetch must
+        happen after the build and must return to the batch boundary instead of
+        launching the old executable.
+        """
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        build = source.index('if ! cargo build --release --bin civvis_orders')
+        difficulty = source.index('DIFFICULTY=$EXPLICIT_DIFFICULTY', build)
+        handoff = source[build:difficulty]
+
+        self.assertIn('git -c gc.auto=0 fetch --quiet origin main', handoff)
+        self.assertIn('ORIGIN_MAIN_AFTER_BUILD=$(git rev-parse origin/main', handoff)
+        self.assertIn('"$HEAD_REVISION" != "$ORIGIN_MAIN_AFTER_BUILD"', handoff)
+        self.assertIn('rebuilding exact head before launch', handoff)
+        self.assertIn('continue', handoff)
+        self.assertLess(handoff.index('cargo build --release --bin civvis_orders'),
+                        handoff.index('fetch --quiet origin main'))
+        self.assertLess(handoff.index('fetch --quiet origin main'),
+                        handoff.index('"$HEAD_REVISION" != "$ORIGIN_MAIN_AFTER_BUILD"'))
+
+    def test_visible_mirror_reports_the_exact_fetched_revision(self):
+        """The display server must identify the build it is actually serving.
+
+        `HEAD_SHA` becomes a seven-character label for logs and the runtime
+        marker.  Passing that shortened value (or no launch stamp at all) to
+        `follow.py` makes native `/status` say `unknown`, so `ship` cannot
+        distinguish a healthy old mirror from the newly deployed build.  The
+        exact SHA and its commit time must be captured before shortening, then
+        handed through the climb under mirror-only names; its replacement
+        follower promotes them while the Civ VI decision worker stays unstamped.
+        """
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        capture = source.index("HEAD_REVISION=$HEAD_SHA")
+        shorten = source.index("HEAD_SHA=${HEAD_REVISION:0:7}")
+        mirror_start = source.index("mkdir -p \"$MIRROR_HOME\"", shorten)
+        mirror_end = source.index('print -r -- "$HEAD_SHA" > "$FOLLOW_REVISION_FILE.$$.tmp"',
+                                  mirror_start)
+        launch = source[mirror_start:mirror_end]
+
+        self.assertLess(capture, shorten)
+        self.assertIn("HEAD_COMMIT_TIME=$(git show -s --format=%cI HEAD", source)
+        self.assertIn('CIVVIS_COMMIT="$HEAD_REVISION"', launch)
+        self.assertIn('CIVVIS_COMMIT_TIME="$HEAD_COMMIT_TIME"', launch)
+        self.assertIn("nohup python3 -u tools/follow.py", launch)
+
+        climb_start = source.index('CIVVIS_MIRROR_COMMIT="$HEAD_REVISION"')
+        climb_end = source.index('python3 -u tools/civ6_civvis_climb.py',
+                                  climb_start)
+        handoff = source[climb_start:climb_end]
+        self.assertIn('CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME"', handoff)
+        self.assertNotIn('CIVVIS_COMMIT="$HEAD_REVISION"', handoff)
 
 
 class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):

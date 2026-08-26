@@ -1,0 +1,1192 @@
+{
+  "batch": {
+    "complete_games": 24,
+    "complete_seats": 144,
+    "completion": 1.0,
+    "partial": false,
+    "read": "screen complete · 144 of 144 intended seats (100.0%) · seeds 27082800..27082823 reserved",
+    "seed_window": [
+      27082800,
+      27082823
+    ],
+    "seed_window_played": [
+      27082800,
+      27082823
+    ],
+    "target_games": 24,
+    "target_seats": 144
+  },
+  "cost_method": {
+    "compute": "log of wall seconds per completed turn, per game",
+    "fit": "OLS on how many seats had each screened gene on, with an intercept; one observation per game with HC1 robust errors",
+    "time": "log of whole-game wall seconds, per game",
+    "unit": "percent change per enabled major seat; positive is slower"
+  },
+  "difficulty": null,
+  "drift": {
+    "batch": {
+      "culture": 0.16666666666666666,
+      "diplomatic": 0.0,
+      "domination": 0.0,
+      "religious": 0.0,
+      "science": 0.5,
+      "score": 0.3333333333333333,
+      "unfinished": 0.0
+    },
+    "games": 24,
+    "live_ladder": {
+      "games": 66,
+      "shares": {
+        "culture": 0.19696969696969696,
+        "diplomatic": 0.21212121212121213,
+        "science": 0.015151515151515152,
+        "score": 0.5757575757575758
+      },
+      "source": "docs/civ6_ladder.json"
+    },
+    "live_loss_census": {
+      "games": 72,
+      "shares": {
+        "culture": 0.375,
+        "diplomatic": 0.4444444444444444,
+        "domination": 0.013888888888888888,
+        "religious": 0.1111111111111111,
+        "science": 0.05555555555555555
+      },
+      "source": "docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md"
+    },
+    "unit": "share of games ended by each condition"
+  },
+  "endings": {
+    "by_kind": {
+      "culture": {
+        "games": 4,
+        "median_turn": 168,
+        "seats": 24,
+        "share": 0.16666666666666666,
+        "won_by_field": 0
+      },
+      "science": {
+        "games": 12,
+        "median_turn": 234,
+        "seats": 72,
+        "share": 0.5,
+        "won_by_field": 0
+      },
+      "score": {
+        "games": 8,
+        "median_turn": 250,
+        "seats": 48,
+        "share": 0.3333333333333333,
+        "won_by_field": 0
+      }
+    },
+    "games": 24,
+    "lanes": {
+      "domestic_mean": 123.61805555555556,
+      "dvp_mean": 11.569444444444445,
+      "dvp_required": 20,
+      "rival_dvp_mean": 14.0,
+      "rival_tourists_mean": 84.6875,
+      "seats_where_somebody_reached_the_threshold": 0.0,
+      "tourists_mean": 35.798611111111114
+    },
+    "lost_to": {
+      "culture": 0.1388888888888889,
+      "diplomatic": 0.0,
+      "religious": 0.0,
+      "science": 0.4166666666666667
+    },
+    "unit": "games, and the seats of those games",
+    "won_by_field": 120
+  },
+  "families": [
+    {
+      "base": "siege-is-progress",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "siege-is-progress",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "siege-is-progress-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "siege-is-progress",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "siege-is-progress-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "siege-is-progress",
+          "b": "siege-is-progress-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "siege-is-progress",
+        "siege-is-progress-2"
+      ]
+    },
+    {
+      "base": "naval-recon",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "naval-recon",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "naval-recon-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "naval-recon",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "naval-recon-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "naval-recon",
+          "b": "naval-recon-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "naval-recon",
+        "naval-recon-2"
+      ]
+    },
+    {
+      "base": "settler-guard-holds",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "settler-guard-holds",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "settler-guard-holds-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "settler-guard-holds",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "settler-guard-holds-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "settler-guard-holds",
+          "b": "settler-guard-holds-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "settler-guard-holds",
+        "settler-guard-holds-2"
+      ]
+    },
+    {
+      "base": "amenity-project-preemption",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "amenity-project-preemption",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "amenity-project-preemption-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "amenity-project-preemption",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "amenity-project-preemption-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "amenity-project-preemption",
+          "b": "amenity-project-preemption-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "amenity-project-preemption",
+        "amenity-project-preemption-2"
+      ]
+    },
+    {
+      "base": "district-coverage",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "district-coverage",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "district-coverage-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "district-coverage",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "district-coverage-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "district-coverage",
+          "b": "district-coverage-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "district-coverage",
+        "district-coverage-2"
+      ]
+    },
+    {
+      "base": "settler-target-hysteresis",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "settler-target-hysteresis",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "settler-target-hysteresis-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "settler-target-hysteresis",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "settler-target-hysteresis-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "settler-target-hysteresis",
+          "b": "settler-target-hysteresis-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "settler-target-hysteresis",
+        "settler-target-hysteresis-2"
+      ]
+    },
+    {
+      "base": "guru-heals-the-corps",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "guru-heals-the-corps",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "guru-heals-the-corps-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "guru-heals-the-corps",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "guru-heals-the-corps-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "guru-heals-the-corps",
+          "b": "guru-heals-the-corps-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "guru-heals-the-corps",
+        "guru-heals-the-corps-2"
+      ]
+    },
+    {
+      "base": "holy-site-where-the-threat-is",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "holy-site-where-the-threat-is",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "holy-site-where-the-threat-is-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "holy-site-where-the-threat-is",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "holy-site-where-the-threat-is-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "holy-site-where-the-threat-is",
+          "b": "holy-site-where-the-threat-is-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "holy-site-where-the-threat-is",
+        "holy-site-where-the-threat-is-2"
+      ]
+    },
+    {
+      "base": "power-the-laboratory",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "power-the-laboratory",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "power-the-laboratory-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "power-the-laboratory",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "power-the-laboratory-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "power-the-laboratory",
+          "b": "power-the-laboratory-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "power-the-laboratory",
+        "power-the-laboratory-2"
+      ]
+    },
+    {
+      "base": "campus-adjacency-threshold",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "campus-adjacency-threshold",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "campus-adjacency-threshold-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "campus-adjacency-threshold",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "campus-adjacency-threshold-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "campus-adjacency-threshold",
+          "b": "campus-adjacency-threshold-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "campus-adjacency-threshold",
+        "campus-adjacency-threshold-2"
+      ]
+    },
+    {
+      "base": "fog-honest",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 144,
+          "share": 0.16666666666666669,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "fog-honest",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "fog-honest-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "fog-honest",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "fog-honest-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "fog-honest",
+          "b": "fog-honest-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "fog-honest",
+        "fog-honest-2"
+      ]
+    }
+  ],
+  "family_wise_z": 1.9599628032746734,
+  "games": 24,
+  "genes": [
+    {
+      "adjusted_pp": -3.7037037037037033,
+      "adjusted_se_pp": 7.103118319890392,
+      "compute_cost_pct": -5.0023131745405,
+      "compute_cost_se_pct": 11.55268990999073,
+      "cost_games": 24,
+      "n_off": 108,
+      "n_on": 36,
+      "read": "~",
+      "seats": 144,
+      "share_delta_pp": 0.8492386475051711,
+      "share_resolves_pp": 4.281702468151377,
+      "share_se_pp": 1.5291794529112062,
+      "share_z": 0.5553557797866143,
+      "tag": "native-emergency-purchase",
+      "time_cost_pct": -9.278426834511883,
+      "time_cost_se_pct": 12.982770677144098,
+      "win_delta_pp": -3.7037037037037033,
+      "win_off": 0.17592592592592593,
+      "win_on": 0.1388888888888889,
+      "win_resolves_pp": 19.8887312956931,
+      "win_se_pp": 7.103118319890392,
+      "win_tranches": [
+        {
+          "games": 24,
+          "position": "latest",
+          "seats": 144,
+          "win_delta_pp": -3.7037037037037033,
+          "win_se_pp": 7.103118319890392,
+          "win_z": -0.5214194015792285
+        }
+      ],
+      "win_z": -0.5214194015792285
+    }
+  ],
+  "kind": "gene_screen_analysis",
+  "overall_share": 0.16666666666666669,
+  "overall_win": 0.16666666666666666,
+  "profile": {
+    "all_seats": true,
+    "baseline": "best",
+    "batch": {
+      "seed_first": 27082800,
+      "seed_last": 27082823,
+      "target_games": 24,
+      "target_seats": 144
+    },
+    "build": {
+      "binary_sha256": "def0da62df3e53b1457e049dc056bd1f86c90fe42a6fe9e60f7a195d8117ee8f",
+      "commit": "073f03109b0384d37c725dae63ebea3a1e0d171c",
+      "commit_source": "build-tree",
+      "dirty": false,
+      "genes_sha256": "cb65164abff4b1d88647ad4ec29072cbf7c4fbe00eb0bfc4b46a720985b3808b"
+    },
+    "city_states": 9,
+    "contested_field": "",
+    "contested_field_genes": "",
+    "design": "independent",
+    "difficulty": "prince",
+    "difficulty_rotate": "",
+    "families": [
+      [
+        "siege-is-progress",
+        "siege-is-progress-2"
+      ],
+      [
+        "naval-recon",
+        "naval-recon-2"
+      ],
+      [
+        "settler-guard-holds",
+        "settler-guard-holds-2"
+      ],
+      [
+        "amenity-project-preemption",
+        "amenity-project-preemption-2"
+      ],
+      [
+        "district-coverage",
+        "district-coverage-2"
+      ],
+      [
+        "settler-target-hysteresis",
+        "settler-target-hysteresis-2"
+      ],
+      [
+        "guru-heals-the-corps",
+        "guru-heals-the-corps-2"
+      ],
+      [
+        "holy-site-where-the-threat-is",
+        "holy-site-where-the-threat-is-2"
+      ],
+      [
+        "power-the-laboratory",
+        "power-the-laboratory-2"
+      ],
+      [
+        "campus-adjacency-threshold",
+        "campus-adjacency-threshold-2"
+      ],
+      [
+        "fog-honest",
+        "fog-honest-2"
+      ]
+    ],
+    "genes": [
+      "war-reinforcement",
+      "come-ashore",
+      "recorded-tactical-step",
+      "whole-turn-backtrack-guard",
+      "blind-objective-strength",
+      "blind-objective-units",
+      "relief-targets-the-siege",
+      "army-target-weighs-enemy",
+      "peacetime-deterrence",
+      "war-economy",
+      "bounded-recovery",
+      "siege-commitment",
+      "siege-is-progress",
+      "home-defense",
+      "garrison-under-fire",
+      "strike-opening",
+      "recon-replacement",
+      "barbarian-scouts-are-scouts",
+      "barbarian-bargain",
+      "barbarian-ranged-answer",
+      "civilian-rescue",
+      "naval-recon",
+      "camp-party",
+      "religion-sues-peace",
+      "escort-unstick",
+      "buildings-before-projects",
+      "settler-guard-holds",
+      "stranded-settler-discount",
+      "wide-map-capacity",
+      "amenity-project-preemption",
+      "amenity-district-path",
+      "housing-research",
+      "district-coverage",
+      "slot-kind-tiebreak",
+      "loyalty-rate-alarm",
+      "score-horizon",
+      "one-launch-pad",
+      "settler-target-hysteresis",
+      "culture-building-debt",
+      "strategic-wonders",
+      "builder-barbarian-safety",
+      "apostle-promotion-by-role",
+      "joint-tactics",
+      "inquisition-on-threat",
+      "founder-temple",
+      "theology-for-founders",
+      "holy-lane-parity",
+      "idle-faith-patronage",
+      "religious-defence-scales",
+      "guru-heals-the-corps",
+      "religious-units-heal-first",
+      "spread-campaign-persists",
+      "holy-site-where-the-threat-is",
+      "enhancer-for-the-corps",
+      "early-contact-window",
+      "great-person-housing",
+      "opportunistic-war",
+      "raid-pillage-prizes",
+      "settler-threat-detour",
+      "settle-sooner",
+      "science-multiplier-payoff",
+      "research-tier-premium",
+      "one-shot-recovery",
+      "lane-great-people",
+      "lane-policy-deck",
+      "lane-culture-spending",
+      "lane-space-race",
+      "competition-victory-points",
+      "defensible-sites",
+      "elective-war-in-reach",
+      "recovery-reads-the-war",
+      "expansion-pays-back",
+      "domination-city-count",
+      "unchosen-war-keeps-the-lane",
+      "elective-war-yields-to-a-lane",
+      "rival-suzerainty-alarm",
+      "congress-counter-leader",
+      "science-chain-alarm",
+      "conversion-majority-alarm",
+      "culture-lane-forecast",
+      "diplomatic-lane-forecast",
+      "frontier-massing-alarm",
+      "air-surge",
+      "power-the-laboratory",
+      "campus-adjacency-threshold",
+      "coordinated-finish",
+      "unit-objective-memory",
+      "pantheon-board",
+      "maintenance-aware-deck",
+      "unit-cost-efficiency",
+      "settlement-gap-target",
+      "price-the-suzerainty",
+      "engine-faith-price",
+      "promote-when-wounded",
+      "district-planning",
+      "wonder-score-tally",
+      "fog-honest",
+      "fog-honest-2",
+      "missionary-last-charge-explores",
+      "missionary-evades-raiders",
+      "religious-veto-defence",
+      "deals-for-our-gain",
+      "deals-at-the-ceiling",
+      "no-free-passage",
+      "one-war-at-a-time",
+      "shoot-and-scoot",
+      "zoc-screen",
+      "pillage-to-heal",
+      "flip-nearby-city-states",
+      "lane-commit",
+      "settler-screen",
+      "pass-picket",
+      "solvency-first-trade-slot",
+      "city-campaign",
+      "campaign-pillage",
+      "settler-factory-coordination",
+      "naval-threat-triage",
+      "surprise-war-mobilization",
+      "science-victory-drive",
+      "expansion-schedule",
+      "growth-to-settle",
+      "order-retry",
+      "builder-tries-the-next-tile",
+      "opening-warrior-recon",
+      "settler-second-look",
+      "civilian-out-of-reach",
+      "chop-into-the-queue",
+      "eureka-chasing-builder",
+      "eureka-chasing-production",
+      "coalition-before-war",
+      "amenity-project-preemption-2",
+      "campus-adjacency-threshold-2",
+      "district-coverage-2",
+      "guru-heals-the-corps-2",
+      "holy-site-where-the-threat-is-2",
+      "naval-recon-2",
+      "power-the-laboratory-2",
+      "settler-guard-holds-2",
+      "settler-target-hysteresis-2",
+      "siege-is-progress-2",
+      "buy-what-cards-cannot-boost",
+      "build-what-cards-boost",
+      "gold-for-the-young-city",
+      "native-emergency-purchase"
+    ],
+    "height": 46,
+    "kind": "header",
+    "map": "continents",
+    "native_competitions": false,
+    "p_default_on": 0.75,
+    "p_on": 0.25,
+    "players": 6,
+    "prior": [
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.25
+    ],
+    "randomize_civs": true,
+    "rivals": "",
+    "screened": [
+      "native-emergency-purchase"
+    ],
+    "speed": "online",
+    "start_seed": 27082800,
+    "turns": 250,
+    "victories": "science,culture,religious,diplomatic,domination,score",
+    "victory_mask": "",
+    "width": 74
+  },
+  "reproducibility": {
+    "target_seats_per_window": 20000,
+    "unit": "seats",
+    "windows": "newest first; whole games only"
+  },
+  "resolution": {
+    "alpha": 0.05,
+    "expected_flags_by_chance": 0.0455,
+    "genes": 1,
+    "power": 0.8,
+    "read": "the smallest Δ this run could resolve at 80% power; a Δ below it is inside the run's own noise",
+    "share_pp": 4.281702468151377,
+    "win_pp": 19.8887312956931
+  },
+  "rival_mix": null,
+  "seats": 144,
+  "shape": "standard",
+  "victory_masks": null
+}

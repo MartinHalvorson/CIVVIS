@@ -423,15 +423,15 @@ keeps it as a `league_only` anchor so the league can compare against an axis
 breeding cannot create without putting that unresolved cost/strength trade into
 the exhibition.
 
-The original structural probe overstated joint-search headroom because it
-reconstructed the lane pass under the doctrine in force; the live lane pass
-uses the unchanged base genome. Against that corrected comparator, a
-deployment-profile run on 20 mirrored 6p 74×46 Online maps split **every map**:
-20/40 wins per arm, +0 Elo-equivalent (95% −148 to +148). Joint search changed
-only 10/268 eligible rollout reviews (3.7%) while evaluating 28 branches rather
-than the sequential policy's 11. That interval does not prove parity, but it
-does not justify buying the extra rollout compute. The treatment remains an
-evaluator-only control and production stays sequential.
+The retired `joint-tactics` experiment's original structural probe overstated
+its headroom because it reconstructed the lane pass under the doctrine in
+force; the live lane pass used the unchanged base genome. Against that corrected
+comparator, a deployment-profile run on 20 mirrored 6p 74×46 Online maps split
+**every map**: 20/40 wins per arm, +0 Elo-equivalent (95% −148 to +148). The
+search changed only 10/268 eligible rollout reviews (3.7%) while evaluating 28
+branches rather than the sequential policy's 11. That interval did not justify
+buying the extra rollout compute. The gene and its evaluator arms were removed
+on 2026-08-25; production remains sequential.
 
 ### 8. Internal ratings are not external strength
 
@@ -708,13 +708,9 @@ to march with.
 `advanced_synergy` is the 37 of those repairs that fix a CIVVIS defect rather
 than encode a rule of Firaxis' game, applied to the stock production
 controller. `live_trader_route_adapter`, `live_religious_purchase_guard` and
-`solvent_faith_army` are excluded as Firaxis semantics. `joint_tactics` remains
-excluded from the native live bundle on evidence (§7 above), but the existing
-bounded search is now the promoted controller's automatic route on the separate
-Battlefield arena. That route is measured on the skirmish benchmark rather than
-claimed as a whole-game win improvement; `advanced_v1` and explicit withholds
-remain greedy. The war (23) and economy (14) halves are separate arms so the
-composite's interaction is measured rather than assumed.
+`solvent_faith_army` are excluded as Firaxis semantics. The war (23) and economy
+(14) halves are separate arms so the composite's interaction is measured rather
+than assumed.
 
 | arm | compact-standard | deployment-online |
 |---|---:|---:|
@@ -1365,7 +1361,7 @@ alternatives per decision, and byte-identical when off.
 
 ★★★★ **The screen is recorded as an artifact and deliberately NOT entered as
 a ledger source, because entering it exposed a defect in the ranking's own
-arithmetic.** `HEURISTIC_GENE_RANKING.md` builds each gene's column as
+arithmetic.** `GENE_HEURISTIC_RANKING.md` builds each gene's column as
 `(win_on − chance) × PER` and its error as `column_se`, and
 `tools/test_genes.py::test_the_band_is_the_columns_own_scale_not_the_differences`
 proves the two are on the same scale by requiring `column / column_se` to

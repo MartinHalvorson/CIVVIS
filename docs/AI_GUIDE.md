@@ -508,7 +508,7 @@ outranks score even when the winner has fewer score points.
 
 To price a behaviour flag, use the gene screen — every seat of every game
 draws its own random genome and each gene is read as seats-on against
-seats-off (`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`):
+seats-off (`docs/GENE_SCREEN.md`, `GENE_HEURISTIC_RANKING.md`):
 
 ```bash
 cargo run --release --bin gene_screen -- --games 600 --jobs 8 --out screen.jsonl

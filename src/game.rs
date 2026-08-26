@@ -1350,8 +1350,15 @@ struct MoveTerms {
     /// effect that pays for it stays at the call site: it is this seven-tile
     /// occupancy scan, not the lookup, that costs anything.
     guru_adjacent: bool,
-    /// Monumentality is active and this unit is a Builder or a Settler.
-    monumentality_civilian: bool,
+    /// Monumentality is active and this unit is a Builder.
+    ///
+    /// Firaxis's `COMMEMORATION_INFRASTRUCTURE_GA_MOVEMENT` modifier is
+    /// gated by `REQUIREMENT_UNIT_IS_BUILDER`; Settlers receive the faith
+    /// purchase discount, but not the two movement points. Keeping those
+    /// effects separate matters to the live mirror: a Settler with the
+    /// fictional four-point allowance can be judged unable to cross a river
+    /// even though the host correctly lets its real two-point unit cross.
+    monumentality_builder: bool,
     /// Exodus of the Evangelists is active and this unit is religious.
     exodus_religious: bool,
     /// `adjacent_support_effect(unit, "adjacent_movement")`.
@@ -2911,20 +2918,6 @@ pub struct City {
     /// city-bound Great Person effects such as Marco Polo and Zheng He.
     #[serde(default)]
     pub great_person_foreign_route_gold: f64,
-}
-
-/// The small part of a foreign City Center a fog-honest controller is allowed
-/// to carry into its private planning world.  The current city may have healed,
-/// changed hands, or added walls while it was out of sight; retaining only the
-/// last observation makes that uncertainty explicit instead of handing the
-/// controller the authoritative city record.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct FogCityMemory {
-    pub owner: usize,
-    pub pos: Pos,
-    pub hp: i32,
-    pub wall_hp: i32,
-    pub strength: f64,
 }
 
 /// Public city information frozen at the moment a player last had sight of
@@ -5811,15 +5804,16 @@ pub struct Game {
     /// ground on the following turn instead of sealing our own invasion out.
     #[serde(default)]
     pub closed_borders: BTreeSet<Pos>,
-    /// Ground a MET major civilization owns whose owning city this seat has
-    /// never seen — the border in the fog. Written fresh from the export every
-    /// turn beside `closed_borders`, and empty on any board that is not a
-    /// live mirror. A settle site beside such a border sits four to seven
-    /// tiles from a city the loyalty forecast cannot count, and the forecast
-    /// then says nothing while the host says −13 a turn: run
-    /// civvis-20260818T155552Z founded Setia at t55 two tiles from Vietnam's
-    /// border (four Vietnamese cities, none seen), read −13.3 Loyalty on its
-    /// first export and lost it at t63. See `AdvancedAi::frontier_loyalty`.
+    /// Ground a MET major civilization owns whose city attribution is unresolved
+    /// to this seat. That means either no city of theirs is visible, or the plot
+    /// sits on the fifth ownership ring of the nearest visible city, where the
+    /// host cannot distinguish that city from a nearer one still in fog. Written
+    /// fresh from the export every turn beside `closed_borders`, and empty on any
+    /// board that is not a live mirror. A settle site beside such a border can sit
+    /// under Loyalty pressure the forecast cannot count: run
+    /// civvis-20260826T030045Z founded Lugdunum five tiles from a German border
+    /// attributed to a city ten tiles away, read −22 Loyalty on its first export,
+    /// and lost the undamaged city at t70. See `AdvancedAi::frontier_loyalty`.
     #[serde(default)]
     pub unseen_major_borders: BTreeSet<Pos>,
     /// How much sealed ground each MAJOR seat accounts for — the mirrored seat
@@ -16954,8 +16948,8 @@ impl Game {
                             && self.units[other].religion == unit.religion
                     })
                 }),
-            monumentality_civilian: self.dedication_active(unit.owner, "monumentality")
-                && matches!(unit.kind.as_str(), "builder" | "settler"),
+            monumentality_builder: self.dedication_active(unit.owner, "monumentality")
+                && unit.kind == "builder",
             exodus_religious: self.dedication_active(unit.owner, "exodus_of_the_evangelists")
                 && spec.class == "religious",
             adjacent_movement: self.adjacent_support_effect(unit, "adjacent_movement"),
@@ -22317,7 +22311,7 @@ impl Game {
         {
             moves += spec.clear_terrain_start_movement;
         }
-        if terms.monumentality_civilian {
+        if terms.monumentality_builder {
             moves += 2.0;
         }
         if terms.exodus_religious {
@@ -23183,183 +23177,6 @@ impl Game {
         branch.visibility_suppressed = true;
         branch.visibility_batch = VisibilityBatch::default();
         branch
-    }
-
-    /// Make the private planning world used by a fog-honest major.
-    ///
-    /// A normal speculative clone is deliberately omniscient because it is a
-    /// rules lookahead, not a player's decision.  Feeding that clone to an AI
-    /// would let production, campaign selection, and movement inspect every
-    /// hidden unit, city, and terrain tile.  This boundary starts from the
-    /// authoritative world, then keeps only the acting seat's current sight
-    /// and its last-known tile memory.  Foreign units that have passed into the
-    /// fog are removed; a known foreign City Center survives only as the small
-    /// stale [`FogCityMemory`] record supplied by the controller's belief.
-    ///
-    /// The returned world is disposable.  The controller replays the actions
-    /// it selected on the authoritative game, where the real hidden entities
-    /// still enforce legality and resolve combat.  This is intentionally a
-    /// turn-level boundary: every subsystem in one production/tactical turn
-    /// sees the same frozen information set.
-    pub(crate) fn fogged_clone(
-        &self,
-        pid: usize,
-        remembered_cities: &BTreeMap<u32, FogCityMemory>,
-    ) -> Game {
-        let mut view = self.clone();
-        let Some(player) = self.players.get(pid) else {
-            return view;
-        };
-        let visible = self.player_vision_now(pid);
-        let remembered_tiles: BTreeMap<Pos, Tile> = player
-            .remembered_tiles
-            .iter()
-            .map(|(pos, remembered)| (*pos, remembered.tile.clone()))
-            .collect();
-
-        // `unknown` is a mirror-only terrain, but using the same explicit
-        // marker here keeps native planning worlds honest without changing the
-        // rules fingerprint used by ratings.
-        Arc::make_mut(&mut view.rules).enable_unknown_terrain();
-        for tile in view.map.tiles.values_mut() {
-            if self.sees(&visible, tile.pos) {
-                continue;
-            }
-            if let Some(last) = remembered_tiles.get(&tile.pos) {
-                *tile = last.clone();
-                continue;
-            }
-            let pos = tile.pos;
-            *tile = Tile::new(pos);
-            tile.terrain = Name::new("unknown");
-            // Exploration is a legitimate action even though the terrain
-            // class is not known yet.  `is_passable` treats this as a prior;
-            // the authoritative replay is where the real terrain is checked.
-            tile.assumed_traversable = true;
-        }
-
-        // Keep our roster and only foreign contacts in the turn-start frame.
-        // The belief object, rather than a hidden live Unit, supplies stale
-        // military pressure to the controller.
-        let hidden_units: Vec<u32> = self
-            .units
-            .values()
-            .filter(|unit| {
-                unit.owner != pid
-                    && !(self.sees(&visible, unit.pos) && self.unit_visible_to(unit.id, pid))
-            })
-            .map(|unit| unit.id)
-            .collect();
-        for uid in hidden_units {
-            view.remove_unit(uid);
-        }
-
-        // A hidden city with no sighting is not a target-shaped hole in the
-        // map.  Remove it entirely.  A stale sighting keeps only public City
-        // Center identity and combat memory; all private production,
-        // population, district, and garrison state is cleared.
-        let hidden_cities: Vec<u32> = self
-            .cities
-            .values()
-            .filter(|city| city.owner != pid && !self.sees(&visible, city.pos))
-            .map(|city| city.id)
-            .collect();
-        let remove_cities: Vec<u32> = hidden_cities
-            .iter()
-            .copied()
-            .filter(|cid| !remembered_cities.contains_key(cid))
-            .collect();
-        for cid in remove_cities {
-            view.mirror_remove_city(cid);
-        }
-        // Removing a hidden city also removes its current ownership footprint
-        // from the disposable map.  Restore what the acting seat can actually
-        // see; a foreign border is public on revealed ground even when its
-        // City Center is behind the fog.
-        for tile in view.map.tiles.values_mut() {
-            if self.sees(&visible, tile.pos) {
-                if let Some(current) = self.map.get(tile.pos) {
-                    *tile = current.clone();
-                }
-            } else if let Some(last) = remembered_tiles.get(&tile.pos) {
-                *tile = last.clone();
-            }
-        }
-        // A revealed border tile may still carry the ownership ID of a city
-        // whose City Center is hidden and was removed above.  The tile is
-        // public, but its foreign city record is not; retaining the dangling
-        // ID makes otherwise ordinary map scans index a city that is absent
-        // from this private world.  Clear only those references.  Remembered
-        // City Centers remain valid because their stale city record is kept.
-        let visible_city_ids: BTreeSet<u32> = view.cities.keys().copied().collect();
-        for tile in view.map.tiles.values_mut() {
-            if tile
-                .owner_city
-                .is_some_and(|city_id| !visible_city_ids.contains(&city_id))
-            {
-                tile.owner_city = None;
-            }
-        }
-        let mut stale_strength = Vec::new();
-        for cid in hidden_cities {
-            let Some(memory) = remembered_cities.get(&cid).copied() else {
-                continue;
-            };
-            let Some(city) = view.cities.get_mut(&cid) else {
-                continue;
-            };
-            city.owner = memory.owner;
-            city.pos = memory.pos;
-            city.pop = 1;
-            city.food = 0.0;
-            city.production = 0.0;
-            city.production_progress.clear();
-            city.strategic_resource_commitments.clear();
-            city.border_culture = 0.0;
-            city.hp = memory.hp;
-            city.buildings.clear();
-            city.products.clear();
-            city.building_eras.clear();
-            city.pillaged_buildings.clear();
-            city.districts.clear();
-            city.wonders.clear();
-            city.owned_tiles.clear();
-            city.queue.clear();
-            city.captured_from = None;
-            city.occupied_from = None;
-            city.occupation_grievance = None;
-            city.wall_hp = memory.wall_hp;
-            city.encampment_hp = 0;
-            city.encampment_wall_hp = 0;
-            city.encampment_struck = false;
-            city.encampment_extra_strikes_used = 0;
-            city.encampment_last_attacked = 0;
-            city.encampment_pillaged = false;
-            city.last_attacked = 0;
-            city.pressure.clear();
-            city.atheist_pressure = 0.0;
-            city.loyalty = 100.0;
-            city.free_city_pressure.clear();
-            stale_strength.push((cid, memory.strength.max(0.0)));
-        }
-        for (cid, strength) in stale_strength {
-            view.observed_city_strength.insert(cid, strength);
-        }
-
-        // Foreign spy missions and routes expose hidden city identities and
-        // destinations.  The acting seat still sees its own operations and
-        // any pending deal it must answer; unrelated diplomatic state is not
-        // part of this private planning view.
-        view.spies.retain(|_, spy| spy.owner == pid);
-        view.routes.retain(|route| route.owner == pid);
-        view.active_trade_deals
-            .retain(|deal| deal.from == pid || deal.to == pid);
-        view.pending_deals
-            .retain(|deal| deal.from == pid || deal.to == pid);
-        if let Some(seat) = view.players.get_mut(pid) {
-            seat.turn_units.clear();
-        }
-        view
     }
 
     /// Stop (or resume) re-syncing the narrated war ledger after every

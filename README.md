@@ -4,6 +4,8 @@ Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)
 
 The Lv 4 (Prince) is the highest level beat so far, using computer control to bridge the gap between CIVVIS and Firaxis Civ 6. I try to keep the [YouTube](https://www.youtube.com/@civvis) channel somewhat up to date with the latest progress.
 
+Check out the ranking of our best Civ 6 heuristics: [GENE_HEURISTIC_RANKING](https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md)
+
 ## Genetic Algorithm
 
 ### Summary
@@ -25,7 +27,16 @@ The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of 
 
 For each free-for-all game, there is one winner. The "on" genes in this players genome are awarded one win. All genes across all players (including duplicates if a gene is present on multiple players) are incremented 1 "game played".
 
-3) Gene Selection: After a tournament concludes, win rates are calculated for every gene (wins / games played). In a 6 player match with equal players, the expected win rate is 1/6 or 16.67%. Genes with win rates above this are deemed beneficial and have a higher likelihood of defaulting "on" in our best genome. The process looks across the last few tournament too to ensure a gene is consistently demonstrating a beneficial performance. Inconsistent results between tournaments is a sign to me to run more games per tournament. Right now I typically run 1667 games per tournament with 6 players/seats each, for a total of 10,002 seats.
+3) Gene Selection: After a tournament concludes, win rates are calculated for every gene (wins / games played). In a 6 player match with equal players, the expected win rate is 1/6 or 16.67%. The ranking scales each gene's excess over that chance rate to **± wins per 10,000 total seats** and keeps the last three tournaments side by side (the *Last Batch*, *Prior Batch* and *Third Batch* columns). Whether a gene defaults "on" is decided automatically from those three columns by the **batch rule** — `tools/genes.py::batch_rule`, mirrored in `src/ai/advanced/gene_ledger.rs`, re-run by `python3 tools/genes.py write` whenever a tournament is entered, and enforced by `python3 tools/genes.py check` and `cargo test` in CI:
+
+- **All 3 batches positive → default "on".**
+- **Exactly 2 of 3 positive and the average of all 3 > +7 → default "on".**
+- **2 or 3 batches negative → default "off".**
+- **Only 1 or 2 batches so far, exactly one positive, and their average > +7 → default "on"** (two of two positive also defaults "on").
+- **All 3 batches below −10 → the gene is removed from the gene pool** — its code is cut, and `genes.py check` fails until it is.
+- **Otherwise → default "off"**, including a gene no tournament has priced yet; a reading of exactly 0 is neither positive nor negative.
+
+A gene with versions (`<base>-2`, …) is judged version by version, and a family with a version "on" ships one version: its head by pooled win-rate difference when the rule turns the head on, else the best version the rule turns on. There is no hand-kept list of defaults any more — a default changes by playing more games. Inconsistent results between tournaments is a sign to me to run more games per tournament. Right now I typically run 1667 games per tournament with 6 players/seats each, for a total of 10,002 seats.
 
 4) Best Genome Verification: The best genome is tested then in an ever-running Civ 6 verification game (in the real Civ 6). I'll watch the game and ideate a new set of heuristics to vibecode out, repeating the Genetic Algorithm loop.
 

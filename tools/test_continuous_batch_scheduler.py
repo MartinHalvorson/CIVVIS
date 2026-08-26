@@ -188,6 +188,60 @@ class PublicationRecovery(unittest.TestCase):
             persisted = json.loads((root / "scheduler-state.json").read_text(encoding="utf-8"))
             self.assertEqual(persisted["current"]["publication"]["stage"], "merged")
 
+    def test_claimed_publication_merged_by_an_operator_skips_regeneration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, batch, _worktree = self.pushed_publication(root)
+            batch["publication"]["stage"] = "claimed"
+
+            def run(command, **_kwargs):
+                self.assertEqual(command[:3], ["gh", "pr", "view"])
+                return SimpleNamespace(stdout=json.dumps({
+                    "state": "MERGED",
+                    "mergedAt": "2026-08-25T13:37:00Z",
+                    "mergeCommit": {"oid": "c" * 40},
+                }))
+
+            with mock.patch.object(scheduler, "refresh_status", return_value={"complete_games": 1}), \
+                    mock.patch.object(scheduler, "validate_analysis"), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run):
+                scheduler.publish_batch(
+                    root, root / "scheduler-state.json", state, repo=root,
+                    machine="test-machine", agent="continuous-batch")
+
+            self.assertEqual(batch["phase"], "published")
+            self.assertEqual(batch["publication"]["stage"], "merged")
+            self.assertEqual(batch["publication"]["merge_commit"], "c" * 40)
+
+    def test_merged_publication_recovers_after_ship_removed_its_worktree(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, batch, worktree = self.pushed_publication(root)
+            batch["publication"]["stage"] = "prepared"
+            worktree.rmdir()
+            queried_from = []
+
+            def run(command, **kwargs):
+                self.assertEqual(command[:3], ["gh", "pr", "view"])
+                queried_from.append(kwargs["cwd"])
+                return SimpleNamespace(stdout=json.dumps({
+                    "state": "MERGED",
+                    "mergedAt": "2026-08-25T13:38:00Z",
+                    "mergeCommit": {"oid": "d" * 40},
+                }))
+
+            with mock.patch.object(scheduler, "refresh_status", return_value={"complete_games": 1}), \
+                    mock.patch.object(scheduler, "validate_analysis"), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run):
+                scheduler.publish_batch(
+                    root, root / "scheduler-state.json", state, repo=root,
+                    machine="test-machine", agent="continuous-batch")
+
+            self.assertEqual(queried_from, [scheduler.ROOT])
+            self.assertEqual(batch["phase"], "published")
+            self.assertEqual(batch["publication"]["stage"], "merged")
+            self.assertEqual(batch["publication"]["merge_commit"], "d" * 40)
+
     def test_merge_race_after_lookup_is_recovered_before_propagating_ship_error(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -242,9 +296,196 @@ class PublicationMetadata(unittest.TestCase):
             batch, "docs/gene_screens/example.json", machine="test-machine",
             agent="continuous-batch", coordinated="#1234", computer="Test Mac")
         self.assertIn("5,000 validated completed games / 30,000 seats / 5,000 wins", body)
-        self.assertIn("changes no game rules or default genes", body)
+        self.assertIn("changes no game mechanics", body)
+        self.assertIn("generated default selection", body)
         self.assertIn("Computer: `Test Mac`", body)
         self.assertIn("Coordinated with: #1234", body)
+        self.assertIn("publish validated 5,000-completed-game", body)
+        self.assertIn("overwrite-guard: allow this report deliberately regenerates", body)
+
+    def test_publication_claim_and_guard_include_every_generated_ranking_artifact(self):
+        self.assertEqual(
+            scheduler.PUBLICATION_GENERATED_FILES,
+            (
+                "docs/gene_ledger.json",
+                "GENE_HEURISTIC_RANKING.md",
+                "docs/GENE_RANKING_EVIDENCE.md",
+                "src/ai/advanced/genes.rs",
+            ),
+        )
+        batch = scheduler.new_batch(1, 1, ident="publication-artifacts")
+        batch.update({
+            "complete_games": 1,
+            "complete_seats": 6,
+            "wins": 1,
+            "source": {"commit": "a" * 40, "binary_sha256": "b" * 64},
+        })
+        body = scheduler.publication_body(
+            batch, "docs/gene_screens/example.json", machine="test-machine",
+            agent="continuous-batch", coordinated="none", computer="Test Mac")
+        self.assertIn("`docs/GENE_RANKING_EVIDENCE.md`", body)
+        self.assertIn("`src/ai/advanced/genes.rs`", body)
+
+
+class PublicationTiming(unittest.TestCase):
+    def test_freeze_persists_the_completion_timestamp_before_analyzer_work(self):
+        """A failed analyzer retry must not inflate the batch's reported rate."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(3_000, 1)
+            batch = state["current"]
+            batch["created_at"] = "2026-08-25T10:00:00Z"
+            reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+            complete_rows(root / batch["rows"], seed_first=reservation["seed_first"],
+                          target_games=1, complete_games=1)
+            batch["source"] = {"binary": "/not-run", "worktree": str(root)}
+            state_path = root / "scheduler-state.json"
+
+            with mock.patch.object(scheduler, "utc_now", return_value="2026-08-25T10:01:00Z"), \
+                    mock.patch.object(scheduler, "run_checked",
+                                      side_effect=scheduler.SchedulerError("analyzer failed")):
+                with self.assertRaisesRegex(scheduler.SchedulerError, "analyzer failed"):
+                    scheduler.freeze_analysis(root, state, state_pathname=state_path)
+
+            self.assertEqual(batch["completed_at"], "2026-08-25T10:01:00Z")
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["current"]["completed_at"], "2026-08-25T10:01:00Z")
+
+    def test_reporting_artifact_carries_exact_whole_batch_rate_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "analysis.json"
+            target = root / "report.json"
+            source.write_text(json.dumps({
+                "kind": "gene_screen_analysis", "games": 3_000, "seats": 18_000,
+            }), encoding="utf-8")
+            batch = scheduler.new_batch(1, 3_000, ident="timed")
+            batch.update({
+                "complete_games": 3_000,
+                "created_at": "2026-08-25T10:00:00Z",
+                "completed_at": "2026-08-25T10:25:00Z",
+            })
+
+            scheduler.write_reporting_artifact(source, target, batch)
+
+            self.assertNotIn("continuous_batch_timing",
+                             json.loads(source.read_text(encoding="utf-8")))
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8"))[
+                "continuous_batch_timing"], {
+                    "schema": "continuous_batch_timing/v1",
+                    "started_at": "2026-08-25T10:00:00Z",
+                    "completed_at": "2026-08-25T10:25:00Z",
+                    "elapsed_seconds": 1_500,
+                    "completed_games": 3_000,
+                })
+
+
+class DeadlineRotation(unittest.TestCase):
+    DEADLINE = scheduler.parse_utc_timestamp("2026-08-26T12:00:00Z", name="test deadline")
+
+    def test_new_deadline_state_persists_the_deadline_and_successor_goal(self):
+        state = scheduler.new_state(10, 1_000_000, deadline_at=self.DEADLINE, next_goal_games=3_000)
+        deadline = state["current"]["deadline"]
+        self.assertEqual(deadline, {
+            "schema": scheduler.CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+            "deadline_at": "2026-08-26T12:00:00Z",
+            "next_goal_completed_games": 3_000,
+        })
+        scheduler.validate_state(state)
+
+    def test_deadline_snapshot_discards_only_a_terminal_partial_game_group(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "rows-continuous.jsonl"
+            target = root / "rows-deadline-cutoff.jsonl"
+            complete_rows(raw, seed_first=700, target_games=100, complete_games=2)
+            raw_bytes = raw.read_bytes()
+            # The process can be interrupted between two rows of its final
+            # six-seat write.  The raw ledger stays intact for audit.
+            raw.write_bytes(raw_bytes + b'{"kind":"game","seed":702,"arm":0,"seat":0')
+
+            status, dropped = scheduler.snapshot_complete_prefix(raw, target)
+
+            self.assertEqual(status["complete_games"], 2)
+            self.assertEqual(status["complete_seats"], 12)
+            self.assertEqual(dropped, 1)
+            self.assertEqual(raw.read_bytes(), raw_bytes + b'{"kind":"game","seed":702,"arm":0,"seat":0')
+            self.assertEqual(scheduler.summarize(target)["complete_games"], 2)
+
+    def test_sealed_deadline_uses_actual_games_but_keeps_raw_target_auditable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(900, 100, deadline_at=self.DEADLINE, next_goal_games=3_000)
+            batch = state["current"]
+            reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+            raw = root / batch["rows"]
+            complete_rows(raw, seed_first=reservation["seed_first"], target_games=100, complete_games=2)
+            raw_bytes = raw.read_bytes()
+            raw.write_bytes(raw_bytes + b'{"kind":"game","seed":902,"arm":0,"seat":0')
+            state_path = root / "scheduler-state.json"
+
+            with mock.patch.object(scheduler, "freeze_analysis") as freeze:
+                scheduler.seal_deadline_cutoff(
+                    root, state_path, state, stopped_at="2026-08-26T12:00:00Z")
+
+            self.assertEqual(state["goal_completed_games"], 2)
+            self.assertEqual(batch["goal_completed_games"], 2)
+            self.assertEqual(batch["raw_rows"], batch["directory"] + "/rows-continuous.jsonl")
+            self.assertEqual(batch["deadline"]["original_goal_completed_games"], 100)
+            self.assertEqual(batch["deadline"]["actual_completed_games"], 2)
+            self.assertEqual(batch["deadline"]["dropped_trailing_records"], 1)
+            self.assertEqual(scheduler.refresh_status(root, state)["complete_games"], 2)
+            self.assertTrue(freeze.called)
+
+    def test_rotation_switches_to_the_deadline_successor_goal_once_published(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(1_100, 100, deadline_at=self.DEADLINE, next_goal_games=3_000)
+            batch = state["current"]
+            state["goal_completed_games"] = 2
+            batch.update({"goal_completed_games": 2, "phase": "published", "complete_games": 2,
+                          "complete_seats": 12, "wins": 2, "source": {"commit": "a"},
+                          "publication": {"stage": "merged"}})
+            batch["deadline"].update({
+                "cutoff_at": "2026-08-26T12:00:00Z",
+                "original_goal_completed_games": 100,
+                "actual_completed_games": 2,
+                "raw_rows": batch["rows"],
+                "raw_rows_sha256": "a" * 64,
+                "frozen_rows": batch["rows"],
+                "dropped_trailing_records": 0,
+            })
+
+            scheduler.rotate(root / "scheduler-state.json", state)
+
+            self.assertEqual(state["goal_completed_games"], 3_000)
+            self.assertEqual(state["current"]["goal_completed_games"], 3_000)
+            self.assertNotIn("deadline", state["current"])
+            self.assertEqual(state["history"][0]["deadline"]["actual_completed_games"], 2)
+
+    def test_tick_seals_an_already_due_deadline_before_reading_live_rows(self):
+        state = scheduler.new_state(1_200, 100, deadline_at=self.DEADLINE, next_goal_games=3_000)
+        with mock.patch.object(scheduler, "seal_deadline_cutoff") as seal, \
+                mock.patch.object(scheduler.dt, "datetime", wraps=scheduler.dt.datetime) as clock:
+            clock.now.return_value = scheduler.parse_utc_timestamp(
+                "2026-08-26T12:00:01Z", name="after deadline")
+            self.assertEqual(scheduler.tick(
+                Path("/state"), Path("/state/scheduler-state.json"), state,
+                repo=Path("/repo"), jobs=1, machine="machine", agent="agent", publish=True),
+                "frozen_deadline")
+        self.assertTrue(seal.called)
+
+    def test_restarted_scheduler_waits_for_its_persisted_live_child(self):
+        state = scheduler.new_state(1_300, 10)
+        reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+        reservation.update({"launch_state": "running", "pid": 4242, "process_group": 4242})
+        with mock.patch.object(scheduler, "process_is_alive", return_value=True), \
+                mock.patch.object(scheduler, "refresh_status") as status:
+            outcome = scheduler.tick(
+                Path("/state"), Path("/state/scheduler-state.json"), state,
+                repo=Path("/repo"), jobs=1, machine="machine", agent="agent", publish=True)
+        self.assertEqual(outcome, "active_segment")
+        status.assert_not_called()
 
 
 if __name__ == "__main__":

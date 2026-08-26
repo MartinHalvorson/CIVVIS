@@ -47,6 +47,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+
+# How often the popup backstop looks at the screen, in seconds. Tight because
+# the operator watches this window and a leader portrait must not sit over it
+# for seconds; safe at this rate because `popup_clear.py` refuses to click
+# unless Civilization VI is frontmost AND the map is positively covered AND the
+# harness has already recorded a turn. Named so the wiring test reads the value
+# rather than repeating the literal — the two drifted apart once already.
+POPUP_CLEAR_INTERVAL = "0.25"
 LEDGER = Path.home() / "civvis-civ6-runs" / "civvis_ladder.jsonl"
 DEFAULT_STRATEGY = ""
 
@@ -348,7 +356,8 @@ def busy() -> str | None:
     return " ".join(real) or None
 
 
-def _detach(cmd: list[str], log_path: Path, what: str) -> None:
+def _detach(cmd: list[str], log_path: Path, what: str,
+            environment: dict[str, str] | None = None) -> None:
     """Start a helper that must outlive this batch's process group.
 
     `start_new_session` is the load-bearing argument. Without it the child joins
@@ -364,11 +373,57 @@ def _detach(cmd: list[str], log_path: Path, what: str) -> None:
         with log_path.open("a") as handle:
             subprocess.Popen(
                 cmd, stdout=handle, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL, start_new_session=True,
+                stdin=subprocess.DEVNULL, start_new_session=True, env=environment,
             )
         print(f"[{what}] started; it logs to {log_path}", flush=True)
     except OSError as exc:
         print(f"[{what}] could not start: {exc}", flush=True)
+
+
+POPUP_KEEPER_LOCK = Path(os.environ.get(
+    "CIVVIS_POPUP_KEEPER_LOCK", str(Path.home() / ".civvis-popup-keeper.lock")))
+
+
+def popup_clearer_pids() -> list[int]:
+    """Return the short-lived clearer children currently visible on this seat."""
+    return [int(pid) for pid in run(["pgrep", "-f", "popup_clear.py"]).split()
+            if pid.isdecimal()]
+
+
+def interactive_popup_keeper_pid() -> int | None:
+    """Return the interactive host's keeper only when its lock holder is genuine."""
+    try:
+        raw = (POPUP_KEEPER_LOCK / "pid").read_text().strip()
+    except OSError:
+        return None
+    if not raw.isdecimal():
+        return None
+    pid = int(raw)
+    if not process_running(pid):
+        return None
+    command = run(["ps", "-p", str(pid), "-o", "command="])
+    return pid if "civvis-popup-keeper.sh" in command else None
+
+
+def popup_clearer_children(pid: int) -> set[int]:
+    """Return a keeper's current clearer child, if it has started one yet."""
+    return {int(child) for child in run(
+        ["pgrep", "-P", str(pid), "-f", "popup_clear.py"]).split()
+            if child.isdecimal()}
+
+
+def retire_popup_clearers(pids: list[int], reason: str) -> None:
+    if not pids:
+        return
+    print(f"[popups] retiring {len(pids)} {reason}", flush=True)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.monotonic() + 10.0
+    while any(process_running(pid) for pid in pids) and time.monotonic() < deadline:
+        time.sleep(0.25)
 
 
 def ensure_popup_clear() -> None:
@@ -390,9 +445,9 @@ def ensure_popup_clear() -> None:
     a question needs an ANSWER, so only a held click on the dialogue button resolves
     it. That is the case the mod structurally cannot reach.
 
-    2.5s rather than the 6s default: the operator watches this window, and six
-    seconds of a leader portrait over the map is the difference they notice. The
-    tool's own guards make a tight interval safe — it refuses to click unless
+    0.25s while a screen covers the map: the operator watches this window, and
+    a leader portrait must not sit over it for seconds. The tool's own guards
+    make a tight interval safe — it refuses to click unless
     Civilization VI is frontmost AND the map is positively covered AND the harness
     has already recorded a turn, so it cannot touch the setup screens.
     """
@@ -400,29 +455,31 @@ def ensure_popup_clear() -> None:
     # Measured 2026-08-15: one clearer started 2026-08-14T22:46 guarded twelve
     # later batches with day-old code, so two shipped leader-scene stall fixes
     # (#1595, #1631) never reached a live game and the outer watchdog kept
-    # spending attempts on screens the current build already handles. Same
-    # invariant as `retire_mirror` above: a fresh batch retires the helper and
-    # starts its own from this checkout.
-    stale = [int(pid) for pid in run(["pgrep", "-f", "popup_clear.py"]).split()
-             if pid.isdecimal()]
-    if stale:
-        print(f"[popups] retiring {len(stale)} inherited clearer(s) so this "
-              "batch gets the current build", flush=True)
-        for pid in stale:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-        deadline = time.monotonic() + 10.0
-        while any(process_running(pid) for pid in stale) and time.monotonic() < deadline:
-            time.sleep(0.25)
+    # spending attempts on screens the current build already handles. An
+    # interactive host, however, owns a keeper for this exact purpose. Killing
+    # its child causes the host to revive it while this batch starts another,
+    # leaving two clearers to capture and click one UI. Preserve that owned
+    # child, retire only unowned batch leftovers, and let the keeper be the one
+    # durable owner.
+    keeper_pid = interactive_popup_keeper_pid()
+    if keeper_pid is not None:
+        owned = popup_clearer_children(keeper_pid)
+        stale = [pid for pid in popup_clearer_pids() if pid not in owned]
+        retire_popup_clearers(stale, "unowned popup clearer(s); the interactive "
+                              "keeper already owns this seat")
+        print(f"[popups] interactive popup keeper pid {keeper_pid} owns this "
+              "batch; not starting a duplicate", flush=True)
+        return
+
+    retire_popup_clearers(popup_clearer_pids(), "inherited clearer(s) so this "
+                          "batch gets the current build")
     clearer = HERE / "civ6_control" / "popup_clear.py"
     if not clearer.exists():
         print(f"[popups] no clearer at {clearer}; stuck screens will sit on the map",
               flush=True)
         return
     _detach(
-        [sys.executable, "-u", str(clearer), "--interval", "2.5",
+        [sys.executable, "-u", str(clearer), "--interval", POPUP_CLEAR_INTERVAL,
          "--runs", str(RUN_ROOT), "--log", str(RUN_ROOT.parent / "popup_clear.log")],
         RUN_ROOT.parent / "popup_clear.log", "popups",
     )
@@ -432,6 +489,34 @@ MIRROR_HOME = Path.home() / "civvis-civ6-mirror"
 MIRROR_FOLLOW_LOG = MIRROR_HOME / "follow.log"
 MIRROR_PORT = 8610
 MIRROR_RETIRE_SECONDS = 8.0
+MIRROR_COMMIT_ENV = "CIVVIS_MIRROR_COMMIT"
+MIRROR_COMMIT_TIME_ENV = "CIVVIS_MIRROR_COMMIT_TIME"
+
+
+def mirror_follower_environment() -> dict[str, str]:
+    """Promote the supervisor's selected revision into its replacement follower.
+
+    The supervisor starts a stamped follower before a batch, but this launcher
+    correctly retires that helper and its server so every verification batch uses
+    the current checkout.  Without this handoff the replacement starts with no
+    ``CIVVIS_COMMIT``, native ``/status`` reports ``unknown``, and deployment
+    cannot prove that the visible mirror is serving the game just built.
+
+    Keep the handoff under mirror-only names until the detached follower starts:
+    Civ VI's harness and decision worker must not inherit a display-server stamp.
+    A malformed or absent handoff deliberately clears any ambient runtime stamp
+    instead of presenting a stale revision as the fresh mirror's identity.
+    """
+    environment = os.environ.copy()
+    commit = environment.pop(MIRROR_COMMIT_ENV, "")
+    commit_time = environment.pop(MIRROR_COMMIT_TIME_ENV, "")
+    environment.pop("CIVVIS_COMMIT", None)
+    environment.pop("CIVVIS_COMMIT_TIME", None)
+    if re.fullmatch(r"[0-9a-f]{40}", commit):
+        environment["CIVVIS_COMMIT"] = commit
+        if commit_time:
+            environment["CIVVIS_COMMIT_TIME"] = commit_time
+    return environment
 
 
 def matching_pids(pattern: str) -> list[int]:
@@ -573,7 +658,7 @@ def ensure_mirror() -> None:
         return
     retire_mirror()
     _detach([sys.executable, "-u", str(follow)],
-            MIRROR_FOLLOW_LOG, "mirror")
+            MIRROR_FOLLOW_LOG, "mirror", mirror_follower_environment())
 
 
 def commits_behind_main() -> int | None:
@@ -1277,6 +1362,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + [
          "--announcement-seconds", "0.05",
          "--era-announcement-seconds", "0.05",
+         "--dialogue-seconds", "0.25",
          "--civvis-decides",
          "--civvis-bin", str(orders_bin),
          "--civvis-victory", args.victory,

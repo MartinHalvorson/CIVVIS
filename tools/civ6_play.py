@@ -131,6 +131,22 @@ ABANDON_PATIENCE = 5
 BEHIND_ALL_METRICS_MIN_TURN = 100
 BEHIND_ALL_METRICS_PATIENCE = 5
 
+# ★★★ OPENING RESTARTS ARE A DEPLOYMENT POLICY, NOT AN EXPERIMENT FLAG.
+# The operator wants every verification attempt to prove that it can expand:
+# three cities must be present by turn 32.  The turn ledger is the authoritative
+# in-game count, so the first readable agent turn at or after the deadline is
+# the one chance to meet it.
+OPENING_CITY_TARGET_TURN = 32
+OPENING_CITY_TARGET = 3
+
+# A starting settler disappears through the same `unit_lost` ledger event when
+# it founds the capital.  Therefore a raw removal is *not* evidence that a
+# settler was captured.  Keep the founding unit ids and only restart when the
+# first settler produced after that capital setter disappears before it founds.
+# This is the operator's "second settler captured" rule; `unit_lost` also
+# covers other irreversible losses, which are equally unable to make city two.
+SETTLER_KIND = "UNIT_SETTLER"
+
 
 def expected_win_rate(turn: int, score: int | None,
                       rival_best: int | None) -> float | None:
@@ -195,6 +211,118 @@ def _nonnegative_metric(value: object) -> float | int | None:
             and math.isfinite(value) and value >= 0):
         return value
     return None
+
+
+def _nonnegative_int(value: object) -> int | None:
+    """A game-provided identifier or count, without bool's integer alias."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def record_opening_settlers(state: dict, event: dict) -> None:
+    """Remember the capital setter, its founding, and the next live setter.
+
+    The Lua ledger sends the normal sequence ``state -> found -> unit_lost``
+    when a settler makes a city.  The first state identifies the starting
+    setter; after that one is recorded as founded, the first distinct live
+    settler is the second settler whose loss ends an opening attempt.
+    """
+    if event.get("ctx") != "agent":
+        return
+    kind = event.get("kind")
+    if kind == "found":
+        unit_id = _nonnegative_int(event.get("unit"))
+        if unit_id is None:
+            return
+        founded = state.get("founded_settler_ids")
+        if not isinstance(founded, set):
+            founded = set()
+            state["founded_settler_ids"] = founded
+        founded.add(unit_id)
+        # The live game's opening `state` arrives first, but retaining this
+        # fallback keeps a delayed state snapshot from mistaking the capital
+        # setter for the second one.
+        if state.get("initial_settler_id") is None:
+            state["initial_settler_id"] = unit_id
+        return
+    if kind != "state":
+        return
+
+    units = event.get("units")
+    if not isinstance(units, list):
+        return
+    observed = state.get("observed_settler_ids")
+    if not isinstance(observed, list):
+        observed = []
+        state["observed_settler_ids"] = observed
+    for unit in units:
+        if not isinstance(unit, dict) or unit.get("kind") != SETTLER_KIND:
+            continue
+        unit_id = _nonnegative_int(unit.get("id"))
+        if unit_id is not None and unit_id not in observed:
+            observed.append(unit_id)
+
+    if state.get("initial_settler_id") is None and observed:
+        state["initial_settler_id"] = observed[0]
+    initial = state.get("initial_settler_id")
+    founded = state.get("founded_settler_ids")
+    if (initial is None or not isinstance(founded, set)
+            or initial not in founded
+            or state.get("second_settler_id") is not None):
+        return
+    for unit_id in observed:
+        if unit_id != initial and unit_id not in founded:
+            state["second_settler_id"] = unit_id
+            return
+
+
+def opening_city_target_reading(state: dict, event: dict) -> dict | None:
+    """Return the mandatory three-cities-by-turn-32 restart verdict."""
+    if event.get("kind") != "turn" or event.get("ctx") != "agent":
+        return None
+    turn = _nonnegative_int(event.get("turn"))
+    if (turn is None or turn < OPENING_CITY_TARGET_TURN
+            or state.get("opening_city_target_checked")):
+        return None
+    cities = _nonnegative_int(event.get("cities"))
+    if cities is None:
+        # An unreadable count is not proof of a failed opening.  Try the next
+        # readable turn rather than quietly disabling the deployment policy.
+        return None
+    state["opening_city_target_checked"] = True
+    if cities >= OPENING_CITY_TARGET:
+        return None
+    return {
+        "rule": "three_cities_by_turn_32",
+        "turn": turn,
+        "cities": cities,
+        "required_cities": OPENING_CITY_TARGET,
+        "deadline_turn": OPENING_CITY_TARGET_TURN,
+    }
+
+
+def second_settler_loss_reading(state: dict, event: dict) -> dict | None:
+    """Return a restart verdict when the tracked second settler disappears."""
+    if (event.get("kind") != "unit_lost" or event.get("ctx") != "agent"
+            or event.get("unit_kind") != SETTLER_KIND):
+        return None
+    unit_id = _nonnegative_int(event.get("unit"))
+    second = state.get("second_settler_id")
+    if unit_id is None or second is None or unit_id != second:
+        return None
+    founded = state.get("founded_settler_ids")
+    if isinstance(founded, set) and unit_id in founded:
+        # Settling consumes the unit and emits `unit_lost`; it is success, not
+        # a capture.  This check also makes duplicate/out-of-order callbacks
+        # harmless after a confirmed foundation.
+        return None
+    return {
+        "rule": "second_settler_captured",
+        "turn": _nonnegative_int(event.get("turn")),
+        "unit": unit_id,
+        "unit_kind": SETTLER_KIND,
+    }
 
 
 def behind_all_metrics_reading(
@@ -519,6 +647,9 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
 
 
 def build_config(args: argparse.Namespace) -> dict:
+    dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
+    if dialogue_seconds is None:
+        dialogue_seconds = 0.25
     config = {
         "RunTag": args.tag,
         "AutoStart": True,
@@ -757,6 +888,9 @@ def build_config(args: argparse.Namespace) -> dict:
         "TileExportEvery": args.tile_export_every,
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
+        # A diplomacy screen is a blocker. Keep its in-game timer explicit and
+        # bounded so old launchers cannot silently restore a multi-second close.
+        "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -993,6 +1127,13 @@ def wait_for_unlocked_session(poll_s: float = 2.0) -> None:
 GAME_SIDE = "left"
 GAME_FRACTION = 0.5
 GAME_VFRACTION = 1.0
+# `swift -` starts an AppKit interpreter.  That is occasionally slow enough to
+# hold the launcher on the already-verified Create Game screen while every
+# subsequent OCR helper repeats the same measurement.  A harness process plays
+# exactly one game, so a valid answer is stable for the lifetime in which its
+# screen coordinates are used.  Do not cache `None`: a transient AppKit failure
+# must still be allowed to recover on the next read.
+_desktop_size_cache: tuple[int, int] | None = None
 
 
 def desktop_size() -> tuple[int, int] | None:
@@ -1017,6 +1158,9 @@ def desktop_size() -> tuple[int, int] | None:
     The screen at origin (0,0) is the one holding the menu bar; `NSScreen.main`
     is the fallback and follows the key window, so it is second choice.
     """
+    global _desktop_size_cache
+    if _desktop_size_cache is not None:
+        return _desktop_size_cache
     swift = textwrap.dedent("""
         import AppKit
         if let s = NSScreen.screens.first(where: { $0.frame.origin == .zero })
@@ -1041,7 +1185,8 @@ def desktop_size() -> tuple[int, int] | None:
     # not one screen — the observed union was 3225x2557.
     if not (800 < width <= 4000 and 600 < height <= 2000):
         return None
-    return (width, height)
+    _desktop_size_cache = (width, height)
+    return _desktop_size_cache
 
 
 def place_game(side: str = "left", fraction: float = 0.5,
@@ -3202,6 +3347,9 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
+        # The restart policy needs the state/found sequence before `finished`
+        # evaluates a possible `unit_lost` event from the same ledger poll.
+        record_opening_settlers(state, event)
         if kind == "host":
             state["hosted"] = bool(event.get("started"))
             print(f"[setup] host started={event.get('started')}")
@@ -3366,6 +3514,22 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
+        opening_verdict = opening_city_target_reading(state, event)
+        if opening_verdict is not None:
+            state["abandoned"] = opening_verdict
+            print(f"[restart] turn {opening_verdict['turn']}: only "
+                  f"{opening_verdict['cities']} cities; need "
+                  f"{opening_verdict['required_cities']} by turn "
+                  f"{opening_verdict['deadline_turn']} — restarting the "
+                  "opening", flush=True)
+            return True
+        settler_verdict = second_settler_loss_reading(state, event)
+        if settler_verdict is not None:
+            state["abandoned"] = settler_verdict
+            print(f"[restart] turn {settler_verdict['turn']}: second settler "
+                  f"unit {settler_verdict['unit']} disappeared before founding "
+                  "— restarting the opening", flush=True)
+            return True
         restart_verdict = behind_all_metrics_reading(
             state, event, args.restart_below_leader_ratio
         )
@@ -4067,6 +4231,8 @@ def main(argv: list[str] | None = None) -> int:
                          "it in a quadrant so CIVVIS can own the other half")
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
+    ap.add_argument("--dialogue-seconds", type=float, default=0.25,
+                    help="maximum in-game diplomacy close delay (capped at 2s)")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
     # fast because something is waiting behind it; nothing is waiting behind this
     # one, because the game is over. The operator's standing brief asks for ten
