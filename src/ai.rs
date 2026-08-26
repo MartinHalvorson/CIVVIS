@@ -8345,16 +8345,7 @@ impl BasicAi {
                         Some(Item::Unit { unit }) if unit == "settler"
                     ) {
                         let item = opening_item.expect("the matched opening item is a Settler");
-                        if g
-                            .apply(
-                                pid,
-                                &Action::Produce {
-                                    city: *cid,
-                                    item,
-                                },
-                            )
-                            .is_ok()
-                        {
+                        if g.apply(pid, &Action::Produce { city: *cid, item }).is_ok() {
                             settlers += 1;
                             think!(self.journal, Cities, Decision,
                                    "{} keeps the opening Settler pipeline filled", g.cities[cid].name;
@@ -18007,7 +17998,8 @@ mod tests {
                 .into_iter()
                 .find(|unit| game.units[unit].kind == "settler")
                 .unwrap();
-            game.apply(0, &Action::FoundCity { unit: founding }).unwrap();
+            game.apply(0, &Action::FoundCity { unit: founding })
+                .unwrap();
             let capital = game.player_city_ids(0)[0];
             let home = game.cities[&capital].pos;
             game.cities.get_mut(&capital).unwrap().pop = 2;
