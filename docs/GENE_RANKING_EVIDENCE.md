@@ -188,6 +188,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `barbarian-settler-capture` | **on** (unmeasured) | A settler in the barbarians' hands is taken back: exempt from the duplicate-settler guard, first among adjacent captures, pursued out to `BARBARIAN_SETTLER_PURSUIT_RADIUS`. | 1 \| 1 |
 | `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 \| 1 |
 | `close-as-a-body` | off (unmeasured) | On an advance, no unit ends the turn more than the body's pace plus one tile closer to the objective than the force's anchor stood, so a horseman does not meet the enemy four tiles before the line does. | 1 \| 1 |
+| `coastal-city-sites` | off (unmeasured) | Price a city site's Harbor-eligible coast in the final settlement score. | — \| 2 |
+| `coastal-city-sites-2` | off (unmeasured) | Version 2 keeps the coast baseline and additionally prices the best water-resource adjacency around a prospective Harbor. | — \| 2 |
 | `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 \| 1 |
 | `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 \| 1 |
 | `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 \| 2 |
