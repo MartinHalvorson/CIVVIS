@@ -10876,15 +10876,24 @@ local function applyOrder(player, pid, row, turn)
 		end
 		verb = resolved;
 		local cityId = tonumber(subject) or -1;
+		-- Read the queue once before considering any emergency replacement.  A
+		-- defender one turn from completion is an immediate answer to a siege;
+		-- replacing it with Walls that need several turns leaves the city with
+		-- neither defense.  `GetTurnsLeft` is the shipped production-panel
+		-- accessor (Base/Assets/UI/Panels/ProductionPanel.lua:1881).
+		local current = try(function()
+			local q = city:GetBuildQueue();
+			return q and q:GetCurrentProductionTypeHash() or 0;
+		end, 0) or 0;
+		local currentTurns = tonumber(try(function()
+			return city:GetBuildQueue():GetTurnsLeft();
+		end, -1)) or -1;
 		-- The first expansion Settler is a commitment, not a provisional queue
 		-- suggestion.  CIVVIS receives a fresh board every turn and can otherwise
 		-- replace it with a newly preferred Scout before either item completes.
 		-- Keep that one-city opening intact; later cities and a repeated Settler
 		-- request retain the ordinary ability to change production.
-		local currentOpening = try(function()
-			local q = city:GetBuildQueue();
-			return q and q:GetCurrentProductionTypeHash() or 0;
-		end, 0) or 0;
+		local currentOpening = current;
 		local settlerRow = GameInfo.Types["UNIT_SETTLER"];
 		if currentOpening ~= 0 and settlerRow ~= nil
 				and currentOpening == settlerRow.Hash and resolved ~= "UNIT_SETTLER" then
@@ -10897,7 +10906,6 @@ local function applyOrder(player, pid, row, turn)
 				return false, "opening_settler_in_progress";
 			end
 		end
-		civvisBuild[cityId] = resolved;
 		-- A live city can go from healthy to lost between two CIVVIS boards.  If
 		-- the engine says an unwalled city is already damaged or has a visible
 		-- enemy in the neighbourhood, spend this queue on the wall immediately.
@@ -10931,11 +10939,37 @@ local function applyOrder(player, pid, row, turn)
 		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
 			cityWarThreat(player, pid, city);
 		local wallRadius = cfg.EmergencyWallRadius or 3;
+		local immediateThreat = maxWallDamage ~= nil and maxWallDamage <= 0
+			and ((damage ~= nil and damage > 0)
+				or (nearestEnemy ~= nil and nearestEnemy <= wallRadius));
+		local currentUnit = current ~= 0 and try(function()
+			return GameInfo.Units[current];
+		end) or nil;
+		local finishingDefender = currentTurns >= 0 and currentTurns <= 1
+			and currentUnit ~= nil
+			and ((currentUnit.Combat or 0) > 0
+				or (currentUnit.RangedCombat or 0) > 0
+				or (currentUnit.Bombard or 0) > 0);
+		-- Preserve the response the city can field this turn before recording a
+		-- replacement intent.  In civvis-20260826T091338Z, replacing a one-turn
+		-- Archer with four-turn Walls let the attacker take Ostia before either
+		-- defense existed.  Returning here keeps both the current queue and the
+		-- fallback's remembered build untouched for the finishing turn.
+		if immediateThreat and finishingDefender then
+			emit("emergency_defender_preserved", {
+				turn = turn, city = cityId, requested = resolved,
+				current = currentUnit.UnitType or tostring(current),
+				current_turns = currentTurns, at_war = atWar,
+				enemy_distance = nearestEnemy, damage = damage,
+				wall_damage = wallDamage, max_wall_damage = maxWallDamage,
+				radius = wallRadius,
+			});
+			return true, "finishing_defender_preserved";
+		end
+		civvisBuild[cityId] = resolved;
 		local emergencyWall = false;
 		if resolved ~= "BUILDING_WALLS"
-				and maxWallDamage ~= nil and maxWallDamage <= 0
-				and ((damage ~= nil and damage > 0)
-					or (nearestEnemy ~= nil and nearestEnemy <= wallRadius)) then
+				and immediateThreat then
 			local wall = GameInfo.Types["BUILDING_WALLS"];
 			local wallCanOk, wallCan = false, false;
 			if wall ~= nil then
@@ -10974,10 +11008,6 @@ local function applyOrder(player, pid, row, turn)
 		--
 		-- Comparing against the queue's current item is an actuation concern, not a
 		-- decision: CIVVIS still chooses, and a genuine change of mind still lands.
-		local current = try(function()
-			local q = city:GetBuildQueue();
-			return q and q:GetCurrentProductionTypeHash() or 0;
-		end, 0);
 		if current ~= 0 and row2.Hash ~= nil and current == row2.Hash then
 			return true, "already_building";
 		end
