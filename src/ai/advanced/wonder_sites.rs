@@ -136,7 +136,8 @@ impl AdvancedAi {
     /// prefer: the projection onto the centre and its neighbours at the
     /// prefilter's own weights, and version 2's flat credit.
     pub(super) fn settlement_prefilter_score_for(&self, g: &Game, pos: Pos) -> f64 {
-        let score = Self::settlement_prefilter_score(g, pos);
+        let score = Self::settlement_prefilter_score(g, pos)
+            + self.coastal_city_site_prefilter_bonus(g, pos);
         if !self.wonder_adjacent_sites_on() {
             return score;
         }

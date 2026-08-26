@@ -1181,6 +1181,15 @@
           "chain-payback-window-2": null
         }
       },
+      "coastal-city-sites": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "coastal-city-sites": null,
+          "coastal-city-sites-2": null
+        }
+      },
       "district-coverage": {
         "rule_on": [],
         "head": "district-coverage",
