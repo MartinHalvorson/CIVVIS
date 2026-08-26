@@ -25097,6 +25097,13 @@ impl Game {
     /// *how* the range is entered, not only where it ends. Direction matters:
     /// stepping into enemy ZOC ends movement, so the reverse step can be
     /// absent while the forward one is offered.
+    ///
+    /// Every pair here is a legal `Action::Move` on its own, which is the
+    /// contract a client draws from. A tile held by one of this unit's own
+    /// units is therefore neither an endpoint nor an origin: the flood crosses
+    /// it, and the unit is never standing on it to take a step from. The whole
+    /// crossing is one `Action::MoveTo` and appears in [`Game::path_to`]
+    /// instead — see [`Game::entry_at`].
     pub fn reach_steps(&self, uid: u32) -> Vec<(Pos, Pos)> {
         let (start, moves) = match self.units.get(&uid) {
             Some(u) => (u.pos, u.moves_left),
