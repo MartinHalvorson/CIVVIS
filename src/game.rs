@@ -26063,7 +26063,7 @@ impl Game {
         // last hex the unit could legally be *left* on turns a truncated walk
         // into a legal position instead of an illegal stack.
         let last = path.len() - 1;
-        let mut anchor = (self.units[&uid].pos, self.units[&uid].moves_left);
+        let mut anchor = self.units[&uid].pos;
         for (index, step) in path.into_iter().enumerate() {
             if self
                 .units
@@ -26076,15 +26076,18 @@ impl Game {
             if self.do_move_step(pid, uid, step, index == last).is_err() {
                 break; // out of MP or stopped by ZOC mid-path
             }
-            if self.units.contains_key(&uid) && self.can_stop(uid, step) {
-                anchor = (step, self.units[&uid].moves_left);
+            if self.can_stop(uid, step) {
+                anchor = step;
             }
         }
         if let Some(at) = self.units.get(&uid).map(|unit| unit.pos) {
-            if at != anchor.0 && !self.can_stop(uid, at) {
-                self.relocate(uid, anchor.0);
+            if at != anchor && !self.can_stop(uid, at) {
+                self.relocate(uid, anchor);
                 if let Some(unit) = self.units.get_mut(&uid) {
-                    // It spent the movement on the attempt either way.
+                    // It spent this turn's movement on the attempt either way,
+                    // and a walk that reaches here has already paid for the
+                    // tiles it crossed. Zero rather than restored, so no
+                    // truncated crossing can hand movement back.
                     unit.moves_left = 0.0;
                 }
             }
