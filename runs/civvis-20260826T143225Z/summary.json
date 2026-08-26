@@ -1,0 +1,253 @@
+{
+  "abandoned": {
+    "consecutive_turns": 5,
+    "culture": 35.7969,
+    "rival_best": 454,
+    "rival_best_culture": 75.9922,
+    "rival_best_science": 87.5352,
+    "rule": "score_science_culture_deficit",
+    "science": 25.2109,
+    "score": 209,
+    "score_ratio": 0.4604,
+    "score_ratio_ceiling": 0.7,
+    "turn": 104
+  },
+  "cities_at_60": 5,
+  "city_two_turn": 23,
+  "configured": true,
+  "decider_revisions": [
+    "4c6cd68af2a8ac5a1b0c88145387fbd9fded0150",
+    "b2ba527da916f4b2eab06126381ec7160624421a"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-26T15:02:34Z",
+  "forced": [],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 209,
+  "last_turn": 104,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "orders": {
+    "*": {
+      "applied": 633,
+      "refused": {
+        "ATTACK": 1,
+        "MOVE_TO": 1,
+        "cannot_FORTIFY": 3,
+        "cannot_buy_UNIT_SCOUT": 1,
+        "cannot_promote_PROMOTION_TORTOISE": 1,
+        "city_strike_refused": 37,
+        "delegation_already_present": 15,
+        "found_off_site": 3,
+        "move_no_moves_this_turn": 14,
+        "opening_settler_in_progress": 9,
+        "policy_deck_too_large": 1,
+        "unit_gone:1966086": 1,
+        "unit_gone:327682": 1
+      },
+      "seen": 756
+    },
+    "city_strike": {
+      "applied": 48,
+      "refused": {
+        "city_strike_refused": 37
+      },
+      "seen": 85
+    },
+    "civic": {
+      "applied": 15,
+      "refused": {},
+      "seen": 15
+    },
+    "delegation": {
+      "applied": 3,
+      "refused": {
+        "delegation_already_present": 15
+      },
+      "seen": 18
+    },
+    "envoy": {
+      "applied": 7,
+      "refused": {},
+      "seen": 7
+    },
+    "government": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "governor_appoint": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "governor_promote": {
+      "applied": 5,
+      "refused": {},
+      "seen": 5
+    },
+    "pantheon": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "policy_deck": {
+      "applied": 27,
+      "refused": {
+        "policy_deck_too_large": 1
+      },
+      "seen": 28
+    },
+    "produce": {
+      "applied": 59,
+      "refused": {
+        "opening_settler_in_progress": 9
+      },
+      "seen": 68
+    },
+    "produce_next": {
+      "applied": 97,
+      "refused": {},
+      "seen": 97
+    },
+    "purchase": {
+      "applied": 4,
+      "refused": {
+        "cannot_buy_UNIT_SCOUT": 1
+      },
+      "seen": 5
+    },
+    "research": {
+      "applied": 19,
+      "refused": {},
+      "seen": 19
+    },
+    "unit": {
+      "applied": 442,
+      "refused": {
+        "ATTACK": 1,
+        "MOVE_TO": 1,
+        "cannot_FORTIFY": 3,
+        "cannot_promote_PROMOTION_TORTOISE": 1,
+        "found_off_site": 3,
+        "move_no_moves_this_turn": 14,
+        "unit_gone:1966086": 1,
+        "unit_gone:327682": 1
+      },
+      "seen": 467
+    }
+  },
+  "orders_applied": 589,
+  "orders_seen": 339,
+  "outcome": {
+    "ctx": "agent",
+    "defeat": 0,
+    "kind": "defeat",
+    "local_player": 0,
+    "ours": false,
+    "player": 10,
+    "run": "civvis-20260826T143225Z",
+    "turn": 51
+  },
+  "reason": "abandoned",
+  "rival_best": 454,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260826T143225Z",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260826T143225Z",
+  "victory_target": "diplomatic",
+  "withheld": []
+}
