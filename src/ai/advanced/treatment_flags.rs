@@ -2290,6 +2290,53 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
+    /// Scale a node whose boost is already in hand by what the discount buys
+    /// under the value function's own cost divisor. `tech_value` and
+    /// `civic_value` both end `(value + k) / cost.sqrt()`, so a node costing
+    /// `1 - frac` of its printed price scores `1 / (1 - frac).sqrt()` times as
+    /// much — 1.29 at the shipped 40%, capped. See
+    /// [`AdvancedAi::boost_in_hand_scale`]. Opt-in gene
+    /// `boost-first-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_first_research(&mut self) {
+        self.boost_first_research = true;
+    }
+
+    /// The twin of `enable_boost_first_research`.
+    pub fn disable_boost_first_research(&mut self) {
+        self.boost_first_research = false;
+    }
+
+    /// Take a node the empire would finish before its own eureka lands after
+    /// that eureka, not before it. The engine credits a boost mid-research
+    /// onto a node still being worked, and never onto one already finished, so
+    /// only a short node loses its discount outright. See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// `boost-wait-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_wait_research(&mut self) {
+        self.boost_wait_research = true;
+    }
+
+    /// The twin of `enable_boost_wait_research`.
+    pub fn disable_boost_wait_research(&mut self) {
+        self.boost_wait_research = false;
+    }
+
+    /// Credit a technology or civic with the boosts it makes chaseable by
+    /// unlocking what their triggers need. The quarry Masonry's eureka wants
+    /// needs Mining first, Machinery's three Archers need Archery, and nothing
+    /// ever bought the permission. See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// `boost-unlock-research`. Filed above the markers: the append-point check
+    /// reads a method line's first identifier.
+    pub fn enable_boost_unlock_research(&mut self) {
+        self.boost_unlock_research = true;
+    }
+
+    /// The twin of `enable_boost_unlock_research`.
+    pub fn disable_boost_unlock_research(&mut self) {
+        self.boost_unlock_research = false;
+    }
+
     /// Pays the Envoy a city-state's quest promises on the unit or district family it asked for.
     /// The production queue reads the outstanding `train_unit_type` and
     /// `zone_district_type` quests and prices the item the city-state named
@@ -2638,6 +2685,32 @@ impl AdvancedAi {
     /// The twin of `enable_contested_land_first`.
     pub fn disable_contested_land_first(&mut self) {
         self.base.contested_land_first = false;
+    }
+
+    /// An adaptive seat stops racing for a Great Prophet: the race costs more
+    /// science than the religion returns. See
+    /// `AdvancedAi::science_building_first`; opt-in gene
+    /// `science-building-first`.
+    pub fn enable_science_building_first(&mut self) {
+        self.science_building_first = true;
+    }
+
+    /// The twin of `enable_science_building_first`.
+    pub fn disable_science_building_first(&mut self) {
+        self.science_building_first = false;
+    }
+
+    /// `AdvancedAi::skip_the_prophet_race`; opt-in gene
+    /// `skip-the-prophet-race`. Filed above the markers with the other
+    /// toggles, because the append-point check reads a line's first
+    /// identifier and every one of these starts `pub`.
+    pub fn enable_skip_the_prophet_race(&mut self) {
+        self.skip_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_skip_the_prophet_race`.
+    pub fn disable_skip_the_prophet_race(&mut self) {
+        self.skip_the_prophet_race = false;
     }
 
     // ---- append: a-b ------------------------------------------------

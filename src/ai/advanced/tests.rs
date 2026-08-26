@@ -34245,20 +34245,21 @@ fn a_neighbour_twelve_tiles_east(met: bool) -> Game {
     game
 }
 
-/// The fourth ring beside a city-state is legal under the engine's ordinary
-/// city-spacing rule, but becomes a weak one-front colony as soon as a rival
-/// Suzerain brings the city-state into war. Standard settlement safety keeps
-/// that exact ring clear, while the fifth ring and frozen legacy remain open.
+/// The sixth ring beside a city-state is legal under the engine's ordinary
+/// city-spacing rule, but remains inside a mobile siege stack's practical
+/// reach once a rival Suzerain brings the city-state into war. Standard
+/// settlement safety keeps that exact ring clear, while the seventh ring and
+/// frozen legacy remain open.
 #[test]
-fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
+fn settlement_safety_keeps_clear_of_a_visible_city_states_sixth_ring() {
     let mut game = a_neighbour_twelve_tiles_east(false);
     let city_state = game.player_city_ids(1)[0];
     let city_state_pos = game.cities[&city_state].pos;
     game.players[1].is_minor = true;
     game.spawn_test_unit("scout", 0, (21, 10));
 
-    let doorstep = (18, 10);
-    let beyond = (17, 10);
+    let doorstep = (16, 10);
+    let beyond = (15, 10);
     assert_eq!(
         game.wdist(doorstep, city_state_pos),
         CITY_STATE_SETTLEMENT_BUFFER
@@ -34268,7 +34269,7 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
         CITY_STATE_SETTLEMENT_BUFFER + 1
     );
 
-    // Make the exact fourth-ring tile the only otherwise ordinary settlement
+    // Make the exact sixth-ring tile the only otherwise ordinary settlement
     // candidate. This exercises the candidate filter, not merely its set.
     let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
     for position in &positions {
@@ -34296,11 +34297,11 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
     let exclusion = live.city_state_settlement_exclusion(&game, 0, &visible);
     assert!(
         exclusion.contains(&doorstep),
-        "the fourth, otherwise legal founding ring stays clear"
+        "the sixth, otherwise legal founding ring stays clear"
     );
     assert!(
         !exclusion.contains(&beyond),
-        "the fifth ring remains available for aggressive expansion"
+        "the seventh ring remains available for aggressive expansion"
     );
     let legacy_sites = AdvancedAi::legacy().settle_ranking(&game, 0, (10, 10), 8);
     assert_eq!(
@@ -34309,7 +34310,7 @@ fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
             .map(|(position, _)| *position)
             .collect::<Vec<_>>(),
         vec![doorstep],
-        "the frozen controller exposes the legal fourth-ring site"
+        "the frozen controller exposes the legal sixth-ring site"
     );
     assert!(
         live.settle_ranking(&game, 0, (10, 10), 8).is_empty(),
