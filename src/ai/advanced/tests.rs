@@ -220,24 +220,36 @@ fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
 }
 
 #[test]
-fn a_siege_landing_net_damage_is_not_a_stalled_war() {
-    // The Chennai shape from run civvis-20260817T075857Z: an assigned lane
-    // (no campaign target), a long defensive war, no capture ever — and the
-    // rival capital ground from 12 to 190 of 200 damage while the fatigue
-    // clock read "no progress". At t212 the seat offered peace with 1180
-    // power against 82 and the city healed to full. The contract: an at-war
-    // rival city whose health FELL since the last observation is campaign
-    // progress, and only a siege the defender out-heals may still fatigue
-    // into a peace offer.
+fn a_siege_arrival_is_not_a_stalled_war_only_with_v2_gene() {
+    // A march to a hostile city can outlast the twelve-turn fatigue window.
+    // The retained opt-in resets that clock on its first land-unit arrival,
+    // but does not keep resetting it while the unit waits on the same ring.
+    assert!(
+        GENES
+            .iter()
+            .any(|gene| gene.tag == "siege-is-progress-2" && gene.opt_in()),
+        "the retained arrival behavior remains a standalone opt-in gene"
+    );
     let (mut game, _, rival_capital) = timed_war_fixture(11);
     let rival_capital_position = game.cities[&rival_capital].pos;
-    // The fatigued offer stands down against a one-city rival (taking the
-    // capital would eliminate them); the measured shape had a multi-city
-    // defender, so this fixture gets one too.
     found_nearby_test_city(&mut game, 1, rival_capital_position);
     game.at_war.insert((0, 1));
     game.at_war.insert((1, 0));
     game.turn = 120;
+
+    let landing = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(position, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && (1..=2).contains(&game.wdist(**position, rival_capital_position))
+        })
+        .map(|(position, _)| *position)
+        .min()
+        .expect("the rival capital has a land approach within two tiles");
+    game.spawn_test_unit("warrior", 0, landing);
 
     let plan = StrategicPlan {
         strategy: GrandStrategy::Diplomacy,
@@ -249,51 +261,45 @@ fn a_siege_landing_net_damage_is_not_a_stalled_war() {
         rush: false,
     };
 
-    let mut live = AdvancedAi::new();
-    live.enable_siege_is_progress();
-    live.major_war_since = Some(80);
-    live.last_campaign_progress = 80;
+    let mut arriving = AdvancedAi::new();
+    arriving.enable_siege_is_progress_2();
+    arriving.major_war_since = Some(80);
+    arriving.last_campaign_progress = 80;
     // A controller mid-game has been counting all along; a zeroed count
     // would trip the frozen count-based clock on the first observation.
-    live.last_city_count = game.player_city_ids(0).len();
-    live.observe_campaign(&game, 0);
-    game.cities.get_mut(&rival_capital).unwrap().hp -= 40;
-    live.observe_campaign(&game, 0);
+    arriving.last_city_count = game.player_city_ids(0).len();
+    arriving.observe_campaign(&game, 0);
     assert_eq!(
-        live.last_campaign_progress, game.turn,
-        "net damage on a besieged city is campaign progress"
+        arriving.last_campaign_progress, game.turn,
+        "the first land-unit arrival is campaign progress"
     );
-    live.advanced_diplomacy(&mut game, 0, &plan);
+    arriving.advanced_diplomacy(&mut game, 0, &plan);
     assert!(
-        !live.peace_offers.contains(&1),
-        "a siege that is winning must not be offered away"
+        !arriving.peace_offers.contains(&1),
+        "a campaign that has just reached its target must not be offered away"
     );
 
-    let mut outhealed = AdvancedAi::new();
-    outhealed.enable_siege_is_progress();
-    outhealed.major_war_since = Some(80);
-    outhealed.last_campaign_progress = 80;
-    outhealed.last_city_count = game.player_city_ids(0).len();
-    outhealed.observe_campaign(&game, 0);
-    outhealed.observe_campaign(&game, 0);
+    game.turn = 121;
+    arriving.observe_campaign(&game, 0);
     assert_eq!(
-        outhealed.last_campaign_progress, 80,
-        "health the defender holds flat buys no progress"
-    );
-    outhealed.advanced_diplomacy(&mut game, 0, &plan);
-    assert!(
-        outhealed.peace_offers.contains(&1),
-        "a siege the defender out-heals is genuinely stalled and may fatigue"
+        arriving.last_campaign_progress, 120,
+        "waiting on the same ring does not refresh the arrival reset"
     );
 
-    let mut bridged = AdvancedAi::new();
-    bridged.enable_live_bridge_universe();
-    assert!(
-        bridged.siege_is_progress,
-        "the live bundle carries the repair"
+    let mut without_gene = AdvancedAi::new();
+    without_gene.major_war_since = Some(80);
+    without_gene.last_campaign_progress = 80;
+    without_gene.last_city_count = game.player_city_ids(0).len();
+    without_gene.observe_campaign(&game, 0);
+    assert_eq!(
+        without_gene.last_campaign_progress, 80,
+        "without the opt-in, arrival does not alter the fatigue clock"
     );
-    bridged.disable_siege_is_progress();
-    assert!(!bridged.siege_is_progress);
+    without_gene.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        without_gene.peace_offers.contains(&1),
+        "without the opt-in, a fatigued campaign may be offered away"
+    );
 }
 
 #[test]
@@ -33626,7 +33632,7 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     assert_ne!(safe.builder_targets.get(&builder), Some(&target));
 }
 
-/// The nine version-2 genes of 2026-08-24: each is a native opt-in, off in
+/// The eight remaining version-2 families of 2026-08-24: each is a native opt-in, off in
 /// both controllers, published for `gene_screen` as `<base>-2`, and its
 /// enable turns version 1 off so a seat plays one version of the family.
 #[test]
@@ -33634,7 +33640,6 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
     let families = [
         "amenity-project-preemption",
         "settler-guard-holds",
-        "siege-is-progress",
         "campus-adjacency-threshold",
         "holy-site-where-the-threat-is",
         "naval-recon",
@@ -33649,7 +33654,6 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
                 ai.amenity_project_preemption_2,
             ),
             (ai.settler_guard_holds, ai.settler_guard_holds_2),
-            (ai.siege_is_progress, ai.siege_is_progress_2),
             (
                 ai.campus_adjacency_threshold,
                 ai.campus_adjacency_threshold_2,

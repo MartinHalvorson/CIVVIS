@@ -251,13 +251,6 @@ pub const GENES: &[Gene] = &[
     // handed 200 of it back, and took nothing — the shape behind 25 live
     // games and 0 captures on 7.7x the field's military.
     Gene { tag: "siege-commitment", field: "siege_commitment", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_siege_commitment, disable: AdvancedAi::disable_siege_commitment },
-    // ⚠ And the fatigue clock must not offer away a siege that is landing
-    // net damage — Chennai at 190/200, "the war has stalled: 1180 power
-    // against their 82". See `siege_is_progress`.
-    // And a siege landing net damage resets the fatigue clock, so the
-    // peace desk cannot offer away a war one hit from a capture. See
-    // `siege_is_progress`.
-    Gene { tag: "siege-is-progress", field: "siege_is_progress", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_siege_is_progress, disable: AdvancedAi::disable_siege_is_progress },
     // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
     // escalation in the production picker reads a barbarian siege as no threat at
     // all: a one-city empire's standing-army floor stays at `mil_per_city` (1.0)
@@ -1147,9 +1140,9 @@ pub const GENES: &[Gene] = &[
     // family draw is biased toward the best version and the ledger ships the
     // best by pooled Diff. See `AdvancedAi::enable_settler_target_hysteresis_2`.
     Gene { tag: "settler-target-hysteresis-2", field: "settler_target_hysteresis_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_target_hysteresis_2, disable: AdvancedAi::disable_settler_target_hysteresis_2 },
-    // Version 2 of `siege-is-progress` (2026-08-24): one gated delta on version 1; the
-    // family draw is biased toward the best version and the ledger ships the
-    // best by pooled Diff. See `AdvancedAi::enable_siege_is_progress_2`.
+    // The first land unit within two tiles of an at-war city resets the
+    // fatigue clock once, so a campaign still walking to its target is not
+    // offered away as stalled. See `AdvancedAi::enable_siege_is_progress_2`.
     Gene { tag: "siege-is-progress-2", field: "siege_is_progress_2", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_is_progress_2, disable: AdvancedAi::disable_siege_is_progress_2 },
     // Every tier-2 government is gated on one civic and `strategic_government`
     // already ranks all three above `classical_republic` in every lane. The
@@ -1514,7 +1507,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("settler-target-hysteresis", [Some(6), Some(13), Some(-10)]),
     ("settler-threat-detour", [Some(-10), Some(-4), Some(19)]),
     ("siege-commitment", [Some(-19), Some(-2), Some(-33)]),
-    ("siege-is-progress", [Some(3), Some(-4), Some(-1)]),
     ("slot-kind-tiebreak", [Some(22), Some(6), Some(10)]),
     ("solvency-first-trade-slot", [Some(89), Some(125), Some(144)]),
     ("stranded-settler-discount", [Some(-17), Some(-2), Some(-3)]),
@@ -1597,7 +1589,6 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "settler-target-hysteresis", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(17), wins_prior_10k: Some(-18), win_diff_pp: Some(0.011271), posterior_pp: Some(0.142789), posterior_se_pp: Some(8.235122), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.335, win_z: 0.873, share_delta_pp: 0.12, share_z: 1.532, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "settler-threat-detour", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(1), wins_prior_10k: Some(18), win_diff_pp: Some(0.450991), posterior_pp: Some(24.316588), posterior_se_pp: Some(13.516949), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.021, win_z: 0.047, share_delta_pp: 0.044, share_z: 0.493, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "siege-commitment", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(9), wins_prior_10k: Some(6), win_diff_pp: Some(-0.039073), posterior_pp: Some(-2.000626), posterior_se_pp: Some(8.322987), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.185, win_z: 0.485, share_delta_pp: -0.036, share_z: -0.457, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "siege-is-progress", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(23), wins_prior_10k: Some(-6), win_diff_pp: Some(-0.144271), posterior_pp: Some(-9.171286), posterior_se_pp: Some(13.818669), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.451, win_z: 1.171, share_delta_pp: 0.117, share_z: 1.48, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "slot-kind-tiebreak", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(25), wins_prior_10k: Some(-1), win_diff_pp: Some(0.203632), posterior_pp: Some(9.448489), posterior_se_pp: Some(8.258141), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.507, win_z: 1.329, share_delta_pp: 0.12, share_z: 1.526, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "stranded-settler-discount", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(33), wins_prior_10k: Some(-8), win_diff_pp: Some(0.234064), posterior_pp: Some(11.031107), posterior_se_pp: Some(8.29178), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.659, win_z: 1.743, share_delta_pp: 0.007, share_z: 0.085, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "strategic-wonders", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(0), wins_prior_10k: Some(11), win_diff_pp: Some(0.172073), posterior_pp: Some(8.794727), posterior_se_pp: Some(8.277293), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.007, win_z: -0.018, share_delta_pp: -0.044, share_z: -0.559, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
