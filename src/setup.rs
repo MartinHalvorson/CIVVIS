@@ -1455,6 +1455,13 @@ pub struct TacticsRules {
     /// and by the city each side holds if the economy grants one.
     #[serde(default)]
     pub flag: bool,
+    /// Whether units recover. Off, the arena's own rule since the mode
+    /// existed: one engagement, permanent damage, a trade you win stays won.
+    /// On, a campaign — the unit that steps back is whole again in a few
+    /// turns, and preserving it is worth something. Off in every save that
+    /// does not carry the field, which is every battle played before it.
+    #[serde(default)]
+    pub heal: bool,
     /// Which era arms the battle — see [`TacticsEra`]. A save from before the
     /// choice existed reads as [`TacticsEra::Start`], which is exactly the
     /// rule it was played under.
@@ -1528,6 +1535,7 @@ impl TacticsRules {
             unique_units: self.unique_units,
             fog: self.fog,
             flag: self.flag,
+            heal: self.heal,
             era: self.era.sanitized(),
         }
     }
@@ -1567,6 +1575,7 @@ impl TacticsRules {
             unique_units: false,
             fog: false,
             flag: false,
+            heal: false,
             // The battle brings its own era: Trafalgar is 1805 whatever the
             // lobby's era control asked for.
             era: TacticsEra::Start,
@@ -1608,6 +1617,7 @@ impl Default for TacticsRules {
             unique_units: false,
             fog: true,
             flag: false,
+            heal: false,
             era: TacticsEra::Start,
         }
     }
@@ -2471,6 +2481,7 @@ mod tests {
             unique_units: true,
             fog: true,
             flag: true,
+            heal: false,
             era: TacticsEra::Random,
         };
         let fought = generous.for_script(MapScript::Trafalgar);
@@ -2486,6 +2497,7 @@ mod tests {
                 unique_units: false,
                 fog: false,
                 flag: false,
+                heal: false,
                 // The era choice goes with the economy: Trafalgar is 1805.
                 era: TacticsEra::Start,
             }
