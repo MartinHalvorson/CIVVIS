@@ -565,10 +565,8 @@ impl AdvancedAi {
     /// city resets the war-fatigue clock once for that city, so a campaign
     /// still walking to its target is not offered away as stalled.
     ///
-    /// Version 2 of `siege_is_progress`; one version of a family plays, so this
-    /// turns version 1 off. Opt-in gene `siege-is-progress-2`. See `AdvancedAi::siege_is_progress_2`.
+    /// Opt-in gene `siege-is-progress-2`. See `AdvancedAi::siege_is_progress_2`.
     pub fn enable_siege_is_progress_2(&mut self) {
-        self.siege_is_progress = false;
         self.siege_is_progress_2 = true;
     }
 
@@ -809,16 +807,6 @@ impl AdvancedAi {
 
     pub fn disable_settler_guard_holds(&mut self) {
         self.settler_guard_holds = false;
-    }
-
-    /// Count damage dealt to an enemy city or its walls as campaign progress,
-    /// so a winning siege is never stalled. See [`Self::siege_is_progress`].
-    pub fn enable_siege_is_progress(&mut self) {
-        self.siege_is_progress = true;
-    }
-
-    pub fn disable_siege_is_progress(&mut self) {
-        self.siege_is_progress = false;
     }
 
     /// Read the Culture and Diplomacy denial alarms off projected pressure,

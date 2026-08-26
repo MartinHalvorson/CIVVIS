@@ -496,11 +496,6 @@
         -2,
         -33
       ],
-      "siege-is-progress": [
-        3,
-        -4,
-        -1
-      ],
       "slot-kind-tiebreak": [
         22,
         6,
@@ -667,7 +662,6 @@
       "settler-target-hysteresis": "off",
       "settler-threat-detour": "off",
       "siege-commitment": "off",
-      "siege-is-progress": "off",
       "slot-kind-tiebreak": "on",
       "solvency-first-trade-slot": "on",
       "stranded-settler-discount": "off",
@@ -825,15 +819,6 @@
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
-        }
-      },
-      "siege-is-progress": {
-        "rule_on": [],
-        "head": "siege-is-progress",
-        "ships": null,
-        "versions": {
-          "siege-is-progress": -0.144271,
-          "siege-is-progress-2": null
         }
       },
       "solvency-first-trade-slot": {
@@ -1220,7 +1205,7 @@
   "counts": {
     "helps": 16,
     "hurts": 0,
-    "unresolved": 59,
+    "unresolved": 58,
     "default_on": 41
   },
   "genes": [
@@ -4100,51 +4085,6 @@
             "win_delta_pp": 0.073,
             "win_z": 0.132,
             "win_se_pp": 0.557
-          }
-        ]
-      }
-    },
-    {
-      "tag": "siege-is-progress",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 23,
-      "wins_prior_10k": -6,
-      "wins_third_10k": -16,
-      "win_diff_pp": -0.144271,
-      "posterior_pp": -9.171286,
-      "posterior_se_pp": 13.818669,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 24.52536,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19086,
-        "n_off": 19074,
-        "win_delta_pp": 0.451,
-        "win_z": 1.171,
-        "share_delta_pp": 0.117,
-        "share_z": 1.48,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 1.177,
-            "win_z": 2.204,
-            "win_se_pp": 0.534
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.349,
-            "win_z": -0.628,
-            "win_se_pp": 0.555
           }
         ]
       }

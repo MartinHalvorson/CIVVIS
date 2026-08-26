@@ -1388,27 +1388,6 @@ pub struct AdvancedAi {
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
-    /// City and wall health of every at-war rival city at the preceding
-    /// observation, so `siege_is_progress` can tell a siege that is landing
-    /// net damage from one the defender out-heals. See the flag.
-    campaign_city_health: BTreeMap<u32, (i32, i32)>,
-    /// ★★★★ A SIEGE THAT IS WINNING IS NOT A STALLED WAR. The fatigue clock
-    /// (`last_campaign_progress`) resets only on a foreign city changing
-    /// hands, so a war spent grinding a city down reads as "no progress" for
-    /// exactly as long as the grinding takes — and the fatigued branch then
-    /// offers the defender peace at the moment of victory. Measured on live
-    /// run civvis-20260817T075857Z: Chennai ground from 12 to 190 of 200
-    /// damage, and at t212 the seat journaled "Offering peace to India | the
-    /// war has stalled: 1180 power against their 82" — a fourteen-to-one war
-    /// offered away one hit from a capture, after which the city healed to
-    /// full. Across the 54 completed runs since 2026-08-16 the fleet reduced
-    /// at-war rival cities to 180–190/200 four times and captured none.
-    /// With this flag, an at-war rival city whose city or wall health DROPPED
-    /// since the last observation counts as campaign progress: out-damaging
-    /// the defender's healing is the war working, and only a siege the
-    /// defender out-heals can stall. Live-bridge repair, withholdable as
-    /// `siege-is-progress`.
-    pub siege_is_progress: bool,
     last_city_count: usize,
     peace_until: u32,
     /// Rivals offered peace in the current diplomacy pass, for `plan_report`.
@@ -4413,8 +4392,8 @@ pub struct AdvancedAi {
     /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
     chop_into_the_queue: bool,
     /// The at-war cities an own unit has already reached this campaign;
-    /// state for `siege_is_progress_2`, rebuilt from the at-war set each
-    /// observation like `campaign_city_health`.
+    /// state for `siege_is_progress_2`, rebuilt from the current at-war set
+    /// each observation.
     campaign_cities_reached: BTreeSet<u32>,
     /// Version 2 of `campus_adjacency_threshold`: the same district pricing,
     /// plus the lever the gene's own survey said was missing — CITY SITING.
@@ -4837,13 +4816,10 @@ pub struct AdvancedAi {
     /// tile the first just fled. Implies version 1; its enable turns
     /// version 1 off. Opt-in gene `settler-target-hysteresis-2`.
     settler_target_hysteresis_2: bool,
-    /// Version 2 of `siege_is_progress`: arriving counts too. The first
-    /// turn an own land military unit stands within two tiles of an at-war
-    /// city resets the fatigue clock once for that city, because the walk
-    /// to a rival's city routinely takes longer than the twelve-turn stall
-    /// window and version 1 could only see damage already landing. Implies
-    /// version 1; its enable turns version 1 off. Opt-in gene
-    /// `siege-is-progress-2`.
+    /// The first turn an own land military unit stands within two tiles of
+    /// an at-war city resets the fatigue clock once for that city, so a
+    /// campaign still walking to its target is not offered away as stalled.
+    /// Opt-in gene `siege-is-progress-2`.
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
@@ -5714,8 +5690,6 @@ impl AdvancedAi {
             builder_targets: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
-            campaign_city_health: BTreeMap::new(),
-            siege_is_progress: false,
             last_city_count: 0,
             peace_until: 0,
             peace_offers: BTreeSet::new(),
@@ -6279,56 +6253,38 @@ impl AdvancedAi {
             self.last_campaign_progress = g.turn;
         }
         self.last_city_count = cities;
-        // ★★★★ Net damage on a besieged city is campaign progress. Only
-        // cities of players this seat is AT WAR with are compared, and only a
-        // DROP against the previous observation counts — a defender whose
-        // healing outpaces the bombardment shows non-falling health and the
-        // fatigue clock runs on, which is the one siege that genuinely has
-        // stalled. The map is rebuilt from the current at-war set each
-        // observation, so peace forgets a city and a later war starts a fresh
-        // baseline instead of inheriting one from the last campaign.
-        if self.siege_is_progress_on() {
-            let mut health_now = BTreeMap::new();
+        // The first own land unit within two tiles of an at-war city is the
+        // campaign arriving. Rebuild the reached set from the current war so
+        // peace forgets a city and a later war gets one fresh arrival reset.
+        if self.siege_is_progress_2 {
             let mut siege_advanced = false;
-            // See `siege_is_progress_2`: the first own land unit within two
-            // tiles of an at-war city is the campaign arriving.
             let mut reached_now = BTreeSet::new();
             for (city, observed) in &g.cities {
                 if observed.owner == pid || !g.is_at_war(pid, observed.owner) {
                     continue;
                 }
-                if self.siege_is_progress_2 {
-                    let arrived = g.units.values().any(|unit| {
-                        unit.owner == pid
-                            && g.rules.units[unit.kind].class == "military"
-                            && !matches!(
-                                g.rules.units[unit.kind].domain.as_deref(),
-                                Some("sea" | "air")
-                            )
-                            && g.wdist(unit.pos, observed.pos) <= 2
-                    });
-                    if arrived {
-                        if !self.campaign_cities_reached.contains(city) {
-                            siege_advanced = true;
-                        }
-                        reached_now.insert(*city);
+                let arrived = g.units.values().any(|unit| {
+                    unit.owner == pid
+                        && g.rules.units[unit.kind].class == "military"
+                        && !matches!(
+                            g.rules.units[unit.kind].domain.as_deref(),
+                            Some("sea" | "air")
+                        )
+                        && g.wdist(unit.pos, observed.pos) <= 2
+                });
+                if arrived {
+                    if !self.campaign_cities_reached.contains(city) {
+                        siege_advanced = true;
                     }
+                    reached_now.insert(*city);
                 }
-                let health = (observed.hp, observed.wall_hp);
-                if self
-                    .campaign_city_health
-                    .get(city)
-                    .is_some_and(|before| health.0 < before.0 || health.1 < before.1)
-                {
-                    siege_advanced = true;
-                }
-                health_now.insert(*city, health);
             }
             if siege_advanced {
                 self.last_campaign_progress = g.turn;
             }
-            self.campaign_city_health = health_now;
             self.campaign_cities_reached = reached_now;
+        } else {
+            self.campaign_cities_reached.clear();
         }
         let major_war = g.players.iter().any(|p| {
             p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, p.id)
@@ -23022,10 +22978,6 @@ impl AdvancedAi {
 
     fn settler_target_hysteresis_on(&self) -> bool {
         self.settler_target_hysteresis || self.settler_target_hysteresis_2
-    }
-
-    fn siege_is_progress_on(&self) -> bool {
-        self.siege_is_progress || self.siege_is_progress_2
     }
 
     fn guard_outmatched_at(
