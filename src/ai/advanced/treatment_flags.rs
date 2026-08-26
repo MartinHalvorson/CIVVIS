@@ -2847,6 +2847,28 @@ impl AdvancedAi {
         self.war_needs_a_treasury = false;
     }
 
+    /// Let the assigned diplomatic lane size its own Congress ballot. See
+    /// `lane_votes_its_favor`.
+    pub fn enable_lane_votes_its_favor(&mut self) {
+        self.lane_votes_its_favor = true;
+    }
+
+    /// The twin of `enable_lane_votes_its_favor`.
+    pub fn disable_lane_votes_its_favor(&mut self) {
+        self.lane_votes_its_favor = false;
+    }
+
+    /// Stop paying for a religion race the world has already closed. See
+    /// `religion_race_is_closed`.
+    pub fn enable_religion_race_is_closed(&mut self) {
+        self.religion_race_is_closed = true;
+    }
+
+    /// The twin of `enable_religion_race_is_closed`.
+    pub fn disable_religion_race_is_closed(&mut self) {
+        self.religion_race_is_closed = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
