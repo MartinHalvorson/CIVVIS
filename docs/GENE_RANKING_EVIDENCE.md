@@ -10,7 +10,7 @@ The deployment genome follows the batch rule (operator, 2026-08-25): a gene's th
 
 ### What the posterior resolves
 
-Of 74 priced genes the interval clears zero for **21 upward** and **0 downward**; **53 straddle zero**. Those are evidence states, not automatic deployment calls.
+Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**; **52 straddle zero**. Those are evidence states, not automatic deployment calls.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Default | Evidence call |
 |---|---:|---:|---:|---|---|
@@ -42,8 +42,8 @@ Of 74 priced genes the interval clears zero for **21 upward** and **0 downward**
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 3 | 92,604 | 74 |
-| legacy | 7 | 132,440 | 47 |
+| standard | 3 | 92,604 | 73 |
+| legacy | 7 | 132,440 | 46 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
 
@@ -69,7 +69,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `garrison-under-fire` | +26 [-16, +68] | +1 [-56, +58] | +15 [-17, +48] | 32 | yes |
 | `great-person-housing` | +78 [+42, +114] | +87 [+62, +112] | +84 [+64, +105] | 0 | yes |
 | `holy-lane-parity` | +45 [-24, +114] | +16 [-9, +41] | +32 [-6, +71] | 39 | yes |
-| `home-defense` | -13 [-35, +10] | -6 [-34, +22] | -10 [-26, +6] | 0 | yes |
 | `housing-research` | +10 [-26, +45] | -12 [-36, +11] | +0 [-22, +23] | 17 | yes |
 | `idle-faith-patronage` | +26 [+9, +44] | +21 [-19, +61] | +26 [+11, +40] | 0 | yes |
 | `loyalty-rate-alarm` | +49 [+25, +73] | +28 [+2, +54] | +40 [+22, +58] | 9 | yes |
@@ -120,7 +119,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `stranded-settler-discount` | +11 [-5, +27] | 90.8% | off | +11.0 | 93,635 |
 | `blind-objective-strength` | +11 [-10, +31] | 84.9% | off | +10.8 | 131,056 |
 | `research-tier-premium` | +10 [-24, +43] | 71.2% | off | +10.3 | 208,314 |
-| `home-defense` | -10 [-26, +6] | 11.7% | on | +9.9 | 137,225 |
 | `relief-targets-the-siege` | +10 [-7, +26] | 87.0% | off | +9.6 | 153,392 |
 | `religious-units-heal-first` | +9 [-14, +33] | 78.0% | off | +9.3 | 208,321 |
 | `strategic-wonders` | +9 [-7, +25] | 85.6% | off | +8.8 | 192,886 |
@@ -269,6 +267,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `civilian-rescue` | -8 | 16.59% | 16.90% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `inquisition-on-threat` | -8 | 16.58% | 16.91% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `idle-walkers-close-the-pipeline` | -10 | 16.56% | 16.77% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `home-defense` | -12 | 16.55% | 16.71% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `muster-at-command-radius` | -12 | 16.55% | 16.79% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `naval-production-policy` | -12 | 16.55% | 16.71% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `barbarian-walls-one-tier` | -13 | 16.54% | 16.80% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |

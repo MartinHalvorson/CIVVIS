@@ -270,13 +270,6 @@ impl AdvancedAi {
     pub fn disable_live_religious_purchase_guard(&mut self) {
         self.base.live_religious_purchase_guard = false;
     }
-    /// Let hostile units inside our own territory claim defenders before the
-    /// offensive campaign takes them. Native tournament games leave this
-    /// disabled so their recorded ladders stay comparable.
-    pub fn enable_home_defense(&mut self) {
-        self.base.home_defense = true;
-    }
-
     /// Discount a Settler that has stopped walking from the expansion gate, and
     /// found where it stands when stalled. Native tournament games leave this
     /// disabled so their recorded ladders replay the historical controller move
@@ -1123,13 +1116,6 @@ impl AdvancedAi {
         {
             (gene.enable)(self);
         }
-    }
-
-    /// Hold ONE live-bridge flag off so an arm can price it. These exist for
-    /// `live_without_*` in `builtin_ai` and nothing else — the deployment never
-    /// turns a repair back off.
-    pub fn disable_home_defense(&mut self) {
-        self.base.home_defense = false;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {

@@ -35,10 +35,9 @@
 //! 3. **Concentrate.** `assess` keeps the plan's target on the front while
 //!    the front is at war, and the force planner's objective enemies are the
 //!    front alone — plus whoever is within relief range of a threatened city
-//!    of ours, so the column still turns for a city about to fall. Home
-//!    defence (`garrison_step`, `home_defense_objective`, budgeted at
-//!    `HOME_DEFENSE_MAX_SHARE`) is untouched and answers every enemy: that is
-//!    the "some defence at home".
+//!    of ours, so the column still turns for a city about to fall. The bounded
+//!    barbarian response (`barbarian_garrison_step`,
+//!    `barbarian_response_objective`) stays outside the major-war planner.
 //! 4. **Fight while there is something to take.** On the front the fatigue
 //!    clause (war age ≥ 24, no capture in 12) stands down while a prize is in
 //!    reach — a front city our soldiers stand at whose health is falling or
