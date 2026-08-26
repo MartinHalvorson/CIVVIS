@@ -1127,6 +1127,13 @@ def wait_for_unlocked_session(poll_s: float = 2.0) -> None:
 GAME_SIDE = "left"
 GAME_FRACTION = 0.5
 GAME_VFRACTION = 1.0
+# `swift -` starts an AppKit interpreter.  That is occasionally slow enough to
+# hold the launcher on the already-verified Create Game screen while every
+# subsequent OCR helper repeats the same measurement.  A harness process plays
+# exactly one game, so a valid answer is stable for the lifetime in which its
+# screen coordinates are used.  Do not cache `None`: a transient AppKit failure
+# must still be allowed to recover on the next read.
+_desktop_size_cache: tuple[int, int] | None = None
 
 
 def desktop_size() -> tuple[int, int] | None:
@@ -1151,6 +1158,9 @@ def desktop_size() -> tuple[int, int] | None:
     The screen at origin (0,0) is the one holding the menu bar; `NSScreen.main`
     is the fallback and follows the key window, so it is second choice.
     """
+    global _desktop_size_cache
+    if _desktop_size_cache is not None:
+        return _desktop_size_cache
     swift = textwrap.dedent("""
         import AppKit
         if let s = NSScreen.screens.first(where: { $0.frame.origin == .zero })
@@ -1175,7 +1185,8 @@ def desktop_size() -> tuple[int, int] | None:
     # not one screen — the observed union was 3225x2557.
     if not (800 < width <= 4000 and 600 < height <= 2000):
         return None
-    return (width, height)
+    _desktop_size_cache = (width, height)
+    return _desktop_size_cache
 
 
 def place_game(side: str = "left", fraction: float = 0.5,
