@@ -4065,6 +4065,20 @@ pub struct Player {
     pub friends_until: BTreeMap<usize, u32>,
     #[serde(default)]
     pub open_borders_until: BTreeMap<usize, u32>,
+    /// Whether this seat's border is ENFORCED at all, when a live host has
+    /// said so. Civilization VI shuts a civilization's territory to foreign
+    /// units only once that civilization holds Early Empire
+    /// (`CIVIC_ENFORCE_BORDERS` hangs off `CIVIC_EARLY_EMPIRE`), and a
+    /// native game reads that off the seat's own civics through
+    /// [`Game::enforces_borders`]. A mirrored board does not model a rival's
+    /// or a city-state's civics, so without this it answered "no border" for
+    /// every foreign seat and walked military units into ground the host
+    /// refuses: run civvis-20260826T184456Z sent 122 military steps into a
+    /// non-suzerain city-state's land and 4 % arrived, 37 into a rival's
+    /// closed border and 0 arrived. `None` = derive from civics, which is
+    /// every native game.
+    #[serde(default)]
+    pub borders_enforced: Option<bool>,
     #[serde(default)]
     pub alliances: BTreeMap<usize, AllianceState>,
     /// Outgoing Delegations or Resident Embassies, keyed by the leader that
@@ -4251,6 +4265,7 @@ impl Player {
             denounced_since: BTreeMap::new(),
             friends_until: BTreeMap::new(),
             open_borders_until: BTreeMap::new(),
+            borders_enforced: None,
             alliances: BTreeMap::new(),
             diplomatic_missions: BTreeMap::new(),
             defensive_pacts: BTreeMap::new(),
@@ -44461,13 +44476,26 @@ impl Game {
         });
     }
 
+    /// Whether `pid`'s territory is closed to foreign units at all. Early
+    /// Empire is what turns a border on — the shipped civic "unlocks the
+    /// abilities to enforce borders and grant Open Borders" — and before it
+    /// anyone may walk through. A live mirror answers from the host's own
+    /// civic list ([`Player::borders_enforced`]) because it does not model a
+    /// rival's civics; a native game reads the seat's tree.
+    pub fn enforces_borders(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .and_then(|player| player.borders_enforced)
+            .unwrap_or_else(|| self.tree_effect(pid, "open_borders") > 0.0)
+    }
+
     /// Whether `mover` may enter `territory_owner`'s peaceful territory.
     /// Before Early Empire borders are open; Alliances and directional trade
     /// grants also qualify.
     pub fn has_open_borders(&self, mover: usize, territory_owner: usize) -> bool {
         if mover == territory_owner
             || self.same_team(mover, territory_owner)
-            || self.tree_effect(territory_owner, "open_borders") <= 0.0
+            || !self.enforces_borders(territory_owner)
             || (self.players[territory_owner].is_minor
                 && (self.suzerain_of(territory_owner) == Some(mover)
                     || self.policy_effect(mover, "open_city_state_borders") > 0.0

@@ -505,3 +505,55 @@ recovery measurable (the arena never healed, so unit preservation was never
 priceable); and a seat is `advanced+<gene>`, so a gene is priced here before
 the whole-game screen prices what it is worth. The whole-game screen becomes a
 no-harm check for tactical genes, not their gate.
+
+## 14. Close as a body, and screen the shooters (2026-08-26, opt-in genes)
+
+Two terms in `coordinated_tactical_step`'s tile score
+(`src/ai/advanced/close_as_a_body.rs`), the mover the deployed controller
+actually uses. Neither adds a stand — `arrival-waves` (−3.0 pp) and
+`contact-posture` (−1.14) both did, and both are gone; here every unit spends
+its movement every turn and what changes is the tile.
+
+- **`close-as-a-body`**: on an `Advance`, no unit ends the turn more than the
+  body's pace (the slowest member's movement) plus one tile closer to the
+  objective than the force's anchor stood; recon exempt, units in contact
+  exempt. Measured on the gate of §13: the curriculum at 40 seeds **+24.2 ±
+  9.5 a seed** (t 2.55, 87/52), carried by **`central_position` +116.5 ± 30.3
+  (t 3.84, 26/7, sign p 0.0013)** — the position whose doctrine it encodes —
+  and `the_reserve` +81 ± 53 (10/3, p 0.09); `battle_bench` −5.6 ± 6.8 (null);
+  the 68-war file null, and it fires on 17 of 408 seeds there, because a
+  captured board starts at contact and the gene acts on the approach.
+- **`screen-the-shooters`**: a ranged or siege tile earns two screen weights
+  when a melee friend stands beside it and nearer the enemy — the arena's own
+  definition of screened, paid to the archer that stays behind the line.
+  `battle_bench` stock army **+62.8 ± 19.9 a seed** (t 3.15, exchange 1.12 v
+  0.90); curriculum −12.7 ± 13.5 (null); 68 wars null. Three forms were
+  measured: both sides (+65.8 skirmish, −21.1 ± 14.8 curriculum), melee side
+  only (+7.6 skirmish, −19.3 ± 12.1 curriculum), shooter side only (the one
+  that ships). The melee half — a line stepping sideways to cover its
+  archers — is what cost the curriculum, and it added nothing to the skirmish.
+
+Both ship off; the whole-game screen is the no-harm check.
+## 15. The fire plan (2026-08-26, opt-in gene `fire-plan`)
+
+The removed joint search's measured value was mostly *ordering* — its static
+seed lost 700 kills on identical total damage (§3 of TACTICS.md). `fire-plan`
+(`src/ai/advanced/fire_plan.rs`) keeps that part without a clone: once a
+turn, `legal_actions_within(UNITS)` names every strike the engine allows,
+`ranged_strike_strengths` / `melee_exchange_strengths` price each at the
+centre roll — the engine's own arithmetic, matchup, flanking, support,
+terrain, river and fortification included — and kills are allocated
+greedily, fewest shooters first, ranged before the melee finisher, with a
+15 % margin over the centre roll where a spare shooter allows. The planned
+shooters go first in the unit order and each is biased toward its planned
+target in the attack scan; the exact, clone-verified attack decision is
+unchanged. Off in both constructors, byte-identical when off.
+
+Measured on the arena gate (§13): `battle_bench` stock six-unit army
+−0.3 ± 13.1 (null; 84/160 seeds diverged), foot-heavy eight-unit army
++23.4 ± 19.2; the curriculum at 40 seeds **+20.6 ± 10.0 a seed** (t 2.05,
+125/83, sign p 0.004), positive on nine of eleven boards and significant on
+none alone; the 68-war captured file at 6 seeds +5.2 ± 5.9 with healing off
+and **+14.0 ± 5.8** (t 2.42, 56/38) with healing on. The plan pays where
+there are several shooters and a target worth finishing, and is inert in a
+six-unit open-field trade. Whole-game screen pending, as a no-harm check.

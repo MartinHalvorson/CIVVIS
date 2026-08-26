@@ -4436,6 +4436,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// On an advance, no unit ends the turn more than the body's pace plus
+    /// one tile closer to the objective than the force's anchor stood. Opt-in
+    /// gene `close-as-a-body`; see `advanced/close_as_a_body.rs`.
+    close_as_a_body: bool,
     /// Want as many cities as the map can seat, not as many as it has land
     /// for.
     ///
@@ -4604,6 +4608,13 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// The turn's fire is planned once from the engine's arithmetic: the
+    /// kills that can be finished, their shooters first in the unit order,
+    /// each biased toward its planned target. Opt-in gene `fire-plan`; see
+    /// `advanced/fire_plan.rs`.
+    fire_plan: bool,
+    /// This turn's plan; empty with the gene off. See `fire_plan`.
+    fire_plan_orders: fire_plan::FirePlan,
     /// Put a ceiling on how long a settler waits for an escort.
     ///
     /// ★★★★ THE THIRD CITY'S SETTLER IS STANDING STILL. The ladder abandons a
@@ -5056,6 +5067,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A shooter's tile beside a melee friend that stands nearer the enemy
+    /// earns two screen weights — the arena's own definition of screened.
+    /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
+    screen_the_shooters: bool,
     /// Build a science building before one that makes no science.
     ///
     /// Carried down to `BasicAi::science_building_first`, which is where the
@@ -5603,6 +5618,15 @@ mod field_craft;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
+
+/// The fire plan: this turn's kills, allocated once from the engine's own
+/// arithmetic, ordering the unit loop and biasing the attack scan. One
+/// opt-in gene; see `advanced/fire_plan.rs`.
+mod fire_plan;
+
+/// Close as a body, and screen the shooters: two opt-in genes in the deployed
+/// mover's tile score; see `advanced/close_as_a_body.rs`.
+mod close_as_a_body;
 
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
@@ -6305,6 +6329,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            close_as_a_body: false,
             city_target_meets_the_map: false,
             camp_tile_buyout: false,
             contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
@@ -6333,6 +6358,8 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            fire_plan: false,
+            fire_plan_orders: fire_plan::FirePlan::default(),
             escort_patience_runs_out: false,
             encampment_seals_the_pass: false,
             first_builder_reserve: false,
@@ -6380,6 +6407,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
             solvency_first_trade_slot_2: false,
@@ -28778,6 +28806,29 @@ impl AdvancedAi {
         const ARENA_ADVANCE_URGENCY: f64 = 3.0;
         const ARENA_THREAT_CAUTION: f64 = 0.35;
         let arena = g.is_arena();
+        // `close-as-a-body` and `screen-the-shooters` read the same hostile
+        // frame the threat term below reads. Nothing here runs with both
+        // genes off; see `advanced/close_as_a_body.rs`.
+        let field_enemies: Vec<Pos> = if self.close_as_a_body || self.screen_the_shooters {
+            g.units
+                .values()
+                .filter(|other| {
+                    let enemy_spec = &g.rules.units[other.kind];
+                    enemies.contains(&other.owner)
+                        && enemy_spec.class == "military"
+                        && (enemy_spec.is_melee_capable() || enemy_spec.has_ranged_attack())
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                })
+                .map(|other| other.pos)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let body_pace = self.body_pace(g, uid, group, target, &field_enemies);
+        let screen_frame = self.screen_frame(g, uid, group, &field_enemies);
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -28798,6 +28849,9 @@ impl AdvancedAi {
                 (progress, threat_caution)
             };
             let mut value = -self.base.w.objective_progress * progress * objective_distance as f64;
+            if let Some(pace) = &body_pace {
+                value -= self.body_pace_penalty(g, tile, target, pace, progress);
+            }
             let nearest_friend = group
                 .units
                 .iter()
@@ -28861,6 +28915,9 @@ impl AdvancedAi {
                             * (front_depth - g.wdist(tile, target)).max(0) as f64;
                     }
                 }
+            }
+            if let Some(frame) = &screen_frame {
+                value += self.screen_bonus(g, tile, frame);
             }
             // The posture selector's superiority gate is already arena-off
             // (an army that declines every even fight loses the field to the
@@ -31276,6 +31333,11 @@ impl AdvancedAi {
             if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
                 score += self.base.w.focus_fire * 10.0;
             }
+            // `fire-plan`: the planned target gets the focus bias too; the
+            // exact decision below is unchanged. `None` with the gene off.
+            if self.fire_plan_target(uid) == Some(pos) {
+                score += self.base.w.focus_fire * 10.0;
+            }
             let caution = group
                 .as_ref()
                 .map(|orders| {
@@ -32525,6 +32587,10 @@ impl AdvancedAi {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
         }
+        // `fire-plan`: this turn's kills, drawn once from the board the unit
+        // loop is about to play, so the shooters that finish them go first.
+        // Empty with the gene off. See `advanced/fire_plan.rs`.
+        self.plan_fire(g, pid);
         // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
         // once from the start-of-turn board so units planned in parallel
         // agree on them. Nothing is read with both genes off. See
@@ -32551,7 +32617,8 @@ impl AdvancedAi {
                 _ if spec.siege => 5,
                 _ => 6,
             };
-            (order, *uid)
+            // Zero for every unit with `fire-plan` off: the shipped key.
+            (self.fire_plan_rank(*uid), order, *uid)
         });
         let pool = self
             .work_pool

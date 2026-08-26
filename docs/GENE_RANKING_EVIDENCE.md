@@ -186,6 +186,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `city-target-meets-the-map` | off (unmeasured) | Cap the city target at the sites the map can actually seat. | 1 |
+| `close-as-a-body` | off (unmeasured) | On an advance, no unit ends the turn more than the body's pace plus one tile closer to the objective than the force's anchor stood, so a horseman does not meet the enemy four tiles before the line does. | 1 |
+| `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 |
 | `government-capacity-fallback` | off (unmeasured) | Let an unlocked government the lane's list never names take the seat when it carries more policy slots. | 1 |
 | `government-ladder-2` | off (unmeasured) | Climb past tier two, and keep climbing while the field out-slots us. | 1 |
 | `lane-release-when-hopeless` | off (unmeasured) | Stop paying a lost victory lane's premiums. | 1 |
@@ -193,6 +195,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `moksha-defends-the-faithless` | off (unmeasured) | Put Moksha first for a religionless empire under conversion. | 1 |
 | `peace-when-the-war-does-not-pay` | off (unmeasured) | Sue for peace when a war has taken nothing and cannot be paid for. | 1 |
 | `religion-race-is-closed` | off (unmeasured) | Stop paying for a religion race the world has already closed. | 1 |
+| `screen-the-shooters` | off (unmeasured) | A shooter's tile beside a melee friend that stands nearer the enemy earns two screen weights — the arena's own definition of screened, paid to the archer that stays behind the line. | 1 |
 | `treasury-at-work` | off (unmeasured) | Keep one emergency defender and ten turns of deficit in the bank, not 250 + 75 Gold a city. | — |
 | `treasury-at-work-2` | off (unmeasured) | The working reserve, and the first Builder or a missing Monument bought ahead of the purchase argmax. | — |
 | `war-needs-a-treasury` | off (unmeasured) | Refuse a war the treasury cannot pay for. | 1 |
