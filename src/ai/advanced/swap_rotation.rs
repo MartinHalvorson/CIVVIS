@@ -77,7 +77,7 @@ impl AdvancedAi {
         if g.rules.units[unit.kind].class != "military" {
             return None;
         }
-        if i32::from(unit.hp) > self.base.w.withdraw_hp.round() as i32 {
+        if unit.hp > self.base.w.withdraw_hp.round() as i32 {
             return None;
         }
         // In contact: the whole point is to hold the tile while the wounded
