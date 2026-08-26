@@ -34245,6 +34245,72 @@ fn a_neighbour_twelve_tiles_east(met: bool) -> Game {
     game
 }
 
+/// The fourth ring beside a city-state is legal under the engine's ordinary
+/// city-spacing rule, but becomes a weak one-front colony as soon as a rival
+/// Suzerain brings the city-state into war. Standard settlement safety keeps
+/// that exact ring clear, while the fifth ring and frozen legacy remain open.
+#[test]
+fn settlement_safety_keeps_clear_of_a_visible_city_states_fourth_ring() {
+    let mut game = a_neighbour_twelve_tiles_east(false);
+    let city_state = game.player_city_ids(1)[0];
+    let city_state_pos = game.cities[&city_state].pos;
+    game.players[1].is_minor = true;
+    game.spawn_test_unit("scout", 0, (21, 10));
+
+    let doorstep = (18, 10);
+    let beyond = (17, 10);
+    assert_eq!(game.wdist(doorstep, city_state_pos), CITY_STATE_SETTLEMENT_BUFFER);
+    assert_eq!(game.wdist(beyond, city_state_pos), CITY_STATE_SETTLEMENT_BUFFER + 1);
+
+    // Make the exact fourth-ring tile the only otherwise ordinary settlement
+    // candidate. This exercises the candidate filter, not merely its set.
+    let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    for position in &positions {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+    }
+    game.players[0].explored.extend(positions.iter().copied());
+    game.blocked_city_sites
+        .extend(positions.into_iter().filter(|position| *position != doorstep));
+
+    let live = AdvancedAi::new();
+    let visible = live.battlefront_visibility(&game, 0);
+    assert!(
+        game.sees(&visible, city_state_pos),
+        "fixture: the city-state is visible"
+    );
+    let exclusion = live.city_state_settlement_exclusion(&game, 0, &visible);
+    assert!(
+        exclusion.contains(&doorstep),
+        "the fourth, otherwise legal founding ring stays clear"
+    );
+    assert!(
+        !exclusion.contains(&beyond),
+        "the fifth ring remains available for aggressive expansion"
+    );
+    let legacy_sites = AdvancedAi::legacy().settle_ranking(&game, 0, (10, 10), 8);
+    assert_eq!(
+        legacy_sites.iter().map(|(position, _)| *position).collect::<Vec<_>>(),
+        vec![doorstep],
+        "the frozen controller exposes the legal fourth-ring site"
+    );
+    assert!(
+        live.settle_ranking(&game, 0, (10, 10), 8).is_empty(),
+        "standard safety removes that site from the actual candidate scan"
+    );
+    assert!(
+        AdvancedAi::legacy()
+            .city_state_settlement_exclusion(&game, 0, &visible)
+            .is_empty(),
+        "the frozen legacy controller keeps its recorded settlement policy"
+    );
+}
+
 /// The credit pays the ground BETWEEN us and a met neighbour, more the
 /// nearer the neighbour, and nothing behind us, beyond them, or outside
 /// the ring their Settlers reach — and it reaches the site value.
