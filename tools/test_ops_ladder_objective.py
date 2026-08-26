@@ -338,6 +338,31 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         self.assertLess(sync.index('checkout --quiet --detach origin/main'),
                         sync.index('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"'))
 
+    def test_visible_mirror_reports_the_exact_fetched_revision(self):
+        """The display server must identify the build it is actually serving.
+
+        `HEAD_SHA` becomes a seven-character label for logs and the runtime
+        marker.  Passing that shortened value (or no launch stamp at all) to
+        `follow.py` makes native `/status` say `unknown`, so `ship` cannot
+        distinguish a healthy old mirror from the newly deployed build.  The
+        exact SHA and its commit time must be captured before shortening and
+        scoped to the follower alone; the Civ VI decision worker owns its own
+        explicit runtime provenance.
+        """
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        capture = source.index("HEAD_REVISION=$HEAD_SHA")
+        shorten = source.index("HEAD_SHA=${HEAD_REVISION:0:7}")
+        mirror_start = source.index("mkdir -p \"$MIRROR_HOME\"", shorten)
+        mirror_end = source.index('print -r -- "$HEAD_SHA" > "$FOLLOW_REVISION_FILE.$$.tmp"',
+                                  mirror_start)
+        launch = source[mirror_start:mirror_end]
+
+        self.assertLess(capture, shorten)
+        self.assertIn("HEAD_COMMIT_TIME=$(git show -s --format=%cI HEAD", source)
+        self.assertIn('CIVVIS_COMMIT="$HEAD_REVISION"', launch)
+        self.assertIn('CIVVIS_COMMIT_TIME="$HEAD_COMMIT_TIME"', launch)
+        self.assertIn("nohup python3 -u tools/follow.py", launch)
+
 
 class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
     """`docs/CIV6_LADDER.md` records wins per (victory type, difficulty), so a
