@@ -2,6 +2,12 @@
 //! deployment genome the batch rule — under the operator's pins — decides
 //! from it.
 //!
+//! ⚠ Names in this module doc are code spans, not intra-doc links, and have to
+//! stay that way: `ai::advanced` is a private module, so `cargo doc` documents
+//! neither it nor this module, and a link from a `//!` doc inside it cannot
+//! resolve — not as a bare name, not as `self::`. Items *within* the module,
+//! whose docs hang off `AdvancedAi`, link normally.
+//!
 //! ⭐ ONE SCREEN. Operator directive 2026-08-22: every row here comes from the
 //! same shape — six majors on 74x46 continents with nine city-states, Online
 //! speed to its own 250-turn clock, all six victory lanes, every seat carrying
@@ -15,7 +21,7 @@
 //! screenable gene's default is decided by its three batch columns in
 //! `GENE_HEURISTIC_RANKING.md` — *Last Batch*, *Prior Batch*, *Third Batch*,
 //! the ± wins per 10,000 total seats each fixed reporting batch read for the
-//! gene, newest first — through [`batch_rule`], the operator's words as a
+//! gene, newest first — through `batch_rule` below, the operator's words as a
 //! function, and by nothing else:
 //!
 //! 1. three batches all below −10 → the gene is REMOVED from the gene pool;
@@ -36,8 +42,8 @@
 //!
 //! ⭐ ABOVE THE RULE, THE OPERATOR'S PINS (operator, 2026-08-26): the genes
 //! named in `tools/genes.py::OPERATOR_DEFAULT_ON`, generated here as
-//! [`OPERATOR_DEFAULT_ON`](operator_pins), ship **on** whatever their batch
-//! columns read. [`batch_rule`] still answers for them — the ledger's
+//! `OPERATOR_DEFAULT_ON` (read here by `operator_pins`), ship **on** whatever their batch
+//! columns read. `batch_rule` still answers for them — the ledger's
 //! `rules.batch_decisions` records the `off` the columns alone would have
 //! given — so a pin is visible as an override rather than dissolved into the
 //! genome. A pin moves a default only: it cannot hold a gene the rule removes

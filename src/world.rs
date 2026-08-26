@@ -712,7 +712,7 @@ impl WorldMap {
     /// time. The exploration search does exactly that walk, and this was the
     /// largest single cost in the engine.
     ///
-    /// A caller that filters on [`Game::wdist`] gets the same answer either
+    /// A caller that filters on [`crate::game::Game::wdist`] gets the same answer either
     /// way: a disk is the union of its rings, and a tile from an inner ring
     /// cannot be at the outer ring's distance.
     pub fn ring(&self, center: Pos, radius: i32) -> Vec<Pos> {
