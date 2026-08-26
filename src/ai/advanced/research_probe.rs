@@ -1461,8 +1461,23 @@ fn the_live_seat_does_not_open_an_elective_war() {
     game.apply(1, &Action::DeclareWar { player: 0 }).unwrap();
     game.current = 0;
     assert!(game.is_at_war(0, 1));
-    // A war the neighbour opens is still answered by ordinary war planning.
-    assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    // ⚠ `unchosen_war_keeps_the_lane` (deployed 2026-08-26) reaches this same
+    // branch from the other side: a war we did NOT declare, over a lane that
+    // is live, names the lane rather than Conquest. Withhold it to read the
+    // branch this test is about, then restore it and read what the deployed
+    // seat actually plays — the two are different answers to the same board.
+    live.disable_unchosen_war_keeps_the_lane();
+    assert_eq!(
+        live.assess(&game, 0).strategy,
+        GrandStrategy::Conquest,
+        "a war the neighbour opens is still answered by ordinary war planning"
+    );
+    live.enable_unchosen_war_keeps_the_lane();
+    assert_ne!(
+        live.assess(&game, 0).strategy,
+        GrandStrategy::Conquest,
+        "the deployed seat keeps the live lane through a war it did not declare"
+    );
 }
 
 /// A settle site pressed against a rival's border is a provocation the

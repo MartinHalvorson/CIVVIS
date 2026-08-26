@@ -1226,3 +1226,69 @@ the pair `advanced_joint_tactics` v `advanced_joint_tactics_geometric` prices
 the lines and nothing else: cavalry cell, 300 seeds, block 7,200,000,
 **+59.0 ± 17.1** (sign p = 0.0023), and the geometric arm against stock
 `advanced` reproduces the pre-change figure exactly (+398.0 ± 21.4).
+
+## 18. Just the fighting: the empire game is off on an arena (2026-08-26)
+
+Operator direction: the point of Tactics is unit combat, and a person seated
+on an arena should be asked for orders and nothing else. Measured before the
+change, on the stock arena opened in the Medieval era and played for
+sixty-five turns by a seat that only ended its turn, the engine offered that
+seat **research every turn** (never satisfied, so "Choose research" stood on
+End Turn from turn 1), **a civic every turn** for a tree the arena pays no
+Culture into, **production every turn** for a city granted nothing to build
+with, **a government and governors** from turn 1, **a Congress ballot** on
+turns 30–34 and 60–64, and **an age's dedication** from turn 44. None of it
+was the battle.
+
+**The rule.** `Action::off_the_battlefield` names the empire game —
+research and civics, governments and policies, governors, religion, Great
+People, envoys and trade routes, spies, corporations and products, deals and
+quick trades, declarations and peace, Congress ballots and dedications —
+and an arena switches all of it off for every seat, AI included:
+
+- `legal_actions` on an arena never enumerates the `EMPIRE`, `DEALS`,
+  `DIPLOMACY`, `CORPORATIONS` or `PRODUCTS` families
+  (`ActionFamilies::OFF_THE_BATTLEFIELD`) and never offers a research or
+  civic pick, so nothing in that list can reach a client's blocker rail or
+  action corner.
+- `Game::apply` refuses the same set with "not on a battlefield", so an AI
+  that picks its own research or sues for its own peace gets the answer a
+  player would; `do_research` and `do_civic` refuse on their own as well.
+- **Research is a pace, not a decision.** `turns_per_tech` still says how
+  often the tree moves; `arena_auto_research` picks *what* — the cheapest
+  technology open to the side, ties by name, identically for both — once
+  when the arena is built and at the top of every turn before the pace is
+  paid, so the Science lands on a technology rather than in overflow. A pace
+  of 0 freezes the tree as before. Both sides therefore climb the same tree
+  in the same order, which is the arena's claim stated as a rule: the two
+  armies stay armed alike and differ in how they fight.
+- **No Congress, no Emergencies.** `process_congress`,
+  `process_emergencies` and `request_city_capture_emergency` return at once
+  on an arena. The thirty-turn ballot was the one thing that stopped a
+  Medieval-or-later arena's End Turn dead.
+- **Nothing to build with, nothing to build.** `can_produce` answers no to
+  everything while the arena grants 0 Production, so the stock city has no
+  build menu and asks for none; raise the grant and the fighting-units-only
+  menu is back exactly as §15 left it (`arena_allows_production` stays the
+  roster rule). The district enumeration in `producible_items` bypassed
+  `can_produce` and so had been offering every district to an arena city —
+  the probe's 1,365 `produce` offers were all districts — and now skips a
+  battlefield outright.
+- **A captured city is kept.** `capture_city` on an arena applies the keep
+  verdict itself — there is no reason to raze the objective and nobody to
+  liberate it for — so "Keep city?" never holds the turn and the elimination
+  and Domination checks run the moment the city falls.
+
+**The client** does not second-guess the engine; it only stops painting
+what a battlefield has none of: under `body.watching-tactics` the Empire
+tabs, Diplomacy and Quick Deals leave the launch bar, the government section
+never shows, neither tree opens, and the standing notices about Great
+People, faith, policies, governors and envoys are not built. The lobby's
+"Turns per technology" hint now says the arena climbs the tree itself.
+
+Unchanged: every order (move, attack, fortify, promote, upgrade, corps and
+armies, city and Encampment strikes), gold purchases where the arena grants
+Gold, the economy settings on every setup surface, the rating profile, and
+every AI arm — an arena AI's research call was already `let _ = g.apply(..)`
+and now simply loses to the arena's own pick, made a moment earlier at the
+top of its turn. Tests: `src/game/arena_only_the_fighting_tests.rs`.
