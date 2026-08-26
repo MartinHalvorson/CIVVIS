@@ -5587,13 +5587,14 @@ mod religious_defence;
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
 mod field_craft;
+/// Recon disruption: the settler screen and the pass picket. Two opt-in
+/// genes; see `advanced/recon_disruption.rs`.
+mod recon_disruption;
+
 /// The fire plan: this turn's kills, allocated once from the engine's own
 /// arithmetic, ordering the unit loop and biasing the attack scan. One
 /// opt-in gene; see `advanced/fire_plan.rs`.
 mod fire_plan;
-/// Recon disruption: the settler screen and the pass picket. Two opt-in
-/// genes; see `advanced/recon_disruption.rs`.
-mod recon_disruption;
 
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
