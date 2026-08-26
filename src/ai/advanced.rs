@@ -710,6 +710,9 @@ impl GrandStrategy {
 /// time" is not otherwise observable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StrategyCensus {
+    /// Wounded front-liners traded out of the line for a fresh unit. See
+    /// `advanced/swap_rotation.rs`.
+    pub swap_rotations: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -5074,6 +5077,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it, so the line does not open when it leaves. Opt-in gene
+    /// `swap-rotation`; see `advanced/swap_rotation.rs`.
+    swap_rotation: bool,
     /// A shooter's tile beside a melee friend that stands nearer the enemy
     /// earns two screen weights — the arena's own definition of screened.
     /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
@@ -5628,6 +5635,10 @@ mod field_craft;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
+
+/// Swap rotation: the wounded front-liner trades places with the fresh unit
+/// behind it. One opt-in gene; see `advanced/swap_rotation.rs`.
+mod swap_rotation;
 
 /// The fire plan: this turn's kills, allocated once from the engine's own
 /// arithmetic, ordering the unit loop and biasing the attack scan. One
@@ -6419,6 +6430,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            swap_rotation: false,
             screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
@@ -30912,6 +30924,15 @@ impl AdvancedAi {
                 || (self.settler_guard_holds_on() && self.formationless_settler_escort()))
         {
             if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
+                return acted;
+            }
+        }
+        // `swap-rotation`: a wounded unit holding a front trades places with
+        // the fresh unit behind it, so the line does not open when it
+        // leaves. Ahead of recovery deliberately — recovery is what walks it
+        // away. `None` with the gene off. See `advanced/swap_rotation.rs`.
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.swap_rotation_step(g, pid, uid) {
                 return acted;
             }
         }

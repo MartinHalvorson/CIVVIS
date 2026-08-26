@@ -2993,6 +2993,23 @@ impl AdvancedAi {
         self.coastal_city_sites_2 = false;
     }
 
+    // Filed here rather than under a marker: `test_treatment_append_points`
+    // reads every line under a marker as an entry and takes its first
+    // identifier, so a whole function files as `pub` and `self`.
+
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it — the engine's own `Action::Swap`, which no controller has
+    /// ever chosen — so the line does not open when it leaves. See
+    /// `swap_rotation`.
+    pub fn enable_swap_rotation(&mut self) {
+        self.swap_rotation = true;
+    }
+
+    /// The twin of `enable_swap_rotation`.
+    pub fn disable_swap_rotation(&mut self) {
+        self.swap_rotation = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
