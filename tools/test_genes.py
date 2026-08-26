@@ -1753,9 +1753,13 @@ class VersionedGenes(unittest.TestCase):
                          "ranking order still falls back to the newest column")
 
     def test_the_ranking_names_the_best_version_and_shows_the_best_two_rates(self):
-        """Operator, 2026-08-23: a *Best version* column after *Description*,
+        r"""Operator, 2026-08-23: a *Best version* column after *Description*,
         and a versioned row's on/off cells list the best two versions — each
-        version's on is only that version on; anything else is its off."""
+        version's on is only that version on; anything else is its off.
+
+        Operator, 2026-08-26: that column now carries the family's SIZE beside
+        its best — `2 \| 3` is "three versions, the second is best". The pipe
+        is escaped so the cell stays one cell."""
         tags = ["plain", "g", "g-2", "g-3"]
         measured = {
             "plain": [{"win_on": 0.20, "win_off": 0.16, "n_on": 100, "n_off": 300}],
@@ -1778,9 +1782,21 @@ class VersionedGenes(unittest.TestCase):
         self.assertEqual(gene_ledger.best_versions(["g", "g-2", "g-3"], lagging, measured),
                          ["g-2", "g-3", "g"], "the table shows the best version, not the pin")
         for tag in ("g", "g-2", "g-3"):
-            self.assertEqual(gene_ledger.best_version_cell(tag, tags, verdict, measured), "2", tag)
-        # A gene with no versions is its own original: version 1, not `—`.
-        self.assertEqual(gene_ledger.best_version_cell("plain", tags, verdict, measured), "1")
+            self.assertEqual(gene_ledger.best_version_cell(tag, tags, verdict, measured),
+                             r"2 \| 3", tag)
+        # A gene with no versions is its own original AND its whole family.
+        self.assertEqual(gene_ledger.best_version_cell("plain", tags, verdict, measured),
+                         r"1 \| 1")
+        # A family of two counts two, and the total does not wait on a price:
+        # `g-3` culled from the code leaves `g`/`g-2` reading a total of 2.
+        pair = ["plain", "g", "g-2"]
+        self.assertEqual(gene_ledger.best_version_cell("g", pair, verdict, measured),
+                         r"2 \| 2")
+        # ⚠ THE PIPE IS ESCAPED, so the row still splits into its own columns:
+        # every reader here splits a row on `" | "`, which `" \| "` is not.
+        self.assertNotIn(
+            " | ", gene_ledger.best_version_cell("g", tags, verdict, measured),
+            "an unescaped pipe would make the version cell two columns")
         self.assertEqual(
             gene_ledger.family_rate_cells("g", tags, verdict, measured),
             ("v2 21.00% (n=500) · v3 19.00% (n=400)", "v2 16.00% (n=3,500) · v3 16.00% (n=3,600)"))
@@ -1791,13 +1807,14 @@ class VersionedGenes(unittest.TestCase):
         self.assertEqual(gene_ledger.best_versions(["g", "g-2", "g-3"], loose, measured),
                          ["g-2", "g-3", "g"],
                          "g-3 reads 3.0 off its display record and ties g; the higher version leads")
-        self.assertEqual(gene_ledger.best_version_cell("g", tags, loose, measured), "2")
+        self.assertEqual(gene_ledger.best_version_cell("g", tags, loose, measured), r"2 \| 3")
         # An unpriced version that ships still leads; an unpriced family with
         # nothing shipping has no best version yet.
         fresh = {"g": {"default_on": True}}
-        self.assertEqual(gene_ledger.best_version_cell("g-2", tags, fresh, {}), "1")
+        self.assertEqual(gene_ledger.best_version_cell("g-2", tags, fresh, {}), r"1 \| 3")
         self.assertIsNone(gene_ledger.family_rate_cells("g-2", tags, fresh, {}))
-        self.assertEqual(gene_ledger.best_version_cell("g-2", tags, {}, {}), "—")
+        # Nothing priced yet: the best half is unknown, the total is not.
+        self.assertEqual(gene_ledger.best_version_cell("g-2", tags, {}, {}), r"— \| 3")
 
     def test_the_shipped_version_is_emitted_in_the_generated_table(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1840,7 +1857,7 @@ def expected_columns() -> str:
         for label, batch in zip(ranking.REPORTING_BATCH_LABELS, slots)
     )
     return (
-        "| Rank | Gene | Description | Best version | Default | P(>0) | "
+        "| Rank | Gene | Description | Best version \\| Total versions | Default | P(>0) | "
         + reporting
         + " | Total (on) Win rate | Total (off) Win rate | Diff | "
         "cost (compute) | cost (time) |"
@@ -1927,9 +1944,11 @@ class TheTableIsDerived(unittest.TestCase):
         return rows
 
     def _versioned_tags(self) -> set[str]:
-        """The ranked tags that belong to a versioned family — read from the
-        tags themselves, not from the *Best version* cell, which reads `1`
-        for an unversioned gene as well as for a family whose original leads.
+        r"""The ranked tags that belong to a versioned family — read from the
+        tags themselves, not from the *Best version \| Total versions* cell,
+        whose right half now separates `1 \| 1` (no versions) from `1 \| 3`
+        (three versions, the original leads) but still only counts the
+        versions the ranked rows can see.
 
         ⚠ READ THE REGISTRY, NOT THE RANKED ROWS. `render()` decides a row is
         versioned from `screenable_tags()`, and an unpriced version has no row
@@ -2760,3 +2779,44 @@ class EveryTestInThisFileIsCollected(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheCommandThatMovesTheGenomeRecordsWhatItCosts(unittest.TestCase):
+    """⭐ Wired after the event it exists for happened on its first day.
+
+    `tools/genome_cost.py` landed in #2576 with a guard that fails when the
+    deployed gene set changes without the compute bill being re-recorded. #2570
+    turned twelve genes on and five off a few hours later, and the guard did
+    exactly what it was built to do — and put `main` red, because nothing
+    regenerated the file. A guard whose only outcome is a red trunk teaches the
+    fleet to ignore it, which is the credibility problem `rust-quality` cost
+    this repository once. So `write` records it and `check` reads it.
+    """
+
+    def test_write_records_the_bill(self):
+        import genome_cost
+        source = Path(genes.__file__).read_text(encoding="utf-8")
+        write_half = source.split('# source / write')[-1]
+        self.assertIn("genome_cost.record(ledger)", write_half)
+        self.assertTrue(genome_cost.RECORD_JSON.exists())
+
+    def test_check_fails_when_the_bill_is_stale(self):
+        import genome_cost
+        source = Path(genes.__file__).read_text(encoding="utf-8")
+        self.assertIn("genome_cost.is_stale(recorded)", source)
+
+    def test_the_recorded_bill_matches_this_repositorys_genome(self):
+        import genome_cost
+        self.assertIsNone(
+            genome_cost.is_stale(),
+            "the deployed genome moved without the compute bill being "
+            "re-recorded; run `python3 tools/genes.py write`")
+
+    def test_the_import_is_deferred_because_the_two_modules_are_mutual(self):
+        """`genome_cost` imports this module for `pooled_win_diff_pp` — the
+        ranking's Diff and the bill's are deliberately one arithmetic — so a
+        module-level import in either direction is a cycle."""
+        source = Path(genes.__file__).read_text(encoding="utf-8")
+        header = source.split("def ", 1)[0]
+        self.assertNotIn("import genome_cost", header)
+        self.assertIn("    import genome_cost", source)
