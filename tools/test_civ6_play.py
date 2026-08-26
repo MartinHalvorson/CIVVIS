@@ -1877,210 +1877,95 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 
-class OpeningRestartPoliciesAreEnforcedBeforeTheGameCanDrift(unittest.TestCase):
-    """The operator's opening rules use ledger evidence, never a screen guess."""
+class AGameUnderTheLeadersScoreAfterTurn100IsAbandoned(unittest.TestCase):
+    """Operator request 2026-08-26: "scrap the early terminate rules that cut
+    off civvis verification games. start playing out full games each time for
+    now. or until we fall below 70% of the score of the leader after turn
+    100." One rule, a default of the harness itself; patience guards a
+    one-turn dip; the ending is filed as its own reason."""
 
     @staticmethod
-    def _turn(turn, cities, ctx="agent"):
-        return {"kind": "turn", "ctx": ctx, "turn": turn, "cities": cities}
-
-    @staticmethod
-    def _state(turn, settlers, ctx="agent"):
-        return {
-            "kind": "state", "ctx": ctx, "turn": turn,
-            "units": [{"id": unit_id, "kind": "UNIT_SETTLER"}
-                      for unit_id in settlers],
-        }
-
-    @staticmethod
-    def _found(turn, unit, ctx="agent"):
-        return {"kind": "found", "ctx": ctx, "turn": turn, "unit": unit}
-
-    @staticmethod
-    def _lost(turn, unit, kind="UNIT_SETTLER", ctx="agent"):
-        return {
-            "kind": "unit_lost", "ctx": ctx, "turn": turn,
-            "unit": unit, "unit_kind": kind,
-        }
-
-    def test_three_cities_are_required_on_the_first_readable_turn_at_deadline(self):
-        state = {}
-        self.assertIsNone(civ6_play.opening_city_target_reading(
-            state, self._turn(31, 1)))
-        self.assertNotIn("opening_city_target_checked", state)
-        verdict = civ6_play.opening_city_target_reading(state, self._turn(32, 2))
-        self.assertEqual(verdict, {
-            "rule": "three_cities_by_turn_32", "turn": 32, "cities": 2,
-            "required_cities": 3, "deadline_turn": 32,
-        })
-        # It is a one-shot decision, not a duplicate restart print every poll.
-        self.assertIsNone(civ6_play.opening_city_target_reading(
-            state, self._turn(33, 1)))
-
-    def test_city_target_does_not_treat_missing_or_invalid_count_as_a_failure(self):
-        state = {}
-        self.assertIsNone(civ6_play.opening_city_target_reading(
-            state, self._turn(32, None)))
-        self.assertNotIn("opening_city_target_checked", state)
-        self.assertIsNone(civ6_play.opening_city_target_reading(
-            state, self._turn(33, True)))
-        self.assertNotIn("opening_city_target_checked", state)
-        verdict = civ6_play.opening_city_target_reading(state, self._turn(34, 1))
-        self.assertEqual((verdict["turn"], verdict["cities"]), (34, 1))
-
-    def test_city_target_accepts_three_or_more_cities_and_ignores_other_contexts(self):
-        state = {}
-        self.assertIsNone(civ6_play.opening_city_target_reading(
-            state, self._turn(32, 2, ctx="spectator")))
-        self.assertNotIn("opening_city_target_checked", state)
-        self.assertIsNone(civ6_play.opening_city_target_reading(
-            state, self._turn(32, 3)))
-        self.assertTrue(state["opening_city_target_checked"])
-
-    def test_only_the_settler_after_the_capital_settler_is_tracked(self):
-        state = {}
-        civ6_play.record_opening_settlers(state, self._state(1, [10]))
-        self.assertEqual(state["initial_settler_id"], 10)
-        civ6_play.record_opening_settlers(state, self._found(1, 10))
-        # Founding consumes the starting settler through `unit_lost`; it must
-        # remain a successful opening, not look like a capture.
-        self.assertIsNone(civ6_play.second_settler_loss_reading(
-            state, self._lost(1, 10)))
-        civ6_play.record_opening_settlers(state, self._state(18, [11]))
-        self.assertEqual(state["second_settler_id"], 11)
-        verdict = civ6_play.second_settler_loss_reading(state, self._lost(20, 11))
-        self.assertEqual(verdict, {
-            "rule": "second_settler_captured", "turn": 20, "unit": 11,
-            "unit_kind": "UNIT_SETTLER",
-        })
-
-    def test_a_second_settler_that_founds_is_not_restarted(self):
-        state = {}
-        civ6_play.record_opening_settlers(state, self._state(1, [10]))
-        civ6_play.record_opening_settlers(state, self._found(1, 10))
-        civ6_play.record_opening_settlers(state, self._state(18, [11]))
-        civ6_play.record_opening_settlers(state, self._found(20, 11))
-        self.assertIsNone(civ6_play.second_settler_loss_reading(
-            state, self._lost(20, 11)))
-
-    def test_settler_rule_requires_the_tracked_agent_settler(self):
-        state = {}
-        civ6_play.record_opening_settlers(state, self._state(1, [10]))
-        civ6_play.record_opening_settlers(state, self._found(1, 10))
-        civ6_play.record_opening_settlers(state, self._state(18, [11]))
-        self.assertIsNone(civ6_play.second_settler_loss_reading(
-            state, self._lost(20, 12)))
-        self.assertIsNone(civ6_play.second_settler_loss_reading(
-            state, self._lost(20, 11, kind="UNIT_WARRIOR")))
-        self.assertIsNone(civ6_play.second_settler_loss_reading(
-            state, self._lost(20, 11, ctx="spectator")))
-
-    def test_the_live_loop_records_and_enforces_both_opening_policies(self):
-        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
-            encoding="utf-8")
-        self.assertIn("record_opening_settlers(state, event)", source)
-        self.assertIn("opening_city_target_reading(state, event)", source)
-        self.assertIn("second_settler_loss_reading(state, event)", source)
-        self.assertIn('"rule": "three_cities_by_turn_32"', source)
-        self.assertIn('"rule": "second_settler_captured"', source)
-
-
-class AnAbandonedGameIsOneTheLadderChoseNotToPlayOut(unittest.TestCase):
-    """Operator request 2026-08-19: "ok to abandon games early if expected win
-    rate <5%". The rule is a measured table (`ABANDON_CELLS`), the estimate is
-    a Laplace rate so thin evidence never clears the floor, patience guards a
-    one-turn dip, and the ending is filed as its own reason. The fit script, so
-    the table can be re-measured when the ladder climbs::
-
-        for each run with summary.json + events.jsonl that reached a terminal
-        result (victory, our defeat, or `stopped` at max_turns): walk the agent
-        `turn` events; a cell (T, R) FIRES on the first turn >= T whose
-        score/rival_best < R for five consecutive turns; count fired runs and
-        the wins among them. 2026-08-19, 48 runs, 7 wins: (100, 0.60) 0/25,
-        (120, 0.75) 0/34; the wins' low-water marks after t120 were 0.87 and
-        0.88. (120, 0.90) also read 0/38 and was NOT taken — a tenth above a
-        real comeback is no margin at all.
-    """
-
-    def test_the_estimate_is_the_laplace_rate_of_the_best_evidenced_cell(self):
-        # (120, 0.75): 0 of 34 → 1/36
-        self.assertAlmostEqual(civ6_play.expected_win_rate(150, 300, 500), 1 / 36)
-        # (100, 0.60) alone: 0 of 25 → 1/27
-        self.assertAlmostEqual(civ6_play.expected_win_rate(105, 290, 500), 1 / 27)
-        # both match: the thinnest (best-evidenced zero) decides
-        self.assertAlmostEqual(civ6_play.expected_win_rate(130, 290, 500), 1 / 36)
-
-    def test_the_table_does_not_speak_where_it_counted_nothing(self):
-        # level, ahead, or early: no cell, no estimate — and never an abandon
-        self.assertIsNone(civ6_play.expected_win_rate(150, 500, 500))
-        self.assertIsNone(civ6_play.expected_win_rate(150, 400, 500))   # 0.80
-        self.assertIsNone(civ6_play.expected_win_rate(90, 100, 500))    # early
-        # unreadable standing: the mirror has not reported a rival yet
-        self.assertIsNone(civ6_play.expected_win_rate(150, 100, None))
-        self.assertIsNone(civ6_play.expected_win_rate(150, None, 500))
-        self.assertIsNone(civ6_play.expected_win_rate(150, 100, 0))
-
-    def test_every_cell_clears_the_operators_floor_on_its_own_evidence(self):
-        """A cell that could not put its own Laplace rate under 5% would fire
-        on nothing but thin evidence; refuse to carry one."""
-        for floor, ceiling, wins, games in civ6_play.ABANDON_CELLS:
-            with self.subTest(cell=(floor, ceiling)):
-                self.assertLess((wins + 1) / (games + 2), 0.05)
-                self.assertGreaterEqual(games, 20)
-
-    def _turn(self, turn, score, rival, ctx="agent"):
-        return {"kind": "turn", "ctx": ctx, "turn": turn, "score": score,
+    def _turn(turn, score, rival, ctx="agent", kind="turn"):
+        return {"kind": kind, "ctx": ctx, "turn": turn, "score": score,
                 "rival_best": rival}
 
-    def test_five_consecutive_hopeless_turns_abandon_and_one_recovery_resets(self):
+    def test_the_line_is_seventy_percent_after_turn_100_for_five_turns(self):
+        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.70)
+        self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 100)
+        self.assertEqual(civ6_play.LEADER_SCORE_PATIENCE, 5)
+
+    def test_five_consecutive_turns_under_the_line_abandon_with_the_standing(self):
+        state = {}
+        for turn in range(100, 104):
+            self.assertIsNone(civ6_play.below_leader_score_reading(
+                state, self._turn(turn, 69, 100), 0.70))
+        verdict = civ6_play.below_leader_score_reading(
+            state, self._turn(104, 69, 100), 0.70)
+        self.assertEqual(verdict, {
+            "rule": "below_leader_score", "turn": 104, "score": 69,
+            "rival_best": 100, "score_ratio": 0.69,
+            "score_ratio_ceiling": 0.70, "min_turn": 100,
+            "consecutive_turns": 5,
+        })
+
+    def test_nothing_fires_before_turn_100_however_far_behind(self):
+        state = {}
+        for turn in range(1, 100):
+            self.assertIsNone(civ6_play.below_leader_score_reading(
+                state, self._turn(turn, 10, 500), 0.70))
+        self.assertNotIn("leader_score_streak", state)
+
+    def test_at_the_line_is_not_under_it_and_a_recovery_resets_the_count(self):
         state = {}
         for turn in range(120, 124):
-            self.assertIsNone(
-                civ6_play.abandon_reading(state, self._turn(turn, 300, 500), 0.05))
-        # a fifth: the verdict, carrying what it saw
-        verdict = civ6_play.abandon_reading(state, self._turn(124, 300, 500), 0.05)
-        self.assertEqual(verdict["turn"], 124)
-        self.assertEqual(verdict["consecutive_turns"], 5)
-        self.assertEqual((verdict["score"], verdict["rival_best"]), (300, 500))
-        self.assertEqual(verdict["floor"], 0.05)
-        self.assertAlmostEqual(verdict["expected_win_rate"], round(1 / 36, 4))
-        # a readable turn back over the floor resets the count
-        state = {}
-        for turn in range(120, 124):
-            civ6_play.abandon_reading(state, self._turn(turn, 300, 500), 0.05)
-        self.assertIsNone(
-            civ6_play.abandon_reading(state, self._turn(124, 450, 500), 0.05))
-        self.assertEqual(state["abandon_streak"], 0)
-        self.assertIsNone(
-            civ6_play.abandon_reading(state, self._turn(125, 300, 500), 0.05))
+            civ6_play.below_leader_score_reading(
+                state, self._turn(turn, 300, 500), 0.70)
+        self.assertEqual(state["leader_score_streak"], 4)
+        # exactly 70 % is not under the line, and it resets the count
+        self.assertIsNone(civ6_play.below_leader_score_reading(
+            state, self._turn(124, 350, 500), 0.70))
+        self.assertEqual(state["leader_score_streak"], 0)
+        for turn in range(125, 129):
+            self.assertIsNone(civ6_play.below_leader_score_reading(
+                state, self._turn(turn, 300, 500), 0.70))
+        self.assertEqual(state["leader_score_streak"], 4)
 
     def test_a_repeated_turn_counts_once_and_silence_is_not_recovery(self):
         state = {}
         for _ in range(5):   # the agent re-reports one turn five times
-            self.assertIsNone(
-                civ6_play.abandon_reading(state, self._turn(130, 300, 500), 0.05))
-        self.assertEqual(state["abandon_streak"], 1)
-        # a turn with no standing neither counts nor resets
-        self.assertIsNone(
-            civ6_play.abandon_reading(state, self._turn(131, 300, None), 0.05))
-        self.assertEqual(state["abandon_streak"], 1)
-        # a non-agent context is ignored entirely
-        self.assertIsNone(
-            civ6_play.abandon_reading(state, self._turn(132, 300, 500, ctx="x"), 0.05))
-        self.assertEqual(state["abandon_streak"], 1)
+            self.assertIsNone(civ6_play.below_leader_score_reading(
+                state, self._turn(130, 300, 500), 0.70))
+        self.assertEqual(state["leader_score_streak"], 1)
+        # no standing: neither counts nor resets
+        self.assertIsNone(civ6_play.below_leader_score_reading(
+            state, self._turn(131, 300, None), 0.70))
+        self.assertIsNone(civ6_play.below_leader_score_reading(
+            state, self._turn(132, 300, 0), 0.70))
+        self.assertIsNone(civ6_play.below_leader_score_reading(
+            state, self._turn(133, None, 500), 0.70))
+        self.assertEqual(state["leader_score_streak"], 1)
+        # other contexts and other event kinds are not readings at all
+        self.assertIsNone(civ6_play.below_leader_score_reading(
+            state, self._turn(134, 300, 500, ctx="spectator"), 0.70))
+        self.assertIsNone(civ6_play.below_leader_score_reading(
+            state, self._turn(134, 300, 500, kind="state"), 0.70))
+        self.assertEqual(state["leader_score_streak"], 1)
 
-    def test_no_floor_means_every_game_is_played_out(self):
-        state = {}
-        for turn in range(120, 140):
-            self.assertIsNone(
-                civ6_play.abandon_reading(state, self._turn(turn, 100, 500), 0.0))
-        self.assertNotIn("abandon_streak", state)
+    def test_zero_or_an_invalid_line_plays_every_game_out(self):
+        for ceiling in (0, 0.0, -1, 1.5, True, None, "0.7"):
+            with self.subTest(ceiling=ceiling):
+                state = {}
+                for turn in range(100, 140):
+                    self.assertIsNone(civ6_play.below_leader_score_reading(
+                        state, self._turn(turn, 10, 500), ceiling))
+                self.assertNotIn("leader_score_streak", state)
 
     def test_an_abandoned_game_is_filed_as_abandoned_and_nothing_else_is(self):
         """`reason` is the only field saying how a game ended. The harness's
         own stop takes it; a game that exited or stalled in the same poll keeps
         that ending; a refusal still outranks everything."""
-        abandoned = {"turn": 124, "expected_win_rate": 0.0278, "floor": 0.05}
+        abandoned = {"rule": "below_leader_score", "turn": 124,
+                     "score_ratio": 0.6, "score_ratio_ceiling": 0.70}
         state = {"abandoned": abandoned, "seat": {"x": 1}, "configured": True,
                  "ruleset_match": True, "mode_mismatch": False}
         self.assertEqual(civ6_play.summary_reason(state, "stopped"), "abandoned")
@@ -2094,90 +1979,23 @@ class AnAbandonedGameIsOneTheLadderChoseNotToPlayOut(unittest.TestCase):
                  "mode_mismatch": False}
         self.assertEqual(civ6_play.summary_reason(clean, "stopped"), "stopped")
 
-    def test_the_flag_and_the_summary_field_exist(self):
+    def test_the_live_loop_runs_the_one_rule_and_none_of_the_scrapped_ones(self):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
-        self.assertIn('"--abandon-below-win-rate"', source)
+        self.assertIn("below_leader_score_reading(\n"
+                      "            state, event, args.restart_below_leader_ratio", source)
         self.assertIn('"--restart-below-leader-ratio"', source)
+        self.assertIn("default=DEFAULT_LEADER_SCORE_RATIO", source)
         self.assertIn('"abandoned": state.get("abandoned"),', source)
-        self.assertIn("abandon_reading(state, event, args.abandon_below_win_rate)",
-                      source)
-        self.assertIn("behind_all_metrics_reading(", source)
+        for scrapped in ("opening_city_target_reading(state",
+                         "second_settler_loss_reading(state",
+                         "behind_all_metrics_reading(",
+                         "abandon_reading(state", "record_opening_settlers(",
+                         "ABANDON_CELLS", 'add_argument("--abandon-below-win-rate"'):
+            self.assertNotIn(scrapped, source, scrapped)
         # The deal lane's tally rides the summary beside the orders totals.
         self.assertIn('deals = civ6_ladder.deal_totals(run_dir / "events.jsonl")', source)
         self.assertIn('summary["deals"] = deals', source)
-
-
-class AThreeSignalRestartDoesNotTreatScoreAsEnough(unittest.TestCase):
-    """The operator's 70 % rule must lose on every named axis, consecutively."""
-
-    @staticmethod
-    def _state(turn, science, culture, rivals, ctx="agent"):
-        return {"kind": "state", "ctx": ctx, "turn": turn,
-                "science": science, "culture": culture, "rivals": rivals}
-
-    @staticmethod
-    def _turn(turn, score, rival_best, ctx="agent"):
-        return {"kind": "turn", "ctx": ctx, "turn": turn,
-                "score": score, "rival_best": rival_best}
-
-    def _reading(self, state, turn, score=69, rival_best=100,
-                 science=9, culture=8, rivals=None):
-        if rivals is None:
-            rivals = [{"science": 10, "culture": 10}]
-        self.assertIsNone(civ6_play.behind_all_metrics_reading(
-            state, self._state(turn, science, culture, rivals), 0.70))
-        return civ6_play.behind_all_metrics_reading(
-            state, self._turn(turn, score, rival_best), 0.70)
-
-    def test_score_science_and_culture_must_all_be_deficits(self):
-        for label, values in (
-            ("score at ceiling", {"score": 70}),
-            ("science tied", {"science": 10}),
-            ("culture tied", {"culture": 10}),
-        ):
-            with self.subTest(label=label):
-                state = {}
-                self.assertIsNone(self._reading(state, 100, **values))
-                self.assertEqual(state["behind_all_metrics_streak"], 0)
-
-    def test_five_current_readings_fire_and_a_recovery_resets(self):
-        state = {}
-        rivals = [{"science": 8, "culture": 10},
-                  {"science": 10, "culture": 8}]
-        for turn in range(100, 104):
-            self.assertIsNone(self._reading(state, turn, rivals=rivals))
-        verdict = self._reading(state, 104, rivals=rivals)
-        self.assertEqual(verdict["rule"], "score_science_culture_deficit")
-        self.assertEqual(verdict["consecutive_turns"], 5)
-        self.assertAlmostEqual(verdict["score_ratio"], 0.69)
-        self.assertEqual((verdict["rival_best_science"],
-                          verdict["rival_best_culture"]), (10, 10))
-        # A current state sample that is no longer behind on culture resets it.
-        self.assertIsNone(self._reading(state, 105, culture=10, rivals=rivals))
-        self.assertEqual(state["behind_all_metrics_streak"], 0)
-        self.assertIsNone(self._reading(state, 106, rivals=rivals))
-        self.assertEqual(state["behind_all_metrics_streak"], 1)
-
-    def test_stale_or_unreadable_standings_never_count(self):
-        state = {}
-        self.assertIsNone(civ6_play.behind_all_metrics_reading(
-            state, self._state(99, 9, 8, [{"science": 10, "culture": 10}]), 0.70))
-        self.assertIsNone(civ6_play.behind_all_metrics_reading(
-            state, self._turn(100, 69, 100), 0.70))
-        self.assertNotIn("behind_all_metrics_streak", state)
-        self.assertIsNone(self._reading(
-            state, 101, rivals=[{"science": -1, "culture": -1}]))
-        self.assertNotIn("behind_all_metrics_streak", state)
-        self.assertIsNone(self._reading(state, 102))
-        self.assertEqual(state["behind_all_metrics_streak"], 1)
-        # Disabled remains a complete no-op, including on a fully bad reading.
-        disabled = {}
-        self.assertIsNone(civ6_play.behind_all_metrics_reading(
-            disabled, self._state(102, 9, 8, [{"science": 10, "culture": 10}]), 0.0))
-        self.assertIsNone(civ6_play.behind_all_metrics_reading(
-            disabled, self._turn(102, 69, 100), 0.0))
-        self.assertNotIn("behind_all_metrics_streak", disabled)
 
 
 class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):

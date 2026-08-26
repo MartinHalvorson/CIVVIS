@@ -47,9 +47,11 @@ against a game that is still being played.
 
 ## ⚠ Where the numbers come from
 
-`#2319`'s reading is not re-implemented here: `behind_all_metrics_reading` is
-imported from `tools/civ6_play.py` and fed the recorded events in file order,
-which is exactly what the live loop does. That section is a **check**.
+The harness's early stop is not re-implemented here: `below_leader_score_reading`
+(the one rule left after 2026-08-26 — under 70 % of the leader's score after
+turn 100; it replaced #2319's three-axis reading) is imported from
+`tools/civ6_play.py` and fed the recorded events in file order, which is
+exactly what the live loop does. That section is a **check**.
 
 `#2278`'s Great Person section transcribes `StateGreatPerson::slot_starved`
 (`src/mirror.rs`) into Python, because the Rust predicate is not reachable from
@@ -76,14 +78,13 @@ from typing import Any, Iterable, Iterator
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_play  # noqa: E402
-from civ6_play import behind_all_metrics_reading  # noqa: E402
+from civ6_play import below_leader_score_reading  # noqa: E402
 
 DEFAULT_CORPUS = Path.home() / "civvis-civ6-runs" / "control"
 
-#: The operator value for `--restart-below-leader-ratio`, recorded in
-#: `tools/civ6_play.py`'s own help text as "Operator request 2026-08-22: 0.70".
-#: The flag's *default* is 0.0, which disables the policy entirely, so a census
-#: run at the default would report nothing and prove nothing.
+#: The line for `--restart-below-leader-ratio`: the harness's own default since
+#: 2026-08-26 (`civ6_play.DEFAULT_LEADER_SCORE_RATIO`), so a census at this
+#: value replays exactly what a live game would have done.
 RESTART_RATIO = 0.70
 
 #: Firaxis's three city-defence buildings, in escalation order. The live report
@@ -343,23 +344,24 @@ def trade_reading(records: Iterable[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------
-# #2319: the restart policy, replayed through its own function
+# The early stop (below the leader's score after turn 100), replayed through
+# the harness's own function
 # --------------------------------------------------------------------------
 
 
 def restart_reading(records: Iterable[dict], ratio: float, closing: dict) -> dict:
-    """BEHAVIOUR, then VALUE-adjacent. Would #2319 have ended this run?
+    """BEHAVIOUR, then VALUE-adjacent. Would the early stop have ended this run?
 
     The verdict half is a **check**, not a transcription: the recorded events
-    are fed to `civ6_play.behind_all_metrics_reading` in file order, which is
+    are fed to `civ6_play.below_leader_score_reading` in file order, which is
     what `_play`'s `finished()` does with the live stream.
 
     The counterfactual half — what the run went on to do after the turn the
     rule would have stopped it — is the closest a recorded corpus can get to
     value, and it is still not a win/loss contrast: a restart replaces the rest
     of that game with a *different* game whose result is unrecorded. What it
-    can say exactly is the **risk**: how many stopped games later recovered on
-    any of the three axes, and how many were won.
+    can say exactly is the **risk**: how many stopped games later climbed back
+    over the score line, and how many were won.
     """
     state: dict[str, Any] = {}
     verdict = None
@@ -372,7 +374,7 @@ def restart_reading(records: Iterable[dict], ratio: float, closing: dict) -> dic
             turn = record.get("turn")
             if isinstance(turn, int) and not isinstance(turn, bool):
                 last_turn = max(last_turn, turn)
-        fired = behind_all_metrics_reading(state, record, ratio)
+        fired = below_leader_score_reading(state, record, ratio)
         if fired is not None and verdict is None:
             verdict = fired
         if verdict is not None and kind == "turn" and record.get("ctx") == "agent":
@@ -1147,7 +1149,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--section", action="append", choices=SECTIONS,
                         help="repeatable; default is every section")
     parser.add_argument("--restart-ratio", type=float, default=RESTART_RATIO,
-                        help=f"score ratio for #2319's rule (default {RESTART_RATIO},"
+                        help=f"score ratio for the early stop (default {RESTART_RATIO},"
                              " the operator value; the flag's own default of 0.0"
                              " disables the policy)")
     parser.add_argument("--replay", action="append", metavar="NAME=BINARY",

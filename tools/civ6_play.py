@@ -83,126 +83,37 @@ DEFAULT_CIVVIS_VICTORY = "diplomatic"
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
 
-# ★★★ WHEN A GAME IS LOST, SAY SO AND STOP PLAYING IT. Operator request
-# 2026-08-19: "ok to abandon games early if expected win rate <5%". The ladder
-# plays 250-turn Online games at about 1.5 h each, and the games it loses it
-# loses EARLY and then plays out: of the 48 live games that reached a terminal
-# result by 2026-08-19 (7 wins), 34 were under three quarters of the best
-# rival's score for five consecutive turns at or after turn 120, and NONE of
-# those 34 won — 3,700 game-turns, nine hours of host time per batch of
-# twelve, spent on results that were already written. The wins' own low-water
-# marks after turn 120 were 0.87 and 0.88 of the rival's score (both Chieftain
-# wins of 08-18/08-19), so the 0.75 line is a tenth below the worst comeback
-# the ladder has ever staged.
+# ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
+# request 2026-08-26: "scrap the early terminate rules that cut off civvis
+# verification games. start playing out full games each time for now. or
+# until we fall below 70% of the score of the leader after turn 100."
 #
-# The expected win rate is read from a table of such cells, each carrying the
-# wins and games it was measured on, as the Laplace estimate (wins+1)/(games+2)
-# — a finite-sample rate that cannot claim zero from zero wins and grows toward
-# 1/2 as the evidence thins, so a cell too thin to trust never clears a 5 %
-# floor by itself. A cell is (turn floor, score-ratio ceiling, wins, games):
-# the rule matches a turn at or after the floor whose own score is under the
-# ceiling times the best rival's. Where several match, the thinnest estimate
-# (the best-evidenced zero) decides.
+# Until then the harness carried four early stops, and on King they ended 73
+# of 81 games before the game could: the three-cities-by-turn-32 and
+# second-settler-captured opening restarts (#2505; 25 and 10 games), the
+# score-science-culture deficit restart (#2319; 36 games — its 0.70 default
+# lived in the supervisor and was on even where the login shell unset it) and
+# the measured win-rate table behind the old abandon floor (#2174; off). All
+# four are gone. What remains is the operator's one rule, and it is a default
+# of the harness itself, not of a launcher: at or after turn 100, a score
+# under 70 % of the leader's for LEADER_SCORE_PATIENCE consecutive readable
+# agent turns abandons the game.
 #
-# ⚠ This table is MEASURED, not chosen, and it is only as good as the games it
-# was fitted on (Settler and Chieftain, diplomatic and untargeted lanes).
-# Re-fit it when the ladder climbs or the seat's comeback shape changes; the
-# script is in the test file beside it. Abandoning is the harness's decision
-# and is recorded as one (`reason: "abandoned"` with the estimate that fired),
-# never as a stall, a wedge or a defeat.
-ABANDON_CELLS: tuple[tuple[int, float, int, int], ...] = (
-    # turn floor, ratio ceiling, wins, games — fitted 2026-08-19 on the 48
-    # terminal live games (7 wins); five consecutive turns under the ceiling
-    (100, 0.60, 0, 25),
-    (120, 0.75, 0, 34),
-)
-# Consecutive agent turns under the floor before the run is abandoned: a
-# single-turn dip (a city lost and retaken, a score swing on a rival's wonder)
-# must not end a game that the next five turns would have carried.
-ABANDON_PATIENCE = 5
-
-# A separate operator policy for an obviously losing strategic position. This
-# is deliberately not folded into ABANDON_CELLS: it is not an empirically
-# fitted win-rate estimate, and score alone is never enough to stop a game.
-# The state export carries our science/culture and those of every met rival;
-# only five current, post-opening readings that lose on all three measures can
-# end a run. A missing or stale state reading is silence, not evidence of a
-# loss or a recovery.
-BEHIND_ALL_METRICS_MIN_TURN = 100
-BEHIND_ALL_METRICS_PATIENCE = 5
-
-# ★★★ OPENING RESTARTS ARE A DEPLOYMENT POLICY, NOT AN EXPERIMENT FLAG.
-# The operator wants every verification attempt to prove that it can expand:
-# three cities must be present by turn 32.  The turn ledger is the authoritative
-# in-game count, so the first readable agent turn at or after the deadline is
-# the one chance to meet it.
-OPENING_CITY_TARGET_TURN = 32
-OPENING_CITY_TARGET = 3
-
-# A starting settler disappears through the same `unit_lost` ledger event when
-# it founds the capital.  Therefore a raw removal is *not* evidence that a
-# settler was captured.  Keep the founding unit ids and only restart when the
-# first settler produced after that capital setter disappears before it founds.
-# This is the operator's "second settler captured" rule; `unit_lost` also
-# covers other irreversible losses, which are equally unable to make city two.
-SETTLER_KIND = "UNIT_SETTLER"
-
-
-def expected_win_rate(turn: int, score: int | None,
-                      rival_best: int | None) -> float | None:
-    """The ladder's own estimate of this game still being won, or None.
-
-    None when the standing is unreadable or no measured cell matches: a game
-    that is level, ahead, or early is not predicted here at all — the table
-    only speaks where it has counted games, and it has counted no comebacks.
-    """
-    if score is None or rival_best is None or rival_best <= 0 or turn is None:
-        return None
-    ratio = score / rival_best
-    estimates = [
-        (wins + 1) / (games + 2)
-        for floor, ceiling, wins, games in ABANDON_CELLS
-        if turn >= floor and ratio < ceiling
-    ]
-    return min(estimates) if estimates else None
-
-
-def abandon_reading(state: dict, event: dict, floor: float) -> dict | None:
-    """Fold one agent turn into the abandonment count; the verdict when it fires.
-
-    Counts consecutive agent turns whose expected win rate sits under `floor`
-    (a distinct turn counted once; an agent may report a turn twice) and
-    returns the record to carry in the summary once `ABANDON_PATIENCE` such
-    turns have passed. A readable turn back over the floor — or outside every
-    measured cell — resets the count; a turn without a standing neither counts
-    nor resets, and is not the turn of record — silence is not recovery.
-    """
-    if floor <= 0 or event.get("ctx") != "agent":
-        return None
-    turn = event.get("turn")
-    if turn is None or turn == state.get("abandon_last_turn"):
-        return None
-    score, rival_best = event.get("score"), event.get("rival_best")
-    if score is None or rival_best is None or rival_best <= 0:
-        return None
-    state["abandon_last_turn"] = turn
-    estimate = expected_win_rate(turn, score, rival_best)
-    if estimate is None or estimate >= floor:
-        # Readable and outside every hopeless cell, or inside one the floor
-        # does not reach: a recovery, whichever way it happened.
-        state["abandon_streak"] = 0
-        return None
-    state["abandon_streak"] = state.get("abandon_streak", 0) + 1
-    if state["abandon_streak"] < ABANDON_PATIENCE:
-        return None
-    return {
-        "turn": turn,
-        "score": event.get("score"),
-        "rival_best": event.get("rival_best"),
-        "expected_win_rate": round(estimate, 4),
-        "floor": floor,
-        "consecutive_turns": state["abandon_streak"],
-    }
+# "The leader" is the best-scoring rival the seat has met — `rival_best` in
+# the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
+# majors the seat's diplomacy has met). A rival still unmet at turn 100 is
+# invisible to the rule, which errs toward playing on.
+#
+# Patience is kept from the rules this replaces: score moves slowly, but a
+# city lost and retaken can dip a single reading, and one turn must not end a
+# game that the next five would have carried. A readable turn back over the
+# line resets the count; a turn without a standing neither counts nor resets
+# — silence is not recovery. An abandoned game is filed as its own ending
+# (`reason: "abandoned"` with the verdict), never as a stall, a wedge or a
+# defeat.
+LEADER_SCORE_MIN_TURN = 100
+DEFAULT_LEADER_SCORE_RATIO = 0.70
+LEADER_SCORE_PATIENCE = 5
 
 
 def _nonnegative_metric(value: object) -> float | int | None:
@@ -213,201 +124,49 @@ def _nonnegative_metric(value: object) -> float | int | None:
     return None
 
 
-def _nonnegative_int(value: object) -> int | None:
-    """A game-provided identifier or count, without bool's integer alias."""
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    return None
-
-
-def record_opening_settlers(state: dict, event: dict) -> None:
-    """Remember the capital setter, its founding, and the next live setter.
-
-    The Lua ledger sends the normal sequence ``state -> found -> unit_lost``
-    when a settler makes a city.  The first state identifies the starting
-    setter; after that one is recorded as founded, the first distinct live
-    settler is the second settler whose loss ends an opening attempt.
-    """
-    if event.get("ctx") != "agent":
-        return
-    kind = event.get("kind")
-    if kind == "found":
-        unit_id = _nonnegative_int(event.get("unit"))
-        if unit_id is None:
-            return
-        founded = state.get("founded_settler_ids")
-        if not isinstance(founded, set):
-            founded = set()
-            state["founded_settler_ids"] = founded
-        founded.add(unit_id)
-        # The live game's opening `state` arrives first, but retaining this
-        # fallback keeps a delayed state snapshot from mistaking the capital
-        # setter for the second one.
-        if state.get("initial_settler_id") is None:
-            state["initial_settler_id"] = unit_id
-        return
-    if kind != "state":
-        return
-
-    units = event.get("units")
-    if not isinstance(units, list):
-        return
-    observed = state.get("observed_settler_ids")
-    if not isinstance(observed, list):
-        observed = []
-        state["observed_settler_ids"] = observed
-    for unit in units:
-        if not isinstance(unit, dict) or unit.get("kind") != SETTLER_KIND:
-            continue
-        unit_id = _nonnegative_int(unit.get("id"))
-        if unit_id is not None and unit_id not in observed:
-            observed.append(unit_id)
-
-    if state.get("initial_settler_id") is None and observed:
-        state["initial_settler_id"] = observed[0]
-    initial = state.get("initial_settler_id")
-    founded = state.get("founded_settler_ids")
-    if (initial is None or not isinstance(founded, set)
-            or initial not in founded
-            or state.get("second_settler_id") is not None):
-        return
-    for unit_id in observed:
-        if unit_id != initial and unit_id not in founded:
-            state["second_settler_id"] = unit_id
-            return
-
-
-def opening_city_target_reading(state: dict, event: dict) -> dict | None:
-    """Return the mandatory three-cities-by-turn-32 restart verdict."""
-    if event.get("kind") != "turn" or event.get("ctx") != "agent":
-        return None
-    turn = _nonnegative_int(event.get("turn"))
-    if (turn is None or turn < OPENING_CITY_TARGET_TURN
-            or state.get("opening_city_target_checked")):
-        return None
-    cities = _nonnegative_int(event.get("cities"))
-    if cities is None:
-        # An unreadable count is not proof of a failed opening.  Try the next
-        # readable turn rather than quietly disabling the deployment policy.
-        return None
-    state["opening_city_target_checked"] = True
-    if cities >= OPENING_CITY_TARGET:
-        return None
-    return {
-        "rule": "three_cities_by_turn_32",
-        "turn": turn,
-        "cities": cities,
-        "required_cities": OPENING_CITY_TARGET,
-        "deadline_turn": OPENING_CITY_TARGET_TURN,
-    }
-
-
-def second_settler_loss_reading(state: dict, event: dict) -> dict | None:
-    """Return a restart verdict when the tracked second settler disappears."""
-    if (event.get("kind") != "unit_lost" or event.get("ctx") != "agent"
-            or event.get("unit_kind") != SETTLER_KIND):
-        return None
-    unit_id = _nonnegative_int(event.get("unit"))
-    second = state.get("second_settler_id")
-    if unit_id is None or second is None or unit_id != second:
-        return None
-    founded = state.get("founded_settler_ids")
-    if isinstance(founded, set) and unit_id in founded:
-        # Settling consumes the unit and emits `unit_lost`; it is success, not
-        # a capture.  This check also makes duplicate/out-of-order callbacks
-        # harmless after a confirmed foundation.
-        return None
-    return {
-        "rule": "second_settler_captured",
-        "turn": _nonnegative_int(event.get("turn")),
-        "unit": unit_id,
-        "unit_kind": SETTLER_KIND,
-    }
-
-
-def behind_all_metrics_reading(
+def below_leader_score_reading(
     state: dict, event: dict, score_ratio_ceiling: float
 ) -> dict | None:
-    """Record a three-signal restart reading, returning its verdict on fire.
+    """Fold one agent turn into the under-the-leader count; the verdict on fire.
 
-    The score comparison is against the best met rival, matching the existing
-    turn record. Science and culture each compare against their visible met
-    leader, which can be different civilizations. The state sample must be
-    from the same turn as the score record: carrying yesterday's yields into a
-    new score position would make a restart look more certain than it is.
+    `score_ratio_ceiling` outside (0, 1] — 0 from the command line — disables
+    the rule, and every game is played to its end. Only an agent `turn` event
+    at or after LEADER_SCORE_MIN_TURN with a readable score and rival score is
+    a reading; a distinct turn is counted once however often the agent
+    reports it.
     """
     if (not isinstance(score_ratio_ceiling, (int, float))
             or isinstance(score_ratio_ceiling, bool)
             or not 0 < score_ratio_ceiling <= 1):
         return None
-
-    if event.get("kind") == "state":
-        if event.get("ctx") == "agent":
-            state["behind_all_metrics_state"] = event
-        return None
     if event.get("kind") != "turn" or event.get("ctx") != "agent":
         return None
-
     turn = event.get("turn")
     if (not isinstance(turn, int) or isinstance(turn, bool)
-            or turn < BEHIND_ALL_METRICS_MIN_TURN
-            or turn == state.get("behind_all_metrics_last_turn")):
+            or turn < LEADER_SCORE_MIN_TURN
+            or turn == state.get("leader_score_last_turn")):
         return None
-    standing = state.get("behind_all_metrics_state")
-    if not isinstance(standing, dict) or standing.get("turn") != turn:
-        return None
-
     score = _nonnegative_metric(event.get("score"))
     rival_best = _nonnegative_metric(event.get("rival_best"))
-    our_science = _nonnegative_metric(standing.get("science"))
-    our_culture = _nonnegative_metric(standing.get("culture"))
-    rivals = standing.get("rivals")
-    if (score is None or rival_best is None or rival_best <= 0
-            or our_science is None or our_culture is None
-            or not isinstance(rivals, list)):
+    if score is None or rival_best is None or rival_best <= 0:
         return None
-
-    rival_sciences, rival_cultures = [], []
-    for rival in rivals:
-        if not isinstance(rival, dict):
-            continue
-        science = _nonnegative_metric(rival.get("science"))
-        culture = _nonnegative_metric(rival.get("culture"))
-        if science is not None:
-            rival_sciences.append(science)
-        if culture is not None:
-            rival_cultures.append(culture)
-    if not rival_sciences or not rival_cultures:
-        return None
-
-    state["behind_all_metrics_last_turn"] = turn
+    state["leader_score_last_turn"] = turn
     score_ratio = score / rival_best
-    rival_best_science = max(rival_sciences)
-    rival_best_culture = max(rival_cultures)
-    if (score_ratio >= score_ratio_ceiling
-            or our_science >= rival_best_science
-            or our_culture >= rival_best_culture):
-        # A complete comparison that is not bad on every axis is a recovery.
-        state["behind_all_metrics_streak"] = 0
+    if score_ratio >= score_ratio_ceiling:
+        state["leader_score_streak"] = 0
         return None
-
-    state["behind_all_metrics_streak"] = (
-        state.get("behind_all_metrics_streak", 0) + 1
-    )
-    if state["behind_all_metrics_streak"] < BEHIND_ALL_METRICS_PATIENCE:
+    state["leader_score_streak"] = state.get("leader_score_streak", 0) + 1
+    if state["leader_score_streak"] < LEADER_SCORE_PATIENCE:
         return None
     return {
-        "rule": "score_science_culture_deficit",
+        "rule": "below_leader_score",
         "turn": turn,
         "score": score,
         "rival_best": rival_best,
         "score_ratio": round(score_ratio, 4),
         "score_ratio_ceiling": score_ratio_ceiling,
-        "science": our_science,
-        "rival_best_science": rival_best_science,
-        "culture": our_culture,
-        "rival_best_culture": rival_best_culture,
-        "consecutive_turns": state["behind_all_metrics_streak"],
+        "min_turn": LEADER_SCORE_MIN_TURN,
+        "consecutive_turns": state["leader_score_streak"],
     }
 
 DEFAULT_CIVVIS_STRATEGY = ""
@@ -3347,9 +3106,6 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
-        # The restart policy needs the state/found sequence before `finished`
-        # evaluates a possible `unit_lost` event from the same ledger poll.
-        record_opening_settlers(state, event)
         if kind == "host":
             state["hosted"] = bool(event.get("started"))
             print(f"[setup] host started={event.get('started')}")
@@ -3514,50 +3270,20 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
-        opening_verdict = opening_city_target_reading(state, event)
-        if opening_verdict is not None:
-            state["abandoned"] = opening_verdict
-            print(f"[restart] turn {opening_verdict['turn']}: only "
-                  f"{opening_verdict['cities']} cities; need "
-                  f"{opening_verdict['required_cities']} by turn "
-                  f"{opening_verdict['deadline_turn']} — restarting the "
-                  "opening", flush=True)
-            return True
-        settler_verdict = second_settler_loss_reading(state, event)
-        if settler_verdict is not None:
-            state["abandoned"] = settler_verdict
-            print(f"[restart] turn {settler_verdict['turn']}: second settler "
-                  f"unit {settler_verdict['unit']} disappeared before founding "
-                  "— restarting the opening", flush=True)
-            return True
-        restart_verdict = behind_all_metrics_reading(
+        # And OUR decision that the game is lost — the operator's one rule:
+        # under 70 % of the leader's score after turn 100, five readable turns
+        # running. See `below_leader_score_reading`.
+        verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         )
-        if restart_verdict is not None:
-            state["abandoned"] = restart_verdict
-            print(f"[restart] turn {restart_verdict['turn']}: score "
-                  f"{restart_verdict['score']} is "
-                  f"{restart_verdict['score_ratio']:.1%} of the best rival; "
-                  f"science {restart_verdict['science']} vs "
-                  f"{restart_verdict['rival_best_science']} and culture "
-                  f"{restart_verdict['culture']} vs "
-                  f"{restart_verdict['rival_best_culture']} for "
-                  f"{restart_verdict['consecutive_turns']} turns — restarting "
-                  "rather than playing the lost position out", flush=True)
+        if verdict is not None:
+            state["abandoned"] = verdict
+            print(f"[abandon] turn {verdict['turn']}: score {verdict['score']} "
+                  f"is {verdict['score_ratio']:.1%} of the leader's "
+                  f"{verdict['rival_best']} for {verdict['consecutive_turns']} "
+                  f"turns, under the {verdict['score_ratio_ceiling']:.0%} line "
+                  "— stopping the game rather than playing it out", flush=True)
             return True
-        # And OUR decision that the game is lost, once the operator has set a
-        # floor under the expected win rate. See `ABANDON_CELLS`.
-        if kind == "turn":
-            verdict = abandon_reading(state, event, args.abandon_below_win_rate)
-            if verdict is not None:
-                state["abandoned"] = verdict
-                print(f"[abandon] turn {verdict['turn']}: score "
-                      f"{verdict['score']} against the best rival's "
-                      f"{verdict['rival_best']} for {verdict['consecutive_turns']} "
-                      f"turns — expected win rate {verdict['expected_win_rate']:.1%} "
-                      f"is under the {verdict['floor']:.0%} floor; stopping the "
-                      "game rather than playing it out", flush=True)
-                return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
         # seat event rather than at the end.
@@ -3988,18 +3714,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="write requested map/game seeds for civ6_seed_check; does not "
                          "make the real-Civ6 world reproducible")
     ap.add_argument("--max-turns", type=int, default=150)
-    ap.add_argument("--abandon-below-win-rate", type=float, default=0.0,
-                    help="stop a run once the ladder's measured expected win "
-                         "rate (see ABANDON_CELLS) has sat under this floor "
-                         "for ABANDON_PATIENCE consecutive turns; 0 (the "
-                         "default) plays every game out. Operator request "
-                         "2026-08-19: 0.05")
-    ap.add_argument("--restart-below-leader-ratio", type=float, default=0.0,
-                    help="restart only after BEHIND_ALL_METRICS_PATIENCE "
-                         "post-turn-100 readings below this score ratio AND "
-                         "behind the visible science and culture leaders; 0 "
-                         "(the default) disables the policy. Operator request "
-                         "2026-08-22: 0.70")
+    ap.add_argument("--restart-below-leader-ratio", type=float,
+                    default=DEFAULT_LEADER_SCORE_RATIO,
+                    help="abandon a game whose score has sat under this share "
+                         "of the leader's (best met rival) for "
+                         "LEADER_SCORE_PATIENCE consecutive readable turns at "
+                         "or after turn LEADER_SCORE_MIN_TURN; 0 plays every "
+                         "game out. Operator request 2026-08-26: 0.70, and no "
+                         "other early stop")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
     # The game must stay frontmost to get frames, which makes it unwatchable if
