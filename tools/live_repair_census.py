@@ -1150,8 +1150,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="repeatable; default is every section")
     parser.add_argument("--restart-ratio", type=float, default=RESTART_RATIO,
                         help=f"score ratio for the early stop (default {RESTART_RATIO},"
-                             " the operator value; the flag's own default of 0.0"
-                             " disables the policy)")
+                             " the harness default; 0 disables the policy)")
     parser.add_argument("--replay", action="append", metavar="NAME=BINARY",
                         help="repeatable; answer the recorded turns again with"
                              " this `civvis_orders` build and diff the arms")

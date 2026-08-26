@@ -144,17 +144,13 @@ class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
              "score": 100, "rival_best": 1000},
         ]
 
-    def test_it_fires_only_after_the_patience_window(self):
-        patience = census.civ6_play.LEADER_SCORE_PATIENCE
+    def test_it_fires_on_the_first_qualifying_reading(self):
         floor = census.civ6_play.LEADER_SCORE_MIN_TURN
-        short = [r for t in range(floor, floor + patience - 1)
-                 for r in self._behind(t)]
-        self.assertFalse(census.restart_reading(short, 0.70, {})["fired"],
-                         f"{patience - 1} readings is one short of the patience")
-        verdict = census.restart_reading(
-            short + self._behind(floor + patience - 1), 0.70, {})
+        self.assertFalse(census.restart_reading(
+            self._behind(floor - 1), 0.70, {})["fired"])
+        verdict = census.restart_reading(self._behind(floor), 0.70, {})
         self.assertTrue(verdict["fired"])
-        self.assertEqual(verdict["fire_turn"], floor + patience - 1)
+        self.assertEqual(verdict["fire_turn"], floor)
 
     def test_a_disabled_ratio_never_fires(self):
         records = [r for t in range(100, 130) for r in self._behind(t)]

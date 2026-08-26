@@ -152,12 +152,12 @@ VICTORY=${CIVVIS_VICTORY:-}
 # The ONE early stop the ladder keeps (operator, 2026-08-26: "start playing
 # out full games each time for now. or until we fall below 70% of the score
 # of the leader after turn 150"): a score under this share of the leader's
-# (best met rival) for five readable turns at or after turn 150 abandons the
-# game. The harness carries the same 0.70 default itself, so a GUI host that
-# never inherited a login shell plays the same policy; a named environment
-# value overrides it for a deliberately configured batch (0 plays every game
-# out). The opening restarts and the measured win-rate floor that used to sit
-# beside this knob are gone (#2505, #2319, #2174).
+# (best met rival) on any readable turn at or after turn 150 immediately
+# abandons the game. The harness carries the same 0.70 default itself, so a
+# GUI host that never inherited a login shell plays the same policy; a named
+# environment value overrides it for a deliberately configured batch (0 plays
+# every game out). The opening restarts and the measured win-rate floor that
+# used to sit beside this knob are gone (#2505, #2319, #2174).
 RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.70}
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host

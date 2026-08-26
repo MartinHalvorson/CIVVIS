@@ -1881,75 +1881,59 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
     """Operator request 2026-08-26: "scrap the early terminate rules that cut
     off civvis verification games. start playing out full games each time for
     now. or until we fall below 70% of the score of the leader after turn
-    150." One rule, a default of the harness itself; patience guards a
-    one-turn dip; the ending is filed as its own reason."""
+    150." One rule, a default of the harness itself; the first qualifying
+    reading ends the game and is filed as its own reason."""
 
     @staticmethod
     def _turn(turn, score, rival, ctx="agent", kind="turn"):
         return {"kind": kind, "ctx": ctx, "turn": turn, "score": score,
                 "rival_best": rival}
 
-    def test_the_line_is_seventy_percent_after_turn_150_for_five_turns(self):
+    def test_the_line_is_seventy_percent_from_turn_150(self):
         self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.70)
         self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 150)
-        self.assertEqual(civ6_play.LEADER_SCORE_PATIENCE, 5)
 
-    def test_five_consecutive_turns_under_the_line_abandon_with_the_standing(self):
+    def test_one_reading_under_the_line_immediately_abandons_with_the_standing(self):
         state = {}
-        for turn in range(150, 154):
-            self.assertIsNone(civ6_play.below_leader_score_reading(
-                state, self._turn(turn, 69, 100), 0.70))
         verdict = civ6_play.below_leader_score_reading(
-            state, self._turn(154, 69, 100), 0.70)
+            state, self._turn(150, 69, 100), 0.70)
         self.assertEqual(verdict, {
-            "rule": "below_leader_score", "turn": 154, "score": 69,
+            "rule": "below_leader_score", "turn": 150, "score": 69,
             "rival_best": 100, "score_ratio": 0.69,
             "score_ratio_ceiling": 0.70, "min_turn": 150,
-            "consecutive_turns": 5,
         })
+        self.assertEqual(state, {})
 
     def test_nothing_fires_before_turn_150_however_far_behind(self):
         state = {}
         for turn in range(1, 150):
             self.assertIsNone(civ6_play.below_leader_score_reading(
                 state, self._turn(turn, 10, 500), 0.70))
-        self.assertNotIn("leader_score_streak", state)
+        self.assertEqual(state, {})
 
-    def test_at_the_line_is_not_under_it_and_a_recovery_resets_the_count(self):
+    def test_at_the_line_is_not_under_it_but_the_next_low_reading_ends_it(self):
         state = {}
-        for turn in range(160, 164):
-            civ6_play.below_leader_score_reading(
-                state, self._turn(turn, 300, 500), 0.70)
-        self.assertEqual(state["leader_score_streak"], 4)
-        # exactly 70 % is not under the line, and it resets the count
+        # Exactly 70 % is not under the line.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(164, 350, 500), 0.70))
-        self.assertEqual(state["leader_score_streak"], 0)
-        for turn in range(165, 169):
-            self.assertIsNone(civ6_play.below_leader_score_reading(
-                state, self._turn(turn, 300, 500), 0.70))
-        self.assertEqual(state["leader_score_streak"], 4)
+            state, self._turn(150, 350, 500), 0.70))
+        self.assertEqual(civ6_play.below_leader_score_reading(
+            state, self._turn(151, 349, 500), 0.70)["turn"], 151)
 
-    def test_a_repeated_turn_counts_once_and_silence_is_not_recovery(self):
+    def test_only_a_readable_agent_turn_is_a_termination_reading(self):
         state = {}
-        for _ in range(5):   # the agent re-reports one turn five times
-            self.assertIsNone(civ6_play.below_leader_score_reading(
-                state, self._turn(170, 300, 500), 0.70))
-        self.assertEqual(state["leader_score_streak"], 1)
-        # no standing: neither counts nor resets
+        # No standing is not a decision to abandon.
         self.assertIsNone(civ6_play.below_leader_score_reading(
             state, self._turn(171, 300, None), 0.70))
         self.assertIsNone(civ6_play.below_leader_score_reading(
             state, self._turn(172, 300, 0), 0.70))
         self.assertIsNone(civ6_play.below_leader_score_reading(
             state, self._turn(173, None, 500), 0.70))
-        self.assertEqual(state["leader_score_streak"], 1)
-        # other contexts and other event kinds are not readings at all
+        # Other contexts and event kinds are not termination readings either.
         self.assertIsNone(civ6_play.below_leader_score_reading(
             state, self._turn(174, 300, 500, ctx="spectator"), 0.70))
         self.assertIsNone(civ6_play.below_leader_score_reading(
             state, self._turn(174, 300, 500, kind="state"), 0.70))
-        self.assertEqual(state["leader_score_streak"], 1)
+        self.assertEqual(state, {})
 
     def test_zero_or_an_invalid_line_plays_every_game_out(self):
         for ceiling in (0, 0.0, -1, 1.5, True, None, "0.7"):
@@ -1958,13 +1942,13 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
                 for turn in range(150, 190):
                     self.assertIsNone(civ6_play.below_leader_score_reading(
                         state, self._turn(turn, 10, 500), ceiling))
-                self.assertNotIn("leader_score_streak", state)
+                self.assertEqual(state, {})
 
     def test_an_abandoned_game_is_filed_as_abandoned_and_nothing_else_is(self):
         """`reason` is the only field saying how a game ended. The harness's
         own stop takes it; a game that exited or stalled in the same poll keeps
         that ending; a refusal still outranks everything."""
-        abandoned = {"rule": "below_leader_score", "turn": 124,
+        abandoned = {"rule": "below_leader_score", "turn": 150,
                      "score_ratio": 0.6, "score_ratio_ceiling": 0.70}
         state = {"abandoned": abandoned, "seat": {"x": 1}, "configured": True,
                  "ruleset_match": True, "mode_mismatch": False}
@@ -1987,6 +1971,7 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         self.assertIn('"--restart-below-leader-ratio"', source)
         self.assertIn("default=DEFAULT_LEADER_SCORE_RATIO", source)
         self.assertIn('"abandoned": state.get("abandoned"),', source)
+        self.assertNotIn("LEADER_SCORE_PATIENCE", source)
         for scrapped in ("opening_city_target_reading(state",
                          "second_settler_loss_reading(state",
                          "behind_all_metrics_reading(",

@@ -95,25 +95,19 @@ OPENING_TEMPO_TURN = 60
 # lived in the supervisor and was on even where the login shell unset it) and
 # the measured win-rate table behind the old abandon floor (#2174; off). All
 # four are gone. What remains is the operator's one rule, and it is a default
-# of the harness itself, not of a launcher: at or after turn 150, a score
-# under 70 % of the leader's for LEADER_SCORE_PATIENCE consecutive readable
-# agent turns abandons the game.
+# of the harness itself, not of a launcher: at or after turn 150, a readable
+# score under 70 % of the leader's immediately abandons the game.
 #
 # "The leader" is the best-scoring rival the seat has met — `rival_best` in
 # the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
 # majors the seat's diplomacy has met). A rival still unmet at turn 150 is
 # invisible to the rule, which errs toward playing on.
 #
-# Patience is kept from the rules this replaces: score moves slowly, but a
-# city lost and retaken can dip a single reading, and one turn must not end a
-# game that the next five would have carried. A readable turn back over the
-# line resets the count; a turn without a standing neither counts nor resets
-# — silence is not recovery. An abandoned game is filed as its own ending
-# (`reason: "abandoned"` with the verdict), never as a stall, a wedge or a
-# defeat.
+# A missing standing is not evidence either way, so it does not end a game.
+# An abandoned game is filed as its own ending (`reason: "abandoned"` with the
+# verdict), never as a stall, a wedge or a defeat.
 LEADER_SCORE_MIN_TURN = 150
 DEFAULT_LEADER_SCORE_RATIO = 0.70
-LEADER_SCORE_PATIENCE = 5
 
 
 def _nonnegative_metric(value: object) -> float | int | None:
@@ -125,15 +119,15 @@ def _nonnegative_metric(value: object) -> float | int | None:
 
 
 def below_leader_score_reading(
-    state: dict, event: dict, score_ratio_ceiling: float
+    _state: dict, event: dict, score_ratio_ceiling: float
 ) -> dict | None:
-    """Fold one agent turn into the under-the-leader count; the verdict on fire.
+    """Return the immediate turn-150 under-the-leader termination verdict.
 
     `score_ratio_ceiling` outside (0, 1] — 0 from the command line — disables
     the rule, and every game is played to its end. Only an agent `turn` event
     at or after LEADER_SCORE_MIN_TURN with a readable score and rival score is
-    a reading; a distinct turn is counted once however often the agent
-    reports it.
+    a reading.  A reading strictly below the line terminates immediately;
+    equality remains in the game.
     """
     if (not isinstance(score_ratio_ceiling, (int, float))
             or isinstance(score_ratio_ceiling, bool)
@@ -143,20 +137,14 @@ def below_leader_score_reading(
         return None
     turn = event.get("turn")
     if (not isinstance(turn, int) or isinstance(turn, bool)
-            or turn < LEADER_SCORE_MIN_TURN
-            or turn == state.get("leader_score_last_turn")):
+            or turn < LEADER_SCORE_MIN_TURN):
         return None
     score = _nonnegative_metric(event.get("score"))
     rival_best = _nonnegative_metric(event.get("rival_best"))
     if score is None or rival_best is None or rival_best <= 0:
         return None
-    state["leader_score_last_turn"] = turn
     score_ratio = score / rival_best
     if score_ratio >= score_ratio_ceiling:
-        state["leader_score_streak"] = 0
-        return None
-    state["leader_score_streak"] = state.get("leader_score_streak", 0) + 1
-    if state["leader_score_streak"] < LEADER_SCORE_PATIENCE:
         return None
     return {
         "rule": "below_leader_score",
@@ -166,7 +154,6 @@ def below_leader_score_reading(
         "score_ratio": round(score_ratio, 4),
         "score_ratio_ceiling": score_ratio_ceiling,
         "min_turn": LEADER_SCORE_MIN_TURN,
-        "consecutive_turns": state["leader_score_streak"],
     }
 
 DEFAULT_CIVVIS_STRATEGY = ""
@@ -3271,8 +3258,8 @@ def _play(args: argparse.Namespace) -> int:
         if kind == "defeat":
             return bool(event.get("ours"))
         # And OUR decision that the game is lost — the operator's one rule:
-        # under 70 % of the leader's score after turn 150, five readable turns
-        # running. See `below_leader_score_reading`.
+        # under 70 % of the leader's score on a readable turn at or after 150.
+        # See `below_leader_score_reading`.
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         )
@@ -3280,8 +3267,8 @@ def _play(args: argparse.Namespace) -> int:
             state["abandoned"] = verdict
             print(f"[abandon] turn {verdict['turn']}: score {verdict['score']} "
                   f"is {verdict['score_ratio']:.1%} of the leader's "
-                  f"{verdict['rival_best']} for {verdict['consecutive_turns']} "
-                  f"turns, under the {verdict['score_ratio_ceiling']:.0%} line "
+                  f"{verdict['rival_best']}, under the "
+                  f"{verdict['score_ratio_ceiling']:.0%} line "
                   "— stopping the game rather than playing it out", flush=True)
             return True
         # A game with an optional mode on is not the game CIVVIS is compared
@@ -3716,10 +3703,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--restart-below-leader-ratio", type=float,
                     default=DEFAULT_LEADER_SCORE_RATIO,
-                    help="abandon a game whose score has sat under this share "
-                         "of the leader's (best met rival) for "
-                         "LEADER_SCORE_PATIENCE consecutive readable turns at "
-                         "or after turn LEADER_SCORE_MIN_TURN; 0 plays every "
+                    help="immediately abandon on a readable turn at or after "
+                         "LEADER_SCORE_MIN_TURN when our score is under this "
+                         "share of the leader's (best met rival); 0 plays every "
                          "game out. Operator request 2026-08-26: 0.70, and no "
                          "other early stop")
     ap.add_argument("--city-target", type=int, default=6)

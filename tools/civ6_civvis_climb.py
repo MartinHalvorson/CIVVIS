@@ -1503,9 +1503,9 @@ def main() -> int:
     # holds — 0.70, the operator's one early stop (2026-08-26). See
     # `civ6_play.below_leader_score_reading`.
     ap.add_argument("--restart-below-leader-ratio", type=float, default=None,
-                    help="abandon a game whose score has sat under this share "
-                         "of the leader's for five readable turns at or after "
-                         "turn 150; 0 plays every game out (forwarded to "
+                    help="immediately abandon on a readable turn at or after "
+                         "turn 150 when our score is under this share of the "
+                         "leader's; 0 plays every game out (forwarded to "
                          "civ6_play.py; operator request 2026-08-26: 0.70)")
     # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
     #

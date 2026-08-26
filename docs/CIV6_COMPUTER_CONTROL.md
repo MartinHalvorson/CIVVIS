@@ -673,14 +673,13 @@ What remains is one rule, carried by `civ6_play.py` itself as a default
 (`--restart-below-leader-ratio 0.70`; the supervisor and the climb forward
 `CIVVIS_RESTART_BELOW_LEADER_RATIO` verbatim when it is set, and `0` plays
 every game out): at or after turn 150, a score under 70 % of the leader's for
-five consecutive readable agent turns abandons the game. "The leader" is the
+any readable agent turn immediately abandons the game. "The leader" is the
 best-scoring rival the seat has met — `rival_best` in the mod's turn record —
 so a rival still unmet at turn 150 is invisible to the rule, which errs toward
-playing on. A readable turn back over the line resets the count; a turn
-without a standing neither counts nor resets. An abandoned run is filed with
-`reason: "abandoned"` and the verdict (`rule: below_leader_score`, turn,
-standing, ratio, line) in its summary and ledger row — its own ending, never a
-stall, a wedge or a defeat.
+playing on. A turn without a standing is not a termination reading. An
+abandoned run is filed with `reason: "abandoned"` and the verdict (`rule:
+below_leader_score`, turn, standing, ratio, line) in its summary and ledger row
+— its own ending, never a stall, a wedge or a defeat.
 
 ### The run always tests the latest code
 
