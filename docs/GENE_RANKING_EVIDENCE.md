@@ -186,6 +186,9 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `amenity-project-preemption-2` | off (unmeasured) | An amenity crisis repair is bought with Gold when the treasury covers it, so the Science plan's repeatable project keeps its queue; only a district or an unaffordable building still pauses the project. | 1 |
+| `boost-first-research` | off (unmeasured) | Scale a node whose boost is already in hand by what the discount buys under the value function's own cost divisor. | 1 |
+| `boost-unlock-research` | off (unmeasured) | Credit a technology or civic with the boosts it makes chaseable by unlocking what their triggers need. | 1 |
+| `boost-wait-research` | off (unmeasured) | Take a node the empire would finish before its own eureka lands after that eureka, not before it. | 1 |
 | `build-what-cards-boost` | off (unmeasured) | Lean the city production governor toward items the slotted policy deck makes cheap, by half the card's bonus. | 1 |
 | `builder-supply-floor` | off (unmeasured) | Keep one Builder per city while there is still land to improve, priced where it can win the queue. | 1 |
 | `buy-what-cards-cannot-boost` | off (unmeasured) | Price a Gold purchase at the build's card-boosted rate, so items a slotted card discounts lose purchase priority to items no card touches. | 1 |
@@ -221,10 +224,12 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | `quest-trade-route` | off (unmeasured) | Sends the Trader to the city-state that is asking us for a trade route, for the Envoy. | 1 |
 | `rapid-city-expansion` | off (unmeasured) | Run the screenable native expansion curve: rapid safe settlement first, then a conquest posture only after the practical frontier is exhausted. | 1 |
 | `recovery-reads-the-war` | off (unmeasured) | Measure the Recovery power gap against the war we are actually fighting. | 1 |
+| `science-building-first` | off (unmeasured) | An adaptive seat stops racing for a Great Prophet: the race costs more science than the religion returns. | 1 |
 | `settler-guard-holds-2` | off (unmeasured) | A settler's bound guard is no protection when two visible hostiles that can reach the tile each match its strength, not only when one is 1.5× it. | 1 |
 | `settler-second-look` | off (unmeasured) | After a Settler's first move, discard only its disposable cached site while movement remains, so the next leg can use its new sight. | 1 |
 | `settler-target-hysteresis-2` | off (unmeasured) | A settle site one settler drops for danger is set aside for every own settler for the same window, so a second settler does not march to the tile the first just fled. | 1 |
 | `siege-is-progress-2` | off (unmeasured) | The first turn an own land unit stands within two tiles of an at-war city resets the war-fatigue clock once for that city, so a campaign still walking to its target is not offered away as stalled. | 1 |
+| `skip-the-prophet-race` | off (unmeasured) | `AdvancedAi::skip_the_prophet_race`; opt-in gene `skip-the-prophet-race`. | 1 |
 | `solvency-first-trade-slot-2` | off (unmeasured) | Reserve every empty trade route slot the empire can use, not only the first. | 1 |
 | `upgrade-the-garrison` | off (unmeasured) | Modernize the standing army before the discretionary purchase pass spends the treasury, while a major war is being fought. | 1 |
 | `wonder-adjacent-sites` | off (unmeasured) | Price a settle site the way the engine pays it beside a natural wonder: the wonder's projected yields on every neighbouring work tile and a capped credit for the amenity, appeal, Holy Site adjacency and era score no yield table shows. | — |
