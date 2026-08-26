@@ -24907,6 +24907,25 @@ impl AdvancedAi {
                     .to_string(),
             );
         }
+        // A visible major city this close is not a speculative border: its
+        // pressure is already on the mirrored board.  The default genome
+        // deliberately withholds `loyalty-rate-alarm`, but that must not turn
+        // an obvious, immediately doomed neighbour colony into a permitted
+        // settle.  Keep the broad rate forecast behind that gene; this narrow
+        // frontier floor only prices a major city inside the same five-tile
+        // radius used for an unresolved major border.
+        if self.frontier_loyalty && Self::visible_major_city_near(g, pid, site) {
+            if let Some((loyalty_per_turn, turns_to_flip)) =
+                Self::settle_site_forecast_revolt(g, pid, site)
+            {
+                return Some(format!(
+                    "it is within five tiles of a visible rival city and would lose \
+                     {:.1} Loyalty a turn, revolting in about {:.0} turns",
+                    -loyalty_per_turn,
+                    turns_to_flip.ceil()
+                ));
+            }
+        }
         None
     }
 
@@ -24923,6 +24942,30 @@ impl AdvancedAi {
         if let Some(why) = self.settle_site_frontier_loyalty_verdict(g, pid, site) {
             return Some(why);
         }
+        Self::settle_site_forecast_revolt(g, pid, site).map(|(loyalty_per_turn, turns_to_flip)| {
+            format!(
+                "the city would lose {:.1} Loyalty a turn beside its neighbours and revolt in about {:.0} turns",
+                -loyalty_per_turn,
+                turns_to_flip.ceil()
+            )
+        })
+    }
+
+    /// The narrow, default-on frontier floor only prices a rival major city
+    /// the mirror already knows about.  Wider rate forecasting remains the
+    /// separately screened `loyalty-rate-alarm` treatment.
+    fn visible_major_city_near(g: &Game, pid: usize, site: Pos) -> bool {
+        g.cities.values().any(|city| {
+            city.owner != pid
+                && !g.players[city.owner].is_minor
+                && !g.players[city.owner].is_barbarian
+                && g.wdist(city.pos, site) <= UNRESOLVED_MAJOR_BORDER_RADIUS
+        })
+    }
+
+    /// The live mirror's prospective Loyalty result for a city founded at
+    /// `site`, limited to cities that would revolt before their growth horizon.
+    fn settle_site_forecast_revolt(g: &Game, pid: usize, site: Pos) -> Option<(f64, f64)> {
         let mut forecast = g.speculative_clone();
         let city = forecast.found_city_for(pid, site, None);
         let city = &forecast.cities[&city];
@@ -24930,13 +24973,7 @@ impl AdvancedAi {
         (loyalty_per_turn < -f64::EPSILON)
             .then(|| city.loyalty / -loyalty_per_turn)
             .filter(|turns_to_flip| *turns_to_flip <= SETTLE_TARGET_LOYALTY_RISK_TURNS)
-            .map(|turns_to_flip| {
-                format!(
-                    "the city would lose {:.1} Loyalty a turn beside its neighbours and revolt in about {:.0} turns",
-                    -loyalty_per_turn,
-                    turns_to_flip.ceil()
-                )
-            })
+            .map(|turns_to_flip| (loyalty_per_turn, turns_to_flip))
     }
 
     /// Whether an unresolved met-major border lies within

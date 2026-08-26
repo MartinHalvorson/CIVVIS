@@ -12770,10 +12770,30 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
         "the ordinary controller retains its established non-forecast path"
     );
 
+    // `loyalty-rate-alarm` is intentionally not in the default genome, but a
+    // city this close to an already visible rival capital is a frontier safety
+    // failure, not an invitation to enable that broader optional forecast.
+    let mut default_live = AdvancedAi::new();
+    default_live.enable_live_bridge();
+    assert!(default_live.frontier_loyalty);
+    assert!(!default_live.base.loyalty_rate_alarm);
+    let why = default_live
+        .settle_site_frontier_loyalty_verdict(&game, 0, target)
+        .expect("the default frontier guard rejects a nearby visible major city");
+    assert!(why.contains("visible rival city"), "{why}");
+    let mut frontier_board = game.clone();
+    assert!(
+        !default_live.advanced_settler_step(&mut frontier_board, 0, settler),
+        "the default live controller must not found an obvious rival-pressed colony"
+    );
+    assert!(default_live.settler_site_is_dead(settler, target));
+    assert_eq!(frontier_board.player_city_ids(0).len(), 1);
+
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
-    // The loyalty forecast under test rides on `loyalty-rate-alarm`, which the
-    // batch rule holds off as of the 2026-08-25 batches; the arm turns it on.
+    // Keep the broad optional forecast independently covered: the default
+    // frontier floor above has already rejected this nearby known city.
+    live.frontier_loyalty = false;
     live.enable_loyalty_rate_alarm();
     let why = live
         .settle_site_loyalty_verdict(&game, 0, target)
