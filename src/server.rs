@@ -16403,24 +16403,103 @@ fetchpriority=\"high\""
 
         // LaunchBar.xml opens with the tech tree and the civics tree, each
         // ringed by the meter of what it is studying, and then runs
-        // Government, Religion, Great People.
+        // Government, Religion, Great People, Great Works, Climate, Governors,
+        // History. The reports and the foreign-affairs rooms are that game's
+        // partial-screen hooks, upper right, read right to left: Reports, Era
+        // progress, Trade routes, City-States, Espionage.
         assert!(EMBEDDED_INDEX.contains(
-            "(empireWorld ? launchTreeHook(\"science\") + launchTreeHook(\"culture\") : \"\") +"
+            "launchTreeHook(\"science\") + launchTreeHook(\"culture\") +\n    LAUNCH_BAR_ORDER"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"cities\","
+            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"works\",\n\
+                          \"climate\", \"governors\", \"history\"];"
         ));
         assert!(EMBEDDED_INDEX.contains("style=\"--ring:${pct}%\""));
-
-        // The corners. The selected unit owns the lower right, the
-        // notification rail climbs out of it, and the chart takes the lower
-        // left the standings masthead used to make unusable. There is no
-        // action corner: End Turn, the auto-play controls and the transport
-        // all stay in the command deck, which stays open.
-        assert!(!EMBEDDED_INDEX.contains("id=\"actionpanel\""));
-        assert!(!EMBEDDED_INDEX.contains("panel.appendChild(footer);"));
+        for piece in [
+            "id=\"hooksbar\"",
+            "id=\"hooktabs\"",
+            "const HOOK_BAR = [",
+            "{tab: \"spies\"},\n  {tab: \"states\"},\n  {tab: \"trade\"",
+            "{tab: \"era\", sense:",
+            "{tab: \"cities\", icon: \"▤\", name: \"Reports\",",
+            "body.civ6-frame #hooksbar {",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the partial-screen hooks are missing {piece}"
+            );
+        }
+        // The hooks and the launch bar stand under the standings masthead,
+        // not beside it: both are placed off one band the masthead sets.
+        assert!(EMBEDDED_INDEX.contains("top: var(--solo-bar-top); right: auto; bottom: auto;"));
+        assert!(EMBEDDED_INDEX.contains("right: var(--panel-edge); top: var(--solo-bar-top);"));
         assert!(EMBEDDED_INDEX.contains(
-            "top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
+            "body.civ6-frame.rankings-open:not(.overlay-players-hidden) #maparea {\n    --solo-masthead:"
+        ));
+        // The four screens Civ 6 hangs on that bar and this client had no
+        // screen for.
+        for piece in [
+            "{id: \"works\", icon: \"▣\", name: \"Great Works\"}",
+            "{id: \"climate\", icon: \"☂\", name: \"Climate\"}",
+            "{id: \"history\", icon: \"◷\", name: \"History\"}",
+            "{id: \"era\", icon: \"✦\", name: \"Era Progress\"}",
+            "function empireGreatWorks()",
+            "function empireClimate()",
+            "function empireHistory()",
+            "function empireEra()",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(piece), "the launch bar's screen is missing {piece}");
+        }
+
+        // The corners. End Turn owns the lower right (ActionPanel.xml) with
+        // what the turn is waiting on and the choices that would settle it
+        // over it; the selected unit stands inboard of that corner, the
+        // notification rail climbs out of it, and the chart takes the lower
+        // left the standings masthead used to make unusable. The button is
+        // the deck's old node, now written in the corner — not re-parented,
+        // and not a second copy.
+        let corner = EMBEDDED_INDEX
+            .find("<div id=\"actionpanel\" aria-label=\"Turn actions\">")
+            .expect("the action corner");
+        let end_turn = EMBEDDED_INDEX
+            .find("<button class=\"primary\" id=\"endturn\">End turn</button>")
+            .expect("End Turn");
+        assert!(corner < end_turn && end_turn - corner < 400, "End Turn stands in the corner");
+        assert_eq!(EMBEDDED_INDEX.matches("id=\"endturn\"").count(), 1);
+        assert!(!EMBEDDED_INDEX.contains("panel.appendChild(footer);"));
+        for piece in [
+            "id=\"actionhead\"",
+            "id=\"actionoptions\"",
+            "function paintActionCorner()",
+            "function actionOptionsFor(next)",
+            "const ACTION_OPTION_CAP = 12;",
+            "body.civ6-frame #actionpanel {",
+            "html:not(.seat-known) #actionpanel { display: none !important; }",
+            "publishSoloHeight(panel, \"--solo-action-height\");",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(piece), "the action corner is missing {piece}");
+        }
+        // Every option is one of the engine's legal actions posted the way the
+        // tree, the city screen and the deck already post it — never an
+        // action the corner composed itself.
+        let options = EMBEDDED_INDEX
+            .split_once("function actionOptionsFor(next) {")
+            .expect("the options")
+            .1
+            .split_once("\nfunction paintActionCorner()")
+            .expect("the end of the options")
+            .0;
+        for post in [
+            "pickTree(${JSON.stringify(tree)},${JSON.stringify(n)})",
+            "send(${JSON.stringify(entry.sites[0])})",
+            "selectUnitById(${unit.id})",
+            "send(${JSON.stringify(action)})",
+        ] {
+            assert!(options.contains(post), "the corner must post {post} unchanged");
+        }
+        assert!(!options.contains("{type:"), "the corner composes no action of its own");
+        assert!(EMBEDDED_INDEX.contains(
+            "top: var(--solo-below-bars); right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
         ));
         assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
         assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
@@ -16606,9 +16685,10 @@ fetchpriority=\"high\""
             );
         }
 
-        // The transport stays in the deck it is written in. #2382 moved it out
-        // to the action corner by the same node move #2275 used for End Turn;
-        // both are reverted, so neither node is re-parented at all.
+        // The transport and the auto-play controls stay in the deck they are
+        // written in — Start new game first, then who plays the seat and for
+        // how long — and neither node is re-parented. End Turn is the one
+        // control that left: it stands in the action corner on the map.
         assert!(!EMBEDDED_INDEX.contains("panel.appendChild(bar);"));
         assert!(EMBEDDED_INDEX.contains("<div id=\"specbar\" style=\"display:none\">"));
         let deck = EMBEDDED_INDEX
@@ -16617,15 +16697,27 @@ fetchpriority=\"high\""
             .1;
         let footer = deck
             .find("id=\"humanfooter\"")
-            .expect("End Turn in the deck");
+            .expect("the auto-play controls in the deck");
         let transport = deck
             .find("id=\"specbar\"")
             .expect("the transport in the deck");
         let close = deck.find("</div>\n  </div>").unwrap_or(deck.len());
         assert!(
-            footer < close && transport < close,
-            "End Turn and the transport are the deck's, and nothing moves them out of it"
+            transport < footer && footer < close,
+            "Start new game leads the deck and the auto-play controls follow it"
         );
+        assert!(
+            !deck[..close].contains("id=\"endturn\""),
+            "End Turn is the corner's, not the deck's"
+        );
+        // The auto-play button says how long the loan is, and follows the
+        // picker beside it.
+        assert!(EMBEDDED_INDEX.contains("▶▶ Auto-play 1 turn</button>"));
+        assert!(EMBEDDED_INDEX.contains("function syncAutoplayLabel()"));
+        assert!(EMBEDDED_INDEX.contains("`▶▶ Auto-play ${turns} turn${turns === 1 ? \"\" : \"s\"}`"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"autoplayturns\").onchange = () => syncAutoplayLabel();"
+        ));
 
         // The report's own class still exists — ☗ folds the masthead and the
         // rail away for a look at the map — but only a played seat ever wears
