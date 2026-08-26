@@ -537,6 +537,7 @@ class TheOperatorPins(unittest.TestCase):
             "apostle-promotion-by-role",
             "army-target-weighs-enemy",
             "boost-wait-research",
+            "builder-supply-floor",
             "buildings-before-projects",
             "buy-what-cards-cannot-boost",
             "camp-party",
@@ -550,6 +551,7 @@ class TheOperatorPins(unittest.TestCase):
             "district-planning",
             "early-contact-window",
             "elective-war-yields-to-a-lane",
+            "enhancer-for-the-corps",
             "expansion-schedule",
             "founder-temple",
             "gold-for-the-young-city",
@@ -559,26 +561,39 @@ class TheOperatorPins(unittest.TestCase):
             "lane-great-people",
             "loyalty-rate-alarm",
             "missionary-evades-raiders",
+            "native-emergency-purchase",
             "naval-threat-triage",
             "never-an-empty-queue",
             "one-launch-pad",
+            "pantheon-board",
+            "quest-boost",
             "quest-trade-route",
             "recon-replacement",
+            "relief-targets-the-siege",
+            "religious-units-heal-first",
             "research-tier-premium",
+            "rival-suzerainty-alarm",
+            "science-chain-alarm",
             "settler-screen",
-            "settler-target-hysteresis",
+            "settler-target-hysteresis-2",
+            "settler-threat-detour",
             "stranded-settler-discount",
+            "unchosen-war-keeps-the-lane",
             "unit-cost-efficiency",
+            "unit-objective-memory",
             "wonder-adjacent-sites",
             "wonder-score-tally",
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 37)
+        self.assertEqual(len(pins), 49)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
-        self.assertIn("settler-target-hysteresis", genome)
-        self.assertNotIn("settler-target-hysteresis-2", genome)
+        # ⭐ The versioned family the operator moved on 2026-08-26: the ship
+        # goes to v2 by a pin while v1 is held off below, so the family still
+        # ships exactly one version.
+        self.assertIn("settler-target-hysteresis-2", genome)
+        self.assertNotIn("settler-target-hysteresis", genome)
         self.assertNotIn("raid-pillage-prizes", genome)
         for tag in pins:
             self.assertIn(tag, screenable, tag)
@@ -592,6 +607,95 @@ class TheOperatorPins(unittest.TestCase):
             all(call in {"on", "off", "unresolved"} for call in readings.values()),
             readings,
         )
+
+
+class TheOperatorHolds(unittest.TestCase):
+    """⭐ THE OPERATOR'S HOLDS (2026-08-26): the mirror of the pins — genes
+    named **off** by hand, above the batch rule and above a retained
+    selection. A hold moves the default and nothing else: the rule's own
+    answer stays published, the gene keeps its row and its code, and no gene
+    is named by both lists."""
+
+    def build(self, batches: list[int | None], holds: tuple[str, ...],
+              pins: tuple[str, ...] = ()):
+        """A ledger for one gene `g` from its batch readings, newest first,
+        built with `holds` standing in for `OPERATOR_DEFAULT_OFF`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            files = batch_files(tmp, [
+                batch([] if wins is None else [{"tag": "g", "wins": wins}])
+                for wins in batches
+            ])
+            with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_ON", pins):
+                with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_OFF", holds):
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        return gene_ledger.build_ledger(
+                            [], filter_known=False, reporting_batches=files)
+
+    def test_a_held_gene_stays_off_and_the_rule_still_says_on(self):
+        columns = [25, 15, 5]
+        self.assertEqual(gene_ledger.batch_rule(columns), "on")
+        on = self.build(columns, holds=())
+        self.assertEqual(on["rules"]["deployment_genome"], ["g"])
+        self.assertEqual(on["rules"]["operator_default_off"], [])
+        off = self.build(columns, holds=("g",))
+        self.assertEqual(off["rules"]["deployment_genome"], [])
+        self.assertEqual(off["rules"]["operator_default_off"], ["g"])
+        self.assertEqual(off["rules"]["batch_decisions"], {"g": "on"},
+                         "the hold is published as an override, not as agreement")
+        self.assertEqual(off["counts"]["default_on"], 0)
+
+    def test_a_hold_beats_a_pin_on_the_same_gene_only_by_never_happening(self):
+        # The two lists are one selection, so an overlap is refused rather
+        # than resolved by precedence.
+        self.assertEqual(
+            set(gene_ledger.OPERATOR_DEFAULT_ON) & set(gene_ledger.OPERATOR_DEFAULT_OFF),
+            set(),
+        )
+
+    def test_a_hold_the_registry_does_not_screen_is_a_hard_error(self):
+        allowed = {"kept"}
+        self.assertEqual(gene_ledger.operator_holds(allowed, strict=False), ())
+        with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_OFF", ("no-such-gene",)):
+            with self.assertRaises(SystemExit) as caught:
+                gene_ledger.operator_holds(allowed, strict=True)
+        self.assertIn("no-such-gene", str(caught.exception))
+        with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_OFF", ("kept",)):
+            self.assertEqual(gene_ledger.operator_holds(allowed, strict=True), ("kept",))
+
+    def test_a_hold_does_not_rescue_a_gene_from_removal(self):
+        # Off by the rule and off by the hold is still a gene whose code the
+        # rule says must go; the removal is reported either way.
+        ledger = self.build([-11, -40, -12], holds=("g",))
+        self.assertEqual(ledger["rules"]["batch_decisions"], {"g": "remove"})
+        self.assertEqual(ledger["rules"]["removals_due"], ["g"])
+
+    def test_the_checked_in_holds_are_the_operators_four_plus_the_moved_version(self):
+        ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        rules = ledger["rules"]
+        expected_holds = {
+            "congress-counter-leader",
+            "one-war-at-a-time",
+            "science-multiplier-payoff",
+            "settler-factory-coordination",
+            "settler-target-hysteresis",
+        }
+        self.assertEqual(tuple(sorted(expected_holds)), gene_ledger.OPERATOR_DEFAULT_OFF)
+        self.assertEqual(rules["operator_default_off"], sorted(expected_holds))
+        screenable = set(gene_ledger.screenable_tags())
+        genome = set(rules["deployment_genome"])
+        for tag in expected_holds:
+            self.assertIn(tag, screenable, tag)
+            self.assertNotIn(tag, genome, f"{tag} is held off but ships anyway")
+            self.assertNotIn(tag, rules["operator_default_on"], tag)
+        # ⭐ WHY A HOLD WAS NEEDED AT ALL. Under `operator-retained-selection`
+        # a rotation carries the recorded genome forward, so the batch rule
+        # reading a gene `off` does not take it out — four of these five read
+        # off and shipped anyway. The fifth, `settler-target-hysteresis`, the
+        # rule reads `on`. Both routes need naming, and neither is the rule.
+        self.assertEqual(rules["deployment_policy"],
+                         gene_ledger.RETAINED_DEPLOYMENT_POLICY)
+        for tag in expected_holds:
+            self.assertIn(rules["batch_decisions"].get(tag), {"on", "off"}, tag)
 
 
 class RetainedReportingDefaults(unittest.TestCase):
