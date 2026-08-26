@@ -530,6 +530,12 @@ while true; do
   # play log written after the mark can vouch for this cycle.
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
+  # The climb retires the follower above and starts its own fresh one before
+  # the attempt.  Carry the exact selected revision under mirror-only names;
+  # the climb promotes them only into that replacement follower, so the game
+  # controller never inherits the display server's provenance stamp.
+  CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
+  CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" \
       "${WITHOUT_ARGS[@]}" \
