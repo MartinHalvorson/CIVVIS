@@ -102,17 +102,11 @@ impl AdvancedAi {
     ///
     /// The Guru is the corps' only field heal and `guru_cap` reads
     /// `offensive && apostles > 0`, so the founder whose whole religious
-    /// effort is defending its own cities can never buy one. This says yes
-    /// only when there is something for it to heal: the home is under
-    /// conversion pressure and a religious unit is already damaged.
-    pub(super) fn guru_defends_the_corps(
-        &self,
-        g: &Game,
-        pid: usize,
-        home_under_pressure: bool,
-    ) -> bool {
-        // See `guru_heals_the_corps_2`: a damaged corps anywhere is enough.
-        if !(self.guru_heals_the_corps && home_under_pressure) && !self.guru_heals_the_corps_2 {
+    /// effort is defending its own cities can never buy one. The surviving
+    /// opt-in says yes only when there is something for it to heal: one of
+    /// its own non-Guru religious units is already damaged, wherever it is.
+    pub(super) fn guru_defends_the_corps(&self, g: &Game, pid: usize) -> bool {
+        if !self.guru_heals_the_corps_2 {
             return false;
         }
         g.units.values().any(|unit| {

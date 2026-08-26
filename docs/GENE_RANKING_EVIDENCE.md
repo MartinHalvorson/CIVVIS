@@ -10,7 +10,7 @@ The deployment genome follows the batch rule (operator, 2026-08-25): a gene's th
 
 ### What the posterior resolves
 
-Of 76 priced genes the interval clears zero for **21 upward** and **0 downward**; **55 straddle zero**. Those are evidence states, not automatic deployment calls.
+Of 75 priced genes the interval clears zero for **21 upward** and **0 downward**; **54 straddle zero**. Those are evidence states, not automatic deployment calls.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Default | Evidence call |
 |---|---:|---:|---:|---|---|
@@ -42,7 +42,7 @@ Of 76 priced genes the interval clears zero for **21 upward** and **0 downward**
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 3 | 92,604 | 76 |
+| standard | 3 | 92,604 | 75 |
 | legacy | 7 | 132,440 | 48 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
@@ -124,7 +124,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `home-defense` | -10 [-26, +6] | 11.7% | on | +9.9 | 137,225 |
 | `relief-targets-the-siege` | +10 [-7, +26] | 87.0% | off | +9.6 | 153,392 |
 | `religious-units-heal-first` | +9 [-14, +33] | 78.0% | off | +9.3 | 208,321 |
-| `guru-heals-the-corps` | -4 [-56, +49] | 44.7% | on | +9.3 | 1,648,811 |
 | `strategic-wonders` | +9 [-7, +25] | 85.6% | off | +8.8 | 192,886 |
 | `lane-culture-spending` | +9 [-15, +32] | 75.9% | off | +8.6 | 250,826 |
 | `early-contact-window` | +8 [-16, +31] | 73.8% | off | +7.8 | 318,670 |
@@ -256,6 +255,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `research-grants-first` | +41 | 17.08% | 16.53% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `lane-congress-ballot` | +40 | 17.06% | 16.53% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `wonder-ring-settle-value` | +34 | 17.00% | 16.56% | `2026-08-25-standard-continuous-4476-total-seats.json` |
+| `guru-heals-the-corps` | +32 | 16.99% | 16.56% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `wonder-prereq-reach` | +29 | 16.96% | 16.38% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `science-payback-horizon` | +24 | 16.91% | 16.59% | `2026-08-25-standard-continuous-4476-total-seats.json` |
 | `envoy-infrastructure` | +18 | 16.84% | 16.61% | `2026-08-25-standard-continuous-4476-total-seats.json` |
