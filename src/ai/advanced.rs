@@ -24131,10 +24131,11 @@ impl AdvancedAi {
         (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
-    /// The first six legal founding rings beside a visible city-state are not a
-    /// safe frontier. A rival Suzerain can turn the city-state hostile without
+    /// The first six legal founding rings beside a revealed city-state are not
+    /// a safe frontier. A rival Suzerain can turn the city-state hostile without
     /// warning, then use the city-state's mobile siege stack to take an
-    /// un-walled colony before it can prepare a defence.
+    /// un-walled colony before it can prepare a defence. A city center the seat
+    /// has already charted remains evidence after fog closes over it.
     ///
     /// This is part of the standard `settlement_safety` policy rather than an
     /// opt-in defence gene: it prevents the exposed city from being founded,
@@ -24143,7 +24144,6 @@ impl AdvancedAi {
         &self,
         g: &Game,
         pid: usize,
-        visible: &TileBits,
     ) -> BTreeSet<Pos> {
         if !self.settlement_safety {
             return BTreeSet::new();
@@ -24152,7 +24152,9 @@ impl AdvancedAi {
             .values()
             .filter(|city| {
                 city.owner != pid
-                    && g.sees(visible, city.pos)
+                    && g.players
+                        .get(pid)
+                        .is_some_and(|player| player.explored.contains(&city.pos))
                     && g.players.get(city.owner).is_some_and(|player| {
                         player.alive && player.is_minor && !player.is_barbarian
                     })
@@ -24765,7 +24767,7 @@ impl AdvancedAi {
             .values()
             .flat_map(|city| g.wdisk(city.pos, 3))
             .collect::<BTreeSet<_>>();
-        let city_state_exclusion = self.city_state_settlement_exclusion(g, pid, &visible);
+        let city_state_exclusion = self.city_state_settlement_exclusion(g, pid);
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
