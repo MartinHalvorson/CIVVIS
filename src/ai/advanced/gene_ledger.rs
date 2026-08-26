@@ -644,9 +644,15 @@ mod tests {
 
     /// ⭐ THE OPERATOR'S PINS: each named gene ships, the rule's own answer for
     /// it is still published, and a pin never rescues a gene the rule removes
-    /// from the pool. Nine genes on 2026-08-26, every one of them a gene the
-    /// rule reads off at clause 4 — two positive batches, a negative third,
-    /// and a mean no higher than 7.
+    /// from the pool.
+    ///
+    /// ⚠ What the rule reads for a pinned gene is not an invariant and does
+    /// not belong here. This doc used to say all nine were genes the rule read
+    /// off at clause 4; that held for the eight hours between the pins landing
+    /// (#2536) and the batch published in #2551, which turned seven of the
+    /// nine on by itself. `batch_columns` and the ledger's
+    /// `rules.batch_decisions` carry today's answer, regenerated with every
+    /// batch. A comment cannot.
     #[test]
     fn the_operator_pins_ship_above_the_rule() {
         let retained = deployment_policy() == "operator-retained-selection";
@@ -685,10 +691,10 @@ mod tests {
                 }
             }
         }
-        // On the 2026-08-26 batches every one of the nine is an override —
-        // the rule reads it off — and the ledger keeps saying so. That is a
-        // fact about today's columns, not an invariant: a later batch may
-        // turn a pinned gene on by the rule, and the pin then agrees with it.
+        // A pin over a gene no batch has priced would ship on its name alone,
+        // which the operator may well mean — but it has never happened yet,
+        // and the day it does is worth noticing rather than discovering later
+        // from a genome nobody can explain.
         assert!(
             pins.iter().all(|tag| batch_columns(tag).is_some()),
             "every pin is priced today; a pin over an unpriced gene ships on its name alone"
