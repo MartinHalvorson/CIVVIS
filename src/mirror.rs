@@ -8246,6 +8246,7 @@ mod tests {
             Some("project:campus_research_grants")
         );
         assert_eq!(key("UNIT_NOT_A_UNIT", None), None);
+    }
 
     /// A board with one met rival on seat 1, for the host-diplomacy tests.
     fn diplomacy_board(turn: u32, rival: StateRival) -> (Snapshot, StateSnapshot) {
