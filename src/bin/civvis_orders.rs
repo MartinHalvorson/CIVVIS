@@ -721,6 +721,80 @@ impl HostCityAttackCooldowns {
     }
 }
 
+/// The ranged strikes the decider has already ordered this turn, per host
+/// city, replayed onto every board built for the turn.
+///
+/// ★★★★ THE EXPORT CARRIES NO "ATTACKS REMAINING" FOR A CITY. A unit's
+/// `attacks_remaining` (`Unit:GetAttacksRemaining`) crosses on every frame and
+/// the board plans no second shot for it; a city's strike is answered only by
+/// `CityManager.CanStartCommand(city, CityCommandTypes.RANGE_ATTACK)`
+/// (`Base/Assets/UI/WorldView/CityBannerManager.lua:1555`, `CanRangeAttack`;
+/// `WorldInput.lua:2545` asks the same before `RequestCommand`), which the mod
+/// asks at order time and which refuses a second strike in the same turn. The
+/// decider plans every frame on a throwaway clone of the mirror, so the
+/// authoritative board's `struck` stayed false across the turn's replan
+/// frames and the same city was ordered to fire again on each one. Measured
+/// on run civvis-20260826T184456Z: 66 `city_strike` orders, 31 refused
+/// (`city_strike_refused`), every one of the 31 a re-issue on frame 1 or 2 by
+/// a city whose frame-0 strike had landed (the target's hit points fell
+/// between the frames); walls, range (≤ 2), visibility and war state were in
+/// order on all 31, and no frame-0 strike was refused. Over the last five
+/// control runs the refusal was 75 of 161 strikes. Remembered here exactly
+/// like the host's repair cooldown above, because it belongs to the host's
+/// turn and not to the reconstructed board.
+///
+/// Victor's Embrasure grants one extra strike; the count of strikes ordered
+/// is kept so `extra_strikes_used` carries it and `city_can_strike` reads the
+/// same rule it reads for a strike applied on the board itself.
+#[derive(Default)]
+struct HostCityStrikes {
+    turn: Option<u32>,
+    city: std::collections::BTreeMap<i64, i32>,
+    encampment: std::collections::BTreeMap<i64, i32>,
+}
+
+impl HostCityStrikes {
+    /// Count the strikes that left for the host on this frame.
+    fn observe(&mut self, turn: u32, orders: &[IssuedOrder]) {
+        if self.turn != Some(turn) {
+            self.turn = Some(turn);
+            self.city.clear();
+            self.encampment.clear();
+        }
+        for order in orders {
+            let Some(subject) = order.subject else {
+                continue;
+            };
+            match order.kind.as_str() {
+                "city_strike" => *self.city.entry(subject).or_insert(0) += 1,
+                "encampment_strike" => *self.encampment.entry(subject).or_insert(0) += 1,
+                _ => {}
+            }
+        }
+    }
+
+    /// Spend, on a board built for `turn`, the strikes already ordered on it.
+    fn apply(&self, mirror: &mut civvis::mirror::LiveMirror, turn: u32) {
+        if self.turn != Some(turn) {
+            return;
+        }
+        for (&host_city, &city) in &mirror.cid_of {
+            let Some(live) = mirror.game.cities.get_mut(&city) else {
+                continue;
+            };
+            if let Some(&count) = self.city.get(&host_city) {
+                live.struck = true;
+                live.extra_strikes_used = live.extra_strikes_used.max(count - 1);
+            }
+            if let Some(&count) = self.encampment.get(&host_city) {
+                live.encampment_struck = true;
+                live.encampment_extra_strikes_used =
+                    live.encampment_extra_strikes_used.max(count - 1);
+            }
+        }
+    }
+}
+
 /// Plots the host will not walk a unit onto, learned from moves that went
 /// nowhere.
 ///
@@ -6293,6 +6367,9 @@ fn main() {
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
     let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
+    // A city's strike is once per host turn and the export never says it was
+    // spent; the decider's own earlier frames do. See `HostCityStrikes`.
+    let mut host_city_strikes = HostCityStrikes::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -6397,6 +6474,7 @@ fn main() {
                     }
                     board.carry_treasury_baseline(carried_treasury);
                     host_city_attack_cooldowns.apply(&mut board);
+                    host_city_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
                     let reply = decide(
                         &mut board,
@@ -6424,6 +6502,7 @@ fn main() {
                                 frontier,
                             );
                             host_city_attack_cooldowns.apply(&mut fresh);
+                            host_city_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
                             let reply = decide(
                                 &mut fresh,
@@ -6443,6 +6522,7 @@ fn main() {
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
                             host_city_attack_cooldowns.apply(existing);
+                            host_city_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
                             // `--fresh-ai` isolates the two halves of persistence: keep the
                             // mirror, throw away the agent. If orders come back, the empty
@@ -6487,9 +6567,11 @@ fn main() {
                         }
                     }
                 };
+                let orders = IssuedOrder::from_reply(&reply);
+                host_city_strikes.observe(state.turn, &orders);
                 pending_orders.push(PendingOrders {
                     turn: state.turn,
-                    orders: IssuedOrder::from_reply(&reply),
+                    orders,
                     before: state.clone(),
                 });
                 append_rows_to_reply(&reply, &verdicts)
@@ -7351,6 +7433,78 @@ mod tests {
             envoys, 4,
             "the confirmed peace frame spends the full suzerainty pool: {confirmed}"
         );
+    }
+
+    /// Run civvis-20260826T184456Z: every one of the 31 refused city strikes
+    /// was a replan-frame re-issue by a city whose frame-0 strike had landed.
+    /// The export carries no per-city "attacks remaining", so the decider's
+    /// own earlier frames are the record, and every board built for the turn
+    /// must read it.
+    #[test]
+    fn a_city_that_fired_on_an_earlier_frame_holds_its_strike_for_the_turn() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 40;
+        let city = &mut state.cities[0];
+        city.producing = None;
+        city.buildings = vec!["BUILDING_WALLS".to_string()];
+        city.damage = 0.0;
+        city.max_damage = 200.0;
+        city.wall_damage = 0.0;
+        city.max_wall_damage = 100.0;
+        let host_city = state.cities[0].id;
+        let strike = |kind: &str| IssuedOrder {
+            kind: kind.to_string(),
+            subject: Some(host_city),
+            verb: None,
+            pos: Some((5, 6)),
+        };
+        let can_strike = |mirror: &civvis::mirror::LiveMirror| {
+            let city = mirror.cid_of[&host_city];
+            mirror.game.city_can_strike(&mirror.game.cities[&city])
+        };
+
+        let mut strikes = HostCityStrikes::default();
+        strikes.observe(40, &[strike("city_strike")]);
+
+        let mut replan = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert!(
+            can_strike(&replan),
+            "precondition: a walled city on a fresh board may strike"
+        );
+        strikes.apply(&mut replan, 40);
+        assert!(
+            !can_strike(&replan),
+            "the frame-0 strike is spent on the replan frame's board"
+        );
+        let city = replan.cid_of[&host_city];
+        assert_eq!(replan.game.cities[&city].extra_strikes_used, 0);
+        assert!(
+            !replan.game.cities[&city].encampment_struck,
+            "a city strike does not spend the encampment's"
+        );
+
+        // A second strike on the same turn (Victor's Embrasure) is counted so
+        // `city_can_strike` reads the extra-strike rule exactly as it would
+        // for strikes applied on the board itself.
+        strikes.observe(40, &[strike("city_strike"), strike("encampment_strike")]);
+        let mut third = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut third, 40);
+        let city = third.cid_of[&host_city];
+        assert_eq!(third.game.cities[&city].extra_strikes_used, 1);
+        assert!(third.game.cities[&city].encampment_struck);
+
+        // The next turn's board starts with the strike available again, and
+        // observing the new turn forgets the old one.
+        let mut next = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut next, 41);
+        assert!(
+            can_strike(&next),
+            "a board built for the next turn is untouched"
+        );
+        strikes.observe(41, &[]);
+        let mut fresh = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut fresh, 40);
+        assert!(can_strike(&fresh), "the old turn's strikes are forgotten");
     }
 
     #[test]
