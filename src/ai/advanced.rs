@@ -482,6 +482,17 @@ const SETTLER_ESCORT_THREAT_RADIUS: i32 = 8;
 /// guard was pulled one tile away); anything longer is a livelocked guard,
 /// and waiting for one of those is how an expansion window closes.
 const STACKED_ESCORT_PATIENCE: u8 = 2;
+/// The hard ceiling on the same wait once `escort-patience-runs-out` is on,
+/// counted the same raw way as `STACKED_ESCORT_PATIENCE` above.
+///
+/// Five turns is three more than the ordinary patience, and it is chosen
+/// against the window that kills these games rather than against the risk:
+/// the ladder abandons a King game that does not hold three cities by turn
+/// 32, and the second city lands at a median turn 18, so the third city's
+/// settler has fourteen turns to walk. A wait that consumes five of them has
+/// already spent a third of the window on a guard that, across the 46 live
+/// games of 2026-08-26, arrived for only 458 of 1,083 waits.
+const ESCORT_PATIENCE_CEILING: u8 = 5;
 /// A guard this close behind a settler on quiet ground is one the settler
 /// marches ahead of rather than waits for. See `stacked_escort_pace`.
 const ADJACENT_GUARD_MARCH_DISTANCE: i32 = 1;
@@ -4573,6 +4584,35 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Put a ceiling on how long a settler waits for an escort.
+    ///
+    /// ★★★★ THE THIRD CITY'S SETTLER IS STANDING STILL. The ladder abandons a
+    /// King game that does not hold three cities by turn 32, and that rule
+    /// fires on **39 of 87 King games**. The obvious readings are all wrong:
+    /// the second city lands at a median turn 18 in the games that die and
+    /// turn 18 in the games that live, and the settler is not missing --
+    /// across the 33 opening deaths of 2026-08-26, **30 still had a settler
+    /// alive at the abandon and 20 of them were waiting for a guard in the
+    /// final five turns**.
+    ///
+    /// `stacked_escort_pace` already bounds the wait at
+    /// `STACKED_ESCORT_PATIENCE`, but the bound is written
+    /// `waited > PATIENCE && !unstacked_settler_step_is_capturable(..)`, so a
+    /// visible hostile anywhere near the next step suspends the ceiling
+    /// entirely. In the opening a barbarian near the route is not an
+    /// exception, it is the weather: across those 46 games the seat waited
+    /// 1,083 times and a guard arrived 458 times, and one run waited on 34
+    /// distinct turns. The exemption is correct as a tie-breaker between
+    /// marching into a capture and holding for one more turn; it is wrong as
+    /// a licence to hold for the rest of the game.
+    ///
+    /// With this on, a settler that has waited [`ESCORT_PATIENCE_CEILING`]
+    /// turns marches whatever the next step looks like. It does not touch the
+    /// threatened-tile fallback below, which still steps a settler on a
+    /// dangerous tile back toward its guard; it only stops an indefinite hold
+    /// on a **safe** tile from consuming the window the whole game is scored
+    /// against.
+    escort_patience_runs_out: bool,
     /// An Encampment on a pass is a wall no foreign unit may ever enter, so
     /// the district lands on the gate rather than on the next free plot.
     /// Opt-in gene `encampment-seals-the-pass`; see `advanced/chokepoints.rs`.
@@ -6227,6 +6267,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            escort_patience_runs_out: false,
             encampment_seals_the_pass: false,
             first_builder_reserve: false,
             first_research_building_reserve: false,
@@ -25411,6 +25452,20 @@ impl AdvancedAi {
                 self.guard_wait.remove(&uid);
                 return None;
             }
+        }
+        // See `escort_patience_runs_out`. Deliberately the LAST word: every
+        // protective branch above has already had its say -- a threatened tile
+        // has tried to step back toward the guard, and a guard one tile behind
+        // on quiet ground has already released the settler -- so what is left
+        // here is a settler that would otherwise stand still indefinitely
+        // because something is visible near its next step. That is the
+        // ordinary weather of the opening, and standing in it until turn 32
+        // is how the game is lost.
+        if self.escort_patience_runs_out && waited >= ESCORT_PATIENCE_CEILING {
+            think!(self.journal(), Expansion, Detail, "Settler stops waiting for its guard";
+                   "{waited} turns waited and the guard has not stacked; the third \
+                    city cannot wait longer than the opening does");
+            return None;
         }
         think!(self.journal(), Expansion, Detail, "Settler waits for its guard";
                "{waited} turn(s) so far; marching alone is how the last two settlers \

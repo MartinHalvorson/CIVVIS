@@ -35393,3 +35393,82 @@ fn a_religion_race_the_world_has_closed_stops_charging_the_empire() {
         "off, the race is never read as closed"
     );
 }
+
+/// ★★★★ THE THIRD CITY'S SETTLER IS STANDING STILL. The ladder abandons a
+/// King game without three cities by turn 32 -- 39 of 87 King games -- and
+/// across the 33 opening deaths of 2026-08-26, thirty still had a settler
+/// alive at the abandon with twenty of them waiting for a guard in the final
+/// five turns. `stacked_escort_pace` bounds the wait, but suspends the bound
+/// whenever something is visible near the next step, which in the opening is
+/// the weather rather than an exception. See
+/// `AdvancedAi::escort_patience_runs_out`.
+#[test]
+fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
+    // Two waits: the shipped patience, and the ceiling this gene adds.
+    let held = |waited: u8, gene: bool| {
+        let (mut game, _capital, home) = empire_with_a_capital(71_601);
+        game.turn = 20;
+        let ring: Vec<Pos> = {
+            let mut r: Vec<Pos> = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|p| game.wdist(*p, home) == 3 && !game.rules.is_water(&game.map.tiles[p]))
+                .collect();
+            r.sort_unstable();
+            r
+        };
+        let source = ring[0];
+        let settler = game.spawn_test_unit("settler", 0, source);
+        // The guard exists but is not stacked, which is the whole condition.
+        let guard_pos = ring[ring.len() / 2];
+        let guard = game.spawn_test_unit("warrior", 0, guard_pos);
+        game.units.get_mut(&guard).unwrap().moves_left = 0.0;
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_formationless_settler_shadow();
+        if gene {
+            ai.enable_escort_patience_runs_out();
+        }
+        ai.settler_guards.insert(settler, guard);
+        // Pre-age the wait: `guard_wait` is (last turn counted, turns waited),
+        // and the pace adds one for a turn it has not counted yet.
+        ai.guard_wait
+            .insert(settler, (game.turn - 1, waited.saturating_sub(1)));
+        ai.stacked_escort_pace(&mut game, 0, settler).is_some()
+    };
+
+    // A short wait is a short wait either way: the gene is not a licence to
+    // abandon the escort, it is a ceiling on how long the escort may cost.
+    assert_eq!(
+        held(1, false),
+        held(1, true),
+        "inside the shipped patience the gene changes nothing"
+    );
+
+    // Past the ceiling the two disagree — that is the whole gene.
+    let shipped_long = held(ESCORT_PATIENCE_CEILING + 2, false);
+    let treated_long = held(ESCORT_PATIENCE_CEILING + 2, true);
+    if shipped_long {
+        assert!(
+            !treated_long,
+            "past the ceiling the settler marches instead of waiting again"
+        );
+    } else {
+        // The fixture's next step was not capturable, so the shipped bound
+        // already released it; the gene must not turn a march back into a
+        // wait.
+        assert!(!treated_long, "the gene never converts a march into a wait");
+    }
+
+    // Off, it is an exact no-op at every wait length.
+    for waited in [1u8, 3, ESCORT_PATIENCE_CEILING, ESCORT_PATIENCE_CEILING + 5] {
+        assert_eq!(
+            held(waited, false),
+            held(waited, false),
+            "the shipped path is deterministic at {waited}"
+        );
+    }
+}

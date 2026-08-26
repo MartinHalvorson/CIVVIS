@@ -2869,6 +2869,17 @@ impl AdvancedAi {
         self.religion_race_is_closed = false;
     }
 
+    /// Put a ceiling on how long a settler waits for an escort. See
+    /// `escort_patience_runs_out`.
+    pub fn enable_escort_patience_runs_out(&mut self) {
+        self.escort_patience_runs_out = true;
+    }
+
+    /// The twin of `enable_escort_patience_runs_out`.
+    pub fn disable_escort_patience_runs_out(&mut self) {
+        self.escort_patience_runs_out = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
