@@ -311,6 +311,67 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class HowTheArmyFought(LedgerCase):
+    """The ladder says how the fighting went, not only whether orders applied."""
+
+    def _events(self, lines):
+        events = self.runs / "events.jsonl"
+        events.write_text("\n".join(json.dumps(line) for line in lines))
+        return events
+
+    def test_combat_totals_sums_the_runs_own_combat_and_occupation_events(self):
+        events = self._events([
+            {"kind": "seat", "local_player": 0},
+            {"kind": "combat", "turn": 5,
+             "attacker": {"player": 0, "id": 1, "kind": "UNIT_WARRIOR", "type": "unit"},
+             "defender": {"player": 2, "id": 900, "kind": "UNIT_SCOUT", "type": "unit"},
+             "damage_to_defender": 100, "damage_to_attacker": 8,
+             "defender_killed": True, "attacker_killed": False},
+            {"kind": "combat", "turn": 6,
+             "attacker": {"player": 2, "id": 901, "kind": "UNIT_ARCHER", "type": "unit"},
+             "defender": {"player": 0, "id": 1, "kind": "UNIT_WARRIOR", "type": "unit"},
+             "damage_to_defender": 100, "damage_to_attacker": 0,
+             "defender_killed": True, "attacker_killed": False},
+            {"kind": "city_occupation", "turn": 7, "player": 0, "city": 77,
+             "original_owner": 2, "ours_now": True},
+            {"kind": "unit_lost", "turn": 6, "unit": 1, "kind_at_last_sight": "UNIT_WARRIOR"},
+        ])
+        totals = civ6_ladder.combat_totals(events)
+        self.assertEqual(totals["kills"], 1)
+        self.assertEqual(totals["losses"], 1)
+        self.assertEqual(totals["kills_per_loss"], 1.0)
+        self.assertEqual(totals["damage_dealt"], 100)
+        self.assertEqual(totals["damage_taken"], 108)
+        self.assertEqual(totals["cities_taken"], 1)
+        self.assertEqual(totals["cities_lost"], 0)
+
+    def test_a_mod_that_never_wrote_a_combat_event_reads_as_silence(self):
+        events = self._events([
+            {"kind": "turn", "ctx": "agent", "turn": 1,
+             "orders_seen": 4, "orders_applied": 4},
+        ])
+        self.assertIsNone(
+            civ6_ladder.combat_totals(events),
+            "no combat event is unknown, which is not the claim that nothing fought",
+        )
+
+    def test_the_row_carries_the_combat_block_and_the_arm_it_seated(self):
+        fought = dict(summary("live-combat"))
+        fought["combat"] = {"kills": 7, "losses": 4, "kills_per_loss": 1.75,
+                            "damage_dealt": 900, "damage_taken": 700,
+                            "cities_taken": 1, "cities_lost": 0,
+                            "military_units_gone": 4}
+        fought["forced"] = ["fire-plan"]
+        entry = civ6_ladder.entry_from(fought)
+        self.assertEqual(entry["combat"]["kills_per_loss"], 1.75)
+        self.assertEqual(entry["combat"]["cities_taken"], 1)
+        self.assertEqual(entry["forced"], ["fire-plan"])
+        # A row from before either field is unknown, not zero.
+        plain = civ6_ladder.entry_from(summary("live-plain"))
+        self.assertIsNone(plain["combat"])
+        self.assertIsNone(plain["forced"])
+
+
 class BridgeHealth(LedgerCase):
     """applied_pct rides the ledger; check floors it."""
 

@@ -721,6 +721,80 @@ impl HostCityAttackCooldowns {
     }
 }
 
+/// The ranged strikes the decider has already ordered this turn, per host
+/// city, replayed onto every board built for the turn.
+///
+/// ★★★★ THE EXPORT CARRIES NO "ATTACKS REMAINING" FOR A CITY. A unit's
+/// `attacks_remaining` (`Unit:GetAttacksRemaining`) crosses on every frame and
+/// the board plans no second shot for it; a city's strike is answered only by
+/// `CityManager.CanStartCommand(city, CityCommandTypes.RANGE_ATTACK)`
+/// (`Base/Assets/UI/WorldView/CityBannerManager.lua:1555`, `CanRangeAttack`;
+/// `WorldInput.lua:2545` asks the same before `RequestCommand`), which the mod
+/// asks at order time and which refuses a second strike in the same turn. The
+/// decider plans every frame on a throwaway clone of the mirror, so the
+/// authoritative board's `struck` stayed false across the turn's replan
+/// frames and the same city was ordered to fire again on each one. Measured
+/// on run civvis-20260826T184456Z: 66 `city_strike` orders, 31 refused
+/// (`city_strike_refused`), every one of the 31 a re-issue on frame 1 or 2 by
+/// a city whose frame-0 strike had landed (the target's hit points fell
+/// between the frames); walls, range (≤ 2), visibility and war state were in
+/// order on all 31, and no frame-0 strike was refused. Over the last five
+/// control runs the refusal was 75 of 161 strikes. Remembered here exactly
+/// like the host's repair cooldown above, because it belongs to the host's
+/// turn and not to the reconstructed board.
+///
+/// Victor's Embrasure grants one extra strike; the count of strikes ordered
+/// is kept so `extra_strikes_used` carries it and `city_can_strike` reads the
+/// same rule it reads for a strike applied on the board itself.
+#[derive(Default)]
+struct HostCityStrikes {
+    turn: Option<u32>,
+    city: std::collections::BTreeMap<i64, i32>,
+    encampment: std::collections::BTreeMap<i64, i32>,
+}
+
+impl HostCityStrikes {
+    /// Count the strikes that left for the host on this frame.
+    fn observe(&mut self, turn: u32, orders: &[IssuedOrder]) {
+        if self.turn != Some(turn) {
+            self.turn = Some(turn);
+            self.city.clear();
+            self.encampment.clear();
+        }
+        for order in orders {
+            let Some(subject) = order.subject else {
+                continue;
+            };
+            match order.kind.as_str() {
+                "city_strike" => *self.city.entry(subject).or_insert(0) += 1,
+                "encampment_strike" => *self.encampment.entry(subject).or_insert(0) += 1,
+                _ => {}
+            }
+        }
+    }
+
+    /// Spend, on a board built for `turn`, the strikes already ordered on it.
+    fn apply(&self, mirror: &mut civvis::mirror::LiveMirror, turn: u32) {
+        if self.turn != Some(turn) {
+            return;
+        }
+        for (&host_city, &city) in &mirror.cid_of {
+            let Some(live) = mirror.game.cities.get_mut(&city) else {
+                continue;
+            };
+            if let Some(&count) = self.city.get(&host_city) {
+                live.struck = true;
+                live.extra_strikes_used = live.extra_strikes_used.max(count - 1);
+            }
+            if let Some(&count) = self.encampment.get(&host_city) {
+                live.encampment_struck = true;
+                live.encampment_extra_strikes_used =
+                    live.encampment_extra_strikes_used.max(count - 1);
+            }
+        }
+    }
+}
+
 /// Plots the host will not walk a unit onto, learned from moves that went
 /// nowhere.
 ///
@@ -2843,27 +2917,34 @@ fn withholdable_treatments() -> String {
         .join(", ")
 }
 
-/// Resolve the ledger-held live genes an explicit `--with` arm may restore.
-/// The live universe already set these flags before the ledger withheld them,
-/// so skipping just that withholding restores the exact named gene without a
-/// second hand-written enable table.
+/// Resolve the genes an explicit `--with` arm may seat: a ledger-held live
+/// treatment to restore, or a held-off production opt-in to add.
+///
+/// The live universe already set the live flags before the ledger withheld
+/// them, so skipping just that withholding restores the exact named gene
+/// without a second hand-written enable table. An opt-in was never in that
+/// universe — seating one is an addition, and it is the only route a gene
+/// priced on the arena has to the live board before the whole-game screen
+/// answers (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
 fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
     let mut selected = Vec::new();
     for treatment in forced {
-        match civvis::ai::GENES
+        let tag = match civvis::ai::GENES
             .iter()
-            .find(|gene| gene.live() && gene.tag == treatment)
+            .find(|gene| gene.tag == treatment)
             .map(|gene| gene.tag)
         {
-            Some(tag) if civvis::ai::gene_ledger::ledger_held_live_treatment(tag) => {
-                if !selected.contains(&tag) {
-                    selected.push(tag);
-                }
+            Some(tag)
+                if civvis::ai::gene_ledger::ledger_held_live_treatment(tag)
+                    || civvis::ai::gene_ledger::ledger_held_opt_in(tag) =>
+            {
+                tag
             }
             Some(tag) => {
                 return Err(format!(
                     "--with treatment {treatment:?} already ships in the deployment genome \
-                     (tag {tag:?}); only ledger-held live treatments form a distinct arm"
+                     (tag {tag:?}); only a ledger-held live treatment or a held-off opt-in \
+                     forms a distinct arm"
                 ));
             }
             None => {
@@ -2872,14 +2953,17 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
                     forceable_live_treatments()
                 ));
             }
+        };
+        if !selected.contains(&tag) {
+            selected.push(tag);
         }
     }
     Ok(selected)
 }
 
-/// Every name a live `--with` arm can restore, in canonical registry order.
+/// Every name a live `--with` arm can seat, in canonical registry order.
 fn forceable_live_treatments() -> String {
-    civvis::ai::gene_ledger::ledger_held_live_treatments().join(", ")
+    civvis::ai::gene_ledger::forceable_treatments().join(", ")
 }
 
 /// Reconstruct the exact live genome for each decision. The default retains
@@ -4580,6 +4664,15 @@ const EVIDENCE_KINDS: &[&str] = &[
     "deal_session",
     "peace_response",
     "improved",
+    // ⭐ THE HOST ALREADY SAID WHY THE STEP DID NOT HAPPEN. The mod has
+    // emitted `move_refused` — with the destination, whether it is water,
+    // whether it is impassable and who owns it — since the order channel
+    // existed, and its own comment says the point is that "the Rust side
+    // can feed a NAMED refusal back so CIVVIS stops re-deriving the same
+    // impossible step". Nothing in Rust has ever read it: a failed
+    // `MOVE_TO` was diagnosed by comparing two frames' positions, which
+    // cannot tell a refusal from a unit that simply had no movement left.
+    "move_refused",
 ];
 
 /// Ledger events of the evidence kinds stamped with one of `turns`.
@@ -4700,6 +4793,27 @@ fn target_harmed(
     }
 }
 
+/// The host's own reason a unit did not step, if it gave one for this unit
+/// and turn. Prefers the named refusal over the position diff: a host that
+/// says `dest_impassable` is a fact, and "the unit is where it was" is an
+/// inference that reads the same for a refusal, an exhausted allowance and
+/// an order the mod never issued.
+fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> Option<String> {
+    let event = evidence.iter().find(|event| {
+        event.get("kind").and_then(|k| k.as_str()) == Some("move_refused")
+            && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+            && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
+    })?;
+    let named = |key: &str| event.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+    Some(if named("dest_impassable") {
+        "host_refused_impassable".to_string()
+    } else if named("dest_water") {
+        "host_refused_water".to_string()
+    } else {
+        "host_refused_move".to_string()
+    })
+}
+
 fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
     evidence.iter().any(|event| {
         event.get("kind").and_then(|k| k.as_str()) == Some("combat")
@@ -4802,7 +4916,12 @@ fn verify_unit_order(
                     if start == 0 || end < start {
                         Verdict::Verified
                     } else if end == start {
-                        Verdict::Failed("did_not_move".to_string())
+                        // The host's own reason when it gave one; see
+                        // `move_refusal_reason`.
+                        Verdict::Failed(
+                            move_refusal_reason(evidence, turn, id)
+                                .unwrap_or_else(|| "did_not_move".to_string()),
+                        )
                     } else {
                         Verdict::Failed("moved_away".to_string())
                     }
@@ -6293,6 +6412,9 @@ fn main() {
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
     let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
+    // A city's strike is once per host turn and the export never says it was
+    // spent; the decider's own earlier frames do. See `HostCityStrikes`.
+    let mut host_city_strikes = HostCityStrikes::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -6397,6 +6519,7 @@ fn main() {
                     }
                     board.carry_treasury_baseline(carried_treasury);
                     host_city_attack_cooldowns.apply(&mut board);
+                    host_city_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
                     let reply = decide(
                         &mut board,
@@ -6424,6 +6547,7 @@ fn main() {
                                 frontier,
                             );
                             host_city_attack_cooldowns.apply(&mut fresh);
+                            host_city_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
                             let reply = decide(
                                 &mut fresh,
@@ -6443,6 +6567,7 @@ fn main() {
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
                             host_city_attack_cooldowns.apply(existing);
+                            host_city_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
                             // `--fresh-ai` isolates the two halves of persistence: keep the
                             // mirror, throw away the agent. If orders come back, the empty
@@ -6487,9 +6612,11 @@ fn main() {
                         }
                     }
                 };
+                let orders = IssuedOrder::from_reply(&reply);
+                host_city_strikes.observe(state.turn, &orders);
                 pending_orders.push(PendingOrders {
                     turn: state.turn,
-                    orders: IssuedOrder::from_reply(&reply),
+                    orders,
                     before: state.clone(),
                 });
                 append_rows_to_reply(&reply, &verdicts)
@@ -6836,6 +6963,51 @@ mod tests {
 
     /// The ledger's best genome remains the default, but a verification arm
     /// needs a precise way to restore one held row and record a real contrast.
+    /// The host says why a step did not happen; the checks now say it back.
+    #[test]
+    fn a_refused_step_carries_the_hosts_own_reason() {
+        let evidence = vec![
+            serde_json::json!({
+                "kind": "move_refused", "turn": 42, "unit": 7,
+                "x": 3, "y": 4, "dest_impassable": true
+            }),
+            serde_json::json!({
+                "kind": "move_refused", "turn": 42, "unit": 9,
+                "x": 5, "y": 6, "dest_water": true
+            }),
+            serde_json::json!({
+                "kind": "move_refused", "turn": 42, "unit": 11, "x": 1, "y": 1
+            }),
+        ];
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 42, 7).as_deref(),
+            Some("host_refused_impassable")
+        );
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 42, 9).as_deref(),
+            Some("host_refused_water")
+        );
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 42, 11).as_deref(),
+            Some("host_refused_move")
+        );
+        assert_eq!(
+            super::move_refusal_reason(&evidence, 43, 7),
+            None,
+            "a refusal belongs to the turn it happened on"
+        );
+        assert_eq!(super::move_refusal_reason(&evidence, 42, 8), None);
+        assert_eq!(
+            super::move_refusal_reason(&[], 42, 7),
+            None,
+            "and a run whose mod says nothing keeps the position diff"
+        );
+        assert!(
+            super::EVIDENCE_KINDS.contains(&"move_refused"),
+            "the reader has to be asked for the kind before it can read it"
+        );
+    }
+
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
         // A live gene the batch rule holds off as of the 2026-08-25 batches;
@@ -6867,6 +7039,32 @@ mod tests {
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
             .expect_err("a treatment already in the live genome cannot form a force-on arm");
         assert!(host_only.contains("already ships"), "{host_only}");
+
+        // A held-off opt-in is the other thing an arm may name: it is the
+        // only route a gene priced on the arena has to the live board
+        // before the whole-game screen answers.
+        let opt_in = civvis::ai::gene_ledger::ledger_held_opt_ins()
+            .first()
+            .copied()
+            .expect("the registry holds opt-ins the ledger has not turned on");
+        let seated = super::forced_live_treatments(&[opt_in.to_string()])
+            .expect("a held-off opt-in is a valid live arm");
+        assert_eq!(seated, vec![opt_in]);
+        let mut seat = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut seat, &seated, &[])
+            .expect("the opt-in arm configures the live controller");
+        assert!(
+            civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&seated)
+                .contains(&opt_in),
+            "the arm's genome names the opt-in it seated"
+        );
+        let mut ordinary = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut ordinary, &[], &[])
+            .expect("the ordinary live seat configures");
+        assert!(
+            !civvis::ai::gene_ledger::deployment_treatments().contains(&opt_in),
+            "and seating it changes nothing about the deployment genome"
+        );
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
         assert!(unknown.contains("whole-turn-backtrack-guard"), "{unknown}");
@@ -7275,6 +7473,78 @@ mod tests {
             envoys, 4,
             "the confirmed peace frame spends the full suzerainty pool: {confirmed}"
         );
+    }
+
+    /// Run civvis-20260826T184456Z: every one of the 31 refused city strikes
+    /// was a replan-frame re-issue by a city whose frame-0 strike had landed.
+    /// The export carries no per-city "attacks remaining", so the decider's
+    /// own earlier frames are the record, and every board built for the turn
+    /// must read it.
+    #[test]
+    fn a_city_that_fired_on_an_earlier_frame_holds_its_strike_for_the_turn() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 40;
+        let city = &mut state.cities[0];
+        city.producing = None;
+        city.buildings = vec!["BUILDING_WALLS".to_string()];
+        city.damage = 0.0;
+        city.max_damage = 200.0;
+        city.wall_damage = 0.0;
+        city.max_wall_damage = 100.0;
+        let host_city = state.cities[0].id;
+        let strike = |kind: &str| IssuedOrder {
+            kind: kind.to_string(),
+            subject: Some(host_city),
+            verb: None,
+            pos: Some((5, 6)),
+        };
+        let can_strike = |mirror: &civvis::mirror::LiveMirror| {
+            let city = mirror.cid_of[&host_city];
+            mirror.game.city_can_strike(&mirror.game.cities[&city])
+        };
+
+        let mut strikes = HostCityStrikes::default();
+        strikes.observe(40, &[strike("city_strike")]);
+
+        let mut replan = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert!(
+            can_strike(&replan),
+            "precondition: a walled city on a fresh board may strike"
+        );
+        strikes.apply(&mut replan, 40);
+        assert!(
+            !can_strike(&replan),
+            "the frame-0 strike is spent on the replan frame's board"
+        );
+        let city = replan.cid_of[&host_city];
+        assert_eq!(replan.game.cities[&city].extra_strikes_used, 0);
+        assert!(
+            !replan.game.cities[&city].encampment_struck,
+            "a city strike does not spend the encampment's"
+        );
+
+        // A second strike on the same turn (Victor's Embrasure) is counted so
+        // `city_can_strike` reads the extra-strike rule exactly as it would
+        // for strikes applied on the board itself.
+        strikes.observe(40, &[strike("city_strike"), strike("encampment_strike")]);
+        let mut third = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut third, 40);
+        let city = third.cid_of[&host_city];
+        assert_eq!(third.game.cities[&city].extra_strikes_used, 1);
+        assert!(third.game.cities[&city].encampment_struck);
+
+        // The next turn's board starts with the strike available again, and
+        // observing the new turn forgets the old one.
+        let mut next = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut next, 41);
+        assert!(
+            can_strike(&next),
+            "a board built for the next turn is untouched"
+        );
+        strikes.observe(41, &[]);
+        let mut fresh = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut fresh, 40);
+        assert!(can_strike(&fresh), "the old turn's strikes are forgotten");
     }
 
     #[test]

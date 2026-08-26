@@ -3576,6 +3576,13 @@ def _play(args: argparse.Namespace) -> int:
         deals = civ6_ladder.deal_totals(run_dir / "events.jsonl")
         if deals:
             summary["deals"] = deals
+        # How the army fought: kills, losses, damage both ways, and the
+        # cities that changed hands. Absent when the run's mod predates the
+        # tactical ledger, so an old run reads as silence rather than a
+        # seat that never fought.
+        combat = civ6_ladder.combat_totals(run_dir / "events.jsonl")
+        if combat:
+            summary["combat"] = combat
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log

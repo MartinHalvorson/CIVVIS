@@ -1923,6 +1923,12 @@ pub struct Unit {
     pub acted: bool,
     #[serde(default)]
     pub zoc_stopped: bool,
+    /// The host's own `Unit:IsEmbarked` reading, pinned to the position it was
+    /// observed on. While the unit stands there it wins over the "its tile is
+    /// water" derivation; a unit the board has moved, and an older export that
+    /// carries no flag, derive from the tile. See `unit_is_embarked_at`.
+    #[serde(default)]
+    pub host_embarked: Option<(Pos, bool)>,
     /// Snapshot taken when this unit's turn begins. A unit may leave a ZOC
     /// as its first action, but attacking before leaving forfeits that move.
     #[serde(default)]
@@ -2593,6 +2599,82 @@ pub struct Spy {
     pub sources_until: u32,
     #[serde(default)]
     pub captured_by: Option<usize>,
+}
+
+/// The host's own verdict on a mirrored unit's upgrade — the loose and strict
+/// `UnitManager.CanStartCommand(unit, UNITCOMMAND_UPGRADE, …)` reads the
+/// shipped `Base/Assets/UI/Panels/UnitPanel.lua:468-483` makes, with
+/// `Unit:GetUpgradeCost()` as the bill. Native games never fill one.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, Default)]
+pub struct HostUnitUpgrade {
+    /// The successor the host names (`UnitCommandResults.UNIT_TYPE`), as the
+    /// CIVVIS unit; `None` when it named a type CIVVIS does not model.
+    #[serde(default)]
+    pub to: Option<Name>,
+    /// The Gold the host would charge, as `GetUpgradeCost()` quotes it.
+    #[serde(default)]
+    pub cost: Option<f64>,
+    /// The first `FAILURE_REASONS` entry when a successor exists and the
+    /// command cannot start this turn. `Some` is final: the order would be
+    /// refused on arrival.
+    #[serde(default)]
+    pub blocked: Option<String>,
+}
+
+/// What an authoritative host said about one of the mirrored seat's units
+/// that the board used to derive from its own rules (docs/FIDELITY.md, "The
+/// one-to-one map", item 9). Keyed by CIVVIS unit id; empty in a native game,
+/// and every reader falls back to the board's own rule when its key is absent.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, Default)]
+pub struct HostUnitFacts {
+    #[serde(default)]
+    pub upgrade: Option<HostUnitUpgrade>,
+    /// `UnitManager.GetUnitMaintenance` (or the Corps/Army accessor) for the
+    /// unit's type, before the player's per-unit discount —
+    /// `Screens/ReportScreen.lua:314-338`.
+    #[serde(default)]
+    pub maintenance: Option<f64>,
+    /// `Unit:GetReligiousStrength()`, the panel's own stat (`UnitPanel.lua:2257`).
+    /// Carried for diagnostics: like the exported `combat`, it is the unit's
+    /// displayed figure, and the board's pressure model stacks its own
+    /// situational terms on the ruleset base rather than on this.
+    #[serde(default)]
+    pub religious_strength: Option<f64>,
+    /// `Unit:GetMaxMoves()` (`UnitPanel.lua:2242`): the fresh-turn allowance
+    /// with every host effect applied.
+    #[serde(default)]
+    pub max_moves: Option<f64>,
+    /// `UnitManager.GetActivityType` as the shipped `WorldTracker.lua:544`
+    /// names it: `sleep`, `hold`, `operation` or `awake`.
+    #[serde(default)]
+    pub activity: Option<String>,
+    /// A Spy's running operation (`Unit:GetSpyOperation()`,
+    /// `EspionageOverview.lua:659`) as the CIVVIS mission kind, and the turn
+    /// it ends (`GetSpyOperationEndTurn`).
+    #[serde(default)]
+    pub spy_operation: Option<String>,
+    #[serde(default)]
+    pub spy_operation_ends: Option<u32>,
+    /// The operations the host would let an idle Spy start from the city it
+    /// stands in (`EspionageChooser.lua:196-213`), as CIVVIS mission kinds.
+    /// `Some` only with entries; a Spy on an operation or outside a city has
+    /// none and the board's menu stands.
+    #[serde(default)]
+    pub spy_missions: Option<BTreeSet<String>>,
+}
+
+/// The treasury's Gold bill by source — `PlayerTreasury:GetUnitMaintenance`,
+/// `GetBuildingMaintenance` and `GetDistrictMaintenance`, the top panel's own
+/// breakdown (`ToolTipHelper_PlayerYields.lua:22-26`). Keyed by seat on
+/// [`Game::host_maintenance`]; a native game has none and bills itself.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Debug, Default)]
+pub struct HostMaintenance {
+    #[serde(default)]
+    pub units: Option<f64>,
+    #[serde(default)]
+    pub buildings: Option<f64>,
+    #[serde(default)]
+    pub districts: Option<f64>,
 }
 
 /// The four location classes used for passive unit healing.
@@ -5559,6 +5641,18 @@ pub struct Game {
     /// the public information without inventing hidden unit positions.
     #[serde(default)]
     pub observed_military_power: BTreeMap<usize, f64>,
+    /// Per-unit facts an authoritative host exported about the mirrored
+    /// seat's units — the upgrade verdict and bill, the per-type upkeep, the
+    /// movement allowance, a Spy's operation and menu. See [`HostUnitFacts`]
+    /// for which decision reads each. Empty in native games.
+    #[serde(default)]
+    pub host_unit_facts: BTreeMap<u32, HostUnitFacts>,
+    /// The host treasury's bill by source for mirrored seats, read by
+    /// [`Game::unit_gold_maintenance`] and
+    /// [`Game::infrastructure_gold_maintenance`] in place of the board's own
+    /// sums. Empty in native games.
+    #[serde(default)]
+    pub host_maintenance: BTreeMap<usize, HostMaintenance>,
     /// Public host score for mirrored seats. Empty in native CIVVIS games.
     #[serde(default)]
     pub observed_score: BTreeMap<usize, i64>,
@@ -6199,6 +6293,10 @@ struct GameSer {
     #[serde(default)]
     observed_military_power: BTreeMap<usize, f64>,
     #[serde(default)]
+    host_unit_facts: BTreeMap<u32, HostUnitFacts>,
+    #[serde(default)]
+    host_maintenance: BTreeMap<usize, HostMaintenance>,
+    #[serde(default)]
     observed_score: BTreeMap<usize, i64>,
     #[serde(default)]
     observed_trade_capacity: BTreeMap<usize, i64>,
@@ -6399,6 +6497,8 @@ impl From<GameSer> for Game {
             cities: s.cities.into_iter().map(|c| (c.id, c)).collect(),
             at_war: s.at_war.into_iter().collect(),
             observed_military_power: s.observed_military_power,
+            host_unit_facts: s.host_unit_facts,
+            host_maintenance: s.host_maintenance,
             observed_score: s.observed_score,
             observed_trade_capacity: s.observed_trade_capacity,
             observed_leader_types: s.observed_leader_types,
@@ -6607,6 +6707,8 @@ impl From<Game> for GameSer {
             rng: g.rng,
             at_war: g.at_war.into_iter().collect(),
             observed_military_power: g.observed_military_power,
+            host_unit_facts: g.host_unit_facts,
+            host_maintenance: g.host_maintenance,
             observed_score: g.observed_score,
             observed_trade_capacity: g.observed_trade_capacity,
             observed_leader_types: g.observed_leader_types,
@@ -7033,6 +7135,8 @@ impl Game {
             cities: Cities::default(),
             at_war: BTreeSet::new(),
             observed_military_power: BTreeMap::new(),
+            host_unit_facts: BTreeMap::new(),
+            host_maintenance: BTreeMap::new(),
             observed_score: BTreeMap::new(),
             observed_trade_capacity: BTreeMap::new(),
             observed_leader_types: BTreeMap::new(),
@@ -11017,6 +11121,41 @@ impl Game {
         if unit.acted || unit.moves_left <= 0.0 {
             return Err("already acted");
         }
+        // ★★★ THE HOST'S OWN VERDICT COMES FIRST, WHEN IT CROSSED
+        // (docs/FIDELITY.md, "The one-to-one map", item 9). Everything below
+        // this block is the board's model of `CanStartCommand(UNITCOMMAND_
+        // UPGRADE)` — territory, successor, price, material — and the
+        // mirrored seat now carries that command's real answer per unit
+        // (`UnitPanel.lua:468-483`) with `GetUpgradeCost()` as the bill. A
+        // named block is final: the order would be refused on arrival, which
+        // is what 933 `UPGRADE` refusals over the 08-04/08-05 runs were. A
+        // successor the host names is priced at the host's Gold, checked
+        // against the treasury this frame still holds; only the strategic
+        // material comes from the board's quote, since the host says nothing
+        // about it beyond "can". Absent — an older mod, or a unit with no
+        // successor at all — the board's own rules decide, unchanged.
+        if let Some(verdict) = self
+            .host_unit_facts
+            .get(&uid)
+            .and_then(|facts| facts.upgrade.as_ref())
+        {
+            if let Some(reason) = verdict.blocked.as_deref() {
+                return Err(Self::host_upgrade_refusal(reason));
+            }
+            if let Some(target) = verdict.to {
+                let quote =
+                    self.unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation);
+                let gold = verdict
+                    .cost
+                    .or_else(|| quote.map(|(gold, _)| gold))
+                    .unwrap_or(0.0);
+                if self.players[pid].gold + f64::EPSILON < gold {
+                    return Err("not enough gold");
+                }
+                let resources = quote.map_or(0.0, |(_, resources)| resources);
+                return Ok((target, gold, resources));
+            }
+        }
         if self.is_embarked(unit) {
             return Err("embarked");
         }
@@ -11062,6 +11201,25 @@ impl Game {
             }
         }
         Ok((target, gold, resources))
+    }
+
+    /// The host's first `FAILURE_REASONS` entry for a blocked upgrade, folded
+    /// onto the board's own refusal vocabulary so a diagnostic reads the same
+    /// whichever side answered. The entries are localisation keys or their
+    /// looked-up text; the match is on the word.
+    fn host_upgrade_refusal(reason: &str) -> &'static str {
+        let reason = reason.to_ascii_uppercase();
+        if reason.contains("GOLD") {
+            "not enough gold"
+        } else if reason.contains("RESOURCE") || reason.contains("STRATEGIC") {
+            "not enough strategic material"
+        } else if reason.contains("TERRITORY") || reason.contains("BORDER") {
+            "foreign territory"
+        } else if reason.contains("TECH") || reason.contains("CIVIC") {
+            "no unlocked successor"
+        } else {
+            "the host refuses the upgrade this turn"
+        }
     }
 
     fn do_upgrade_unit(&mut self, pid: usize, uid: u32) -> Result<(), String> {
@@ -11548,8 +11706,19 @@ impl Game {
     fn spy_operation_actions(&self, spy: &Spy, city: &City) -> Vec<Action> {
         let mut actions = Vec::new();
         let offensive = city.owner != spy.owner;
+        // The host's own menu for this Spy, when it crossed: the operations
+        // `UnitManager.CanStartOperation(spy, op, cityPlot, false, true)`
+        // answers yes to from the city it stands in
+        // (`EspionageChooser.lua:196-213`), as CIVVIS mission kinds. A mission
+        // the host would not let it start is not offered, whatever the
+        // board's model of the city says.
+        let host_menu = self
+            .host_unit_facts
+            .get(&spy.id)
+            .and_then(|facts| facts.spy_missions.as_ref());
         let mut add = |mission: &str, target: Pos| {
-            if !self.congress_effect_active("espionage_pact", "B", mission)
+            if !host_menu.is_some_and(|menu| !menu.contains(mission))
+                && !self.congress_effect_active("espionage_pact", "B", mission)
                 && !self.spy_mission_already_running(spy.owner, city.id, mission)
             {
                 actions.push(Action::SpyMission {
@@ -15751,20 +15920,35 @@ impl Game {
     /// effective delegation, while the stored envoy balance remains unchanged.
     pub fn envoys_at(&self, pid: usize, minor: usize) -> i64 {
         let raw = self.raw_envoys_at(pid, minor);
-        if self.players[pid].governor_roster.is_empty() {
+        let (messenger, multiplier) = self.amani_envoy_terms(pid, minor);
+        if messenger == 0.0 && multiplier == 1.0 {
             return raw;
         }
+        ((raw as f64 + messenger) * multiplier).round() as i64
+    }
+
+    /// What an established Amani adds to `pid`'s delegation at `minor`, as
+    /// `(messenger, multiplier)` with `envoys_at = round((raw + messenger) *
+    /// multiplier)`; `(0.0, 1.0)` when she is not established in one of that
+    /// city-state's cities. Public to the crate so a mirrored board can store
+    /// the host's count NET of these terms — the host's `GetTokensReceived`
+    /// already includes her, and storing it raw counted her twice.
+    pub(crate) fn amani_envoy_terms(&self, pid: usize, minor: usize) -> (f64, f64) {
+        let none = (0.0, 1.0);
+        if self.players[pid].governor_roster.is_empty() {
+            return none;
+        }
         let Some(city) = self.established_governor_city(pid, "amani") else {
-            return raw;
+            return none;
         };
         if self.cities.get(&city).map(|city| city.owner) != Some(minor) {
-            return raw;
+            return none;
         }
         let messenger = self.governor_effect(pid, city, "city_state_envoys");
         let multiplier = self
             .governor_effect(pid, city, "city_state_envoys_multiplier")
             .max(1.0);
-        ((raw as f64 + messenger) * multiplier).round() as i64
+        (messenger, multiplier)
     }
 
     /// Suzerain: at least 3 envoys and strictly more than every other major.
@@ -16939,6 +17123,14 @@ impl Game {
     }
 
     fn unit_is_embarked_at(&self, unit: &Unit, pos: Pos) -> bool {
+        // The host's flag is the fact while the unit stands where it was read; the
+        // tile rule below is the model, and the two disagree exactly when the
+        // mirrored tile is behind the unit (the tile export runs every fourth turn).
+        if let Some((observed_at, embarked)) = unit.host_embarked {
+            if observed_at == pos {
+                return embarked;
+            }
+        }
         let domain = self.rules.units[unit.kind].domain.as_deref();
         !matches!(domain, Some("sea" | "air"))
             && unit.kind != "giant_death_robot"
@@ -21584,6 +21776,7 @@ impl Game {
             fortify_turns: 0,
             acted: false,
             zoc_stopped: false,
+            host_embarked: None,
             started_turn_in_zoc: false,
             air_patrol: false,
             air_patrol_pos: None,
@@ -22569,6 +22762,18 @@ impl Game {
     /// movement field is a remaining-movement observation, not a fresh-turn
     /// allowance.
     pub(crate) fn unit_max_moves(&self, uid: u32) -> f64 {
+        // `Unit:GetMaxMoves()` (`UnitPanel.lua:2242`) when the host exported
+        // it: the allowance with every road, promotion, Great General, policy
+        // and embarkation effect the host applies, in place of the board's
+        // model of them. Zero or less is no reading, not an immobile unit.
+        if let Some(moves) = self
+            .host_unit_facts
+            .get(&uid)
+            .and_then(|facts| facts.max_moves)
+            .filter(|moves| *moves > 0.0)
+        {
+            return moves;
+        }
         self.unit_max_moves_at(uid, self.units[&uid].pos)
     }
 
@@ -42737,13 +42942,31 @@ impl Game {
         } else {
             0.0
         };
-        (self.rules.units[unit.kind].maintenance * formation
-            - self.policy_effect(pid, "unit_maintenance_discount"))
-        .max(0.0)
-            + surcharge
+        // The host's own per-type bill for this unit (`GetUnitMaintenance`
+        // by formation, `ReportScreen.lua:314-334`) in place of the ruleset's
+        // `maintenance × formation`; the discount and surcharge stay the
+        // board's, exactly as that screen subtracts `GetMaintDiscountPerUnit`
+        // afterwards. Absent in a native game and on an older mod.
+        let base = match self
+            .host_unit_facts
+            .get(&unit.id)
+            .and_then(|facts| facts.maintenance)
+        {
+            Some(bill) => bill.max(0.0),
+            None => self.rules.units[unit.kind].maintenance * formation,
+        };
+        (base - self.policy_effect(pid, "unit_maintenance_discount")).max(0.0) + surcharge
     }
 
     pub(crate) fn unit_gold_maintenance(&self, pid: usize) -> f64 {
+        // The treasury's own unit bill (`PlayerTreasury:GetUnitMaintenance`,
+        // `ToolTipHelper_PlayerYields.lua:26`) when an authoritative host
+        // exported it: every discount, every Spy, every formation as the host
+        // charges them. The sum below is the board's model of that figure and
+        // is what a native game, or an older mod, still pays.
+        if let Some(total) = self.host_maintenance.get(&pid).and_then(|bill| bill.units) {
+            return total.max(0.0);
+        }
         let units = self
             .player_unit_ids(pid)
             .into_iter()
@@ -42796,7 +43019,15 @@ impl Game {
         districts + buildings
     }
 
-    fn infrastructure_gold_maintenance(&self, pid: usize) -> f64 {
+    pub(crate) fn infrastructure_gold_maintenance(&self, pid: usize) -> f64 {
+        // `GetBuildingMaintenance` + `GetDistrictMaintenance`
+        // (`ToolTipHelper_PlayerYields.lua:22-24`) when both crossed; the
+        // per-city sum otherwise.
+        if let Some(bill) = self.host_maintenance.get(&pid) {
+            if let (Some(buildings), Some(districts)) = (bill.buildings, bill.districts) {
+                return (buildings + districts).max(0.0);
+            }
+        }
         self.cities
             .values()
             .filter(|city| city.owner == pid)
