@@ -7453,17 +7453,16 @@ mod tests {
     /// the same reason the border-growth test above asserts through
     /// `valid_improvements`: the field only matters where it is consulted, and a
     /// test on the field alone would pass on a set nothing reads.
-    /// ★★★★ A met major's border plot the mirror can attribute to no city of
-    /// theirs is a city in the fog. Run civvis-20260818T155552Z founded Setia
-    /// two tiles from such a border (Vietnam: four cities, none seen) and lost
-    /// it eight turns later at −13 Loyalty a turn, while the settle-site
-    /// forecast — which sums the cities on the board — had passed the site.
-    /// `unseen_major_borders` names those plots: a rival with no city on the
-    /// board, or a plot further from every known city of theirs than a
-    /// Civilization VI city can own. A minor's ground and a plot beside a
-    /// KNOWN rival city are not in it.
+    /// ★★★★ A met major's border plot whose city cannot be safely resolved is
+    /// a city in the fog. Run civvis-20260826T030045Z founded Lugdunum five
+    /// tiles from Germany's border; the only visible German city was ten tiles
+    /// away, so the settle-site forecast passed it before the host reported
+    /// −22 Loyalty a turn. `unseen_major_borders` names a rival with no city on
+    /// the board, a plot beyond every known city ownership ring, and a fifth-ring
+    /// plot whose reported owner could equally be a nearer unseen city. A minor's
+    /// ground and a plot securely inside a known rival city's ring are not in it.
     #[test]
-    fn a_met_majors_border_with_no_city_behind_it_is_recorded_as_unseen() {
+    fn a_met_majors_border_without_a_safe_city_attribution_is_recorded_as_unseen() {
         let owned = |x: i32, y: i32, owner: i32| {
             let mut p = plot(x, y, "TERRAIN_GRASS");
             p.o = owner;
@@ -7473,10 +7472,12 @@ mod tests {
         // Rival 3 owns (5,7) and (5,8) and none of their cities is in sight.
         plots.push(owned(5, 7, 3));
         plots.push(owned(5, 8, 3));
-        // Rival 4 owns (14, 5) beside their known city at (15, 5), and (5, 12)
-        // ten tiles from it — the second belongs to a city we cannot see.
+        // Rival 4 owns (14, 5) beside their known city at (15, 5), (10, 5) on
+        // the fifth ring of that city, and (5, 12) ten tiles from it. The
+        // latter two could belong to a closer city we cannot see.
         plots.push(owned(15, 5, 4));
         plots.push(owned(14, 5, 4));
+        plots.push(owned(10, 5, 4));
         plots.push(owned(5, 12, 4));
         // A city-state owns (9, 9); minors exert no loyalty pressure and are
         // not majors.
@@ -7535,6 +7536,10 @@ mod tests {
         assert!(
             unseen.contains(&at(5, 12)),
             "ten tiles from the only known city of theirs: a city we cannot see owns it"
+        );
+        assert!(
+            unseen.contains(&at(10, 5)),
+            "the fifth ring is ambiguous: a nearer unseen city can own it"
         );
         assert!(
             !unseen.contains(&at(14, 5)),
@@ -16971,7 +16976,10 @@ fn record_host_observed(game: &mut crate::game::Game) {
 /// border growth stop at five tiles from the centre (`GlobalParameters`
 /// `CITY_MAX_BUY_PLOT_RANGE`, and the plot-acquisition ring). A plot a met
 /// major owns further than this from every city of theirs we can see is owned
-/// by a city we cannot. See [`crate::game::Game::unseen_major_borders`].
+/// by a city we cannot. A plot exactly this far away is not proved safe either:
+/// the host exports only its player owner, so it can equally belong to a nearer
+/// city still in fog. Mark that outer ring as unresolved for the live Loyalty
+/// guard. See [`crate::game::Game::unseen_major_borders`].
 const CIV6_CITY_OWNERSHIP_REACH: i32 = 5;
 
 fn apply_territory(
@@ -17010,10 +17018,11 @@ fn apply_territory(
     // open borders open the second while leaving the first shut, and a settler
     // barred by loyalty is barred from founding on ground it may cross freely.
     let mut sealed: std::collections::BTreeSet<crate::Pos> = Default::default();
-    // Ground a MET major owns whose city we cannot see: either the seat holds
-    // no city on this board at all, or its nearest known city stands further
-    // than any Civilization VI city can own (five tiles), so the plot belongs
-    // to one still in the fog. See [`crate::game::Game::unseen_major_borders`].
+    // Ground a MET major owns whose city attribution is unresolved: either the
+    // seat holds no city on this board at all, or its nearest known city lies
+    // on or beyond the fifth ownership ring. At five, the host cannot tell that
+    // city from a nearer one still in fog; beyond five, the visible city cannot
+    // own it at all. See [`crate::game::Game::unseen_major_borders`].
     let mut unseen_major: std::collections::BTreeSet<crate::Pos> = Default::default();
     // Who seals how much, majors only — the passage-purchase lane's shopping
     // list. See [`crate::game::Game::sealed_border_owners`].
@@ -17086,10 +17095,13 @@ fn apply_territory(
             });
             let owner = nearest.map(|(cid, _)| cid);
             if owner.is_some() {
-                // A plot further from every known city of a major than a city
-                // can own belongs to one this seat has not seen.
+                // A plot on the outermost known-city ownership ring is
+                // ambiguous: the export names only a player, so it may instead
+                // belong to a nearer city this seat has not seen. Beyond that
+                // ring it must be unseen. Mark either case for the live
+                // settlement Loyalty guard.
                 if is_major(seat)
-                    && nearest.is_some_and(|(_, distance)| distance > CIV6_CITY_OWNERSHIP_REACH)
+                    && nearest.is_some_and(|(_, distance)| distance >= CIV6_CITY_OWNERSHIP_REACH)
                 {
                     unseen_major.insert(pos);
                 }
