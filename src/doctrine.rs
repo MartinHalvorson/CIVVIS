@@ -2716,15 +2716,16 @@ mod tests {
 
         let result = matched_position(&POSITIONS[0], 41, "advanced", "advanced", &builtin_ai);
         let profile = result.a.profile();
-        for share in [
+        for value in [
             profile.focus,
             profile.ground,
             profile.screen,
             profile.contact,
-        ] {
-            if let Some(value) = share {
-                assert!((0.0..=1.0).contains(&value), "share out of range: {value}");
-            }
+        ]
+        .into_iter()
+        .flatten()
+        {
+            assert!((0.0..=1.0).contains(&value), "share out of range: {value}");
         }
     }
 
