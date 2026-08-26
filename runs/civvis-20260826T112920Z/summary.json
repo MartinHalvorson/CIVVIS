@@ -1,0 +1,382 @@
+{
+  "abandoned": null,
+  "cities_at_60": 6,
+  "city_two_turn": 15,
+  "configured": true,
+  "deals": {
+    "closed": 12,
+    "declined": 32,
+    "expired": 0,
+    "peace_accepted": 3,
+    "peace_refused": 1,
+    "sessions_answered": 48,
+    "sessions_opened": 48,
+    "sessions_unanswered": 0,
+    "stood_down": false
+  },
+  "decider_revisions": [
+    "872d7ad3a5a6ae74162eba2a1a36f251aceadd69",
+    "464abd74cc06e3a6e178a9fc067f8a77f144255d",
+    "e41b166ef1f67d1625945a2df5e0f37fa345819b"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-26T13:03:54Z",
+  "forced": [],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 1005,
+  "last_turn": 248,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": false,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "orders": {
+    "*": {
+      "applied": 2930,
+      "refused": {
+        "IMPROVEMENT_BEACH_RESORT": 1,
+        "IMPROVEMENT_INDUSTRY": 3,
+        "IMPROVEMENT_MINE": 2,
+        "IMPROVEMENT_SOLAR_FARM": 5,
+        "IMPROVEMENT_WIND_FARM": 4,
+        "MOVE_TO": 4,
+        "RANGE_ATTACK": 24,
+        "SPY_FOMENT_UNREST": 1,
+        "SPY_GAIN_SOURCES": 53,
+        "SPY_LISTENING_POST": 6,
+        "TRADE_ROUTE": 1,
+        "UPGRADE": 120,
+        "already_IMPROVEMENT_WIND_FARM": 1,
+        "cannot_FORTIFY": 14,
+        "cannot_PILLAGE": 1,
+        "cannot_REPAIR": 12,
+        "cannot_buy_UNIT_BUILDER": 1,
+        "cannot_declare": 1,
+        "cannot_form_army": 1,
+        "cannot_form_corps": 2,
+        "cannot_promote_PROMOTION_TORTOISE": 1,
+        "cannot_start_BUILDING_BANK": 7,
+        "cannot_start_BUILDING_GOV_WIDE": 1,
+        "cannot_start_PROJECT_BUILD_NUCLEAR_DEVICE": 11,
+        "cannot_start_UNIT_ANTIAIR_GUN": 1,
+        "cannot_start_UNIT_SPY": 19,
+        "city_strike_refused": 74,
+        "delegation_already_present": 46,
+        "delegation_cooldown": 3,
+        "delegation_unaffordable": 3,
+        "found_off_site": 3,
+        "governor_neutralized": 28,
+        "governor_promotion_unavailable": 1,
+        "gp_class_not_offered": 3,
+        "move_no_moves_this_turn": 94,
+        "no_params_BUILDING_APADANA": 1,
+        "no_params_BUILDING_BIOSPHERE": 1,
+        "no_params_BUILDING_BROADWAY": 1,
+        "no_params_BUILDING_CHICHEN_ITZA": 1,
+        "no_params_BUILDING_GREAT_BATH": 1,
+        "no_params_BUILDING_JEBEL_BARKAL": 1,
+        "no_params_BUILDING_OXFORD_UNIVERSITY": 1,
+        "no_params_BUILDING_STONEHENGE": 1,
+        "nothing_tradeable": 5,
+        "obsolete_POLICY_CHARISMATIC_LEADER": 1,
+        "obsolete_POLICY_COLONIZATION": 1,
+        "obsolete_POLICY_NATURAL_PHILOSOPHY": 1,
+        "obsolete_POLICY_SERFDOM": 1,
+        "obsolete_POLICY_URBAN_PLANNING": 1,
+        "opening_settler_in_progress": 3,
+        "policy_deck_too_large": 1,
+        "queue_prior_refused": 25,
+        "sell_cooldown": 44,
+        "unit_gone:1048579": 1,
+        "unit_gone:1179653": 1,
+        "unit_gone:2621443": 1,
+        "unit_gone:3473419": 1,
+        "unit_gone:3735553": 1,
+        "unit_gone:393220": 1,
+        "unit_gone:4063247": 1,
+        "unit_gone:4390920": 1,
+        "unit_gone:4521985": 1,
+        "unit_gone:4653065": 1,
+        "unit_gone:4849676": 1,
+        "unit_gone:65536": 1
+      },
+      "seen": 3913
+    },
+    "city_strike": {
+      "applied": 55,
+      "refused": {
+        "city_strike_refused": 74
+      },
+      "seen": 129
+    },
+    "civic": {
+      "applied": 39,
+      "refused": {},
+      "seen": 39
+    },
+    "delegation": {
+      "applied": 5,
+      "refused": {
+        "delegation_already_present": 46,
+        "delegation_cooldown": 3,
+        "delegation_unaffordable": 3
+      },
+      "seen": 57
+    },
+    "envoy": {
+      "applied": 42,
+      "refused": {},
+      "seen": 42
+    },
+    "government": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "governor_appoint": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "governor_assign": {
+      "applied": 6,
+      "refused": {
+        "governor_neutralized": 28
+      },
+      "seen": 34
+    },
+    "governor_promote": {
+      "applied": 11,
+      "refused": {
+        "governor_promotion_unavailable": 1
+      },
+      "seen": 12
+    },
+    "gp_patronize_faith": {
+      "applied": 4,
+      "refused": {
+        "gp_class_not_offered": 3
+      },
+      "seen": 7
+    },
+    "pantheon": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "peace": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "policy_deck": {
+      "applied": 314,
+      "refused": {
+        "obsolete_POLICY_CHARISMATIC_LEADER": 1,
+        "obsolete_POLICY_COLONIZATION": 1,
+        "obsolete_POLICY_NATURAL_PHILOSOPHY": 1,
+        "obsolete_POLICY_SERFDOM": 1,
+        "obsolete_POLICY_URBAN_PLANNING": 1,
+        "policy_deck_too_large": 1
+      },
+      "seen": 320
+    },
+    "produce": {
+      "applied": 409,
+      "refused": {
+        "cannot_start_BUILDING_BANK": 7,
+        "cannot_start_BUILDING_GOV_WIDE": 1,
+        "cannot_start_PROJECT_BUILD_NUCLEAR_DEVICE": 11,
+        "cannot_start_UNIT_ANTIAIR_GUN": 1,
+        "cannot_start_UNIT_SPY": 19,
+        "no_params_BUILDING_APADANA": 1,
+        "no_params_BUILDING_BIOSPHERE": 1,
+        "no_params_BUILDING_BROADWAY": 1,
+        "no_params_BUILDING_CHICHEN_ITZA": 1,
+        "no_params_BUILDING_GREAT_BATH": 1,
+        "no_params_BUILDING_JEBEL_BARKAL": 1,
+        "no_params_BUILDING_OXFORD_UNIVERSITY": 1,
+        "no_params_BUILDING_STONEHENGE": 1,
+        "opening_settler_in_progress": 3
+      },
+      "seen": 459
+    },
+    "produce_next": {
+      "applied": 740,
+      "refused": {},
+      "seen": 740
+    },
+    "purchase": {
+      "applied": 17,
+      "refused": {
+        "cannot_buy_UNIT_BUILDER": 1
+      },
+      "seen": 18
+    },
+    "purchase_faith": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "research": {
+      "applied": 69,
+      "refused": {},
+      "seen": 69
+    },
+    "sell": {
+      "applied": 44,
+      "refused": {
+        "nothing_tradeable": 5,
+        "sell_cooldown": 44
+      },
+      "seen": 93
+    },
+    "unit": {
+      "applied": 1902,
+      "refused": {
+        "IMPROVEMENT_BEACH_RESORT": 1,
+        "IMPROVEMENT_INDUSTRY": 3,
+        "IMPROVEMENT_MINE": 2,
+        "IMPROVEMENT_SOLAR_FARM": 5,
+        "IMPROVEMENT_WIND_FARM": 4,
+        "MOVE_TO": 4,
+        "RANGE_ATTACK": 24,
+        "SPY_FOMENT_UNREST": 1,
+        "SPY_GAIN_SOURCES": 53,
+        "SPY_LISTENING_POST": 6,
+        "TRADE_ROUTE": 1,
+        "UPGRADE": 120,
+        "already_IMPROVEMENT_WIND_FARM": 1,
+        "cannot_FORTIFY": 14,
+        "cannot_PILLAGE": 1,
+        "cannot_REPAIR": 12,
+        "cannot_form_army": 1,
+        "cannot_form_corps": 2,
+        "cannot_promote_PROMOTION_TORTOISE": 1,
+        "found_off_site": 3,
+        "move_no_moves_this_turn": 94,
+        "queue_prior_refused": 25,
+        "unit_gone:1048579": 1,
+        "unit_gone:1179653": 1,
+        "unit_gone:2621443": 1,
+        "unit_gone:3473419": 1,
+        "unit_gone:3735553": 1,
+        "unit_gone:393220": 1,
+        "unit_gone:4063247": 1,
+        "unit_gone:4390920": 1,
+        "unit_gone:4521985": 1,
+        "unit_gone:4653065": 1,
+        "unit_gone:4849676": 1,
+        "unit_gone:65536": 1
+      },
+      "seen": 2292
+    },
+    "war": {
+      "applied": 1,
+      "refused": {
+        "cannot_declare": 1
+      },
+      "seen": 2
+    }
+  },
+  "orders_applied": 2283,
+  "orders_seen": 1413,
+  "outcome": null,
+  "reason": "game exited",
+  "rival_best": 1453,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260826T112920Z",
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260826T112920Z",
+  "victory_target": "diplomatic",
+  "withheld": []
+}
