@@ -265,6 +265,35 @@ def render(reading: dict, out=print) -> None:
             "these are operator pins, which are decisions rather than oversights)")
 
 
+def record(ledger: Optional[dict] = None) -> dict:
+    """Write today's reading and return it.
+
+    Exposed as a function because `tools/genes.py write` calls it: the command
+    that moves the genome is the command that records what the move costs, so
+    the two cannot come apart. They did on the day this file landed — #2570
+    turned twelve genes on and five off a few hours later, the recorded bill
+    went stale, and the guard that exists to notice that put `main` red instead
+    of putting the number in the pull request that moved it. A guard whose only
+    outcome is a red trunk teaches the fleet to ignore it; this is the wiring
+    that makes it produce a diff instead.
+    """
+    reading = bill(json.loads(LEDGER_JSON.read_text()) if ledger is None else ledger)
+    RECORD_JSON.write_text(json.dumps(reading, indent=1, sort_keys=False) + "\n")
+    return reading
+
+
+def is_stale(ledger: Optional[dict] = None) -> Optional[Tuple[List[str], List[str]]]:
+    """`(joined, left)` when the recorded set no longer matches, else `None`."""
+    if not RECORD_JSON.exists():
+        return ([], [])
+    reading = bill(json.loads(LEDGER_JSON.read_text()) if ledger is None else ledger)
+    was = {row["tag"] for row in json.loads(RECORD_JSON.read_text()).get("genes", [])}
+    now = {row["tag"] for row in reading["genes"]}
+    if was == now:
+        return None
+    return (sorted(now - was), sorted(was - now))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)

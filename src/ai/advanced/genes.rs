@@ -1561,6 +1561,18 @@ pub const GENES: &[Gene] = &[
     // go first, ranged before the melee finisher, each biased toward its
     // planned target; the exact attack decision is unchanged.
     Gene { tag: "fire-plan", field: "fire_plan", kind: Kind::OptIn, enable: AdvancedAi::enable_fire_plan, disable: AdvancedAi::disable_fire_plan },
+    // The doctrine arena's replicated finding: the share of the force up at
+    // first contact predicts the swing (r +0.30 on central_position), and
+    // the deployed controller arrives over twice the span `basic` does. On
+    // an advance no unit ends the turn more than the body's pace plus one
+    // closer to the objective than the anchor stood — no stand, every unit
+    // spends its movement; the tile beside the line is the line.
+    Gene { tag: "close-as-a-body", field: "close_as_a_body", kind: Kind::OptIn, enable: AdvancedAi::enable_close_as_a_body, disable: AdvancedAi::disable_close_as_a_body },
+    // The same arena reads the deployed controller's shooters unscreened
+    // 25–32 % of their turns against basic's 39–50 %. The arena's own
+    // definition of screened — a friend beside the shooter and nearer the
+    // enemy — paid to the shooter's tile; the melee side measured −19/seed.
+    Gene { tag: "screen-the-shooters", field: "screen_the_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_screen_the_shooters, disable: AdvancedAi::disable_screen_the_shooters },
     // `early-archers` (operator, 2026-08-26): an Archer for every city, the
     // frontier city first, while the world is Ancient and Classical. The
     // shipped army is sized by bodies (one land unit per city, the Scout
