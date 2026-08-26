@@ -1923,6 +1923,12 @@ pub struct Unit {
     pub acted: bool,
     #[serde(default)]
     pub zoc_stopped: bool,
+    /// The host's own `Unit:IsEmbarked` reading, pinned to the position it was
+    /// observed on. While the unit stands there it wins over the "its tile is
+    /// water" derivation; a unit the board has moved, and an older export that
+    /// carries no flag, derive from the tile. See `unit_is_embarked_at`.
+    #[serde(default)]
+    pub host_embarked: Option<(Pos, bool)>,
     /// Snapshot taken when this unit's turn begins. A unit may leave a ZOC
     /// as its first action, but attacking before leaving forfeits that move.
     #[serde(default)]
@@ -15751,20 +15757,35 @@ impl Game {
     /// effective delegation, while the stored envoy balance remains unchanged.
     pub fn envoys_at(&self, pid: usize, minor: usize) -> i64 {
         let raw = self.raw_envoys_at(pid, minor);
-        if self.players[pid].governor_roster.is_empty() {
+        let (messenger, multiplier) = self.amani_envoy_terms(pid, minor);
+        if messenger == 0.0 && multiplier == 1.0 {
             return raw;
         }
+        ((raw as f64 + messenger) * multiplier).round() as i64
+    }
+
+    /// What an established Amani adds to `pid`'s delegation at `minor`, as
+    /// `(messenger, multiplier)` with `envoys_at = round((raw + messenger) *
+    /// multiplier)`; `(0.0, 1.0)` when she is not established in one of that
+    /// city-state's cities. Public to the crate so a mirrored board can store
+    /// the host's count NET of these terms — the host's `GetTokensReceived`
+    /// already includes her, and storing it raw counted her twice.
+    pub(crate) fn amani_envoy_terms(&self, pid: usize, minor: usize) -> (f64, f64) {
+        let none = (0.0, 1.0);
+        if self.players[pid].governor_roster.is_empty() {
+            return none;
+        }
         let Some(city) = self.established_governor_city(pid, "amani") else {
-            return raw;
+            return none;
         };
         if self.cities.get(&city).map(|city| city.owner) != Some(minor) {
-            return raw;
+            return none;
         }
         let messenger = self.governor_effect(pid, city, "city_state_envoys");
         let multiplier = self
             .governor_effect(pid, city, "city_state_envoys_multiplier")
             .max(1.0);
-        ((raw as f64 + messenger) * multiplier).round() as i64
+        (messenger, multiplier)
     }
 
     /// Suzerain: at least 3 envoys and strictly more than every other major.
@@ -16939,6 +16960,14 @@ impl Game {
     }
 
     fn unit_is_embarked_at(&self, unit: &Unit, pos: Pos) -> bool {
+        // The host's flag is the fact while the unit stands where it was read; the
+        // tile rule below is the model, and the two disagree exactly when the
+        // mirrored tile is behind the unit (the tile export runs every fourth turn).
+        if let Some((observed_at, embarked)) = unit.host_embarked {
+            if observed_at == pos {
+                return embarked;
+            }
+        }
         let domain = self.rules.units[unit.kind].domain.as_deref();
         !matches!(domain, Some("sea" | "air"))
             && unit.kind != "giant_death_robot"
@@ -21584,6 +21613,7 @@ impl Game {
             fortify_turns: 0,
             acted: false,
             zoc_stopped: false,
+            host_embarked: None,
             started_turn_in_zoc: false,
             air_patrol: false,
             air_patrol_pos: None,
