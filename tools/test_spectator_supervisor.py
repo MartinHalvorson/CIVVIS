@@ -19,6 +19,27 @@ supervisor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(supervisor)
 
 
+#: Held for the whole module run; removed when the interpreter exits.
+_SANDBOX = tempfile.TemporaryDirectory(prefix="civvis-test-gamelock-")
+
+
+def setUpModule() -> None:
+    """⚠ Never ask THIS machine whether a spectator may start.
+
+    `gamelock` reads the operator-halt marker out of the operator's home
+    directory, so the halt recorded here on 2026-08-19 made eleven of these
+    tests fail on that Mac and pass on the runner — a halt no test had asked
+    for. `test_ladder_watchdog.py`'s `setUpModule` tells the whole story; this
+    is the same sandbox for the same reason.
+    """
+    sandbox = Path(_SANDBOX.name)
+    halt, lock = sandbox / "operator-halt.json", sandbox / "civ6-game.lock"
+    os.environ["CIVVIS_OPERATOR_HALT_FILE"] = str(halt)
+    os.environ["CIVVIS_GAME_LOCK_DIR"] = str(lock)
+    supervisor.gamelock.OPERATOR_HALT = halt
+    supervisor.gamelock.LOCK = lock
+
+
 class OperatorHaltTests(unittest.TestCase):
     def test_wait_for_operator_resume_logs_once_and_rechecks_the_marker(self):
         with (
@@ -2653,6 +2674,23 @@ class StatusDocumentContractTests(unittest.TestCase):
         with patch.object(supervisor, "read_json", return_value=None) as read:
             self.assertIsNone(supervisor.read_status(8766))
         read.assert_called_once_with(8766, "/status", 5.0)
+
+
+
+class TheSuiteReadsASandboxNotThisMachine(unittest.TestCase):
+    """⚠ The guard on `setUpModule` — see `test_ladder_watchdog.py` for why."""
+
+    def test_the_halt_marker_and_the_game_lock_live_in_the_sandbox(self):
+        sandbox = Path(_SANDBOX.name)
+        for name, path in (("OPERATOR_HALT", supervisor.gamelock.OPERATOR_HALT),
+                           ("LOCK", supervisor.gamelock.LOCK)):
+            self.assertTrue(
+                path.is_relative_to(sandbox),
+                f"gamelock.{name} is {path}, outside the test sandbox: this suite "
+                f"is reading the machine it runs on. See setUpModule.")
+        self.assertEqual(os.environ.get("CIVVIS_OPERATOR_HALT_FILE"),
+                         str(supervisor.gamelock.OPERATOR_HALT),
+                         "a subprocess a test spawns must inherit the same sandbox")
 
 
 if __name__ == "__main__":
