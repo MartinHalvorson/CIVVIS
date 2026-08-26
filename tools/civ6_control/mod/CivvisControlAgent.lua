@@ -11778,7 +11778,13 @@ local function applyOrder(player, pid, row, turn)
 			end
 			return placed, "found";
 		end
-		if verb == "MOVE_TO" or verb == "ATTACK" then
+		-- CAPTURE is a MOVE_TO onto an enemy civilian with the attack modifier
+		-- and without a strike ledger entry: no combat follows, the unit simply
+		-- arrives and the civilian is ours. Without the modifier the host walks
+		-- next to the civilian and stops (see `attackModifiers`); measured on
+		-- the 273 live runs that carried #2075: 65 bare MOVE_TO orders aimed at
+		-- an unguarded barbarian-held settler, zero captures.
+		if verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE" then
 			if x == nil or y == nil then return false, "no_dest"; end
 			-- ★★★★★ SEND THIS TURN'S LEG, NOT A PATH THE HOST WALKS NEXT TURN.
 			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
@@ -11801,14 +11807,16 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			if verb == "ATTACK" then
+			if verb == "ATTACK" or verb == "CAPTURE" then
 				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
 				-- a strike, and the whole army has been swinging at air.
 				local modifiers = CivvisLedger.attackModifiers();
 				if modifiers ~= nil then
 					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
 				end
-				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+				if verb == "ATTACK" then
+					CivvisLedger.strike(unit, subject, verb, x, y, turn);
+				end
 			end
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
 			if not moved then
@@ -12965,7 +12973,7 @@ CivvisQueue.drain = function(player, pid, turn)
 				elseif ready then
 					local row = entry.rows[entry.next];
 					local verb = tostring(row.verb or "");
-					if spent and (verb == "MOVE_TO" or CivvisQueue.isStrike(row)) then
+					if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or CivvisQueue.isStrike(row)) then
 						-- Nothing that needs movement can run; say why, don't ask.
 						CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
 					else
