@@ -38,6 +38,27 @@ fn is_subsequence(part: &[String], whole: &[String]) -> bool {
 /// move it — turn 60 held one until the generator started filling lakes,
 /// and turns 65, 70, 80 and 90 all did while 75 and 100 did not. Play on
 /// until a deal is genuinely available instead.
+/// Whether dropping any one of the six families from the full enumeration
+/// removes at least one action — the position the partition test needs.
+///
+/// The fixture used to stop at the first settled position that offered a
+/// deal and a diplomatic action, and nothing else. Which position that is
+/// depends on every rule the played-out game runs through: #2573 let units
+/// pass through their own units, the four AIs took different roads to turn
+/// 60, and the first position with a deal and a denouncement on offer had
+/// nothing left in `CORE` to drop — no research, civic or production choice
+/// pending on that exact turn — so the partition test failed on `main` with
+/// no change to the partition. Asking the fixture for the property the test
+/// asserts keeps it from breaking on the next unrelated engine change.
+fn every_family_drops_something(game: &Game, pid: usize) -> bool {
+    let all = game.legal_actions_within(pid, ActionFamilies::ALL).len();
+    FAMILIES.iter().all(|family| {
+        game.legal_actions_within(pid, ActionFamilies::ALL.without(*family))
+            .len()
+            < all
+    })
+}
+
 fn played_in_game() -> Game {
     let mut game = Game::new_with(GameOptions::new(4, 32, 22, 90_002, 400, 4));
     let mut ais = AdvancedAi::fleet(&game);
@@ -52,6 +73,7 @@ fn played_in_game() -> Game {
         let diplomacy =
             game.legal_actions_within(game.current, ActionFamilies::DIPLOMACY);
         if settled
+            && every_family_drops_something(&game, game.current)
             && deals.iter().any(|action| {
                 matches!(
                     action,

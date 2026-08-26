@@ -4472,6 +4472,13 @@ pub struct AdvancedAi {
     /// state for `contested_land_first`, whose flag is on `BasicAi`. See
     /// `advanced/contested_land.rs`.
     contested_land_frame: RefCell<contested_land::ContestedLandFrame>,
+    /// Price city sites with an adjacent Harbor-eligible coast. Opt-in gene
+    /// `coastal-city-sites`; see `advanced/coastal_sites.rs`.
+    coastal_city_sites: bool,
+    /// Version 2 of `coastal-city-sites`: keep the coast baseline and add the
+    /// best local Harbor water-resource adjacency. Its toggle selects this
+    /// version instead of version 1. Opt-in gene `coastal-city-sites-2`.
+    coastal_city_sites_2: bool,
 
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
     /// or a wonder at the front of the owning city's queue. Opt-in gene
@@ -5557,6 +5564,9 @@ use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 /// into it, stack with a summoned guard when they must. Opt-in gene
 /// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
 mod civilian_safety;
+/// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
+/// resource-aware version. See `advanced/coastal_sites.rs`.
+mod coastal_sites;
 /// Three Deity habits: chop into the queue, chase eurekas with Builders and
 /// with the production queue. Three opt-in genes; see
 /// `advanced/deity_habits.rs`.
@@ -6333,6 +6343,8 @@ impl AdvancedAi {
             city_target_meets_the_map: false,
             camp_tile_buyout: false,
             contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
+            coastal_city_sites: false,
+            coastal_city_sites_2: false,
 
             chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
@@ -23530,13 +23542,12 @@ impl AdvancedAi {
         };
         let tile = &g.map.tiles[&pos];
         let mut value = value_of(tile, 1.5);
-        let mut fresh = tile.has_river();
+        let fresh = Self::settlement_prefilter_has_fresh_water(g, pos);
         let mut coastal = false;
         for neighbor in g.nbrs(pos) {
             let Some(tile) = g.map.get(neighbor) else {
                 continue;
             };
-            fresh |= tile.terrain == "lake" || tile.feature.as_deref() == Some("oasis");
             coastal |= matches!(tile.terrain.as_str(), "coast" | "ocean");
             value += value_of(tile, 1.0);
         }
@@ -23571,6 +23582,7 @@ impl AdvancedAi {
                 } * ring_discount;
             }
         }
+        value += self.coastal_city_site_bonus(g, pos, &g.wdisk(pos, 2));
         let fresh = tile.has_river()
             || g.nbrs(pos).iter().any(|p| {
                 g.map
@@ -23630,6 +23642,7 @@ impl AdvancedAi {
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.coastal_city_site_bonus(g, pos, &positions);
         value += self.wonder_footprint_value(g, &positions);
         let enemy_distance = g
             .cities
@@ -30855,6 +30868,13 @@ impl AdvancedAi {
                 self.base.remember_capture_objective(g, pid, uid, city);
             }
         }
+        // A barbarian-held settler is not an unwanted one under the
+        // `barbarian-settler-capture` gene: it is the capture below.
+        let barb_rescue: Option<usize> = if self.base.barbarian_settler_capture {
+            g.barb_pid
+        } else {
+            None
+        };
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
@@ -30862,6 +30882,7 @@ impl AdvancedAi {
                     other.owner != pid
                         && g.is_at_war(pid, other.owner)
                         && other.kind == "settler"
+                        && barb_rescue != Some(other.owner)
                 })
             });
         if !unwanted_settler_adjacent
@@ -30911,6 +30932,18 @@ impl AdvancedAi {
         if self
             .base
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
+        {
+            return true;
+        }
+        // The gene's pursuit half: a capturable barbarian-held civilian a few
+        // tiles out is walked onto rather than watched. #2075 enabled the
+        // flag and never called this from here, so on the live seat the
+        // pursuit existed only in `BasicAi::military_step`, which a major
+        // does not run.
+        if self.base.barbarian_settler_capture
+            && self
+                .base
+                .pursue_capturable_civilian(g, pid, uid, decline_settlers)
         {
             return true;
         }

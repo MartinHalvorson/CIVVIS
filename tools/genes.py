@@ -525,6 +525,7 @@ RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 OPERATOR_DEFAULT_ON = (
     "apostle-promotion-by-role",
     "army-target-weighs-enemy",
+    "barbarian-settler-capture",
     "boost-wait-research",
     "builder-supply-floor",
     "buildings-before-projects",
@@ -572,6 +573,18 @@ OPERATOR_DEFAULT_ON = (
     "unit-objective-memory",
     "wonder-adjacent-sites",
     "wonder-score-tally",
+)
+
+#: ⭐ A pin over a gene no batch has priced ships on its name alone. The
+#: operator may well mean exactly that, and on 2026-08-26 did:
+#: `barbarian-settler-capture` was asked for by name after the live seat
+#: fortified beside a free settler for twenty turns (civvis-20260826T194422Z),
+#: and no reporting batch has run since. Each such pin is named here so the
+#: genome stays explicable (the Rust ledger test carries the same list as
+#: `PINNED_BEFORE_PRICING`); the next batch prices it like any other gene, and
+#: its row leaves the day a batch column exists.
+PINNED_BEFORE_PRICING = (
+    "barbarian-settler-capture",
 )
 
 #: ⭐ THE OPERATOR'S HOLDS — genes that default **off** whatever their batch

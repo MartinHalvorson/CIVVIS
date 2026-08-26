@@ -2956,8 +2956,44 @@ impl AdvancedAi {
         self.screen_the_shooters = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
+    /// A settler in the barbarians' hands is taken back: exempt from the
+    /// duplicate-settler guard, first among adjacent captures, pursued out to
+    /// `BARBARIAN_SETTLER_PURSUIT_RADIUS`. Gene `barbarian-settler-capture`;
+    /// the flag lives on `BasicAi`, whose `military_step` and
+    /// `capture_adjacent_civilian` read it.
+    pub fn enable_barbarian_settler_capture(&mut self) {
+        self.base.barbarian_settler_capture = true;
+    }
 
+    /// The twin of `enable_barbarian_settler_capture`.
+    pub fn disable_barbarian_settler_capture(&mut self) {
+        self.base.barbarian_settler_capture = false;
+    }
+
+    /// Price a city site's Harbor-eligible coast in the final settlement
+    /// score. See `advanced/coastal_sites.rs`.
+    pub fn enable_coastal_city_sites(&mut self) {
+        self.coastal_city_sites = true;
+    }
+
+    /// The twin of `enable_coastal_city_sites`.
+    pub fn disable_coastal_city_sites(&mut self) {
+        self.coastal_city_sites = false;
+    }
+
+    /// Version 2 keeps the coast baseline and additionally prices the best
+    /// water-resource adjacency around a prospective Harbor.
+    pub fn enable_coastal_city_sites_2(&mut self) {
+        self.coastal_city_sites = false;
+        self.coastal_city_sites_2 = true;
+    }
+
+    /// The twin of `enable_coastal_city_sites_2`.
+    pub fn disable_coastal_city_sites_2(&mut self) {
+        self.coastal_city_sites_2 = false;
+    }
+
+    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
     // ---- append: e-f ------------------------------------------------
