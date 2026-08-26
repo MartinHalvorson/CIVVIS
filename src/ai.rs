@@ -4600,18 +4600,16 @@ impl BasicAi {
             .values()
             .filter(|(_, claimant)| *claimant != uid)
             .count();
-        // `quest_camp_errand`: a camp a city-state named is worth walking
-        // past a nearer one for, and worth a little further out than the ring
-        // the errand normally stops at. Off, `named` is always false and the
-        // ordering below is unchanged. See `advanced/city_state_quests.rs`.
+        // `quest_camp_errand`: among the camps this errand would already run,
+        // the one a city-state named is the one that pays an Envoy. A
+        // PREFERENCE, not a reach: the errand's own radius, war gate, claim
+        // ledger and exchange threshold all still decide which camps are
+        // eligible, and a named camp outside them is not chased. Off, `named`
+        // is always false and the ordering below is unchanged. See
+        // `advanced/city_state_quests.rs`.
         let mut best: Option<(bool, i32, Pos)> = None;
         for camp in g.barb_camps.keys() {
             let named = self.quest_camp_is_named(g, pid, *camp);
-            let reach = if named {
-                crate::ai::advanced::city_state_quests::QUEST_CAMP_EXTRA_REACH
-            } else {
-                0
-            };
             match self.camp_bounty_claims.get(camp) {
                 // Another unit already runs this camp's errand.
                 Some((_, claimant)) if *claimant != uid => continue,
@@ -4620,7 +4618,7 @@ impl BasicAi {
                 None if claims_spent >= CAMP_BOUNTY_PARTY => continue,
                 None => {}
             }
-            if my_cities.iter().map(|c| g.wdist(*camp, *c)).min().unwrap() > camp_radius + reach {
+            if my_cities.iter().map(|c| g.wdist(*camp, *c)).min().unwrap() > camp_radius {
                 continue;
             }
             // `enemy_of_my_enemy`: the neighbour's camp is not our errand.
@@ -4628,7 +4626,7 @@ impl BasicAi {
                 continue;
             }
             let d = g.wdist(upos, *camp);
-            if d > BARBARIAN_RESPONSE_RECALL_RANGE + reach {
+            if d > BARBARIAN_RESPONSE_RECALL_RANGE {
                 continue;
             }
             if self.exchange_score(g, uid, *camp, ranged) <= self.attack_threshold(g, uid, *camp) {
