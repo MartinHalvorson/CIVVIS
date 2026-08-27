@@ -25551,10 +25551,15 @@ impl Game {
         // Per tile: movement kept on arrival, and whether the arrival stopped
         // the unit (zone of control) so nothing expands from it.
         let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
-        let best: BTreeMap<Pos, (f64, bool)> =
-            self.relax_movement(uid, start, moves, |cur, n| self.can_pass(uid, cur, n), |n, cur| {
+        let best: BTreeMap<Pos, (f64, bool)> = self.relax_movement(
+            uid,
+            start,
+            moves,
+            |cur, n| self.can_pass(uid, cur, n),
+            |n, cur| {
                 parent.insert(n, cur);
-            });
+            },
+        );
         for (pos, (rem, _)) in best {
             // The flood crosses our own column and never ends on it, so a
             // stand behind a friendly unit is a step on the way and not a
@@ -26571,10 +26576,10 @@ impl Game {
         let mut queue = vec![start];
         while let Some(cur) = queue.pop() {
             let here = best[&cur];
-            if here.remaining() <= 0.0 || here.stopped() {
+            let rem = here.remaining();
+            if rem <= 0.0 || here.stopped() {
                 continue;
             }
-            let rem = here.remaining();
             for n in self.nbrs(cur) {
                 if !self.map.tiles.contains_key(&n) || !passable(cur, n) {
                     continue;
@@ -26586,7 +26591,18 @@ impl Game {
                 }
                 let new_rem = (rem - cost).max(0.0).min(self.capped_moves_at(uid, &cap, n));
                 let arrival = V::arrival(new_rem, self.enters_enemy_zoc(&zoc, n));
-                if best.get(&n).map(|b| new_rem > b.remaining()).unwrap_or(true) {
+                // ⚠ The zone-of-control rule is applied BEFORE the improvement
+                // test, not after it: `flow_past` and `path_to` compare the
+                // zeroed value, so a second arrival at a tile inside a zone of
+                // control never improves on the first and never re-parents it.
+                // Comparing the pre-ZOC movement instead leaves every distance
+                // identical and hands `path_to` a different walk to a
+                // destination under a zone of control.
+                if best
+                    .get(&n)
+                    .map(|b| arrival.remaining() > b.remaining())
+                    .unwrap_or(true)
+                {
                     best.insert(n, arrival);
                     record_parent(n, cur);
                     queue.push(n);
@@ -26659,10 +26675,17 @@ impl Game {
         }
         let _memo = self.query_memo();
         let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
-        let _: BTreeMap<Pos, f64> =
-            self.relax_movement(uid, start, moves, |cur, n| self.can_pass(uid, cur, n), |n, cur| {
+        // Run for its parents: `f64` is the zone-of-control rule `flow` uses,
+        // which is what this path has always been read against.
+        let _reach: BTreeMap<Pos, f64> = self.relax_movement(
+            uid,
+            start,
+            moves,
+            |cur, n| self.can_pass(uid, cur, n),
+            |n, cur| {
                 parent.insert(n, cur);
-            });
+            },
+        );
         parent.get(&to)?;
         let mut path = vec![to];
         let mut cur = to;
@@ -40619,27 +40642,36 @@ impl Game {
         Ok(())
     }
 
-    /// Faith price for a building unlocked by a Worship belief, Jesuit
-    /// Education, or Valletta. Valletta uses the normal 2:1 Faith conversion
-    /// for City Center and Encampment buildings, while the three wall tiers
-    /// (including unique replacements) receive its 50% discount.
-    pub(crate) fn building_faith_purchase_cost(
+    /// The half of a building purchase gate that does not depend on the
+    /// currency.
+    ///
+    /// ⚠ One engine, two purchase paths. `building_faith_purchase_cost` and
+    /// `building_gold_purchase_cost` asked the same three questions in two
+    /// hand-copied preambles, and the last time those drifted the Faith path
+    /// sold a city defence the Gold path had always refused — 99 purchases the
+    /// live host rejected, recorded in the comment below. They now ask them
+    /// once.
+    ///
+    /// `Err` is an answer the gate has already settled: the host's own price
+    /// (or its refusal), or a building the shipped ruleset sells for no
+    /// currency at all. `Ok` hands back the item and its district family for
+    /// the currency's own rules to price.
+    fn building_purchase_gate(
         &self,
-        pid: usize,
         cid: u32,
         building: &str,
-    ) -> Option<f64> {
-        let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
-        let spec = self.rules.buildings.get(building)?;
-        if city.buildings.iter().any(|owned| owned == building) {
-            return None;
-        }
+        spec: &crate::rules::BuildingSpec,
+        currency: &str,
+    ) -> Result<(Item, Name), Option<f64>> {
         let item = Item::Building {
             building: Name::new(building),
         };
-        // ★ The host's own answer first — see `building_gold_purchase_cost`.
-        if let Some(host) = self.host_purchase_price(cid, &item, "faith") {
-            return host.filter(|_| !self.purchase_is_blocked(cid, &item));
+        // ★ The host's own answer first. When the export carried this city's
+        // purchase menu (`StateCity::purchasable`) the price is the engine's
+        // `GetPurchaseCost` and an item off the menu is not for sale; the
+        // model's rules below are what the board falls back on without it.
+        if let Some(host) = self.host_purchase_price(cid, &item, currency) {
+            return Err(host.filter(|_| !self.purchase_is_blocked(cid, &item)));
         }
         let district = spec
             .district
@@ -40659,21 +40691,41 @@ impl Game {
         // cost modifiers beside it are vestigial -- they discount a purchase
         // the game never offers.
         //
-        // This function granted the opposite, and `building_gold_purchase_cost`
-        // twelve lines below has always refused the same buildings for the same
-        // reason ("City defenses ... remain Production-only"). One engine, two
-        // purchase paths, opposite answers for one building.
-        //
-        // The live seat paid for it: runs `civvis-20260818T113115Z` and
-        // `104654Z`, the two whose minors list carries Valletta with this seat
-        // as suzerain, issued 99 Faith purchases of `BUILDING_CASTLE` (53),
+        // The Faith path granted the opposite until 2026-08-18, while the Gold
+        // path had always refused the same buildings for the same reason. The
+        // live seat paid for it: runs `civvis-20260818T113115Z` and `104654Z`,
+        // the two whose minors list carries Valletta with this seat as
+        // suzerain, issued 99 Faith purchases of `BUILDING_CASTLE` (53),
         // `BUILDING_STAR_FORT` (32) and `BUILDING_WALLS` (14). The host refused
         // every one, with no reason text and with all four of the mod's probed
         // parameter shapes answering `can = false`. The other six runs, which
-        // have no Valletta, refused none.
+        // have no Valletta, refused none. Two copies of a gate is how that
+        // happens; this is the copy that is left.
         if spec.outer_defense > 0 {
+            return Err(None);
+        }
+        Ok((item, district))
+    }
+
+    /// Faith price for a building unlocked by a Worship belief, Jesuit
+    /// Education, or Valletta. Valletta uses the normal 2:1 Faith conversion
+    /// for City Center and Encampment buildings, while the three wall tiers
+    /// (including unique replacements) receive its 50% discount.
+    pub(crate) fn building_faith_purchase_cost(
+        &self,
+        pid: usize,
+        cid: u32,
+        building: &str,
+    ) -> Option<f64> {
+        let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
+        let spec = self.rules.buildings.get(building)?;
+        if city.buildings.iter().any(|owned| owned == building) {
             return None;
         }
+        let (item, district) = match self.building_purchase_gate(cid, building, spec, "faith") {
+            Ok(gate) => gate,
+            Err(settled) => return settled,
+        };
         let valletta = self.grants_city_state_unique_bonus(pid, "Valletta")
             && matches!(district.as_str(), "city_center" | "encampment")
             && self.can_produce(pid, cid, &item);
@@ -40724,22 +40776,11 @@ impl Game {
         building: &str,
     ) -> Option<f64> {
         let spec = self.rules.buildings.get(building)?;
-        // ★ The host's own answer first. When the export carried this city's
-        // purchase menu (`StateCity::purchasable`) the price is the engine's
-        // `GetPurchaseCost` and an item off the menu is not for sale; the
-        // model's rules below are what the board falls back on without it.
-        let asked = Item::Building {
-            building: Name::new(building),
+        let (item, district) = match self.building_purchase_gate(cid, building, spec, "gold") {
+            Ok(gate) => gate,
+            Err(settled) => return settled,
         };
-        if let Some(host) = self.host_purchase_price(cid, &asked, "gold") {
-            return host.filter(|_| !self.purchase_is_blocked(cid, &asked));
-        }
-        let district = spec
-            .district
-            .map(|district| self.district_family(district))
-            .unwrap_or(crate::name!("city_center"));
-        if spec.outer_defense > 0
-            || spec.wonder
+        if spec.wonder
             || district == "government_plaza"
             || spec
                 .effects
@@ -40747,24 +40788,13 @@ impl Game {
                 .copied()
                 .unwrap_or(0.0)
                 > 0.0
-            || !self.can_produce(
-                pid,
-                cid,
-                &Item::Building {
-                    building: Name::new(building),
-                },
-            )
+            || !self.can_produce(pid, cid, &item)
             // ⚠ `can_produce` reads `blocked_production`; a PURCHASE refusal lands
             // in `blocked_purchases`, a different set with a different meaning —
             // "the host will not sell this here right now" rather than "this city
             // cannot build it". Without this the two never met and a refused
             // purchase was re-offered every turn.
-            || self.purchase_is_blocked(
-                cid,
-                &Item::Building {
-                    building: Name::new(building),
-                },
-            )
+            || self.purchase_is_blocked(cid, &item)
         {
             return None;
         }
@@ -40772,16 +40802,7 @@ impl Game {
             .city_district_effect(&self.cities[&cid], "gold_faith_purchase_discount_pct")
             + self.gov_effects(pid).gold_purchase_discount_pct)
             .clamp(0.0, 100.0);
-        Some(
-            self.item_cost_for_city(
-                pid,
-                cid,
-                &Item::Building {
-                    building: Name::new(building),
-                },
-            ) * 4.0
-                * (1.0 - discount / 100.0),
-        )
+        Some(self.item_cost_for_city(pid, cid, &item) * 4.0 * (1.0 - discount / 100.0))
     }
 
     fn finish_purchased_building(&mut self, cid: u32, item: &Item) {
