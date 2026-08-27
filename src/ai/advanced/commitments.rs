@@ -350,10 +350,10 @@ impl CommitmentLedger {
             .insert((commitment.kind, commitment.owner), commitment);
     }
 
-    /// Hexes to walk, priced as turns at two hexes a turn — the flat-ground
-    /// rate. The fallback price when the terrain walk cannot reach the
-    /// target inside [`WALK_PRICE_RADIUS`]; see the `price` closure in
-    /// `AdvancedAi::reconcile_commitments`.
+    /// Test-only flat-ground ETA baseline: two hexes a turn, rounded up.
+    /// Production pricing follows the terrain walk in
+    /// `AdvancedAi::reconcile_commitments` instead.
+    #[cfg(test)]
     fn walk_eta(turn: u32, hexes: i32) -> u32 {
         turn + (hexes.max(0) as u32).div_ceil(2)
     }
