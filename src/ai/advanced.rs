@@ -30595,8 +30595,17 @@ impl AdvancedAi {
             .map(|player| player.id)
             .collect();
         let mut worst_reply = 0.0_f64;
+        // With one front there is no clone to save, so retain the original
+        // path exactly. The broad geometry scan only earns its keep when it
+        // can eliminate one or more other warring seats.
+        let has_multiple_enemies = enemies.len() > 1;
 
         for enemy in enemies {
+            if has_multiple_enemies
+                && !Self::enemy_can_force_a_reply_against_any(after, enemy, &victims)
+            {
+                continue;
+            }
             let mut reply_position = after.speculative_clone();
             reply_position.current = enemy;
             for unit in reply_position
@@ -30631,6 +30640,65 @@ impl AdvancedAi {
             }
         }
         worst_reply
+    }
+
+    /// Whether an enemy can *possibly* make one of the forcing replies this
+    /// search admits on its next turn.  A negative answer is enough to avoid
+    /// cloning the whole board for that enemy; a positive answer deliberately
+    /// remains only a broad prefilter and the cloned `Game::apply` below is
+    /// still the authority on terrain, line of sight, occupancy, and costs.
+    ///
+    /// The reply position resets the enemy's moves, attacks, and city strikes
+    /// before searching it.  This predicate must therefore not use their
+    /// current availability.  It mirrors the geometry of `forcing_attacks_to`:
+    /// direct air strikes, direct or one-step land attacks, and city or
+    /// encampment strikes.  City checks are intentionally looser than the
+    /// engine (range only), which preserves every uncertain branch rather than
+    /// proving a legal counterattack away from the search.
+    fn enemy_can_force_a_reply_against_any(position: &Game, enemy: usize, victims: &[u32]) -> bool {
+        let unit_can_reach_a_victim = position
+            .units
+            .values()
+            .filter(|unit| unit.owner == enemy)
+            .any(|unit| {
+                let spec = &position.rules.units[unit.kind];
+                let reach = position.unit_attack_range(unit.id);
+                if spec.domain.as_deref() == Some("air") {
+                    return victims.iter().any(|victim| {
+                        position
+                            .units
+                            .get(victim)
+                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach)
+                    });
+                }
+                spec.class == "military"
+                    && victims.iter().any(|victim| {
+                        position
+                            .units
+                            .get(victim)
+                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach + 2)
+                    })
+                    && !position.is_embarked(unit)
+            });
+        if unit_can_reach_a_victim {
+            return true;
+        }
+
+        position
+            .cities
+            .values()
+            .filter(|city| city.owner == enemy)
+            .any(|city| {
+                victims.iter().any(|victim| {
+                    let Some(victim) = position.units.get(victim) else {
+                        return false;
+                    };
+                    position.wdist(city.pos, victim.pos) <= 2
+                        || position
+                            .city_district_family_position(city, crate::name!("encampment"))
+                            .is_some_and(|source| position.wdist(source, victim.pos) <= 2)
+                })
+            })
     }
 
     /// Price a forcing reply against an untouched board, cloning and applying

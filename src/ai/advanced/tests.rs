@@ -21455,6 +21455,61 @@ fn forcing_reply_search_prices_a_move_then_attack_counter() {
 }
 
 #[test]
+fn forcing_reply_prefilter_keeps_one_step_attackers_and_skips_remote_wars() {
+    let mut game = Game::new_full(3, 24, 16, 81_181, 80, 0, false);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|target| {
+            game.wdisk(*target, 3)
+                .iter()
+                .any(|pos| game.wdist(*target, *pos) == 3)
+                && game
+                    .wdisk(*target, 6)
+                    .iter()
+                    .any(|pos| game.wdist(*target, *pos) == 6)
+                && game
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == 2)
+                    .all(|city| game.wdist(*target, city.pos) > 2)
+        })
+        .expect("fixture needs one-step and remote reply rings");
+    let one_step = game
+        .wdisk(target, 3)
+        .into_iter()
+        .find(|pos| game.wdist(target, *pos) == 3)
+        .expect("fixture has a one-step ranged-counter position");
+    let remote = game
+        .wdisk(target, 6)
+        .into_iter()
+        .find(|pos| game.wdist(target, *pos) == 6)
+        .expect("fixture has a remote position");
+    let exposed = game.spawn_test_unit("warrior", 0, target);
+    game.spawn_test_unit("archer", 1, one_step);
+    game.spawn_test_unit("archer", 2, remote);
+
+    assert!(
+        AdvancedAi::enemy_can_force_a_reply_against_any(&game, 1, &[exposed]),
+        "a ranged unit one step outside direct range remains a forcing branch"
+    );
+    assert!(
+        !AdvancedAi::enemy_can_force_a_reply_against_any(&game, 2, &[exposed]),
+        "a warring army outside the search geometry needs no whole-game clone"
+    );
+}
+
+#[test]
 fn explicit_victory_command_phase_fires_city_center_strikes() {
     let mut game = Game::new_full(2, 20, 14, 8_119, 80, 0, false);
     let settler = game
