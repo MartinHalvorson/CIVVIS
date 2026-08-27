@@ -269,7 +269,7 @@ static MACHINE_METRICS_CACHE: OnceLock<Mutex<Option<MachineMetricsSnapshot>>> = 
 fn sampled_machine_metrics() -> MachineMetrics {
     let cache = MACHINE_METRICS_CACHE.get_or_init(|| Mutex::new(None));
     let now = Instant::now();
-    let mut held = lock_or_recover(&cache);
+    let mut held = lock_or_recover(cache);
     if let Some(snapshot) = *held {
         if now.duration_since(snapshot.sampled_at) < MACHINE_METRICS_SAMPLE_INTERVAL {
             return snapshot.metrics;
