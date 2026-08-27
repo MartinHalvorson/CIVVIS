@@ -8145,6 +8145,13 @@ local function exportState(player, pid, turn, frame)
 		domestic_tourists = try(function()
 			return player:GetCulture():GetStaycationers();
 		end, -1),
+		-- Our own tourism per turn, the accessor each rival's `tourism` already
+		-- uses (GetStats():GetTourism()). The board prefers it to its model and
+		-- the divergence instrument scores the model against it; until it
+		-- crossed the `tourism` row read "no pairs" on every run.
+		tourism_per_turn = try(function()
+			return player:GetStats():GetTourism();
+		end, nil),
 		-- The religion lane's own number for us, the same accessor as each
 		-- rival's `cities_following_religion` (WorldRankings.lua:44): cities
 		-- anywhere following OUR religion, including ones the seat has never
@@ -10956,6 +10963,36 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "delegation_asked" or "throw";
+	end
+
+	-- ★★★★ A DENOUNCEMENT IS A SESSION, LIKE A DELEGATION. The shipped view
+	-- opens it with DiplomacyManager.RequestSession(local, other, "DENOUNCE")
+	-- (DiplomacyActionView.lua:469); there is no PlayerOperations verb. The
+	-- host's own record of it (GetDenounceTurn) crosses on every rival, which
+	-- is how the verdict reads the next frame, and how a second ask inside
+	-- the shipped time limit is refused here before it opens a leader scene.
+	if kind == "denounce" then
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if subject < 0 then return false, "denounce_target_unmapped"; end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "denounce_at_war";
+		end
+		local since = try(function() return diplomacy:GetDenounceTurn(subject); end, -1) or -1;
+		local limit = try(function() return Game.GetGameDiplomacy():GetDenounceTimeLimit(); end, 0) or 0;
+		if since >= 0 and (turn - since) < limit then
+			return false, "denounce_already";
+		end
+		local key = "DENOUNCE" .. subject;
+		local asked = peaceAsked[key];
+		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
+			return false, "denounce_cooldown";
+		end
+		local ok = pcall(function()
+			DiplomacyManager.RequestSession(pid, subject, "DENOUNCE");
+		end);
+		if ok then peaceAsked[key] = turn; end
+		return ok, ok and "denounce_asked" or "throw";
 	end
 
 	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid

@@ -3154,20 +3154,36 @@ Amani, `ri`/`embarked`), #2593 (the instruments), #2594 (city strikes),
 (rival intelligence). Every one exports state the host alone held, writes it
 onto the board on both import paths, names the decision that reads it, and
 pins the rule with tests; each was replayed against the recording to show the
-absent-key path unchanged. The first live game whose mod carries all of it is
-the one launched after `0a5368e7`; read its `--dump-mirror` and the
-`unmapped` list for `schema:` and `quest_target:` entries before trusting the
-presence paths, which tests alone pin today.
+absent-key path unchanged. The first live game whose mod carries all of it,
+`civvis-20260827T012035Z` (launched 01:20Z on `3cc94330`), answered the
+presence-path question at t30: `climate`, `route_options`, every city's
+`buildable`/`purchasable`, rival `tech_names`, city-state `quests` all in
+the export, the decider's `unmapped` list EMPTY — no `schema:` gap, no
+`quest_target:` miss — and its economy line `science 4.9/4.8 −0% culture
+7.5/7.5 +0% production 17.0/17.2 +1%` against the `+8% +8% +27%` the same
+line read the day before.
 
-What is still open, in order: the `Denounce` order has no bridge verb
-(#2590's note); the foreign side of a `combat` event never resolves to a
-board unit, so `combat_damage` has no pairs (record the host ids of
-`hostiles[]`/`rivals[].units[]` when the mirror plants them); the seat's own
-per-turn tourism is not exported (`tourism` rows); storm positions and route
-`turns` have no host accessor; `w`/`i`/`fw` cross unread; and the event
-kinds nothing in `src/` opens (`gp`, `unit_lost`, `wc_*`, `envoy`,
+The residuals that remained after those nine closed in a tenth (#2613):
+the `Denounce` action now translates to a `denounce` order the mod opens as
+the shipped view does (`DiplomacyManager.RequestSession(…, "DENOUNCE")`,
+DiplomacyActionView.lua:469) and the verdict reads the host's own
+`GetDenounceTurn` on the next frame; the mirror remembers the host id of
+every FOREIGN unit it plants (`LiveMirror::foreign_uid_of`, both paths) so
+`live_divergence::combat_pairs` resolves both sides of a `combat` event and
+the `combat_damage` row finally has pairs; the seat's own tourism per turn
+crosses (`tourism_per_turn`, the same `GetStats():GetTourism()` each rival's
+figure uses), `Game::tourism_per_turn` prefers it and the `tourism` row
+scores the model (`tourism_per_turn_model`) against it; and the host's
+`Plot:IsFreshWater()` (`fw`, exported since the tiles export began and read
+by nothing) sets a city centre's fresh-water housing floor through
+`Game::city_water`. `w` and `i` stay unread on purpose — the terrain name
+carries both.
+
+What is still open: storm positions and route `turns` have no host accessor;
+the event kinds nothing in `src/` opens (`gp`, `unit_lost`, `wc_*`, `envoy`,
 `deal_response`) still carry facts the board could use — Great Person city
-effects first.
+effects first; and a settle-site's fresh water is still derived from the
+board (the host's `fw` is consulted for founded cities only).
 
 ### How to re-measure
 

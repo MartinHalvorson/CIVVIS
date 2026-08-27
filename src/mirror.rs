@@ -156,7 +156,7 @@ pub struct Plot {
     #[serde(default)]
     pub i: bool,
     #[serde(default)]
-    pub fw: bool,
+    pub fw: Option<bool>,
     /// Improvement type name already built here, e.g. `IMPROVEMENT_FARM`.
     #[serde(default)]
     pub im: Option<String>,
@@ -529,7 +529,7 @@ mod tests {
             o: -1,
             w: false,
             i: false,
-            fw: false,
+            fw: None,
             rv: 0,
             ri: false,
             ct: None,
@@ -2077,7 +2077,7 @@ mod tests {
                 o: 0,
                 w: false,
                 i: false,
-                fw: true,
+                fw: Some(true),
                 rv: 0,
                 ri: false,
                 ct: None,
@@ -2138,7 +2138,7 @@ mod tests {
         assert_eq!(chunk.plots.len(), 2);
         let hill = &chunk.plots[0];
         assert_eq!(hill.o, 0);
-        assert!(hill.fw, "fresh water carries through");
+        assert_eq!(hill.fw, Some(true), "fresh water carries through");
         let vocab = Vocabulary::embedded();
         assert_eq!(
             vocab.terrain(hill.t.as_deref().unwrap()),
@@ -4892,7 +4892,7 @@ mod tests {
                     },
                     w: false,
                     i: false,
-                    fw: false,
+                    fw: None,
                     rv: 0,
                     ri: false,
                     ct: None,
@@ -4992,7 +4992,7 @@ mod tests {
                     },
                     w: false,
                     i: false,
-                    fw: false,
+                    fw: None,
                     rv: 0,
                     ri: false,
                     ct: None,
@@ -10204,6 +10204,200 @@ mod tests {
         );
     }
 
+    /// `live_divergence::combat_pairs` resolves BOTH sides of a `combat` event
+    /// through the mirror's id maps; foreign units never had one, so every
+    /// unit-vs-unit fight read "no pairs".
+    #[test]
+    fn foreign_units_keep_their_host_ids_on_both_paths() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                plot(5, 5, "TERRAIN_GRASS"),
+                plot(5, 6, "TERRAIN_GRASS"),
+                plot(7, 7, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        state.hostiles.push(StateUnit {
+            id: 77,
+            kind: "UNIT_WARRIOR".to_string(),
+            player: 63,
+            x: 5,
+            y: 6,
+            hp: 80.0,
+            ..StateUnit::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let barbarian = *mirror
+            .foreign_uid_of
+            .get(&77)
+            .expect("the barbarian's host id is remembered on the rebuild path");
+        assert_ne!(mirror.game.units[&barbarian].owner, 0, "and it is not ours");
+        assert!(
+            !mirror.uid_of.contains_key(&77),
+            "foreign ids stay out of `uid_of`, which the sync path prunes against our units"
+        );
+
+        // The next export: that barbarian is gone, a different one stands
+        // elsewhere. The map follows the board, which is rebuilt wholesale.
+        state.turn = 21;
+        state.hostiles = vec![StateUnit {
+            id: 78,
+            kind: "UNIT_SLINGER".to_string(),
+            player: 63,
+            x: 7,
+            y: 7,
+            hp: 100.0,
+            ..StateUnit::default()
+        }];
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            !mirror.foreign_uid_of.contains_key(&77),
+            "a foreign unit the host no longer reports leaves the map"
+        );
+        let slinger = *mirror
+            .foreign_uid_of
+            .get(&78)
+            .expect("the new barbarian's host id is remembered on the sync path");
+        assert_eq!(
+            mirror.game.units[&slinger].pos,
+            crate::hex::offset_to_axial(7, 7)
+        );
+        assert!(
+            mirror.uid_of.contains_key(&10),
+            "our own unit keeps its map"
+        );
+    }
+
+    /// `Plot:IsFreshWater()` crossed as `fw` since the tiles export began and
+    /// nothing read it; a city centre on a lake the export names
+    /// `TERRAIN_COAST` derived no fresh water and housed 2, not 5.
+    #[test]
+    fn the_hosts_fresh_water_answer_sets_the_city_housing_floor() {
+        let mut wet = plot(5, 5, "TERRAIN_GRASS");
+        wet.fw = Some(true);
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![wet, plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            loyalty: 100.0,
+            ..StateCity::default()
+        });
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let pos = crate::hex::offset_to_axial(5, 5);
+        assert_eq!(mirror.game.observed_fresh_water.get(&pos), Some(&true));
+        let city = mirror
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner == 0)
+            .expect("Roma is on the board");
+        assert!(
+            mirror.game.city_housing_sources(city).water >= 5.0,
+            "the host says fresh water, so the centre houses 5 (no river or lake on the board)"
+        );
+
+        // A plot that carries no `fw` (an older export, a test fixture) overrides nothing.
+        let dry = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let plain = LiveMirror::new(&dry, &state, 4, 1, 500, 0);
+        assert!(plain.game.observed_fresh_water.is_empty());
+        let city = plain
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner == 0)
+            .expect("Roma is on the board");
+        assert!(plain.game.city_housing_sources(city).water < 5.0);
+    }
+
+    /// The seat's own tourism per turn was the one culture-victory figure the
+    /// export never carried; the board now reads the host's and the model's
+    /// figure stays behind `tourism_per_turn_model` for the instrument.
+    #[test]
+    fn the_seats_own_tourism_per_turn_crosses_and_lapses() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 90,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 90,
+            tourism_per_turn: Some(12.5),
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            ..StateCity::default()
+        });
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.tourism_per_turn(0),
+            12.5,
+            "the host's figure is the board's"
+        );
+        assert!(
+            mirror.game.tourism_per_turn_model(0) < 12.5,
+            "the model has no great works to earn 12.5 from"
+        );
+
+        state.turn = 91;
+        state.tourism_per_turn = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.tourism_per_turn(0),
+            mirror.game.tourism_per_turn_model(0),
+            "an export without the key leaves the model's figure"
+        );
+    }
+
     #[test]
     fn sync_discards_units_that_only_civvis_simulated_from_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -10370,7 +10564,7 @@ mod tests {
                         o: -1,
                         w: false,
                         i: false,
-                        fw: false,
+                        fw: None,
                         rv: 0,
                         ri: false,
                         ct: None,
@@ -10899,7 +11093,7 @@ mod tests {
                         o: -1,
                         w: false,
                         i: false,
-                        fw: false,
+                        fw: None,
                         rv: 0,
                         ri: false,
                         ct: None,
@@ -11088,7 +11282,7 @@ mod tests {
                     o: -1,
                     w: false,
                     i: false,
-                    fw: false,
+                    fw: None,
                     rv: 0,
                     ri: false,
                     ct: None,
@@ -11315,10 +11509,14 @@ mod tests {
                         t: Some("TERRAIN_GRASS".to_string()),
                         f: None,
                         r: None,
-                        o: if (5..=6).contains(&x) && (5..=6).contains(&y) { 7 } else { -1 },
+                        o: if (5..=6).contains(&x) && (5..=6).contains(&y) {
+                            7
+                        } else {
+                            -1
+                        },
                         w: false,
                         i: false,
-                        fw: false,
+                        fw: None,
                         rv: 0,
                         ri: false,
                         ct: None,
@@ -12025,6 +12223,7 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
     // Rebuilt from the plots on every apply, like the landmass: a plot whose
     // reading lapsed keeps none.
     game.observed_appeal.clear();
+    game.observed_fresh_water.clear();
     for (x, y) in snapshot.revealed_positions() {
         let Some(plot) = snapshot.plot((x, y)) else {
             continue;
@@ -12045,6 +12244,10 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
         // derivation from the six neighbours it can see.
         if let Some(appeal) = plot.ap {
             game.observed_appeal.insert(pos, appeal);
+        }
+        // The host's fresh-water answer, which `Game::city_water` prefers.
+        if let Some(fresh) = plot.fw {
+            game.observed_fresh_water.insert(pos, fresh);
         }
     }
 
@@ -14136,6 +14339,13 @@ pub struct StateSnapshot {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// Our tourism per turn as the host reports it (`GetStats():GetTourism()`,
+    /// the accessor already used for each rival). `None` on an older export.
+    /// The mirror writes it into `Game::observed_tourism_per_turn`, and it is
+    /// the live side of the `tourism` divergence row, which read "no pairs"
+    /// on every run until it crossed.
+    #[serde(default)]
+    pub tourism_per_turn: Option<f64>,
     /// Cities anywhere following our religion, the religion lane's own
     /// number (`GetNumCitiesFollowingReligion`, WorldRankings.lua:44), the
     /// same accessor as each rival's. `None` on an older export or a refused
@@ -14559,6 +14769,11 @@ fn apply_rival_public_economy(
             .military_no_treasury
             .filter(|value| value.is_finite() && *value >= 0.0);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
+        if known(rival.tourism) {
+            game.observed_tourism_per_turn.insert(owner, rival.tourism);
+        } else {
+            game.observed_tourism_per_turn.remove(&owner);
+        }
         // Like `techs`/`civics`: the observed table is rebuilt from each
         // snapshot (`apply_observed_host_metrics` clears it), so absent or
         // refused reads honestly say None for THIS snapshot. The durable
@@ -15979,6 +16194,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // `schema:state.strategic_resources` gap that was not one.
         "strategic_resources",
         "foreign_tourists", "domestic_tourists",
+        "tourism_per_turn",
         "cities_following_religion",
         "military",
         "trade_capacity",
@@ -16597,6 +16813,10 @@ pub struct Reconstruction {
     pub game: crate::game::Game,
     /// CIVVIS unit id -> Civilization VI unit id, for translating orders back.
     pub unit_ids: std::collections::BTreeMap<u32, i64>,
+    /// Civilization VI id -> board id for every FOREIGN unit planted (rival,
+    /// city-state, barbarian, Free Cities). Kept apart from `unit_ids`, whose
+    /// inverse the sync path prunes against `state.units` — our units only.
+    pub foreign_unit_ids: std::collections::BTreeMap<i64, u32>,
     /// CIVVIS city id -> Civilization VI city id.
     pub city_ids: std::collections::BTreeMap<u32, i64>,
     /// Civilization VI city id -> CIVVIS city id for every city retained in the
@@ -20055,8 +20275,17 @@ fn apply_observed_host_metrics(
     game.observed_city_loyalty_per_turn.clear();
     game.observed_city_strength.clear();
     game.observed_city_max_wall_hp.clear();
+    game.observed_tourism_per_turn.clear();
     if let Some(capacity) = state.trade_capacity.filter(|capacity| *capacity >= 0) {
         game.observed_trade_capacity.insert(0, capacity);
+    }
+    // Our tourism per turn as the host counts it; `Game::tourism_per_turn`
+    // prefers it, the model figure stays behind `tourism_per_turn_model`.
+    if let Some(tourism) = state
+        .tourism_per_turn
+        .filter(|t| t.is_finite() && *t >= 0.0)
+    {
+        game.observed_tourism_per_turn.insert(0, tourism);
     }
     apply_public_empire_stats(game, 0, &state.public_stats);
     {
@@ -20678,6 +20907,7 @@ pub fn rebuild_from_state(
     }
 
     let mut unit_ids = std::collections::BTreeMap::new();
+    let mut foreign_unit_ids: std::collections::BTreeMap<i64, u32> = Default::default();
     let mut city_ids = std::collections::BTreeMap::new();
     // Every retained city, including visible rivals.  `city_ids` stays our-city
     // only because order translation must never point a purchase at a rival;
@@ -21310,7 +21540,8 @@ pub fn rebuild_from_state(
             }
         }
         for unit in &rival.units {
-            if plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped).is_some() {
+            if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
+                foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
             }
         }
@@ -21375,7 +21606,8 @@ pub fn rebuild_from_state(
             }
         }
         for unit in &minor.units {
-            if plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped).is_some() {
+            if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
+                foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
             }
         }
@@ -21447,7 +21679,8 @@ pub fn rebuild_from_state(
             ));
             continue;
         };
-        if plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped).is_some() {
+        if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
+            foreign_unit_ids.insert(unit.id, uid);
             placed_rival_units += 1;
             if game.players[owner].is_free_city {
                 game.players[owner].alive = true;
@@ -21558,6 +21791,7 @@ pub fn rebuild_from_state(
     Reconstruction {
         game,
         unit_ids,
+        foreign_unit_ids,
         city_ids,
         known_city_ids,
         placed_cities,
@@ -22258,6 +22492,13 @@ pub struct LiveMirror {
     /// Civilization VI unit id -> the CIVVIS unit standing in for it. Stable for the
     /// life of the unit, which is the point.
     pub uid_of: std::collections::BTreeMap<i64, u32>,
+    /// Civilization VI id -> board id for the foreign units on the board,
+    /// rebuilt with them on every sync. `live_divergence::combat_pairs` needs
+    /// the foreign side of a `combat` event to resolve; before this every
+    /// `combat_damage` row read "no pairs" because only `uid_of` — our units —
+    /// was ever consulted (184 combats in run civvis-20260826T184456Z, 110 of
+    /// them unit-vs-unit, none paired).
+    pub foreign_uid_of: std::collections::BTreeMap<i64, u32>,
     pub civ6_of: std::collections::BTreeMap<u32, i64>,
     /// Civilization VI city id -> CIVVIS city id.
     pub cid_of: std::collections::BTreeMap<i64, u32>,
@@ -22472,6 +22713,7 @@ impl LiveMirror {
             game,
             civ6_of: rebuilt.unit_ids,
             uid_of,
+            foreign_uid_of: rebuilt.foreign_unit_ids,
             cid_of,
             known_city_ids: rebuilt.known_city_ids,
             active_trade_route_traders: active_trade_route_traders(state),
@@ -23190,6 +23432,7 @@ impl LiveMirror {
             apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
             return;
         }
+        self.foreign_uid_of.clear();
         for uid in std::mem::take(&mut self.rival_units) {
             if self.game.units.contains_key(&uid) {
                 self.game.remove_unit(uid);
@@ -23261,6 +23504,7 @@ impl LiveMirror {
             if let Some(live) = self.game.units.get_mut(&uid) {
                 apply_unit_observation(live, unit, progress);
                 self.hostile_units.push(uid);
+                self.foreign_uid_of.insert(unit.id, uid);
             }
         }
 
@@ -23405,6 +23649,7 @@ impl LiveMirror {
                 if let Some(live) = self.game.units.get_mut(&uid) {
                     apply_unit_observation(live, unit, progress);
                     self.rival_units.push(uid);
+                    self.foreign_uid_of.insert(unit.id, uid);
                 }
             }
         }
@@ -23515,6 +23760,7 @@ impl LiveMirror {
                     if let Some(live) = self.game.units.get_mut(&uid) {
                         apply_unit_observation(live, unit, progress);
                         self.rival_units.push(uid);
+                        self.foreign_uid_of.insert(unit.id, uid);
                     }
                 }
             }
@@ -23952,7 +24198,7 @@ mod host_fact_tests {
             o: 0,
             w: false,
             i: false,
-            fw: false,
+            fw: None,
             im: None,
             rv: 0,
             ri: false,
