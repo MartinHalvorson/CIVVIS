@@ -595,10 +595,15 @@ class TheOperatorPins(unittest.TestCase):
         self.assertIn("settler-target-hysteresis-2", genome)
         self.assertNotIn("settler-target-hysteresis", genome)
         self.assertNotIn("raid-pillage-prizes", genome)
+        retained = rules["deployment_policy"] == gene_ledger.RETAINED_DEPLOYMENT_POLICY
         for tag in pins:
             self.assertIn(tag, screenable, tag)
             self.assertIn(tag, genome, f"{tag} is pinned on but does not ship")
-            self.assertNotEqual(rules["batch_decisions"].get(tag), "remove", tag)
+            # A normal selection may not pin a gene the rule removes. A
+            # reporting-only rotation retains the selected genome instead,
+            # so `remove` remains visible as evidence without changing it.
+            if not retained:
+                self.assertNotEqual(rules["batch_decisions"].get(tag), "remove", tag)
         # A batch may agree with any pin.  What must remain true is that the
         # decision beside every pin is recorded, rather than treating a
         # reporting-only refresh as a reason to re-select defaults.
@@ -608,8 +613,11 @@ class TheOperatorPins(unittest.TestCase):
         # empties itself the day a batch supplies the column.
         unpriced = set(gene_ledger.pinned_before_pricing(rules))
         self.assertTrue(unpriced <= set(pins), unpriced - set(pins))
+        allowed_readings = {"on", "off", "unresolved"}
+        if retained:
+            allowed_readings.add("remove")
         self.assertTrue(
-            all(call in {"on", "off", "unresolved"} or (call is None and tag in unpriced)
+            all(call in allowed_readings or (call is None and tag in unpriced)
                 for tag, call in readings.items()),
             readings,
         )
