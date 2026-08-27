@@ -82,6 +82,11 @@ const STRANDED_SITE_RADIUS: i32 = 14;
 /// How many forecast refusals the exhaustion search pays before it stops
 /// asking the forecast; each is a speculative founding on a cloned board.
 const STRANDED_FORECAST_RETRIES: usize = 4;
+/// Turns a Settler found stranded on a tile waits before the exhaustion
+/// search is asked again from that tile. The board that stranded it changes
+/// slowly — a razed rival city, a border that recedes — and the search is
+/// the dearest thing a Settler does; a Settler that moves is asked at once.
+pub(super) const STRANDED_RECHECK_TURNS: u32 = 5;
 
 impl AdvancedAi {
     /// Advance this Settler's idle streak, once per turn, and return it.
@@ -107,6 +112,18 @@ impl AdvancedAi {
         self.settler_idle_streak
             .get(&uid)
             .map_or(0, |(_, _, streak)| *streak)
+    }
+
+    /// Whether this Settler was found stranded on its current tile inside
+    /// the last [`STRANDED_RECHECK_TURNS`] turns, so the exhaustion search
+    /// need not be paid again yet.
+    pub(super) fn settler_stranded_recently(&self, g: &Game, uid: u32) -> bool {
+        self.settler_stranded_at
+            .get(&uid)
+            .is_some_and(|(pos, turn)| {
+                g.units.get(&uid).is_some_and(|unit| unit.pos == *pos)
+                    && g.turn < turn.saturating_add(STRANDED_RECHECK_TURNS)
+            })
     }
 
     /// The wider questions asked when the preferred search returns nothing.
@@ -159,17 +176,17 @@ impl AdvancedAi {
             }
         }
         // Tier 3: a city anywhere beats a Settler for ever. Nearest first,
-        // value the tie-break.
+        // the position the tie-break — deliberately no site value here: the
+        // value is a growth forecast over a radius-2 disk per plot, and a
+        // stranded Settler asks this every recheck for every legal plot in
+        // the radius.
         let mut legal: Vec<(Pos, f64)> = g
             .wdisk(from, radius)
             .into_iter()
             .filter(|pos| {
                 self.base.valid_settle_site(g, pid, *pos) && !g.blocked_city_sites.contains(pos)
             })
-            .map(|pos| {
-                let value = self.settle_value(g, pid, pos);
-                (pos, -(g.wdist(from, pos) as f64) * 1000.0 + value)
-            })
+            .map(|pos| (pos, -(g.wdist(from, pos) as f64)))
             .collect();
         legal.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         let site = BasicAi::first_reachable_settle_site(g, uid, &legal).map(|(pos, _)| pos)?;
@@ -203,6 +220,7 @@ impl AdvancedAi {
         think!(self.journal(), Expansion, Detail, "Settler is stranded at {here:?}";
                "no legal site is reachable and a city cannot be founded here; it holds until \
                 the board changes"; here);
+        self.settler_stranded_at.insert(uid, (here, g.turn));
         false
     }
 

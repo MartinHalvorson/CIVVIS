@@ -1975,6 +1975,10 @@ pub struct AdvancedAi {
     /// `settler-never-idles` watchdog: (tile, turn last noted, streak). See
     /// `advanced/settler_never_idles.rs`.
     settler_idle_streak: BTreeMap<u32, (Pos, u32, u32)>,
+    /// Where and when each Settler was last found stranded, so the
+    /// exhaustion search is not repeated every turn from the same tile. See
+    /// `STRANDED_RECHECK_TURNS`.
+    settler_stranded_at: BTreeMap<u32, (Pos, u32)>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -6147,6 +6151,7 @@ impl AdvancedAi {
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
         self.settler_idle_streak.clear();
+        self.settler_stranded_at.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
         self.forget_missionary_explore();
@@ -6230,6 +6235,11 @@ impl AdvancedAi {
             .settler_idle_streak
             .iter()
             .filter_map(|(uid, streak)| map.get(uid).map(|new| (*new, *streak)))
+            .collect();
+        self.settler_stranded_at = self
+            .settler_stranded_at
+            .iter()
+            .filter_map(|(uid, stranded)| map.get(uid).map(|new| (*new, *stranded)))
             .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
@@ -6332,6 +6342,7 @@ impl AdvancedAi {
             settler_retreats: BTreeMap::new(),
             settler_walk_started: BTreeMap::new(),
             settler_idle_streak: BTreeMap::new(),
+            settler_stranded_at: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -26925,7 +26936,7 @@ impl AdvancedAi {
         // See `settler_never_idles`: exhaustion asks two wider questions
         // before it holds, and a hold is never silent.
         let target = target.or_else(|| {
-            if !self.settler_never_idles {
+            if !self.settler_never_idles || self.settler_stranded_recently(g, uid) {
                 return None;
             }
             let site = self.settler_exhaustion_target(g, pid, uid)?;
@@ -33657,6 +33668,8 @@ impl AdvancedAi {
         self.settler_walk_started
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_idle_streak
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_stranded_at
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
             .retain(|uid, _| g.units.contains_key(uid));
