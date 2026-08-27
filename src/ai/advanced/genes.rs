@@ -1656,6 +1656,15 @@ pub const GENES: &[Gene] = &[
     // turns is stood down explicitly — excluded from the ranking for twenty
     // turns, strategy re-assessed now. See `docs/COMMITMENTS.md`.
     Gene { tag: "capture-go-or-stand-down", field: "capture_go_or_stand_down", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_go_or_stand_down, disable: AdvancedAi::disable_capture_go_or_stand_down },
+    // `commitment-patience` (operator, 2026-08-27, the follow-up): the ledger
+    // read 2,684 civilian-turns frozen with a hostile within two, 1,713
+    // Builder-turns holding a pin never walked to, and 150 of 309 settler
+    // retargets after the walk had started — the threat drop reasons turn a
+    // passing raider into a whole new walk. A target now survives a threat
+    // (the unit holds or retreats as before) and is retired only after three
+    // consecutive forgotten turns, parked for the hysteresis window. See
+    // `docs/COMMITMENTS.md` §8.
+    Gene { tag: "commitment-patience", field: "commitment_patience", kind: Kind::OptIn, enable: AdvancedAi::enable_commitment_patience, disable: AdvancedAi::disable_commitment_patience },
     // `relief-column-marches` / `threatened-city-reserve` (operator,
     // 2026-08-27): the live King seat `civvis-20260827T113726Z` lost
     // Aquileia (pop 15, walled) on t164 to a Chinese stack of seven while

@@ -54,6 +54,18 @@ pub const CAPTURE_GO_TURNS: u32 = 6;
 /// [`CONQUEST_ETA_TURNS`]: the same patience the campaign layer gives a plan.
 pub const CAPTURE_STAND_DOWN_TURNS: u32 = 20;
 
+/// `commitment-patience`: consecutive forgotten turns a settle or improve
+/// commitment survives before the ledger retires it — the target dropped and
+/// parked in the owner's avoid map for the hysteresis window, so the next
+/// pick is a different one. Three is [`STALL_TURNS`] and
+/// `SETTLER_STALL_LIMIT`: the controller's own definition of "not getting
+/// there". A passing raider moves on inside it; a camp guard does not.
+pub const COMMITMENT_PATIENCE: u32 = 3;
+
+/// The terrain walk price looks this far; a target beyond it is priced at a
+/// hex a turn, the pessimistic reading.
+const WALK_PRICE_RADIUS: i32 = 16;
+
 /// The ETA a Conquest target carries when no appointed war priced one: the
 /// campaign layer's own patience (`CAMPAIGN_PATIENCE`), the longest the
 /// controller lets a planned city wait before it drops the plan.
@@ -339,10 +351,23 @@ impl CommitmentLedger {
     }
 
     /// Hexes to walk, priced as turns at two hexes a turn — the flat-ground
-    /// rate; hills, rivers and coast make the walk longer, which the
-    /// `late` reading then records against this price.
+    /// rate. The fallback price when the terrain walk cannot reach the
+    /// target inside [`WALK_PRICE_RADIUS`]; see the `price` closure in
+    /// `AdvancedAi::reconcile_commitments`.
     fn walk_eta(turn: u32, hexes: i32) -> u32 {
         turn + (hexes.max(0) as u32).div_ceil(2)
+    }
+
+    /// `commitment-patience`: a commitment the gene gave up on. Ends as
+    /// `retired`, counted with the abandoned.
+    pub(super) fn retire(&mut self, key: (Kind, Owner), turn: u32) -> bool {
+        match self.open.remove(&key) {
+            Some(c) => {
+                self.end(c, "retired", turn);
+                true
+            }
+            None => false,
+        }
     }
 
     /// The unit kinds: compare last turn's openings with the map as it stands
@@ -353,9 +378,13 @@ impl CommitmentLedger {
         pid: usize,
         kind: Kind,
         now: &BTreeMap<u32, Pos>,
-        new_cities: &[Pos],
-        holds: &BTreeMap<u32, &'static str>,
+        ctx: &UnitContext<'_>,
     ) {
+        let UnitContext {
+            new_cities,
+            holds,
+            price,
+        } = *ctx;
         let turn = g.turn;
         let gone: Vec<Commitment> = self
             .open
@@ -423,7 +452,7 @@ impl CommitmentLedger {
                         owner: Owner::Unit(uid),
                         target: Target::Tile(*site),
                         made: turn,
-                        eta: Self::walk_eta(turn, hexes),
+                        eta: turn + price(uid, *site, hexes),
                         initial: hexes,
                         best: hexes,
                         best_turn: turn,
@@ -464,7 +493,7 @@ impl CommitmentLedger {
                     owner: Owner::Unit(uid),
                     target: Target::Tile(site),
                     made: turn,
-                    eta: Self::walk_eta(turn, hexes),
+                    eta: turn + price(uid, site, hexes),
                     initial: hexes,
                     best: hexes,
                     best_turn: turn,
@@ -585,6 +614,16 @@ impl CommitmentLedger {
             put(format!("commit:{name}"), value);
         }
     }
+}
+
+/// What one turn's reading of the unit kinds needs beside the target map.
+struct UnitContext<'a> {
+    /// Our cities that are new this turn (founded or taken).
+    new_cities: &'a [Pos],
+    /// Why each idle committed unit did not act, by unit id.
+    holds: &'a BTreeMap<u32, &'static str>,
+    /// Turns a new decision is priced at: (unit, site, hexes) → turns.
+    price: &'a dyn Fn(u32, Pos, i32) -> u32,
 }
 
 /// The war plan as the ledger reads it.
@@ -725,24 +764,72 @@ impl AdvancedAi {
             };
             holds.insert(uid, why);
         }
+        // The ETA a new decision carries: the terrain walk in turns
+        // (`settle_sooner_walk_costs`, movement points over `step_cost`), at
+        // the owner's allowance; a hex a turn when the walk cannot reach the
+        // target inside the radius. Priced once, when the decision is made.
+        let price = |uid: u32, site: Pos, hexes: i32| -> u32 {
+            let Some(unit) = g.units.get(&uid) else {
+                return (hexes.max(0) as u32).div_ceil(2);
+            };
+            let moves = g.rules.units[unit.kind].moves.max(1.0);
+            let radius = (hexes + 3).min(WALK_PRICE_RADIUS);
+            match AdvancedAi::settle_sooner_walk_costs(g, uid, radius).get(&site) {
+                Some(cost) => (cost / moves).ceil().max(1.0) as u32,
+                None => hexes.max(1) as u32,
+            }
+        };
+        let ctx = UnitContext {
+            new_cities: &new_cities,
+            holds: &holds,
+            price: &price,
+        };
         let ledger = &mut self.commitments;
-        ledger.reconcile_units(
-            g,
-            pid,
-            Kind::Settle,
-            &self.settler_targets,
-            &new_cities,
-            &holds,
-        );
-        ledger.reconcile_units(
-            g,
-            pid,
-            Kind::Improve,
-            &self.builder_targets,
-            &new_cities,
-            &holds,
-        );
+        ledger.reconcile_units(g, pid, Kind::Settle, &self.settler_targets, &ctx);
+        ledger.reconcile_units(g, pid, Kind::Improve, &self.builder_targets, &ctx);
         ledger.reconcile_capture(g, pid, war);
+        // `commitment-patience`: a settle or improve decision forgotten for
+        // COMMITMENT_PATIENCE turns running is retired — target dropped and
+        // parked for the hysteresis window — instead of held for ever.
+        if self.commitment_patience {
+            self.builder_avoid.retain(|_, (_, until)| g.turn < *until);
+            let expired: Vec<(Kind, u32, Pos)> = self
+                .commitments
+                .open()
+                .filter(|c| c.forgotten_streak >= COMMITMENT_PATIENCE)
+                .filter_map(|c| match (c.kind, c.owner, c.target) {
+                    (Kind::Capture, _, _) => None,
+                    (kind, Owner::Unit(uid), Target::Tile(site)) => Some((kind, uid, site)),
+                    _ => None,
+                })
+                .collect();
+            for (kind, uid, site) in expired {
+                let until = g.turn + g.standard_duration(super::SETTLER_TARGET_HYSTERESIS_TURNS);
+                match kind {
+                    Kind::Settle => {
+                        self.settler_targets.remove(&uid);
+                        self.settler_dead_sites
+                            .entry(uid)
+                            .or_default()
+                            .insert(site, until);
+                    }
+                    Kind::Improve => {
+                        self.builder_targets.remove(&uid);
+                        self.builder_avoid.insert(uid, (site, until));
+                    }
+                    Kind::Capture => continue,
+                }
+                self.commitments.retire((kind, Owner::Unit(uid)), g.turn);
+                *g.players[pid]
+                    .counters
+                    .entry(format!("commit:{}:retired", kind.as_str()))
+                    .or_insert(0) += 1;
+                think!(self.journal(), Expansion, Detail, "Giving up a target nobody is walking to";
+                       "{} {uid} held {site:?} for {COMMITMENT_PATIENCE} turns without acting on it; the site is set aside until turn {until}",
+                       kind.as_str(); site);
+            }
+        }
+        let ledger = &mut self.commitments;
         // `capture-go-or-stand-down`: the one place the ledger acts. A
         // declared objective forgotten for CAPTURE_GO_TURNS running is stood
         // down: out of the ranking until the stand-down expires, and
@@ -1060,6 +1147,152 @@ mod tests {
                 .forgotten_streak,
             CAPTURE_GO_TURNS,
             "off: the ledger still counts"
+        );
+    }
+
+    /// `commitment-patience`: a settler and a Builder that never act on their
+    /// targets. Three forgotten readings retire both — the targets leave the
+    /// maps, the sites are parked, the endings say `retired` — and the gene
+    /// off leaves both targets standing however long the unit idles.
+    #[test]
+    fn a_target_nobody_acts_on_is_retired_after_patience_and_parked() {
+        use crate::game::Action;
+
+        let fixture = || {
+            let mut game = Game::new_full(2, 24, 16, 5_150, 200, 0, false);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|id| game.units[id].kind == "settler")
+                .expect("a starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            let home = game.cities[&game.player_city_ids(0)[0]].pos;
+            let settler = game.spawn_test_unit("settler", 0, home);
+            let builder = game.spawn_test_unit("builder", 0, home);
+            let land_at = |game: &Game, ring: i32| {
+                game.wdisk(home, ring + 1)
+                    .into_iter()
+                    .filter(|pos| {
+                        game.wdist(*pos, home) == ring && !game.rules.is_water(&game.map.tiles[pos])
+                    })
+                    .min()
+                    .expect("a land tile on the ring")
+            };
+            let far = land_at(&game, 5);
+            let near = land_at(&game, 2);
+            (game, settler, builder, far, near)
+        };
+        let idle = |ai: &mut AdvancedAi, game: &mut Game, rounds: u32| {
+            for _ in 0..rounds {
+                ai.reconcile_commitments(game, 0);
+                game.turn += 1;
+            }
+        };
+
+        let (mut game, settler, builder, far, near) = fixture();
+        let mut ai = AdvancedAi::new();
+        ai.enable_commitment_patience();
+        ai.settler_targets.insert(settler, far);
+        ai.builder_targets.insert(builder, near);
+        // Registration, then COMMITMENT_PATIENCE forgotten readings.
+        idle(&mut ai, &mut game, 1 + COMMITMENT_PATIENCE);
+        assert!(
+            !ai.settler_targets.contains_key(&settler),
+            "the settle target is retired"
+        );
+        assert!(
+            !ai.builder_targets.contains_key(&builder),
+            "the improve target is retired"
+        );
+        assert!(
+            ai.settler_site_is_dead(settler, far),
+            "the site is parked for this settler"
+        );
+        assert_eq!(
+            ai.builder_avoid.get(&builder).map(|(tile, _)| *tile),
+            Some(near)
+        );
+        assert_eq!(
+            ai.commitments().endings.get(&(Kind::Settle, "retired")),
+            Some(&1)
+        );
+        assert_eq!(
+            ai.commitments().endings.get(&(Kind::Improve, "retired")),
+            Some(&1)
+        );
+        assert_eq!(ai.commitment_census().settle.abandoned, 1);
+        assert_eq!(
+            game.players[0].counters.get("commit:settle:retired"),
+            Some(&1)
+        );
+
+        // A reading short of the patience retires nothing.
+        let (mut game, settler, builder, far, near) = fixture();
+        let mut early = AdvancedAi::new();
+        early.enable_commitment_patience();
+        early.settler_targets.insert(settler, far);
+        early.builder_targets.insert(builder, near);
+        idle(&mut early, &mut game, COMMITMENT_PATIENCE);
+        assert!(early.settler_targets.contains_key(&settler));
+        assert!(early.builder_targets.contains_key(&builder));
+
+        let (mut game, settler, builder, far, near) = fixture();
+        let mut off = AdvancedAi::new();
+        off.settler_targets.insert(settler, far);
+        off.builder_targets.insert(builder, near);
+        idle(&mut off, &mut game, 2 + COMMITMENT_PATIENCE);
+        assert!(
+            off.settler_targets.contains_key(&settler),
+            "off: the target stands"
+        );
+        assert!(
+            off.builder_targets.contains_key(&builder),
+            "off: the pin stands"
+        );
+        assert!(off.builder_avoid.is_empty());
+        assert_eq!(
+            off.commitments().endings.get(&(Kind::Settle, "retired")),
+            None
+        );
+    }
+
+    /// The ETA is the terrain walk at the unit's allowance, not two hexes a
+    /// turn: a five-hex walk for a two-move settler is at least three turns,
+    /// and never less than the flat-ground price.
+    #[test]
+    fn a_new_decision_is_priced_on_the_terrain_walk() {
+        use crate::game::Action;
+
+        let mut game = Game::new_full(2, 24, 16, 5_150, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| game.units[id].kind == "settler")
+            .expect("a starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let settler = game.spawn_test_unit("settler", 0, home);
+        let far = game
+            .wdisk(home, 6)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, home) == 5 && !game.rules.is_water(&game.map.tiles[pos]))
+            .min()
+            .expect("a land tile five hexes out");
+        let mut ai = AdvancedAi::new();
+        ai.settler_targets.insert(settler, far);
+        ai.reconcile_commitments(&mut game, 0);
+        let c = ai
+            .commitments()
+            .open_for(Kind::Settle, Owner::Unit(settler))
+            .expect("registered");
+        let priced = c.eta - c.made;
+        assert!(
+            priced >= 3,
+            "five hexes at two moves is three turns or more, got {priced}"
+        );
+        assert!(
+            priced >= CommitmentLedger::walk_eta(0, 5),
+            "never below the flat-ground price"
         );
     }
 
