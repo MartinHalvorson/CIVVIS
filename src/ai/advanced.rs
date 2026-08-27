@@ -25482,16 +25482,33 @@ impl AdvancedAi {
             return None;
         }
         let current = g.units[&uid].pos;
+        // The live safety floor already refuses to price a stacked guard as
+        // protection when it is wounded or a visible hostile can break it.
+        // Keep the assignment itself to that same definition: otherwise a
+        // guard that has ceased to protect is retained forever, and the
+        // Settler waits beside the exact unit that will die first.
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
         if let Some(guard) = self.settler_guards.get(&uid).copied() {
-            let alive = g.units.get(&guard).is_some_and(|unit| {
+            let can_hold = g.units.get(&guard).is_some_and(|unit| {
                 unit.owner == pid
                     && g.rules.units[unit.kind].class == "military"
                     && !matches!(
                         g.rules.units[unit.kind].domain.as_deref(),
                         Some("sea" | "air")
                     )
+                    && (!self.settler_guard_holds_on()
+                        || (unit.hp >= STACKED_GUARD_MIN_HP
+                            && !self.guard_outmatched_at(
+                                g,
+                                pid,
+                                unit,
+                                current,
+                                visible.as_ref().expect("computed under the flag"),
+                            )))
             });
-            if !alive {
+            if !can_hold {
                 self.settler_guards.remove(&uid);
                 self.guard_wait.remove(&uid);
             }
@@ -25518,6 +25535,15 @@ impl AdvancedAi {
                         && !taken.contains(candidate)
                         && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
                         && !holds_threatened_city(unit.pos)
+                        && (!self.settler_guard_holds_on()
+                            || (unit.hp >= STACKED_GUARD_MIN_HP
+                                && !self.guard_outmatched_at(
+                                    g,
+                                    pid,
+                                    unit,
+                                    current,
+                                    visible.as_ref().expect("computed under the flag"),
+                                )))
                 })
                 .min_by_key(|candidate| {
                     let unit = &g.units[candidate];
