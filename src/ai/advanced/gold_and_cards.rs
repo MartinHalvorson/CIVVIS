@@ -116,7 +116,7 @@
 //! Both are exact no-ops while off: the reserve helper returns the stock
 //! value untouched and the ladder is not consulted.
 
-use super::{AdvancedAi, CITY_MAX_HP};
+use super::{AdvancedAi, StrategicPlan, CITY_MAX_HP};
 use crate::ai::BasicAi;
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
@@ -309,6 +309,48 @@ impl AdvancedAi {
         unit_purchase_keeps_solvent(g.players[pid].gold_per_turn, maintenance)
     }
 
+    /// `threatened-city-reserve`: the Gold an ordinary purchase must leave in
+    /// the treasury while a city of ours is threatened (`plan.threatened_city`)
+    /// or bleeding (`native_city_emergency`) — one emergency defender at
+    /// today's price, [`FALLBACK_DEFENDER_PRICE`] when nothing military is
+    /// unlocked. Exactly 0.0 while the gene is off and while no city is under
+    /// threat, so both buyers keep their stock reserve then.
+    pub(super) fn threatened_city_gold_floor(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        if !self.threatened_city_reserve {
+            return 0.0;
+        }
+        let threatened = plan
+            .threatened_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| city.owner == pid)
+            || g.player_city_ids(pid)
+                .into_iter()
+                .any(|cid| self.native_city_emergency(g, pid, cid));
+        if !threatened {
+            return 0.0;
+        }
+        self.emergency_defender_price(g, pid)
+            .unwrap_or_else(|| g.game_speed.scale(FALLBACK_DEFENDER_PRICE))
+    }
+
+    /// The reserve `advanced_gold_spending` keeps, lifted to
+    /// [`Self::threatened_city_gold_floor`]. `stock` unchanged while the gene
+    /// is off.
+    pub(super) fn reserve_for_the_threatened_city(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        stock: f64,
+    ) -> f64 {
+        stock.max(self.threatened_city_gold_floor(g, pid, plan))
+    }
+
     /// The Gold price of the dearest land ranged unit some city of `pid` can
     /// build now, else the dearest land melee unit; `None` with no city or
     /// nothing military unlocked. Priced at the shipped ×4 rate on the
@@ -492,6 +534,84 @@ mod tests {
         assert!(!ai.build_what_cards_boost);
         assert!(!ai.gold_for_the_young_city);
         assert!(!ai.native_emergency_purchase);
+    }
+
+    /// `threatened-city-reserve`: the same run bought a Water Mill at t160
+    /// with Aquileia named under threat and 399 Gold in hand (a Line
+    /// Infantry cost 360), and a Market in Aquileia itself at t162 with the
+    /// walls half down. The floor is one emergency defender while a city is
+    /// threatened or bleeding, and exactly zero otherwise.
+    #[test]
+    fn the_treasury_keeps_one_defender_while_a_city_is_threatened() {
+        use super::super::GrandStrategy;
+        let (mut g, city) = board();
+        let threatened = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: Some(city),
+            desired_cities: 3,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        let calm = StrategicPlan {
+            threatened_city: None,
+            ..threatened.clone()
+        };
+
+        let off = AdvancedAi::new();
+        assert!(!off.threatened_city_reserve, "a repair gene ships off");
+        assert!(!AdvancedAi::legacy().threatened_city_reserve);
+        assert_eq!(off.threatened_city_gold_floor(&g, 0, &threatened), 0.0);
+        assert_eq!(
+            off.reserve_for_the_threatened_city(&g, 0, &threatened, 125.0),
+            125.0
+        );
+
+        let mut on = AdvancedAi::new();
+        on.enable_threatened_city_reserve();
+        assert!(on.threatened_city_reserve);
+        assert_eq!(
+            on.threatened_city_gold_floor(&g, 0, &calm),
+            0.0,
+            "no threat, no floor"
+        );
+        let floor = on.threatened_city_gold_floor(&g, 0, &threatened);
+        let defender = on
+            .emergency_defender_price(&g, 0)
+            .unwrap_or_else(|| g.game_speed.scale(FALLBACK_DEFENDER_PRICE));
+        assert!(
+            floor > 0.0,
+            "a threatened city holds a defender's price back"
+        );
+        assert_eq!(floor, defender);
+        assert_eq!(
+            on.reserve_for_the_threatened_city(&g, 0, &threatened, 1.0),
+            floor
+        );
+        assert_eq!(
+            on.reserve_for_the_threatened_city(&g, 0, &threatened, floor + 1_000.0),
+            floor + 1_000.0,
+            "a stock reserve already above the floor stands"
+        );
+
+        // A bleeding city with no named threat is the other trigger, through
+        // `native-emergency-purchase`'s own confirmed-damage signal.
+        g.turn = 10;
+        {
+            let bleeding = g.cities.get_mut(&city).unwrap();
+            bleeding.hp = 150;
+            bleeding.last_attacked = 9;
+        }
+        assert_eq!(
+            on.threatened_city_gold_floor(&g, 0, &calm),
+            0.0,
+            "unseen without the signal"
+        );
+        on.enable_native_emergency_purchase();
+        assert_eq!(on.threatened_city_gold_floor(&g, 0, &calm), defender);
+        on.disable_threatened_city_reserve();
+        assert_eq!(on.threatened_city_gold_floor(&g, 0, &threatened), 0.0);
     }
 
     #[test]
