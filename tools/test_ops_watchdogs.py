@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -60,6 +64,97 @@ class RepeatingUnitBlockerTest(unittest.TestCase):
         ]))
 
 
+class SynchronizedProgressTokenTest(unittest.TestCase):
+    def test_arms_only_when_this_run_agrees_with_the_live_mirror(self) -> None:
+        status = {
+            "server_instance": 321,
+            "turn": 184,
+            "frame_sequence": 912,
+        }
+        events = [
+            {"kind": "turn", "turn": 183},
+            {"kind": "turn", "turn": 184},
+        ]
+        self.assertEqual(
+            watchdog_state.synchronized_progress_token(status, events),
+            (321, 184, 912, 184),
+        )
+
+    def test_does_not_arm_from_setup_or_a_stale_mirror(self) -> None:
+        status = {
+            "server_instance": 321,
+            "turn": 184,
+            "frame_sequence": 912,
+        }
+        self.assertIsNone(watchdog_state.synchronized_progress_token(status, []))
+        self.assertIsNone(watchdog_state.synchronized_progress_token(
+            status, [{"kind": "turn", "turn": 170}],
+        ))
+
+    def test_same_turn_blocked_events_do_not_look_like_progress(self) -> None:
+        status = {
+            "server_instance": 321,
+            "turn": 184,
+            "frame_sequence": 912,
+        }
+        first = [{"kind": "turn", "turn": 184}]
+        blocked = [
+            *first,
+            {"kind": "blocked", "turn": 184,
+             "blocker": "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE"},
+        ]
+        self.assertEqual(
+            watchdog_state.synchronized_progress_token(status, first),
+            watchdog_state.synchronized_progress_token(status, blocked),
+        )
+
+    def test_terminal_or_malformed_status_disarms_progress_guard(self) -> None:
+        status = {
+            "server_instance": 321,
+            "turn": 184,
+            "frame_sequence": 912,
+        }
+        self.assertIsNone(watchdog_state.synchronized_progress_token(
+            status, [{"kind": "turn", "turn": 184},
+                     {"kind": "victory", "turn": 184}],
+        ))
+        self.assertEqual(
+            watchdog_state.synchronized_progress_token(
+                status, [{"kind": "turn", "turn": 184},
+                         {"kind": "defeat", "turn": 184, "ours": False}],
+            ),
+            (321, 184, 912, 184),
+        )
+        self.assertIsNone(watchdog_state.synchronized_progress_token(
+            {"server_instance": True, "turn": 184, "frame_sequence": 912},
+            [{"kind": "turn", "turn": 184}],
+        ))
+
+    def test_progress_cli_uses_the_current_run_as_its_stale_mirror_fence(self) -> None:
+        status = {
+            "server_instance": 321,
+            "turn": 184,
+            "frame_sequence": 912,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "turn", "turn": 184}) + "\n")
+            command = [
+                sys.executable, str(STATE_PATH), "--progress", str(events),
+            ]
+            live = subprocess.run(
+                command, input=json.dumps(status), text=True, check=True,
+                capture_output=True,
+            )
+            self.assertEqual(live.stdout, "321 184 912 184\n")
+            events.write_text(json.dumps({"kind": "turn", "turn": 170}) + "\n")
+            stale = subprocess.run(
+                command, input=json.dumps(status), text=True, check=True,
+                capture_output=True,
+            )
+            self.assertEqual(stale.stdout, "")
+
+
 class WatchdogWiringTest(unittest.TestCase):
     def test_agent_watchdog_escalates_an_explicit_repeating_unit_blocker(self) -> None:
         source = (OPS / "civvis-agent-wedge-watchdog.sh").read_text()
@@ -68,7 +163,18 @@ class WatchdogWiringTest(unittest.TestCase):
         self.assertIn("repeating unit blocker", source)
         self.assertLess(
             source.index("repeating unit blocker"),
-            source.index("mirror_turn=$(curl"),
+            source.index("mirror_status=$(curl"),
+        )
+
+    def test_agent_watchdog_requires_synchronized_no_progress_before_recovery(self) -> None:
+        source = (OPS / "civvis-agent-wedge-watchdog.sh").read_text()
+        self.assertIn("CIVVIS_WEDGE_PROGRESS_CONFIRM", source)
+        self.assertIn("--progress", source)
+        self.assertIn("NO GAME PROGRESS confirmed", source)
+        self.assertIn("synchronized progress", source)
+        self.assertLess(
+            source.index("NO GAME PROGRESS confirmed"),
+            source.index("gap=$(( mirror_turn - agent_turn ))"),
         )
 
     def test_interactive_host_keeps_the_agent_watchdog_alive(self) -> None:
