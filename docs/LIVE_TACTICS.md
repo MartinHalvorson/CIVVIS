@@ -650,3 +650,27 @@ handled piecemeal — carries the curriculum at +115.
 need healing, and it does not: the wounded unit never has to come back. What
 pays is that the line does not open when it leaves. That is a different
 claim from "rotate to heal", and it is the one the numbers support.
+
+## 19. The arena can pose a siege, and the siege is an arrival problem (2026-08-27)
+
+`docs/DOCTRINE_ARENA.md` ("The arena can pose a siege") records the
+instrument: a position may state a city with hit points and a wall pool, a
+captured `Engagement` carries the city the fight was over, and the ledger
+counts what changed hands.
+
+The first assault position, `the_storming` — a 200-hit-point city behind 100
+points of wall against a siege train worth three times the garrison —
+reproduces §1's live record in thirty-four turns: over forty assaults the
+deployed controller took the city **three times**, and it **loses the
+position** to `basic` at −200.8 ± 102.5 a seed (sign p 0.024).
+
+**The cause is not the walls.** The besieger's arrival spread on that board
+is **10.91 turns**, the worst in the arena against 1.2–8.1 everywhere else,
+with contact at 70 %, the lowest anywhere. The siege train is fed to the
+garrison a unit at a time — §10's finding, on the position that punishes it
+hardest. `close-as-a-body` is the gene shaped for it and reads the right sign
+(+37.5 ± 30.3) while firing on only 6 of 40 seeds, because it acts on an
+`Advance` posture out of contact and this board reaches contact quickly. A
+gene that paced a *siege train* specifically — hold the melee until the
+catapults are in range and the wall is going down — is the next thing this
+board can price, and it could not be priced at all before it existed.

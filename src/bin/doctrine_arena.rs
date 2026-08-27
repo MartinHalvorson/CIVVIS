@@ -119,6 +119,17 @@ fn merged(ledgers: impl Iterator<Item = DoctrineLedger>) -> DoctrineLedger {
     out
 }
 
+/// Cities taken and lost, or a dash on a board with no city to take. The
+/// live seat's own count is zero across eleven declared wars, so this is the
+/// column an assault board exists to move.
+fn captures(ledger: &DoctrineLedger) -> String {
+    if ledger.cities_taken == 0 && ledger.cities_lost == 0 {
+        "--".to_string()
+    } else {
+        format!("+{}/-{}", ledger.cities_taken, ledger.cities_lost)
+    }
+}
+
 /// Kills per loss, or a dash when nothing was lost — the exchange ratio the
 /// live seat's Hall of Fame is read in, so an arena number and a live number
 /// are the same kind of number.
@@ -139,11 +150,25 @@ fn describe(boards: &[Engagement]) {
         println!("  {}", spec.provenance);
         println!("  {}", spec.problem);
         println!(
-            "  board {}x{}, {} turns{}",
+            "  board {}x{}, {} turns{}{}",
             spec.width,
             spec.height,
             spec.turns,
-            if spec.heal { ", healing on" } else { "" }
+            if spec.heal { ", healing on" } else { "" },
+            match spec.cities.len() {
+                0 => String::new(),
+                n => format!(
+                    ", {n} city ({})",
+                    spec.cities
+                        .iter()
+                        .map(|held| format!(
+                            "role {} at {},{} hp {} wall {}",
+                            held.role, held.col, held.row, held.hp, held.wall_hp
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
+            }
         );
         for role in 0..2 {
             let force: Vec<&str> = spec.forces[role]
@@ -590,6 +615,14 @@ fn main() {
             b.losses,
             exchange(&b)
         );
+        if a.cities_taken + a.cities_lost > 0 {
+            println!(
+                "{:<20}cities taken/lost: {name_a} {}, {name_b} {}",
+                "",
+                captures(&a),
+                captures(&b)
+            );
+        }
         println!();
         println!(
             "The pooled row treats every board as one experiment, which the curriculum is not: \
@@ -639,6 +672,13 @@ fn main() {
             outcome.b.losses,
             exchange(&outcome.b)
         );
+        if outcome.a.cities_taken + outcome.a.cities_lost > 0 {
+            println!(
+                "  cities: {name_a} {}, {name_b} {}",
+                captures(&outcome.a),
+                captures(&outcome.b)
+            );
+        }
     }
 
     if !silent.is_empty() {
