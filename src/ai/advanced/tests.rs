@@ -21446,7 +21446,7 @@ fn forcing_reply_search_prices_a_move_then_attack_counter() {
 
 #[test]
 fn forcing_reply_prefilter_keeps_one_step_attackers_and_skips_remote_wars() {
-    let mut game = Game::new_full(3, 24, 16, 8_118_1, 80, 0, false);
+    let mut game = Game::new_full(3, 24, 16, 81_181, 80, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
         game.remove_unit(unit);
     }

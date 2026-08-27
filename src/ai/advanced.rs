@@ -30558,11 +30558,7 @@ impl AdvancedAi {
     /// encampment strikes.  City checks are intentionally looser than the
     /// engine (range only), which preserves every uncertain branch rather than
     /// proving a legal counterattack away from the search.
-    fn enemy_can_force_a_reply_against_any(
-        position: &Game,
-        enemy: usize,
-        victims: &[u32],
-    ) -> bool {
+    fn enemy_can_force_a_reply_against_any(position: &Game, enemy: usize, victims: &[u32]) -> bool {
         let unit_can_reach_a_victim = position
             .units
             .values()
@@ -30580,9 +30576,10 @@ impl AdvancedAi {
                 }
                 spec.class == "military"
                     && victims.iter().any(|victim| {
-                        position.units.get(victim).is_some_and(|victim| {
-                            position.wdist(unit.pos, victim.pos) <= reach + 2
-                        })
+                        position
+                            .units
+                            .get(victim)
+                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach + 2)
                     })
                     && !position.is_embarked(unit)
             });
