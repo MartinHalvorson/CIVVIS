@@ -34,6 +34,7 @@
 //! silently comes back empty would put the simulator on ground that does not
 //! exist, which is a worse failure than any of those.
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use serde::Deserialize;
 
@@ -802,7 +803,7 @@ mod tests {
         let settler_item = crate::game::Item::Unit {
             unit: crate::name!("settler"),
         };
-        game.blocked_production.clear();
+        Arc::make_mut(&mut game.blocked_production).clear();
         game.cities.get_mut(&city).unwrap().pop = 4;
         game.players[0].gold = 10_000.0;
         assert!(game.can_produce(0, city, &settler_item));
@@ -1505,7 +1506,7 @@ mod tests {
             "precondition: the card is on offer before the host retires it"
         );
 
-        game.blocked_policies.insert(victim);
+        Arc::make_mut(&mut game.blocked_policies).insert(victim);
         assert!(
             !game.available_policies(0).contains(&victim),
             "a card the host ruleset retired must not be offered again — this is the \
@@ -3460,7 +3461,7 @@ mod tests {
         let engine_foreign = game.foreign_tourists(1);
         let engine_domestic = game.domestic_tourists(1);
         {
-            let observed = game.observed_public_empire_stats.entry(1).or_default();
+            let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(1).or_default();
             observed.foreign_tourists = Some(41);
             observed.domestic_tourists = Some(66);
         }
@@ -3468,7 +3469,7 @@ mod tests {
         assert_eq!(game.domestic_tourists(1), 66);
         // An entry with no counters falls back to the engine's arithmetic.
         {
-            let observed = game.observed_public_empire_stats.entry(1).or_default();
+            let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(1).or_default();
             observed.foreign_tourists = None;
             observed.domestic_tourists = None;
         }
@@ -6638,7 +6639,7 @@ mod tests {
             })
             .expect("some wonder must be sitable in both cities for this to prove anything");
 
-        game.host_unavailable_wonders.insert(wonder);
+        Arc::make_mut(&mut game.host_unavailable_wonders).insert(wonder);
 
         for city in [first_city, second_city] {
             assert!(
@@ -6678,7 +6679,7 @@ mod tests {
         let (district, site) =
             candidate.expect("an unlocked grown city needs a buildable district");
 
-        game.blocked_districts.entry(city).or_default().insert(district);
+        Arc::make_mut(&mut game.blocked_districts).entry(city).or_default().insert(district);
         assert!(
             game.district_sites(city, district).is_empty(),
             "precondition: the paired refusal blocks the normal model"
@@ -6743,7 +6744,7 @@ mod tests {
             "precondition: the configured Pyramids site is buildable"
         );
 
-        game.blocked_wonders.entry(city).or_default().insert(wonder);
+        Arc::make_mut(&mut game.blocked_wonders).entry(city).or_default().insert(wonder);
         assert!(
             game.wonder_sites(city, &wonder).is_empty(),
             "precondition: the paired refusal blocks the normal model"
@@ -11400,7 +11401,7 @@ mod tests {
             doomed, recon.game.cities[&recon.known_city_ids[&1]].pos
         ) > 9);
         let mut forecast = recon.game.clone();
-        forecast.blocked_city_sites.remove(&doomed);
+        Arc::make_mut(&mut forecast.blocked_city_sites).remove(&doomed);
         assert!(forecast.can_found_city(doomed_settler));
         let forecast_city = forecast.found_city_for(0, doomed, None);
         let forecast_loyalty = forecast.city_loyalty_per_turn(&forecast.cities[&forecast_city]);
@@ -12452,8 +12453,8 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
 
     // Rebuilt from the plots on every apply, like the landmass: a plot whose
     // reading lapsed keeps none.
-    game.observed_appeal.clear();
-    game.observed_fresh_water.clear();
+    Arc::make_mut(&mut game.observed_appeal).clear();
+    Arc::make_mut(&mut game.observed_fresh_water).clear();
     for (x, y) in snapshot.revealed_positions() {
         let Some(plot) = snapshot.plot((x, y)) else {
             continue;
@@ -12473,11 +12474,11 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
         // The host's own appeal, which `Game::tile_appeal` prefers to its
         // derivation from the six neighbours it can see.
         if let Some(appeal) = plot.ap {
-            game.observed_appeal.insert(pos, appeal);
+            Arc::make_mut(&mut game.observed_appeal).insert(pos, appeal);
         }
         // The host's fresh-water answer, which `Game::city_water` prefers.
         if let Some(fresh) = plot.fw {
-            game.observed_fresh_water.insert(pos, fresh);
+            Arc::make_mut(&mut game.observed_fresh_water).insert(pos, fresh);
         }
     }
 
@@ -14879,8 +14880,7 @@ fn apply_public_empire_stats(
         .population
         .filter(|value| *value >= 0)
         .and_then(|value| i32::try_from(value).ok());
-    let observed = game
-        .observed_public_empire_stats
+    let observed = Arc::make_mut(&mut game.observed_public_empire_stats)
         .entry(owner)
         .or_default();
     observed.city_count = count(source.city_count);
@@ -14982,7 +14982,7 @@ fn apply_rival_public_economy(
             .then(|| value.round() as usize)
     };
     {
-        let observed = game.observed_public_empire_stats.entry(owner).or_default();
+        let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(owner).or_default();
         // The science lane's own number (`GetNumTechsResearched`) where it
         // crossed, else the counted loop an older mod sends; they agree.
         observed.techs = rival
@@ -15000,9 +15000,9 @@ fn apply_rival_public_economy(
             .filter(|value| value.is_finite() && *value >= 0.0);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
         if known(rival.tourism) {
-            game.observed_tourism_per_turn.insert(owner, rival.tourism);
+            Arc::make_mut(&mut game.observed_tourism_per_turn).insert(owner, rival.tourism);
         } else {
-            game.observed_tourism_per_turn.remove(&owner);
+            Arc::make_mut(&mut game.observed_tourism_per_turn).remove(&owner);
         }
         // Like `techs`/`civics`: the observed table is rebuilt from each
         // snapshot (`apply_observed_host_metrics` clears it), so absent or
@@ -15017,12 +15017,12 @@ fn apply_rival_public_economy(
     // victory tracker (`victory_races`, `religious_conversion_tally`) counts
     // a rival converted by cities the seat has never seen.
     if let Some(name) = rival.religion.as_deref().and_then(civvis_religion_name) {
-        game.observed_majority_religion.insert(owner, name);
+        Arc::make_mut(&mut game.observed_majority_religion).insert(owner, name);
     }
     // Our draw from this rival, keyed the way `visiting_tourists_from` asks:
     // (tourism source = us, where the tourists come from = them).
     if let Some(tourists) = rival.tourists_visiting_us.filter(|value| *value >= 0) {
-        game.observed_visiting_tourists.insert((0, owner), tourists);
+        Arc::make_mut(&mut game.observed_visiting_tourists).insert((0, owner), tourists);
     }
     // Era Score on the rival's own seat, the slot `apply_player_ages` fills
     // for ours; the standings (`obs.rs`) show it per player.
@@ -15057,7 +15057,7 @@ fn apply_rival_public_economy(
         && !stats.production.is_some_and(known)
         && !known(rival.faith_per_turn)
     {
-        game.observed_yield_adjustments.remove(&owner);
+        Arc::make_mut(&mut game.observed_yield_adjustments).remove(&owner);
         return;
     }
     let mut derived = crate::rules::Yields::default();
@@ -15082,7 +15082,7 @@ fn apply_rival_public_economy(
     if known(rival.faith_per_turn) {
         adjustment.faith = rival.faith_per_turn - derived.faith;
     }
-    game.observed_yield_adjustments.insert(owner, adjustment);
+    Arc::make_mut(&mut game.observed_yield_adjustments).insert(owner, adjustment);
 }
 
 /// Traders that Firaxis says are already servicing a route.
@@ -15114,8 +15114,8 @@ fn restore_active_trade_routes(
     city_of_civ6: &std::collections::BTreeMap<i64, u32>,
 ) -> Vec<String> {
     game.routes.clear();
-    game.observed_route_posts.clear();
-    game.observed_route_yields.clear();
+    Arc::make_mut(&mut game.observed_route_posts).clear();
+    Arc::make_mut(&mut game.observed_route_yields).clear();
     let ends = game.turn.saturating_add(game.max_turns.max(1));
     let mut unresolved = Vec::new();
 
@@ -15163,7 +15163,7 @@ fn restore_active_trade_routes(
         // ran through Cumae's post, run civvis-20260816T200454Z t144-154).
         if let (Some(own), Some(foreign)) = (route.posts_own, route.posts_foreign) {
             if own >= 0 && foreign >= 0 {
-                game.observed_route_posts
+                Arc::make_mut(&mut game.observed_route_posts)
                     .insert((origin, destination), (own, foreign));
             }
         }
@@ -15174,7 +15174,7 @@ fn restore_active_trade_routes(
                 .iter()
                 .all(|value| value.is_finite() && *value >= 0.0);
             if finite {
-                game.observed_route_yields.insert((origin, destination), yields);
+                Arc::make_mut(&mut game.observed_route_yields).insert((origin, destination), yields);
             }
         }
         game.routes.push(crate::game::TradeRoute {
@@ -16169,13 +16169,13 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
         game.game_speed = speed;
     }
     apply_seat_victories(game, &state.seat);
-    game.observed_leader_types.clear();
+    Arc::make_mut(&mut game.observed_leader_types).clear();
     if !state.seat.leader.is_empty() {
-        game.observed_leader_types.insert(0, state.seat.leader.clone());
+        Arc::make_mut(&mut game.observed_leader_types).insert(0, state.seat.leader.clone());
     }
     for (index, rival) in state.rivals.iter().enumerate() {
         if !rival.leader.is_empty() {
-            game.observed_leader_types
+            Arc::make_mut(&mut game.observed_leader_types)
                 .insert(index + 1, rival.leader.clone());
         }
     }
@@ -17958,7 +17958,7 @@ fn block_live_spy_production(game: &mut crate::game::Game, capacity: Option<i64>
         unit: crate::name!("spy"),
     };
     let key = crate::game::Game::production_block_key(&spy);
-    let mut blocked = std::mem::take(&mut game.blocked_production);
+    let mut blocked = Arc::unwrap_or_clone(std::mem::take(&mut game.blocked_production));
     for city in game.player_city_ids(0) {
         let entry = blocked.entry(city).or_default();
         if room {
@@ -18042,7 +18042,7 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
         || unit.spy_operation_end_turn.is_some()
         || unit.spy_missions_available.is_some();
     if !exported {
-        game.host_unit_facts.remove(&uid);
+        Arc::make_mut(&mut game.host_unit_facts).remove(&uid);
         return;
     }
     let upgrade = (unit.upgrade_to.is_some() || unit.upgrade_blocked_reason.is_some()).then(|| {
@@ -18071,7 +18071,7 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
                 .collect::<BTreeSet<String>>()
         })
         .filter(|menu| !menu.is_empty());
-    game.host_unit_facts.insert(
+    Arc::make_mut(&mut game.host_unit_facts).insert(
         uid,
         crate::game::HostUnitFacts {
             upgrade,
@@ -18101,9 +18101,9 @@ fn apply_host_maintenance(game: &mut crate::game::Game, state: &StateSnapshot) {
         districts: reading(state.district_maintenance_total),
     };
     if bill.units.is_some() || bill.buildings.is_some() || bill.districts.is_some() {
-        game.host_maintenance.insert(0, bill);
+        Arc::make_mut(&mut game.host_maintenance).insert(0, bill);
     } else {
-        game.host_maintenance.remove(&0);
+        Arc::make_mut(&mut game.host_maintenance).remove(&0);
     }
 }
 
@@ -19734,7 +19734,7 @@ fn apply_city_health(game: &mut crate::game::Game, cid: u32, state: &StateCity) 
         && state.max_wall_damage >= 0.0
     {
         let max_wall = state.max_wall_damage.round().max(0.0) as i32;
-        game.observed_city_max_wall_hp.insert(cid, max_wall);
+        Arc::make_mut(&mut game.observed_city_max_wall_hp).insert(cid, max_wall);
         if let Some(city) = game.cities.get_mut(&cid) {
             city.wall_hp = (state.max_wall_damage - state.wall_damage)
                 .round()
@@ -20199,7 +20199,7 @@ fn apply_observed_plot_yields(game: &mut crate::game::Game, snapshot: &Snapshot)
         {
             continue;
         }
-        game.observed_tile_yield_adjustments.insert(pos, delta);
+        Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(pos, delta);
     }
 }
 
@@ -20210,15 +20210,15 @@ fn apply_observed_city_economy(
     snapshot: Option<&Snapshot>,
     unmapped: &mut Vec<String>,
 ) {
-    game.observed_city_yield_adjustments.clear();
+    Arc::make_mut(&mut game.observed_city_yield_adjustments).clear();
     // Clear first: the previous correction is part of `city_amenities` and
     // `city_housing`, and using it while deriving this turn's delta would
     // compound it forever.
-    game.observed_city_amenity_adjustments.clear();
-    game.observed_city_housing_adjustments.clear();
-    game.observed_tile_yield_adjustments.clear();
-    game.observed_city_worked_tiles.clear();
-    game.observed_city_specialists.clear();
+    Arc::make_mut(&mut game.observed_city_amenity_adjustments).clear();
+    Arc::make_mut(&mut game.observed_city_housing_adjustments).clear();
+    Arc::make_mut(&mut game.observed_tile_yield_adjustments).clear();
+    Arc::make_mut(&mut game.observed_city_worked_tiles).clear();
+    Arc::make_mut(&mut game.observed_city_specialists).clear();
 
     for observed in &state.cities {
         let pos = crate::hex::offset_to_axial(observed.x, observed.y);
@@ -20282,7 +20282,7 @@ fn apply_observed_city_economy(
                     }
                     game.map.tiles.get_mut(&worked_pos).unwrap().owner_city = Some(cid);
                 }
-                game.observed_city_worked_tiles.insert(cid, positions);
+                Arc::make_mut(&mut game.observed_city_worked_tiles).insert(cid, positions);
             } else {
                 let issue = format!("{}:worked_plot", observed.name);
                 if !unmapped.contains(&issue) {
@@ -20308,7 +20308,7 @@ fn apply_observed_city_economy(
                 }
             }
             if all_valid {
-                game.observed_city_specialists.insert(cid, translated);
+                Arc::make_mut(&mut game.observed_city_specialists).insert(cid, translated);
             }
         }
     }
@@ -20355,7 +20355,7 @@ fn apply_observed_city_economy(
                 }
             }
         }
-        game.observed_great_work_housing = Some(housing);
+        game.observed_great_work_housing = Some(Arc::new(housing));
     }
 
     // ★★★★★ THE HOST'S OWN PER-PLOT YIELDS, WHERE THE EXPORT CARRIES THEM.
@@ -20402,7 +20402,7 @@ fn apply_observed_city_economy(
             // sits at or above that floor, so raw + correction = host survives
             // the floor unchanged.
             let model = game.modeled_tile_yields(pos);
-            game.observed_tile_yield_adjustments
+            Arc::make_mut(&mut game.observed_tile_yield_adjustments)
                 .insert(pos, delta(host, model));
         }
         for plot in observed.worked.iter().flatten() {
@@ -20420,7 +20420,7 @@ fn apply_observed_city_economy(
                 continue;
             }
             let model = game.modeled_tile_yields(plot_pos);
-            game.observed_tile_yield_adjustments
+            Arc::make_mut(&mut game.observed_tile_yield_adjustments)
                 .insert(plot_pos, delta(host, model));
         }
     }
@@ -20445,7 +20445,7 @@ fn apply_observed_city_economy(
         let pos = crate::hex::offset_to_axial(observed.x, observed.y);
         let Some(cid) = game.city_at(pos) else { continue };
         let modeled_surplus = game.city_amenity_surplus(&game.cities[&cid]);
-        game.observed_city_amenity_adjustments
+        Arc::make_mut(&mut game.observed_city_amenity_adjustments)
             .insert(cid, host_surplus - modeled_surplus);
     }
 
@@ -20461,7 +20461,7 @@ fn apply_observed_city_economy(
         let pos = crate::hex::offset_to_axial(observed.x, observed.y);
         let Some(cid) = game.city_at(pos) else { continue };
         let modeled_housing = game.city_housing(&game.cities[&cid]);
-        game.observed_city_housing_adjustments
+        Arc::make_mut(&mut game.observed_city_housing_adjustments)
             .insert(cid, host_housing - modeled_housing);
     }
 
@@ -20487,7 +20487,7 @@ fn apply_observed_city_economy(
             culture: host.culture - model.culture,
             faith: host.faith - model.faith,
         };
-        game.observed_city_yield_adjustments.insert(cid, adjustment);
+        Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(cid, adjustment);
     }
 }
 
@@ -20497,17 +20497,17 @@ fn apply_observed_host_metrics(
     snapshot: Option<&Snapshot>,
     unmapped: &mut Vec<String>,
 ) {
-    game.observed_trade_capacity.clear();
-    game.observed_yield_adjustments.clear();
-    game.observed_public_empire_stats.clear();
-    game.observed_majority_religion.clear();
-    game.observed_visiting_tourists.clear();
-    game.observed_city_loyalty_per_turn.clear();
-    game.observed_city_strength.clear();
-    game.observed_city_max_wall_hp.clear();
-    game.observed_tourism_per_turn.clear();
+    Arc::make_mut(&mut game.observed_trade_capacity).clear();
+    Arc::make_mut(&mut game.observed_yield_adjustments).clear();
+    Arc::make_mut(&mut game.observed_public_empire_stats).clear();
+    Arc::make_mut(&mut game.observed_majority_religion).clear();
+    Arc::make_mut(&mut game.observed_visiting_tourists).clear();
+    Arc::make_mut(&mut game.observed_city_loyalty_per_turn).clear();
+    Arc::make_mut(&mut game.observed_city_strength).clear();
+    Arc::make_mut(&mut game.observed_city_max_wall_hp).clear();
+    Arc::make_mut(&mut game.observed_tourism_per_turn).clear();
     if let Some(capacity) = state.trade_capacity.filter(|capacity| *capacity >= 0) {
-        game.observed_trade_capacity.insert(0, capacity);
+        Arc::make_mut(&mut game.observed_trade_capacity).insert(0, capacity);
     }
     // Our tourism per turn as the host counts it; `Game::tourism_per_turn`
     // prefers it, the model figure stays behind `tourism_per_turn_model`.
@@ -20515,7 +20515,7 @@ fn apply_observed_host_metrics(
         .tourism_per_turn
         .filter(|t| t.is_finite() && *t >= 0.0)
     {
-        game.observed_tourism_per_turn.insert(0, tourism);
+        Arc::make_mut(&mut game.observed_tourism_per_turn).insert(0, tourism);
     }
     apply_public_empire_stats(game, 0, &state.public_stats);
     {
@@ -20524,7 +20524,7 @@ fn apply_observed_host_metrics(
             (value.is_finite() && value >= 0.0 && value <= usize::MAX as f64)
                 .then(|| value.round() as usize)
         };
-        let observed = game.observed_public_empire_stats.entry(0).or_default();
+        let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(0).or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
         observed.cities_following_religion = state
@@ -20578,7 +20578,7 @@ fn apply_observed_host_metrics(
         || adjustment.culture != 0.0
         || adjustment.faith != 0.0
     {
-        game.observed_yield_adjustments.insert(0, adjustment);
+        Arc::make_mut(&mut game.observed_yield_adjustments).insert(0, adjustment);
     }
     // Which seats the export names a capital for. A record that flags none
     // (an older export, or a fixture) keeps `place_city`'s own choice rather
@@ -20629,11 +20629,11 @@ fn apply_observed_host_metrics(
         }
         apply_city_health(game, cid, observed);
         if observed.loyalty_per_turn.is_finite() {
-            game.observed_city_loyalty_per_turn
+            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
                 .insert(cid, observed.loyalty_per_turn);
         }
         if observed.defense.is_finite() && observed.defense >= 0.0 {
-            game.observed_city_strength.insert(cid, observed.defense);
+            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
         }
     }
 
@@ -21370,13 +21370,13 @@ fn step_map_script(ctx: &mut HostStepCtx<'_>) {
 fn step_refused_site_blocks(ctx: &mut HostStepCtx<'_>) {
     // Sites the host engine has already rejected, so the planner stops re-deriving
     // them. See `refused_sites_of_kind_through`.
-    ctx.game.blocked_city_sites = ctx.state.refused_sites.clone();
-    ctx.game.blocked_improvement_sites = ctx.state.refused_improves.clone();
-    ctx.game.blocked_trade_routes = ctx.state.refused_trade_routes.clone();
+    ctx.game.blocked_city_sites = Arc::new(ctx.state.refused_sites.clone());
+    ctx.game.blocked_improvement_sites = Arc::new(ctx.state.refused_improves.clone());
+    ctx.game.blocked_trade_routes = Arc::new(ctx.state.refused_trade_routes.clone());
     let policies = blocked_policies_from(&ctx.state.refused_policy_names, &ctx.game.rules);
-    ctx.game.blocked_policies = policies;
+    ctx.game.blocked_policies = Arc::new(policies);
     let pantheons = blocked_pantheons_from(&ctx.state.refused_pantheons, &ctx.game.rules);
-    ctx.game.blocked_pantheons = pantheons;
+    ctx.game.blocked_pantheons = Arc::new(pantheons);
     // ⚠ The district/wonder/production half needs `city_ids`, which is only
     // complete once every city is planted, so it is wired after the board phase
     // rather than here. See the note on `HOST_STATE_STEPS`.
@@ -21411,15 +21411,13 @@ fn step_turn_and_score(ctx: &mut HostStepCtx<'_>) {
     // and no district, while its own plan asked for 3 cities. An agent whose strategy
     // is keyed to era and timing cannot plan from a clock stuck at zero.
     ctx.game.turn = ctx.state.turn.max(1);
-    ctx.game.observed_score.clear();
-    ctx.game.observed_military_power.clear();
+    Arc::make_mut(&mut ctx.game.observed_score).clear();
+    Arc::make_mut(&mut ctx.game.observed_military_power).clear();
     if ctx.state.score >= 0 {
-        ctx.game.observed_score.insert(0, ctx.state.score);
+        Arc::make_mut(&mut ctx.game.observed_score).insert(0, ctx.state.score);
     }
     if ctx.state.military.is_finite() && ctx.state.military >= 0.0 {
-        ctx.game
-            .observed_military_power
-            .insert(0, ctx.state.military);
+        Arc::make_mut(&mut ctx.game.observed_military_power).insert(0, ctx.state.military);
     }
 }
 
@@ -22259,7 +22257,7 @@ pub fn rebuild_from_state(
     // What the host said about each unit, keyed by the board id it just got.
     // Written here, before `LiveMirror::new` takes the movement allowance and
     // before `seat_live_spies` reads a Spy's operation off it.
-    game.host_unit_facts.clear();
+    Arc::make_mut(&mut game.host_unit_facts).clear();
     for unit in &state.units {
         if let Some(uid) = plant_unit(&mut game, 0, unit, &mut unmapped, &mut dropped) {
             unit_ids.insert(uid, unit.id);
@@ -22311,10 +22309,10 @@ pub fn rebuild_from_state(
             break;
         }
         if rival.military.is_finite() && rival.military >= 0.0 {
-            game.observed_military_power.insert(owner, rival.military);
+            Arc::make_mut(&mut game.observed_military_power).insert(owner, rival.military);
         }
         if rival.score >= 0 {
-            game.observed_score.insert(owner, rival.score);
+            Arc::make_mut(&mut game.observed_score).insert(owner, rival.score);
         }
         if let Some(dvp) = rival.dvp {
             game.players[owner].dvp = dvp;
@@ -22407,10 +22405,10 @@ pub fn rebuild_from_state(
         apply_host_rival_envoys(&mut game, minor, owner, &seat_of_host);
         apply_host_quest(&mut game, minor, owner, &mut unmapped);
         if minor.score >= 0 {
-            game.observed_score.insert(owner, minor.score);
+            Arc::make_mut(&mut game.observed_score).insert(owner, minor.score);
         }
         if minor.military.is_finite() && minor.military >= 0.0 {
-            game.observed_military_power.insert(owner, minor.military);
+            Arc::make_mut(&mut game.observed_military_power).insert(owner, minor.military);
         }
         let bond = (0, owner);
         if minor.at_war {
@@ -22534,15 +22532,30 @@ pub fn rebuild_from_state(
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
     // because it needs `city_ids`, which is only complete once every city is planted.
-    game.blocked_districts =
-        blocked_districts_from(&state.refused_districts, &city_ids, &game.rules);
-    game.host_district_sites =
-        host_district_sites_from(&state.host_district_sites, &city_ids, &game.rules);
-    game.host_wonder_sites =
-        host_wonder_sites_from(&state.host_wonder_sites, &city_ids, &game.rules);
-    game.blocked_wonders = blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
-    game.host_unavailable_wonders =
-        host_unavailable_wonders_from(&state.host_unavailable_wonders, &game.rules);
+    game.blocked_districts = Arc::new(blocked_districts_from(
+        &state.refused_districts,
+        &city_ids,
+        &game.rules,
+    ));
+    game.host_district_sites = Arc::new(host_district_sites_from(
+        &state.host_district_sites,
+        &city_ids,
+        &game.rules,
+    ));
+    game.host_wonder_sites = Arc::new(host_wonder_sites_from(
+        &state.host_wonder_sites,
+        &city_ids,
+        &game.rules,
+    ));
+    game.blocked_wonders = Arc::new(blocked_wonders_from(
+        &state.refused_wonders,
+        &city_ids,
+        &game.rules,
+    ));
+    game.host_unavailable_wonders = Arc::new(host_unavailable_wonders_from(
+        &state.host_unavailable_wonders,
+        &game.rules,
+    ));
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
@@ -22566,8 +22579,11 @@ pub fn rebuild_from_state(
     // ⚠ Wired on BOTH the rebuild (here) and the refresh path. `--fresh-board`
     // reconstructs the board every turn and never runs the refresh, so wiring only
     // there left the block set permanently empty and the gate measured no change.
-    game.blocked_promotions =
-        blocked_promotions_from(&state.refused_promotions, &unit_ids, &game.rules);
+    game.blocked_promotions = Arc::new(blocked_promotions_from(
+        &state.refused_promotions,
+        &unit_ids,
+        &game.rules,
+    ));
 
     // The readings that must survive whatever the board passes scored on their
     // way there. See `HOST_STATE_STEPS`.
@@ -22776,7 +22792,7 @@ fn restore_route_options(
     options: Option<&[StateRouteOption]>,
     city_of_civ6: &std::collections::BTreeMap<i64, u32>,
 ) -> Vec<String> {
-    game.observed_route_options.clear();
+    Arc::make_mut(&mut game.observed_route_options).clear();
     let Some(options) = options else {
         return Vec::new();
     };
@@ -22830,7 +22846,7 @@ fn restore_route_options(
         .iter()
         .all(|value| value.is_finite() && *value >= 0.0);
         if finite {
-            game.observed_route_options
+            Arc::make_mut(&mut game.observed_route_options)
                 .insert((origin, destination), yields);
         }
     }
@@ -22871,7 +22887,7 @@ fn record_host_observed(game: &mut crate::game::Game, snapshot: &Snapshot) {
             observed.insert(pos);
         }
     }
-    game.host_observed = observed;
+    game.host_observed = Arc::new(observed);
 }
 
 /// Give every revealed plot the owner Civilization VI says it has.
@@ -23117,7 +23133,7 @@ fn apply_territory(
             }
         }
     }
-    game.blocked_city_sites.extend(blocked);
+    Arc::make_mut(&mut game.blocked_city_sites).extend(blocked);
     // Assigned, not extended: recomputed from the export every turn, so ground
     // that opens — a war declared, borders granted, or simply their city coming
     // into view so the ordinary gate takes over — stops being sealed next turn.
@@ -23253,7 +23269,7 @@ fn block_loyalty_doomed_settler_sites(game: &mut crate::game::Game) {
         let city = forecast.found_city_for(0, site, None);
         let loyalty = forecast.city_loyalty_per_turn(&forecast.cities[&city]);
         if loyalty <= DOOMED_LOYALTY_PER_TURN {
-            game.blocked_city_sites.insert(site);
+            Arc::make_mut(&mut game.blocked_city_sites).insert(site);
         }
     }
 }
@@ -23662,40 +23678,37 @@ impl LiveMirror {
         // rebuilt from the whole event log each time, but a sync that assigned
         // instead of merging would silently drop anything the caller had added
         // directly — and a forgotten refusal is a settler back in the same loop.
-        self.game
-            .blocked_city_sites
+        Arc::make_mut(&mut self.game.blocked_city_sites)
             .extend(state.refused_sites.iter().copied());
-        self.game
-            .blocked_improvement_sites
+        Arc::make_mut(&mut self.game.blocked_improvement_sites)
             .extend(state.refused_improves.iter().copied());
-        self.game
-            .blocked_trade_routes
+        Arc::make_mut(&mut self.game.blocked_trade_routes)
             .extend(state.refused_trade_routes.iter().copied());
         // Union for the same reason as the two above: a card the host retired stays
         // retired, and the set is rebuilt from the whole event log each time.
         let retired = blocked_policies_from(&state.refused_policy_names, &self.game.rules);
-        self.game.blocked_policies.extend(retired);
+        Arc::make_mut(&mut self.game.blocked_policies).extend(retired);
         // And a pantheon a rival holds stays held.
         let taken = blocked_pantheons_from(&state.refused_pantheons, &self.game.rules);
-        self.game.blocked_pantheons.extend(taken);
+        Arc::make_mut(&mut self.game.blocked_pantheons).extend(taken);
         let refused = blocked_districts_from(
             &state.refused_districts,
             &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
             &self.game.rules,
         );
         for (cid, names) in refused {
-            self.game.blocked_districts.entry(cid).or_default().extend(names);
+            Arc::make_mut(&mut self.game.blocked_districts).entry(cid).or_default().extend(names);
         }
-        self.game.host_district_sites = host_district_sites_from(
+        self.game.host_district_sites = Arc::new(host_district_sites_from(
             &state.host_district_sites,
             &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
             &self.game.rules,
-        );
-        self.game.host_wonder_sites = host_wonder_sites_from(
+        ));
+        self.game.host_wonder_sites = Arc::new(host_wonder_sites_from(
             &state.host_wonder_sites,
             &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
             &self.game.rules,
-        );
+        ));
         // The wonder half of the same event, unioned for the same reason.
         let refused_wonders = blocked_wonders_from(
             &state.refused_wonders,
@@ -23703,13 +23716,11 @@ impl LiveMirror {
             &self.game.rules,
         );
         for (cid, names) in refused_wonders {
-            self.game.blocked_wonders.entry(cid).or_default().extend(names);
+            Arc::make_mut(&mut self.game.blocked_wonders).entry(cid).or_default().extend(names);
         }
         let unavailable_wonders =
             host_unavailable_wonders_from(&state.host_unavailable_wonders, &self.game.rules);
-        self.game
-            .host_unavailable_wonders
-            .extend(unavailable_wonders);
+        Arc::make_mut(&mut self.game.host_unavailable_wonders).extend(unavailable_wonders);
         // Unlike impossible district plots, a production refusal can be temporary.
         // Replace this cooldown snapshot so entries disappear after their TTL.
         let blocked_production = blocked_production_from(
@@ -23743,8 +23754,11 @@ impl LiveMirror {
         self.game.replace_blocked_purchases(blocked_purchases);
         // Unit ids are only in hand here, so the promotion blocks are wired late for
         // the same reason the production blocks are.
-        self.game.blocked_promotions =
-            blocked_promotions_from(&state.refused_promotions, &self.civ6_of, &self.game.rules);
+        self.game.blocked_promotions = Arc::new(blocked_promotions_from(
+            &state.refused_promotions,
+            &self.civ6_of,
+            &self.game.rules,
+        ));
         // ⚠ ONE ORDERED STEP LIST, WALKED BY BOTH PASSES. See
         // `HOST_STATE_STEPS`: everything this method and `rebuild_from_state`
         // apply from the host state is written there once and told apart by
@@ -23896,7 +23910,7 @@ impl LiveMirror {
         if !skip_units {
             // Re-read from this export; a unit that stopped carrying a key
             // falls back to the board's rule rather than keeping a stale fact.
-            self.game.host_unit_facts.clear();
+            Arc::make_mut(&mut self.game.host_unit_facts).clear();
         }
         let mut seen: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
         for unit in if skip_units { &[][..] } else { &state.units[..] } {
@@ -24010,7 +24024,7 @@ impl LiveMirror {
         for civ6 in gone {
             if let Some(uid) = self.uid_of.remove(&civ6) {
                 self.civ6_of.remove(&uid);
-                self.game.host_unit_facts.remove(&uid);
+                Arc::make_mut(&mut self.game.host_unit_facts).remove(&uid);
                 if self.game.units.contains_key(&uid) {
                     self.game.remove_unit(uid);
                 }
@@ -24262,12 +24276,11 @@ impl LiveMirror {
                 break;
             }
             if rival.military.is_finite() && rival.military >= 0.0 {
-                self.game
-                    .observed_military_power
+                Arc::make_mut(&mut self.game.observed_military_power)
                     .insert(owner, rival.military);
             }
             if rival.score >= 0 {
-                self.game.observed_score.insert(owner, rival.score);
+                Arc::make_mut(&mut self.game.observed_score).insert(owner, rival.score);
             }
             if let Some(dvp) = rival.dvp {
                 self.game.players[owner].dvp = dvp;
@@ -24425,8 +24438,8 @@ impl LiveMirror {
         for owner in free_city_seats {
             self.game.players[owner].alive = free_cities_armed;
             self.game.at_war.remove(&(0, owner));
-            self.game.observed_score.remove(&owner);
-            self.game.observed_military_power.remove(&owner);
+            Arc::make_mut(&mut self.game.observed_score).remove(&owner);
+            Arc::make_mut(&mut self.game.observed_military_power).remove(&owner);
         }
         let minor_assignments = minor_actor_assignments(&self.game, state);
         for &(minor, owner) in &minor_assignments {
@@ -24446,10 +24459,10 @@ impl LiveMirror {
             apply_host_rival_envoys(&mut self.game, minor, owner, &seat_of_host);
             apply_host_quest(&mut self.game, minor, owner, &mut self.unmapped);
             if minor.score >= 0 {
-                self.game.observed_score.insert(owner, minor.score);
+                Arc::make_mut(&mut self.game.observed_score).insert(owner, minor.score);
             }
             if minor.military.is_finite() && minor.military >= 0.0 {
-                self.game.observed_military_power.insert(owner, minor.military);
+                Arc::make_mut(&mut self.game.observed_military_power).insert(owner, minor.military);
             }
             if minor.at_war {
                 self.game.at_war.insert((0, owner));
