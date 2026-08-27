@@ -29909,6 +29909,34 @@ impl AdvancedAi {
         replies
     }
 
+    /// One-ply-then-extend search depth used to price a forcing reply: the
+    /// direct reply ply, plus one further extension ply chosen by
+    /// [`Self::forcing_reply_line`]'s own recursion. Named so the value only
+    /// has to be justified once, at its declaration, instead of read back
+    /// out of a bare `2` at the call site in
+    /// [`Self::forcing_reply_penalty_from_position`].
+    const FORCING_REPLY_DEPTH: usize = 2;
+
+    /// Chess-style move-ordering width: after every forcing reply at a node
+    /// is generated and scored, only this many of the strongest
+    /// captures/checks are extended into another ply. Named so the value is
+    /// documented once instead of read back out of a bare `.take(4)`.
+    const FORCING_REPLY_WIDTH: usize = 4;
+
+    /// Debug text for one forcing-reply candidate, used only as a sort
+    /// tie-break key when two candidates already share the same primary
+    /// score (see the `sort_by` in [`Self::forcing_reply_line`]). Takes the
+    /// raw `Action`(s) rather than a precomputed `String` so the
+    /// (allocating) `Debug` formatting happens lazily, inside the
+    /// comparator's `then_with`, and only for the rare pair that actually
+    /// ties — every other candidate never pays for a label at all.
+    fn forcing_reply_label(reply: &Action, followup: &Option<Action>) -> String {
+        match followup {
+            Some(followup) => format!("{reply:?} -> {followup:?}"),
+            None => format!("{reply:?}"),
+        }
+    }
+
     fn forcing_reply_line(
         work_pool: Option<&Arc<WorkPool>>,
         position: &Game,
@@ -29939,7 +29967,9 @@ impl AdvancedAi {
             if branch.apply(enemy, &reply).is_err() {
                 continue;
             }
-            reply_branches.push((format!("{reply:?}"), branch, reply_unit, reply_hp));
+            // `reply` itself (not a formatted String) is stored so its Debug
+            // text is only built lazily, in the sort tie-break below.
+            reply_branches.push((reply, None, branch, reply_unit, reply_hp));
         }
 
         // A Civ unit can normally move and attack in the same turn. Search
@@ -29980,7 +30010,8 @@ impl AdvancedAi {
                         continue;
                     }
                     reply_branches.push((
-                        format!("{movement:?} -> {followup:?}"),
+                        movement.clone(),
+                        Some(followup),
                         branch,
                         Some(attacker),
                         Some(reply_hp),
@@ -29990,7 +30021,7 @@ impl AdvancedAi {
         }
 
         let mut ordered = Vec::new();
-        for (label, branch, reply_unit, reply_hp) in reply_branches {
+        for (reply, followup, branch, reply_unit, reply_hp) in reply_branches {
             let loss = branch
                 .units
                 .get(&victim)
@@ -30004,23 +30035,34 @@ impl AdvancedAi {
                     .unwrap_or(hp as f64 + 20.0),
                 _ => 0.0,
             };
-            ordered.push(((loss - 0.35 * counter_loss).max(0.0), label, branch));
+            ordered.push((
+                (loss - 0.35 * counter_loss).max(0.0),
+                reply,
+                followup,
+                branch,
+            ));
         }
 
         // Chess-style move ordering keeps the extension bounded: examine all
-        // forcing replies at the frontier, but only extend the four strongest
-        // captures/checks into another focus-fire action.
+        // forcing replies at the frontier, but only extend the
+        // FORCING_REPLY_WIDTH strongest captures/checks into another
+        // focus-fire action. The tie-break Debug text is built lazily,
+        // inside `then_with`, so it is only paid for the rare pair of
+        // candidates that actually share the same primary score.
         ordered.sort_by(|left, right| {
-            right
-                .0
-                .total_cmp(&left.0)
-                .then_with(|| left.1.cmp(&right.1))
+            right.0.total_cmp(&left.0).then_with(|| {
+                Self::forcing_reply_label(&left.1, &left.2)
+                    .cmp(&Self::forcing_reply_label(&right.1, &right.2))
+            })
         });
-        let continuations = ordered.into_iter().take(4).collect::<Vec<_>>();
+        let continuations = ordered
+            .into_iter()
+            .take(Self::FORCING_REPLY_WIDTH)
+            .collect::<Vec<_>>();
         let values = match work_pool {
             Some(pool) if continuations.len() > 1 => {
                 let nested_pool = Arc::clone(pool);
-                pool.map_owned(continuations, move |(immediate, _, branch)| {
+                pool.map_owned(continuations, move |(immediate, _, _, branch)| {
                     immediate
                         + Self::forcing_reply_line(
                             Some(&nested_pool),
@@ -30033,7 +30075,7 @@ impl AdvancedAi {
             }
             _ => continuations
                 .into_iter()
-                .map(|(immediate, _, branch)| {
+                .map(|(immediate, _, _, branch)| {
                     immediate
                         + Self::forcing_reply_line(
                             work_pool,
@@ -30538,7 +30580,7 @@ impl AdvancedAi {
                     &reply_position,
                     enemy,
                     *victim,
-                    2,
+                    Self::FORCING_REPLY_DEPTH,
                 ));
             }
         }
@@ -34493,6 +34535,125 @@ mod live_bundle_tests {
         assert!(!live.base.explore_commit);
         assert!(!live.bank_envoys);
         assert!(!live.base.bank_envoys);
+    }
+}
+
+// This module lives here, rather than in `src/ai/advanced/tests.rs`, because
+// it is exercising `AdvancedAi::forcing_reply_label`, a private associated
+// item declared inside the `impl AdvancedAi` block just above this file's
+// `forcing_reply_line` — a plain `mod` cannot nest inside an `impl`, and
+// `advanced.rs`'s single giant `impl AdvancedAi` block spans essentially the
+// whole file, so a top-level test module can only land in a gap like this
+// one (see `live_bundle_tests` immediately above, which does the same).
+#[cfg(test)]
+mod forcing_reply_lazy_key_tests {
+    use super::AdvancedAi;
+    use crate::game::Action;
+
+    /// Reimplements the *old*, eager form of the forcing-reply tie-break:
+    /// format every candidate's Debug label up front, then sort on
+    /// `(score desc, label asc)`.
+    fn eager_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut eager: Vec<(f64, String)> = candidates
+            .iter()
+            .map(|(score, reply, followup)| {
+                (*score, AdvancedAi::forcing_reply_label(reply, followup))
+            })
+            .collect();
+        eager.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        eager.into_iter().map(|(_, label)| label).collect()
+    }
+
+    /// The *new*, lazy form actually used by `forcing_reply_line`: sort
+    /// directly on the raw candidates, formatting a label only inside
+    /// `then_with`, i.e. only for a pair that ties on score.
+    fn lazy_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut lazy = candidates.to_vec();
+        lazy.sort_by(|left, right| {
+            right.0.total_cmp(&left.0).then_with(|| {
+                AdvancedAi::forcing_reply_label(&left.1, &left.2)
+                    .cmp(&AdvancedAi::forcing_reply_label(&right.1, &right.2))
+            })
+        });
+        lazy.into_iter()
+            .map(|(_, reply, followup)| AdvancedAi::forcing_reply_label(&reply, &followup))
+            .collect()
+    }
+
+    #[test]
+    fn lazy_tie_break_matches_eager_key_ordering() {
+        let candidates: Vec<(f64, Action, Option<Action>)> = vec![
+            (
+                8.0,
+                Action::Ranged {
+                    unit: 9,
+                    target: (1, 1),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 5,
+                    target: (2, 3),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 1,
+                    target: (0, 0),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Move {
+                    unit: 2,
+                    to: (4, 4),
+                },
+                Some(Action::Attack {
+                    unit: 2,
+                    target: (5, 5),
+                }),
+            ),
+            (
+                1.0,
+                Action::Attack {
+                    unit: 3,
+                    target: (9, 9),
+                },
+                None,
+            ),
+        ];
+
+        let lazy = lazy_order(&candidates);
+        let eager = eager_order(&candidates);
+        assert_eq!(
+            lazy, eager,
+            "lazily-formatted tie-break keys must sort identically to eagerly-formatted ones"
+        );
+
+        // A concrete regression check on top of the equivalence check above:
+        // the 8.0 candidate leads; the three 5.0 candidates tie and fall
+        // back to ascending Debug-text order ("Attack ... unit: 1" <
+        // "Attack ... unit: 5" < "Move ..."); the 1.0 candidate trails.
+        assert_eq!(
+            lazy,
+            vec![
+                "Ranged { unit: 9, target: (1, 1) }".to_string(),
+                "Attack { unit: 1, target: (0, 0) }".to_string(),
+                "Attack { unit: 5, target: (2, 3) }".to_string(),
+                "Move { unit: 2, to: (4, 4) } -> Attack { unit: 2, target: (5, 5) }".to_string(),
+                "Attack { unit: 3, target: (9, 9) }".to_string(),
+            ]
+        );
     }
 }
 
