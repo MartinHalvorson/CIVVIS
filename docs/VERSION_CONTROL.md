@@ -635,6 +635,15 @@ assertion; the engine-exactness run (`tools/speed_ab.py` reporting *same game
 on every seed*) then confirms it on real games. Keep the script in the pull
 request body, not in the repository: it is evidence for one merge, not a tool.
 
+A module's tests live in a file of their own — `src/<module>/tests.rs`, declared
+from the parent as `#[cfg(test)] mod tests;` after all of its production code —
+never as an inline `mod tests { … }` block with production code below it.
+
+That layout is what produced #2606: `src/mirror.rs` opened its test module at
+line 477 and carried ~15,000 lines of production code underneath, so a hunk
+appended "at the end of the tests" landed on the far side of a brace and four
+tests never ran, with nothing in the compiler or CI to say so.
+
 ## Fleet migration and incident recovery
 
 When adopting this workflow on machines that already contain active work:
