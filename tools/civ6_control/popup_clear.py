@@ -215,7 +215,17 @@ def systemstatusd_cpu():
 def capture_pause_reason():
     """Why this optional screenshot loop should yield display capture now."""
     if native_recording_ui_active():
-        return "native screen recording UI is active"
+        # A stale Cmd-Shift-5 helper can survive for hours after its toolbar
+        # has left the screen.  Treating its process alone as an active capture
+        # paused the popup watcher for the whole current King game, even though
+        # CoreGraphics could still read the Civ VI window and the real game was
+        # waiting on a leader dialogue.  The native region helper is independent
+        # of `screencapture`, so it is safe to keep the watcher alive whenever
+        # that helper is available.  If the helper is unavailable, the fallback
+        # invokes `screencapture` itself and must still yield to the recording
+        # UI rather than contend with it.
+        if NATIVE_CAPTURE_DISABLED or not macos_capture.prepare():
+            return "native screen recording UI is active"
     cpu = systemstatusd_cpu()
     if cpu is not None and cpu >= SYSTEMSTATUSD_SPIN_PERCENT:
         return f"systemstatusd is spinning at {cpu:.0f}% CPU"
