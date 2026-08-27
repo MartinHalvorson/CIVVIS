@@ -2146,6 +2146,31 @@ impl AdvancedAi {
         self.growth_to_settle = false;
     }
 
+    /// Once the Palace landmass has at most two independent city sites left,
+    /// rebuild a naval eye and favor water that can reveal a known foreign
+    /// landfall. Opt-in gene `island-exploration`; see `BasicAi`'s
+    /// `island_exploration_active` and `exploration_goal`.
+    pub fn enable_island_exploration(&mut self) {
+        self.base.island_exploration = true;
+    }
+
+    /// The twin of `enable_island_exploration`.
+    pub fn disable_island_exploration(&mut self) {
+        self.base.island_exploration = false;
+    }
+
+    /// When the main landmass has little room left, route a Settler to the
+    /// nearest viable foreign site the player has discovered. Opt-in gene
+    /// `overseas-settlement`; see `advanced/island_expansion.rs`.
+    pub fn enable_overseas_settlement(&mut self) {
+        self.overseas_settlement = true;
+    }
+
+    /// The twin of `enable_overseas_settlement`.
+    pub fn disable_overseas_settlement(&mut self) {
+        self.overseas_settlement = false;
+    }
+
     /// Fall through to the next-best candidate the planner already ranked when
     /// an order is refused, instead of losing the turn. Opt-in gene
     /// `order-retry`; see `advanced/order_retry.rs`.

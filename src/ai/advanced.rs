@@ -1058,7 +1058,10 @@ pub struct ForceGroup {
 /// detector moves even if a tile was already visible.
 #[derive(Clone)]
 struct BattlefrontFrame {
-    visible: TileBits,
+    /// An `Arc` into the engine's own per-seat vision cache (see
+    /// `Game::player_vision_frame`) rather than an owned copy: every reader
+    /// below only ever borrows this, and there can be many readers per turn.
+    visible: Arc<TileBits>,
     units: BTreeSet<u32>,
 }
 
@@ -4899,6 +4902,10 @@ pub struct AdvancedAi {
     /// spent BEFORE the city converts, which is why the ordering rather than
     /// some later reaction is the fix.
     moksha_defends_the_faithless: bool,
+    /// Give a Settler a discovered overseas colony before spending the last
+    /// practical spaces on the capital's landmass. Opt-in gene
+    /// `overseas-settlement`.
+    overseas_settlement: bool,
     /// Let the assigned diplomatic lane size its own Congress ballot.
     ///
     /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
@@ -5752,6 +5759,11 @@ mod expansion_schedule;
 /// `advanced/growth_to_settle.rs`.
 mod growth_to_settle;
 
+/// `overseas-settlement`: when the capital's connected land is nearly full,
+/// send the next Settler to the nearest viable discovered foreign landmass.
+/// See `advanced/island_expansion.rs`.
+mod island_expansion;
+
 /// `order-retry`: a refused order falls through to the next-best candidate
 /// the planner already ranked. One opt-in gene; see
 /// `advanced/order_retry.rs`.
@@ -6492,6 +6504,7 @@ impl AdvancedAi {
 
             // ---- append: l-o ----------------------------------------
             moksha_defends_the_faithless: false,
+            overseas_settlement: false,
             lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
@@ -8173,7 +8186,7 @@ impl AdvancedAi {
             self.battlefront_frame = None;
             return;
         }
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         let units = g
             .units
             .values()
@@ -8185,11 +8198,11 @@ impl AdvancedAi {
 
     /// The battlefront's turn-start tile frame, or current vision when this
     /// helper is used outside a controller turn (including focused tests).
-    fn battlefront_visibility(&self, g: &Game, pid: usize) -> TileBits {
+    fn battlefront_visibility(&self, g: &Game, pid: usize) -> Arc<TileBits> {
         self.battlefront_frame
             .as_ref()
-            .map(|frame| frame.visible.clone())
-            .unwrap_or_else(|| g.player_vision_now(pid))
+            .map(|frame| Arc::clone(&frame.visible))
+            .unwrap_or_else(|| g.player_vision_frame(pid))
     }
 
     /// Whether a unit belonged to the same turn-start observation frame.
@@ -8215,13 +8228,13 @@ impl AdvancedAi {
 
     #[cfg(test)]
     fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         Self::city_pressure_with_visibility(g, pid, cid, &visible)
     }
 
     #[cfg(test)]
     fn belief_city_pressure(&self, g: &Game, pid: usize, cid: u32) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         self.city_pressure_with_belief(g, pid, cid, &visible)
     }
 
@@ -8230,7 +8243,7 @@ impl AdvancedAi {
     /// the simulation thread first, so workers share no `Game` caches and the
     /// floating-point sums retain unit-ID order exactly.
     fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         let Some(pool) = self.work_pool.as_ref() else {
             return cities
                 .iter()
@@ -8502,7 +8515,7 @@ impl AdvancedAi {
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
@@ -26779,7 +26792,25 @@ impl AdvancedAi {
         } else {
             avoid
         };
-        let target = valid_target.or_else(|| {
+        // Preserve a colony already under way, but replace a merely cached
+        // home-island target once the overseas gene finds a discovered foreign
+        // landfall and the home landmass has genuinely run short of room.
+        let overseas_target = if self.overseas_settlement
+            && !(valid_target == Some(current) && g.can_found_city(uid))
+        {
+            let home_landmass = BasicAi::capital_landmass(g, pid);
+            valid_target
+                .filter(|target| !home_landmass.contains(target))
+                .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
+        } else {
+            None
+        };
+        if let Some(target) = overseas_target {
+            self.settler_targets.insert(uid, target);
+            self.settler_stalls.remove(&uid);
+            self.settler_closest.remove(&uid);
+        }
+        let target = overseas_target.or(valid_target).or_else(|| {
             // Ask the forecast before the walk. The mirror can only reject a
             // doomed site after the Settler stands on it, which previously
             // spent a long frontier walk merely to discover the city would
@@ -29580,7 +29611,8 @@ impl AdvancedAi {
             if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
                 value -= crate::ai::WATER_MARCH_PENALTY;
             }
-            value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
+            value +=
+                self.strike_opening_value(g, pid, uid, tile, group, enemies, visible.as_deref());
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
@@ -31887,10 +31919,12 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
-        // Hoisted out of the tile loop below: `player_vision_now` clones a
-        // whole `TileBits` and `visibility_viewers` walks the alliance graph,
-        // and neither can move while this loop applies nothing. Built lazily,
-        // because most units reach no enemy tile at all.
+        // Hoisted out of the tile loop below: `visibility_viewers` walks the
+        // alliance graph, and neither frame can move while this loop applies
+        // nothing. Built lazily, because most units reach no enemy tile at
+        // all. `player_vision_frame` hands back the engine's own `Arc`, so
+        // even that one build is a refcount bump rather than a `TileBits`
+        // clone.
         let mut vision_frames = None;
         for pos in g.wdisk(unit.pos, radius) {
             if spec.class != "military" {
@@ -31935,12 +31969,11 @@ impl AdvancedAi {
             // truthful, which matters to anything that trusts it.
             //
             // ⚠⚠ The first version of this gate was a **+6.43% pessimization**
-            // because it called `combat_target_visible`, which recomputes
-            // `player_vision_now` -- a whole `TileBits` clone -- per call. The
-            // frames are hoisted below for that reason. Do not inline them
-            // back.
+            // because it called `combat_target_visible`, which recomputes the
+            // full vision and viewer derivation per call. The frames are
+            // hoisted below for that reason. Do not inline them back.
             let frames = vision_frames
-                .get_or_insert_with(|| (g.player_vision_now(pid), g.visibility_viewers(pid)));
+                .get_or_insert_with(|| (g.player_vision_frame(pid), g.visibility_viewers(pid)));
             if spec.has_ranged_attack()
                 && distance <= g.unit_attack_range(uid)
                 && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
@@ -33138,7 +33171,7 @@ impl AdvancedAi {
     /// Whether this hull is on the sea-scout roster this turn. See
     /// `naval_explorer`.
     fn is_naval_explorer(&self, g: &Game, pid: usize, uid: u32) -> bool {
-        self.base.naval_recon
+        (self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
             && self.naval_explorer(g, pid).contains(&uid)
     }
@@ -33166,7 +33199,9 @@ impl AdvancedAi {
     /// arm still buys only the first ship; this merely lets a spare hull open
     /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
     fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
-        if !self.base.naval_recon_on() || !BasicAi::unseen_water_remains(g, pid) {
+        if !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
+            || !BasicAi::unseen_water_remains(g, pid)
+        {
             return Vec::new();
         }
         let mut ships = g

@@ -2974,8 +2974,8 @@ fn production_advanced_omits_measured_null_arms() {
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        !live_bridge.bounded_recovery,
-        "the live bridge applies the ledger, which demoted the gene on 2026-08-25"
+        live_bridge.bounded_recovery,
+        "the live bridge applies the 2026-08-27 operator default"
     );
 }
 
@@ -5681,6 +5681,48 @@ fn strategic_settler_routes_to_an_island_beyond_the_local_search_radius() {
         .is_some_and(|tile| g.rules.is_water(tile)));
 }
 
+#[test]
+fn overseas_settlement_claims_a_discovered_foreign_landfall_when_home_is_full() {
+    let (mut g, source, target) = island_colony_game();
+    g.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+    g.players[0].explored.extend(explored);
+    let settler = g.spawn_test_unit("settler", 0, source);
+    let home_landmass = BasicAi::capital_landmass(&g, 0);
+    let mut ai = AdvancedAi::new();
+    ai.enable_overseas_settlement();
+
+    assert!(ai.advanced_settler_step(&mut g, 0, settler));
+    let chosen = ai.settler_targets[&settler];
+    assert!(
+        !home_landmass.contains(&chosen),
+        "the gene sends the settler beyond the capital's landmass"
+    );
+    assert!(
+        g.wdist(chosen, target) <= 1,
+        "the nearest discovered overseas landfall is chosen"
+    );
+}
+
+#[test]
+fn island_expansion_genes_are_reversible_opt_ins() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
+
+    ai.enable_island_exploration();
+    ai.enable_overseas_settlement();
+    assert!(ai.base.island_exploration);
+    assert!(ai.overseas_settlement);
+
+    ai.disable_island_exploration();
+    ai.disable_overseas_settlement();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
+}
+
 /// A dodge is a legal move that is not progress. The commitment bound has
 /// to expire on one, or a settler beside a roaming hostile holds a site it
 /// is walking away from for the rest of the game — measured on run
@@ -8187,7 +8229,7 @@ fn settlement_atlas_parallel_misses_match_uncached_values_and_invalidate_on_map_
         .collect::<Vec<_>>();
     assert_eq!(positions.len(), 48, "the fixture needs a wide score batch");
 
-    let visible = game.player_vision_now(0);
+    let visible = game.player_vision_frame(0);
     let units = game
         .units
         .values()
@@ -34111,17 +34153,17 @@ fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
     );
 }
 
-/// The gene is off in the stock and legacy agents and reaches a seat only
-/// through the ledger: the 2026-08-25 operator directive pinned it on.
+/// The gene is off in the stock and legacy agents and remains off through the
+/// ledger under the 2026-08-27 operator directive.
 #[test]
-fn builder_tries_the_next_tile_is_on_only_through_the_ledger() {
+fn builder_tries_the_next_tile_stays_off_through_the_ledger() {
     assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
     assert!(
-        deployment.base.builder_tries_the_next_tile,
-        "pinned on by the 2026-08-25 operator directive"
+        !deployment.base.builder_tries_the_next_tile,
+        "held off by the 2026-08-27 operator directive"
     );
 }
 

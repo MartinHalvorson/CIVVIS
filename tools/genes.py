@@ -522,8 +522,7 @@ DEPLOYMENT_POLICY = "batch-rule+operator-pins"
 #: but cannot silently flip treatments while a historical batch is published.
 RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: ⭐ THE OPERATOR'S PINS — genes that default **on** whatever their batch
-#: columns read. The 2026-08-26 selected defaults extend this list; the
-#: retained deployment selection separately excludes `raid-pillage-prizes`.
+#: columns read. The 2026-08-27 selected defaults extend this list.
 #: For the versioned `settler-target-hysteresis` family the operator moved the
 #: ship from v1 to v2 (2026-08-26): `settler-target-hysteresis-2` is pinned on
 #: here and v1 is held off below, so the family still ships exactly one
@@ -531,56 +530,81 @@ RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: from the pool (`build_ledger` refuses that). Nothing derives this list; it
 #: is the operator's, by name.
 OPERATOR_DEFAULT_ON = (
+    "amenity-project-preemption",
     "apostle-promotion-by-role",
     "army-target-weighs-enemy",
     "barbarian-settler-capture",
+    "blind-objective-strength",
     "boost-wait-research",
-    "builder-supply-floor",
+    "bounded-recovery",
     "buildings-before-projects",
-    "buy-what-cards-cannot-boost",
     "camp-party",
-    "campaign-pillage",
+    "camp-tile-buyout",
+    "canal-city",
+    "chain-payback-window-2",
     "chokepoint-claim",
     "civilian-out-of-reach",
+    "close-as-a-body",
     "coalition-before-war",
+    "coastal-city-sites",
+    "come-ashore",
+    "contested-land-first",
+    "conversion-majority-alarm",
     "deals-at-the-ceiling",
-    "deals-for-our-gain",
+    "defend-where-you-stand",
     "defensible-sites",
+    "district-coverage",
     "district-planning",
+    "early-archers",
     "early-contact-window",
     "elective-war-yields-to-a-lane",
+    "enemy-of-my-enemy",
     "enhancer-for-the-corps",
+    "exchange-is-the-engines",
+    "expansion-pays-back",
     "expansion-schedule",
     "founder-temple",
+    "garrison-under-fire",
     "gold-for-the-young-city",
-    "holy-site-where-the-threat-is-2",
+    "gold-income-floor",
+    "guru-heals-the-corps-2",
+    "holy-site-where-the-threat-is",
     "idle-faith-patronage",
     "lane-great-people",
     "loyalty-rate-alarm",
     "missionary-evades-raiders",
-    "native-emergency-purchase",
     "naval-threat-triage",
-    "never-an-empty-queue",
     "one-launch-pad",
-    "pantheon-board",
+    "one-shot-recovery",
+    "one-war-at-a-time",
+    "order-retry",
+    "peace-when-the-war-does-not-pay",
+    "peacetime-deterrence",
+    "power-the-laboratory-2",
     "quest-boost",
+    "quest-production",
     "quest-trade-route",
+    "raid-pillage-prizes",
     "recon-replacement",
     "relief-column-marches",
     "relief-targets-the-siege",
+    "religion-race-is-closed",
     "religious-units-heal-first",
     "research-tier-premium",
     "rival-suzerainty-alarm",
     "science-chain-alarm",
+    "science-multiplier-payoff",
+    "score-horizon",
     "settler-screen",
     "settler-target-hysteresis-2",
     "settler-threat-detour",
     "stranded-settler-discount",
     "threatened-city-reserve",
+    "treasury-at-work",
     "unchosen-war-keeps-the-lane",
     "unit-cost-efficiency",
-    "unit-objective-memory",
-    "wonder-adjacent-sites",
+    "upgrade-the-garrison",
+    "whole-turn-backtrack-guard",
     "wonder-score-tally",
 )
 
@@ -612,19 +636,32 @@ def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
                         if tag not in columns))
 
 #: ⭐ THE OPERATOR'S HOLDS — genes that default **off** whatever their batch
-#: columns read (operator, 2026-08-26). The mirror of `OPERATOR_DEFAULT_ON`,
+#: columns read (operator, 2026-08-27). The mirror of `OPERATOR_DEFAULT_ON`,
 #: and the only thing that can take a gene out of a retained selection. Like a
 #: pin it decides a default and nothing else: the rule's own answer stays
 #: published under `rules.batch_decisions`, and a gene the rule removes from
 #: the pool is still cut. Nothing derives this list either; it is the
 #: operator's, by name.
 OPERATOR_DEFAULT_OFF = (
+    "blind-objective-units",
+    "builder-supply-floor",
+    "builder-tries-the-next-tile",
+    "buy-what-cards-cannot-boost",
+    "campaign-pillage",
     "congress-counter-leader",
+    "deals-for-our-gain",
+    "frontier-massing-alarm",
     "holy-lane-parity",
-    "one-war-at-a-time",
-    "science-multiplier-payoff",
+    "holy-site-where-the-threat-is-2",
+    "lane-space-race",
+    "native-emergency-purchase",
+    "naval-recon",
+    "never-an-empty-queue",
+    "pantheon-board",
     "settler-factory-coordination",
     "settler-target-hysteresis",
+    "unit-objective-memory",
+    "wonder-adjacent-sites",
 )
 
 #: A gene is named by at most one of the two lists — the pair is one selection,

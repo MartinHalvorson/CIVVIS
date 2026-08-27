@@ -157,7 +157,7 @@ impl BeliefState {
         radius: i32,
         horizon: u32,
     ) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         self.remembered_hidden_military_threat_in_view(g, pid, &visible, at, radius, horizon)
     }
 
