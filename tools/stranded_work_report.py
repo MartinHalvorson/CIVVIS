@@ -47,10 +47,13 @@ import datetime
 import json
 import os
 import re
-import subprocess
 import sys
+from pathlib import Path
 from urllib.parse import quote
 import urllib.request
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _common  # noqa: E402
 
 REPOSITORY = "MartinHalvorson/CIVVIS"
 ISSUE_TITLE = "Stranded work report"
@@ -68,11 +71,7 @@ def github_url(kind: str, value: str) -> str:
     return f"https://github.com/{REPOSITORY}/{kind}/{quote(value, safe='/')}"
 
 
-def git(*args: str) -> str:
-    return subprocess.run(
-        ["git", *args], capture_output=True, text=True, encoding="utf-8",
-        errors="replace", check=False,
-    ).stdout
+git = _common.git
 
 
 def api(path: str, method: str = "GET", data: dict | None = None):
