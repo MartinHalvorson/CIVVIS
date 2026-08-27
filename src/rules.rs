@@ -1,8 +1,8 @@
 //! Ruleset loaded from the shared JSON data files (embedded at compile time).
 use serde::{Deserialize, Serialize};
 
-use crate::rng::Rng;
 use crate::name::Name;
+use crate::rng::Rng;
 use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
@@ -1125,7 +1125,11 @@ pub struct StartBias {
 
 impl StartBias {
     pub fn weight(tier: i32) -> i32 {
-        if tier <= 0 { 0 } else { (6 - tier).max(1) }
+        if tier <= 0 {
+            0
+        } else {
+            (6 - tier).max(1)
+        }
     }
 }
 
@@ -1516,7 +1520,9 @@ fn compile_modifier_selectors(
 ) -> Result<(), String> {
     for (building, yields) in &spec.building_yields {
         if building.is_empty() || building.contains(':') {
-            return Err(format!("modifier {name} has invalid building selector {building:?}"));
+            return Err(format!(
+                "modifier {name} has invalid building selector {building:?}"
+            ));
         }
         for (yield_type, value) in [
             ("food", yields.food),
@@ -1535,7 +1541,9 @@ fn compile_modifier_selectors(
     }
     for (unit, value) in &spec.unit_purchase_discount_pct {
         if unit.is_empty() || unit.contains(':') {
-            return Err(format!("modifier {name} has invalid unit selector {unit:?}"));
+            return Err(format!(
+                "modifier {name} has invalid unit selector {unit:?}"
+            ));
         }
         *effects
             .entry(unit_purchase_discount_effect_key(unit))
@@ -1545,7 +1553,9 @@ fn compile_modifier_selectors(
         if ability.is_empty() || ability.contains(':') {
             return Err(format!("modifier {name} has invalid ability {ability:?}"));
         }
-        *effects.entry(grant_ability_effect_key(ability)).or_insert(0.0) += 1.0;
+        *effects
+            .entry(grant_ability_effect_key(ability))
+            .or_insert(0.0) += 1.0;
     }
     Ok(())
 }
@@ -2015,10 +2025,8 @@ fn random_tree_layout(
         2 + rng.below(regular.len() - 2)
     };
     let (first, second) = regular.split_at(first_len);
-    let mut requirements: BTreeMap<Name, Vec<Name>> = randomized
-        .iter()
-        .map(|name| (*name, Vec::new()))
-        .collect();
+    let mut requirements: BTreeMap<Name, Vec<Name>> =
+        randomized.iter().map(|name| (*name, Vec::new())).collect();
     connect_random_layers(&previous_leaves, first, rng, &mut requirements)?;
     connect_random_layers(first, second, rng, &mut requirements)?;
 
@@ -2084,9 +2092,7 @@ fn apply_tree_layout(
         .collect();
     let previous_leaves: BTreeSet<Name> = tree
         .iter()
-        .filter(|(name, spec)| {
-            spec.era == previous_era && !fixed_parents.contains(*name)
-        })
+        .filter(|(name, spec)| spec.era == previous_era && !fixed_parents.contains(*name))
         .map(|(name, _)| *name)
         .collect();
 
@@ -2181,8 +2187,7 @@ fn apply_tree_layout(
     let terminal = terminals.pop().unwrap();
     let terminal_requires: BTreeSet<Name> = layout[&terminal].requires.iter().cloned().collect();
     if let Some(gateway) = gateways.pop() {
-        let gateway_requires: BTreeSet<Name> =
-            layout[&gateway].requires.iter().cloned().collect();
+        let gateway_requires: BTreeSet<Name> = layout[&gateway].requires.iter().cloned().collect();
         if gateway_requires != second || terminal_requires != BTreeSet::from([gateway]) {
             return Err(format!(
                 "saved randomized {kind} gateway and terminal do not close the second column"
@@ -2446,9 +2451,10 @@ impl CityStateSpec {
     /// The real site, when the roster carries one.
     pub fn site(&self) -> Option<crate::leader_roster::TrueStartPoint> {
         match (self.latitude, self.longitude) {
-            (Some(latitude), Some(longitude)) => {
-                Some(crate::leader_roster::TrueStartPoint { latitude, longitude })
-            }
+            (Some(latitude), Some(longitude)) => Some(crate::leader_roster::TrueStartPoint {
+                latitude,
+                longitude,
+            }),
             _ => None,
         }
     }
@@ -2504,9 +2510,7 @@ fn add_effects(target: &mut BTreeMap<String, f64>, source: &BTreeMap<String, f64
 }
 
 /// Resolve the modifier graph into bundles that contain no further links.
-fn resolve_modifiers(
-    source: &SpecMap<ModifierSpec>,
-) -> Result<SpecMap<ModifierSpec>, String> {
+fn resolve_modifiers(source: &SpecMap<ModifierSpec>) -> Result<SpecMap<ModifierSpec>, String> {
     fn resolve_one(
         name: &str,
         source: &SpecMap<ModifierSpec>,
@@ -2715,20 +2719,20 @@ impl Rules {
             .get_or_init(|| {
                 let mut values = Rules::active_values();
                 for (file, text) in FUTURE_ERA_MODIFIED_FILES {
-                    let overlay: serde_json::Value = serde_json::from_str(text).unwrap_or_else(
-                        |error| panic!("the Modified Future Era's {file}.json is malformed: {error}"),
-                    );
-                    let base = values
-                        .get_mut(file)
-                        .unwrap_or_else(|| panic!("the Modified Future Era overlays unknown file {file}.json"));
+                    let overlay: serde_json::Value =
+                        serde_json::from_str(text).unwrap_or_else(|error| {
+                            panic!("the Modified Future Era's {file}.json is malformed: {error}")
+                        });
+                    let base = values.get_mut(file).unwrap_or_else(|| {
+                        panic!("the Modified Future Era overlays unknown file {file}.json")
+                    });
                     crate::mods::merge(base, overlay).unwrap_or_else(|error| {
                         panic!("cannot merge the Modified Future Era's {file}.json: {error}")
                     });
                 }
-                Arc::new(
-                    Rules::from_values(values)
-                        .unwrap_or_else(|error| panic!("the Modified Future Era does not load: {error}")),
-                )
+                Arc::new(Rules::from_values(values).unwrap_or_else(|error| {
+                    panic!("the Modified Future Era does not load: {error}")
+                }))
             })
             .clone()
     }
@@ -3317,10 +3321,16 @@ mod tests {
             json!({"slot": "economic", "replaces": ["bastions", "serfdom"]}),
         )
         .unwrap();
-        assert_eq!(many.replaces, vec![Name::new("bastions"), Name::new("serfdom")]);
+        assert_eq!(
+            many.replaces,
+            vec![Name::new("bastions"), Name::new("serfdom")]
+        );
 
         let none: PolicySpec = serde_json::from_value(json!({"slot": "economic"})).unwrap();
-        assert!(none.replaces.is_empty(), "a card that retires nothing stays empty");
+        assert!(
+            none.replaces.is_empty(),
+            "a card that retires nothing stays empty"
+        );
     }
 
     #[test]
@@ -3624,7 +3634,11 @@ mod tests {
             .iter()
             .filter(|name| name.starts_with("IMPROVEMENT_"))
             .collect();
-        assert_eq!(improvement_types.len(), 72, "the audited Firaxis type inventory changed");
+        assert_eq!(
+            improvement_types.len(),
+            72,
+            "the audited Firaxis type inventory changed"
+        );
 
         let rules = Rules::embedded();
         for type_name in improvement_types {
@@ -3795,7 +3809,9 @@ mod tests {
                 [&building_yield_effect_key("library", "science")],
             3.0
         );
-        assert!(rules.modifiers["production_bundle"].building_yields.is_empty());
+        assert!(rules.modifiers["production_bundle"]
+            .building_yields
+            .is_empty());
         assert!(rules.modifiers["production_bundle"]
             .unit_purchase_discount_pct
             .is_empty());
@@ -3887,7 +3903,10 @@ mod tests {
             json!({"outer": {"modifiers": ["missing"]}}),
         );
         let error = Rules::from_values(dangling).err().unwrap();
-        assert!(error.contains("outer attaches missing modifier missing"), "{error}");
+        assert!(
+            error.contains("outer attaches missing modifier missing"),
+            "{error}"
+        );
 
         let mut cycle = Rules::shipped_values();
         cycle.insert(
@@ -3907,8 +3926,7 @@ mod tests {
     #[test]
     fn rules_objects_cannot_attach_an_unknown_modifier() {
         let mut files = Rules::shipped_values();
-        files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] =
-            json!(["missing"]);
+        files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] = json!(["missing"]);
         let error = Rules::from_values(files).err().unwrap();
         assert!(
             error.contains("policies.json.urban_planning attaches missing modifier missing"),
@@ -3916,11 +3934,7 @@ mod tests {
         );
     }
 
-    fn assert_complete_tree(
-        tree: &SpecMap<TechSpec>,
-        expected: &str,
-        era_counts: [usize; 9],
-    ) {
+    fn assert_complete_tree(tree: &SpecMap<TechSpec>, expected: &str, era_counts: [usize; 9]) {
         let actual: BTreeSet<&str> = tree.keys().map(|name| name.as_str()).collect();
         let expected: BTreeSet<&str> = expected.split_whitespace().collect();
         assert_eq!(actual, expected);
@@ -4024,7 +4038,11 @@ mod tests {
         match gateway {
             Some(gateway) => {
                 assert_eq!(
-                    tree[gateway].requires.iter().cloned().collect::<BTreeSet<_>>(),
+                    tree[gateway]
+                        .requires
+                        .iter()
+                        .cloned()
+                        .collect::<BTreeSet<_>>(),
                     second_owned
                 );
                 assert_eq!(tree[terminal].requires, [Name::new(gateway)]);
@@ -4094,8 +4112,7 @@ mod tests {
                 "future_civic",
             );
             let layout = rules.future_tree_layout();
-            let restored =
-                Rules::for_game(seed, Some(&layout), crate::setup::FutureEra::Classic);
+            let restored = Rules::for_game(seed, Some(&layout), crate::setup::FutureEra::Classic);
             assert_eq!(restored.future_tree_layout(), layout);
             layouts.insert(format!("{layout:?}"));
         }
@@ -4839,11 +4856,17 @@ mod tests {
         let mut hollow = Tile::new((0, 0));
         hollow.terrain = Name::new("tundra");
         hollow.feature = Some(Name::new("ubsunur_hollow"));
-        assert_eq!(rules.worked_tile_yields(&hollow), rules.features["ubsunur_hollow"].yields);
+        assert_eq!(
+            rules.worked_tile_yields(&hollow),
+            rules.features["ubsunur_hollow"].yields
+        );
         // Hills under a wonder add nothing either; ordinary hills still do.
         let mut hilly_hollow = hollow.clone();
         hilly_hollow.hills = true;
-        assert_eq!(rules.worked_tile_yields(&hilly_hollow), rules.features["ubsunur_hollow"].yields);
+        assert_eq!(
+            rules.worked_tile_yields(&hilly_hollow),
+            rules.features["ubsunur_hollow"].yields
+        );
         let mut plain_hills = Tile::new((0, 0));
         plain_hills.terrain = Name::new("tundra");
         plain_hills.hills = true;
@@ -4852,7 +4875,10 @@ mod tests {
             rules.terrains["tundra"].yields.production + 1.0
         );
         // The catalogue sum map generation reads keeps its additive shape.
-        assert_eq!(rules.tile_yields(&hollow).food, rules.terrains["tundra"].yields.food + 1.0);
+        assert_eq!(
+            rules.tile_yields(&hollow).food,
+            rules.terrains["tundra"].yields.food + 1.0
+        );
     }
 
     /// Complete transcription of the placement columns in the shipped
@@ -5074,7 +5100,10 @@ panama_canal|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;rel
         let mut checked = 0usize;
         let check = |family: &str, present: bool, in_any: bool, key: &str| {
             assert!(present, "{family} declares {key}, which its index omits");
-            assert!(in_any, "{key} is declared by {family} but missing from the union");
+            assert!(
+                in_any,
+                "{key} is declared by {family} but missing from the union"
+            );
         };
         for spec in rules.policies.values() {
             for key in spec.effects.keys() {
@@ -5134,10 +5163,16 @@ panama_canal|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;rel
             }
         }
         for key in rules.tech_effects.keys().chain(rules.civic_effects.keys()) {
-            assert!(index.any(key), "tree effect {key} is missing from the union");
+            assert!(
+                index.any(key),
+                "tree effect {key} is missing from the union"
+            );
             checked += 1;
         }
-        assert!(checked > 500, "expected the shipped ruleset to declare many effects, saw {checked}");
+        assert!(
+            checked > 500,
+            "expected the shipped ruleset to declare many effects, saw {checked}"
+        );
     }
 
     /// The three namespaced families are ruled out on the selector alone, so
@@ -5148,7 +5183,9 @@ panama_canal|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;rel
         let index = &rules.effect_index;
         for key in index.any.keys() {
             if let Some(rest) = key.strip_prefix(BUILDING_YIELD_EFFECT_PREFIX) {
-                let (selector, _) = rest.split_once(':').expect("a building yield key names a yield");
+                let (selector, _) = rest
+                    .split_once(':')
+                    .expect("a building yield key names a yield");
                 assert!(
                     index.modifies_building_yields(selector),
                     "{key} names building selector {selector}, which the index omits"

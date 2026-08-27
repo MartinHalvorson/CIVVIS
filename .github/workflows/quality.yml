@@ -1,9 +1,15 @@
 name: rust-quality
 
-# This is an incremental gate. The crate has a large, known formatting and
-# clippy backlog; requiring a clean repository-wide run would make every new
-# PR inherit unrelated debt. New or edited Rust files must nevertheless be
+# This is an incremental gate. The crate still carries a known clippy
+# backlog; requiring a clean repository-wide run would make every new PR
+# inherit unrelated debt. New or edited Rust files must nevertheless be
 # formatted and warning-free, so the backlog cannot grow.
+#
+# The *formatting* half of that backlog is gone: #2659 swept the whole tree
+# with `cargo fmt`, so `cargo fmt --check` and per-file
+# `rustfmt --check --edition 2021` are both silent on `main`. The gate stays
+# incremental anyway — it is what keeps the tree clean, and it is the only
+# half of this job that also covers clippy.
 
 on:
   pull_request:

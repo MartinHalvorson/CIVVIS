@@ -123,12 +123,18 @@ impl<'a> Check<'a> {
         let civics = &self.rules.civics;
         if let Some(tech) = tech {
             if !techs.contains_key(tech) {
-                self.error(subject, format!("tech names {tech:?}, which is not a known technology"));
+                self.error(
+                    subject,
+                    format!("tech names {tech:?}, which is not a known technology"),
+                );
             }
         }
         if let Some(civic) = civic {
             if !civics.contains_key(civic) {
-                self.error(subject, format!("civic names {civic:?}, which is not a known civic"));
+                self.error(
+                    subject,
+                    format!("civic names {civic:?}, which is not a known civic"),
+                );
             }
         }
     }
@@ -256,7 +262,10 @@ fn world_events(check: &mut Check) {
         if spec.eras.0 > spec.eras.1 || spec.eras.1 >= eras {
             check.error(
                 subject.clone(),
-                format!("spans eras {:?}, which is not a run of real eras", spec.eras),
+                format!(
+                    "spans eras {:?}, which is not a run of real eras",
+                    spec.eras
+                ),
             );
         }
         if spec.triggers.is_empty() {
@@ -274,7 +283,10 @@ fn world_events(check: &mut Check) {
 /// Technology and civic trees: prerequisites resolve, nothing is its own
 /// ancestor, and everything a node claims to unlock exists.
 fn trees(check: &mut Check) {
-    for (tree_name, tree) in [("techs", &check.rules.techs), ("civics", &check.rules.civics)] {
+    for (tree_name, tree) in [
+        ("techs", &check.rules.techs),
+        ("civics", &check.rules.civics),
+    ] {
         let tree = tree.clone();
         for (id, spec) in &tree {
             let subject = format!("{tree_name}/{id}");
@@ -286,7 +298,10 @@ fn trees(check: &mut Check) {
                     );
                 }
                 if spec.repeatable && !spec.random_costs.is_empty() {
-                    check.error(&subject, "is repeatable but carries randomized column costs");
+                    check.error(
+                        &subject,
+                        "is repeatable but carries randomized column costs",
+                    );
                 } else if !spec.repeatable
                     && !spec.random_costs.is_empty()
                     && spec.random_costs.len() != 2
@@ -359,7 +374,10 @@ fn trees(check: &mut Check) {
                 if !known {
                     check.error(
                         &subject,
-                        format!("unlocks {} {:?}, which does not exist", unlock.kind, unlock.id),
+                        format!(
+                            "unlocks {} {:?}, which does not exist",
+                            unlock.kind, unlock.id
+                        ),
                     );
                 }
             }
@@ -402,7 +420,9 @@ fn trees(check: &mut Check) {
             let mut seen = BTreeSet::new();
             let mut frontier = vec![*id];
             while let Some(node) = frontier.pop() {
-                let Some(spec) = tree.get(&node) else { continue };
+                let Some(spec) = tree.get(&node) else {
+                    continue;
+                };
                 for prerequisite in &spec.requires {
                     if prerequisite == id {
                         check.error(
@@ -428,7 +448,13 @@ fn units(check: &mut Check) {
         check.gates(&subject, spec.tech.as_ref(), spec.civic.as_ref());
         check.civ(&subject, "unique_to", spec.unique_to.as_ref());
         check.reference(&subject, "replaces", spec.replaces.as_ref(), &units, "unit");
-        check.reference(&subject, "upgrade_to", spec.upgrade_to.as_ref(), &units, "unit");
+        check.reference(
+            &subject,
+            "upgrade_to",
+            spec.upgrade_to.as_ref(),
+            &units,
+            "unit",
+        );
         let techs = check.rules.techs.clone();
         check.reference(
             &subject,
@@ -465,9 +491,18 @@ fn units(check: &mut Check) {
             "district",
         );
         let improvements = check.rules.improvements.clone();
-        check.references(&subject, "builds", &spec.builds, &improvements, "improvement");
+        check.references(
+            &subject,
+            "builds",
+            &spec.builds,
+            &improvements,
+            "improvement",
+        );
         if spec.replaces.is_some() && spec.unique_to.is_none() {
-            check.error(&subject, "replaces another unit but belongs to no civilization");
+            check.error(
+                &subject,
+                "replaces another unit but belongs to no civilization",
+            );
         }
         if spec.buildable && spec.cost <= 0.0 {
             check.warn(&subject, "is buildable but free");
@@ -493,7 +528,13 @@ fn districts_and_buildings(check: &mut Check) {
         let subject = format!("districts/{id}");
         check.gates(&subject, spec.tech.as_ref(), spec.civic.as_ref());
         check.civ(&subject, "unique_to", spec.unique_to.as_ref());
-        check.reference(&subject, "replaces", spec.replaces.as_ref(), &districts, "district");
+        check.reference(
+            &subject,
+            "replaces",
+            spec.replaces.as_ref(),
+            &districts,
+            "district",
+        );
         check.references(&subject, "excludes", &spec.excludes, &districts, "district");
         for kind in spec.great_person_points.keys() {
             if !check.great_person_kinds.contains(kind) {
@@ -513,8 +554,20 @@ fn districts_and_buildings(check: &mut Check) {
         let subject = format!("buildings/{id}");
         check.gates(&subject, spec.tech.as_ref(), spec.civic.as_ref());
         check.civ(&subject, "unique_to", spec.unique_to.as_ref());
-        check.reference(&subject, "district", spec.district.as_ref(), &districts, "district");
-        check.reference(&subject, "replaces", spec.replaces.as_ref(), &buildings, "building");
+        check.reference(
+            &subject,
+            "district",
+            spec.district.as_ref(),
+            &districts,
+            "district",
+        );
+        check.reference(
+            &subject,
+            "replaces",
+            spec.replaces.as_ref(),
+            &buildings,
+            "building",
+        );
         check.references(&subject, "requires", &spec.requires, &buildings, "building");
         check.references(
             &subject,
@@ -616,7 +669,13 @@ fn terrain_and_improvements(check: &mut Check) {
         );
         check.references(&subject, "terrain", &spec.terrain, &terrains, "terrain");
         check.references(&subject, "feature", &spec.feature, &features, "feature");
-        check.references(&subject, "resources", &spec.resources, &resources, "resource");
+        check.references(
+            &subject,
+            "resources",
+            &spec.resources,
+            &resources,
+            "resource",
+        );
         if spec.resource_only && spec.resources.is_empty() {
             check.error(&subject, "is resource_only but names no resources");
         }
@@ -649,7 +708,10 @@ fn terrain_and_improvements(check: &mut Check) {
             );
         }
         if spec.terrain.is_empty() && spec.feature.is_empty() {
-            check.warn(&subject, "can appear on no terrain or feature, so it never spawns");
+            check.warn(
+                &subject,
+                "can appear on no terrain or feature, so it never spawns",
+            );
         }
         if let Some(lunar) = spec.lunar {
             // The Moon's ore is drawn into a stockpile, and only strategic
@@ -690,7 +752,10 @@ fn politics(check: &mut Check) {
         check.gates(&subject, None, spec.civic.as_ref());
         check.references(&subject, "replaces", &spec.replaces, &policies, "policy");
         if !SLOTS.contains(&spec.slot.as_str()) {
-            check.error(&subject, format!("slot {:?} is not a policy slot type", spec.slot));
+            check.error(
+                &subject,
+                format!("slot {:?} is not a policy slot type", spec.slot),
+            );
         }
         if spec.effects.is_empty() {
             check.warn(&subject, "has no effects, so slotting it does nothing");
@@ -719,7 +784,13 @@ fn politics(check: &mut Check) {
         .collect();
     for (id, spec) in &promotions {
         let subject = format!("promotions/{id}");
-        check.references(&subject, "requires", &spec.requires, &promotions, "promotion");
+        check.references(
+            &subject,
+            "requires",
+            &spec.requires,
+            &promotions,
+            "promotion",
+        );
         if !classes.contains(&spec.class) {
             check.error(
                 &subject,
@@ -1027,15 +1098,13 @@ mod tests {
     #[test]
     fn a_dangling_reference_is_an_error() {
         let mut rules = Rules::embedded();
-        rules
-            .units
-            .get_mut("warrior")
-            .unwrap()
-            .tech = Some(crate::name!("nonexistent_tech"));
+        rules.units.get_mut("warrior").unwrap().tech = Some(crate::name!("nonexistent_tech"));
         let findings = validate(&rules);
-        assert!(findings.iter().any(|finding| finding.severity == Severity::Error
-            && finding.subject == "units/warrior"
-            && finding.message.contains("nonexistent_tech")));
+        assert!(findings
+            .iter()
+            .any(|finding| finding.severity == Severity::Error
+                && finding.subject == "units/warrior"
+                && finding.message.contains("nonexistent_tech")));
     }
 
     /// Difficulty and speed are validated like any other catalogue.
@@ -1050,11 +1119,13 @@ mod tests {
             .ai_bonus_units
             .insert("trebuchet_of_theseus".to_string(), 1);
         let findings = validate(&rules);
+        assert!(findings.iter().any(
+            |finding| finding.subject == "difficulties" && finding.severity == Severity::Error
+        ));
         assert!(findings
             .iter()
-            .any(|finding| finding.subject == "difficulties" && finding.severity == Severity::Error));
-        assert!(findings.iter().any(|finding| finding.subject == "difficulties/king"
-            && finding.message.contains("trebuchet_of_theseus")));
+            .any(|finding| finding.subject == "difficulties/king"
+                && finding.message.contains("trebuchet_of_theseus")));
     }
 
     #[test]

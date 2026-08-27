@@ -422,11 +422,18 @@ setting should stay on.
 The rust-quality workflow runs beside cargo-test on pull requests and pushes
 to main. It checks only Rust files changed by that revision: rustfmt must pass,
 and compiler or clippy warnings whose spans land in a changed file fail the
-job. This is intentional incremental enforcement. The repository's older
-formatting and lint debt is still measurable with cargo fmt --all -- --check
-and cargo clippy --all-targets --all-features --locked -- -D warnings, but it
-does not make unrelated work unmergeable; every new Rust change must leave its
-own files clean.
+job. This is intentional incremental enforcement. The repository's older lint
+debt is still measurable with cargo clippy --all-targets --all-features
+--locked -- -D warnings, but it does not make unrelated work unmergeable;
+every new Rust change must leave its own files clean.
+
+2026-08-27 (#2659): the tree is rustfmt-clean. `cargo fmt --check` and
+per-file `rustfmt --check --edition 2021` are both silent over src, tests and
+experiments, so a bare `cargo fmt` on a task branch is now safe and produces
+no diff outside the lines you actually edited — the "avoid whole-repository
+formatting" rule above is about not *bundling* a sweep into a feature PR, not
+about the command. The incremental changed-lines gate stays: it is what keeps
+this true, and it is the same job that enforces clippy.
 
 The scheduled stranded-work-report workflow remains the queue's source of
 truth. It updates one issue in place, reopens it only when a commentless close

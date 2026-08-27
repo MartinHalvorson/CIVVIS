@@ -127,10 +127,7 @@ const ROOM_RADIUS: i32 = 6;
 fn measure(g: &Game, pid: usize, start: (f64, f64), churn: (f64, f64)) -> Vec<f64> {
     let cities = g.player_city_ids(pid);
     let pop: i64 = cities.iter().map(|cid| i64::from(g.cities[cid].pop)).sum();
-    let districts: usize = cities
-        .iter()
-        .map(|cid| g.cities[cid].districts.len())
-        .sum();
+    let districts: usize = cities.iter().map(|cid| g.cities[cid].districts.len()).sum();
     let holy: usize = cities
         .iter()
         .filter(|cid| g.city_has_district_family(&g.cities[cid], civvis::name!("holy_site")))
@@ -260,7 +257,8 @@ fn play(options: GameOptions) -> Trace {
     // are positions in `seats`, matching the sample rows.
     let mut finish: Vec<usize> = (0..seats.len()).collect();
     finish.sort_by(|a, b| {
-        g.score_rank_key(seats[*b]).cmp(&g.score_rank_key(seats[*a]))
+        g.score_rank_key(seats[*b])
+            .cmp(&g.score_rank_key(seats[*a]))
     });
     if let Some(w) = g.winner {
         if let Some(slot) = seats.iter().position(|pid| *pid == w) {
@@ -339,7 +337,10 @@ fn main() {
         for s in 0..SAMPLES.len() {
             match tally.get(&(m, s)) {
                 Some((hit, seen)) if *seen >= 5 => {
-                    print!("{:>7}", format!("{:.0}%", 100.0 * *hit as f64 / *seen as f64))
+                    print!(
+                        "{:>7}",
+                        format!("{:.0}%", 100.0 * *hit as f64 / *seen as f64)
+                    )
                 }
                 _ => print!("{:>7}", "-"),
             }

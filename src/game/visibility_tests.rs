@@ -588,7 +588,10 @@ fn a_civilization_is_met_only_when_something_of_theirs_is_seen() {
     // And it stays met once the scout walks home again.
     game.units.get_mut(&scout).unwrap().pos = center;
     game.refresh_all_visibility();
-    assert!(game.has_met(0, 1), "an empire once found is never forgotten");
+    assert!(
+        game.has_met(0, 1),
+        "an empire once found is never forgotten"
+    );
 }
 
 /// Diplomacy needs somebody to conduct it with. Every act on the panel is
@@ -618,10 +621,7 @@ fn diplomacy_waits_for_contact_before_a_declaration() {
     );
     assert_eq!(game.apply(0, &Action::DeclareWar { player: 1 }), Ok(()));
     assert!(game.is_at_war(0, 1));
-    assert!(
-        game.has_met(1, 0),
-        "the prewar contact remains mutual"
-    );
+    assert!(game.has_met(1, 0), "the prewar contact remains mutual");
 }
 
 /// `legal_actions` is a discovery aid, not the authority boundary: every
@@ -697,8 +697,7 @@ fn stock_unit_sight_ranges_match_civilization_vi() {
     .into_iter()
     .collect();
     let sight_four: BTreeSet<&str> = ["biplane", "fighter", "bomber"].into_iter().collect();
-    let sight_five: BTreeSet<&str> =
-        ["drone", "jet_fighter", "jet_bomber"].into_iter().collect();
+    let sight_five: BTreeSet<&str> = ["drone", "jet_fighter", "jet_bomber"].into_iter().collect();
 
     for (unit, spec) in &rules.units {
         let expected = if sight_three.contains(unit.as_str()) {
@@ -723,7 +722,10 @@ fn kongo_shield_bearer_matches_firaxis_identity_movement_sight_and_defense() {
     let unit = game.spawn_unit("kongo_shield_bearer", 0, origin);
     let spec = &game.rules.units["kongo_shield_bearer"];
 
-    assert_eq!((spec.cost, spec.maintenance, spec.strength), (110.0, 2.0, 38.0));
+    assert_eq!(
+        (spec.cost, spec.maintenance, spec.strength),
+        (110.0, 2.0, 38.0)
+    );
     assert_eq!(spec.resource_cost, 5.0);
     assert_eq!(spec.replaces.as_deref(), Some("swordsman"));
     assert_eq!(spec.upgrade_to.as_deref(), Some("man_at_arms"));
@@ -741,7 +743,10 @@ fn oromo_cavalry_matches_firaxis_identity_sight_and_hill_movement() {
     let unit = game.spawn_unit("oromo_cavalry", 0, origin);
     let spec = &game.rules.units["oromo_cavalry"];
 
-    assert_eq!((spec.cost, spec.maintenance, spec.strength), (200.0, 3.0, 48.0));
+    assert_eq!(
+        (spec.cost, spec.maintenance, spec.strength),
+        (200.0, 3.0, 48.0)
+    );
     assert_eq!((spec.moves, spec.sight), (5.0, 3));
     assert_eq!(spec.resource_cost, 10.0);
     assert_eq!(spec.requires_resource.as_deref(), Some("horses"));
@@ -1272,8 +1277,7 @@ fn fog_uses_last_seen_tiles_and_cities_and_never_remembers_units() {
     assert_eq!(remembered_city["name"], "Last Seen");
     assert_eq!(remembered_city["pop"], 4);
 
-    let mut restored: Game =
-        serde_json::from_value(serde_json::to_value(&game).unwrap()).unwrap();
+    let mut restored: Game = serde_json::from_value(serde_json::to_value(&game).unwrap()).unwrap();
     let restored_fog = crate::obs::observation(&restored, 0);
     assert_eq!(
         observed_tile(&restored_fog, remembered_position)["improvement"],
@@ -1383,7 +1387,8 @@ fn first_major_to_meet_a_city_state_receives_its_automatic_envoy() {
     game.players[1].alive = false;
     game.record_contact(0, city_state);
     assert_eq!(
-        game.envoys_at(0, city_state), 0,
+        game.envoys_at(0, city_state),
+        0,
         "a later visitor must not receive the first-discovery envoy"
     );
     assert_eq!(game.envoys_at(1, city_state), 1);
@@ -1424,11 +1429,11 @@ fn browser_lights_turn_memory_but_traces_only_exact_current_sight() {
     assert!(INDEX.contains("function drawFlatVisibilityPerimeter(tiles, visible)"));
     assert!(INDEX.contains("function drawPlanetVisibilityPerimeter(cells, visible)"));
     assert!(INDEX.contains("const visible = new Set(state.visible.map(key));"));
-    assert!(INDEX.contains(
-        "const turnVisible = new Set((state.turn_visible || state.visible).map(key));"
-    ));
     assert!(INDEX
-        .contains("const visSet = new Set((state.turn_visible || state.visible).map(key));"));
+        .contains("const turnVisible = new Set((state.turn_visible || state.visible).map(key));"));
+    assert!(
+        INDEX.contains("const visSet = new Set((state.turn_visible || state.visible).map(key));")
+    );
     assert!(INDEX.contains("drawPlanetVisibilityPerimeter(cells, visible);"));
     assert!(INDEX.contains("drawFlatVisibilityPerimeter(tiles, visible);"));
 }

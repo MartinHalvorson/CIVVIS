@@ -22,7 +22,10 @@ fn a_golden_age_pays_only_what_its_dedication_says() {
     let normal = g.city_yields(cid);
     g.players[0].age = "golden".to_string();
     let golden = g.city_yields(cid);
-    assert!((normal.production - golden.production).abs() < 1e-9, "no age multiplier: {normal:?} vs {golden:?}");
+    assert!(
+        (normal.production - golden.production).abs() < 1e-9,
+        "no age multiplier: {normal:?} vs {golden:?}"
+    );
     assert!((normal.science - golden.science).abs() < 1e-9);
     g.players[0].age = "dark".to_string();
     let dark = g.city_yields(cid);
@@ -31,8 +34,7 @@ fn a_golden_age_pays_only_what_its_dedication_says() {
     // Heartbeat of Steam: place a Campus, note its adjacency, dedicate.
     g.players[0].age = "golden".to_string();
     let city_pos = g.cities[&cid].pos;
-    let site = g
-        .cities[&cid]
+    let site = g.cities[&cid]
         .owned_tiles
         .iter()
         .copied()
@@ -43,10 +45,16 @@ fn a_golden_age_pays_only_what_its_dedication_says() {
                 })
         })
         .expect("a land tile to hold the Campus");
-    g.cities.get_mut(&cid).unwrap().districts.insert(crate::name!("campus"), site);
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .districts
+        .insert(crate::name!("campus"), site);
     g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
     let before = g.city_yields(cid);
-    g.players[0].dedications.insert("heartbeat_of_steam".to_string());
+    g.players[0]
+        .dedications
+        .insert("heartbeat_of_steam".to_string());
     let after = g.city_yields(cid);
     let adjacency = g.district_yields(crate::name!("campus"), site).science
         - g.rules.districts["campus"].yields.science;
@@ -54,7 +62,10 @@ fn a_golden_age_pays_only_what_its_dedication_says() {
         (after.production - before.production - adjacency.max(0.0)).abs() < 1e-9,
         "Campus Science adjacency {adjacency} must arrive as Production: {before:?} -> {after:?}"
     );
-    assert!((after.science - before.science).abs() < 1e-9, "and nothing as Science");
+    assert!(
+        (after.science - before.science).abs() < 1e-9,
+        "and nothing as Science"
+    );
 }
 
 #[test]
@@ -70,16 +81,16 @@ fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
     // Eras.ChronologyIndex is ONE-based (ERA_ANCIENT is 1), so every index
     // here is that column minus one.
     let expected: &[(&str, usize, usize)] = &[
-        ("free_inquiry", 1, 2),          // SCIENTIFIC / POLICY_FREE_ENQUIRY
-        ("pen_brush_and_voice", 1, 2),   // CULTURAL
-        ("monumentality", 1, 3),         // INFRASTRUCTURE / POLICY_MONUMENTALITY
+        ("free_inquiry", 1, 2),              // SCIENTIFIC / POLICY_FREE_ENQUIRY
+        ("pen_brush_and_voice", 1, 2),       // CULTURAL
+        ("monumentality", 1, 3),             // INFRASTRUCTURE / POLICY_MONUMENTALITY
         ("exodus_of_the_evangelists", 1, 3), // RELIGIOUS / same-named card
-        ("hic_sunt_dracones", 3, 5),     // EXPLORATION
-        ("reform_the_coinage", 3, 5),    // ECONOMIC / same-named card
-        ("heartbeat_of_steam", 4, 6),    // INDUSTRIAL / same-named card
-        ("to_arms", 4, 6),               // MILITARY / POLICY_TO_ARMS
-        ("wish_you_were_here", 6, 8),    // TOURISM / same-named card
-        ("bodyguard_of_lies", 6, 8),     // ESPIONAGE
+        ("hic_sunt_dracones", 3, 5),         // EXPLORATION
+        ("reform_the_coinage", 3, 5),        // ECONOMIC / same-named card
+        ("heartbeat_of_steam", 4, 6),        // INDUSTRIAL / same-named card
+        ("to_arms", 4, 6),                   // MILITARY / POLICY_TO_ARMS
+        ("wish_you_were_here", 6, 8),        // TOURISM / same-named card
+        ("bodyguard_of_lies", 6, 8),         // ESPIONAGE
         // The ONE place the two sources disagree, and the only one where it
         // matters which is authoritative. COMMEMORATION_AERONAUTICAL opens
         // at ERA_INFORMATION; the leftover POLICY_SKY_AND_STARS card says
@@ -87,8 +98,8 @@ fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
         // transition reads, and CommemorationModifiers already carries the
         // Golden-Age half directly, which is what makes the same-named
         // RequiresGoldenAge cards dead data rather than a second opinion.
-        ("sky_and_stars", 7, 8),         // COMMEMORATION_AERONAUTICAL
-        ("automaton_warfare", 7, 8),     // AUTOMATON
+        ("sky_and_stars", 7, 8),     // COMMEMORATION_AERONAUTICAL
+        ("automaton_warfare", 7, 8), // AUTOMATON
     ];
     let mut game = Game::new_full(1, 24, 16, 22_508, 120, 0, false);
     assert_eq!(game.rules.dedications.len(), expected.len());
