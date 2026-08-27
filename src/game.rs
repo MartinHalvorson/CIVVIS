@@ -3,7 +3,7 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::sync::Arc;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::name::{AsName, Name};
 use crate::leader_roster;
@@ -1585,6 +1585,49 @@ impl VisionCache {
             self.built_wonders = Some(wonders);
         }
     }
+}
+
+/// The expensive, viewer-independent part of one unit's attack envelope.
+///
+/// An AI still decides whether this unit is hostile and visible to its own
+/// seat. Once those filters have selected a unit, though,
+/// [`Game::attack_reach_from_flood`] reads only the board and that unit. Keep
+/// both products together: the target list is the answer callers need and the
+/// flood is the exact sensitivity input the envelope cache needs to decide
+/// whether that answer survives a later board change.
+#[derive(Debug)]
+pub(crate) struct AttackReachFromFlood {
+    targets: Vec<Pos>,
+    flood: Vec<Pos>,
+}
+
+impl AttackReachFromFlood {
+    #[inline]
+    pub(crate) fn targets(&self) -> &[Pos] {
+        &self.targets
+    }
+
+    #[inline]
+    pub(crate) fn flood(&self) -> &[Pos] {
+        &self.flood
+    }
+}
+
+/// Reach answers for one complete envelope-board fingerprint.
+///
+/// `BasicAi` already computes this fingerprint before it asks for an envelope.
+/// Storing only one board at a time is deliberate: a speculative branch that
+/// changes a unit must never be served its parent's reach, and retaining a
+/// table for every short-lived tactical branch would trade flood work for an
+/// unbounded cache. A matching board, however, is common when separate
+/// controllers inspect the same position, and a game clone shares this cache
+/// through its [`Arc`].
+#[derive(Default)]
+struct AttackReachCache {
+    key: Option<(u32, u64)>,
+    reaches: HashMap<u32, Arc<AttackReachFromFlood>>,
+    #[cfg(test)]
+    computations: u64,
 }
 
 /// Everything about a mover that decides which tiles it could ever stand
@@ -5747,6 +5790,12 @@ pub struct Game {
     /// can change its inputs; empty in any clone.
     #[serde(skip)]
     query_memo: QueryCache,
+    /// Raw next-turn attack reaches, shared by controller instances that read
+    /// this exact board and by their speculative clones. The cache is keyed
+    /// by the same complete board fingerprint that gates AI attack envelopes;
+    /// it is never serialized and can always be discarded.
+    #[serde(skip)]
+    attack_reach_cache: Arc<std::sync::Mutex<AttackReachCache>>,
     /// The state of the world each seat's remembered map was last taken
     /// under — the whole of it, then the narrower part the tile memory is
     /// drawn from — and the tiles it was taken over. Empty means "assume
@@ -6839,6 +6888,7 @@ impl From<GameSer> for Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
@@ -7496,6 +7546,7 @@ impl Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
@@ -25996,6 +26047,48 @@ impl Game {
     /// matter. The returned order is stable for explainers and tests.
     pub fn attack_reach(&self, uid: u32) -> Vec<Pos> {
         self.attack_reach_from_flood(uid).0
+    }
+
+    /// The cached form of [`Self::attack_reach_from_flood`] for an AI envelope
+    /// query. `key` is the caller's full board fingerprint; on a mismatch the
+    /// old snapshot is discarded before this unit's reach can be read.
+    ///
+    /// The answer deliberately remains viewer-independent. Sharing an
+    /// already-filtered hostile table would be wrong because different seats
+    /// see and fight different units; sharing this raw flood is exact because
+    /// `attack_reach_from_flood` receives only `self` and `uid`.
+    pub(crate) fn cached_attack_reach_from_flood(
+        &self,
+        key: (u32, u64),
+        uid: u32,
+    ) -> Arc<AttackReachFromFlood> {
+        let mut cache = self
+            .attack_reach_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.key != Some(key) {
+            cache.key = Some(key);
+            cache.reaches.clear();
+        }
+        if let Some(reach) = cache.reaches.get(&uid) {
+            return Arc::clone(reach);
+        }
+        let (targets, flood) = self.attack_reach_from_flood(uid);
+        let reach = Arc::new(AttackReachFromFlood { targets, flood });
+        #[cfg(test)]
+        {
+            cache.computations += 1;
+        }
+        cache.reaches.insert(uid, Arc::clone(&reach));
+        reach
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attack_reach_cache_computations(&self) -> u64 {
+        self.attack_reach_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .computations
     }
 
     /// `attack_reach`, and the tiles the unit walked to get there.
