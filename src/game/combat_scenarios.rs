@@ -2461,7 +2461,7 @@ fn a_promotion_the_host_refused_is_never_asked_for_again() {
 
     // ONE refusal removes exactly that promotion and leaves the rest: another
     // choice may still be legal for this unit.
-    game.blocked_promotions
+    std::sync::Arc::make_mut(&mut game.blocked_promotions)
         .insert(warrior, [offers[0]].into_iter().collect());
     let after_one = game.available_promotions(warrior);
     assert!(
@@ -2476,7 +2476,7 @@ fn a_promotion_the_host_refused_is_never_asked_for_again() {
     // TWO distinct refusals mean the unit cannot promote at all. This is the
     // Apostle case: it takes one promotion when it is created and can never take
     // another, so offering the next name just walks the list.
-    game.blocked_promotions
+    std::sync::Arc::make_mut(&mut game.blocked_promotions)
         .insert(warrior, [offers[0], offers[1]].into_iter().collect());
     assert!(
         game.available_promotions(warrior).is_empty(),
@@ -2484,7 +2484,7 @@ fn a_promotion_the_host_refused_is_never_asked_for_again() {
     );
 
     // A native game never populates the block set and is untouched.
-    game.blocked_promotions.clear();
+    std::sync::Arc::make_mut(&mut game.blocked_promotions).clear();
     assert_eq!(game.available_promotions(warrior), offers);
 }
 
