@@ -194,8 +194,8 @@ impl AdvancedAi {
             return false;
         };
         g.cities.get(&cid).is_some_and(|city| city.owner == pid)
-            && !g.units_at(pos).into_iter().any(|other| {
-                other != uid
+            && !g.unit_ids_at(pos).into_iter().any(|other| {
+                *other != uid
                     && g.units[&other].owner == pid
                     && g.rules.units[g.units[&other].kind].class == "military"
             })
@@ -256,7 +256,7 @@ impl AdvancedAi {
             let guarded = g
                 .wdisk(unit.pos, 1)
                 .into_iter()
-                .flat_map(|position| g.units_at(position))
+                .flat_map(|position| g.unit_ids_at(position))
                 .any(|oid| {
                     let other = &g.units[&oid];
                     other.owner != pid
@@ -633,8 +633,8 @@ impl AdvancedAi {
             return Some(g.apply(pid, &Action::Pillage { unit: uid }).is_ok());
         }
         // A guard standing with its own Settler does not leave it for a prize.
-        let beside_own_settler = g.units_at(unit.pos).into_iter().any(|other| {
-            other != uid && g.units[&other].owner == pid && g.units[&other].kind == "settler"
+        let beside_own_settler = g.unit_ids_at(unit.pos).into_iter().any(|other| {
+            *other != uid && g.units[&other].owner == pid && g.units[&other].kind == "settler"
         });
         if beside_own_settler {
             return None;

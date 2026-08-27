@@ -4178,7 +4178,7 @@ impl BasicAi {
             match doctrine {
                 UnitDoctrine::Siege => 14.0,
                 UnitDoctrine::Mobile
-                    if g.units_at(target).iter().any(|other| {
+                    if g.unit_ids_at(target).iter().any(|other| {
                         g.rules.units[g.units[other].kind].class != "military"
                             || g.units[other].hp <= 40
                     }) =>
@@ -4195,7 +4195,7 @@ impl BasicAi {
         let bargain = if self.barbarian_bargain
             && !self.barb
             && g.barb_pid.is_some_and(|barb| {
-                g.units_at(target)
+                g.unit_ids_at(target)
                     .into_iter()
                     .any(|other| g.units[&other].owner == barb)
             }) {
@@ -4295,7 +4295,7 @@ impl BasicAi {
                 .iter()
                 .find(|action| match action {
                     Action::AirStrike { unit, target } if *unit == uid => {
-                        g.units_at(*target).iter().any(|other| {
+                        g.unit_ids_at(*target).iter().any(|other| {
                             let other = &g.units[other];
                             other.owner != pid
                                 && g.rules.units[other.kind].domain.as_deref()
@@ -4360,7 +4360,7 @@ impl BasicAi {
                     .filter_map(|action| match action {
                         Action::AirStrike { unit, target } if *unit == uid => {
                             let target_hp = g
-                                .units_at(*target)
+                                .unit_ids_at(*target)
                                 .iter()
                                 .filter_map(|other| {
                                     let other = &g.units[other];
@@ -4858,7 +4858,7 @@ impl BasicAi {
             // camp in fog into an AI objective merely because its coordinate
             // happens to be present in the model.
             .filter(|position| g.player_can_see(pid, *position))
-            .filter(|position| g.units_at(*position).is_empty())
+            .filter(|position| g.unit_ids_at(*position).is_empty())
             .filter(|position| g.can_move(uid, *position))
             .collect();
         // `enemy_of_my_enemy`: a camp that raids the neighbour is left to it.
@@ -8437,7 +8437,7 @@ impl BasicAi {
             if g.city_can_strike(&g.cities[cid]) {
                 let cpos = g.cities[cid].pos;
                 for pos in g.wdisk(cpos, 2) {
-                    let hit = g.units_at(pos).into_iter().any(|oid| {
+                    let hit = g.unit_ids_at(pos).into_iter().any(|oid| {
                         let o = &g.units[&oid];
                         o.owner != pid && g.is_at_war(pid, o.owner)
                     });
@@ -8794,7 +8794,7 @@ impl BasicAi {
                     // only bites the live bridge. The refusals are all live.
                     let center = g.cities[cid].pos;
                     let occupied = self.live_religious_purchase_guard
-                        && g.units_at(center).into_iter().any(|uid| {
+                        && g.unit_ids_at(center).into_iter().any(|uid| {
                             let unit = &g.units[&uid];
                             unit.owner == pid
                                 && g.rules
@@ -11638,12 +11638,12 @@ impl BasicAi {
             let mut s = -3.0 * progress * depth_error as f64;
             let mut adjacent_support = 0;
             for n in g.nbrs(tile) {
-                for oid in g.units_at(n) {
+                for oid in g.unit_ids_at(n) {
                     let o = &g.units[&oid];
                     if g.rules.units[o.kind].class != "military" {
                         continue;
                     }
-                    if o.owner == pid && oid != uid {
+                    if o.owner == pid && *oid != uid {
                         adjacent_support += 1;
                     } else if enemy_ids.contains(&o.owner) {
                         let att = effective_strength(g.unit_strength(o, false), o.hp);
@@ -12913,7 +12913,7 @@ impl BasicAi {
     }
 
     fn is_enemy_tile(&self, g: &Game, pos: Pos, enemy_ids: &[usize]) -> bool {
-        for oid in g.units_at(pos) {
+        for oid in g.unit_ids_at(pos) {
             if enemy_ids.contains(&g.units[&oid].owner) {
                 return true;
             }
@@ -12941,7 +12941,7 @@ impl BasicAi {
             }
         }
         let defender = g
-            .units_at(pos)
+            .unit_ids_at(pos)
             .into_iter()
             .map(|oid| &g.units[&oid])
             .filter(|o| g.rules.units[o.kind].class == "military")
@@ -13028,7 +13028,7 @@ impl BasicAi {
         // strength bearing down, then the most damage already taken.
         let mut wanting: Vec<(i64, Pos)> = Vec::new();
         for city in g.cities.values().filter(|city| city.owner == pid) {
-            let held = g.units_at(city.pos).into_iter().any(|uid| {
+            let held = g.unit_ids_at(city.pos).into_iter().any(|uid| {
                 g.units[&uid].owner == pid && g.rules.units[g.units[&uid].kind].class == "military"
             });
             if held {
@@ -13265,7 +13265,7 @@ impl BasicAi {
         if !self.naval_threat_triage || !ranged {
             return 0.0;
         }
-        let harmless_ship = g.units_at(target).into_iter().any(|other| {
+        let harmless_ship = g.unit_ids_at(target).into_iter().any(|other| {
             let unit = &g.units[&other];
             Some(unit.owner) == g.barb_pid
                 && Self::is_barbarian_raider(g, unit)
@@ -13367,7 +13367,7 @@ impl BasicAi {
                 // standing on it.
                 let ranked = distance.min(3);
                 let defender = g
-                    .units_at(*camp)
+                    .unit_ids_at(*camp)
                     .into_iter()
                     .filter_map(|other| g.units.get(&other))
                     .filter(|other| {
@@ -13583,7 +13583,7 @@ impl BasicAi {
                     g.cities
                         .values()
                         .any(|city| city.owner == *enemy && city.pos == target)
-                        || g.units_at(target)
+                        || g.unit_ids_at(target)
                             .iter()
                             .any(|other| enemy_ids.contains(&g.units[other].owner))
                 }) {
@@ -14209,7 +14209,7 @@ impl BasicAi {
                     !g.rules.is_water(tile)
                         && g.rules.is_passable(tile)
                         && g.unit_can_traverse(uid, **pos)
-                        && g.units_at(**pos).is_empty()
+                        && g.unit_ids_at(**pos).is_empty()
                 })
                 .map(|(pos, tile)| {
                     let ours = tile
@@ -14695,7 +14695,7 @@ impl BasicAi {
             None
         };
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
-            g.units_at(position).into_iter().any(|other| {
+            g.unit_ids_at(position).into_iter().any(|other| {
                 g.units[&other].owner != pid
                     && g.is_at_war(pid, g.units[&other].owner)
                     && g.units[&other].kind == "settler"
@@ -14966,7 +14966,7 @@ impl BasicAi {
                     return None;
                 }
                 let value = g
-                    .units_at(position)
+                    .unit_ids_at(position)
                     .into_iter()
                     .filter_map(|other| {
                         let other = &g.units[&other];
@@ -15038,7 +15038,7 @@ impl BasicAi {
         }
         let here = unit.pos;
         let target_unit = g
-            .units_at(here)
+            .unit_ids_at(here)
             .into_iter()
             .filter(|oid| {
                 let other = &g.units[oid];
@@ -15060,7 +15060,7 @@ impl BasicAi {
             pid,
             &Action::CondemnHeretic {
                 unit: uid,
-                target_unit,
+                target_unit: *target_unit,
             },
         )
         .is_ok()
@@ -15140,8 +15140,8 @@ impl BasicAi {
         // A unit standing on or beside one of our own settlers is plausibly
         // its escort; rescuing one civilian must not expose another.
         let beside_own_settler = g.nbrs(origin).into_iter().chain([origin]).any(|position| {
-            g.units_at(position).into_iter().any(|other| {
-                other != uid && g.units[&other].owner == pid && g.units[&other].kind == "settler"
+            g.unit_ids_at(position).into_iter().any(|other| {
+                *other != uid && g.units[&other].owner == pid && g.units[&other].kind == "settler"
             })
         });
         if beside_own_settler {
@@ -15152,7 +15152,7 @@ impl BasicAi {
         let lone_garrison = g
             .city_at(origin)
             .is_some_and(|cid| g.cities[&cid].owner == pid)
-            && g.units_at(origin)
+            && g.unit_ids_at(origin)
                 .into_iter()
                 .filter(|other| {
                     let other = &g.units[other];
@@ -15206,7 +15206,7 @@ impl BasicAi {
                 }
                 // A civilian standing under an enemy military unit cannot be
                 // captured by entering; that tile is an attack problem.
-                let guarded = g.units_at(other.pos).into_iter().any(|oid| {
+                let guarded = g.unit_ids_at(other.pos).into_iter().any(|oid| {
                     let blocker = &g.units[&oid];
                     blocker.owner != pid && g.rules.units[blocker.kind].class == "military"
                 });
@@ -15842,7 +15842,7 @@ mod tests {
             .filter(|pos| g.wdist(home, *pos) == 2)
             .find(|pos| {
                 g.map.get(*pos).is_some_and(|t| !g.rules.is_water(t))
-                    && g.units_at(*pos).is_empty()
+                    && g.unit_ids_at(*pos).is_empty()
             })
             .expect("open land two tiles from the capital");
         let our_galley = g.spawn_test_unit("galley", 0, water[0]);
@@ -15880,7 +15880,7 @@ mod tests {
             .filter(|(pos, tile)| {
                 game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
-                    && game.units_at(**pos).is_empty()
+                    && game.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .take(3)
@@ -17128,7 +17128,7 @@ mod tests {
             .owned_tiles
             .iter()
             .copied()
-            .find(|position| game.units_at(*position).is_empty())
+            .find(|position| game.unit_ids_at(*position).is_empty())
             .unwrap();
         game.players[0].techs.insert(crate::name!("archery"));
         game.players[0].gold = 180.0;
@@ -19603,7 +19603,7 @@ mod tests {
         let (mut game, ours, front, _home) = a_warrior_under_one_archer();
         game.units.get_mut(&ours).unwrap().hp = 60;
         for position in game.nbrs(front) {
-            if game.units_at(position).is_empty() && game.city_at(position).is_none() {
+            if game.unit_ids_at(position).is_empty() && game.city_at(position).is_none() {
                 game.spawn_test_unit("warrior", 1, position);
             }
         }
@@ -19679,7 +19679,7 @@ mod tests {
                 let t = &g.map.tiles[p];
                 g.rules.is_passable(t)
                     && !g.rules.is_water(t)
-                    && g.units_at(*p).is_empty()
+                    && g.unit_ids_at(*p).is_empty()
                     && g.city_at(*p).is_none()
             })
             .expect("open land tile next to the city");
@@ -19717,7 +19717,7 @@ mod tests {
                     && tile.owner_city.is_none()
                     && g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .expect("the test map has a second city site");
@@ -19760,7 +19760,7 @@ mod tests {
                     && g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
                     && g.city_at(**pos).is_none()
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .expect("the city has an open tile outside immediate attack range");
@@ -19826,7 +19826,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile) && !g.rules.is_water(tile)
                         })
-                        && g.units_at(*pos).is_empty()
+                        && g.unit_ids_at(*pos).is_empty()
                         && g.city_at(*pos).is_none()
                 })
                 .min()
@@ -19888,7 +19888,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile) && !g.rules.is_water(tile)
                         })
-                        && g.units_at(*pos).is_empty()
+                        && g.unit_ids_at(*pos).is_empty()
                         && g.city_at(*pos).is_none()
                 })
                 .min()
@@ -19947,7 +19947,7 @@ mod tests {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
                     && g.city_at(**pos).is_none()
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .collect();
@@ -19981,7 +19981,7 @@ mod tests {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
                     && g.city_at(**pos).is_none()
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .collect();
@@ -20050,7 +20050,7 @@ mod tests {
                 let t = &g.map.tiles[p];
                 g.rules.is_passable(t)
                     && !g.rules.is_water(t)
-                    && g.units_at(*p).is_empty()
+                    && g.unit_ids_at(*p).is_empty()
                     && g.city_at(*p).is_none()
             })
             .expect("open land tile next to the warrior");
@@ -20840,7 +20840,7 @@ mod tests {
                 g.map.get(*pos).is_some_and(|tile| {
                     g.rules.is_passable(tile)
                         && !g.rules.is_water(tile)
-                        && g.units_at(*pos).is_empty()
+                        && g.unit_ids_at(*pos).is_empty()
                 })
             })
             .take(5)
@@ -20887,7 +20887,7 @@ mod tests {
             .filter(|(pos, tile)| {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
                     // The campaign must march, not brawl: keep the arena away
                     // from everyone's starting units.
                     && g.units.values().all(|unit| g.wdist(unit.pos, **pos) > 8)
@@ -20901,7 +20901,7 @@ mod tests {
                             && g.map.get(*pos).is_some_and(|tile| {
                                 g.rules.is_passable(tile)
                                     && !g.rules.is_water(tile)
-                                    && g.units_at(*pos).is_empty()
+                                    && g.unit_ids_at(*pos).is_empty()
                             })
                             // Troops staged here must be able to march out.
                             && g.nbrs(*pos)
@@ -20971,7 +20971,7 @@ mod tests {
             .tiles
             .keys()
             .copied()
-            .filter(|pos| g.units_at(*pos).is_empty())
+            .filter(|pos| g.unit_ids_at(*pos).is_empty())
             .take(9)
             .collect();
         let cases = [
@@ -21305,7 +21305,9 @@ mod tests {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .find_map(|(center, _)| {
                 let ring: Vec<Pos> = g
@@ -21315,7 +21317,7 @@ mod tests {
                         g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                     })
                     .collect();
@@ -21383,7 +21385,7 @@ mod tests {
             .filter(|(origin, tile)| {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**origin).is_empty()
+                    && g.unit_ids_at(**origin).is_empty()
                     && g.city_at(**origin).is_none()
             })
             .find_map(|(origin, _)| {
@@ -21394,7 +21396,7 @@ mod tests {
                         g.map.get(*position).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*position).is_empty()
+                                && g.unit_ids_at(*position).is_empty()
                                 && g.city_at(*position).is_none()
                         })
                     })
@@ -21685,7 +21687,9 @@ mod tests {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             // Demand elbow room rather than taking whichever tiles the map
             // lists first: the air base needs a free land tile beside it that
@@ -21697,7 +21701,7 @@ mod tests {
                         g.map.get(*neighbor).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*neighbor).is_empty()
+                                && g.unit_ids_at(*neighbor).is_empty()
                         })
                     })
                     .count()
@@ -21714,7 +21718,7 @@ mod tests {
                     && g.map.get(*pos).is_some_and(|tile| {
                         g.rules.is_passable(tile)
                             && !g.rules.is_water(tile)
-                            && g.units_at(*pos).is_empty()
+                            && g.unit_ids_at(*pos).is_empty()
                     })
             })
             .expect("test map needs a land target beside the air base");
@@ -21827,7 +21831,9 @@ mod tests {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .find_map(|(target, _)| {
                 let ranged = g.wdisk(*target, 2).into_iter().find(|pos| {
@@ -21835,7 +21841,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                 })?;
                 let mobile = g.wdisk(*target, 4).into_iter().find(|pos| {
@@ -21844,7 +21850,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                 })?;
                 Some((*target, ranged, mobile))
@@ -22103,7 +22109,7 @@ mod tests {
             .filter(|position| {
                 game.wdist(origin, *position) == distance
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .collect();
         tiles.sort_unstable();
@@ -22733,7 +22739,7 @@ mod tests {
                 (4..=15).contains(&distance)
                     && g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**position).is_empty()
+                    && g.unit_ids_at(**position).is_empty()
             })
             .map(|(position, _)| *position)
             .expect("the recovery Trader needs a reachable destination");
@@ -22835,7 +22841,7 @@ mod tests {
                 game.wdist(**position, first_center) >= 4
                     && game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
-                    && game.units_at(**position).is_empty()
+                    && game.unit_ids_at(**position).is_empty()
             })
             .map(|(position, _)| *position)
             .next()
@@ -22988,7 +22994,9 @@ mod tests {
             .tiles
             .iter()
             .find(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .unwrap();
@@ -23312,7 +23320,7 @@ mod tests {
             .owned_tiles
             .iter()
             .copied()
-            .find(|position| *position != center && game.units_at(*position).is_empty())
+            .find(|position| *position != center && game.unit_ids_at(*position).is_empty())
             .unwrap();
         let center_edge = game.map.direction_to(site, center).unwrap();
         {
@@ -23428,7 +23436,7 @@ mod tests {
             .iter()
             .copied()
             .find(|position| {
-                g.wdist(*position, g.cities[&city].pos) == 1 && g.units_at(*position).is_empty()
+                g.wdist(*position, g.cities[&city].pos) == 1 && g.unit_ids_at(*position).is_empty()
             })
             .unwrap();
         let tile = g.map.tiles.get_mut(&site).unwrap();
@@ -24538,7 +24546,7 @@ mod attack_envelope_key_tests {
             .into_iter()
             .find(|pos| {
                 game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t))
-                    && game.units_at(*pos).is_empty()
+                    && game.unit_ids_at(*pos).is_empty()
             })
             .expect("the fixture offers dry ground beside the capital");
         let enemy = game.spawn_test_unit("warrior", 1, beside);
@@ -24568,7 +24576,7 @@ mod attack_envelope_key_tests {
         let mine = game.player_unit_ids(0).into_iter().next().unwrap();
         let home = game.units[&mine].pos;
         let dry = |g: &Game, pos: Pos| {
-            g.map.get(pos).is_some_and(|t| !g.rules.is_water(t)) && g.units_at(pos).is_empty()
+            g.map.get(pos).is_some_and(|t| !g.rules.is_water(t)) && g.unit_ids_at(pos).is_empty()
         };
         let far = game
             .map
@@ -24681,7 +24689,7 @@ mod attack_envelope_key_tests {
                 game.map
                     .get(*pos)
                     .is_some_and(|tile| !game.rules.is_water(tile))
-                    && game.units_at(*pos).is_empty()
+                    && game.unit_ids_at(*pos).is_empty()
             })
             .expect("the fixture offers dry ground beside the starting unit");
         game.spawn_test_unit("warrior", 1, beside);

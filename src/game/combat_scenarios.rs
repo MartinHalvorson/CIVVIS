@@ -732,7 +732,7 @@ fn the_ledger_counts_what_the_barbarians_take() {
     let builder_home = g
         .nbrs(at)
         .into_iter()
-        .find(|p| g.units_at(*p).is_empty())
+        .find(|p| g.unit_ids_at(*p).is_empty())
         .unwrap();
     let builder = g.spawn_unit("builder", 1, builder_home);
     g.apply(
@@ -757,7 +757,7 @@ fn the_ledger_counts_what_the_barbarians_take() {
     let second_home = g
         .nbrs(at)
         .into_iter()
-        .find(|p| g.units_at(*p).is_empty())
+        .find(|p| g.unit_ids_at(*p).is_empty())
         .unwrap();
     let second = g.spawn_unit("warrior", 1, second_home);
     g.units.get_mut(&second).unwrap().hp = 1;
@@ -2840,7 +2840,7 @@ fn air_pillage_uses_exact_health_floor_layer_order_and_no_spoils() {
             .find(|position| {
                 game.map.get(*position).is_some_and(|tile| {
                     game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                }) && game.units_at(*position).is_empty()
+                }) && game.unit_ids_at(*position).is_empty()
             })
             .unwrap();
     game.spawn_unit("warrior", 0, spotter);
@@ -4723,7 +4723,7 @@ fn a_winged_hussar_pushes_the_survivor_off_its_tile() {
         "and pushed AWAY from the attacker, not sideways"
     );
     assert!(
-        g.units_at(defender_now).contains(&defender),
+        g.unit_ids_at(defender_now).contains(&defender),
         "the occupancy index moves with it, or `units_at` hands out a stale id"
     );
 }
@@ -4765,7 +4765,7 @@ fn a_cornered_survivor_pays_for_the_retreat_it_cannot_make() {
         // The same exchange with the ring left open, for the damage the retreat
         // itself does not add.
         for pos in ring.iter().skip(1) {
-            let ids: Vec<u32> = open.units_at(*pos).to_vec();
+            let ids: Vec<u32> = open.unit_ids_at(*pos).to_vec();
             for id in ids {
                 open.remove_unit(id);
             }

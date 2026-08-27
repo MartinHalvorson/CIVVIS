@@ -106,7 +106,7 @@ impl AdvancedAi {
         {
             return false;
         }
-        let guarded = g.units_at(pos).into_iter().any(|other| {
+        let guarded = g.unit_ids_at(pos).into_iter().any(|other| {
             let other = &g.units[&other];
             other.owner == pid && g.rules.units[other.kind].class == "military"
         });

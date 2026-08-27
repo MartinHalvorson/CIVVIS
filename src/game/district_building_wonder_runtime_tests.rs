@@ -158,7 +158,7 @@ fn formations_can_be_bought_directly_for_full_constituent_cost() {
         .find(|position| {
             game.map.get(*position).is_some_and(|tile| {
                 game.rules.is_passable(tile) && !game.rules.is_water(tile)
-            }) && game.units_at(*position).is_empty()
+            }) && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     game.relocate(bought, open_land);
@@ -441,8 +441,8 @@ fn routes_level_per_tile_and_engineers_lay_railroads() {
                 let ok = game.map.get(neighbor).is_some_and(|tile| {
                     !game.rules.is_water(tile) && game.rules.is_passable(tile)
                 }) && !game.crosses_river(*position, neighbor)
-                    && game.units_at(*position).is_empty()
-                    && game.units_at(neighbor).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.unit_ids_at(neighbor).is_empty()
                     && game.map.tiles[position].district.is_none()
                     && game.map.tiles[&neighbor].district.is_none();
                 ok.then_some((*position, neighbor))
@@ -528,8 +528,8 @@ fn a_bridged_river_crossing_costs_its_route_and_never_returns_movement() {
                 let ok = game.map.get(neighbor).is_some_and(|tile| {
                     !game.rules.is_water(tile) && game.rules.is_passable(tile)
                 }) && !game.crosses_river(*position, neighbor)
-                    && game.units_at(*position).is_empty()
-                    && game.units_at(neighbor).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.unit_ids_at(neighbor).is_empty()
                     && game.map.tiles[position].district.is_none()
                     && game.map.tiles[&neighbor].district.is_none();
                 ok.then_some((*position, neighbor))
@@ -591,7 +591,7 @@ fn golden_gate_is_a_modern_road_without_embarking_land_units() {
         .filter(|(position, tile)| {
             tile.terrain == "coast"
                 && tile.owner_city.is_none()
-                && game.units_at(**position).is_empty()
+                && game.unit_ids_at(**position).is_empty()
         })
         .find_map(|(position, _)| {
             let neighbors = game.nbrs(*position);
@@ -603,7 +603,7 @@ fn golden_gate_is_a_modern_road_without_embarking_land_units() {
                         game.rules.is_passable(tile)
                             && !game.rules.is_water(tile)
                             && tile.owner_city.is_none()
-                            && game.units_at(**neighbor).is_empty()
+                            && game.unit_ids_at(**neighbor).is_empty()
                     })
                 })
                 .map(|(index, _)| index)
@@ -759,7 +759,7 @@ fn a_returning_levy_never_shares_a_tile_with_its_own_class() {
     let resident = game.spawn_unit("warrior", minor, position);
     let reachable: Vec<Pos> = game.wdisk(position, 4);
     for spot in reachable {
-        if spot != position && game.units_at(spot).is_empty() && game.city_at(spot).is_none() {
+        if spot != position && game.unit_ids_at(spot).is_empty() && game.city_at(spot).is_none() {
             game.spawn_unit("warrior", minor, spot);
         }
     }
@@ -771,13 +771,13 @@ fn a_returning_levy_never_shares_a_tile_with_its_own_class() {
     // combat and stacking all assume it. The returning levy must not be
     // parked on top of the resident.
     let here: Vec<u32> = game
-        .units_at(position)
+        .unit_ids_at(position)
         .into_iter()
         .filter(|uid| {
             game.units[uid].owner == minor
                 && game.rules.units[game.units[uid].kind].class == "military"
         })
-        .collect();
+        .copied().collect();
     assert!(
         here.len() <= 1,
         "two military units of {} share {:?}: {:?}",

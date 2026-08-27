@@ -1523,7 +1523,7 @@ fn alerted_naval_barbarian_camps_reconnoiter_and_produce_ships() {
                 || !game.rules.is_passable(tile)
                 || tile.owner_city.is_some()
                 || game.city_at(*position).is_some()
-                || !game.units_at(*position).is_empty()
+                || !game.unit_ids_at(*position).is_empty()
             {
                 return None;
             }
@@ -1663,7 +1663,7 @@ fn a_barbarian_scout_reports_the_settler_it_sees_with_no_city_anywhere() {
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .min()
             .expect("open ground away from the camp");
@@ -1675,7 +1675,7 @@ fn a_barbarian_scout_reports_the_settler_it_sees_with_no_city_anywhere() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .expect("open ground beside the Settler");
     let scout = game.spawn_unit("scout", barbarian, scout_position);
@@ -1738,7 +1738,7 @@ fn barbarian_scouts_report_only_cities_they_can_really_see() {
                                 && !game.rules.is_water(tile)
                                 && tile.owner_city.is_none()
                                 && game.city_at(position).is_none()
-                                && game.units_at(position).is_empty()
+                                && game.unit_ids_at(position).is_empty()
                         })
                     };
                     (land(origin)
@@ -2074,7 +2074,7 @@ fn a_flag_arena_gives_every_side_a_flag_of_its_own() {
         );
         // Its own army is the garrison: a side opens sitting on its flag.
         assert!(
-            game.units_at(flag).iter().all(|uid| game.units[uid].owner == seat),
+            game.unit_ids_at(flag).iter().all(|uid| game.units[uid].owner == seat),
             "seat {seat}'s flag opens held by somebody else"
         );
     }
@@ -2889,7 +2889,7 @@ fn an_arena_is_walled_where_a_world_wraps() {
     let west = crate::hex::offset_to_axial(0, 4);
     let east = crate::hex::offset_to_axial(arena.map.width - 1, 4);
     let mut arena = arena;
-    assert!(arena.units_at(west).is_empty(), "the wall hex is free to stand on");
+    assert!(arena.unit_ids_at(west).is_empty(), "the wall hex is free to stand on");
     let uid = arena.spawn_test_unit("horseman", 0, west);
     assert!(
         !arena.can_move(uid, east),
@@ -3932,7 +3932,7 @@ fn emergency_combat_qualifies_a_remote_member_and_blocks_deal_peace() {
             game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
                 && game.city_at(**position).is_none()
-                && game.units_at(**position).is_empty()
+                && game.unit_ids_at(**position).is_empty()
         })
         .find_map(|(position, _)| {
             game.nbrs(*position).into_iter().find_map(|neighbor| {
@@ -3940,7 +3940,7 @@ fn emergency_combat_qualifies_a_remote_member_and_blocks_deal_peace() {
                     (game.rules.is_passable(tile)
                         && !game.rules.is_water(tile)
                         && game.city_at(neighbor).is_none()
-                        && game.units_at(neighbor).is_empty())
+                        && game.unit_ids_at(neighbor).is_empty())
                     .then_some((*position, neighbor))
                 })
             })
@@ -4321,7 +4321,7 @@ fn war_strength_is_unit_only_and_saw_action_counts_distinct_units() {
             game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
                 && game.city_at(**position).is_none()
-                && game.units_at(**position).is_empty()
+                && game.unit_ids_at(**position).is_empty()
         })
         .find_map(|(position, _)| {
             game.nbrs(*position).into_iter().find_map(|neighbor| {
@@ -4329,7 +4329,7 @@ fn war_strength_is_unit_only_and_saw_action_counts_distinct_units() {
                     (game.rules.is_passable(tile)
                         && !game.rules.is_water(tile)
                         && game.city_at(neighbor).is_none()
-                        && game.units_at(neighbor).is_empty())
+                        && game.unit_ids_at(neighbor).is_empty())
                     .then_some((*position, neighbor))
                 })
             })
@@ -4419,7 +4419,7 @@ fn a_city_strike_counts_the_defending_unit_but_not_city_defense() {
         .find(|position| {
             game.rules.is_passable(&game.map.tiles[position])
                 && game.city_at(*position).is_none()
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     let defender_id = game.spawn_unit("warrior", 1, target);
@@ -4840,7 +4840,7 @@ fn tagma_replaces_knights_buffs_its_formation_and_is_the_hippodrome_reward() {
         .find(|position| {
             game.rules.is_passable(&game.map.tiles[position])
                 && !game.rules.is_water(&game.map.tiles[position])
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     game.spawn_test_unit("tagma", 0, adjacent);

@@ -2662,7 +2662,7 @@ fn late_congress_rules_change_wmd_policy_projects_energy_borders_and_chops() {
         .find(|position| {
             *position != g.cities[&city].pos
                 && *position != district_site
-                && g.units_at(*position).is_empty()
+                && g.unit_ids_at(*position).is_empty()
                 && g.map.tiles[position].district.is_none()
                 && g.map.tiles[position].wonder.is_none()
         })
