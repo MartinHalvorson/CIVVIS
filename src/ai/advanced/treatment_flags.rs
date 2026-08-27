@@ -3009,6 +3009,21 @@ impl AdvancedAi {
         self.capture_stood_down.clear();
     }
 
+    /// A settle or improve target survives a passing threat, and the
+    /// commitment ledger retires it after `COMMITMENT_PATIENCE` consecutive
+    /// forgotten turns, parking the site. Filed here rather than under a
+    /// marker: a whole function under one reads as an entry. See
+    /// `commitment_patience` and `advanced/commitments.rs`.
+    pub fn enable_commitment_patience(&mut self) {
+        self.commitment_patience = true;
+    }
+
+    /// The twin of `enable_commitment_patience`.
+    pub fn disable_commitment_patience(&mut self) {
+        self.commitment_patience = false;
+        self.builder_avoid.clear();
+    }
+
     /// `culture-floor`: a culture-yielding building is exempt from the Great
     /// Work veto and the Theatre Square is priced while the empire's culture
     /// a turn trails the strongest major's by the floor ratio. See

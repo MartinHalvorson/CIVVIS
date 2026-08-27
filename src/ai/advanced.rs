@@ -4405,6 +4405,9 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `commitment-patience`: a Builder's retired tile and the turn the
+    /// parking expires; the tile joins `reserved` in the job sweep until then.
+    builder_avoid: BTreeMap<u32, (Pos, u32)>,
     /// A boost already in hand is worth the turns of research it saves, not a
     /// flat credit. Opt-in gene `boost-first-research`; see
     /// `advanced/boost_research.rs`.
@@ -4469,6 +4472,12 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `commitment-patience`: a settle or improve target survives a passing
+    /// threat — the two threat drop reasons and the Builder's reach filter no
+    /// longer drop it — and the ledger retires it after
+    /// `commitments::COMMITMENT_PATIENCE` consecutive forgotten turns, parking
+    /// the site. Opt-in gene; see `advanced/commitments.rs`.
+    commitment_patience: bool,
     /// `capture-go-or-stand-down`: a declared war's objective that no unit of
     /// ours has been within `commitments::CAPTURE_PRESENCE_RADIUS` of for
     /// `commitments::CAPTURE_GO_TURNS` consecutive turns is stood down
@@ -6203,6 +6212,7 @@ impl AdvancedAi {
         self.settler_walk_started.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
+        self.builder_avoid.clear();
         self.forget_missionary_explore();
         self.force_groups.clear();
         self.force_groups_dirty = true;
@@ -6220,6 +6230,11 @@ impl AdvancedAi {
         };
         self.settler_targets = remap(&self.settler_targets);
         self.builder_targets = remap(&self.builder_targets);
+        self.builder_avoid = self
+            .builder_avoid
+            .iter()
+            .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
+            .collect();
         self.remap_missionary_explore(map);
         self.settler_stalls = self
             .settler_stalls
@@ -6507,6 +6522,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_avoid: BTreeMap::new(),
             boost_first_research: false,
             boost_wait_research: false,
             boost_unlock_research: false,
@@ -6516,6 +6532,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            commitment_patience: false,
             capture_go_or_stand_down: false,
             capture_stood_down: BTreeMap::new(),
             close_as_a_body: false,
@@ -26875,7 +26892,12 @@ impl AdvancedAi {
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
             }
-            if self.settler_threat_detour && self.settler_threat_deferrals.contains_key(&target) {
+            // `commitment_patience`: a threat is a hold, not a drop — the
+            // ledger retires the site if the hold outlasts its patience.
+            if self.settler_threat_detour
+                && !self.commitment_patience
+                && self.settler_threat_deferrals.contains_key(&target)
+            {
                 return Some("the approach is temporarily deferred for a visible threat");
             }
             // A momentarily unavailable route is not a bad site. Under
@@ -26886,6 +26908,7 @@ impl AdvancedAi {
                 return Some("no route this turn");
             }
             if self.settlement_safety
+                && !self.commitment_patience
                 && self.settlement_tile_risk(g, pid, Some(uid), target, &visible)
                     > SETTLER_STEP_RISK_LIMIT
             {
@@ -28049,12 +28072,19 @@ impl AdvancedAi {
             }
             return false;
         }
-        let reserved: HashSet<Pos> = self
+        let mut reserved: HashSet<Pos> = self
             .builder_targets
             .iter()
             .filter(|(other, _)| **other != uid && g.units.contains_key(other))
             .map(|(_, pos)| *pos)
             .collect();
+        // `commitment_patience`: a tile this Builder gave up on stays out of
+        // its own sweep until the parking expires.
+        if let Some((tile, until)) = self.builder_avoid.get(&uid) {
+            if g.turn < *until {
+                reserved.insert(*tile);
+            }
+        }
         // Reading every tile the empire owns: one memo scope so the
         // empire-wide questions each tile asks are answered once for the whole
         // sweep rather than once per tile. The borrow checker rejects the
@@ -28082,7 +28112,7 @@ impl AdvancedAi {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
-                    && job_out_of_reach(*pos)
+                    && (self.commitment_patience || job_out_of_reach(*pos))
                     && (!self
                         .worthwhile_improvements(g, pid, *pos, strategy)
                         .is_empty()
@@ -33747,6 +33777,8 @@ impl AdvancedAi {
         self.settler_walk_started
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
     }
 
