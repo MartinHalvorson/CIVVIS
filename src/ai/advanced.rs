@@ -24046,14 +24046,37 @@ impl AdvancedAi {
             return 0.0;
         }
         let potential = g.settlement_adjacency_summary_from_positions(pid, pos, positions);
-        ((potential.food * 2.0
-            + potential.production * 2.2
-            + potential.gold * 0.7
-            + potential.science * 1.2
-            + potential.culture * 1.2
-            + potential.faith * 0.4)
-            * 0.5)
-            .min(24.0)
+        (Self::settlement_yield_value(potential) * 0.5).min(24.0)
+    }
+
+    /// What a settlement scan pays for one point of each yield.
+    ///
+    /// One vector, four readers: the prefilter's own tile score, the adjacency
+    /// projection it is compared against, the frozen legacy site value, and
+    /// the wonder-site projection in `wonder_sites.rs`. They were four
+    /// hand-copied literals, which is the shape where a re-weighting lands on
+    /// three of four scans and the ranking quietly stops agreeing with the
+    /// score it is a prefilter for.
+    const SETTLEMENT_YIELD_WEIGHTS: Yields = Yields {
+        food: 2.0,
+        production: 2.2,
+        gold: 0.7,
+        science: 1.2,
+        culture: 1.2,
+        faith: 0.4,
+    };
+
+    /// `yields` priced at [`AdvancedAi::SETTLEMENT_YIELD_WEIGHTS`], summed in
+    /// the order the four copies summed it — a settle ranking is decided on
+    /// hundredths, so the association is part of the answer.
+    fn settlement_yield_value(yields: Yields) -> f64 {
+        let weights = Self::SETTLEMENT_YIELD_WEIGHTS;
+        yields.food * weights.food
+            + yields.production * weights.production
+            + yields.gold * weights.gold
+            + yields.science * weights.science
+            + yields.culture * weights.culture
+            + yields.faith * weights.faith
     }
 
     /// Order a global candidate scan before invoking the full growth,
@@ -24069,14 +24092,7 @@ impl AdvancedAi {
                     _ => 1.5,
                 }
             });
-            weight
-                * (yields.food * 2.0
-                    + yields.production * 2.2
-                    + yields.gold * 0.7
-                    + yields.science * 1.2
-                    + yields.culture * 1.2
-                    + yields.faith * 0.4
-                    + resource)
+            weight * (Self::settlement_yield_value(yields) + resource)
         };
         let tile = &g.map.tiles[&pos];
         let mut value = value_of(tile, 1.5);
@@ -24105,13 +24121,7 @@ impl AdvancedAi {
             }
             let y = g.rules.tile_yields(t);
             let ring_discount = if g.wdist(pos, p) <= 1 { 1.0 } else { 0.45 };
-            value += ring_discount
-                * (y.food * 2.0
-                    + y.production * 2.2
-                    + y.gold * 0.7
-                    + y.science * 1.2
-                    + y.culture * 1.2
-                    + y.faith * 0.4);
+            value += ring_discount * Self::settlement_yield_value(y);
             if let Some(resource) = &t.resource {
                 value += match g.rules.resources[resource].class.as_str() {
                     "luxury" => 5.0,
