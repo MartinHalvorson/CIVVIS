@@ -38,6 +38,7 @@ Both detectors were measured against the live game rather than guessed:
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -90,6 +91,14 @@ DIALOGUE_POLL_SECONDS = 0.25
 MIN_POLL_SECONDS = 0.05
 POINTER_SETTLE_SECONDS = 0.05
 POST_CLICK_SETTLE_SECONDS = 0.20
+
+# A native screen recording and this pixel backstop both use macOS's display
+# capture services.  The backstop is never worth starving a user-requested
+# recording: it must yield as soon as Cmd-Shift-5 is up, and it must stop
+# feeding the service while the system status daemon is already wedged.
+SYSTEMSTATUSD_SPIN_PERCENT = 85.0
+SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS = 30.0
+RECORDING_UI_POLL_SECONDS = 2.0
 
 
 def osa(script):
@@ -144,6 +153,73 @@ def window_box():
         return tuple(nums[:4])
     except Exception:
         return None
+
+
+def native_recording_command(command):
+    """Whether a process command line is Apple's recording UI or a video capture.
+
+    Plain ``screencapture -x -t png`` calls belong to this helper's fallback
+    path and must not make it pause itself.  Cmd-Shift-5 uses the persistent
+    ``keyboard.interactive`` process, while command-line recordings carry a
+    lower-case ``v`` video flag.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if not tokens or os.path.basename(tokens[0]) != "screencapture":
+        return False
+    return ("keyboard.interactive" in tokens
+            or any(token.startswith("-") and "v" in token for token in tokens[1:]))
+
+
+def native_recording_ui_active():
+    """Return true while a native screenshot/recording toolbar is in use."""
+    try:
+        result = subprocess.run(
+            ["ps", "-axo", "command="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return any(native_recording_command(line) for line in result.stdout.splitlines())
+
+
+def systemstatusd_cpu():
+    """Current CPU use of the status daemon ScreenCaptureKit waits on."""
+    try:
+        pids = subprocess.run(
+            ["pgrep", "-x", "systemstatusd"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        ).stdout.split()
+        if not pids:
+            return None
+        value = subprocess.run(
+            ["ps", "-p", pids[0], "-o", "%cpu="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        ).stdout.strip()
+        return float(value)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def capture_pause_reason():
+    """Why this optional screenshot loop should yield display capture now."""
+    if native_recording_ui_active():
+        return "native screen recording UI is active"
+    cpu = systemstatusd_cpu()
+    if cpu is not None and cpu >= SYSTEMSTATUSD_SPIN_PERCENT:
+        return f"systemstatusd is spinning at {cpu:.0f}% CPU"
+    return None
 
 
 def capture(box_points):
@@ -613,7 +689,28 @@ def main():
     waiting_since = None
     warned_setup = False
     warned_cards = False
+    last_pause_reason = None
     while True:
+        # A separate native recording gets first claim on screen capture.  This
+        # check intentionally happens before even grabbing the Civ window: a
+        # fallback screencapture launched at the wrong instant can make
+        # ScreenCaptureKit's one-second display lookup time out.
+        pause_reason = capture_pause_reason()
+        if pause_reason:
+            if pause_reason != last_pause_reason:
+                log(f"pausing pixel capture: {pause_reason}")
+            last_pause_reason = pause_reason
+            if args.once:
+                return
+            delay = (RECORDING_UI_POLL_SECONDS
+                     if pause_reason == "native screen recording UI is active"
+                     else SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS)
+            time.sleep(delay)
+            continue
+        if last_pause_reason is not None:
+            log(f"resuming pixel capture after: {last_pause_reason}")
+            last_pause_reason = None
+
         idle = False
         covered = False
         try:
