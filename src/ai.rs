@@ -13327,7 +13327,7 @@ impl BasicAi {
         if !g.rules.units[shooter.kind].has_ranged_attack() {
             return false;
         }
-        let frames = (g.player_vision_now(pid), g.visibility_viewers(pid));
+        let frames = (g.player_vision_frame(pid), g.visibility_viewers(pid));
         let range = g.unit_attack_range(uid);
         g.units.values().any(|target| {
             Some(target.owner) == g.barb_pid
@@ -13936,7 +13936,7 @@ impl BasicAi {
         // Visible hostiles at war with us: ground around them is not a goal.
         // Live vision only — a threat the seat cannot see does not steer it.
         let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
-            let visible = g.player_vision_now(pid);
+            let visible = g.player_vision_frame(pid);
             g.units
                 .values()
                 .filter(|unit| {
@@ -14183,7 +14183,7 @@ impl BasicAi {
                 return Some(village);
             }
         } else if self.hut_collection {
-            let visible = g.player_vision_now(pid);
+            let visible = g.player_vision_frame(pid);
             if let Some(village) = g
                 .reachable(uid)
                 .into_iter()
@@ -14910,11 +14910,14 @@ impl BasicAi {
             };
             let mut best: Option<(f64, Pos, Action)> = None;
             // Hoisted out of the candidate loop below (see
-            // `Game::ranged_order_is_legal`): `player_vision_now` clones a
-            // whole `TileBits`, and neither frame can move while this loop
-            // applies nothing. Built lazily — most units reach no enemy tile.
+            // `Game::ranged_order_is_legal`): neither frame can move while
+            // this loop applies nothing, so it is built at most once here
+            // rather than once per candidate tile. Built lazily — most units
+            // reach no enemy tile. `player_vision_frame` hands back the
+            // engine's own `Arc`, so even that one build is a refcount bump
+            // rather than a `TileBits` clone.
             let mut vision_frames: Option<(
-                crate::world::TileBits,
+                std::sync::Arc<crate::world::TileBits>,
                 std::collections::BTreeSet<usize>,
             )> = None;
             for pos in g.wdisk(upos, radius) {
@@ -14942,7 +14945,7 @@ impl BasicAi {
                     && distance <= g.unit_attack_range(uid)
                     && (!(self.legal_tactical_candidates || self.naval_threat_triage) || {
                         let frames = vision_frames.get_or_insert_with(|| {
-                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                            (g.player_vision_frame(pid), g.visibility_viewers(pid))
                         });
                         g.ranged_order_is_legal(pid, uid, pos, &frames.0, &frames.1)
                     })
@@ -14960,7 +14963,7 @@ impl BasicAi {
                     && g.priority_support_target_at(pid, pos).is_some()
                     && (!self.legal_tactical_candidates || {
                         let frames = vision_frames.get_or_insert_with(|| {
-                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                            (g.player_vision_frame(pid), g.visibility_viewers(pid))
                         });
                         g.units[&uid].attacks_left > 0
                             && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
@@ -21278,7 +21281,7 @@ mod tests {
 
         // Engine preconditions: the wall makes one shot illegal, not both.
         let (g, archer, _, _, blocked_pos, clear_pos) = build();
-        let frames = (g.player_vision_now(0), g.visibility_viewers(0));
+        let frames = (g.player_vision_frame(0), g.visibility_viewers(0));
         assert!(
             !g.ranged_order_is_legal(0, archer, blocked_pos, &frames.0, &frames.1),
             "the walled corridor must refuse the shot"

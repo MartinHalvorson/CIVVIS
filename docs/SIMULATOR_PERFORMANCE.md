@@ -2854,6 +2854,105 @@ Two things worth keeping from the pair of readings:
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
 
+## 2026-08-27: per-ask vision allocations paid for answers that had not moved
+
+Vision sat at roughly 9% of the main thread, and a chunk of that share was
+small, high-frequency allocations that answered no differently from a cached
+borrow. Two exact changes, both in the single-seat sight-frame path
+(`Game::player_vision_frame` / `Game::vision_frame`):
+
+1. **16 non-test call sites cloned a whole `TileBits` for a read-only
+   membership check.** `player_vision_now` returns an owned `TileBits`,
+   cloned out of the engine's own `Arc<TileBits>` cache
+   (`player_vision_frame`). Every production call site only ever read the
+   bits afterwards — `Game::sees`, `ranged_order_is_legal`,
+   `combat_target_visible_at`, and the rest — so all 16 switch to
+   `player_vision_frame`'s `Arc`. `AdvancedAi::BattlefrontFrame` followed the
+   same change: it stored a fresh clone of the turn-start frame every turn,
+   and now stores the `Arc` instead. `player_vision_now` itself stays,
+   `#[cfg_attr(not(test), allow(dead_code))]`, for the handful of test call
+   sites that want an owned snapshot on purpose.
+
+2. **`vision_input_stamp_with_suzerains` rebuilt its own inputs on every
+   ask, cache hit or not.** Deciding whether the *cached* sight frame was
+   still valid required building a fresh `BTreeMap<minor, suzerain>`
+   (`suzerain_input_map`) and a fresh `BTreeSet<viewer>`
+   (`visibility_viewers`) on every single call — including a repeat ask on a
+   board that had not moved at all. Both are now memoized behind a new
+   `Game::diplomacy_epoch`, following the same discipline `map_geometry` and
+   `unit_stamps` already use above it in `VisionFrameCache`: `Players` gets
+   a `Units`-style mutation epoch (bumped in the three routes that reach
+   `&mut Player` — `get_mut`, `IndexMut::index_mut`, `iter_mut` — plus
+   `push`; the wrapped `Vec` is private, so that is the whole surface).
+   `Cities` gets an analogous `generation` counter bumped inside its
+   existing `invalidate()`, riding the same eager, exhaustive-by-construction
+   guarantee `city_roster`'s sight fold already documents. `active_emergencies`
+   is different: it is a plain `pub Vec<Emergency>` a couple of engine paths
+   and several tests write in place, not a closed type like the two above, so
+   a bumped counter at its two real mutation sites (declare, resolve) could
+   silently miss a direct write — an early version of this change did exactly
+   that and a test that warmed the cache before pushing straight onto
+   `active_emergencies` would have gone stale. `diplomacy_epoch` folds its
+   live content instead (`ends`, `members` — the two fields
+   `visibility_viewers` reads), which cannot be bypassed and costs nothing
+   next to the allocation it is guarding, since the vector holds at most a
+   handful of live emergencies.
+
+### Measured
+
+Temporary `AtomicU64` counters on `suzerain_input_map`, `visibility_viewers`,
+and the `TileBits` clone inside `player_vision_now` (not committed — added to
+a scratch clone of the pre-change commit for "before", and to this branch for
+"after"), one 150-turn game, `--jobs 1` (seed 7320000, 6p 74×46, 9 city-states,
+online, continents):
+
+| per game | before | after | Δ |
+| --- | ---: | ---: | ---: |
+| `suzerain_input_map` calls | 69,022 | 26,944 | **-61.0%** |
+| `visibility_viewers` calls | 101,585 | 83,435 | **-17.9%** |
+| `TileBits` clones (`player_vision_now`) | 19,443 | 0 | **-100%** |
+
+The remaining `visibility_viewers` calls are the roughly-dozen direct
+(uncached) call sites elsewhere in `game.rs` this change deliberately left
+alone — see "What was left out" below; `suzerain_input_map` has no such
+direct callers left, so its whole remaining count is genuine diplomacy-epoch
+misses (a suzerainty, envoy, city, or turn change) rather than redundant
+re-asks.
+
+### Exactness
+
+`tools/speed_ab.py` (seeds 7320000-7320001, 2 paired 150-turn games, same
+shape as the counters above) reports the same game on every seed — identical
+report digests, baseline against candidate — and
+`advanced_v1_plays_the_same_game_it_always_did` passes. A new test,
+`diplomacy_caches_agree_with_an_uncached_derivation_across_every_input` in
+`src/game/visibility_tests.rs`, asserts the memoized suzerain map and viewer
+set equal a from-scratch derivation across a suzerainty change, an envoy
+change that does not flip it, a unit move, and a spy move — and separately
+that the last two correctly leave `diplomacy_epoch` untouched, since neither
+`suzerain_input_map` nor `visibility_viewers` reads a unit or a spy (the spy
+still moves the *overall* stamp, folded fresh on every ask by
+`base_vision_input_stamp`, entirely outside this cache).
+
+### What was left out
+
+- The larger per-tile viewer-count redesign this task named was explicitly
+  out of scope.
+- `battlefront_visibility`'s roughly two dozen other call sites in
+  `ai/advanced.rs` needed no edits beyond the `Arc<TileBits>` return-type
+  change: the type flows through `let visible = self.battlefront_visibility(...)`
+  by inference, since every one of them only ever reads `&visible`. The one
+  site that did need a fix was a direct `BattlefrontFrame { visible, .. }`
+  construction in `src/ai/advanced/tests.rs`, where a `TileBits` local no
+  longer matched the field's new type.
+- A handful of direct (uncached) `self.visibility_viewers(pid)` call sites
+  remain scattered through `game.rs` outside `vision_input_stamp_with_suzerains`
+  (legal-action-enumeration-shaped functions, mostly). Routing them through
+  `with_visibility_viewers` would mean restructuring each function's control
+  flow into the closure-based API for a caller that, unlike the per-ask sight
+  path, is not obviously asked the same question twice — left alone rather
+  than widen this pass.
+
 ## 2026-08-27 — the envelope table opened one memo scope per flood, and swept a cache that had nothing to sweep
 
 `docs/AI_GAPS.md`'s late-game crawl (#2611) and today's profile both put
