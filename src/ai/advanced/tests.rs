@@ -19171,9 +19171,14 @@ fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
         ai.stacked_escort_pace(&mut game, 0, settler).is_some(),
         "a close capture threat keeps the Settler waiting after its ordinary patience"
     );
-    assert_eq!(
-        game.units[&settler].pos, source,
-        "the Settler holds on the safe staging tile instead of marching into capture range"
+    assert_ne!(
+        game.units[&settler].pos, next,
+        "the Settler must not march into the capturable route step"
+    );
+    assert!(
+        game.wdist(game.units[&settler].pos, game.units[&guard].pos)
+            < game.wdist(source, game.units[&guard].pos),
+        "an exposed Settler retreats toward its guard instead of spending its patience on capture"
     );
 }
 
