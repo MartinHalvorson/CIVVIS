@@ -30579,12 +30579,12 @@ impl AdvancedAi {
                     });
                 }
                 spec.class == "military"
-                    && !position.is_embarked(unit)
                     && victims.iter().any(|victim| {
                         position.units.get(victim).is_some_and(|victim| {
                             position.wdist(unit.pos, victim.pos) <= reach + 2
                         })
                     })
+                    && !position.is_embarked(unit)
             });
         if unit_can_reach_a_victim {
             return true;
