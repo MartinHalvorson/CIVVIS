@@ -417,7 +417,7 @@ fn a_stalled_escort_is_released_and_the_settler_walks_itself() {
                 .filter(|(pos, tile)| {
                     game.rules.is_passable(tile)
                         && !game.rules.is_water(tile)
-                        && game.units_at(**pos).is_empty()
+                        && game.unit_ids_at(**pos).is_empty()
                         && want(**pos)
                 })
                 .map(|(pos, _)| *pos)
@@ -1609,7 +1609,7 @@ fn production_units_keep_their_assigned_capture_city_across_turns() {
     let origin = game
         .wdisk(target, 4)
         .into_iter()
-        .find(|position| g_is_open_land(&game, *position) && game.units_at(*position).is_empty())
+        .find(|position| g_is_open_land(&game, *position) && game.unit_ids_at(*position).is_empty())
         .expect("fixture needs an open land approach to the objective city");
     let unit = game.spawn_test_unit("warrior", 0, origin);
     let plan = StrategicPlan {
@@ -1719,7 +1719,7 @@ fn charged_toa_attacks_an_adjacent_enemy_before_building_a_pa() {
                 game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
                     && game.city_at(*neighbor).is_none()
-                    && game.units_at(*neighbor).is_empty()
+                    && game.unit_ids_at(*neighbor).is_empty()
             })
         })
         .expect("the Pa site has an adjacent open land tile");
@@ -2166,7 +2166,7 @@ fn timed_war_holds_an_incomplete_package_then_declares_together() {
         if staged.len() == TIMED_WAR_BODIES {
             break;
         }
-        if g_is_open_land(&game, position) && game.units_at(position).is_empty() {
+        if g_is_open_land(&game, position) && game.unit_ids_at(position).is_empty() {
             let unit = game.spawn_test_unit("giant_death_robot", 0, position);
             if ai.campaign_staging_position(&game, 0, 1, unit, objective_pos, position) {
                 staged.push(unit);
@@ -2206,7 +2206,7 @@ fn timed_war_finisher_captures_the_open_objective_same_turn() {
     let adjacent = game
         .nbrs(objective_pos)
         .into_iter()
-        .find(|position| g_is_open_land(&game, *position) && game.units_at(*position).is_empty())
+        .find(|position| g_is_open_land(&game, *position) && game.unit_ids_at(*position).is_empty())
         .unwrap();
     let body = game.spawn_test_unit("giant_death_robot", 0, adjacent);
     let mut ai = AdvancedAi::new();
@@ -3314,7 +3314,7 @@ fn battlefront_frame_keeps_later_reveals_out_of_turn_start_planning() {
                 && game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
                 && game.city_at(tile.pos).is_none()
-                && game.units_at(tile.pos).is_empty()
+                && game.unit_ids_at(tile.pos).is_empty()
         })
         .map(|tile| tile.pos)
         .next()
@@ -3329,7 +3329,7 @@ fn battlefront_frame_keeps_later_reveals_out_of_turn_start_planning() {
             .filter(|position| {
                 *position != hidden
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -3432,7 +3432,7 @@ fn found_test_city(game: &mut Game, pid: usize) -> u32 {
                 && tile.wonder.is_none()
                 && tile.owner_city.is_none()
                 && game.city_at(tile.pos).is_none()
-                && game.units_at(tile.pos).is_empty()
+                && game.unit_ids_at(tile.pos).is_empty()
                 && game
                     .cities
                     .values()
@@ -5009,7 +5009,8 @@ fn outgunned_at_war_fixture() -> (Game, AdvancedAi) {
     // None and only the power gap can fire the arm.
     let rival_home = game.cities[&game.player_city_ids(1)[0]].pos;
     for position in game.wdisk(rival_home, 3) {
-        if game.units_at(position).is_empty() && !game.rules.is_water(&game.map.tiles[&position]) {
+        if game.unit_ids_at(position).is_empty() && !game.rules.is_water(&game.map.tiles[&position])
+        {
             game.spawn_test_unit("swordsman", 1, position);
         }
     }
@@ -5244,7 +5245,7 @@ fn conquest_ai_spends_a_device_on_the_hard_city_but_spares_its_own() {
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .expect("blast ring has an open land tile");
     let picket = game.spawn_test_unit("scout", 0, picket_pos);
@@ -5366,7 +5367,7 @@ fn the_doctrine_spares_a_power_it_is_not_fighting() {
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .take(4)
             .collect();
@@ -7751,7 +7752,7 @@ fn recovery_requires_material_local_danger_and_ends_when_it_clears() {
         .find(|position| {
             *position != home_pos
                 && game.city_at(*position).is_none()
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     let far_pos = game
@@ -8724,7 +8725,7 @@ fn advanced_settler_refuses_a_visible_direct_attack_tile() {
             .find(|position| {
                 *position != home
                     && *position != target
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         !game.rules.is_water(tile) && game.rules.is_passable(tile)
                     })
@@ -9681,7 +9682,7 @@ fn military_units_step_onto_and_condemn_enemy_missionaries() {
         .nbrs(home)
         .into_iter()
         .find(|p| {
-            game.units_at(*p).is_empty()
+            game.unit_ids_at(*p).is_empty()
                 && game
                     .map
                     .get(*p)
@@ -9697,7 +9698,7 @@ fn military_units_step_onto_and_condemn_enemy_missionaries() {
         .find(|p| {
             *p != home
                 && game.nbrs(home).contains(p)
-                && game.units_at(*p).is_empty()
+                && game.unit_ids_at(*p).is_empty()
                 && game
                     .map
                     .get(*p)
@@ -9840,7 +9841,7 @@ fn non_founder_buys_defense_before_an_approaching_rival_missionary_spreads() {
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .expect("the capital has a clear one-turn religious approach tile");
     let rival = game.spawn_test_unit("missionary", 1, approach);
@@ -10778,7 +10779,7 @@ fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
                 game.wdist(*position, target) == 1
                     && game.wdist(*position, home) > 1
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.rules.is_passable(&game.map.tiles[position])
                     && !game.rules.is_water(&game.map.tiles[position])
             })
@@ -12646,7 +12647,7 @@ fn force_readiness_excludes_aircraft_from_ground_armies() {
         .find(|(position, tile)| {
             game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
-                && game.units_at(**position).is_empty()
+                && game.unit_ids_at(**position).is_empty()
         })
         .map(|(position, _)| *position)
         .unwrap();
@@ -12753,7 +12754,7 @@ fn local_superiority_prices_the_objective_city_defense() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     let warrior = game.spawn_test_unit("warrior", 0, staging);
@@ -13664,7 +13665,7 @@ fn global_recovery_holds_an_unthreatened_front_but_keeps_a_forcing_finish() {
                 game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
         })
         .expect("the capital has an empty land launch tile");
@@ -13741,7 +13742,7 @@ fn global_recovery_holds_an_unthreatened_front_but_keeps_a_forcing_finish() {
                 game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
         })
         .expect("the warrior has an empty adjacent land contact");
@@ -14245,7 +14246,7 @@ fn exact_hybrid_search_uses_melee_to_finish_a_city() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     game.cities.get_mut(&city).unwrap().hp = 0;
@@ -14341,7 +14342,7 @@ fn conquest_waits_to_recapture_an_unholdable_original_capital() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .expect("the capital has an open melee approach");
     let attacker = game.spawn_test_unit("giant_death_robot", 0, staging);
@@ -15836,7 +15837,7 @@ fn live_gold_purchase_falls_back_to_a_defender_when_walls_are_not_buyable() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .take(2)
         .collect();
@@ -15916,7 +15917,7 @@ fn live_gold_purchase_spends_through_the_reserve_to_save_a_besieged_city() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .take(2)
         .collect();
@@ -16269,7 +16270,7 @@ fn diagnostic_how_often_is_a_city_garrisoned_and_under_loyalty_pressure() {
                     continue;
                 }
                 let pos = city.pos;
-                let held = g.units_at(pos).into_iter().any(|uid| {
+                let held = g.unit_ids_at(pos).iter().any(|uid| {
                     g.units[&uid].owner == owner
                         && g.rules.units[g.units[&uid].kind].class == "military"
                 });
@@ -18284,7 +18285,7 @@ fn command_phase_spends_promotions_and_links_support() {
         .tiles
         .iter()
         .find(|(pos, tile)| {
-            g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+            g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.unit_ids_at(**pos).is_empty()
         })
         .map(|(pos, _)| *pos)
         .unwrap();
@@ -18493,7 +18494,7 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
             .find(|position| {
                 game.wdist(*position, game.units[&settler].pos) == 2
                     && *position != target
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -18556,7 +18557,7 @@ fn a_default_live_escort_replaces_guards_that_cannot_hold() {
             .find(|position| {
                 game.wdist(source, *position) == 2
                     && *position != target
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -19061,7 +19062,7 @@ fn a_settler_waits_for_its_guard_only_within_patience_outside_a_city() {
             .find(|position| {
                 game.wdist(source, *position) == 6
                     && *position != lagging
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -19149,7 +19150,7 @@ fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
             .find(|position| {
                 game.wdist(next, *position) == 2
                     && *position != lagging
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -19721,7 +19722,7 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
                         .owner_city
                         .is_none_or(|city| g.cities[&city].owner == 0)
             }) && g.city_at(position).is_none()
-                && g.units_at(position).is_empty()
+                && g.unit_ids_at(position).is_empty()
         };
         // Start from the controller's real first choice. The test then places
         // the blocker after that decision, which is the live failure shape:
@@ -20396,7 +20397,7 @@ fn escorted_settler_does_not_follow_its_leader_into_a_visible_capture_envelope()
             .filter(|position| {
                 *position != source
                     && *position != target
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -20508,7 +20509,9 @@ fn armies_and_fleets_receive_domain_specific_shared_orders() {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .collect(),
@@ -20523,7 +20526,7 @@ fn armies_and_fleets_receive_domain_specific_shared_orders() {
                     g.map.get(*neighbor).is_some_and(|tile| {
                         g.rules.is_passable(tile)
                             && !g.rules.is_water(tile)
-                            && g.units_at(*neighbor).is_empty()
+                            && g.unit_ids_at(*neighbor).is_empty()
                     })
                 })
                 .collect();
@@ -20561,7 +20564,7 @@ fn armies_and_fleets_receive_domain_specific_shared_orders() {
         g.map
             .tiles
             .iter()
-            .filter(|(pos, tile)| g.rules.is_water(tile) && g.units_at(**pos).is_empty())
+            .filter(|(pos, tile)| g.rules.is_water(tile) && g.unit_ids_at(**pos).is_empty())
             .map(|(pos, _)| *pos)
             .collect(),
     );
@@ -20573,7 +20576,7 @@ fn armies_and_fleets_receive_domain_specific_shared_orders() {
                 .into_iter()
                 .filter(|neighbor| {
                     g.map.get(*neighbor).is_some_and(|tile| {
-                        g.rules.is_water(tile) && g.units_at(*neighbor).is_empty()
+                        g.rules.is_water(tile) && g.unit_ids_at(*neighbor).is_empty()
                     })
                 })
                 .collect();
@@ -20647,7 +20650,7 @@ fn city_state_wars_receive_a_campaign_target_and_combined_arms_orders() {
             g.map.get(*position).is_some_and(|tile| {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(*position).is_empty()
+                    && g.unit_ids_at(*position).is_empty()
             })
         })
         .expect("city-state needs an open attack front");
@@ -20681,7 +20684,7 @@ fn city_state_wars_receive_a_campaign_target_and_combined_arms_orders() {
     assert!(
         g.city_at(focus)
             .is_some_and(|city| g.cities[&city].owner == minor)
-            || g.units_at(focus)
+            || g.unit_ids_at(focus)
                 .iter()
                 .any(|unit| g.units[unit].owner == minor)
     );
@@ -20726,7 +20729,7 @@ fn coordinated_force_moves_most_routed_units_on_advance() {
         .tiles
         .iter()
         .filter(|(pos, tile)| {
-            g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+            g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.unit_ids_at(**pos).is_empty()
         })
         .find_map(|(target, _)| {
             let staging: Vec<Pos> = g
@@ -20737,7 +20740,7 @@ fn coordinated_force_moves_most_routed_units_on_advance() {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                 })
                 .take(6)
@@ -20955,7 +20958,7 @@ fn recon_explores_independently_while_combat_roles_form_the_army() {
         .tiles
         .iter()
         .filter(|(pos, tile)| {
-            g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+            g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.unit_ids_at(**pos).is_empty()
         })
         .map(|(pos, _)| *pos)
         .take(6)
@@ -21107,7 +21110,7 @@ fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
     let static_score = attack_value - threshold
         + ai.base.w.focus_fire * 10.0
         + if game
-            .units_at(target)
+            .unit_ids_at(target)
             .iter()
             .any(|unit| game.units[unit].hp <= 35)
         {
@@ -21332,7 +21335,7 @@ fn forcing_reply_search_avoids_a_poisoned_capture() {
         .filter(|(position, tile)| {
             g.rules.is_passable(tile)
                 && !g.rules.is_water(tile)
-                && g.units_at(**position).is_empty()
+                && g.unit_ids_at(**position).is_empty()
                 && g.city_at(**position).is_none()
                 && g.cities
                     .values()
@@ -21349,7 +21352,7 @@ fn forcing_reply_search_avoids_a_poisoned_capture() {
                     .filter(|position| {
                         g.map.get(*position).is_some_and(|tile| {
                             g.rules.is_passable(tile) && !g.rules.is_water(tile)
-                        }) && g.units_at(*position).is_empty()
+                        }) && g.unit_ids_at(*position).is_empty()
                             && g.city_at(*position).is_none()
                     })
                     .collect();
@@ -21373,7 +21376,7 @@ fn forcing_reply_search_avoids_a_poisoned_capture() {
                                     && g.map.get(*reply).is_some_and(|tile| {
                                         g.rules.is_passable(tile) && !g.rules.is_water(tile)
                                     })
-                                    && g.units_at(*reply).is_empty()
+                                    && g.unit_ids_at(*reply).is_empty()
                                     && g.city_at(*reply).is_none()
                         })
                         .collect();
@@ -21401,7 +21404,7 @@ fn forcing_reply_search_avoids_a_poisoned_capture() {
         if position == safe
             || position == anchor
             || position == risky
-            || !g.units_at(position).is_empty()
+            || !g.unit_ids_at(position).is_empty()
             || g.city_at(position).is_some()
         {
             continue;
@@ -21485,7 +21488,7 @@ fn forcing_reply_search_prices_a_move_then_attack_counter() {
         .filter(|(position, tile)| {
             game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
-                && game.units_at(**position).is_empty()
+                && game.unit_ids_at(**position).is_empty()
                 && game.city_at(**position).is_none()
                 && game
                     .cities
@@ -21501,7 +21504,7 @@ fn forcing_reply_search_prices_a_move_then_attack_counter() {
                 let prize_tile = game.map.get(prize)?;
                 if !game.rules.is_passable(prize_tile)
                     || game.rules.is_water(prize_tile)
-                    || !game.units_at(prize).is_empty()
+                    || !game.unit_ids_at(prize).is_empty()
                     || game.city_at(prize).is_some()
                 {
                     return None;
@@ -21511,14 +21514,14 @@ fn forcing_reply_search_prices_a_move_then_attack_counter() {
                     (game.wdist(prize, counter) == 3
                         && game.rules.is_passable(tile)
                         && !game.rules.is_water(tile)
-                        && game.units_at(counter).is_empty()
+                        && game.unit_ids_at(counter).is_empty()
                         && game.city_at(counter).is_none()
                         && game.nbrs(counter).into_iter().any(|step| {
                             game.wdist(step, prize) == 2
                                 && game.map.get(step).is_some_and(|tile| {
                                     game.rules.is_passable(tile) && !game.rules.is_water(tile)
                                 })
-                                && game.units_at(step).is_empty()
+                                && game.unit_ids_at(step).is_empty()
                                 && game.city_at(step).is_none()
                         }))
                     .then_some((*anchor, prize, counter))
@@ -21571,7 +21574,7 @@ fn explicit_victory_command_phase_fires_city_center_strikes() {
         .nbrs(center)
         .into_iter()
         .find(|position| {
-            game.units_at(*position).is_empty()
+            game.unit_ids_at(*position).is_empty()
                 && game.city_at(*position).is_none()
                 && game.encampment_at(*position).is_none()
         })
@@ -21634,7 +21637,7 @@ fn encampment_strikes_choose_the_exact_kill_over_static_unit_strength() {
             *position != encampment
                 && game.city_at(*position).is_none()
                 && game.encampment_at(*position).is_none()
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .take(2)
         .collect();
@@ -21671,7 +21674,9 @@ fn force_replans_focus_after_each_battlefield_action() {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .collect(),
@@ -21683,7 +21688,7 @@ fn force_replans_focus_after_each_battlefield_action() {
                 let second_tile = g.map.get(second)?;
                 if !g.rules.is_passable(second_tile)
                     || g.rules.is_water(second_tile)
-                    || !g.units_at(second).is_empty()
+                    || !g.unit_ids_at(second).is_empty()
                 {
                     return None;
                 }
@@ -21696,7 +21701,7 @@ fn force_replans_focus_after_each_battlefield_action() {
                         g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                     })
                     .collect();
@@ -22030,7 +22035,7 @@ fn colliding_unit_intents_revalidate_and_finish_from_live_state() {
 
     assert_eq!(game.units[&first].pos, target);
     assert_ne!(game.units[&second].pos, target);
-    assert_eq!(game.units_at(target), vec![first]);
+    assert_eq!(game.unit_ids_at(target), vec![first]);
 }
 
 #[test]
@@ -22220,7 +22225,7 @@ fn occupation_reserves_a_reachable_garrison_during_war() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     let warrior = game.spawn_test_unit("warrior", 0, start);
@@ -22716,7 +22721,7 @@ fn city_pressure_ignores_a_hidden_hostile_inside_its_radius() {
             .filter(|position| {
                 *position != city_pos
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -22865,7 +22870,7 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
             .get(pos)
             .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             && g.city_at(pos).is_none()
-            && g.units_at(pos).is_empty()
+            && g.unit_ids_at(pos).is_empty()
     };
     let ring_at = |g: &Game, distance: i32| -> Vec<Pos> {
         let mut ring: Vec<Pos> = g
@@ -22946,7 +22951,7 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
     game.remove_unit(far);
     let gate_pos = ring_at(&game, 2)
         .into_iter()
-        .find(|pos| game.units_at(*pos).is_empty())
+        .find(|pos| game.unit_ids_at(*pos).is_empty())
         .expect("open ground at the gates");
     let _gate = game.spawn_test_unit("warrior", barb, gate_pos);
     let sent = objectives(&live, &game);
@@ -23012,7 +23017,7 @@ fn a_raider_is_cheaper_to_attack_than_a_major_and_only_for_a_soldier() {
             game.map
                 .get(**pos)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(**pos).is_empty()
+                && game.unit_ids_at(**pos).is_empty()
                 && game.city_at(**pos).is_none()
         })
         .expect("open ground beside the ring tile");
@@ -23082,7 +23087,7 @@ fn a_ring_of_shooters_is_answered_by_a_shooter_and_a_melee_ring_is_not() {
                     && game.map.get(*pos).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
-                    && game.units_at(*pos).is_empty()
+                    && game.unit_ids_at(*pos).is_empty()
                     && game.city_at(*pos).is_none()
             })
             .collect();
@@ -23165,7 +23170,7 @@ fn open_ground_at(game: &Game, home: Pos, distance: i32) -> Pos {
             .get(pos)
             .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
             && game.city_at(pos).is_none()
-            && game.units_at(pos).is_empty()
+            && game.unit_ids_at(pos).is_empty()
     };
     let mut ring: Vec<Pos> = game
         .map
@@ -23283,7 +23288,7 @@ fn the_camp_errand_stands_down_for_war_recon_and_bad_trades() {
     );
 
     // A major war stands the whole errand down.
-    let guard = game.units_at(near)[0];
+    let guard = game.unit_ids_at(near)[0];
     game.remove_unit(guard);
     let mut wartime = AdvancedAi::new();
     wartime.enable_camp_bounty();
@@ -23424,7 +23429,7 @@ fn a_charted_village_preempts_a_prewar_campaign_staging_order() {
             .get(pos)
             .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             && g.city_at(pos).is_none()
-            && g.units_at(pos).is_empty()
+            && g.unit_ids_at(pos).is_empty()
     };
     let (assault_at, village) = game
         .wdisk(home, 4)
@@ -23515,7 +23520,7 @@ fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
             .get(pos)
             .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             && g.city_at(pos).is_none()
-            && g.units_at(pos).is_empty()
+            && g.unit_ids_at(pos).is_empty()
     };
     // Inside the home ring, outside the garrison alarm: the field
     // response, not the city garrison, is what must answer.
@@ -23635,7 +23640,7 @@ fn immediate_kill_priority_finishes_barbarians_and_wartime_units() {
             game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
                 && game.city_at(**pos).is_none()
-                && game.units_at(**pos).is_empty()
+                && game.unit_ids_at(**pos).is_empty()
         })
         .map(|(pos, _)| *pos)
         .collect();
@@ -23762,7 +23767,7 @@ fn advanced_turn_finishes_a_distant_barbarian_before_campaign_filtering() {
                     && game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
                     && game.city_at(**position).is_none()
-                    && game.units_at(**position).is_empty()
+                    && game.unit_ids_at(**position).is_empty()
             })
             .map(|(position, _)| *position)
             .find(|target| {
@@ -23876,7 +23881,7 @@ fn a_distant_campaign_unit_stays_staged_while_barbarians_are_at_home() {
             .get(pos)
             .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             && g.city_at(pos).is_none()
-            && g.units_at(pos).is_empty()
+            && g.unit_ids_at(pos).is_empty()
     };
     let raider_at = game
         .wdisk(home, crate::ai::HOME_THREAT_RADIUS - 1)
@@ -24073,7 +24078,7 @@ fn clear_land_at(game: &Game, home: Pos, distance: i32, away: &[(Pos, i32)], roo
             game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
                 && game.city_at(pos).is_none()
-                && game.units_at(pos).is_empty()
+                && game.unit_ids_at(pos).is_empty()
         })
     };
     let mut candidates: Vec<Pos> = game
@@ -24110,7 +24115,7 @@ fn clear_land_beside(game: &Game, of: Pos, not: &[Pos]) -> Pos {
                 game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
                     && game.city_at(*pos).is_none()
-                    && game.units_at(*pos).is_empty()
+                    && game.unit_ids_at(*pos).is_empty()
             }) && !not.contains(pos)
         })
         .collect();
@@ -24402,7 +24407,7 @@ fn belief_pressure_remembers_a_hidden_contact_without_reading_current_state() {
             .find(|position| {
                 *position != city_pos
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && !game.player_visibility(0).contains(position)
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
@@ -24416,7 +24421,7 @@ fn belief_pressure_remembers_a_hidden_contact_without_reading_current_state() {
             .filter(|position| {
                 *position != hidden
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
@@ -24858,7 +24863,7 @@ fn city_loss_autopsy() {
                 let hp = city.hp;
                 // Cities cap at 200 hp; `Game` clamps to that in its own scoring.
                 let maxhp = 200;
-                let garrison = game.units_at(pos).into_iter().any(|u| {
+                let garrison = game.unit_ids_at(pos).iter().any(|u| {
                     let unit = &game.units[&u];
                     unit.owner == 0 && game.rules.units[unit.kind].class == "military"
                 });
@@ -27564,7 +27569,7 @@ fn hex_triangle(game: &crate::game::Game) -> Option<[(i32, i32); 3]> {
         game.map
             .get(pos)
             .is_some_and(|tile| !game.rules.is_water(tile))
-            && game.units_at(pos).is_empty()
+            && game.unit_ids_at(pos).is_empty()
     };
     for (a, _) in game.map.tiles.iter() {
         if !open(*a) {
@@ -28912,7 +28917,7 @@ fn raid_tile_at(game: &Game, anchor: Pos, distance: i32, home: Pos, home_limit: 
         .copied()
         .filter(|position| {
             g_is_open_land(game, *position)
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
                 && game.wdist(anchor, *position) == distance
                 && game.wdist(home, *position) <= home_limit
         })
@@ -29022,7 +29027,7 @@ fn a_guarded_settler_is_no_raid_prize() {
     let beside = game
         .nbrs(settler_at)
         .into_iter()
-        .find(|position| g_is_open_land(&game, *position) && game.units_at(*position).is_empty())
+        .find(|position| g_is_open_land(&game, *position) && game.unit_ids_at(*position).is_empty())
         .unwrap();
     game.relocate(guard, beside);
     assert!(ai.raid_opportunity(&game, 0).is_none());
@@ -29185,7 +29190,7 @@ fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
     let mine = *ring
         .iter()
         .take(6)
-        .find(|position| game.units_at(**position).is_empty())
+        .find(|position| game.unit_ids_at(**position).is_empty())
         .unwrap();
     game.relocate(warrior, mine);
     game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
@@ -31328,7 +31333,7 @@ fn a_religious_unit_steps_out_of_a_raiders_reach_only_with_the_gene() {
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
                 && game.city_at(*position).is_none()
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .max_by_key(|position| (game.wdist(*position, home), *position))
         .expect("open ground beside the raider");
@@ -34389,7 +34394,7 @@ fn barbarian_field(seed: u64) -> (Game, u32, Pos) {
 
 fn open_land(game: &Game, pos: Pos) -> bool {
     game.city_at(pos).is_none()
-        && game.units_at(pos).is_empty()
+        && game.unit_ids_at(pos).is_empty()
         && game
             .map
             .get(pos)
@@ -35864,7 +35869,7 @@ fn the_native_emergency_purchase_spends_through_the_reserve() {
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .take(2)
             .collect();

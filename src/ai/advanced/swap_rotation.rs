@@ -106,7 +106,7 @@ impl AdvancedAi {
         // the margin, and standing further from the enemy than we are.
         let mut best: Option<(i32, u32)> = None;
         for pos in g.nbrs(unit.pos) {
-            for other_id in g.units_at(pos) {
+            for other_id in g.unit_ids_at(pos) {
                 let Some(other) = g.units.get(&other_id) else {
                     continue;
                 };

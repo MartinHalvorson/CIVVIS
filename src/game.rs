@@ -443,7 +443,7 @@ pub(crate) fn install_test_district(game: &mut Game, city: u32, district: &str) 
 #[cfg(test)]
 pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, city: u32) {
     let center = game.cities[&city].pos;
-    let blocker = game.units_at(center).into_iter().find(|unit| {
+    let blocker = game.unit_ids_at(center).iter().find(|unit| {
         let unit = &game.units[unit];
         let spec = &game.rules.units[unit.kind];
         unit.owner == player
@@ -451,16 +451,16 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
             && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
     });
     if let Some(unit) = blocker {
-        let destination = game
-            .nbrs(center)
-            .into_iter()
-            .find(|position| {
-                game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                }) && game.units_at(*position).is_empty()
-            })
-            .expect("test city has an open adjacent land-combat slot");
-        game.relocate(unit, destination);
+        let destination =
+            game.nbrs(center)
+                .into_iter()
+                .find(|position| {
+                    game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.unit_ids_at(*position).is_empty()
+                })
+                .expect("test city has an open adjacent land-combat slot");
+        game.relocate(*unit, destination);
     }
 }
 
@@ -8234,7 +8234,7 @@ impl Game {
         for kind in Self::battlefield_army(self.map.tiles.len(), script) {
             while ground
                 .get(cursor)
-                .is_some_and(|pos| !self.units_at(*pos).is_empty())
+                .is_some_and(|pos| !self.unit_ids_at(*pos).is_empty())
             {
                 cursor += 1;
             }
@@ -8286,7 +8286,7 @@ impl Game {
                 ship.at.0,
                 ship.at.1
             );
-            if self.map.get(pos).is_none() || !self.units_at(pos).is_empty() {
+            if self.map.get(pos).is_none() || !self.unit_ids_at(pos).is_empty() {
                 continue;
             }
             let uid = self.spawn_unit(crate::trafalgar::SHIP_OF_THE_LINE, pid, pos);
@@ -8340,7 +8340,7 @@ impl Game {
                 self.map.get(*position).is_some_and(|tile| {
                     self.rules.is_passable(tile)
                         && self.rules.is_water(tile) == wants_water
-                        && self.units_at(*position).is_empty()
+                        && self.unit_ids_at(*position).is_empty()
                 })
             };
             // The front first; the anchor's own neighbourhood is the fallback
@@ -8367,7 +8367,7 @@ impl Game {
             self.map.get(*position).is_some_and(|tile| {
                 self.rules.is_passable(tile)
                     && self.rules.is_water(tile) == want_sea
-                    && self.units_at(*position).is_empty()
+                    && self.unit_ids_at(*position).is_empty()
                     && tile
                         .owner_city
                         .is_none_or(|city| self.cities[&city].owner == owner)
@@ -9082,7 +9082,7 @@ impl Game {
             if t.owner_city.is_some()
                 || t.improvement.is_some()
                 || self.city_by_pos.contains_key(pos)
-                || !self.units_at(*pos).is_empty()
+                || !self.unit_ids_at(*pos).is_empty()
             {
                 continue;
             }
@@ -9416,9 +9416,10 @@ impl Game {
                 return None;
             }
             if self.city_at(position).is_some()
-                || self.units_at(position).into_iter().any(|unit| {
-                    self.rules.units[self.units[&unit].kind].class == "military"
-                })
+                || self
+                    .unit_ids_at(position)
+                    .iter()
+                    .any(|unit| self.rules.units[self.units[unit].kind].class == "military")
             {
                 return None;
             }
@@ -9912,11 +9913,14 @@ impl Game {
         self.city_by_pos.get(&pos).copied()
     }
 
+    #[inline]
     pub fn unit_ids_at(&self, pos: Pos) -> &[u32] {
         const EMPTY: &[u32] = &[];
         self.occ.get(&pos).map_or(EMPTY, Vec::as_slice)
     }
 
+    /// Prefer [`unit_ids_at`](Self::unit_ids_at) at a read-only call site — it
+    /// borrows the occupancy list instead of copying it into a fresh `Vec`.
     pub fn units_at(&self, pos: Pos) -> Vec<u32> {
         self.unit_ids_at(pos).to_vec()
     }
@@ -10477,8 +10481,8 @@ impl Game {
         let owner = self.cities[&city].owner;
         let position = self.cities[&city].pos;
         let garrison = self
-            .units_at(position)
-            .into_iter()
+            .unit_ids_at(position)
+            .iter()
             .filter_map(|unit| {
                 let candidate = &self.units[&unit];
                 (candidate.owner == owner
@@ -10935,7 +10939,7 @@ impl Game {
             let chaplain = self
                 .wdisk(unit.pos, 1)
                 .into_iter()
-                .flat_map(|position| self.units_at(position))
+                .flat_map(|position| self.unit_ids_at(position).iter().copied())
                 .filter(|other| self.units[other].owner == unit.owner)
                 .map(|other| self.promotion_effect(&self.units[&other], "adjacent_heal"))
                 .fold(0.0, f64::max);
@@ -12663,9 +12667,10 @@ impl Game {
                 .filter(|position| {
                     self.map.get(*position).is_some_and(|tile| {
                         self.rules.is_passable(tile) && !self.rules.is_water(tile)
-                    }) && !self.units_at(*position).iter().any(|unit| {
-                        self.rules.units[self.units[unit].kind].class == "military"
-                    })
+                    }) && !self
+                        .unit_ids_at(*position)
+                        .iter()
+                        .any(|unit| self.rules.units[self.units[unit].kind].class == "military")
                 })
                 .take(2)
                 .collect();
@@ -14188,7 +14193,7 @@ impl Game {
             strength += self.governor_effect(unit.owner, city.id, "theological_strength");
         }
         if self.wdisk(unit.pos, 1).into_iter().any(|position| {
-            self.units_at(position).into_iter().any(|other| {
+            self.unit_ids_at(position).iter().any(|other| {
                 self.units[&other].owner == unit.owner
                     && self.units[&other].kind == "guru"
                     && self.units[&other].religion == unit.religion
@@ -14238,7 +14243,7 @@ impl Game {
                 * self
                     .nbrs(unit.pos)
                     .into_iter()
-                    .flat_map(|pos| self.units_at(pos))
+                    .flat_map(|pos| self.unit_ids_at(pos))
                     .filter(|id| self.units[id].religion.as_deref() == Some(religion))
                     .count() as f64
     }
@@ -16772,8 +16777,8 @@ impl Game {
                 unit.acted = true;
                 (self.rules.units[unit.kind].class.clone(), unit.pos)
             };
-            let occupied = self.units_at(current_pos).into_iter().any(|other| {
-                other != unit_id
+            let occupied = self.unit_ids_at(current_pos).iter().any(|other| {
+                *other != unit_id
                     && self.units[&other].owner == minor
                     && self.rules.units[self.units[&other].kind].class == class
             });
@@ -16792,7 +16797,7 @@ impl Game {
                 candidates.dedup();
                 let free = candidates.into_iter().find(|position| {
                     self.unit_can_traverse(unit_id, *position)
-                        && !self.units_at(*position).into_iter().any(|other| {
+                        && !self.unit_ids_at(*position).iter().any(|other| {
                             self.units[&other].owner == minor
                                 && self.rules.units[self.units[&other].kind].class == class
                         })
@@ -19677,7 +19682,7 @@ impl Game {
             .and_then(|city_id| self.cities.get(&city_id))
             .map(|city| city.owner);
         told.extend(owner);
-        for unit_id in self.units_at(position) {
+        for unit_id in self.unit_ids_at(position) {
             told.insert(self.units[&unit_id].owner);
         }
         for pid in told {
@@ -20757,7 +20762,7 @@ impl Game {
         if !city.districts.is_empty() {
             supply += government.district_city_amenity;
         }
-        let garrison = self.units_at(city.pos).into_iter().any(|id| {
+        let garrison = self.unit_ids_at(city.pos).iter().any(|id| {
             let o = &self.units[&id];
             o.owner == city.owner && self.rules.units[o.kind].class == "military"
         });
@@ -21684,8 +21689,8 @@ impl Game {
         // you are at peace with is not.
         let mut aggrieved = BTreeSet::new();
         let owners = self
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .map(|uid| self.units[&uid].owner)
             .chain(self.city_at(target).map(|city| self.cities[&city].owner))
             .chain(
@@ -22462,16 +22467,15 @@ impl Game {
             .get(&uid)
             .filter(|unit| unit.kind == "aircraft_carrier")
             .map(|carrier| {
-                self.units_at(carrier.pos)
-                    .into_iter()
+                self.unit_ids_at(carrier.pos)
+                    .iter()
                     .filter(|other| {
-                        *other != uid
+                        **other != uid
                             && self.units[other].owner == carrier.owner
-                            && self.rules.units[self.units[other].kind]
-                                .domain
-                                .as_deref()
+                            && self.rules.units[self.units[other].kind].domain.as_deref()
                                 == Some("air")
                     })
+                    .copied()
                     .collect()
             })
             .unwrap_or_default();
@@ -23400,7 +23404,7 @@ impl Game {
     fn adjacent_support_effect(&self, unit: &Unit, effect: &str) -> f64 {
         self.wdisk(unit.pos, 1)
             .into_iter()
-            .flat_map(|position| self.units_at(position))
+            .flat_map(|position| self.unit_ids_at(position))
             .filter(|other| self.units[other].owner == unit.owner)
             .filter_map(|other| {
                 let support = &self.rules.units[self.units[&other].kind];
@@ -23416,8 +23420,8 @@ impl Game {
     fn adjacent_friendly_unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
         self.wdisk(unit.pos, 1)
             .into_iter()
-            .flat_map(|position| self.units_at(position))
-            .filter(|other| *other != unit.id && self.units[other].owner == unit.owner)
+            .flat_map(|position| self.unit_ids_at(position))
+            .filter(|other| **other != unit.id && self.units[other].owner == unit.owner)
             .map(|other| {
                 self.rules.units[self.units[&other].kind]
                     .effects
@@ -25321,8 +25325,8 @@ impl Game {
             if self.map.get(n).is_none() {
                 continue;
             }
-            for oid in self.units_at(n) {
-                let o = &self.units[&oid];
+            for oid in self.unit_ids_at(n) {
+                let o = &self.units[oid];
                 if o.owner == pid || !self.is_at_war(pid, o.owner) || !self.exerts_zoc(o) {
                     continue;
                 }
@@ -25739,7 +25743,7 @@ impl Game {
         {
             return false;
         }
-        self.units_at(pos).into_iter().all(|other_id| {
+        self.unit_ids_at(pos).iter().all(|other_id| {
             if moving.contains(&other_id) {
                 return true;
             }
@@ -25819,16 +25823,14 @@ impl Game {
         };
         let peer = self.units[&uid].linked_to;
         let carried_aircraft: Vec<u32> = if self.units[&uid].kind == "aircraft_carrier" {
-            self.units_at(self.units[&uid].pos)
-                .into_iter()
+            self.unit_ids_at(self.units[&uid].pos)
+                .iter()
                 .filter(|other| {
-                    *other != uid
+                    **other != uid
                         && self.units[other].owner == self.units[&uid].owner
-                        && self.rules.units[self.units[other].kind]
-                            .domain
-                            .as_deref()
-                            == Some("air")
+                        && self.rules.units[self.units[other].kind].domain.as_deref() == Some("air")
                 })
+                .copied()
                 .collect()
         } else {
             Vec::new()
@@ -27343,8 +27345,8 @@ impl Game {
             .map(|v| *v as f64)
             .unwrap_or(current_best);
         let garrison = self
-            .units_at(city.pos)
-            .into_iter()
+            .unit_ids_at(city.pos)
+            .iter()
             .filter_map(|id| {
                 let u = &self.units[&id];
                 (u.owner == city.owner && self.rules.units[u.kind].class == "military")
@@ -27442,23 +27444,20 @@ impl Game {
     }
 
     fn district_under_siege(&self, owner: usize, position: Pos) -> bool {
-        self.map
-            .around(position)
-            .into_iter()
-            .all(|pos| {
-                let Some(tile) = self.map.get(pos) else {
-                    return true;
-                };
-                if !self.rules.is_passable(tile) {
-                    return true;
-                }
-                self.units_at(pos).into_iter().any(|id| {
-                    let unit = &self.units[&id];
-                    unit.owner != owner
-                        && self.is_at_war(owner, unit.owner)
-                        && self.rules.units[unit.kind].class == "military"
-                }) || self.in_enemy_zoc(owner, pos)
-            })
+        self.map.around(position).into_iter().all(|pos| {
+            let Some(tile) = self.map.get(pos) else {
+                return true;
+            };
+            if !self.rules.is_passable(tile) {
+                return true;
+            }
+            self.unit_ids_at(pos).iter().any(|id| {
+                let unit = &self.units[id];
+                unit.owner != owner
+                    && self.is_at_war(owner, unit.owner)
+                    && self.rules.units[unit.kind].class == "military"
+            }) || self.in_enemy_zoc(owner, pos)
+        })
     }
 
     /// A city cannot heal when every adjacent passable tile is occupied by a
@@ -34480,7 +34479,7 @@ impl Game {
                     Some(d) => city.districts.iter().any(|(built, position)| {
                         self.district_is_family(built, d)
                             && self.district_is_active(city, built, *position)
-                            && !self.units_at(*position).into_iter().any(|unit| {
+                            && !self.unit_ids_at(*position).iter().any(|unit| {
                                 self.units[&unit].owner != pid
                                     && self.is_at_war(pid, self.units[&unit].owner)
                             })
@@ -34527,7 +34526,7 @@ impl Game {
                 };
                 if tile.owner_city != Some(cid)
                     || tile.district.is_none()
-                    || self.units_at(*pos).into_iter().any(|unit| {
+                    || self.unit_ids_at(*pos).iter().any(|unit| {
                         self.units[&unit].owner != pid
                             && self.is_at_war(pid, self.units[&unit].owner)
                     })
@@ -35471,7 +35470,7 @@ impl Game {
                 && u.attacks_left > 0
             {
                 for target in self.nbrs(u.pos) {
-                    let rival = self.units_at(target).into_iter().any(|id| {
+                    let rival = self.unit_ids_at(target).iter().any(|id| {
                         let other = &self.units[&id];
                         self.rules.units[other.kind].class == "religious"
                             && other.owner != pid
@@ -35485,7 +35484,7 @@ impl Game {
                 }
             }
             if spec.class == "military" && u.moves_left > 0.0 {
-                for target_unit in self.units_at(u.pos) {
+                for target_unit in self.unit_ids_at(u.pos) {
                     let target = &self.units[&target_unit];
                     if target.owner != pid
                         && self.rules.units[target.kind].class == "religious"
@@ -35496,7 +35495,7 @@ impl Game {
                     {
                         acts.push(Action::CondemnHeretic {
                             unit: uid,
-                            target_unit,
+                            target_unit: *target_unit,
                         });
                     }
                 }
@@ -35505,7 +35504,7 @@ impl Game {
                 let damaged = self
                     .wdisk(u.pos, 1)
                     .into_iter()
-                    .flat_map(|pos| self.units_at(pos))
+                    .flat_map(|pos| self.unit_ids_at(pos))
                     .any(|id| self.units[&id].religion == u.religion && self.units[&id].hp < 100);
                 if damaged {
                     acts.push(Action::HealReligious { unit: uid });
@@ -35577,7 +35576,7 @@ impl Game {
                 && self.barb_pid.is_some_and(|barbarian| {
                     self.wdisk(u.pos, 1)
                         .into_iter()
-                        .flat_map(|position| self.units_at(position))
+                        .flat_map(|position| self.unit_ids_at(position))
                         .any(|other| self.units[&other].owner == barbarian)
                 })
             {
@@ -35807,7 +35806,7 @@ impl Game {
                         if !self.map.tiles.contains_key(&pos) {
                             continue;
                         }
-                        let hit = self.units_at(pos).into_iter().any(|oid| {
+                        let hit = self.unit_ids_at(pos).iter().any(|oid| {
                             let o = &self.units[&oid];
                             o.owner != pid
                                 && self.is_at_war(pid, o.owner)
@@ -35839,7 +35838,7 @@ impl Game {
                         continue;
                     };
                     for pos in self.wdisk(source, 2) {
-                        let hit = self.units_at(pos).into_iter().any(|id| {
+                        let hit = self.unit_ids_at(pos).iter().any(|id| {
                             let other = &self.units[&id];
                             other.owner != pid
                                 && self.is_at_war(pid, other.owner)
@@ -36416,7 +36415,7 @@ impl Game {
     }
 
     fn enemy_combat_target_at(&self, pid: usize, pos: Pos) -> bool {
-        for oid in self.units_at(pos) {
+        for oid in self.unit_ids_at(pos) {
             let unit = &self.units[&oid];
             if unit.owner != pid
                 && self.is_at_war(pid, unit.owner)
@@ -36446,19 +36445,20 @@ impl Game {
 
     pub(crate) fn priority_support_target_at(&self, pid: usize, pos: Pos) -> Option<u32> {
         let mut supports: Vec<u32> = self
-            .units_at(pos)
-            .into_iter()
+            .unit_ids_at(pos)
+            .iter()
             .filter(|unit| {
                 let unit = &self.units[unit];
                 unit.owner != pid
                     && self.is_at_war(pid, unit.owner)
                     && self.rules.units[unit.kind].class == "support"
             })
+            .copied()
             .collect();
         supports.sort_unstable();
         supports.into_iter().find(|support| {
             let owner = self.units[support].owner;
-            self.units_at(pos).into_iter().any(|escort| {
+            self.unit_ids_at(pos).iter().any(|escort| {
                 let escort = &self.units[&escort];
                 escort.owner == owner
                     && self.rules.units[escort.kind].class == "military"
@@ -37129,8 +37129,9 @@ impl Game {
                 {
                     return None;
                 }
-                let destination = self.city_active_district_family_position(city, crate::name!("aerodrome"))?;
-                (!self.units_at(destination).into_iter().any(|other| {
+                let destination =
+                    self.city_active_district_family_position(city, crate::name!("aerodrome"))?;
+                (!self.unit_ids_at(destination).iter().any(|other| {
                     let other = &self.units[&other];
                     other.owner != pid || self.rules.units[other.kind].class == spec.class
                 }))
@@ -37182,16 +37183,14 @@ impl Game {
             None
         };
         let carrier_aircraft: Vec<u32> = if u.kind == "aircraft_carrier" {
-            self.units_at(u.pos)
-                .into_iter()
+            self.unit_ids_at(u.pos)
+                .iter()
                 .filter(|other| {
-                    *other != uid
+                    **other != uid
                         && self.units[other].owner == pid
-                        && self.rules.units[self.units[other].kind]
-                            .domain
-                            .as_deref()
-                            == Some("air")
+                        && self.rules.units[self.units[other].kind].domain.as_deref() == Some("air")
                 })
+                .copied()
                 .collect()
         } else {
             Vec::new()
@@ -37371,8 +37370,8 @@ impl Game {
         }
         if u.kind == "hoplite"
             && self.nbrs(u.pos).into_iter().any(|p| {
-                self.units_at(p).into_iter().any(|id| {
-                    id != uid
+                self.unit_ids_at(p).iter().any(|id| {
+                    *id != uid
                         && self.units[&id].owner == u.owner
                         && self.units[&id].kind == "hoplite"
                 })
@@ -37447,7 +37446,7 @@ impl Game {
             bonus += self
                 .nbrs(u.pos)
                 .into_iter()
-                .flat_map(|pos| self.units_at(pos))
+                .flat_map(|pos| self.unit_ids_at(pos))
                 .filter(|id| {
                     let ally = &self.units[id];
                     ally.owner == u.owner
@@ -37595,8 +37594,8 @@ impl Game {
         let additional = self
             .nbrs(target)
             .into_iter()
-            .flat_map(|p| self.units_at(p))
-            .filter(|id| *id != uid)
+            .flat_map(|p| self.unit_ids_at(p))
+            .filter(|id| **id != uid)
             .filter(|id| {
                 let u = &self.units[id];
                 u.owner == owner
@@ -37656,7 +37655,7 @@ impl Game {
         let adjacent = self
             .nbrs(defender.pos)
             .into_iter()
-            .flat_map(|p| self.units_at(p))
+            .flat_map(|p| self.unit_ids_at(p))
             .filter(|id| {
                 let u = &self.units[id];
                 u.owner == defender.owner && self.rules.units[u.kind].class == "military"
@@ -37707,12 +37706,13 @@ impl Game {
     fn pillage_encampment(&mut self, uid: u32, cid: u32, target: Pos) {
         let defender = self.cities[&cid].owner;
         let garrison: Vec<u32> = self
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter(|id| {
                 self.units[id].owner == defender
                     && self.rules.units[self.units[id].kind].class == "military"
             })
+            .copied()
             .collect();
         for id in garrison {
             self.remove_unit(id);
@@ -37795,8 +37795,8 @@ impl Game {
         }
         let adjacent_support = |kind: &str| {
             self.nbrs(target).into_iter().any(|position| {
-                self.units_at(position)
-                    .into_iter()
+                self.unit_ids_at(position)
+                    .iter()
                     .any(|id| self.units[&id].owner == attacker && self.units[&id].kind == kind)
             })
         };
@@ -37890,12 +37890,13 @@ impl Game {
             }
         }
         let enemy_ids: Vec<u32> = self
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter(|id| {
                 let owner = self.units[id].owner;
                 owner != pid && self.is_at_war(pid, owner)
             })
+            .copied()
             .collect();
         let mut city_id = self.city_at(target);
         if let Some(cid) = city_id {
@@ -38023,7 +38024,7 @@ impl Game {
                 return Ok(());
             }
             if d_dead {
-                let enemy_military_left = self.units_at(target).into_iter().any(|id| {
+                let enemy_military_left = self.unit_ids_at(target).iter().any(|id| {
                     let o = &self.units[&id];
                     o.owner != pid && self.rules.units[o.kind].class == "military"
                 });
@@ -38239,14 +38240,15 @@ impl Game {
             }
         }
         let mut enemy_ids: Vec<u32> = self
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter(|id| {
                 let owner = self.units[id].owner;
                 owner != pid
                     && self.is_at_war(pid, owner)
-                    && self.unit_currently_visible_to(*id, pid)
+                    && self.unit_currently_visible_to(**id, pid)
             })
+            .copied()
             .collect();
         enemy_ids.extend(self.units.values().filter_map(|unit| {
             (unit.air_patrol
@@ -39535,7 +39537,7 @@ impl Game {
             return false;
         };
         if self.district_is_family(district, crate::name!("encampment"))
-            || self.units_at(pos).iter().any(|id| {
+            || self.unit_ids_at(pos).iter().any(|id| {
                 self.units[id].owner == city.owner
                     && self.rules.units[self.units[id].kind].class == "military"
                     && self.rules.units[self.units[id].kind]
@@ -39837,8 +39839,8 @@ impl Game {
             }
         }
         capacity += self
-            .units_at(pos)
-            .into_iter()
+            .unit_ids_at(pos)
+            .iter()
             .filter(|id| self.units[id].owner == pid && self.units[id].kind == "aircraft_carrier")
             .map(|id| 2 + self.promotion_effect(&self.units[&id], "aircraft_slots") as i32)
             .sum::<i32>();
@@ -39846,8 +39848,8 @@ impl Game {
     }
 
     fn air_units_at(&self, pid: usize, pos: Pos) -> i32 {
-        self.units_at(pos)
-            .into_iter()
+        self.unit_ids_at(pos)
+            .iter()
             .filter(|id| {
                 self.units[id].owner == pid
                     && self.rules.units[self.units[id].kind]
@@ -39871,14 +39873,10 @@ impl Game {
     /// their ordinary rebase radius; if none exists, they are destroyed.
     fn scatter_aircraft_from(&mut self, pos: Pos) {
         let mut aircraft: Vec<u32> = self
-            .units_at(pos)
-            .into_iter()
-            .filter(|unit| {
-                self.rules.units[self.units[unit].kind]
-                    .domain
-                    .as_deref()
-                    == Some("air")
-            })
+            .unit_ids_at(pos)
+            .iter()
+            .filter(|unit| self.rules.units[self.units[unit].kind].domain.as_deref() == Some("air"))
+            .copied()
             .collect();
         aircraft.sort_unstable();
         let retained = aircraft
@@ -40312,13 +40310,13 @@ impl Game {
                 self.remove_unit(defender_id);
                 self.on_unit_lost(defender.owner);
             }
-        } else if let Some(defender_id) = self.units_at(target).into_iter().find(|id| {
+        } else if let Some(defender_id) = self.unit_ids_at(target).iter().find(|id| {
             self.units[id].owner != pid
                 && self.is_at_war(pid, self.units[id].owner)
                 && self.rules.units[self.units[id].kind].class == "support"
-                && self.unit_currently_visible_to(*id, pid)
+                && self.unit_currently_visible_to(**id, pid)
         }) {
-            self.priority_damage_support(pid, uid, defender_id);
+            self.priority_damage_support(pid, uid, *defender_id);
         }
         self.consume_unit_attack(uid);
         if let Some(aircraft) = self.units.get_mut(&uid) {
@@ -40565,7 +40563,7 @@ impl Game {
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
             })
         };
-        if self.units_at(city.pos).into_iter().any(|uid| {
+        if self.unit_ids_at(city.pos).iter().any(|uid| {
             let other = &self.units[&uid];
             other.owner != pid || is_land_combat(&other.kind)
         }) {
@@ -41803,8 +41801,8 @@ impl Game {
         let mut targeted_owners = BTreeSet::new();
         for position in &blast {
             let victims = self
-                .units_at(*position)
-                .into_iter()
+                .unit_ids_at(*position)
+                .iter()
                 .map(|uid| self.units[&uid].owner)
                 .chain(self.city_at(*position).map(|c| self.cities[&c].owner))
                 .chain(
@@ -42072,14 +42070,15 @@ impl Game {
             return Err("line of sight blocked".into());
         }
         let enemies: Vec<u32> = self
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter(|id| {
                 let o = &self.units[id];
                 o.owner != pid
                     && self.is_at_war(pid, o.owner)
-                    && self.unit_currently_visible_to(*id, pid)
+                    && self.unit_currently_visible_to(**id, pid)
             })
+            .copied()
             .collect();
         if enemies.is_empty() {
             return Err("no enemy target".into());
@@ -44677,8 +44676,8 @@ impl Game {
                 if territory_owner.is_some_and(|owner| owner != unit.owner) {
                     return false;
                 }
-                self.units_at(**position).into_iter().all(|other_id| {
-                    other_id == unit_id
+                self.unit_ids_at(**position).iter().all(|other_id| {
+                    *other_id == unit_id
                         || (self.units[&other_id].owner == unit.owner
                             && self.rules.units[self.units[&other_id].kind].class
                                 != spec.class)
@@ -46262,8 +46261,8 @@ impl Game {
             }
         }
         let garrison_formation = self
-            .units_at(cpos)
-            .into_iter()
+            .unit_ids_at(cpos)
+            .iter()
             .filter(|uid| {
                 self.units[uid].owner == pid
                     && self.rules.units[self.units[uid].kind].class == "military"
@@ -51670,7 +51669,7 @@ impl Game {
                 continue;
             }
             let mut occupied = false;
-            for oid in self.units_at(cand) {
+            for oid in self.unit_ids_at(cand) {
                 let o = &self.units[&oid];
                 if o.owner != owner || self.rules.units[o.kind].class == spec.class {
                     occupied = true;

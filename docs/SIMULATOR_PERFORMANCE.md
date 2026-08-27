@@ -3324,6 +3324,95 @@ seeds 7320000..7320003 (4 games x 1 interleave(s) = 4 pairs),
 Read the identity line, not the timing: the host carried a load average above 90
 for the whole window and a dozen agents share it.
 
+## 2026-08-27 — `units_at` copied the occupancy list at 292 call sites for one that reads it
+
+`Game::units_at(pos)` is `self.unit_ids_at(pos).to_vec()` — a fresh heap `Vec<u32>`
+on every call, for a value that lives one statement. `Game::unit_ids_at(pos)`
+returns the same ids as a `&[u32]` borrowed straight out of the occupancy
+map, no allocation, same order. Both have existed since early on; almost every
+call site had kept using the allocating one, including the ones inside a
+per-neighbour or per-tile loop — `in_enemy_zoc` over six neighbours,
+`unit_heal_rate`'s chaplain search over `wdisk(unit.pos, 1)`, every ZoC and
+combat-target scan.
+
+A census at the start of this change found 292 call sites across `game.rs`,
+`ai.rs`, `ai/advanced.rs`, and their test/submodule files — roughly twice the
+number a line-number sample from an earlier commit had suggested, because the
+submodule files (`src/ai/advanced/*.rs`, `src/game/*.rs`) hold as many sites
+between them as the three hotspot files do.
+
+### Converting 292 sites by hand does not scale; converting them by compiler does
+
+Reasoning about each site's borrow shape individually — does the surviving
+code hold the slice across a `&mut self` call, does a closure need one deref
+or two — is exactly what the borrow checker already does per site, correctly,
+every time. The conversion here was mechanical instead of manual:
+
+1. Rewrite every `.units_at(` to `.unit_ids_at(` in the claimed files (a
+   `sed` pass; the function *definition*, `fn units_at`, doesn't match the
+   call-site pattern `.units_at(`, so it is untouched).
+2. `cargo check --message-format=json`, and revert to `.units_at(` only the
+   specific lines a compile error's spans implicate.
+3. `cargo fix --broken-code` picks up everything with a machine-applicable
+   suggestion — mostly `for id in unit_ids_at(...)` loops where the bound
+   name changed from an owned `u32` to a borrowed `&u32` and downstream
+   `*id` / `self.units[&id]` needed a deref adjusted to match.
+4. Repeat 2–3 until the error set stops shrinking, then hand-fix what neither
+   step reaches: `.collect()` into an owned `Vec<u32>` (or a tuple containing
+   one) needs `.copied()` or a `*id` inside the constructing closure — cheap,
+   because only the *surviving filtered subset* gets copied, not the whole
+   occupancy list up front, which is a net win over the pre-change code, not
+   a wash; and the borrow-conflict idiom below, which the compiler correctly
+   refuses and this change leaves alone.
+
+The one idiom that has to keep allocating: a site that finds a target unit
+and then calls `&mut self` methods against it for the rest of the block
+(`apply_unit_damage`, `remove_unit`, `record_war_unit_participation`, …) needs
+an *owned* id, because a borrowed `&u32` sourced from `self.occ` would still
+be live across those mutations. Religious combat resolution and the
+encampment-strike defender search are both this shape; both were left on
+`units_at`, exactly as the task that produced this change predicted.
+
+### The result, by file
+
+| file | now borrowing (`unit_ids_at`) | still allocating (`units_at`) |
+| --- | ---: | ---: |
+| `game.rs` | 65 | 11 |
+| `ai.rs` | 56 | 0 |
+| `ai/advanced.rs` | 34 | 2 |
+| `ai/advanced/*.rs` (submodules) | 97 | 1 |
+| `game/*.rs` (submodules) | 37 | 2 |
+| **total** | **289** | **16** |
+
+The 16 remaining sites are the mutate-while-holding-the-id shape above, plus
+one `.collect()` into an owned `Vec` that a caller elsewhere still consumes by
+value — converting it would only move the allocation, not remove it.
+
+### The counter
+
+A temporary `AtomicU64` on `units_at` (not committed — a scratch build only),
+one 150-turn, 6-player game, seed 7320000, `--width 74 --height 46
+--city-states 9 --speed online --map continents`, `--jobs 1`:
+
+| | calls to `units_at` |
+| --- | ---: |
+| before | **19,731,233** |
+| after | **274,822** |
+
+A 71.8x drop — 98.6% of what used to be a fresh heap allocation per call is
+now a slice borrow. The 274,822 that remain are the sites this change
+correctly left alone.
+
+### Exactness
+
+`tools/speed_ab.py` hashed both arms' reports on seeds 7320000–7320001
+(2 games, 6p) — same game on every seed. The two runs that produced the
+counter numbers above are the same comparison with the instrumentation left
+in: their stdout (turn timer aside) is byte-identical.
+`advanced_v1_plays_the_same_game_it_always_did` passes, and the full suite
+(`cargo test --profile ci --locked`) is green: 2,586 lib tests plus every
+integration and protocol-parity suite, 0 failures.
+
 ## 2026-08-27 — the policy review valued the whole empire to price a Great-Scientist card
 
 `AdvancedAi::production_weights` sets `PolicyDeck::Live`, so every deployment
