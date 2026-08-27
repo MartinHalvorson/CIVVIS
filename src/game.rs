@@ -8507,7 +8507,7 @@ impl Game {
         let mut ground: Vec<Pos> = self.map.tiles.keys().copied().collect();
         ground.sort_by_key(|position| (self.wdist(anchor, *position), *position));
         for kind in units {
-            let Some(spec) = self.rules.units.get(*kind) else {
+            let Some(spec) = self.rules.units.get(kind) else {
                 continue;
             };
             let wants_water = spec.domain.as_deref() == Some("sea");
@@ -10636,7 +10636,7 @@ impl Game {
             .unit_ids_at(position)
             .iter()
             .filter_map(|unit| {
-                let candidate = &self.units[&unit];
+                let candidate = &self.units[unit];
                 (candidate.owner == owner && self.rules.units[candidate.kind].class == "military")
                     .then_some(candidate)
             })
@@ -14070,7 +14070,7 @@ impl Game {
             // ⚠ The price, not a literal. The old message said "needs 25 faith" on
             // every speed, so a refusal on Online named a number the game was not
             // charging and read as a CIVVIS bug rather than a scaling one.
-            return Err(format!("needs {cost:.0} faith").into());
+            return Err(format!("needs {cost:.0} faith"));
         }
         if !self.rules.beliefs.pantheon.contains_key(belief) {
             return Err("no such pantheon belief".into());
@@ -14357,9 +14357,9 @@ impl Game {
         }
         if self.wdisk(unit.pos, 1).into_iter().any(|position| {
             self.unit_ids_at(position).iter().any(|other| {
-                self.units[&other].owner == unit.owner
-                    && self.units[&other].kind == "guru"
-                    && self.units[&other].religion == unit.religion
+                self.units[other].owner == unit.owner
+                    && self.units[other].kind == "guru"
+                    && self.units[other].religion == unit.religion
             })
         }) {
             strength += self.empire_wonder_effect(unit.owner, "guru_adjacent_religious_strength");
@@ -16933,8 +16933,8 @@ impl Game {
             };
             let occupied = self.unit_ids_at(current_pos).iter().any(|other| {
                 *other != unit_id
-                    && self.units[&other].owner == minor
-                    && self.rules.units[self.units[&other].kind].class == class
+                    && self.units[other].owner == minor
+                    && self.rules.units[self.units[other].kind].class == class
             });
             if occupied {
                 // Look outward from where the operative actually stands before
@@ -16952,8 +16952,8 @@ impl Game {
                 let free = candidates.into_iter().find(|position| {
                     self.unit_can_traverse(unit_id, *position)
                         && !self.unit_ids_at(*position).iter().any(|other| {
-                            self.units[&other].owner == minor
-                                && self.rules.units[self.units[&other].kind].class == class
+                            self.units[other].owner == minor
+                                && self.rules.units[self.units[other].kind].class == class
                         })
                 });
                 match free {
@@ -19837,7 +19837,7 @@ impl Game {
             .map(|city| city.owner);
         told.extend(owner);
         for unit_id in self.unit_ids_at(position) {
-            told.insert(self.units[&unit_id].owner);
+            told.insert(self.units[unit_id].owner);
         }
         for pid in told {
             self.note(pid, "World", text.clone(), Some(position));
@@ -20914,7 +20914,7 @@ impl Game {
             supply += government.district_city_amenity;
         }
         let garrison = self.unit_ids_at(city.pos).iter().any(|id| {
-            let o = &self.units[&id];
+            let o = &self.units[id];
             o.owner == city.owner && self.rules.units[o.kind].class == "military"
         });
         if garrison {
@@ -21840,7 +21840,7 @@ impl Game {
         let owners = self
             .unit_ids_at(target)
             .iter()
-            .map(|uid| self.units[&uid].owner)
+            .map(|uid| self.units[uid].owner)
             .chain(self.city_at(target).map(|city| self.cities[&city].owner))
             .chain(
                 self.encampment_at(target)
@@ -23566,7 +23566,7 @@ impl Game {
             .flat_map(|position| self.unit_ids_at(position))
             .filter(|other| self.units[other].owner == unit.owner)
             .filter_map(|other| {
-                let support = &self.rules.units[self.units[&other].kind];
+                let support = &self.rules.units[self.units[other].kind];
                 (support.class == "support")
                     .then(|| support.effects.get(effect).copied().unwrap_or(0.0))
             })
@@ -23582,7 +23582,7 @@ impl Game {
             .flat_map(|position| self.unit_ids_at(position))
             .filter(|other| **other != unit.id && self.units[other].owner == unit.owner)
             .map(|other| {
-                self.rules.units[self.units[&other].kind]
+                self.rules.units[self.units[other].kind]
                     .effects
                     .get(effect)
                     .copied()
@@ -25996,10 +25996,10 @@ impl Game {
             return false;
         }
         self.unit_ids_at(pos).iter().all(|other_id| {
-            if moving.contains(&other_id) {
+            if moving.contains(other_id) {
                 return true;
             }
-            let other = &self.units[&other_id];
+            let other = &self.units[other_id];
             let other_spec = &self.rules.units[other.kind];
             if other_spec.domain.as_deref() == Some("air") {
                 return true;
@@ -27869,7 +27869,7 @@ impl Game {
                 self.units[uid].owner == pid
                     && self.rules.units[self.units[uid].kind].class == "military"
             })
-            .map(|uid| self.units[&uid].formation)
+            .map(|uid| self.units[uid].formation)
             .max();
         let garrisoned = garrison_formation.is_some();
         if let Some(formation) = garrison_formation {
@@ -33254,7 +33254,7 @@ impl Game {
             }
             let mut occupied = false;
             for oid in self.unit_ids_at(cand) {
-                let o = &self.units[&oid];
+                let o = &self.units[oid];
                 if o.owner != owner || self.rules.units[o.kind].class == spec.class {
                     occupied = true;
                     break;

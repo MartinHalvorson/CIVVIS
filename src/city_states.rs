@@ -160,7 +160,7 @@ fn farthest(
             pick = position;
         } else if (score - best).abs() <= f64::EPSILON {
             seen += 1;
-            if rng.next_u64() % seen == 0 {
+            if rng.next_u64().is_multiple_of(seen) {
                 pick = position;
             }
         }

@@ -791,11 +791,10 @@ fn step_cycle_pipelined(
             }
             None => census.unplanned_seats += 1,
         }
-        if g.winner.is_none() && g.current == seat {
-            if !close_seat_turn(g, seat, &mut census.forced) {
-                census.aborted = true;
-                break;
-            }
+        if g.winner.is_none() && g.current == seat && !close_seat_turn(g, seat, &mut census.forced)
+        {
+            census.aborted = true;
+            break;
         }
     }
     // Let the cycle's whole fleet report before touching the next cycle:
@@ -920,13 +919,12 @@ where
             // turn here and plans normally next turn.
             None => census.unplanned_seats += 1,
         }
-        if g.winner.is_none() && g.current == seat {
-            if !close_seat_turn(g, seat, &mut census.forced) {
-                // Closing failed within the bound. Abandon the game
-                // loudly rather than replaying the same turn forever.
-                census.aborted = true;
-                return false;
-            }
+        if g.winner.is_none() && g.current == seat && !close_seat_turn(g, seat, &mut census.forced)
+        {
+            // Closing failed within the bound. Abandon the game
+            // loudly rather than replaying the same turn forever.
+            census.aborted = true;
+            return false;
         }
     }
     // Plans the cursor never reached: their seats were eliminated by an

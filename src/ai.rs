@@ -3536,9 +3536,9 @@ impl BasicAi {
         }
     }
 
-    fn live_great_person_district<'a>(
-        need: &'a crate::game::LiveGreatPersonActivationNeed,
-    ) -> Option<&'a str> {
+    fn live_great_person_district(
+        need: &crate::game::LiveGreatPersonActivationNeed,
+    ) -> Option<&str> {
         match need.required_district.as_deref() {
             Some("city_center") => None,
             Some(family) => Some(family),
@@ -4266,7 +4266,7 @@ impl BasicAi {
             && g.barb_pid.is_some_and(|barb| {
                 g.unit_ids_at(target)
                     .iter()
-                    .any(|other| g.units[&other].owner == barb)
+                    .any(|other| g.units[other].owner == barb)
             }) {
             BARBARIAN_BARGAIN_DISCOUNT
         } else {
@@ -8519,7 +8519,7 @@ impl BasicAi {
                 let cpos = g.cities[cid].pos;
                 for pos in g.wdisk(cpos, 2) {
                     let hit = g.unit_ids_at(pos).iter().any(|oid| {
-                        let o = &g.units[&oid];
+                        let o = &g.units[oid];
                         o.owner != pid && g.is_at_war(pid, o.owner)
                     });
                     if hit {
@@ -8876,7 +8876,7 @@ impl BasicAi {
                     let center = g.cities[cid].pos;
                     let occupied = self.live_religious_purchase_guard
                         && g.unit_ids_at(center).iter().any(|uid| {
-                            let unit = &g.units[&uid];
+                            let unit = &g.units[uid];
                             unit.owner == pid
                                 && g.rules
                                     .units
@@ -11053,7 +11053,7 @@ impl BasicAi {
             for (family, weight) in dpri.iter_mut() {
                 let have = mine
                     .iter()
-                    .filter(|city| g.city_has_district_family(city, Name::new(*family)))
+                    .filter(|city| g.city_has_district_family(city, Name::new(family)))
                     .count() as f64;
                 // 1.0 when no city has it, falling toward 0.5 when every city
                 // does — a quarter under `district_coverage_2`.
@@ -11710,7 +11710,7 @@ impl BasicAi {
             let mut adjacent_support = 0;
             for n in g.nbrs(tile) {
                 for oid in g.unit_ids_at(n) {
-                    let o = &g.units[&oid];
+                    let o = &g.units[oid];
                     if g.rules.units[o.kind].class != "military" {
                         continue;
                     }
@@ -13050,7 +13050,7 @@ impl BasicAi {
 
     fn is_enemy_tile(&self, g: &Game, pos: Pos, enemy_ids: &[usize]) -> bool {
         for oid in g.unit_ids_at(pos) {
-            if enemy_ids.contains(&g.units[&oid].owner) {
+            if enemy_ids.contains(&g.units[oid].owner) {
                 return true;
             }
         }
@@ -13079,7 +13079,7 @@ impl BasicAi {
         let defender = g
             .unit_ids_at(pos)
             .iter()
-            .map(|oid| &g.units[&oid])
+            .map(|oid| &g.units[oid])
             .filter(|o| g.rules.units[o.kind].class == "military")
             .max_by(|a, b| {
                 effective_strength(g.unit_strength(a, true), a.hp)
@@ -13165,7 +13165,7 @@ impl BasicAi {
         let mut wanting: Vec<(i64, Pos)> = Vec::new();
         for city in g.cities.values().filter(|city| city.owner == pid) {
             let held = g.unit_ids_at(city.pos).iter().any(|uid| {
-                g.units[&uid].owner == pid && g.rules.units[g.units[&uid].kind].class == "military"
+                g.units[uid].owner == pid && g.rules.units[g.units[uid].kind].class == "military"
             });
             if held {
                 continue;
@@ -13402,7 +13402,7 @@ impl BasicAi {
             return 0.0;
         }
         let harmless_ship = g.unit_ids_at(target).iter().any(|other| {
-            let unit = &g.units[&other];
+            let unit = &g.units[other];
             Some(unit.owner) == g.barb_pid
                 && Self::is_barbarian_raider(g, unit)
                 && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
@@ -13505,7 +13505,7 @@ impl BasicAi {
                 let defender = g
                     .unit_ids_at(*camp)
                     .iter()
-                    .filter_map(|other| g.units.get(&other))
+                    .filter_map(|other| g.units.get(other))
                     .filter(|other| {
                         enemy_ids.contains(&other.owner)
                             && g.rules.units[other.kind].class == "military"
@@ -14874,10 +14874,10 @@ impl BasicAi {
         };
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
             g.unit_ids_at(position).iter().any(|other| {
-                g.units[&other].owner != pid
-                    && g.is_at_war(pid, g.units[&other].owner)
-                    && g.units[&other].kind == "settler"
-                    && barb_rescue != Some(g.units[&other].owner)
+                g.units[other].owner != pid
+                    && g.is_at_war(pid, g.units[other].owner)
+                    && g.units[other].kind == "settler"
+                    && barb_rescue != Some(g.units[other].owner)
             })
         });
         let decline_settlers = adjacent_enemy_settler
@@ -15150,7 +15150,7 @@ impl BasicAi {
                     .unit_ids_at(position)
                     .iter()
                     .filter_map(|other| {
-                        let other = &g.units[&other];
+                        let other = &g.units[other];
                         if other.owner == pid || !g.is_at_war(pid, other.owner) {
                             return None;
                         }
@@ -15388,7 +15388,7 @@ impl BasicAi {
                 // A civilian standing under an enemy military unit cannot be
                 // captured by entering; that tile is an attack problem.
                 let guarded = g.unit_ids_at(other.pos).iter().any(|oid| {
-                    let blocker = &g.units[&oid];
+                    let blocker = &g.units[oid];
                     blocker.owner != pid && g.rules.units[blocker.kind].class == "military"
                 });
                 if guarded {

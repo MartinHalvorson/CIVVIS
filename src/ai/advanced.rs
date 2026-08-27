@@ -6763,7 +6763,7 @@ impl AdvancedAi {
             .iter()
             .filter(|(settler, _)| {
                 g.units
-                    .get(*settler)
+                    .get(settler)
                     .is_some_and(|unit| unit.owner == pid && unit.kind == "settler")
             })
             .map(|(_, guard)| *guard)
@@ -7506,7 +7506,7 @@ impl AdvancedAi {
         path.insert(goal.as_str().to_string());
         let mut cost: f64 = path
             .iter()
-            .filter(|tech| !g.players[pid].techs.contains(&Name::new(*tech)))
+            .filter(|tech| !g.players[pid].techs.contains(&Name::new(tech)))
             .map(|tech| g.tech_cost(tech.as_str()))
             .sum();
         if let Some(current) = g.players[pid].research.as_deref() {
@@ -13361,10 +13361,8 @@ impl AdvancedAi {
             GrandStrategy::Religion if g.players[pid].religion.is_some() => {
                 temporary.push("inquisition");
             }
-            GrandStrategy::Conquest if at_war => {
-                if elite_affordable {
-                    temporary.push("elite_forces");
-                }
+            GrandStrategy::Conquest if at_war && elite_affordable => {
+                temporary.push("elite_forces");
             }
             _ => {}
         }
@@ -15654,7 +15652,7 @@ impl AdvancedAi {
             .into_iter()
             .flat_map(|position| g.unit_ids_at(position))
             .any(|other| {
-                g.units.get(&other).is_some_and(|other| {
+                g.units.get(other).is_some_and(|other| {
                     other.owner == war.target_player
                         && g.rules.units[other.kind].class == "military"
                 })
@@ -18847,15 +18845,15 @@ impl AdvancedAi {
         }
         let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
         let cost = |name: &str| {
-            g.rules
-                .projects
-                .contains_key(name)
-                .then(|| {
+            if g.rules.projects.contains_key(name) {
+                {
                     g.item_cost(&Item::Project {
                         project: Name::new(name),
                     })
-                })
-                .unwrap_or(0.0)
+                }
+            } else {
+                0.0
+            }
         };
         let total = match project {
             "manhattan_project" => cost("manhattan_project") + cost("build_nuclear_device"),
@@ -20727,7 +20725,7 @@ impl AdvancedAi {
         // amenity lift, then the fastest legal completion.
         let mut best: Option<(u8, i64, f64, f64, u32, String, Item)> = None;
         for (cid, shortfall) in shortfalls {
-            if shortfall == 0 || g.cities[&cid].queue.first().is_some() {
+            if shortfall == 0 || !g.cities[&cid].queue.is_empty() {
                 continue;
             }
             let city = &g.cities[&cid];
@@ -20895,7 +20893,7 @@ impl AdvancedAi {
             let current = &g.cities[&city];
             let threatened = plan.threatened_city == Some(city)
                 || (current.last_attacked > 0 && g.turn.saturating_sub(current.last_attacked) <= 4);
-            if current.queue.first().is_some() || threatened {
+            if !current.queue.is_empty() || threatened {
                 continue;
             }
             let Some(unit) = self.base.best_naval_recon(g, pid, city) else {
@@ -26242,16 +26240,12 @@ impl AdvancedAi {
                         *candidate,
                     )
                 });
-            match guard {
-                Some(guard) => {
-                    think!(self.journal(), Expansion, Detail, "A guard joins the settler";
-                           "it will share the settler's tile; a stacked civilian cannot \
-                            be captured");
-                    self.settler_guards.insert(uid, guard);
-                }
-                // Nobody can come: march unescorted rather than freeze the
-                // expansion window behind a guard that does not exist.
-                None => return None,
+            {
+                let guard = guard?;
+                think!(self.journal(), Expansion, Detail, "A guard joins the settler";
+                       "it will share the settler's tile; a stacked civilian cannot \
+                        be captured");
+                self.settler_guards.insert(uid, guard);
             }
         }
         let guard = self.settler_guards[&uid];
@@ -26634,7 +26628,7 @@ impl AdvancedAi {
             let guarded_here = g.city_at(current).is_some()
                 || g.unit_ids_at(current).iter().any(|other| {
                     *other != uid
-                        && g.units.get(&other).is_some_and(|unit| {
+                        && g.units.get(other).is_some_and(|unit| {
                             unit.owner == pid
                                 && g.rules.units[unit.kind].class == "military"
                                 // See `settler_guard_holds`: only the bound
@@ -26642,7 +26636,7 @@ impl AdvancedAi {
                                 // hold. Anyone else walks off; an outmatched
                                 // guard is broken and the settler taken.
                                 && (!self.settler_guard_holds_on()
-                                    || (self.settler_guards.get(&uid) == Some(&other)
+                                    || (self.settler_guards.get(&uid) == Some(other)
                                         && unit.hp >= STACKED_GUARD_MIN_HP
                                         && !self.guard_outmatched_at(
                                             g,
@@ -27608,7 +27602,7 @@ impl AdvancedAi {
         });
         let hostile_nearby = g.wdisk(pos, 4).into_iter().any(|neighbor| {
             g.unit_ids_at(neighbor).iter().any(|uid| {
-                let unit = &g.units[&uid];
+                let unit = &g.units[uid];
                 unit.owner != pid && g.is_at_war(pid, unit.owner)
             })
         });
@@ -28793,7 +28787,7 @@ impl AdvancedAi {
                             g.rules.units[other.kind].class == "religious"
                                 && other.religion != religion
                         })
-                        .map(|other| g.units[&other].hp)
+                        .map(|other| g.units[other].hp)
                         .min()
                         .unwrap_or(100);
                     Some((100 - defender_hp, *target, action.clone()))
@@ -28873,8 +28867,8 @@ impl AdvancedAi {
             })
             .filter(|city| {
                 !g.unit_ids_at(city.pos).iter().any(|unit| {
-                    g.units[&unit].owner == pid
-                        && g.rules.units[g.units[&unit].kind].class == "military"
+                    g.units[unit].owner == pid
+                        && g.rules.units[g.units[unit].kind].class == "military"
                 })
             })
             .collect();
@@ -29453,11 +29447,11 @@ impl AdvancedAi {
                 / units.len().max(1) as f64;
             let forcing_focus = focus_target.is_some_and(|target| {
                 let low_hp_unit = g.unit_ids_at(target).iter().any(|unit| {
-                    enemies.contains(&g.units[&unit].owner)
+                    enemies.contains(&g.units[unit].owner)
                         && (!self.battlefront_observation
                             || (g.sees(&visible, target)
                                 && self.battlefront_unit_visible(g, pid, *unit)))
-                        && g.units[&unit].hp <= 35
+                        && g.units[unit].hp <= 35
                 });
                 let capturable_city = g.city_at(target).is_some_and(|city| {
                     enemies.contains(&g.cities[&city].owner)
@@ -29661,10 +29655,9 @@ impl AdvancedAi {
         if self.base.come_ashore
             && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea")
             && g.is_embarked(&g.units[&uid])
+            && self.base.disembark_step(g, pid, uid)
         {
-            if self.base.disembark_step(g, pid, uid) {
-                return true;
-            }
+            return true;
         }
         let visible = self
             .battlefront_observation
@@ -30348,7 +30341,7 @@ impl AdvancedAi {
             .unit_ids_at(target)
             .iter()
             .filter_map(|unit| {
-                let defender = &after.units[&unit];
+                let defender = &after.units[unit];
                 let spec = &after.rules.units[defender.kind];
                 (defender.owner != pid
                     && after.is_at_war(pid, defender.owner)
@@ -30386,7 +30379,7 @@ impl AdvancedAi {
                 before.is_capital,
                 before.wall_hp,
                 before.hp,
-                Self::should_defer_city_capture(&after, pid, city),
+                Self::should_defer_city_capture(after, pid, city),
             )
         });
         let encampment_before = target_encampment.map(|city| {
@@ -30932,7 +30925,7 @@ impl AdvancedAi {
         let mut after_first = g.speculative_clone();
         if after_first.apply(pid, action).is_err()
             || !after_first.units.contains_key(&uid)
-            || !after_first.units.contains_key(&victim)
+            || !after_first.units.contains_key(victim)
         {
             return None;
         }
@@ -31019,7 +31012,7 @@ impl AdvancedAi {
         // for modifiers this arithmetic does not see — there is no three-blow
         // kill to find and the clone enumeration below never starts.
         {
-            let survivor = &after_first.units[&victim];
+            let survivor = &after_first.units[victim];
             let defence = crate::game::effective_strength(
                 after_first.unit_strength(survivor, true),
                 survivor.hp,
@@ -31060,7 +31053,7 @@ impl AdvancedAi {
             };
             let mut after_second = after_first.speculative_clone();
             if after_second.apply(pid, &followup).is_err()
-                || !after_second.units.contains_key(&victim)
+                || !after_second.units.contains_key(victim)
             {
                 continue;
             }
@@ -31092,7 +31085,7 @@ impl AdvancedAi {
                     _ => unreachable!("friendly volley only retains direct ground attacks"),
                 };
                 let mut after_third = after_second.speculative_clone();
-                if after_third.apply(pid, &last).is_err() || after_third.units.contains_key(&victim)
+                if after_third.apply(pid, &last).is_err() || after_third.units.contains_key(victim)
                 {
                     continue;
                 }
@@ -31174,7 +31167,7 @@ impl AdvancedAi {
         };
         let mut value = -attacker_loss;
         if let Some(unit) = target_unit {
-            let defender = &g.units[&unit];
+            let defender = &g.units[unit];
             let spec = &g.rules.units[defender.kind];
             let role_value = if spec.siege { 70.0 } else { 0.0 }
                 + if spec.is_melee_capable() { 30.0 } else { 0.0 }
@@ -31183,7 +31176,7 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
-            value += match after.units.get(&unit) {
+            value += match after.units.get(unit) {
                 None => {
                     190.0 + spec.cost * 0.45 + g.unit_strength(defender, true) * 1.8 + role_value
                 }
@@ -31227,7 +31220,7 @@ impl AdvancedAi {
             .unit_ids_at(target)
             .iter()
             .filter_map(|unit| {
-                let candidate = &g.units[&unit];
+                let candidate = &g.units[unit];
                 (candidate.owner != pid
                     && g.rules.units[candidate.kind].domain.as_deref() == Some("air"))
                 .then_some((*unit, g.rules.units[candidate.kind].cost))
@@ -32181,7 +32174,7 @@ impl AdvancedAi {
                     let defended = g
                         .unit_ids_at(camp)
                         .iter()
-                        .any(|oid| Some(g.units[&oid].owner) == g.barb_pid);
+                        .any(|oid| Some(g.units[oid].owner) == g.barb_pid);
                     if !defended {
                         // Walking onto the empty camp is the clear itself.
                         if self.base.step_toward(g, pid, uid, camp) {
@@ -33124,7 +33117,7 @@ impl AdvancedAi {
             .unit_ids_at(target)
             .iter()
             .filter_map(|unit| {
-                let defender = &g.units[&unit];
+                let defender = &g.units[unit];
                 let spec = &g.rules.units[defender.kind];
                 (defender.owner != pid
                     && g.is_at_war(pid, defender.owner)
@@ -33278,7 +33271,7 @@ impl AdvancedAi {
                     .map(|city| city.owner);
                 g.unit_ids_at(*position)
                     .iter()
-                    .map(|uid| g.units[&uid].owner)
+                    .map(|uid| g.units[uid].owner)
                     .chain(g.city_at(*position).map(|city| g.cities[&city].owner))
                     .chain(g.encampment_at(*position).map(|city| g.cities[&city].owner))
                     .any(|owner| {

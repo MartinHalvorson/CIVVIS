@@ -107,7 +107,7 @@ impl AdvancedAi {
         let mut best: Option<(i32, u32)> = None;
         for pos in g.nbrs(unit.pos) {
             for other_id in g.unit_ids_at(pos) {
-                let Some(other) = g.units.get(&other_id) else {
+                let Some(other) = g.units.get(other_id) else {
                     continue;
                 };
                 if other.owner != pid || other.id == uid || other.linked_to.is_some() {

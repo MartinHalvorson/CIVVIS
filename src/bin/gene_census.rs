@@ -108,8 +108,8 @@ fn main() {
          'identical' = same winner, victory, end turn, and every score\n"
     );
     println!(
-        "{:<20} {:>8} {:>8} {:>10}  {}",
-        "gene", "stock", "probe", "identical", "verdict"
+        "{:<20} {:>8} {:>8} {:>10}  verdict",
+        "gene", "stock", "probe", "identical"
     );
 
     let mut inert = Vec::new();

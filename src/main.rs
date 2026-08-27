@@ -1219,7 +1219,8 @@ fn main() {
                                 continue;
                             }
                             last_turn = g.turn;
-                            let due = g.turn >= start_turn && (g.turn - start_turn) % every == 0;
+                            let due =
+                                g.turn >= start_turn && (g.turn - start_turn).is_multiple_of(every);
                             if !due || g.winner.is_some() || crossings.iter().all(Option::is_some) {
                                 continue;
                             }

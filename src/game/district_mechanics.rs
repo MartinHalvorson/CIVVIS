@@ -3096,7 +3096,7 @@ fn an_arena_is_walled_where_a_world_wraps() {
         let west = crate::hex::offset_to_axial(0, 4);
         let east = crate::hex::offset_to_axial(width - 1, 4);
         assert_eq!(
-            game.nbrs(west).iter().any(|neighbor| *neighbor == east),
+            game.nbrs(west).contains(&east),
             wraps,
             "the two edge columns are neighbours only on a cylinder"
         );

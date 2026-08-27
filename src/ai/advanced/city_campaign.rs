@@ -735,25 +735,11 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_support::opt_in_off_in_both_controllers;
     use super::super::GrandStrategy;
     use super::*;
     use crate::game::Game;
     use crate::name;
-
-    fn opt_in_off_in_both_controllers(tag: &str, read: fn(&AdvancedAi) -> bool) {
-        assert!(!read(&AdvancedAi::new()), "{tag} is off in new()");
-        assert!(!read(&AdvancedAi::legacy()), "{tag} is off in legacy()");
-        let gene = super::super::genes::GENES
-            .iter()
-            .find(|gene| gene.tag == tag)
-            .unwrap_or_else(|| panic!("{tag} has a registry row"));
-        assert_eq!(gene.kind, super::super::genes::Kind::OptIn);
-        let mut ai = AdvancedAi::new();
-        (gene.enable)(&mut ai);
-        assert!(read(&ai));
-        (gene.disable)(&mut ai);
-        assert!(!read(&ai));
-    }
 
     #[test]
     fn city_campaign_is_a_native_opt_in_off_in_both_controllers() {

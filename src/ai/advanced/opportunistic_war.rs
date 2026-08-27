@@ -196,8 +196,8 @@ impl AdvancedAi {
         g.cities.get(&cid).is_some_and(|city| city.owner == pid)
             && !g.unit_ids_at(pos).iter().any(|other| {
                 *other != uid
-                    && g.units[&other].owner == pid
-                    && g.rules.units[g.units[&other].kind].class == "military"
+                    && g.units[other].owner == pid
+                    && g.rules.units[g.units[other].kind].class == "military"
             })
     }
 
@@ -258,7 +258,7 @@ impl AdvancedAi {
                 .into_iter()
                 .flat_map(|position| g.unit_ids_at(position))
                 .any(|oid| {
-                    let other = &g.units[&oid];
+                    let other = &g.units[oid];
                     other.owner != pid
                         && !g.players[other.owner].is_barbarian
                         && g.rules.units[other.kind].class == "military"
