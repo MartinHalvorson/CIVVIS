@@ -111,28 +111,10 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests {
-    use super::super::genes::GENES;
+    use super::super::test_support::opt_in_off_in_both_controllers;
     use super::super::AdvancedAi;
     use super::*;
     use crate::game::{Action, Game};
-
-    fn opt_in_off_in_both_controllers(tag: &str, read: fn(&AdvancedAi) -> bool) {
-        assert!(!read(&AdvancedAi::new()), "{tag} must be off in new()");
-        assert!(
-            !read(&AdvancedAi::legacy()),
-            "{tag} must be off in legacy()"
-        );
-        let gene = GENES
-            .iter()
-            .find(|gene| gene.tag == tag)
-            .expect("the gene is published for gene_screen");
-        assert!(gene.opt_in() && gene.screenable() && !gene.live());
-        let mut ai = AdvancedAi::new();
-        (gene.enable)(&mut ai);
-        assert!(read(&ai));
-        (gene.disable)(&mut ai);
-        assert!(!read(&ai));
-    }
 
     #[test]
     fn flip_nearby_city_states_is_a_native_opt_in_off_in_both_controllers() {

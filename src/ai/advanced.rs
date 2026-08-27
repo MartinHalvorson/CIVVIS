@@ -34849,6 +34849,12 @@ mod live_bundle_tests {
     }
 }
 
+/// Shared `#[cfg(test)]` helpers for the gene submodules' own `tests` blocks,
+/// so a check repeated across several modules has one definition. See
+/// `advanced/test_support.rs`.
+#[cfg(test)]
+pub(crate) mod test_support;
+
 // This module lives here, rather than in `src/ai/advanced/tests.rs`, because
 // it is exercising `AdvancedAi::forcing_reply_label`, a private associated
 // item declared inside the `impl AdvancedAi` block just above this file's
