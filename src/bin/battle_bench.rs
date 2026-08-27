@@ -16,6 +16,10 @@
 //! what it claims to cancel and no treatment number from the same harness can
 //! be believed.
 use civvis::ai::{run_game, Ai};
+// One `erfc` in the repository. The identical Abramowitz & Stegun 7.1.26
+// approximation stood here too, and a bench that measures significance must
+// not be able to disagree with the ladder that reads it.
+use civvis::doctrine::paired::erfc;
 use civvis::elo::{seat_ai, seat_spec};
 use civvis::game::Game;
 use civvis::parallel::{default_jobs, map};
@@ -107,29 +111,6 @@ fn paired_t(differences: &[f64]) -> (f64, f64, f64, f64) {
     // Two-sided normal tail via erfc.
     let p = erfc(t.abs() / 2f64.sqrt());
     (mean, stderr, t, p.clamp(0.0, 1.0))
-}
-
-/// Abramowitz & Stegun 7.1.26, good to ~1.5e-7 — far tighter than the
-/// precision any decision here turns on.
-fn erfc(x: f64) -> f64 {
-    let z = x.abs();
-    let t = 1.0 / (1.0 + 0.5 * z);
-    let ans = t
-        * (-z * z - 1.265_512_23
-            + t * (1.000_023_68
-                + t * (0.374_091_96
-                    + t * (0.096_784_18
-                        + t * (-0.186_288_06
-                            + t * (0.278_868_07
-                                + t * (-1.135_203_98
-                                    + t * (1.488_515_87
-                                        + t * (-0.822_152_23 + t * 0.170_872_77)))))))))
-            .exp();
-    if x >= 0.0 {
-        ans
-    } else {
-        2.0 - ans
-    }
 }
 
 /// What a treated seat costs, measured **as a ratio, on interleaved runs, in

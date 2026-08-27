@@ -1555,7 +1555,7 @@ fn a_site_inside_a_rivals_border_is_priced_as_a_provocation() {
         .expect("a plot in our own territory");
     assert_eq!(live.foreign_border_pressure(&game, 0, home_ring), 0.0);
     // The penalty reaches the site value.
-    let visible = game.player_vision_now(0);
+    let visible = game.player_vision_frame(0);
     let with = live.settlement_safety_penalty(&game, 0, pressed, &visible);
     live.settlement_safety = false;
     let without = live.settlement_safety_penalty(&game, 0, pressed, &visible);
