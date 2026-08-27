@@ -2394,8 +2394,11 @@ def main() -> int:
 
             # The supervised server rejects an in-process /new for another
             # simulation, so it is safe to leave the result reachable during
-            # the short cooldown. Builds happen during active play; the
-            # boundary itself never waits on Cargo.
+            # the short cooldown. A background build normally keeps the
+            # boundary quick, but the successor is a new verification game:
+            # it must still fetch and build the current canonical head before
+            # it launches. A build that began just before a merge is otherwise
+            # a verified *old* runtime that can leak into the next game.
             remaining = FINAL_COUNTDOWN_SECONDS - (time.monotonic() - finished_seen_at)
             if remaining > 0:
                 time.sleep(remaining)
@@ -2439,16 +2442,16 @@ def main() -> int:
                 checkpointed_progress = None
                 time.sleep(args.poll)
                 continue
-            stop_server(process, adopted_pid)
-            process = None
-            adopted_pid = None
-            try:
-                save_path.unlink()
-            except FileNotFoundError:
-                pass
-
+            # `prepare_latest_once` resets the private source worktree. Do
+            # not let an old background Cargo process compile that same tree
+            # while the boundary refreshes it. The result screen remains up
+            # while this happens, and a failed fresh build still has the last
+            # verified runtime as its explicit recovery fallback.
+            stop_background_prebuild(prebuild_process)
+            prebuild_process = None
+            fresh_prepared = prepare_boundary_runtime(args.build_retry)
             snapshot = source_snapshot()
-            latest_ready = runtime_matches(snapshot)
+            latest_ready = fresh_prepared and runtime_matches(snapshot)
             if latest_ready:
                 # A commit changes repository identity without changing the
                 # compiled input snapshot. Reconcile metadata so the promoted
@@ -2457,9 +2460,16 @@ def main() -> int:
                 refresh_runtime_metadata(snapshot)
             else:
                 log(
-                    "latest source is not prebuilt; starting the verified "
-                    "fallback immediately and refreshing it during play"
+                    "fresh canonical build is unavailable; starting the "
+                    "verified fallback and refreshing it during play"
                 )
+            stop_server(process, adopted_pid)
+            process = None
+            adopted_pid = None
+            try:
+                save_path.unlink()
+            except FileNotFoundError:
+                pass
             launch_runtime_id = promoted_runtime_id()
             process = start_server(args.port, settings, False)
             running_runtime_id = launch_runtime_id
