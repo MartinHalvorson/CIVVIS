@@ -476,11 +476,11 @@ class TheBatchRule(unittest.TestCase):
 
 
 class TheOperatorPins(unittest.TestCase):
-    """⭐ THE OPERATOR'S PINS (2026-08-26): nine genes named on by hand, above
-    the batch rule. The pin moves the default and nothing else — the rule's own
-    answer stays published, a pin cannot rescue a gene the rule removes from
-    the pool, and a pin naming a gene the registry does not screen is a hard
-    error rather than a silent no-op."""
+    """⭐ THE OPERATOR'S PINS (2026-08-27): operator-selected genes named
+    on by hand, above the batch rule. The pin moves the default and nothing
+    else — the rule's own answer stays published, a pin cannot rescue a gene
+    the rule removes from the pool, and a pin naming a gene the registry
+    does not screen is a hard error rather than a silent no-op."""
 
     def build(self, batches: list[int | None], pins: tuple[str, ...]):
         """A ledger for one gene `g` from its batch readings, newest first,

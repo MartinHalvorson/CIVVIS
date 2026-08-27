@@ -1050,10 +1050,7 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
-        assert!(
-            ai.blind_objective_units,
-            "the named live treatment stands"
-        );
+        assert!(ai.blind_objective_units, "the named live treatment stands");
         assert!(
             !ai.base.naval_recon,
             "another ledger-held treatment stays off unless named too"
