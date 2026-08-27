@@ -27006,10 +27006,10 @@ impl AdvancedAi {
                     Some(step) if !g.can_move(uid, step) => {
                         let occupant = g
                             .unit_ids_at(step)
-                            .into_iter()
+                            .iter()
                             .filter(|other| **other != uid)
                             .find_map(|other| {
-                                g.units.get(&other).map(|unit| (unit.owner, unit.kind))
+                                g.units.get(other).map(|unit| (unit.owner, unit.kind))
                             });
                         match occupant {
                             Some((owner, kind)) if owner == pid => {
@@ -28513,7 +28513,7 @@ impl AdvancedAi {
                 Action::TheologicalAttack { unit, target } if *unit == uid => {
                     let defender_hp = g
                         .unit_ids_at(*target)
-                        .into_iter()
+                        .iter()
                         .filter(|other| {
                             let other = &g.units[other];
                             g.rules.units[other.kind].class == "religious"
@@ -30034,7 +30034,7 @@ impl AdvancedAi {
         let attacker_cost = after.rules.units[after.units[&uid].kind].cost;
         let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = after
             .unit_ids_at(target)
-            .into_iter()
+            .iter()
             .filter_map(|unit| {
                 let defender = &after.units[&unit];
                 let spec = &after.rules.units[defender.kind];
@@ -30246,7 +30246,7 @@ impl AdvancedAi {
         let (uid, target) = Self::unit_strike_actor_and_target(action)?;
         let threatened: Vec<u32> = g
             .unit_ids_at(target)
-            .into_iter()
+            .iter()
             .filter(|other| {
                 let other = &g.units[other];
                 other.owner != pid && g.is_at_war(pid, other.owner)
@@ -30843,7 +30843,7 @@ impl AdvancedAi {
         let before_tile = &g.map.tiles[&target];
         let before_aircraft: Vec<(u32, f64)> = g
             .unit_ids_at(target)
-            .into_iter()
+            .iter()
             .filter_map(|unit| {
                 let candidate = &g.units[&unit];
                 (candidate.owner != pid
@@ -31786,7 +31786,7 @@ impl AdvancedAi {
                 if let Some(camp) = self.base.camp_bounty_target(g, pid, uid) {
                     let defended = g
                         .unit_ids_at(camp)
-                        .into_iter()
+                        .iter()
                         .any(|oid| Some(g.units[&oid].owner) == g.barb_pid);
                     if !defended {
                         // Walking onto the empty camp is the clear itself.
@@ -32085,9 +32085,9 @@ impl AdvancedAi {
             let mut volley_indices: Vec<usize> = (0..scored.len())
                 .filter(|index| {
                     g.unit_ids_at(scored[*index].target)
-                        .into_iter()
+                        .iter()
                         .any(|other| {
-                            let defender = &g.units[&other];
+                            let defender = &g.units[other];
                             defender.owner != pid
                                 && g.is_at_war(pid, defender.owner)
                                 && g.rules.units[defender.kind].class == "military"
@@ -32617,7 +32617,7 @@ impl AdvancedAi {
             let pos = g.units[&with].pos;
             let escort = g
                 .unit_ids_at(pos)
-                .into_iter()
+                .iter()
                 .filter(|unit| {
                     let unit = &g.units[unit];
                     unit.owner == pid
@@ -32666,7 +32666,7 @@ impl AdvancedAi {
             let pos = g.units[&with].pos;
             let escort = g
                 .unit_ids_at(pos)
-                .into_iter()
+                .iter()
                 .filter(|unit| {
                     let unit = &g.units[unit];
                     let spec = &g.rules.units[unit.kind];
@@ -32739,7 +32739,7 @@ impl AdvancedAi {
         };
         let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = g
             .unit_ids_at(target)
-            .into_iter()
+            .iter()
             .filter_map(|unit| {
                 let defender = &g.units[&unit];
                 let spec = &g.rules.units[defender.kind];
@@ -32895,7 +32895,7 @@ impl AdvancedAi {
                     .and_then(|city| g.cities.get(&city))
                     .map(|city| city.owner);
                 g.unit_ids_at(*position)
-                    .into_iter()
+                    .iter()
                     .map(|uid| g.units[&uid].owner)
                     .chain(g.city_at(*position).map(|city| g.cities[&city].owner))
                     .chain(g.encampment_at(*position).map(|city| g.cities[&city].owner))

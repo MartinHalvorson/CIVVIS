@@ -4196,7 +4196,7 @@ impl BasicAi {
             && !self.barb
             && g.barb_pid.is_some_and(|barb| {
                 g.unit_ids_at(target)
-                    .into_iter()
+                    .iter()
                     .any(|other| g.units[&other].owner == barb)
             }) {
             BARBARIAN_BARGAIN_DISCOUNT
@@ -12942,7 +12942,7 @@ impl BasicAi {
         }
         let defender = g
             .unit_ids_at(pos)
-            .into_iter()
+            .iter()
             .map(|oid| &g.units[&oid])
             .filter(|o| g.rules.units[o.kind].class == "military")
             .max_by(|a, b| {
@@ -13368,7 +13368,7 @@ impl BasicAi {
                 let ranked = distance.min(3);
                 let defender = g
                     .unit_ids_at(*camp)
-                    .into_iter()
+                    .iter()
                     .filter_map(|other| g.units.get(&other))
                     .filter(|other| {
                         enemy_ids.contains(&other.owner)
@@ -14967,7 +14967,7 @@ impl BasicAi {
                 }
                 let value = g
                     .unit_ids_at(position)
-                    .into_iter()
+                    .iter()
                     .filter_map(|other| {
                         let other = &g.units[&other];
                         if other.owner == pid || !g.is_at_war(pid, other.owner) {
@@ -15039,7 +15039,7 @@ impl BasicAi {
         let here = unit.pos;
         let target_unit = g
             .unit_ids_at(here)
-            .into_iter()
+            .iter()
             .filter(|oid| {
                 let other = &g.units[oid];
                 other.owner != pid
@@ -15153,7 +15153,7 @@ impl BasicAi {
             .city_at(origin)
             .is_some_and(|cid| g.cities[&cid].owner == pid)
             && g.unit_ids_at(origin)
-                .into_iter()
+                .iter()
                 .filter(|other| {
                     let other = &g.units[other];
                     other.owner == pid && g.rules.units[other.kind].class == "military"

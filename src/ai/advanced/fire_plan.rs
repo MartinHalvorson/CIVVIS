@@ -119,7 +119,7 @@ impl AdvancedAi {
             // military unit on the tile, as the exchange scorer reads it.
             let Some(defender) = g
                 .unit_ids_at(target)
-                .into_iter()
+                .iter()
                 .filter(|oid| {
                     let other = &g.units[oid];
                     other.owner != pid

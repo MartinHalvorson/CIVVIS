@@ -773,7 +773,7 @@ fn a_returning_levy_never_shares_a_tile_with_its_own_class() {
     // parked on top of the resident.
     let here: Vec<u32> = game
         .unit_ids_at(position)
-        .into_iter()
+        .iter()
         .filter(|uid| {
             game.units[uid].owner == minor
                 && game.rules.units[game.units[uid].kind].class == "military"
