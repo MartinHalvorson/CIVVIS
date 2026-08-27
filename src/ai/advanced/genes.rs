@@ -1686,7 +1686,14 @@ pub const GENES: &[Gene] = &[
     // A discovered foreign landfall is time-sensitive. Once the capital's
     // connected land has two or fewer independent city sites remaining, send
     // a Settler to the nearest viable one before spending its last local room.
-    Gene { tag: "overseas-settlement", field: "overseas_settlement", kind: Kind::OptIn, enable: AdvancedAi::enable_overseas_settlement, disable: AdvancedAi::disable_overseas_settlement },
+    Gene { tag: "overseas-settlement", field: "overseas_settlement", kind: Kind::OptIn, enable: AdvancedAi::enable_overseas_settlement, disable: AdvancedAi::disable_overseas_settlement },    // The live seat never researched Astrology (1 of 130 games, at t244):
+    // every explicit lane goal is a far-era tech Astrology is not an
+    // ancestor of, so the beeline skips it for the whole game and no Holy
+    // Site, Shrine, Prophet or Missionary is ever reachable. Take Astrology
+    // after the opening techs while a Prophet slot is open, put the first
+    // Holy Site at the front of the district order, price the Prophet as a
+    // lane great person, and keep the prize (`pursue_religion`) once won.
+    Gene { tag: "enter-the-prophet-race", field: "enter_the_prophet_race", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_enter_the_prophet_race, disable: AdvancedAi::disable_enter_the_prophet_race },
     // `settler-never-idles` (operator, 2026-08-27): a Settler always has
     // somewhere to go. `advanced_settler_step` held a Settler on more than a
     // dozen branches — a Loyalty forecast, a fog guess, a safe-step guard, a
@@ -1753,6 +1760,7 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "enemy-of-my-enemy",
     "engine-faith-price",
     "enhancer-for-the-corps",
+    "enter-the-prophet-race",
     "escort-unstick",
     "exchange-is-the-engines",
     "expansion-pays-back",
@@ -1856,6 +1864,7 @@ pub(super) const OPERATOR_DEFAULT_ON: &[&str] = &[
     "elective-war-yields-to-a-lane",
     "enemy-of-my-enemy",
     "enhancer-for-the-corps",
+    "enter-the-prophet-race",
     "exchange-is-the-engines",
     "expansion-pays-back",
     "expansion-schedule",
