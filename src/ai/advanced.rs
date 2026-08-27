@@ -33876,6 +33876,12 @@ mod live_bundle_tests {
     }
 }
 
+/// Shared `#[cfg(test)]` helpers for the gene submodules' own `tests` blocks,
+/// so a check repeated across several modules has one definition. See
+/// `advanced/test_support.rs`.
+#[cfg(test)]
+pub(crate) mod test_support;
+
 #[cfg(test)]
 mod tests;
 

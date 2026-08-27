@@ -10442,23 +10442,6 @@ fn the_settling_gates_and_the_cascade_disagree_about_the_city_target() {
 }
 
 #[test]
-fn the_governor_recovery_withhold_changes_who_decides_a_recovery_city() {
-    // A pure routing flag can look alive in the struct and be dead in the
-    // dispatch, which is how a withhold arm ends up measuring nothing. Pin
-    // both halves: the shipped controller carries the governor into Recovery,
-    // the withhold arm does not, and nothing else moves.
-    let shipped = AdvancedAi::new();
-    assert!(
-        shipped.governor_in_recovery,
-        "production ships with the governor deciding Recovery cities"
-    );
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_governor_in_recovery();
-    assert!(!withheld.governor_in_recovery);
-    assert_eq!(shipped.victory_planning, withheld.victory_planning);
-}
-
-#[test]
 fn a_spawned_builder_carries_the_charges_production_priced() {
     // `Game::builder_charges` is the number the survey prices; spawning
     // must hand out exactly the same count or the valuation is priced
@@ -11614,7 +11597,7 @@ fn a_district_keyed_great_work_veto_exempts_the_government_plaza() {
 
     let mut slot_keyed = AdvancedAi::targeting(VictoryTarget::Science);
     let mut district_keyed = AdvancedAi::targeting(VictoryTarget::Science);
-    district_keyed.enable_great_work_veto_by_district();
+    district_keyed.great_work_veto_by_district = true;
     slot_keyed.refresh_research_weight(&game);
     district_keyed.refresh_research_weight(&game);
 
@@ -23036,9 +23019,6 @@ fn the_adjacent_camp_clear_cannot_reach_the_frozen_anchor() {
          anchor move needs a protocol decision owned by the world rule"
     );
     assert!(AdvancedAi::new().adjacent_camp_clear());
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_adjacent_camp_clear();
-    assert!(!withheld.adjacent_camp_clear());
 }
 
 #[test]
@@ -30589,11 +30569,6 @@ fn the_barbarian_heretic_hunt_cannot_reach_the_frozen_anchor() {
         "the frozen anchor must not hunt heretics"
     );
     assert!(AdvancedAi::new().barbarian_heretic_hunt());
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_barbarian_heretic_hunt();
-    assert!(!withheld.barbarian_heretic_hunt());
-    withheld.enable_barbarian_heretic_hunt();
-    assert!(withheld.barbarian_heretic_hunt());
 }
 
 /// A board with a founder, a rival faith holding its own capital, and a
