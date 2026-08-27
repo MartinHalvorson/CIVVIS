@@ -1240,6 +1240,19 @@ pub struct QueryCache {
     /// The answers are computed once per unit per memo scope instead.
     movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
+    // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
+    // for every unit kind in the ruleset, at all three formations and both
+    // currencies, and `legal_actions_within`'s purchase family repeats the
+    // same sweep, none of the asks sharing an answer. The price reads live
+    // unit occupancy (`land_combat_purchase_slot_open`) and the production
+    // queue head, both of which a caller can change without going through
+    // `Game::apply` — `relocate` and a direct queue edit are `pub(crate)`,
+    // and `land_combat_purchase_requires_an_unreserved_city_center_combat_layer`
+    // exercises exactly that from a test. So this is scoped like `appeal` and
+    // `movement`, not like `producible`: cached only for the life of one
+    // `QueryMemo` guard, which is also the only span the codebase already
+    // guarantees nothing mutates the world out from under a `&self` query.
+    purchase_price: std::cell::RefCell<Option<BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
@@ -1294,19 +1307,6 @@ pub struct QueryCache {
     // catalog with the next helper in the same decision; retaining it only
     // inside one guard would miss the duplicate scans this cache exists for.
     producible: std::cell::RefCell<BTreeMap<(usize, u32), Vec<Item>>>,
-    // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
-    // for every unit kind in the ruleset, at all three formations and both
-    // currencies, and `legal_actions_within`'s purchase family repeats the
-    // same sweep — six full price derivations per unit kind per city per ask,
-    // none of them sharing an answer. The price is a pure function of the
-    // board (policies, buildings, districts, era, game speed, Great People
-    // and religion discounts) plus `blocked_purchases`, so it shares
-    // `producible`'s outlives-`QueryMemo` lifetime and every one of
-    // `producible`'s clear sites, with one addition: `replace_blocked_purchases`
-    // also clears it, because a price can depend on `purchase_is_blocked`
-    // through the host-priced branch even though `producible_items` itself
-    // never reads that set.
-    purchase_price: std::cell::RefCell<BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>>,
 }
 
 impl Clone for QueryCache {
@@ -1412,6 +1412,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.passage_improvements.borrow_mut() = None;
             *self.game.query_memo.movement.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
+            *self.game.query_memo.purchase_price.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
@@ -30034,6 +30035,7 @@ impl Game {
             *self.query_memo.passage_improvements.borrow_mut() = None;
             *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.purchase_price.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
@@ -33105,7 +33107,6 @@ impl Game {
         // ordinary successful-apply invalidation below. A menu derived before sync
         // must not survive after the host has rejected one of its entries.
         self.query_memo.producible.borrow_mut().clear();
-        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Replace the current live-host competition snapshot. The production
@@ -33116,7 +33117,6 @@ impl Game {
         if self.host_competitions != competitions {
             self.host_competitions = competitions;
             self.query_memo.producible.borrow_mut().clear();
-            self.query_memo.purchase_price.borrow_mut().clear();
         }
     }
 
@@ -33348,7 +33348,6 @@ impl Game {
             scores: BTreeMap::new(),
         });
         self.query_memo.producible.borrow_mut().clear();
-        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Seat Gathering Storm's targeted aid request at its native trigger.
@@ -33388,7 +33387,6 @@ impl Game {
             scores: BTreeMap::new(),
         });
         self.query_memo.producible.borrow_mut().clear();
-        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Whether the game contains the civilization a competition's emergency
@@ -33615,17 +33613,10 @@ impl Game {
         self.competition = None;
         self.competition_lockout_until.insert(kind, until);
         self.query_memo.producible.borrow_mut().clear();
-        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
         self.blocked_purchases = blocked;
-        // Unlike `replace_blocked_production`, this does not touch
-        // `producible`: the production catalog never reads `blocked_purchases`.
-        // But `unit_purchase_cost_for_formation`'s host-priced branch does
-        // (through `purchase_is_blocked`), so the memoized price answers it
-        // feeds must be retired here even though the catalog's need not be.
-        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Replace the host's menus (see [`Game::host_buildable`]). Mirror input
@@ -33641,7 +33632,6 @@ impl Game {
         self.host_purchasable = purchasable;
         self.host_district_plots = district_plots;
         self.query_memo.producible.borrow_mut().clear();
-        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// The host's own turns-to-complete for an item in this city
@@ -36531,11 +36521,8 @@ impl Game {
             // `producible_items` is intentionally retained across short
             // read-only decision helpers, rather than only one `QueryMemo`.
             // Once an action succeeds any one of its prerequisites may have
-            // changed, so the next helper must derive a fresh catalog. The
-            // purchase-price memo shares its lifetime (see
-            // `QueryCache::purchase_price`).
+            // changed, so the next helper must derive a fresh catalog.
             self.query_memo.producible.borrow_mut().clear();
-            self.query_memo.purchase_price.borrow_mut().clear();
             // A planning world's EndTurn keeps only what planning reads.
             // On a seat's private copy the close is the last thing the world
             // ever does: the plan harvest reads the actions logged before it,
@@ -40100,17 +40087,21 @@ impl Game {
         })
     }
 
-    /// Memoized front door for [`Game::unit_purchase_cost_for_formation_uncached`].
+    /// Memoized front door for [`Game::unit_purchase_cost_for_formation_uncached`],
+    /// scoped like [`Game::tile_appeal`] rather than like `producible_items`:
+    /// cached only for the life of one [`QueryMemo`] guard (see
+    /// `QueryCache::purchase_price`), because the price reads live unit
+    /// occupancy and the production queue head, and a `QueryMemo` guard is
+    /// the one span the codebase already guarantees nothing mutates those
+    /// out from under a `&self` query. Outside any guard every call still
+    /// derives fresh, exactly as before this cache existed.
     ///
     /// `legal_purchase_actions_for_city` calls the uncached derivation six
-    /// times per unit kind per city (three formations, two currencies) with
-    /// nothing between those calls that could change the answer — a read-only
-    /// enumeration mutates nothing — and `legal_actions_within`'s purchase
-    /// family repeats the identical sweep. Share one answer per
-    /// `(pid, cid, unit, formation, currency)` the way `producible_items`
-    /// shares one production catalog per `(pid, cid)`: see
-    /// `QueryCache::purchase_price` for the (slightly larger than
-    /// `producible`'s) invalidation surface this depends on.
+    /// times per unit kind per city (three formations, two currencies), and
+    /// `legal_actions_within`'s purchase family repeats the identical sweep
+    /// under its own guard — sharing one answer per
+    /// `(pid, cid, unit, formation, currency)` removes the duplication
+    /// between call sites that both run inside the same decision's guard.
     fn unit_purchase_cost_for_formation(
         &self,
         pid: usize,
@@ -40128,12 +40119,16 @@ impl Game {
             _ => return None,
         };
         let key = (pid, cid, Name::new(unit), formation, currency_is_gold);
-        if let Some(cached) = self.query_memo.purchase_price.borrow().get(&key) {
-            return *cached;
+        if let Some(memo) = self.query_memo.purchase_price.borrow().as_ref() {
+            if let Some(cached) = memo.get(&key) {
+                return *cached;
+            }
         }
         let cost =
             self.unit_purchase_cost_for_formation_uncached(pid, cid, unit, formation, currency);
-        self.query_memo.purchase_price.borrow_mut().insert(key, cost);
+        if let Some(memo) = self.query_memo.purchase_price.borrow_mut().as_mut() {
+            memo.insert(key, cost);
+        }
         cost
     }
 

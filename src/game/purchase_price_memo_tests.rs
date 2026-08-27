@@ -2,10 +2,10 @@ use super::*;
 
 /// A fixture with THREE cities under one player: the capital at the starting
 /// settler's site, plus two more well clear of it and of each other.
-/// `legal_purchase_actions` walks every city of the asking player, so this is
-/// the shape `legal_purchase_actions_for_city`'s per-unit, per-formation,
-/// per-currency sweep actually runs across in a real game — a single-city
-/// fixture would never exercise the memo being shared across cities.
+/// `legal_purchase_actions` walks every city of the asking player under one
+/// shared `QueryMemo` guard, so this is the shape
+/// `legal_purchase_actions_for_city`'s per-unit, per-formation, per-currency
+/// sweep actually runs across in a real game.
 fn several_cities(seed: u64) -> Game {
     let mut game = Game::new_full(1, 34, 22, seed, 200, 0, false);
     let settler = game
@@ -46,36 +46,31 @@ fn several_cities(seed: u64) -> Game {
     game
 }
 
-/// ★★★ THE MEMO MUST BE INVISIBLE TO THE CALLER.
+/// ★★★ THE MEMO MUST BE INVISIBLE TO THE CALLER, UNDER A SHARED GUARD.
 ///
-/// `legal_purchase_actions_for_city` used to call
-/// `unit_purchase_cost_for_formation` six times per unit kind per city (three
-/// formations, two currencies) with nothing between those calls that could
-/// change the answer — a read-only enumeration mutates nothing. Sharing one
-/// answer per `(pid, cid, unit, formation, currency)` must not change which
-/// purchases come back, their order, or their fields: a cold ask and a warm
-/// ask of the same unchanged board must be byte-identical, and every
-/// memoized answer must equal an uncached re-derivation.
+/// `legal_purchase_actions_for_city` calls
+/// `unit_purchase_cost_for_formation` once per unit kind, formation and
+/// currency; `legal_actions_within`'s purchase family repeats the identical
+/// sweep. `QueryCache::purchase_price` shares one answer per
+/// `(pid, cid, unit, formation, currency)` for the life of one `QueryMemo`
+/// guard — an explicit outer guard here stands in for the guard a real
+/// decision holds open across several such helpers. Sharing that answer must
+/// not change which purchases come back, their order, or their fields: a
+/// cold ask and a warm ask under the same guard must be byte-identical, and
+/// every memoized answer must equal an uncached re-derivation.
 #[test]
-fn a_warm_purchase_price_memo_matches_a_cold_derivation_across_several_cities() {
+fn a_warm_purchase_price_memo_matches_a_cold_derivation_under_one_guard() {
     let game = several_cities(91_401);
+    let _memo = game.query_memo();
 
-    assert!(
-        game.query_memo.purchase_price.borrow().is_empty(),
-        "nothing has been asked yet"
-    );
     let cold = game.legal_purchase_actions(0);
     assert!(
         !cold.is_empty(),
         "three rich cities must offer at least one purchase"
     );
-    assert!(
-        !game.query_memo.purchase_price.borrow().is_empty(),
-        "the ask must have populated the price memo"
-    );
 
-    // Warm: read again with nothing between the two asks that could change
-    // an answer.
+    // Warm: read again under the same still-open guard, with nothing between
+    // the two asks that could change an answer.
     let warm = game.legal_purchase_actions(0);
     assert_eq!(
         warm, cold,
@@ -103,57 +98,61 @@ fn a_warm_purchase_price_memo_matches_a_cold_derivation_across_several_cities() 
     }
 }
 
-/// The memo shares `producible`'s outlives-`QueryMemo` lifetime and its
-/// invalidation boundary: a successful `Game::apply` must retire both, and a
-/// re-ask right after must reflect the new board, never a cached answer from
-/// before the mutation.
+/// ★★★★ THE REGRESSION THIS DESIGN EXISTS TO AVOID.
+///
+/// An earlier version of this memo was scoped like `producible_items`:
+/// outlives `QueryMemo`, cleared only at explicit sites (a successful
+/// `Game::apply`, the mirror-input `replace_*` calls). It went stale here —
+/// `land_combat_purchase_slot_open` reads live unit occupancy and the
+/// production queue head, and `relocate` plus a direct queue edit are
+/// `pub(crate)` and do not go through `Game::apply`.
+/// `district_building_wonder_runtime_tests::
+/// land_combat_purchase_requires_an_unreserved_city_center_combat_layer`
+/// caught it directly (a queue edit and a `relocate` between two identical
+/// asks, expecting the second to differ).
+///
+/// The fix scopes the memo like `Game::tile_appeal`'s `appeal` cache instead:
+/// live only for one `QueryMemo` guard. This test pins that shape rather than
+/// re-deriving the scenario: outside any guard, the field must never even
+/// arm, so a bare call always re-derives.
 #[test]
-fn a_successful_purchase_apply_retires_the_price_memo_it_used() {
-    let mut game = several_cities(91_402);
+fn unit_purchase_cost_for_formation_never_caches_outside_a_query_memo_guard() {
+    let mut game = several_cities(91_404);
     // Index [0] is the capital, sited on the starting settler's tile — its
     // starting Warrior spawns on that same tile (`Game::new_with`), so its
     // land-combat slot is already filled. Index [1] is one of the two extra
     // cities `several_cities` founds directly with no units on them.
     let cid = game.player_city_ids(0)[1];
 
+    assert!(
+        game.query_memo.purchase_price.borrow().is_none(),
+        "no guard is open yet"
+    );
     let before = game.unit_purchase_cost_for_formation(0, cid, "warrior", 0, "gold");
     assert!(before.is_some(), "an empty city center can price a warrior");
-    assert!(!game.query_memo.purchase_price.borrow().is_empty());
-
-    game.apply(
-        0,
-        &Action::Buy {
-            city: cid,
-            unit: crate::name!("warrior"),
-            formation: 0,
-            currency: "gold".to_string(),
-        },
-    )
-    .expect("5,000 gold affords a warrior");
-
     assert!(
-        game.query_memo.purchase_price.borrow().is_empty(),
-        "a successful apply must retire the price memo, the same boundary that retires `producible`"
+        game.query_memo.purchase_price.borrow().is_none(),
+        "a bare call outside any QueryMemo guard must never arm the memo"
     );
 
-    // The city center now holds a land-combat unit, so
-    // `land_combat_purchase_slot_open` refuses a second one. A stale cached
-    // price would wrongly still quote one.
+    // Mutate the board directly — no `Game::apply` in between, the same
+    // shape the caught regression used.
+    game.spawn_unit("warrior", 0, game.cities[&cid].pos);
+
     let after = game.unit_purchase_cost_for_formation(0, cid, "warrior", 0, "gold");
     assert_eq!(
         after, None,
-        "the purchased warrior fills the land-combat slot; the price must reflect \
-         that, not a memo answer from before the purchase"
+        "the new warrior fills the land-combat slot; a stale cached price from \
+         before the direct mutation would wrongly still quote one"
     );
 }
 
-/// `replace_blocked_purchases` deliberately leaves `producible` untouched
-/// (the production catalog never reads `blocked_purchases`), but the price
-/// memo's host-priced branch reads it through `purchase_is_blocked` — so this
-/// is the one clear site the price memo needs beyond every one `producible`
-/// already has, and it is the easiest one to have missed.
+/// The host-priced branch reads `purchase_is_blocked` (`blocked_purchases`),
+/// so a refusal that arrives after a host price was quoted must be reflected
+/// immediately. Nothing outside a `QueryMemo` guard is ever cached, so there
+/// is nothing that needs an explicit invalidation site for this to hold.
 #[test]
-fn replace_blocked_purchases_retires_a_cached_host_priced_answer() {
+fn a_host_priced_purchase_reflects_a_later_purchase_refusal_immediately() {
     let mut game = several_cities(91_403);
     let cid = game.player_city_ids(0)[0];
 
@@ -174,26 +173,20 @@ fn replace_blocked_purchases_retires_a_cached_host_priced_answer() {
         )]),
         std::collections::BTreeMap::new(),
     );
+    assert_eq!(
+        game.unit_purchase_cost_for_formation(0, cid, "warrior", 0, "gold"),
+        Some(42.0)
+    );
 
-    let priced = game.unit_purchase_cost_for_formation(0, cid, "warrior", 0, "gold");
-    assert_eq!(priced, Some(42.0));
-    assert!(!game.query_memo.purchase_price.borrow().is_empty());
-
-    // The mirror refuses the sale on a later tick, without a fresh menu
-    // export to trip `replace_host_menus`'s own clear.
+    // The mirror refuses the sale on a later tick.
     game.replace_blocked_purchases(std::collections::BTreeMap::from([(
         cid,
         std::collections::BTreeSet::from(["unit:warrior".to_string()]),
     )]));
 
-    assert!(
-        game.query_memo.purchase_price.borrow().is_empty(),
-        "replace_blocked_purchases must retire the price memo even though it \
-         leaves `producible` untouched"
-    );
     assert_eq!(
         game.unit_purchase_cost_for_formation(0, cid, "warrior", 0, "gold"),
         None,
-        "a stale cached host price would ignore the refusal that just arrived"
+        "a refused purchase must read as refused immediately"
     );
 }

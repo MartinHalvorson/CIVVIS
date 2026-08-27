@@ -2854,32 +2854,61 @@ Two things worth keeping from the pair of readings:
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
 
-## 2026-08-27 — purchase-price memo and a non-allocating production block key
 
-`legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation` once
-per unit kind, formation (0/1/2) and currency (gold/faith) — six full price
-derivations per unit kind per city per ask, each one walking policies,
+## 2026-08-27 — purchase-price memo (scoped to one `QueryMemo` guard) and a non-allocating production block key
+
+`legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
+once per unit kind, formation (0/1/2) and currency (gold/faith) — six full
+price derivations per unit kind per city per ask, each one walking policies,
 buildings, districts, era, game speed and Great People/religion discounts.
 `legal_actions_within`'s purchase family repeats the identical sweep, and
 several AI call sites (`ai.rs`, `ai/advanced.rs`, `gold_and_cards.rs`,
 `religion.rs`) ask the same price again elsewhere in the same turn's
-decision-making, all against a board that has not changed between asks.
+decision-making.
 
-**The fix mirrors `producible_items` exactly rather than inventing a new
-pattern.** `QueryCache::purchase_price` memoizes
-`(pid, cid, unit, formation, currency) -> Option<f64>` and shares
-`producible`'s outlives-`QueryMemo` lifetime: it is cleared at every one of
-`producible`'s clear sites (a successful `Game::apply`, `replace_blocked_production`,
-`replace_host_competitions`, `replace_host_menus`, and both competition-start
-sites), plus one site `producible` does not need — `replace_blocked_purchases`
-— because the price's host-priced branch reads `purchase_is_blocked`
-(`blocked_purchases`) even though `producible_items` never does. Missing that
-one site was the easiest way to ship a stale price; `purchase_price_memo_tests.rs`
-has a test that pins it (buy a Warrior, then confirm a second ask correctly
-returns `None` because the land-combat slot is now filled — a stale cached
-price would wrongly still quote one).
+### ⚠ The first design was wrong, and a pre-existing test caught it before it shipped
 
-Second, `production_block_key` built a fresh `String` (`format!("formation:{unit}:{formation}")`
+The first cut mirrored `producible_items`: a cache keyed on
+`(pid, cid, unit, formation, currency)` that outlives `QueryMemo`, cleared
+only at explicit sites (a successful `Game::apply`, the mirror-input
+`replace_*` calls). `district_building_wonder_runtime_tests::
+land_combat_purchase_requires_an_unreserved_city_center_combat_layer` failed
+against it: `unit_purchase_cost_for_formation` reads live unit occupancy
+through `land_combat_purchase_slot_open` (`self.units_at(city.pos)`) and the
+production queue head (`city.queue.first()`), and that test edits the queue
+and calls `relocate` directly — both `pub(crate)`, neither going through
+`Game::apply` — between two otherwise-identical asks, expecting the second to
+differ. The persistent design served the first answer back stale.
+
+**The fix scopes the cache like `Game::tile_appeal`'s `appeal` field instead**
+(`QueryCache::purchase_price`, now `RefCell<Option<BTreeMap<...>>>`): armed
+only while a `QueryMemo` guard is open, cleared on that guard's outermost
+`Drop`, exactly like `appeal`, `movement`, `unit_ids` and the rest of that
+family. Outside any guard — a bare call, which is what the caught test and
+any direct-mutation caller do — the field stays `None` and every ask derives
+fresh, byte-for-byte the function's behaviour before this cache existed. That
+also makes the fix airtight against the exact bug that broke the first
+design: a `QueryMemo` guard holds `&Game`, so `Game::apply` (`&mut self`)
+cannot be called while one is alive, and `relocate`/a queue edit made outside
+any guard never had a stale answer to leave behind in the first place.
+
+The benefit this design keeps is real but narrower than the persistent one:
+it removes duplication only between calls that share one already-open guard
+(nested `query_memo()` calls inside one decision), not across separate
+top-level calls. `legal_purchase_actions_for_city` itself has no internal
+duplication to remove — each `(unit, formation, currency)` combination is
+asked exactly once per city by construction — so the saving is entirely
+cross-call-site, and how much of it survives the narrower scope depends on
+how much of the AI's purchase-pricing work already runs under one shared
+guard. The scratch `AtomicU64` measurement taken against the first (buggy)
+design read 4,375,259 asks / 2,993,698 derivations over one 150-turn game;
+that number is **retracted** along with the design it measured; a fresh
+measurement against the guard-scoped version is the next reader's first
+follow-up here, not yet re-taken under fleet time pressure.
+
+### The second half, unaffected by the above: a non-allocating production block key
+
+`production_block_key` built a fresh `String` (`format!("formation:{unit}:{formation}")`
 and five siblings) for every candidate item at several call sites, including
 unconditionally at the top of `can_produce` and once per queued item in its
 duplicate-scan. `ProductionKey` is a `Copy` enum over `Name` (already an
@@ -2892,42 +2921,18 @@ cross the live mirror's serde boundary (`mirror.rs` calls
 now only builds that `String` when `blocked_production`/`host_buildable`
 actually holds an entry for the city — empty on an ordinary, non-mirrored
 board — and its queue duplicate-scan compares `ProductionKey` values directly
-instead of formatting one `String` per queued item.
-
-### Measured
-
-A temporary `AtomicU64` pair (`SCRATCH_PURCHASE_COST_ASKS` incremented in the
-memoized entry point, `SCRATCH_PURCHASE_COST_DERIVATIONS` incremented only in
-the uncached derivation — a scratch build, not committed) over one standard
-6-player, 9-city-state, 150-turn game (seed 7311001, `AdvancedAi::fleet` +
-`ai::run_game`, Continents):
-
-| | |
-| --- | ---: |
-| `unit_purchase_cost_for_formation` asks | 4,375,259 |
-| of those, an actual (uncached) derivation | 2,993,698 |
-| served from the memo | 1,381,561 |
-| **reduction in full derivations** | **31.6%** |
-
-That is the honest number, not the six-fold reduction the per-city loop's
-shape might suggest: within one `legal_purchase_actions_for_city` call each
-`(unit, formation, currency)` combination is asked exactly once by
-construction, so the loop itself has no internal duplication to remove. The
-31.6% comes from the *cross-call-site* duplication the memo was built to
-catch — `legal_actions_within`'s purchase family re-asking the same combos
-`legal_purchase_actions_for_city` already priced, and the scattered
-`unit_purchase_cost` call sites re-asking a specific unit's price again later
-in the same turn — all against a board a successful `apply` has not yet
-invalidated.
+instead of formatting one `String` per queued item. This half introduces no
+caching and carries none of the risk above: it changes only how a key is
+represented, never when or whether one is computed fresh.
 
 ### Exactness
 
-`legal_purchase_actions` before/after is covered by
-`purchase_price_memo_tests::a_warm_purchase_price_memo_matches_a_cold_derivation_across_several_cities`
-(a warm ask against a cold ask, byte-identical, across a three-city fixture,
-plus every memoized answer checked against an uncached re-derivation for every
-unit/formation/currency/city). `tools/speed_ab.py` and
+`purchase_price_memo_tests.rs` covers: a warm ask matching a cold ask under
+one shared guard, across a three-city fixture, with every memoized answer
+also checked against an uncached re-derivation for every unit/formation/
+currency/city; the memo field never arming outside a guard (the shape of the
+bug above, pinned directly); and a host-priced answer reflecting a later
+purchase refusal immediately. `tools/speed_ab.py` and
 `advanced_v1_plays_the_same_game_it_always_did` both agree on report digests
 before and after — see the PR body for the exact command and hashes. No
-action list changed order or content; this is a pure caching and allocation
-change.
+action list changed order or content.
