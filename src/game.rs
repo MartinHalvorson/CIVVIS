@@ -1220,6 +1220,10 @@ type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
+/// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
+/// guard: keyed on (player, city, unit kind, formation, faith?) → price.
+type PurchasePriceMemo = BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>;
+
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
@@ -1276,7 +1280,7 @@ pub struct QueryCache {
     // `movement`, not like `producible`: cached only for the life of one
     // `QueryMemo` guard, which is also the only span the codebase already
     // guarantees nothing mutates the world out from under a `&self` query.
-    purchase_price: std::cell::RefCell<Option<BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>>>,
+    purchase_price: std::cell::RefCell<Option<PurchasePriceMemo>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
