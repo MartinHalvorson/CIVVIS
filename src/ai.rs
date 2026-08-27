@@ -5621,6 +5621,12 @@ impl BasicAi {
     }
 
     fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
+        // `attack_envelope_cache` may intentionally omit this seat while the
+        // evaluator prices the stale-own-moves treatment. The raw reach is
+        // not allowed to do that: another unit's position can stop an enemy
+        // in zone of control, so every controller must share only a key over
+        // the complete board.
+        let reach_key = (g.turn, Self::attack_envelope_fingerprint(g, None));
         let mut store = self
             .enemy_envelope_cache
             .lock()
@@ -5670,16 +5676,18 @@ impl BasicAi {
                 // ⚠ `attack_reach_from_flood` already returns these ascending
                 // and distinct; re-collecting them into a second set was
                 // building the same answer twice.
-                let (targets, flood) = g.attack_reach_from_flood(unit.id);
+                let cached = g.cached_attack_reach_from_flood(reach_key, unit.id);
                 let reach: std::sync::Arc<EnvelopeReach> =
-                    std::sync::Arc::new(EnvelopeReach::from_tiles(targets));
+                    std::sync::Arc::new(EnvelopeReach::from_tiles(cached.targets().to_vec()));
                 if reusable {
                     store.insert(
                         unit.id,
                         EnemyEnvelope {
                             reach: std::sync::Arc::clone(&reach),
                             sensitive: std::sync::Arc::new(Self::envelope_sensitive_tiles(
-                                g, unit, &flood,
+                                g,
+                                unit,
+                                cached.flood(),
                             )),
                         },
                     );
@@ -25001,6 +25009,71 @@ mod attack_envelope_key_tests {
             seen[2], seen[3],
             "the enemy moved and its envelope did not, so the comparison above \
              cannot detect a stale one"
+        );
+    }
+
+    /// The expensive raw flood belongs to the board, not to one controller.
+    ///
+    /// A fresh `BasicAi` must reuse it, and a speculative `Game` clone must
+    /// reuse it too. The clone check is important: tactical search makes many
+    /// clones, which was the source of the repeated flood work this cache is
+    /// meant to remove.
+    #[test]
+    fn raw_enemy_reach_is_shared_by_controllers_and_game_clones() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let dry = |g: &Game, pos: Pos| {
+            g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile)) && g.units_at(pos).is_empty()
+        };
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, home) > 12 && dry(&game, *pos))
+            .min_by_key(|pos| (game.wdist(*pos, home), *pos))
+            .expect("the fixture offers distant open land");
+        let enemy = game.spawn_test_unit("warrior", 1, far);
+
+        let expected = BasicAi::new().enemy_attack_envelopes(&game, 0).to_vec();
+        assert!(
+            !expected.is_empty(),
+            "the fixture must cause at least one raw enemy reach to be cached"
+        );
+        let after_first_controller = game.attack_reach_cache_computations();
+        assert!(after_first_controller > 0);
+
+        let from_second_controller = BasicAi::new().enemy_attack_envelopes(&game, 0).to_vec();
+        assert_eq!(from_second_controller, expected);
+        assert_eq!(
+            game.attack_reach_cache_computations(),
+            after_first_controller,
+            "a new controller on the same board must reuse the raw flood"
+        );
+
+        let clone = game.clone();
+        let from_clone = BasicAi::new().enemy_attack_envelopes(&clone, 0).to_vec();
+        assert_eq!(from_clone, expected);
+        assert_eq!(
+            clone.attack_reach_cache_computations(),
+            after_first_controller,
+            "a speculative clone must share the parent's raw flood"
+        );
+
+        let mut changed_clone = clone;
+        let to = changed_clone
+            .nbrs(changed_clone.units[&enemy].pos)
+            .into_iter()
+            .next_back()
+            .unwrap();
+        changed_clone.units.get_mut(&enemy).unwrap().pos = to;
+        let _ = BasicAi::new().enemy_attack_envelopes(&changed_clone, 0);
+        assert!(
+            changed_clone.attack_reach_cache_computations() > after_first_controller,
+            "a changed speculative board must discard the parent snapshot"
         );
     }
 
