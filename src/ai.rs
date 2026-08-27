@@ -11985,9 +11985,10 @@ impl BasicAi {
                 if landmass.contains(&next) {
                     continue;
                 }
-                if g.map.get(next).is_some_and(|tile| {
-                    !g.rules.is_unknown(tile) && !g.rules.is_water(tile)
-                }) {
+                if g.map
+                    .get(next)
+                    .is_some_and(|tile| !g.rules.is_unknown(tile) && !g.rules.is_water(tile))
+                {
                     frontier.push_back(next);
                 }
             }
