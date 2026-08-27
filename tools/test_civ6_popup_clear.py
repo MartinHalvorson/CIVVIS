@@ -51,6 +51,18 @@ class PopupTimingTest(unittest.TestCase):
         self.assertLessEqual(popup_clear.POST_CLICK_SETTLE_SECONDS, 0.25)
 
 
+class NativeRecordingProtectionTest(unittest.TestCase):
+    def test_native_recording_commands_are_distinguished_from_png_fallbacks(self) -> None:
+        self.assertTrue(popup_clear.native_recording_command(
+            "/usr/sbin/screencapture -pdiU -z keyboard.interactive"))
+        self.assertTrue(popup_clear.native_recording_command(
+            "/usr/sbin/screencapture -v -V 5 /tmp/recording.mov"))
+        self.assertFalse(popup_clear.native_recording_command(
+            "screencapture -x -t png -R0,0,100,100 /tmp/frame.png"))
+        self.assertFalse(popup_clear.native_recording_command(
+            "/usr/bin/python3 tools/civ6_control/popup_clear.py"))
+
+
 # Unlike the module under test, these checks really do need Pillow: every one
 # of them paints a synthetic Civilization VI screen and asserts on what the
 # classifier makes of the pixels. A host without it skips them by name rather
