@@ -75,8 +75,6 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _common  # noqa: E402
 
 KEEP_DAYS = 7
 PER_VICTIM = 25
@@ -104,7 +102,18 @@ WAIVER = re.compile(
 FENCE = re.compile(r"^ {0,3}(```+|~~~+)")
 
 
-git = _common.git
+def git(*args: str) -> str:
+    # Deliberately NOT `tools/_common.git`: `.github/workflows/overwrite-guard.yml`
+    # judges every PR with MAIN's copy of this file, exported alone into /tmp
+    # (`git show origin/main:tools/overwrite_guard.py > /tmp/overwrite_guard.py`),
+    # so a sibling import cannot resolve there. #2642 made it `_common.git` and
+    # every PR in the fleet failed the required check with
+    # `ModuleNotFoundError: No module named '_common'`. This file must stay
+    # self-contained; `test_the_guard_runs_standalone_from_a_temp_dir` pins it.
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, encoding="utf-8",
+        errors="replace", check=False,
+    ).stdout
 
 
 def git_ok(*args: str) -> bool:

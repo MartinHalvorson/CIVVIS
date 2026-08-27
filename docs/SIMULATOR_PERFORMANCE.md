@@ -2854,6 +2854,174 @@ Two things worth keeping from the pair of readings:
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
 
+## 2026-08-27 — the envelope table opened one memo scope per flood, and swept a cache that had nothing to sweep
+
+`docs/AI_GAPS.md`'s late-game crawl (#2611) and today's profile both put
+`enemy_attack_envelopes → compute_enemy_attack_envelopes →
+attack_reach_from_flood → flow_past` at about a fifth of the main thread. The
+floods themselves are the answer to a real question and this entry does not
+touch one. It is about the four things the machinery *around* them charged on
+every ask, none of which can change a decision.
+
+Counted, not clocked — `AtomicU64`s in a scratch build that is not committed,
+over one whole 150-turn game at the shape `tools/speed_ab.py` uses (`civvis
+simulate --seed 7320000 --jobs 1 --players 6 --turns 150 --width 74 --height 46
+--city-states 9 --speed online --map continents`, `ci` profile):
+
+| per game | before | after |
+| --- | ---: | ---: |
+| envelope asks (`enemy_attack_envelopes`) | 51,500 | 51,500 |
+| of those, board-key hits | 16,319 | 16,318 |
+| table computations | 35,181 | 35,182 |
+| `attack_reach_from_flood` calls | 218,269 | 218,260 |
+| **outermost `query_memo` scopes those floods opened** | **218,269** | **35,182** |
+| per-enemy store sweeps (`store.retain`) | 35,181 | **2,775** |
+| store entries those sweeps walked | 3,076,566 | **227,564** |
+| unit records the board diff built per game | 8,977,330 | 8,977,650 |
+| …of those, hashed twice into and out of a `HashMap` | 8,977,330 | **0** |
+| fingerprint mixing rounds, unit fields only | 734,608,784 | **91,826,098** |
+
+⚠ The *after* column is one run of a build that also carried two candidate
+changes to the speculative-attack path which were then **discarded** — see
+"What the counter refused" below. They are why `floods` moves by 9 in 218,269
+and `hits` by one; no other row is theirs.
+
+### 1. Every flood was the outermost memo scope of its own
+
+`Game::flow_past` opens `self.query_memo()`, and nothing above it did — so each
+of a table's floods was an outermost scope, and everything a scope holds was
+derived again for the next enemy in the same loop. `air_patrols` is a scan of
+every unit in the world, and it exists as a memo entry precisely because
+`can_enter_past` asks it once per neighbour of every tile a flood expands;
+`passage_improvements` is a table over every improvement in the ruleset;
+`traversal` and `movement` are the per-unit terms of the step cost. **218,269
+floods over 35,181 tables: 83.9% of those scopes were one flood paying again
+for what the previous flood in the same table had just derived.**
+
+One scope now wraps the whole per-enemy loop. It is exact because a memo scope
+can only lie if the board moves under it, and this one is taken over `&Game` —
+nothing inside can mutate it — and it is dropped before the ask returns, so no
+caller inherits it.
+
+It is opened at the call site in `enemy_attack_envelopes` rather than inside
+`compute_enemy_attack_envelopes`, which has the same effect and leaves that
+function's interior to #2632.
+
+### 2. The board diff rebuilt a `HashMap` of the whole army on every ask
+
+`envelope_board_delta` built a fresh `HashMap<u32, EnvelopeUnit>` of every unit
+in the game, hashed each id again to look its predecessor up, and threw the
+previous table away — **8,977,330 records a game, each hashed twice**, to
+report a list of touched tiles that is usually one unit long.
+
+Both rosters are ordered by id: `Game.units` is a `BTreeMap`, and the stored
+board is now a `Vec<(u32, EnvelopeUnit)>` kept in the same order. The diff is a
+merge — one pass, one allocation, no hashing at all. The comparison it makes is
+the same `EnvelopeUnit` equality over the same fields, and
+`the_delta_tracks_every_field_the_board_key_hashes` still holds the field set
+to the board key's. `the_merge_diff_reports_what_a_whole_board_diff_would`
+writes the table version out and compares the two as sets with a moved unit, a
+born unit, a dead unit and a changed patrol all in flight at once, which is
+where a merge cursor goes wrong and a one-change-at-a-time test does not look.
+Only the order within the returned `Vec` differs, and its single reader asks
+whether a sensitive set contains any of them.
+
+### 3. The sweep ran on every ask to find the removals of a board that has none
+
+`store.retain(|id, _| g.units.contains_key(id))` walked the whole per-enemy
+cache on every ask, hit or miss, and a board loses a unit on very few of them:
+**2,775 asks out of 35,181, and 92.6% of the 3.08 M entries it walked were
+walked for nothing.**
+
+The delta already knows. `envelope_board_change` reports whether any id the
+previous board held is missing from this one — and reports `true`
+unconditionally when it gives up and returns no delta at all, which is the case
+where nothing is known.
+
+⚠ The induction, and it is the whole of why the skip is exact: every id
+inserted into the store belongs to the board being asked about, and the store
+and the stored board move together under the store's own lock, so after a sweep
+the store holds only ids of that board. If the next ask removes nothing, every
+id the store holds is still on the board and a sweep would find nothing to
+drop. That argument deliberately does not care *which* board the previous ask
+was about — which matters, because a speculative clone draws new unit ids from
+the same `next_id` as the board it was cloned from, so two branches can mint
+the same id for different units. The branch that goes away takes its ids with
+it, that is a removal, and a removal is a sweep.
+`a_removal_still_clears_the_per_enemy_store` pins it.
+
+### 4. FNV-1a is defined a byte at a time, and this is not a hash of bytes
+
+The three envelope fingerprints mixed each `u64` field eight rounds at a time.
+`attack_envelope_fingerprint` runs once per ask over every unit on the board —
+**13,118,014 units a game, seven fields each, 734.6 M rounds of
+xor-and-multiply to answer "is this the same board"**. The mix is now the one
+`vision_key` uses in `src/game.rs`, a round per field: **91.8 M**. The
+belligerence and city fingerprints, which the board diff pays once per ask,
+take the same 8→1.
+
+Nothing reads the number. It is compared for equality with the previous ask's
+and discarded, so the only property that matters is that different boards keep
+giving different values; the field set and its order are untouched, which is
+what the argument for what the key *covers* rests on.
+
+### What the counter refused
+
+Two changes to `can_survive_by_attacking` were written, measured and dropped.
+
+- **The speculative boards do evict the real one's table, and it costs
+  nothing.** Each candidate attack clones the game and asks the clone for its
+  envelopes, and `enemy_attack_envelopes` keeps exactly one entry — so the last
+  speculative board's table is what the caller's next ask finds in the slot.
+  Saving and restoring the entry around the loop (exact: the slot is keyed on a
+  fingerprint over everything reach reads, and an entry answers for its own key
+  or not at all) moved the game's flood count by **9 in 218,269** and its hit
+  count by **one**. 1,714 calls and 1,343 speculative asks a game, and the
+  pollution is worth four thousandths of a percent of the floods, because the
+  caller is still holding the table it asked for and the next ask is about a
+  board that has moved anyway.
+- **A guard that never fires is not a saving.** `legal_actions_within` is
+  enumerated for the whole seat to keep the handful of actions belonging to one
+  unit — 205,768 actions thrown away per game — and all three action kinds it
+  filters for are gated on `attacks_left > 0`, so reading that field first is
+  an exact early-out. The counter says it fired **zero** times: `retreat_step`
+  runs before the unit has attacked. A per-unit action generator would be the
+  real fix and it belongs to `Game`, not here.
+
+### What is still on the table here
+
+- **The diff still walks every unit.** `Units` has the machinery to skip it
+  outright — `snapshot()` holds the roster `Arc` and `Arc::ptr_eq` against it
+  is a sound "nothing changed at all", stronger than any field comparison. It
+  is not used here because holding that `Arc` forces the game's next unit write
+  to copy the whole roster map, and the ask that would benefit is rare: the
+  board key is a *miss* on 68% of asks, and a miss usually means the board did
+  change. Worth revisiting for the seat-turn's first ask, where the key misses
+  because `turn` or `pid` moved rather than because the board did.
+- **⚠ There is no reach bound to pre-check with, and the comment that says
+  there is describes a function deleted in #2163.** The doc block above
+  `envelope_sensitive_tiles` still opens *"the largest number of tiles an
+  enemy's next-turn reach can span … `MIN_STEP_COST` 0.25, which is the
+  floor"*; that is the key `envelope_sensitive_tiles` replaced, `MIN_STEP_COST`
+  does not exist anywhere in the tree, and `Game::unit_step_cost` ends
+  `cost.max(0.0)` — **the floor the engine enforces is zero, and 0.25 is a
+  claim about the shipped ruleset's data**. 79.1% of `retreat_step`'s 46,731
+  calls a game end at `anything_can_reach` saying no, so a pre-check that could
+  skip building the table for those is worth real money — but it would rest on
+  a movement floor the engine does not guarantee, and on a radius around the
+  unit's own tile, which is the wrong centre for an air unit (`attack_reach`
+  centres those on `air_operation_origin`). Both are why #2163 replaced the
+  radius with the unit's own flood in the first place.
+
+### Exactness
+
+`tools/speed_ab.py`, two paired 150-turn games at the shape above: **"same game
+on every seed"** — the two binaries produce byte-identical reports.
+`advanced_v1_plays_the_same_game_it_always_did` passes. The timing half of that
+run is not quoted: the host was at load 61 with a sibling simulation on it, and
+`docs/speed_ledger.json`'s conditions block is right that a number measured
+there is a measurement of the machine.
+
 ## 2026-08-27 — three copies of the movement flood became one, and the tie-break inside it was the whole risk
 
 `Game::flow_past`, `Game::path_to` and `Game::approach_reach` were three
