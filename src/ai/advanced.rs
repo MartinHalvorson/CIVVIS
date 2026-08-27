@@ -16600,35 +16600,58 @@ impl AdvancedAi {
         let purchases = self.legal_purchase_actions(g, pid);
         let Some((rank, action, city_name, defence)) = candidates.into_iter().find_map(
             |(rank, city_id, city_name, defence)| {
-                let action = purchases
-                    .iter()
-                    .find(|action| match (action, &defence) {
-                        (
-                            Action::Buy {
-                                city,
-                                unit,
-                                formation,
-                                currency,
-                            },
-                            Item::Unit { unit: wanted },
-                        ) => {
-                            *city == city_id
-                                && *formation == 0
-                                && currency == "gold"
-                                && unit == wanted
-                        }
-                        (
-                            Action::BuyBuilding {
-                                city,
-                                building,
-                                currency,
-                            },
-                            Item::Building { building: wanted },
-                        ) => *city == city_id && currency == "gold" && building == wanted,
-                        _ => false,
-                    })
-                    .cloned()?;
-                Some((rank, action, city_name, defence))
+                // Walls are the right production answer, but the live Gold
+                // menu can exclude them.  A bleeding unwalled city must then
+                // buy the local land defender rather than abandon its only
+                // immediate rescue because the preferred queue item is not a
+                // purchase action.
+                let fallback_defender = matches!(
+                    &defence,
+                    Item::Building { building }
+                        if matches!(building.as_str(), "walls" | "medieval_walls" | "renaissance_walls")
+                )
+                .then(|| {
+                    self.base
+                        .best_military(g, pid, city_id, Some(false))
+                        .map(|unit| Item::Unit {
+                            unit: Name::new(&unit),
+                        })
+                })
+                .flatten();
+                for selected in std::iter::once(defence).chain(fallback_defender) {
+                    let action = purchases
+                        .iter()
+                        .find(|action| match (action, &selected) {
+                            (
+                                Action::Buy {
+                                    city,
+                                    unit,
+                                    formation,
+                                    currency,
+                                },
+                                Item::Unit { unit: wanted },
+                            ) => {
+                                *city == city_id
+                                    && *formation == 0
+                                    && currency == "gold"
+                                    && unit == wanted
+                            }
+                            (
+                                Action::BuyBuilding {
+                                    city,
+                                    building,
+                                    currency,
+                                },
+                                Item::Building { building: wanted },
+                            ) => *city == city_id && currency == "gold" && building == wanted,
+                            _ => false,
+                        })
+                        .cloned();
+                    if let Some(action) = action {
+                        return Some((rank, action, city_name, selected));
+                    }
+                }
+                None
             },
         )
         else {
