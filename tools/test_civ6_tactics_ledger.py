@@ -140,6 +140,43 @@ class QueueAndCombatTest(unittest.TestCase):
         self.assertIn("kills 0, losses 1", text)
 
 
+class SalvageableLossTest(unittest.TestCase):
+    def test_a_unit_last_seen_wounded_is_a_loss_the_seat_saw_coming(self) -> None:
+        events = [
+            {"kind": "seat", "local_player": 0},
+            {"kind": "state", "turn": 3, "gold": 40, "units": [
+                _unit(1, "UNIT_WARRIOR", 5, 5), _unit(2, "UNIT_ARCHER", 6, 5),
+                _unit(3, "UNIT_SPEARMAN", 7, 5)], "hostiles": []},
+            {"kind": "state", "turn": 4, "gold": 40, "units": [
+                _unit(3, "UNIT_SPEARMAN", 7, 5)], "hostiles": []},
+        ]
+        # Unit 1 was at 24 hp when last seen, unit 2 at full health.
+        events[1]["units"][0]["hp"] = 24
+        events[1]["units"][1]["hp"] = 100
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _write_run(Path(tmp), events, [])
+            report = ledger.ledger(run)
+        roster = report["roster"]
+        self.assertEqual(roster["military_units_gone"], 2)
+        self.assertEqual(roster["lost_when_salvageable"], 1)
+        self.assertEqual(roster["salvageable_share"], 0.5)
+        self.assertIn("had a turn's warning of", ledger.render(report))
+
+    def test_a_run_that_lost_nothing_says_nothing_rather_than_zero(self) -> None:
+        events = [
+            {"kind": "seat", "local_player": 0},
+            {"kind": "state", "turn": 3, "gold": 0, "units": [_unit(1, "UNIT_WARRIOR", 5, 5)],
+             "hostiles": []},
+            {"kind": "state", "turn": 4, "gold": 0, "units": [_unit(1, "UNIT_WARRIOR", 5, 5)],
+             "hostiles": []},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _write_run(Path(tmp), events, [])
+            report = ledger.ledger(run)
+        self.assertEqual(report["roster"]["military_units_gone"], 0)
+        self.assertIsNone(report["roster"]["salvageable_share"])
+
+
 class CityOccupationTest(unittest.TestCase):
     def test_a_captured_city_is_counted_and_a_lost_one_is_not_a_capture(self) -> None:
         events = [
