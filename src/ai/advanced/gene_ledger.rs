@@ -775,27 +775,21 @@ mod tests {
         // operator may well mean exactly that, and on 2026-08-26 did:
         // `barbarian-settler-capture` was asked for by name after the live
         // seat fortified beside a free settler for twenty turns
-        // (civvis-20260826T194422Z), and no reporting batch has run since.
-        // Each such pin is named here so the genome stays explicable; the
-        // next batch prices it like any other gene, and its row below leaves
-        // the day a batch column exists.
-        const PINNED_BEFORE_PRICING: &[&str] = &["barbarian-settler-capture"];
+        // (civvis-20260826T194422Z), before any reporting batch had run.
+        //
+        // ⚠⚠ This used to be a hand-written `PINNED_BEFORE_PRICING` list that
+        // a pin had to be named in, and it deadlocked the publication of the
+        // very batch that priced the gene: the scheduler regenerates the
+        // generated artifacts and cannot edit source. The condition is now
+        // derived — a pin is either priced, or it is one the ranking marks
+        // *(unmeasured)* — so it clears itself when the column arrives.
         for tag in pins {
-            assert!(
-                batch_columns(tag).is_some() || PINNED_BEFORE_PRICING.contains(tag),
-                "{tag} is pinned on before any batch priced it; name it in \
-                 PINNED_BEFORE_PRICING with the operator's reason, or wait for a batch"
-            );
-        }
-        for tag in PINNED_BEFORE_PRICING {
-            assert!(
-                operator_pinned_on(tag),
-                "{tag} is named as pinned before pricing but is not a pin"
-            );
-            assert!(
-                batch_columns(tag).is_none(),
-                "{tag} is priced now; its PINNED_BEFORE_PRICING row has done its job"
-            );
+            if batch_columns(tag).is_none() {
+                assert!(
+                    ledger_verdict(tag).is_none(),
+                    "{tag} has no batch column, so it must be awaiting measurement"
+                );
+            }
         }
     }
 
