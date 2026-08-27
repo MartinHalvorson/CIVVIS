@@ -1470,3 +1470,50 @@ instrument that plays both arms under the same rules measures controllers, not
 rules.** Rules are measured against the shipped game or not at all — see the
 open item in `docs/FIDELITY.md` on verifying legality in both directions across
 the live bridge.
+
+## The engine has no Great General (2026-08-26)
+
+Recorded because a ranking asked for a Great General aura and there is
+nothing to give one to. Great People are recruited *effects*, not board
+pieces: `data/units.json` has no `great_person` class and no general unit,
+and `Game`'s `"general"` / `"admiral"` arm is a one-shot empire-wide `+1
+level` on recruitment plus 100 gold for an admiral. Civilization VI's own
+Great General is a unit that moves with an army and gives +5 combat strength
+and +1 movement to land units within two tiles — a persistent, positional
+effect that is a large part of how a real army fights, and the reason a
+player escorts one.
+
+The engine's only adjacency combat terms are `flanking_bonus` (+2 per
+adjacent friend of the attacker, once `flanking_support` is unlocked),
+`support_bonus` (the same for the defender), and one unique unit carrying
+`adjacent_combat_strength`. The support-unit auras
+(`adjacent_siege_range`, `adjacent_heal`, `adjacent_movement`,
+`adjacent_siege_bombard`) are real but none is a combat-strength aura.
+
+This is a fidelity gap in the engine, not a controller gene: a Great General
+would need a unit kind, a recruitment path that puts it on the board, an
+aura in `unit_unembarked_strength`, and a controller that keeps it alive
+behind the line. `civ6_fidelity` would be the instrument to size it.
+
+## Exact arithmetic did not make the controller fight better (2026-08-26)
+
+`exchange-is-the-engines` and `defend-where-you-stand` (`Kind::OptIn`, both
+off) replace the controller's two hand-written estimates of a fight with the
+engine's own: `melee_exchange_strengths` / `ranged_strike_strengths` in
+`exchange_score`, and the defender priced on the candidate tile with that
+tile's defence in `projected_counter_damage` and the mover's threat term.
+Both are strictly more accurate. Both measure null: `battle_bench` +10.9 ±
+11.9 and +5.4 ± 16.2, the doctrine curriculum +8.1 ± 10.3 and +2.1 ± 6.4,
+and a captured 68-war file −10.0 ± 6.7 and −13.9 ± 8.8 with healing on. They
+fire heavily — 79 and 140 of 160 skirmish seeds diverged — so this is a
+measurement, not a silent arm.
+
+The hypothesis worth testing next, from `docs/TACTICS.md` §3's own lesson
+("charge the shipped attack toll", or a change conflates two things):
+`exchange_score`'s output is compared against `attack_threshold`, and that
+threshold was calibrated against the *biased* estimate. Making the estimate
+exact without recalibrating the toll changes every accept/decline decision
+as a side effect, which is a second change riding along with the first. A
+version that re-fits `attack_threshold` to the exact scale — or that applies
+the exact pricing only to `force_focus_target`, which is pure ranking with
+no threshold — would separate them.
