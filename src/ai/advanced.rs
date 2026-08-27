@@ -324,8 +324,10 @@ const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 /// catches that unresolved fifth-ring attribution without rejecting ordinary
 /// known-city sites. See `frontier_loyalty` and `Game::unseen_major_borders`.
 const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
-/// New-target picks re-asked after a doomed forecast. Exhaustion holds the
-/// Settler rather than routing it through the unfiltered baseline picker.
+/// Preferred new-target picks re-asked after a doomed forecast. If they all
+/// fail, the live controller probes one nearby alternative with the same
+/// safety guards; remaining exhaustion holds rather than routing the Settler
+/// through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
 /// A stalled Settler may finish on the tile it reached, but not when a known
 /// enemy city can support a counterattack before our own nearest city can.
@@ -26385,7 +26387,22 @@ impl AdvancedAi {
             // the next candidate is genuinely distinct.
             let mut rejected = 0;
             loop {
-                let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                // The preferred ranking is allowed to pay a premium for a
+                // rich, distant site. That is normally right, but three
+                // distinct frontier colonies can all fail the live Loyalty
+                // forecast while an already-ranked, reachable local site
+                // remains. Do not turn that bounded safety retry into a
+                // parked Settler: after the preferred attempts, ask the local
+                // ranking once.
+                // It carries the same site, route, dead-site, and threat
+                // filters; it merely declines the global premium.
+                let local_fallback = rejected >= SETTLE_TARGET_FORECAST_RETRIES;
+                let candidate = if local_fallback {
+                    self.best_reachable_settle_site_except(g, pid, uid, 8, avoid)
+                } else {
+                    self.best_settler_target(g, pid, uid, 8, avoid)
+                };
+                let Some((pos, _)) = candidate else {
                     break None;
                 };
                 let verdict = if self.base.loyalty_rate_alarm {
@@ -26394,6 +26411,13 @@ impl AdvancedAi {
                     self.settle_site_frontier_loyalty_verdict(g, pid, pos)
                 };
                 let Some(why) = verdict else {
+                    if local_fallback {
+                        think!(self.journal(), Expansion, Detail,
+                               "Settler falls back to a nearby safe site";
+                               "{SETTLE_TARGET_FORECAST_RETRIES} higher-priority sites failed the \
+                                live Loyalty forecast; this ranked local site still passes it";
+                               pos);
+                    }
                     self.settler_targets.insert(uid, pos);
                     break Some(pos);
                 };
@@ -26404,10 +26428,10 @@ impl AdvancedAi {
                     pos,
                     g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
                 );
-                rejected += 1;
-                if rejected >= SETTLE_TARGET_FORECAST_RETRIES {
+                if local_fallback {
                     break None;
                 }
+                rejected += 1;
             }
         });
         let Some(mut target) = target else {
