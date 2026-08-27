@@ -1466,6 +1466,8 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
+    /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
+    commitments: commitments::CommitmentLedger,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -4467,6 +4469,16 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `capture-go-or-stand-down`: a declared war's objective that no unit of
+    /// ours has been within `commitments::CAPTURE_PRESENCE_RADIUS` of for
+    /// `commitments::CAPTURE_GO_TURNS` consecutive turns is stood down
+    /// explicitly — excluded from the target ranking for
+    /// `commitments::CAPTURE_STAND_DOWN_TURNS` and the strategy re-assessed
+    /// now — instead of being held, unprosecuted, until the five-turn cadence
+    /// happens to drop it. Opt-in gene; see `advanced/commitments.rs`.
+    capture_go_or_stand_down: bool,
+    /// City id → turn the stand-down expires. Written only by the gene.
+    capture_stood_down: BTreeMap<u32, u32>,
     /// On an advance, no unit ends the turn more than the body's pace plus
     /// one tile closer to the objective than the force's anchor stood. Opt-in
     /// gene `close-as-a-body`; see `advanced/close_as_a_body.rs`.
@@ -5831,6 +5843,12 @@ mod camp_buyout;
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
 mod early_archers;
 
+/// Commitments: every multi-turn decision — a settle site, a Builder's tile,
+/// the appointed war's objective — observed at the turn boundary and tracked
+/// to its ending, with what became of it counted. Infrastructure, not a
+/// gene: it changes no decision. See `docs/COMMITMENTS.md`.
+pub mod commitments;
+
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained
@@ -6254,6 +6272,7 @@ impl AdvancedAi {
             war_status: WarPackageStatus::default(),
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
+            commitments: commitments::CommitmentLedger::default(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -6448,6 +6467,8 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            capture_go_or_stand_down: false,
+            capture_stood_down: BTreeMap::new(),
             close_as_a_body: false,
             culture_floor: false,
             city_target_meets_the_map: false,
@@ -6910,6 +6931,14 @@ impl AdvancedAi {
 
     fn plan_stale(&self, g: &Game, pid: usize) -> bool {
         let Some(plan) = &self.plan else { return true };
+        // `capture-go-or-stand-down`: the ledger stood the target down this
+        // turn; re-assess now rather than on the cadence.
+        if plan
+            .target_city
+            .is_some_and(|city| self.capture_stood_down_holds(g, city))
+        {
+            return true;
+        }
         let unavailable_victory_plan = matches!(
             plan.strategy,
             GrandStrategy::Science
@@ -10347,6 +10376,30 @@ impl AdvancedAi {
                 })
         } else {
             None
+        };
+        // `capture-go-or-stand-down`: a city the ledger stood down is not
+        // ranked again until the stand-down expires; the next-best city of the
+        // same rival takes its place. A home emergency is never stood down.
+        let ranked_target_city = if self.capture_go_or_stand_down && emergency_objective.is_none() {
+            ranked_target_city
+                .filter(|city| !self.capture_stood_down_holds(g, *city))
+                .or_else(|| {
+                    target_player.and_then(|target| {
+                        g.cities
+                            .values()
+                            .filter(|c| {
+                                c.owner == target && !self.capture_stood_down_holds(g, c.id)
+                            })
+                            .min_by(|left, right| {
+                                self.campaign_city_value(g, pid, left, strategy)
+                                    .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
+                                    .then_with(|| left.id.cmp(&right.id))
+                            })
+                            .map(|c| c.id)
+                    })
+                })
+        } else {
+            ranked_target_city
         };
         let target_city = committed_target_city.or(ranked_target_city);
 
@@ -26132,6 +26185,24 @@ impl AdvancedAi {
             self.guard_wait.remove(&uid);
             return None;
         }
+        // A completed Settler starts on one of our city tiles, which is the
+        // safest place it will be all trip.  Do not spend its first actionable
+        // turn fortifying there just because a newly assigned guard has not
+        // caught up: retain the assignment so the guard still follows, but
+        // hand the Settler to the ordinary safe-step route immediately.  That
+        // route can still reject a genuinely unsafe departure or take a safer
+        // sidestep; it is the open-ended city wait that costs the expansion
+        // window.
+        if g.city_at(current)
+            .is_some_and(|city| g.cities.get(&city).is_some_and(|city| city.owner == pid))
+        {
+            self.guard_wait.remove(&uid);
+            think!(self.journal(), Expansion, Detail,
+                   "Settler departs its city before its guard";
+                   "the guard remains assigned, while the Settler takes the first safe step \
+                    toward its target now");
+            return None;
+        }
         // Counted once per turn: `advance_unit_serial` re-enters a unit up to
         // eight times a turn, and each of those is the same wait.
         let (last_turn, waited) = self
@@ -34504,6 +34575,9 @@ impl AdvancedAi {
             self.stamp_city_directives(g, pid, &plan);
         }
         self.resolve_city_dispositions(g, pid, plan.strategy);
+        // The last reading of the turn: what became of every decision, with
+        // `Unit::acted` still saying what each unit did. Observes only.
+        self.reconcile_commitments(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
