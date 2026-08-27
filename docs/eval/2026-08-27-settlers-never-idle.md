@@ -124,21 +124,30 @@ time it walks out.
 
 ## What it read, with the gene
 
+The reading `docs/CENSUS.md` records — the shipped code, the gene on by the
+ledger in both arms, the same eight maps and seeds — beside the "before"
+row above:
+
 | genome | settlers | settler-turns | idle | idle on an own city tile | settlers idle ≥10 turns in a city | longest in-city streak p90 / max | alive at the end |
 |---|---|---|---|---|---|---|---|
-| deployment | 285 → 276 | 3,149 → 2,685 | 19.5% → **9.2%** | 4.2% → **1.0%** | 2.1% → **0.0%** | 1 / 19 → 0 / 6 | 13 → **3** |
-| live seat | 772 → 631 | 51,215 → 23,896 | 85.6% → **47.2%** | 33.7% → **7.1%** | 28.1% → **5.5%** | 93 / 185 → **3 / 63** | 398 → **191** (founded 373 → **440**) |
+| deployment | 285 → 250 | 3,149 → 2,526 | 19.5% → **11.8%** | 4.2% → **0.9%** | 2.1% → **0.0%** | 1 / 19 → **0 / 6** | 13 → 11 (none that never moved) |
+| live seat | 772 → 679 | 51,215 → 30,143 | 85.6% → **42.2%** | 33.7% → **4.7%** | 28.1% → **3.8%** | 93 / 185 → **3 / 66** | 398 → **230** (founded 373 → **449**) |
 
-On the live seat's genome the median build-to-first-move fell from one turn
-to zero and the p90 from 53 turns to 2; the share of Settlers idle on their
-birth tile the turn they were built fell from 45.5% to 28.5%, and the ones
-that were are now the ones whose every exit a raider can reach. What remains
-of the live arm's idle turns is a different defect: 53.8% are "no legal site
-anywhere in reach" — the host-only production genes (`land-grab`,
+(An earlier cut, before the arrival-verdict fix and the twenty-turn floor,
+read 9.2% / 1.0% on the deployment arm and 47.2% / 7.1% on the live arm
+with the gene as an opt-in over the pre-pin build; the recorded numbers are
+the ones that ship.)
+
+On the live seat's genome the p90 build-to-first-move fell from 53 turns to
+2 and the longest in-city streak from 185 turns to 66; two Settlers of 679
+were alive at the end without ever having moved, against 132 of 772. What
+remains of the live arm's idle turns is a different defect: about half are
+"no legal site anywhere in reach", now *named* in the journal ("Settler is
+stranded") — the host-only production genes (`land-grab`,
 `parallel-settlers`, `host-settler-pop`) keep building Settlers after the
 map is full for that seat, which is a production gate's business, not a
-Settler's — and 24.5% carry a stale `guard_wait` marker on a Settler the
-livelock detector has stood down (see below).
+Settler's; the rest are the bounded safety holds and the strict verdict
+retiring a doomed arrival for next turn's pick.
 
 With the gene the deployment genome's remaining idle turns are the bounded
 safety holds — the safe-step guard (115 of 248), the out-of-reach wait (48),
