@@ -493,6 +493,22 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertEqual(civ6_mirror_check.queue_item_name({"district": "campus", "pos": [2, 3]}),
                          ("district", "campus"))
 
+    def test_a_wonder_in_production_is_the_boards_wonder_kind(self) -> None:
+        # Firaxis files wonders under BUILDING_; the board queues them as
+        # `wonder`, so the PRODUCTION check must compare like with like.
+        self.assertIn("taj_mahal", civ6_mirror_check.MIRRORED_WONDERS)
+        self.assertEqual(civ6_mirror_check.production_item_name("BUILDING_TAJ_MAHAL"),
+                         ("wonder", "taj_mahal"))
+        self.assertEqual(civ6_mirror_check.production_item_name("BUILDING_PYRAMIDS"),
+                         ("wonder", "pyramids"))
+        self.assertEqual(
+            civ6_mirror_check.production_item_name("BUILDING_TAJ_MAHAL"),
+            civ6_mirror_check.queue_item_name({"wonder": "taj_mahal", "pos": [4, 5]}),
+        )
+        # An ordinary building keeps its kind.
+        self.assertEqual(civ6_mirror_check.production_item_name("BUILDING_WALLS"),
+                         ("building", "walls"))
+
     def test_state_selection_does_not_compare_a_future_turn_to_the_board(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"

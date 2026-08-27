@@ -119,6 +119,10 @@ TABLE_KEYS = {
     "Terrains": "TerrainType",
     "Terrain_YieldChanges": ("TerrainType", "YieldType"),
     "Features": "FeatureType",
+    # Gathering Storm's own feature columns live in a side table, not in
+    # `Features`. `Volcano` is the one the audit reads: it names the four
+    # features that can go active and erupt.
+    "Features_XP2": "FeatureType",
     "Feature_YieldChanges": ("FeatureType", "YieldType"),
     "Feature_AdjacentYields": ("FeatureType", "YieldType"),
     "Resources": "ResourceType",
@@ -969,6 +973,17 @@ def project_features(database: Database) -> dict[str, dict]:
     adjacent = yield_map(
         database, "Feature_AdjacentYields", "FeatureType", "FEATURE_", FEATURE_ALIASES
     )
+    # `Features_XP2.Volcano` is the shipped roster of cones that can go active
+    # and erupt, and it is four features wide: the generic Volcano plus the
+    # three volcanic Natural Wonders. Reading the feature name instead left
+    # Vesuvius, Kilimanjaro and Eyjafjallajokull permanently dormant.
+    volcanoes = {
+        FEATURE_ALIASES.get(
+            slug(row["FeatureType"], "FEATURE_"), slug(row["FeatureType"], "FEATURE_")
+        )
+        for row in database.rows("Features_XP2")
+        if truthy(row.get("Volcano"))
+    }
     chops: dict[str, dict] = {}
     for row in database.rows("Feature_Removes"):
         yield_type = slug(row["YieldType"], "YIELD_")
@@ -984,6 +999,7 @@ def project_features(database: Database) -> dict[str, dict]:
             "move_cost": number(row.get("MovementChange")),
             "impassable": truthy(row.get("Impassable")),
             "natural_wonder": truthy(row.get("NaturalWonder")),
+            "volcano": name in volcanoes,
             "defense": number(row.get("DefenseModifier")),
             "chop": chops.get(name, {}),
         }
@@ -2431,6 +2447,7 @@ def ours_features() -> dict[str, dict]:
             "move_cost": entry.get("move_cost", 0),
             "impassable": entry.get("impassable", False),
             "natural_wonder": entry.get("natural_wonder", False),
+            "volcano": entry.get("volcano", False),
             "defense": entry.get("defense", 0),
             "chop": entry.get("chop", {}),
         }

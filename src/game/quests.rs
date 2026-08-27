@@ -191,7 +191,7 @@ impl Game {
     }
 
     /// The barbarian outposts within five tiles of the city-state.
-    fn camps_near_city_state(&self, minor: usize) -> Vec<Pos> {
+    pub(crate) fn camps_near_city_state(&self, minor: usize) -> Vec<Pos> {
         let mut found = Vec::new();
         for city in self.player_city_ids(minor) {
             let centre = self.cities[&city].pos;

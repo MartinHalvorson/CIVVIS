@@ -491,6 +491,103 @@ change, so it cannot be its gate. A tactical gene is read on:
 The whole-game screen is then a **no-harm** check: a tactical gene that reads
 clearly worse there is stopped, and one that reads null is not culled for it.
 
+### The arena can pose a siege (2026-08-27)
+
+A `Position` may now state a **city** — whose it is, where it stands, its hit
+points and its wall pool — and a captured `Engagement` carries the city the
+fight was over. Until this, the arena could pose every tactical problem
+except the one the live seat keeps losing: eleven declared wars, four sieges
+reduced to 180-190 of 200, and no capture. An assault is a different problem
+from a field fight, and a board that dropped the city could not pose it.
+
+```rust
+cities: &[city(/* role */ 1, /* col,row */ 17, 6, /* hp */ 200, /* wall */ 100)],
+```
+
+`build_engagement` places them with `Game::place_city` — the arena's own
+path; the `FoundCity` *action* stays refused on a battlefield, because a
+position states what is held rather than letting a settler decide — and
+overrides the wall pool through `observed_city_max_wall_hp`, the same field
+the live mirror uses for the host's number, so a walled position is walled
+and an unwalled one cannot grow a wall from a ruleset default. The muster
+will not seat a unit on a city tile. `capture_engagement` takes every city
+inside the window with its hit points and walls, so a real siege replays as a
+board. `DoctrineLedger` gains `cities_taken` / `cities_lost`, scored from a
+change of owner between two readings and reported as a `cities` line.
+
+**`the_storming`** is the first assault position: a 200-hit-point city behind
+**100 points of wall** with three defenders, against two catapults, three
+melee and an archer — 520 material against 165. Walls are an outer pool a
+melee unit cannot capture through, so the assault has an order: break the
+wall, then take the city, and a body that storms an unbreached wall is spent
+for nothing.
+
+**What it found, immediately.** The control is exact — `advanced` against
+itself is `+0.0` with 0 of 12 seeds diverging and captures symmetric at
+`+1/-1` each way. Against `basic`, `advanced` **loses the position**:
+**−200.8 ± 102.5 a seed (t −1.96, sign p 0.024, 12/27)**, at 0.77 kills per
+loss against 1.31. It is the second position `advanced` loses, after
+`the_reserve`. And the captures column reproduces the live record in
+thirty-four turns instead of two hundred and fifty: over forty assaults
+`advanced` took the city **three times**, `basic` none.
+
+The profile names the failure, and it is not the walls. On `the_storming` the
+besieger's **arrival spread is 10.91 turns** — the worst figure on any board
+in the arena, against 1.2–8.1 everywhere else — with `contact` at 70 %, the
+lowest anywhere. A 520-material siege train is not beaten by a 165-material
+garrison; it is fed to it over eleven turns.
+
+That is a testable claim, and the two genes that might have answered it do
+not, yet: `close-as-a-body` reads **+37.5 ± 30.3 (4/1)** — the right sign,
+but it fires on only 6 of 40 seeds, because it acts on an `Advance` posture
+out of contact and this board reaches contact quickly — and `fire-plan`
+reads **−53.5 ± 36.1**. Neither is significant. The assault is a problem the
+current controller does not solve and the current genes do not address, and
+now it is a thirty-four-turn board rather than a two-hundred-and-fifty-turn
+game.
+
+### The instrument says how units are being lost (2026-08-27)
+
+`salvag.` is the share of a side's losses that were **already at or below 30
+hit points the turn before they died** — losses the controller had a turn's
+warning of and could have answered by rotating, withdrawing or healing. The
+rest were killed from a health it had no reason to act on. `DoctrineLedger`
+counts them (`losses_when_salvageable`), the profile reports the share, and
+`tools/civ6_tactics_ledger.py` computes the same figure on a live run
+(`lost_when_salvageable` / `salvageable_share`, threshold shared as
+`SALVAGEABLE_HP`), so an arena number and a live number are the same number.
+
+Thirty rather than forty-five: below `withdraw_hp`, the line the controller's
+own recovery already uses, so the column counts units it had *already been
+told* to pull out and did not — not every unit that happened to be scratched.
+
+The distinction only became worth making when a board could heal (`--heal`).
+With nothing to recover to, "should have pulled it out" was not a real
+alternative — which is why `swap-rotation` measured the same with healing on
+and off.
+
+**What it says about the deployed controller** (`--profile advanced`, 14
+seeds): on three of four positions the **winning** side has the *higher*
+share — `central_position` 50 % against the loser's 26 %, `the_defile` 71 %
+against 26 %, `the_reserve` 39 % against 28 %. That is the expected shape: a
+side that is winning loses units it has worn down, and a side that is losing
+has them killed outright.
+
+`the_storming` inverts it, and that is the finding. The besieger **loses the
+position by 291 a seed and its losses are 52 % salvageable** — it is worn
+down and then killed wounded, rather than overwhelmed. Beside an arrival
+spread of 7–11 turns, that is one story: the siege train arrives piecemeal,
+is ground down at the wall, and dies there instead of being pulled out.
+
+**The obvious answer does not work, and the column is how we know.**
+`swap-rotation` is the gene for pulling a wounded unit out of a line, and on
+`the_storming` it reads **−9.8 ± 33.8**, fires on only 9 of 40 seeds, and
+moves the salvageable share not at all (50 % against 48 %). The reason is in
+its own predicate: the relief must stand *further from the enemy* than the
+unit it replaces, and on a ring around a city every besieger is about
+equally far from it. A rotation measured against **the city** rather than the
+nearest enemy is a different gene, and this board can now price it.
+
 ## What this does not license
 
 The same two limits `src/skirmish.rs` states, and one more.

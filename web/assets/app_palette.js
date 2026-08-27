@@ -113,6 +113,21 @@ function isNaturalWonder(feature) {
   return !!(RULES && RULES.features && RULES.features[feature]
             && RULES.features[feature].natural_wonder);
 }
+// Gathering Storm's `Features_XP2.Volcano` flag rides four features, not one:
+// the generic cone plus Vesuvius, Kilimanjaro and Eyjafjallajokull. Ash
+// therefore has four possible sources, and soil a volcanic Natural Wonder threw
+// has to read as coming from that wonder. The roster is checked first for the
+// same reason the wonder art table is: it is available on the very first frame,
+// before /rules lands.
+const VOLCANO_FEATURES = new Set([
+  "volcano", "vesuvius", "kilimanjaro", "eyjafjallajokull",
+]);
+function isVolcano(feature) {
+  if (!feature) return false;
+  if (VOLCANO_FEATURES.has(feature)) return true;
+  return !!(RULES && RULES.features && RULES.features[feature]
+            && RULES.features[feature].volcano);
+}
 // A footprint continues only through the same named Natural Wonder. This is
 // deliberately stricter than "another wonder": two different landmarks that
 // happen to touch still keep the line that distinguishes them, while every

@@ -8587,14 +8587,18 @@ function paintNaturalWonder(feature, x, y, footprint) {
 
 // Volcanic Soil is fallout, not three unrelated stones. In Strategic, anchor
 // an ash-and-earth fan to the entire edge shared with its volcano, then let it
-// taper into the tile. The fallback covers old saves and second-ring eruption
-// deposits: it is coordinate-seeded, so the mark remains static while still
-// entering through a deliberate edge instead of floating in the hex.
+// taper into the tile. A volcanic Natural Wonder is one of those volcanoes —
+// Vesuvius, Kilimanjaro and Eyjafjallajokull all carry the shipped
+// `Features_XP2.Volcano` flag — so soil one of them left aims back at the
+// wonder rather than falling through to the fallback and pointing anywhere.
+// The fallback still covers old saves and second-ring eruption deposits: it is
+// coordinate-seeded, so the mark remains static while still entering through a
+// deliberate edge instead of floating in the hex.
 function drawStrategicVolcanicSoil(t, x, y) {
   let sourceSide = -1;
   for (let side = 0; side < DIRS.length; side++) {
     const neighbor = nbrTile(t.pos, DIRS[side]);
-    if (neighbor?.feature === "volcano") { sourceSide = side; break; }
+    if (isVolcano(neighbor?.feature)) { sourceSide = side; break; }
   }
   if (sourceSide < 0)
     sourceSide = Math.floor(hash2(t.pos[0] * 29 + 7, t.pos[1] * 31 + 11) * DIRS.length);
@@ -18689,7 +18693,7 @@ function drawPlanetStrategicVolcanicSoil(cells, visible, spectator) {
     let sourceSide = -1;
     for (let side = 0; side < points.length; side++) {
       const neighbor = TMAP.get(cell.nbrs[side]);
-      if (neighbor?.feature === "volcano") { sourceSide = side; break; }
+      if (isVolcano(neighbor?.feature)) { sourceSide = side; break; }
     }
     if (sourceSide < 0)
       sourceSide = Math.floor(hash2(tile.pos[0] * 29 + 7, tile.pos[1] * 31 + 11) * points.length);

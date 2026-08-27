@@ -253,6 +253,29 @@ def arrival_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str
     }
 
 
+def city_occupations(
+    events: list[dict[str, Any]], local_player: int | None
+) -> tuple[int, int]:
+    """`(taken, lost)` cities, from the mod's `city_occupation` events.
+
+    The mod has emitted these since the tactical ledger landed and nothing
+    has ever read them, so no report has been able to say whether a war
+    ended in a capture — the question eleven declared wars and four sieges
+    to 180-190/200 were waiting on.
+    """
+    taken = lost = 0
+    for event in events:
+        if event.get("kind") != "city_occupation" or local_player is None:
+            continue
+        ours_now = event.get("ours_now")
+        was_ours = event.get("original_owner") == local_player
+        if ours_now is True and not was_ours:
+            taken += 1
+        elif ours_now is False and was_ours:
+            lost += 1
+    return taken, lost
+
+
 def combat_section(events: list[dict[str, Any]], local_player: int | None) -> dict[str, Any] | None:
     combats = [event for event in events if event.get("kind") == "combat"]
     if not combats:
@@ -300,6 +323,7 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
     kills = ours["kills"] + theirs["losses_attacking"]
     losses = theirs["kills"] + ours["losses_attacking"]
     mean_err = (sum(preview_error) / len(preview_error)) if preview_error else None
+    cities_taken, cities_lost = city_occupations(events, local_player)
     return {
         "combats": len(combats),
         "our_attacks": ours["combats"],
@@ -310,6 +334,8 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
         "losses": losses,
         "kills_per_loss": round(kills / losses, 2) if losses else None,
         "city_strikes": ours["city_strikes"],
+        "cities_taken": cities_taken,
+        "cities_lost": cities_lost,
         "kills_by_kind": dict(kills_by_kind.most_common()),
         "losses_by_kind": dict(losses_by_kind.most_common()),
         "host_preview": None
@@ -322,11 +348,18 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
     }
 
 
+#: A unit at or below this the last time we saw it was one the controller had
+#: a turn's warning about — below `withdraw_hp` (45), the line its own
+#: recovery uses. The arena's twin is `doctrine::SALVAGEABLE_HP`.
+SALVAGEABLE_HP = 30
+
+
 def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
     states = _states(events)
     turns = sorted(states)
     gone: collections.Counter = collections.Counter()
     gone_by_kind: collections.Counter = collections.Counter()
+    salvageable = 0
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
@@ -339,14 +372,25 @@ def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
             gone_by_kind[kind] += 1
             pos = (int(unit["x"]), int(unit["y"]))
             near = any(hex_distance(pos, plot) <= 2 for plot in hostiles)
+            if (unit.get("hp") or 0) <= SALVAGEABLE_HP:
+                salvageable += 1
             if (unit.get("hp") or 0) >= 100 and isinstance(gold, (int, float)) and gold <= 0:
                 gone["full_hp_treasury_empty"] += 1
             elif near:
                 gone["hostile_within_2"] += 1
             else:
                 gone["no_visible_threat"] += 1
+    lost = sum(gone.values())
     return {
-        "military_units_gone": sum(gone.values()),
+        "military_units_gone": lost,
+        # ⭐ HOW MANY OF THEM THE SEAT SAW COMING. A unit last seen at or
+        # below `SALVAGEABLE_HP` is one the controller had a turn's warning
+        # about and could have rotated, withdrawn or healed out of; the rest
+        # were killed from a health it had no reason to act on. The two are
+        # different failures and only one of them is worth a preservation
+        # change. The arena reports the same share as `salvag.`.
+        "lost_when_salvageable": salvageable,
+        "salvageable_share": round(salvageable / lost, 2) if lost else None,
         "context_at_last_sight": dict(gone),
         "by_kind": dict(gone_by_kind.most_common()),
     }
@@ -514,7 +558,8 @@ def render(report: dict[str, Any]) -> str:
             f"  combat   {combat['combats']} combats: ours {combat['our_attacks']}, received {combat['attacks_received']}; "
             f"kills {combat['kills']}, losses {combat['losses']} "
             f"(kills/loss {combat['kills_per_loss'] if combat['kills_per_loss'] is not None else 'n/a'}); "
-            f"damage dealt {combat['damage_dealt']}, taken {combat['damage_taken']}; city strikes {combat['city_strikes']}"
+            f"damage dealt {combat['damage_dealt']}, taken {combat['damage_taken']}; city strikes {combat['city_strikes']}; "
+            f"cities taken {combat['cities_taken']}, lost {combat['cities_lost']}"
         )
         preview = combat["host_preview"]
         if preview:
@@ -528,6 +573,12 @@ def render(report: dict[str, Any]) -> str:
         f"  roster   {roster['military_units_gone']} military units left the board: "
         + ", ".join(f"{k} {n}" for k, n in roster["context_at_last_sight"].items())
     )
+    if roster["military_units_gone"]:
+        lines.append(
+            f"           {roster['lost_when_salvageable']} were last seen at or below "
+            f"{SALVAGEABLE_HP} hp ({_fmt_share(roster['salvageable_share'])}) — the losses the "
+            f"seat had a turn's warning of"
+        )
     hover = report["hover"]
     lines.append(
         f"  hover    {hover['hovering_unit_turns']} of {hover['unit_turns_2_to_4_from_a_hostile']} "

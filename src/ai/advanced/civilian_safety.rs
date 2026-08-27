@@ -186,15 +186,66 @@ impl AdvancedAi {
         !reach.covers(g, pos) || self.civilian_guarded_at(g, pid, uid, pos)
     }
 
+    /// Whether the Settler's bound guard really protects `pos` this turn.
+    ///
+    /// A body physically stacked with a civilian stops a capture only while
+    /// it can survive the hostile phase.  The default `settler-guard-holds`
+    /// policy already gives that fact one definition: a bound, healthy guard
+    /// that is not outmatched.  Do not let the earlier civilian-reach pass
+    /// accidentally credit the same wounded guard as an unconditional shield
+    /// and skip the retreat that definition requires.
+    fn bound_guard_protects_settler_at(
+        &self,
+        g: &Game,
+        pid: usize,
+        settler: u32,
+        pos: Pos,
+    ) -> bool {
+        let Some(guard) = self.settler_guards.get(&settler).copied() else {
+            return false;
+        };
+        let Some(unit) = g.units.get(&guard) else {
+            return false;
+        };
+        if unit.owner != pid
+            || unit.pos != pos
+            || g.rules.units[unit.kind].class != "military"
+            || matches!(
+                g.rules.units[unit.kind].domain.as_deref(),
+                Some("sea" | "air")
+            )
+        {
+            return false;
+        }
+        if !self.settler_guard_holds_on() {
+            return true;
+        }
+        unit.hp >= STACKED_GUARD_MIN_HP
+            && !self.guard_outmatched_at(g, pid, unit, pos, &self.battlefront_visibility(g, pid))
+    }
+
     fn civilian_guarded_at(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
-        g.city_at(pos)
+        if g.city_at(pos)
             .is_some_and(|city| g.cities[&city].owner == pid)
-            || g.unit_ids_at(pos).iter().any(|other| {
-                *other != uid
-                    && g.units.get(other).is_some_and(|unit| {
-                        unit.owner == pid && g.rules.units[unit.kind].class == "military"
-                    })
-            })
+        {
+            return true;
+        }
+        // The formationless live Settler repair deliberately binds the one
+        // military unit whose turn is reserved to the Settler.  Under that
+        // default policy, an arbitrary bystander is not a safe excuse to
+        // suppress an emergency retreat, and neither is the bound guard once
+        // it has dropped below the shared survival floor.
+        if g.units.get(&uid).is_some_and(|unit| unit.kind == "settler")
+            && self.settler_guard_holds_on()
+        {
+            return self.bound_guard_protects_settler_at(g, pid, uid, pos);
+        }
+        g.unit_ids_at(pos).iter().any(|other| {
+            *other != uid
+                && g.units.get(other).is_some_and(|unit| {
+                    unit.owner == pid && g.rules.units[unit.kind].class == "military"
+                })
+        })
     }
 
     /// The tile a civilian is trying to reach: its site or job, else the
@@ -293,17 +344,21 @@ impl AdvancedAi {
     }
 
     /// Rule 3: bring the nearest healthy land military unit that can reach
-    /// `pos` this turn onto it and bind it to the settler. `true` when a
-    /// guard now shares the tile.
-    fn summon_guard_to(&mut self, g: &mut Game, pid: usize, settler: u32, pos: Pos) -> bool {
-        if let Some(guard) = self.settler_guards.get(&settler).copied() {
-            if g.units
-                .get(&guard)
-                .is_some_and(|unit| unit.owner == pid && unit.pos == pos)
-            {
-                return true;
-            }
+    /// `pos` this turn and survive there, then bind it to the settler. `true`
+    /// when a guard now shares the tile.
+    pub(super) fn summon_guard_to(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        settler: u32,
+        pos: Pos,
+    ) -> bool {
+        if self.bound_guard_protects_settler_at(g, pid, settler, pos) {
+            return true;
         }
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
         let bound: Vec<u32> = self.settler_guards.values().copied().collect();
         let mut candidates: Vec<(i32, i32, u32)> = g
             .player_unit_ids(pid)
@@ -316,6 +371,14 @@ impl AdvancedAi {
                     && unit.hp >= STACKED_GUARD_MIN_HP
                     && unit.linked_to.is_none()
                     && (!bound.contains(uid) || self.settler_guards.get(&settler) == Some(uid))
+                    && (!self.settler_guard_holds_on()
+                        || !self.guard_outmatched_at(
+                            g,
+                            pid,
+                            unit,
+                            pos,
+                            visible.as_ref().expect("computed under the flag"),
+                        ))
                     && (unit.pos == pos
                         || (unit.moves_left > 0.0 && g.reachable(*uid).contains(&pos)))
             })
