@@ -3699,3 +3699,59 @@ submodule too** — 41 files, 1,677 lines here, none of them yours. `game.rs`
 declares those modules and rustfmt follows `mod`. The narrower trap beside the
 known `cargo fmt -- <file>` one; check `git status`, not just the file you
 named.
+
+## 2026-08-27 — movement loops stop measuring edges they just enumerated
+
+The 2026-08-26 opportunity list measured `Sphere::distance` at 3.31% of
+running self time and its ring `binary_search` at 1.61%. The generic movement
+gate was one of those callers: `Game::entry_at` rejected `wdist(from, pos) !=
+1` even when a flood or route loop had just obtained `pos` from `nbrs(from)`.
+The predicate is necessary for a direct, arbitrary-coordinate `Move` request;
+it is not work a loop needs to repeat for each of its already-adjacent
+candidates.
+
+`entry_at` therefore remains the general gate, with its exact distance guard.
+Its rule body lives in a private `entry_at_neighbor` helper, used only by loops
+whose destination comes directly from `Game::nbrs`: the shared
+`relax_movement` kernel behind `flow_past`, `path_to`, and `approach_reach`;
+`reach_steps`; the pass-through probe; and the first-edge gates in all three
+route finders. The future-route terrain gate has the same private, neighbor-only
+form. No public or arbitrary-coordinate caller lost its guard.
+
+The existing movement counter makes the lower bound concrete: one 150-turn
+deployment-shaped game reached **7,621,833** neighbor examinations in
+`relax_movement` alone. Every one that reaches the gate now skips an exact
+world-distance lookup; the route and per-step callers above are additional
+savings not included in that flood counter.
+
+### The precondition is tested on both world shapes
+
+`neighbor_fast_path_matches_the_generic_entry_gate_on_both_world_shapes`
+enumerates every `nbrs` edge of a wrapped cylinder and a Planet globe. It
+asserts `wdist(from, to) == 1` for every edge, then compares the generic and
+neighbor entry, stop, and crossing gates on every one. That catches the only
+new assumption at the wrap seam and at the globe's pentagons, rather than
+assuming ordinary hex-coordinate arithmetic describes either shape.
+
+The focused 16-test movement suite, the frozen `advanced_v1` identity anchor,
+and the complete local `cargo test --profile ci --locked` suite passed (2,609
+library tests, 44 ignored, plus every binary, integration, protocol, and doc
+target). A fresh 2-game 6-player, 74×46, 9-city-state, Online Continents soak
+reached turns 212 and 243 without a failure.
+
+### The local clock is deliberately not a speed claim
+
+Two independent, two-pair `tools/speed_ab.py` windows at 6 players, 74×46, 9
+city-states, 150 turns, Online Continents each reported **same game on every
+seed**. Their clocks point in opposite directions because the host's load did,
+and neither window resolves a change this small:
+
+| seeds | load, start → end | median / resolution | pooled |
+| --- | ---: | ---: | ---: |
+| 7,320,200–201 | 22.81 → 11.73 | −4.45% / ±12.84% | −5.18% |
+| 7,320,210–211 | 9.27 → 29.29 | +25.78% / ±18.71% | +23.76% |
+
+The equal report hashes are load-bearing; the opposite timing signs are not.
+The required five-pair CI cost gate is the performance regression guard for the
+merge, and its result belongs beside this note once the current-main branch is
+validated.
