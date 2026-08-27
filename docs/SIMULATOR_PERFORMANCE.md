@@ -3022,6 +3022,145 @@ run is not quoted: the host was at load 61 with a sibling simulation on it, and
 `docs/speed_ledger.json`'s conditions block is right that a number measured
 there is a measurement of the machine.
 
+## 2026-08-27 — three copies of the movement flood became one, and the tie-break inside it was the whole risk
+
+`Game::flow_past`, `Game::path_to` and `Game::approach_reach` were three
+hand-copied relaxation loops over a `BTreeMap<Pos, f64>` and a re-pushing `Vec`
+stack. `flow_past` is 11.0% of the main thread in the 2026-08-23 profile above
+and `path_to` sits behind every AI march, so the same loop had been optimized
+once and then not twice: the 2026-08-22 and 2026-08-23 hoists landed on
+`flow_past`, and `path_to`/`approach_reach` kept asking the ruleset the same
+questions per neighbour that `flow_past` had already stopped asking.
+
+`Game::relax_movement` is that loop once. The two differences between the three
+callers are parameters:
+
+- **the step test** — a closure: `entry_at(..) != Entry::Blocked` for
+  `flow_past` (which optionally reads through units), `can_pass` for the other
+  two;
+- **what a zone of control does to the arrival** — the `FloodArrival` value
+  type. `f64` writes 0, which is the right answer to *can it move on*.
+  `(f64, bool)` keeps the movement and marks the tile as one nothing expands
+  from, which is the right answer to *can it still strike* — a unit stopped by a
+  zone of control keeps its unused movement for the blow.
+
+Parents are reported through a callback, so `path_to` and `approach_reach` get
+the flood's own parents and `flow_past` allocates no parent map at all.
+
+### ⚠ The tie-break is the answer, not an implementation detail
+
+The stack is LIFO and re-pushes a tile every time it improves; the neighbour
+order is `nbrs`; the improvement test is a strict `>`. Between them they decide
+which parent wins a tie and therefore **which of several equally long walks
+`path_to` returns**. Two floods can agree on every distance and still hand back
+different paths.
+
+A first draft of the kernel got one detail of that wrong, and it is worth
+writing down because the identity check did not catch it. `flow_past` and
+`path_to` apply the zone-of-control zeroing **before** the improvement test:
+
+```rust
+if self.formation_enters_enemy_zoc(uid, n) { new_rem = 0.0; }
+if best.get(&n).map(|b| new_rem > *b).unwrap_or(true) { ... }
+```
+
+so a second arrival at a tile inside a zone of control compares `0.0 > 0.0`,
+fails, and never re-parents the tile. `approach_reach` stores the un-zeroed
+movement and compares that instead. The draft compared the pre-ZOC value in all
+three. Every distance stayed identical — the stored value is still 0 either way
+— and **the 2-seed report-identity check passed**. What would have changed is
+`path_to`'s parent for a destination *inside* a zone of control, i.e. the walk
+returned for exactly the move an attack is made from. (Only the final tile can
+be affected: a tile with zero movement is never expanded from, so it can never
+appear as a parent.)
+
+The shipped kernel compares `arrival.remaining()` — each caller's own rule —
+and the counters below say how often that branch is taken.
+
+### Two unit-only derivations hoisted out of the per-neighbour body
+
+The direct sequel to the 2026-08-23 entry above, which hoisted the *per-unit*
+movement profile into the `QueryMemo` scope. Two more terms did not depend on
+the candidate tile and were still being re-derived per neighbour:
+
+- `unit_max_moves_at`'s linked/escort branch — `units[&uid]`,
+  `rules.units[kind]` and up to two `unit_shares_escort_movement` calls — is now
+  `MovesCap`, decided once per flood, with `capped_moves_at` doing the tile half.
+- `formation_enters_enemy_zoc`'s `unit_ignores_zoc` and `is_linked_leader` — a
+  `SpecMap` lookup and four string comparisons — are now `ZocTest`, decided once
+  per flood, with `enters_enemy_zoc` doing the tile half.
+
+Both public entry points are the hoisted pair applied at one tile, so there is
+still one definition of each rule.
+
+### The counter
+
+Per the standing rule of this file, the verdict is a counter, not a clock.
+Instrumented over one whole game (seed 7320000, 6p 74x46, 9 city-states, 150 turns online, Continents, `--jobs 1`), counting every flood and every
+relaxation the kernel performs:
+
+| | | per flood |
+| --- | ---: | ---: |
+| floods (`relax_movement` calls) | **232,000** | |
+| neighbours examined | 7,621,833 | 32.9 |
+| arrivals relaxed | **5,310,220** | 22.9 |
+| tiles reached | 2,704,390 | 11.7 |
+
+(counters printed every 1,000 floods, so the totals are the last print and
+undercount the tail of the game by under half a percent)
+
+Each arrival used to evaluate `unit_ignores_zoc` and `unit_max_moves_at`'s
+unit half; both are now evaluated once per flood. **5,310,220 evaluations of each became 232,000** — a factor of 22.9, and 5.08 M `SpecMap` lookups plus their string comparisons removed per game, twice over. The 11.7 tiles reached per flood also reproduces the 2026-08-23 entry's 13.5 at a different shape, which is the number that entry used to reject the dense frontier.
+
+And the tie-break above, counted directly — relaxations where the pre-ZOC
+movement improves on the stored value but the post-ZOC movement does not, i.e.
+exactly the comparisons the draft would have decided differently:
+
+| | |
+| --- | ---: |
+| divergent comparisons in one game | **10,657** |
+| as a share of arrivals | 0.20% |
+
+Two tenths of a percent of relaxations, in one 150-turn game, on the tiles a
+unit attacks from. Not a hypothetical.
+
+### Rejected again, without re-measuring: a dense frontier
+
+The 2026-08-23 entry above measured a dense `route_scratch`-style frontier for
+`flow_past` at **+0.81%** and rejected it, with the counter that explains why:
+58.7% of these floods reach 11 tiles or fewer, which is a single `BTreeMap`
+node — a flat, cache-resident array with no tree descent to remove — against a
+`Vec<f64>` sized to every tile on the map and a sort to rebuild the ordering the
+tree supplies for free. The ceiling on the whole idea was computed there at
+0.4%.
+
+This change keeps the `BTreeMap`. Folding three copies into one is orthogonal to
+the container, and re-litigating a measured null inside a kernel whose
+visitation order is load-bearing is the wrong risk to take for an 0.4% ceiling.
+The relevant standing rule from that entry — *the payer is an expensive
+derivation that is recomputed, not a cheap operation that is frequent* — is also
+why the two hoists above are the part of this change that could pay.
+
+### The measurement
+
+`tools/speed_ab.py` hashes each game report, so the exactness claim is the half
+worth quoting on a loaded host:
+
+```
+seeds 7320000..7320001 (2 games x 1 interleave(s) = 2 pairs),
+6p 74x46 9CS 150t online continents, --jobs 1
+  load average 101.24 at start, 101.24 peak, 84.57 at end
+  — same game on every seed
+
+seeds 7320000..7320003 (4 games x 1 interleave(s) = 4 pairs),
+6p 74x46 9CS 150t online continents, --jobs 1
+  load average 84.57 at start, 106.84 peak, 106.84 at end
+  — same game on every seed
+```
+
+Read the identity line, not the timing: the host carried a load average above 90
+for the whole window and a dozen agents share it.
+
 ## 2026-08-27 — the policy review valued the whole empire to price a Great-Scientist card
 
 `AdvancedAi::production_weights` sets `PolicyDeck::Live`, so every deployment
