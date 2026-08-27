@@ -1,23 +1,24 @@
 {
   "coverage": {
     "named": 37,
-    "never_named": 2,
+    "never_named": 3,
     "never_named_treatments": [
+      "enter-the-prophet-race",
       "relief-column-marches",
       "threatened-city-reserve"
     ],
-    "withholdable": 39
+    "withholdable": 40
   },
   "derived": {
     "firaxis_only_count": 28,
-    "live_bridge_count": 67,
-    "native_engine_repair_count": 39,
-    "withholdable_live_count": 39
+    "live_bridge_count": 68,
+    "native_engine_repair_count": 40,
+    "withholdable_live_count": 40
   },
   "genome_coverage": {
-    "capability_toggles": 241,
+    "capability_toggles": 242,
     "measured_by_a_screen": 73,
-    "reachable_as_a_gene": 190,
+    "reachable_as_a_gene": 191,
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 51,
     "unreachable_toggles": [
@@ -139,7 +140,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 15,
+      "declared_count": 16,
       "items": [
         "escort-unstick",
         "buildings-before-projects",
@@ -155,11 +156,12 @@
         "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
-        "culture-building-debt"
+        "culture-building-debt",
+        "enter-the-prophet-race"
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 39,
+      "declared_count": 40,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -199,7 +201,8 @@
         "culture-building-debt",
         "barbarian-settler-capture",
         "relief-column-marches",
-        "threatened-city-reserve"
+        "threatened-city-reserve",
+        "enter-the-prophet-race"
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
@@ -265,7 +268,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 67,
+      "declared_count": 68,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -333,7 +336,8 @@
         "escort-patience-runs-out",
         "barbarian-settler-capture",
         "relief-column-marches",
-        "threatened-city-reserve"
+        "threatened-city-reserve",
+        "enter-the-prophet-race"
       ]
     }
   },
