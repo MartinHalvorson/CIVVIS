@@ -24861,8 +24861,11 @@ impl Game {
     /// The tile half of [`Game::formation_enters_enemy_zoc`], once the
     /// formation half is settled.
     fn enters_enemy_zoc(&self, test: &ZocTest, pos: Pos) -> bool {
-        test.mover.is_some_and(|uid| self.in_enemy_zoc_for(uid, pos))
-            || test.peer.is_some_and(|peer| self.in_enemy_zoc_for(peer, pos))
+        test.mover
+            .is_some_and(|uid| self.in_enemy_zoc_for(uid, pos))
+            || test
+                .peer
+                .is_some_and(|peer| self.in_enemy_zoc_for(peer, pos))
     }
 
     fn formation_enters_enemy_zoc(&self, uid: u32, pos: Pos) -> bool {
@@ -26589,7 +26592,9 @@ impl Game {
                 if rem < cost && !fresh {
                     continue; // MP paid up front (Civ 6)
                 }
-                let new_rem = (rem - cost).max(0.0).min(self.capped_moves_at(uid, &cap, n));
+                let new_rem = (rem - cost)
+                    .max(0.0)
+                    .min(self.capped_moves_at(uid, &cap, n));
                 let arrival = V::arrival(new_rem, self.enters_enemy_zoc(&zoc, n));
                 // ⚠ The zone-of-control rule is applied BEFORE the improvement
                 // test, not after it: `flow_past` and `path_to` compare the
