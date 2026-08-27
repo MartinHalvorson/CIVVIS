@@ -236,6 +236,14 @@ pub struct FeatureSpec {
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
+    /// `Features_XP2.Volcano`: this feature is a volcanic cone that can go
+    /// active and erupt. Gathering Storm ships the flag on four features, not
+    /// one — the generic Volcano and the three volcanic Natural Wonders,
+    /// Vesuvius, Kilimanjaro and Eyjafjallajokull. Reading only the generic
+    /// cone left the three wonders permanently dormant, so no eruption ever
+    /// came out of them and no Volcanic Soil was ever laid down around one.
+    #[serde(default)]
+    pub volcano: bool,
     /// Civilization VI refuses a district on this feature and a Builder cannot
     /// remove it: the Oasis is the shipped case. The rule was half-modelled —
     /// city founding knew it, district siting did not — so run
@@ -3241,6 +3249,16 @@ impl Rules {
         self.terrains[t.terrain].water
     }
 
+    /// Whether this tile carries a volcanic cone — the shipped
+    /// `Features_XP2.Volcano` flag rather than the generic `volcano` feature
+    /// name, so Vesuvius, Kilimanjaro and Eyjafjallajokull count as the
+    /// volcanoes Gathering Storm says they are.
+    pub fn is_volcano(&self, t: &Tile) -> bool {
+        t.feature
+            .as_deref()
+            .is_some_and(|feature| self.features[feature].volcano)
+    }
+
     pub fn is_unknown(&self, t: &Tile) -> bool {
         self.terrains[t.terrain].unknown
     }
@@ -3583,9 +3601,15 @@ mod tests {
         // approximation is `river_flood`, whose three Floodplains features are
         // rated apart in the table and averaged into the single per-severity
         // rate `DisasterSpec` carries.
+        // Moved again by `Features_XP2.Volcano`, which the audit had never
+        // read. The column names four features, not one — the generic cone and
+        // the three volcanic Natural Wonders, Vesuvius, Kilimanjaro and
+        // Eyjafjallajokull — so those three had been scenery: never active,
+        // never drawn by the eruption lottery, and never the source of a hex
+        // of Volcanic Soil.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:fbd69339f1ba4e2b"
+            "fnv1a64:63b1654facb5b19b"
         );
     }
 

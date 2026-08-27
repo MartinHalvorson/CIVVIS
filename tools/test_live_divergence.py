@@ -174,6 +174,44 @@ class Waivers(unittest.TestCase):
         self.assertEqual(ld.breaches(pseudo, {"thresholds": {"city_science": {"mae": 0.9}}}), [])
 
 
+class BinaryLookup(unittest.TestCase):
+    """`--bin`, then the env var, then the cargo dirs, then the published runtimes.
+
+    Until 2026-08-26 only `target/release/live_divergence` was consulted, no
+    host had built it, and every scoreboard row read "no pairs" for the ledger
+    subsystems. The published runtime layout is a directory per sha holding
+    the bins, so a directory names the bin inside it."""
+
+    def test_explicit_then_env_then_cargo_then_published(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            published = root / "published"
+            older = published / "aaaa" / "live_divergence"
+            newer = published / "bbbb" / "live_divergence"
+            for path in (older, newer):
+                path.parent.mkdir(parents=True)
+                path.write_text("")
+            import os
+            os.utime(older, (1, 1))
+            os.utime(newer, (2, 2))
+            env_dir = root / "env-runtime"
+            env_dir.mkdir()
+            (env_dir / "live_divergence").write_text("")
+            env = {ld.BIN_ENV: str(env_dir), "CARGO_TARGET_DIR": str(root / "cargo")}
+            found = ld.binary_candidates("/x/explicit", env=env, home_published=published)
+            self.assertEqual(found[0], Path("/x/explicit"))
+            self.assertEqual(found[1], env_dir / "live_divergence",
+                             "a directory in the env var names the bin inside it")
+            self.assertEqual(found[2], root / "cargo" / "release" / "live_divergence")
+            self.assertEqual(found[3], ld.REPO / "target" / "release" / "live_divergence")
+            self.assertEqual(found[4:], [newer, older], "newest published runtime first")
+
+    def test_nothing_named_means_only_the_cargo_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            found = ld.binary_candidates(None, env={}, home_published=Path(tmp) / "absent")
+            self.assertEqual(found, [ld.REPO / "target" / "release" / "live_divergence"])
+
+
 class CheckCommand(unittest.TestCase):
     def test_check_exit_codes_from_scoreboard_files(self):
         with tempfile.TemporaryDirectory() as tmp:

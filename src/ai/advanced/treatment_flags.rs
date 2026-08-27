@@ -2981,8 +2981,85 @@ impl AdvancedAi {
         self.gold_income_floor = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
+    /// A settler in the barbarians' hands is taken back: exempt from the
+    /// duplicate-settler guard, first among adjacent captures, pursued out to
+    /// `BARBARIAN_SETTLER_PURSUIT_RADIUS`. Gene `barbarian-settler-capture`;
+    /// the flag lives on `BasicAi`, whose `military_step` and
+    /// `capture_adjacent_civilian` read it.
+    pub fn enable_barbarian_settler_capture(&mut self) {
+        self.base.barbarian_settler_capture = true;
+    }
 
+    /// The twin of `enable_barbarian_settler_capture`.
+    pub fn disable_barbarian_settler_capture(&mut self) {
+        self.base.barbarian_settler_capture = false;
+    }
+
+    /// Price a city site's Harbor-eligible coast in the final settlement
+    /// score. See `advanced/coastal_sites.rs`.
+    pub fn enable_coastal_city_sites(&mut self) {
+        self.coastal_city_sites = true;
+    }
+
+    /// The twin of `enable_coastal_city_sites`.
+    pub fn disable_coastal_city_sites(&mut self) {
+        self.coastal_city_sites = false;
+    }
+
+    /// Version 2 keeps the coast baseline and additionally prices the best
+    /// water-resource adjacency around a prospective Harbor.
+    pub fn enable_coastal_city_sites_2(&mut self) {
+        self.coastal_city_sites = false;
+        self.coastal_city_sites_2 = true;
+    }
+
+    /// The twin of `enable_coastal_city_sites_2`.
+    pub fn disable_coastal_city_sites_2(&mut self) {
+        self.coastal_city_sites_2 = false;
+    }
+
+    // Filed here rather than under a marker: `test_treatment_append_points`
+    // reads every line under a marker as an entry and takes its first
+    // identifier, so a whole function files as `pub` and `self`.
+
+    /// Price a strike with the two strengths the engine will resolve it
+    /// with, so matchup, flanking, adjacent support, ground and the river
+    /// reach the exchange evaluation. See `exchange_is_the_engines`.
+    pub fn enable_exchange_is_the_engines(&mut self) {
+        self.base.exchange_is_the_engines = true;
+    }
+
+    /// The twin of `enable_exchange_is_the_engines`.
+    pub fn disable_exchange_is_the_engines(&mut self) {
+        self.base.exchange_is_the_engines = false;
+    }
+
+    /// Price the defender on the tile it is being asked about, with that
+    /// tile's own defence, so a unit weighing a hill is credited for the
+    /// hill. See `defend_where_you_stand`.
+    pub fn enable_defend_where_you_stand(&mut self) {
+        self.base.defend_where_you_stand = true;
+    }
+
+    /// The twin of `enable_defend_where_you_stand`.
+    pub fn disable_defend_where_you_stand(&mut self) {
+        self.base.defend_where_you_stand = false;
+    }
+
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it — the engine's own `Action::Swap`, which no controller has
+    /// ever chosen — so the line does not open when it leaves. See
+    /// `swap_rotation`.
+    pub fn enable_swap_rotation(&mut self) {
+        self.swap_rotation = true;
+    }
+
+    /// The twin of `enable_swap_rotation`.
+    pub fn disable_swap_rotation(&mut self) {
+        self.swap_rotation = false;
+    }
+
+    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
     // ---- append: e-f ------------------------------------------------

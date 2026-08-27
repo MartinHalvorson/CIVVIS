@@ -136,6 +136,46 @@ class ResourcePlacementWeightsAreAudited(unittest.TestCase):
         self.assertEqual(projected["stone"]["sea_frequency"], 0)
 
 
+class TheVolcanoFlagIsAudited(unittest.TestCase):
+    """⚠ `Features_XP2.Volcano` rides FOUR features, not one.
+
+    The generic cone plus Vesuvius, Kilimanjaro and Eyjafjallajokull. The audit
+    never read the column at all, so an engine that recognised only the feature
+    named `volcano` left the three Natural Wonders dormant for good and the
+    report said the Features table agreed.
+    """
+
+    def test_the_three_volcanic_natural_wonders_project_as_volcanoes(self):
+        database = database_with({
+            "Features": [
+                {"FeatureType": "FEATURE_VOLCANO"},
+                {"FeatureType": "FEATURE_VESUVIUS", "NaturalWonder": "true"},
+                {"FeatureType": "FEATURE_KILIMANJARO", "NaturalWonder": "true"},
+                {"FeatureType": "FEATURE_EYJAFJALLAJOKULL", "NaturalWonder": "true"},
+                {"FeatureType": "FEATURE_FOREST"},
+            ],
+            "Features_XP2": [
+                {"FeatureType": "FEATURE_VOLCANO", "Volcano": "true"},
+                {"FeatureType": "FEATURE_VESUVIUS", "Volcano": "true"},
+                {"FeatureType": "FEATURE_KILIMANJARO", "Volcano": "true"},
+                {"FeatureType": "FEATURE_EYJAFJALLAJOKULL", "Volcano": "true"},
+                {"FeatureType": "FEATURE_FOREST", "ValidForReplacement": "true"},
+            ],
+        })
+
+        projected = civ6_fidelity.project_features(database)
+        self.assertEqual(
+            sorted(name for name, entry in projected.items() if entry["volcano"]),
+            ["eyjafjallajokull", "kilimanjaro", "vesuvius", "volcano"],
+        )
+        self.assertFalse(projected["forest"]["volcano"])
+
+    def test_a_reference_without_the_side_table_flags_nothing(self):
+        database = database_with({"Features": [{"FeatureType": "FEATURE_VOLCANO"}]})
+
+        self.assertFalse(civ6_fidelity.project_features(database)["volcano"]["volcano"])
+
+
 class ImprovementPlacementAlternativesAreAudited(unittest.TestCase):
     def test_a_feature_can_be_an_alternative_to_hills(self):
         database = database_with({

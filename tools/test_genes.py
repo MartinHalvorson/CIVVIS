@@ -536,6 +536,7 @@ class TheOperatorPins(unittest.TestCase):
         expected_pins = {
             "apostle-promotion-by-role",
             "army-target-weighs-enemy",
+            "barbarian-settler-capture",
             "boost-wait-research",
             "builder-supply-floor",
             "buildings-before-projects",
@@ -586,7 +587,7 @@ class TheOperatorPins(unittest.TestCase):
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 49)
+        self.assertEqual(len(pins), 50)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         # ⭐ The versioned family the operator moved on 2026-08-26: the ship
@@ -603,10 +604,19 @@ class TheOperatorPins(unittest.TestCase):
         # decision beside every pin is recorded, rather than treating a
         # reporting-only refresh as a reason to re-select defaults.
         readings = {tag: rules["batch_decisions"].get(tag) for tag in pins}
+        # ⭐ A pin over a gene no batch has priced has no reading beside it;
+        # every such pin is named in `PINNED_BEFORE_PRICING`, and leaves it
+        # the day a batch prices it.
+        unpriced = set(gene_ledger.PINNED_BEFORE_PRICING)
+        self.assertTrue(unpriced <= set(pins), unpriced - set(pins))
         self.assertTrue(
-            all(call in {"on", "off", "unresolved"} for call in readings.values()),
+            all(call in {"on", "off", "unresolved"} or (call is None and tag in unpriced)
+                for tag, call in readings.items()),
             readings,
         )
+        for tag in unpriced:
+            self.assertIsNone(
+                readings[tag], f"{tag} is priced now; its PINNED_BEFORE_PRICING row has done its job")
 
 
 class TheOperatorHolds(unittest.TestCase):
@@ -1916,8 +1926,10 @@ class TheTableIsDerived(unittest.TestCase):
             else:
                 text = evidence
                 self.assertIn("## Awaiting measurement", text)
-                # No batch priced it, so the batch rule reads it as off.
-                self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
+                # No batch priced it, so the batch rule reads it as off —
+                # unless the operator pinned it on by name.
+                default = "**on**" if tag in gene_ledger.PINNED_BEFORE_PRICING else "off"
+                self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
 
     def test_descriptions_come_from_the_toggle_docs(self):
         desc = ranking.descriptions()
@@ -2328,7 +2340,13 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
                       if tag not in recorded]
         self.assertTrue(batch_only, "some gene is on from its batch columns alone")
         for tag in batch_only:
-            self.assertEqual(displayed[tag], "**on**", tag)
+            if tag in gene_ledger.PINNED_BEFORE_PRICING:
+                # On by the operator's name, not by a column: awaiting
+                # measurement, and marked on there.
+                self.assertNotIn(tag, displayed, tag)
+                self.assertIn(f"| `{tag}` | **on** (unmeasured) |", self.evidence, tag)
+            else:
+                self.assertEqual(displayed[tag], "**on**", tag)
             self.assertRegex(list_rows, rf"(?m)^{re.escape(tag)}\s+.+\s+on\s+unmeasured$")
 
     def test_the_evidence_section_marks_the_default_without_a_counterfactual_rule(self):
@@ -2762,6 +2780,35 @@ class EveryTestInThisFileIsCollected(unittest.TestCase):
     So this counts them. `def test_` at method indentation is a test method,
     and unittest must have loaded every one of them."""
 
+    def test_the_runner_is_the_last_thing_in_the_file(self):
+        """⭐ The check above can only fail where it cannot be seen.
+
+        `test_every_method_named_test_is_loaded` compares written methods to
+        loaded ones — but a class defined BELOW `unittest.main()` is missing
+        only when this file is run as `__main__`, because that call executes
+        before the rest of the module is defined. CI runs `unittest discover`,
+        which imports the module instead, so every class exists and the check
+        passes. That is exactly what happened to #2584: four test methods sat
+        under the runner, CI was green, and the failure surfaced only in the
+        continuous batch scheduler, which runs `python3 tools/test_genes.py`
+        directly — where it blocked publication on every machine.
+
+        So assert the shape, not the symptom. This fails under `discover`.
+        """
+        source = Path(__file__).read_text(encoding="utf-8")
+        # ⚠ One idiom, shared with `civvis_collab.py` and `overwrite_guard.py`
+        # (#2341): writing ABOUT a marker must not be USING it. Spelled
+        # literally here, this line would be a second occurrence and the count
+        # below would always read 2.
+        marker = 'if __name__ == "__%s__":' % "main"
+        self.assertEqual(source.count(marker), 1)
+        after = source.split(marker, 1)[1]
+        self.assertEqual(
+            after.strip(), "unittest.main()",
+            "the runner must be the last statement in this file; anything "
+            "defined below it does not exist when the file is run directly",
+        )
+
     def test_every_method_named_test_is_loaded(self):
         source = Path(__file__).read_text()
         written = set(re.findall(r"^    def (test_\w+)", source, re.M))
@@ -2776,9 +2823,6 @@ class EveryTestInThisFileIsCollected(unittest.TestCase):
             "check that each sits directly inside a TestCase class",
         )
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TheCommandThatMovesTheGenomeRecordsWhatItCosts(unittest.TestCase):
@@ -2820,3 +2864,7 @@ class TheCommandThatMovesTheGenomeRecordsWhatItCosts(unittest.TestCase):
         header = source.split("def ", 1)[0]
         self.assertNotIn("import genome_cost", header)
         self.assertIn("    import genome_cost", source)
+
+
+if __name__ == "__main__":
+    unittest.main()

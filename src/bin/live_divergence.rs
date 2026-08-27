@@ -81,6 +81,9 @@ pub struct SimFrame {
     pub gold_delta: f64,
     pub faith_delta: f64,
     pub favor_delta: Option<f64>,
+    /// The engine's own tourism per turn after the passive turn
+    /// (`tourism_per_turn_model`, never the host reading it may hold).
+    pub tourism: f64,
 }
 
 /// `RELIGION_CATHOLICISM`, `Catholicism` and `catholicism` are one religion.
@@ -266,8 +269,17 @@ pub fn combat_pairs(combats: &[LedgerCombat], mirror: &LiveMirror) -> Vec<Pair> 
         .iter()
         .filter_map(|combat| {
             let live = combat.damage_to_defender?;
-            let attacker = game.units.get(mirror.uid_of.get(&combat.attacker)?)?;
-            let defender = game.units.get(mirror.uid_of.get(&combat.defender)?)?;
+            // Either side may be foreign: the mirror keeps those ids apart from
+            // our own, whose map the sync path prunes against `state.units`.
+            let board_id = |civ6: &i64| {
+                mirror
+                    .uid_of
+                    .get(civ6)
+                    .or_else(|| mirror.foreign_uid_of.get(civ6))
+                    .copied()
+            };
+            let attacker = game.units.get(&board_id(&combat.attacker)?)?;
+            let defender = game.units.get(&board_id(&combat.defender)?)?;
             let sim = expected_damage(
                 game.unit_strength(attacker, false),
                 game.unit_strength(defender, true),
@@ -306,6 +318,7 @@ pub fn sim_frame(mirror: &LiveMirror, before: (f64, f64, Option<f64>)) -> SimFra
     frame.gold_delta = seat.gold - before.0;
     frame.faith_delta = seat.faith - before.1;
     frame.favor_delta = before.2.map(|favor| seat.diplomatic_favor - favor);
+    frame.tourism = game.tourism_per_turn_model(0);
     frame
 }
 
@@ -419,7 +432,7 @@ fn main() {
         Subsystem {
             unit: "tourism/turn",
             pairs: Vec::new(),
-            note: "the seat's own tourism per turn is not in the state export (only rivals' is); no pair can be formed",
+            note: "the seat's tourism per turn (`tourism_per_turn`, exported since 2026-08-27) vs the engine's model after the passive turn; older exports form no pair",
         },
     );
     report.subsystems.insert(
@@ -579,6 +592,17 @@ fn compare_turn(
         out.extend(pairs.into_iter().map(|p| (name, p)));
     }
     out.extend(empire_delta_pairs(prev, next, &sim));
+    if let Some(live) = next.tourism_per_turn {
+        out.push((
+            "tourism",
+            Pair {
+                turn: next.turn,
+                key: "tourism".into(),
+                live,
+                sim: sim.tourism,
+            },
+        ));
+    }
     out.extend(
         loyalty_pairs(next, &sim)
             .into_iter()

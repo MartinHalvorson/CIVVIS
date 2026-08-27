@@ -710,6 +710,9 @@ impl GrandStrategy {
 /// time" is not otherwise observable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StrategyCensus {
+    /// Wounded front-liners traded out of the line for a fresh unit. See
+    /// `advanced/swap_rotation.rs`.
+    pub swap_rotations: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -4476,6 +4479,13 @@ pub struct AdvancedAi {
     /// state for `contested_land_first`, whose flag is on `BasicAi`. See
     /// `advanced/contested_land.rs`.
     contested_land_frame: RefCell<contested_land::ContestedLandFrame>,
+    /// Price city sites with an adjacent Harbor-eligible coast. Opt-in gene
+    /// `coastal-city-sites`; see `advanced/coastal_sites.rs`.
+    coastal_city_sites: bool,
+    /// Version 2 of `coastal-city-sites`: keep the coast baseline and add the
+    /// best local Harbor water-resource adjacency. Its toggle selects this
+    /// version instead of version 1. Opt-in gene `coastal-city-sites-2`.
+    coastal_city_sites_2: bool,
 
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
     /// or a wonder at the front of the owning city's queue. Opt-in gene
@@ -5075,6 +5085,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it, so the line does not open when it leaves. Opt-in gene
+    /// `swap-rotation`; see `advanced/swap_rotation.rs`.
+    swap_rotation: bool,
     /// A shooter's tile beside a melee friend that stands nearer the enemy
     /// earns two screen weights — the arena's own definition of screened.
     /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
@@ -5568,6 +5582,9 @@ use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 /// into it, stack with a summoned guard when they must. Opt-in gene
 /// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
 mod civilian_safety;
+/// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
+/// resource-aware version. See `advanced/coastal_sites.rs`.
+mod coastal_sites;
 /// Three Deity habits: chop into the queue, chase eurekas with Builders and
 /// with the production queue. Three opt-in genes; see
 /// `advanced/deity_habits.rs`.
@@ -5629,6 +5646,14 @@ mod field_craft;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
+
+/// Price it like the engine: the exact exchange, and the defender priced
+/// where it would stand. Two opt-in genes; see `advanced/engine_pricing.rs`.
+mod engine_pricing;
+
+/// Swap rotation: the wounded front-liner trades places with the fresh unit
+/// behind it. One opt-in gene; see `advanced/swap_rotation.rs`.
+mod swap_rotation;
 
 /// The fire plan: this turn's kills, allocated once from the engine's own
 /// arithmetic, ordering the unit loop and biasing the attack scan. One
@@ -6352,6 +6377,8 @@ impl AdvancedAi {
             city_target_meets_the_map: false,
             camp_tile_buyout: false,
             contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
+            coastal_city_sites: false,
+            coastal_city_sites_2: false,
 
             chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
@@ -6427,6 +6454,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            swap_rotation: false,
             screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
@@ -8916,7 +8944,15 @@ impl AdvancedAi {
                         .get(city)
                         .is_some_and(|city| g.city_religion(city) == Some(faith))
                 })
-                .count();
+                .count()
+                // The host's own majority answer, where the mirror recorded
+                // one, counts the cities of theirs we have never seen; on a
+                // native board it is the same test as the count above.
+                .max(if g.civ_follows_religion(other.id, faith) {
+                    majority
+                } else {
+                    0
+                });
             required += majority;
             held += following.min(majority);
         }
@@ -8933,17 +8969,13 @@ impl AdvancedAi {
             .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
             .map(|player| player.id)
             .collect();
+        // `civ_follows_religion` is the engine's `following * 2 > cities`
+        // test on a native board and the host's `GetReligionInMajorityOfCities`
+        // answer on a mirrored one, where a rival's unseen cities count.
         let converted = g.players[pid].religion.as_ref().map_or(0, |religion| {
             living_majors
                 .iter()
-                .filter(|other| {
-                    let cities = g.player_city_ids(**other);
-                    let following = cities
-                        .iter()
-                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
-                        .count();
-                    !cities.is_empty() && following * 2 > cities.len()
-                })
+                .filter(|other| g.civ_follows_religion(**other, religion.as_str()))
                 .count()
         });
         (converted, living_majors.len())
@@ -23556,13 +23588,12 @@ impl AdvancedAi {
         };
         let tile = &g.map.tiles[&pos];
         let mut value = value_of(tile, 1.5);
-        let mut fresh = tile.has_river();
+        let fresh = Self::settlement_prefilter_has_fresh_water(g, pos);
         let mut coastal = false;
         for neighbor in g.nbrs(pos) {
             let Some(tile) = g.map.get(neighbor) else {
                 continue;
             };
-            fresh |= tile.terrain == "lake" || tile.feature.as_deref() == Some("oasis");
             coastal |= matches!(tile.terrain.as_str(), "coast" | "ocean");
             value += value_of(tile, 1.0);
         }
@@ -23597,6 +23628,7 @@ impl AdvancedAi {
                 } * ring_discount;
             }
         }
+        value += self.coastal_city_site_bonus(g, pos, &g.wdisk(pos, 2));
         let fresh = tile.has_river()
             || g.nbrs(pos).iter().any(|p| {
                 g.map
@@ -23656,6 +23688,7 @@ impl AdvancedAi {
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.coastal_city_site_bonus(g, pos, &positions);
         value += self.wonder_footprint_value(g, &positions);
         let enemy_distance = g
             .cities
@@ -25491,16 +25524,33 @@ impl AdvancedAi {
             return None;
         }
         let current = g.units[&uid].pos;
+        // The live safety floor already refuses to price a stacked guard as
+        // protection when it is wounded or a visible hostile can break it.
+        // Keep the assignment itself to that same definition: otherwise a
+        // guard that has ceased to protect is retained forever, and the
+        // Settler waits beside the exact unit that will die first.
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
         if let Some(guard) = self.settler_guards.get(&uid).copied() {
-            let alive = g.units.get(&guard).is_some_and(|unit| {
+            let can_hold = g.units.get(&guard).is_some_and(|unit| {
                 unit.owner == pid
                     && g.rules.units[unit.kind].class == "military"
                     && !matches!(
                         g.rules.units[unit.kind].domain.as_deref(),
                         Some("sea" | "air")
                     )
+                    && (!self.settler_guard_holds_on()
+                        || (unit.hp >= STACKED_GUARD_MIN_HP
+                            && !self.guard_outmatched_at(
+                                g,
+                                pid,
+                                unit,
+                                current,
+                                visible.as_ref().expect("computed under the flag"),
+                            )))
             });
-            if !alive {
+            if !can_hold {
                 self.settler_guards.remove(&uid);
                 self.guard_wait.remove(&uid);
             }
@@ -25527,6 +25577,15 @@ impl AdvancedAi {
                         && !taken.contains(candidate)
                         && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
                         && !holds_threatened_city(unit.pos)
+                        && (!self.settler_guard_holds_on()
+                            || (unit.hp >= STACKED_GUARD_MIN_HP
+                                && !self.guard_outmatched_at(
+                                    g,
+                                    pid,
+                                    unit,
+                                    current,
+                                    visible.as_ref().expect("computed under the flag"),
+                                )))
                 })
                 .min_by_key(|candidate| {
                     let unit = &g.units[candidate];
@@ -27622,7 +27681,7 @@ impl AdvancedAi {
             .filter(|city| g.can_establish_trade_route(pid, origin, city.id))
             .map(|city| {
                 (
-                    self.trade_route_destination_value(g, pid, city, strategy),
+                    self.trade_route_destination_value_from(g, pid, Some(origin), city, strategy),
                     city.id,
                 )
             })
@@ -27682,7 +27741,27 @@ impl AdvancedAi {
         city: &crate::game::City,
         strategy: GrandStrategy,
     ) -> f64 {
-        let mut value = self.yield_value(g.trade_route_yields(pid, city.id), strategy);
+        self.trade_route_destination_value_from(g, pid, None, city, strategy)
+    }
+
+    /// The same valuation from a known origin. Where the host has priced this
+    /// exact pair (`Game::observed_route_options` — the shipped chooser's own
+    /// `CalculateOriginYieldFromPotentialRoute` sum, exported while a route
+    /// slot is open), its figure stands in for the model's route yields: the
+    /// model cannot see a destination's districts in fog. The premiums on top
+    /// (quest, alliance, tourism) are the board's own either way.
+    pub(crate) fn trade_route_destination_value_from(
+        &self,
+        g: &Game,
+        pid: usize,
+        origin: Option<u32>,
+        city: &crate::game::City,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        let yields = origin
+            .and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied())
+            .unwrap_or_else(|| g.trade_route_yields(pid, city.id));
+        let mut value = self.yield_value(yields, strategy);
         // `quest_trade_route`: the Envoy a city-state asking us for a route
         // pays for one. See `advanced/city_state_quests.rs`.
         value += self.quest_trade_route_premium(g, pid, city.owner, strategy);
@@ -28892,6 +28971,11 @@ impl AdvancedAi {
                     value += self.base.w.mv_support;
                 }
             }
+            // `defend-where-you-stand`: priced once for this tile, and only
+            // if something actually reaches it. `None` with the gene off,
+            // and then the defence below is the snapshot's, as before. See
+            // `advanced/engine_pricing.rs`.
+            let mut standing_defense: Option<f64> = None;
             for enemy in g.units.values().filter(|other| {
                 enemies.contains(&other.owner)
                     && visible.as_ref().is_none_or(|visible| {
@@ -28913,8 +28997,13 @@ impl AdvancedAi {
                 if g.wdist(tile, enemy.pos) <= radius {
                     let attack =
                         crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
-                    let defense =
-                        crate::game::effective_strength(g.unit_strength(&unit, true), unit.hp);
+                    let defense = *standing_defense.get_or_insert_with(|| {
+                        let base = self
+                            .base
+                            .defence_base_where_it_would_stand(g, uid, tile)
+                            .unwrap_or_else(|| g.unit_strength(&unit, true));
+                        crate::game::effective_strength(base, unit.hp)
+                    });
                     value -= self.base.w.mv_threat
                         * threat_caution
                         * 30.0
@@ -30881,6 +30970,13 @@ impl AdvancedAi {
                 self.base.remember_capture_objective(g, pid, uid, city);
             }
         }
+        // A barbarian-held settler is not an unwanted one under the
+        // `barbarian-settler-capture` gene: it is the capture below.
+        let barb_rescue: Option<usize> = if self.base.barbarian_settler_capture {
+            g.barb_pid
+        } else {
+            None
+        };
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
@@ -30888,6 +30984,7 @@ impl AdvancedAi {
                     other.owner != pid
                         && g.is_at_war(pid, other.owner)
                         && other.kind == "settler"
+                        && barb_rescue != Some(other.owner)
                 })
             });
         if !unwanted_settler_adjacent
@@ -30920,6 +31017,15 @@ impl AdvancedAi {
                 return acted;
             }
         }
+        // `swap-rotation`: a wounded unit holding a front trades places with
+        // the fresh unit behind it, so the line does not open when it
+        // leaves. Ahead of recovery deliberately — recovery is what walks it
+        // away. `None` with the gene off. See `advanced/swap_rotation.rs`.
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.swap_rotation_step(g, pid, uid) {
+                return acted;
+            }
+        }
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
@@ -30937,6 +31043,18 @@ impl AdvancedAi {
         if self
             .base
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
+        {
+            return true;
+        }
+        // The gene's pursuit half: a capturable barbarian-held civilian a few
+        // tiles out is walked onto rather than watched. #2075 enabled the
+        // flag and never called this from here, so on the live seat the
+        // pursuit existed only in `BasicAi::military_step`, which a major
+        // does not run.
+        if self.base.barbarian_settler_capture
+            && self
+                .base
+                .pursue_capturable_civilian(g, pid, uid, decline_settlers)
         {
             return true;
         }
