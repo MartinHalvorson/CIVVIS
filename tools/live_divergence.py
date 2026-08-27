@@ -386,7 +386,7 @@ def binary_candidates(explicit: str | None = None, env: dict | None = None,
     return out
 
 
-def find_binary(explicit: str | None) -> Path:
+def find_binary(explicit: str | None, no_build: bool = False) -> Path:
     candidates = binary_candidates(explicit)
     if explicit or os.environ.get(BIN_ENV):
         # Named explicitly: never fall through to a build the caller did not ask for.
@@ -397,6 +397,10 @@ def find_binary(explicit: str | None) -> Path:
     for path in candidates:
         if path.is_file():
             return path
+    if no_build:
+        raise SystemExit(
+            "live_divergence: no built binary found among "
+            f"{[str(p) for p in candidates]} and --no-build was passed")
     print("live_divergence: building target/release/live_divergence", file=sys.stderr)
     subprocess.run(
         ["cargo", "build", "--release", "--bin", "live_divergence"],
@@ -435,6 +439,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="print the run summary as JSON")
     ap.add_argument("--bin", help=f"live_divergence binary (else ${BIN_ENV}, $CARGO_TARGET_DIR/release, "
                     "target/release, the newest published runtime dir; see the header)")
+    ap.add_argument("--no-build", action="store_true",
+                    help="fail instead of running `cargo build` when no built "
+                         "binary is found among the --bin candidates")
     ap.add_argument("--fidelity-dir", default=str(FIDELITY_DIR))
     ap.add_argument("--no-scoreboard", action="store_true", help="write only the report")
     ap.add_argument("--fidelity-doc", default=str(FIDELITY_DOC), help="FIDELITY.md carrying the generated section")
@@ -465,7 +472,7 @@ def main(argv: list[str] | None = None) -> int:
         events = events / "events.jsonl"
     if not events.exists():
         raise SystemExit(f"live_divergence: no events.jsonl at {events}")
-    report = run_binary(find_binary(args.bin), events, args.turns)
+    report = run_binary(find_binary(args.bin, no_build=args.no_build), events, args.turns)
     summary = summarize(report, source_commit=git_head())
 
     if not args.no_scoreboard:

@@ -87,6 +87,25 @@ class OverwriteGuardTests(unittest.TestCase):
         finally:
             os.chdir(cwd)
 
+    def test_the_guard_runs_standalone_from_a_temp_dir(self):
+        """`.github/workflows/overwrite-guard.yml` exports main's copy of the
+        tool alone into /tmp and runs it there, so it may not import a sibling
+        module. #2642 made it import `_common` and every PR in the fleet failed
+        the required check. This runs the file exactly the way the workflow
+        does: copied by itself into an empty directory."""
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = pathlib.Path(tmp) / "overwrite_guard.py"
+            shutil.copy(pathlib.Path(overwrite_guard.__file__), copy)
+            result = subprocess.run(
+                [sys.executable, str(copy), "--help"],
+                capture_output=True, text=True, cwd=tmp, check=False,
+            )
+        self.assertEqual(
+            result.returncode, 0,
+            f"the guard cannot run standalone:\n{result.stderr}",
+        )
+
     def test_deleting_young_work_unacknowledged_fails(self):
         head = self.branch_deleting("panel.txt", 0, "Redesign the panel")
         self.assertEqual(self.verdict(head), 1)
@@ -408,9 +427,9 @@ class OneIdiomTests(unittest.TestCase):
     `tools/speed_ab.py` spells the same hatch as `paired-cost: allow <reason>`.
     Two hand-maintained copies of a security-shaped pattern drift, and the way
     they drift is one of them getting looser — which is the whole defect this
-    file exists for. The duplication itself is forced: `overwrite-guard.yml`
-    copies `overwrite_guard.py` alone to `/tmp` and runs it there, so it cannot
-    import from the repository. Comparing them here is the cheap alternative.
+    file exists for. The workflow copies the guard and its `_common.py` helper
+    to `/tmp`, so it cannot import from the repository. Comparing them here is
+    the cheap alternative.
     """
 
     def setUp(self):
@@ -429,6 +448,18 @@ class OneIdiomTests(unittest.TestCase):
     def test_both_blank_fenced_blocks_the_same_way(self):
         body = "intro\n```\nhidden\n```\ntail\n"
         self.assertEqual(overwrite_guard.prose(body), self.speed_ab.prose(body))
+
+    def test_workflow_copies_the_guard_with_its_shared_helper(self):
+        workflow = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / ".github/workflows/overwrite-guard.yml"
+        ).read_text()
+        self.assertIn(
+            "git show origin/main:tools/overwrite_guard.py > /tmp/overwrite_guard.py",
+            workflow,
+        )
+        self.assertIn(
+            "git show origin/main:tools/_common.py > /tmp/_common.py", workflow)
 
 
 if __name__ == "__main__":

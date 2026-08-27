@@ -11606,6 +11606,236 @@ mod tests {
             "a genuinely untranslatable unit must stay a bridge defect"
         );
     }
+
+    /// The ordered host-state step list, per mode, exactly as
+    /// `HOST_STATE_STEPS` declares it.
+    ///
+    /// ⚠⚠ A STEP THAT LANDS ON ONE PASS ONLY IS THE BUG THE TABLE EXISTS TO
+    /// PREVENT. `rebuild_from_state` and `Mirror::sync` used to carry a private
+    /// copy of this each — ~1,000 lines apiece, 26 and 25 `apply_*` helpers —
+    /// and a one-to-one map of a new Civilization VI reading written into one
+    /// body and not the other desynced a live seat with nothing to see. If this
+    /// test fails the list moved: say so here, per mode, or put the step back.
+    #[test]
+    fn host_state_step_list_is_the_recorded_order() {
+        use super::{host_step_names, HostPhase, MirrorMode};
+        let rebuild = |phase| host_step_names(MirrorMode::Rebuild, phase);
+        let sync = |phase| host_step_names(MirrorMode::Sync, phase);
+
+        assert_eq!(
+            rebuild(HostPhase::Empire),
+            [
+                "game_speed",
+                "seat_victories",
+                "difficulty",
+                "human_seat",
+                "map_script",
+                "refused_site_blocks",
+                "identity",
+            ]
+        );
+        assert_eq!(sync(HostPhase::Empire), ["identity"]);
+
+        // ⚠ `host_gold` sits either side of `host_maintenance` depending on the
+        // pass. Both orders are what shipped, and neither helper reads what the
+        // other writes.
+        assert_eq!(
+            rebuild(HostPhase::Economy),
+            [
+                "turn_and_score",
+                "max_turns",
+                "host_gold",
+                "host_maintenance",
+                "faith_and_dvp",
+                "congress_dvp",
+                "host_competitions",
+                "diplomatic_favor",
+                "mirrored_envoys_free",
+                "player_religion",
+            ]
+        );
+        assert_eq!(
+            sync(HostPhase::Economy),
+            [
+                "turn_and_score",
+                "host_maintenance",
+                "host_gold",
+                "faith_and_dvp",
+                "congress_dvp",
+                "host_competitions",
+                "diplomatic_favor",
+                "mirrored_envoys_free",
+                "player_religion",
+            ]
+        );
+
+        assert_eq!(rebuild(HostPhase::Refresh), [] as [&str; 0]);
+        assert_eq!(
+            sync(HostPhase::Refresh),
+            ["terrain", "territory", "city_memory"]
+        );
+
+        // ⚠ `trade_routes` likewise: before the terrain passes on the sync,
+        // after `city_memory` on the rebuild.
+        assert_eq!(
+            rebuild(HostPhase::Board),
+            [
+                "terrain",
+                "territory",
+                "tile_memory",
+                "city_memory",
+                "trade_routes",
+                "governor_state",
+                "host_envoys",
+                "great_person_points",
+                "strategic_stockpiles",
+                "player_ages",
+                "host_congress",
+                "observed_host_metrics",
+                "loyalty_doomed_sites",
+            ]
+        );
+        assert_eq!(
+            sync(HostPhase::Board),
+            [
+                "trade_routes",
+                "terrain",
+                "territory",
+                "tile_memory",
+                "city_memory",
+                "governor_state",
+                "host_envoys",
+                "great_person_points",
+                "strategic_stockpiles",
+                "player_ages",
+                "host_congress",
+                "observed_host_metrics",
+                "loyalty_doomed_sites",
+            ]
+        );
+
+        let finish = ["player_ages", "host_climate", "record_host_observed"];
+        assert_eq!(rebuild(HostPhase::Finish), finish);
+        assert_eq!(sync(HostPhase::Finish), finish);
+    }
+
+    /// The whole divergence between the two passes, named in one place.
+    ///
+    /// The only `apply_*` helper one pass calls and the other does not is
+    /// `apply_seat_victories`, here as `seat_victories`: the host's enabled
+    /// victory conditions cannot change mid-game, so a sync never re-reads them.
+    /// Everything else on these two lists is board setup the rebuild does once
+    /// (`game_speed`, `difficulty`, `human_seat`, `map_script`, `max_turns`, the
+    /// refusal ledgers) or the sync-only mid-pass over ground revealed this turn.
+    #[test]
+    fn the_two_host_state_passes_differ_only_where_recorded() {
+        use super::{host_step_names, HostPhase, MirrorMode};
+        let mut rebuild_only = Vec::new();
+        let mut sync_only = Vec::new();
+        for phase in [
+            HostPhase::Empire,
+            HostPhase::Economy,
+            HostPhase::Refresh,
+            HostPhase::Board,
+            HostPhase::Finish,
+        ] {
+            let on_rebuild = host_step_names(MirrorMode::Rebuild, phase);
+            let on_sync = host_step_names(MirrorMode::Sync, phase);
+            for name in &on_rebuild {
+                if !on_sync.contains(name) {
+                    rebuild_only.push(format!("{phase:?}/{name}"));
+                }
+            }
+            for name in &on_sync {
+                if !on_rebuild.contains(name) {
+                    sync_only.push(format!("{phase:?}/{name}"));
+                }
+            }
+        }
+        assert_eq!(
+            rebuild_only,
+            [
+                "Empire/game_speed",
+                "Empire/seat_victories",
+                "Empire/difficulty",
+                "Empire/human_seat",
+                "Empire/map_script",
+                "Empire/refused_site_blocks",
+                "Economy/max_turns",
+            ]
+        );
+        assert_eq!(
+            sync_only,
+            [
+                "Refresh/terrain",
+                "Refresh/territory",
+                "Refresh/city_memory"
+            ]
+        );
+    }
+
+    /// Neither pass may apply a host-state reading of its own at the top level.
+    ///
+    /// ⚠⚠ THIS IS THE GUARD, not the taste. The two bodies are still ~900-line
+    /// twins around the step calls, and a new `apply_*` dropped into one of them
+    /// by hand is exactly the edit that used to ship half-done. Read out of the
+    /// source so it cannot be satisfied by editing the table alone: a top-level
+    /// `apply_*` in either body fails here until it is a step in
+    /// `HOST_STATE_STEPS` with a mode mask on it.
+    #[test]
+    fn both_host_state_passes_walk_only_the_step_table() {
+        const SOURCE: &str = include_str!("mirror.rs");
+        let walk = ["Empire", "Economy", "Refresh", "Board", "Finish"];
+        assert_eq!(
+            top_level_host_state_effects(SOURCE, "pub fn rebuild_from_state(", 0),
+            walk,
+            "rebuild_from_state applies something outside `HOST_STATE_STEPS`"
+        );
+        assert_eq!(
+            top_level_host_state_effects(SOURCE, "    pub fn sync(&mut self, snapshot:", 4),
+            walk,
+            "Mirror::sync applies something outside `HOST_STATE_STEPS`"
+        );
+    }
+
+    /// The phases a function body drives, and any `apply_*` it calls as a
+    /// statement of its own, in source order.
+    ///
+    /// Nested calls are left out on purpose: the per-city, per-unit, per-rival
+    /// and per-minor loops apply readings to ONE entity at a time and are not
+    /// whole-board steps. `rustfmt` guarantees the closing brace sits at the
+    /// signature's own indent, which is how the body is bounded.
+    fn top_level_host_state_effects(source: &str, signature: &str, indent: usize) -> Vec<String> {
+        let lines: Vec<&str> = source.lines().collect();
+        let start = lines
+            .iter()
+            .position(|line| line.starts_with(signature))
+            .unwrap_or_else(|| panic!("no function starting `{signature}` in mirror.rs"));
+        let closing = format!("{}}}", " ".repeat(indent));
+        let end = start
+            + 1
+            + lines[start + 1..]
+                .iter()
+                .position(|line| *line == closing)
+                .unwrap_or_else(|| panic!("`{signature}` never closes in mirror.rs"));
+        let statement = " ".repeat(indent + 4);
+        let mut effects = Vec::new();
+        for line in &lines[start..end] {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            if let Some(rest) = line.split("HostPhase::").nth(1) {
+                effects.push(rest.trim_end_matches([',', ')', ';']).to_string());
+            } else if line.starts_with(&statement) && !line[indent + 4..].starts_with(' ') {
+                for word in line.split(|c: char| !c.is_alphanumeric() && c != '_') {
+                    if word.starts_with("apply_") {
+                        effects.push(word.to_string());
+                    }
+                }
+            }
+        }
+        effects
+    }
 }
 
 /// Read every `tiles` chunk out of a run's `events.jsonl`.
@@ -20803,6 +21033,652 @@ pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, r
     }
 }
 
+/// Which of the two host-state passes is running.
+///
+/// `rebuild_from_state` builds a board from nothing; [`Mirror::sync`] brings an
+/// existing one up to date. They apply the SAME readings in the same order, so
+/// the shared ones are written once as [`HOST_STATE_STEPS`] and told apart by
+/// this.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum MirrorMode {
+    Rebuild,
+    Sync,
+}
+
+/// A step runs on the rebuild pass only.
+const REBUILD: u8 = 1;
+/// A step runs on the sync pass only.
+const SYNC: u8 = 2;
+/// A step runs on both passes — what almost every step is.
+const BOTH: u8 = REBUILD | SYNC;
+
+impl MirrorMode {
+    const fn bit(self) -> u8 {
+        match self {
+            MirrorMode::Rebuild => REBUILD,
+            MirrorMode::Sync => SYNC,
+        }
+    }
+}
+
+/// Where in the pass a step belongs.
+///
+/// The two passes call the phases in the same order; what each one does BETWEEN
+/// the phases is its own business (the rebuild plants cities and units where the
+/// sync reconciles them against their Civilization VI ids), and that middle is
+/// what still differs between the two functions.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum HostPhase {
+    /// Seat identity, before anything is on the board.
+    Empire,
+    /// The seat's own economy readings, still before the board.
+    Economy,
+    /// The sync-only mid-pass over ground that was revealed this turn. The
+    /// rebuild's board does not exist yet at this point, so it runs nothing —
+    /// the call is there so both passes walk the same list of phases.
+    Refresh,
+    /// The whole-board passes, once every city and unit is planted.
+    Board,
+    /// Readings that must survive whatever the board passes scored on their way.
+    Finish,
+}
+
+/// Everything a host-state step is allowed to touch.
+///
+/// The rebuild path owns its `game`/`unmapped` as locals and the sync path owns
+/// them as fields of [`Mirror`]; borrowing them through this is what lets one
+/// step body serve both.
+pub(crate) struct HostStepCtx<'a> {
+    mode: MirrorMode,
+    game: &'a mut crate::game::Game,
+    snapshot: &'a Snapshot,
+    state: &'a StateSnapshot,
+    unmapped: &'a mut Vec<String>,
+    /// Civ 6 city id → board city id for every RETAINED city, ours and theirs.
+    /// Empty until the board phase; no earlier step reads it.
+    known_city_ids: &'a std::collections::BTreeMap<i64, u32>,
+    /// Empty until the board phase, as `known_city_ids`.
+    minor_assignments: &'a [(&'a StateMinor, usize)],
+    /// Civ 6 player id → board seat. Empty until the board phase.
+    seat_of_host: &'a std::collections::BTreeMap<usize, usize>,
+    /// The horizon the rebuild was asked for. Unused on the sync path, which
+    /// never rewrites it.
+    max_turns: u32,
+    frontier_depth: u32,
+    /// `CIVVIS_SYNC_NO_TERRAIN`, the sync path's bisect switch. Never set on the
+    /// rebuild path.
+    skip_terrain: bool,
+    /// [`Mirror::last_treasury`], differenced by the sync-only derived income
+    /// fallback. A throwaway on the rebuild path, which has no predecessor.
+    last_treasury: &'a mut Option<(u32, f64)>,
+}
+
+/// Empty stand-ins for the board-phase lookups, which do not exist yet when the
+/// empire, economy and refresh phases run.
+static NO_CITY_IDS: std::collections::BTreeMap<i64, u32> = std::collections::BTreeMap::new();
+static NO_HOST_SEATS: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+
+/// The constants of one host-state pass, fixed before the first step runs.
+#[derive(Clone, Copy)]
+pub(crate) struct HostPass {
+    mode: MirrorMode,
+    /// The horizon the rebuild was asked for. Unused on the sync path, which
+    /// never rewrites it.
+    max_turns: u32,
+    frontier_depth: u32,
+    /// `CIVVIS_SYNC_NO_TERRAIN`, the sync path's bisect switch. Never set on the
+    /// rebuild path.
+    skip_terrain: bool,
+}
+
+impl<'a> HostStepCtx<'a> {
+    /// Everything that exists before the board does. The board-phase lookups
+    /// start empty; no step before [`HostPhase::Board`] reads one.
+    fn new(
+        game: &'a mut crate::game::Game,
+        snapshot: &'a Snapshot,
+        state: &'a StateSnapshot,
+        unmapped: &'a mut Vec<String>,
+        last_treasury: &'a mut Option<(u32, f64)>,
+        pass: HostPass,
+    ) -> Self {
+        HostStepCtx {
+            mode: pass.mode,
+            game,
+            snapshot,
+            state,
+            unmapped,
+            known_city_ids: &NO_CITY_IDS,
+            minor_assignments: &[],
+            seat_of_host: &NO_HOST_SEATS,
+            max_turns: pass.max_turns,
+            frontier_depth: pass.frontier_depth,
+            skip_terrain: pass.skip_terrain,
+            last_treasury,
+        }
+    }
+
+    /// The lookups the board phase needs, which are only complete once every
+    /// city, rival and minor is on the board.
+    fn with_board(
+        mut self,
+        known_city_ids: &'a std::collections::BTreeMap<i64, u32>,
+        minor_assignments: &'a [(&'a StateMinor, usize)],
+        seat_of_host: &'a std::collections::BTreeMap<usize, usize>,
+    ) -> Self {
+        self.known_city_ids = known_city_ids;
+        self.minor_assignments = minor_assignments;
+        self.seat_of_host = seat_of_host;
+        self
+    }
+}
+
+/// One entry of [`HOST_STATE_STEPS`]: its NAME, the passes that take it, and
+/// what it does.
+///
+/// The name is what the tests record, so a step that appears on one pass only
+/// is a failure with a name on it rather than a live seat that quietly drifts.
+/// A tuple rather than a struct so the table below stays a readable list.
+type HostStep = (&'static str, u8, fn(&mut HostStepCtx<'_>));
+
+/// ⚠⚠ THE ORDERED HOST-STATE STEP LIST — THE ONE COPY.
+///
+/// `rebuild_from_state` and [`Mirror::sync`] used to carry a private copy of
+/// this each, ~1,000 lines apiece calling 26 and 25 `apply_*` helpers. Every
+/// one-to-one mapping of a new Civilization VI reading had to be written twice
+/// and a missed second edit desynced a live seat with nothing to see. The order
+/// and the per-pass membership below are exactly what those two bodies did.
+///
+/// Reading it: `ON_BOTH` is the normal case. `ON_REBUILD` / `ON_SYNC` mark the
+/// places the two passes genuinely differ, and each one has a reason on it.
+/// The single `apply_*` helper only one pass calls is `apply_seat_victories`
+/// (rebuild only: the host's enabled victory conditions cannot change mid-game,
+/// so the sync never re-reads them).
+///
+/// NOT steps, deliberately: the refusal/menu wiring — `blocked_districts`,
+/// `host_*_sites`, `blocked_wonders`, `replace_blocked_production`,
+/// `replace_host_menus`, `replace_blocked_purchases`, `blocked_promotions` and
+/// the live-spy seating. The rebuild REPLACES those from locals that only exist
+/// once every city is planted (so it runs them between `Board` and `Finish`);
+/// the sync UNIONS some of them into what the caller already added and runs
+/// them before `Empire`. Different position, different bodies — folding them in
+/// would hide the difference rather than state it.
+const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
+    (
+        HostPhase::Empire,
+        &[
+            ("game_speed", REBUILD, step_game_speed),
+            ("seat_victories", REBUILD, step_seat_victories),
+            ("difficulty", REBUILD, step_difficulty),
+            ("human_seat", REBUILD, step_human_seat),
+            ("map_script", REBUILD, step_map_script),
+            ("refused_site_blocks", REBUILD, step_refused_site_blocks),
+            ("identity", BOTH, step_identity),
+        ],
+    ),
+    (
+        HostPhase::Economy,
+        &[
+            ("turn_and_score", BOTH, step_turn_and_score),
+            ("max_turns", REBUILD, step_max_turns),
+            // ⚠ The treasury is read BEFORE the maintenance bill on the
+            // rebuild and AFTER it on the sync. Both orders are what shipped;
+            // neither helper reads what the other writes (`host_maintenance`
+            // is its own map, the gold lands on `players[0]`), so the two
+            // entries stay where they were rather than being moved onto one
+            // line and quietly changing a live board.
+            ("host_gold", REBUILD, step_host_gold),
+            ("host_maintenance", BOTH, step_host_maintenance),
+            ("host_gold", SYNC, step_host_gold),
+            ("faith_and_dvp", BOTH, step_faith_and_dvp),
+            ("congress_dvp", BOTH, step_congress_dvp),
+            ("host_competitions", BOTH, step_host_competitions),
+            ("diplomatic_favor", BOTH, step_diplomatic_favor),
+            ("mirrored_envoys_free", BOTH, step_mirrored_envoys_free),
+            ("player_religion", BOTH, step_player_religion),
+        ],
+    ),
+    (
+        HostPhase::Refresh,
+        &[
+            // Newly revealed ground, and the traversability prior redrawn
+            // beyond it. The rebuild has nothing to refresh: it has not planted
+            // a city yet, and its own terrain pass is the board phase below.
+            ("terrain", SYNC, step_terrain),
+            ("territory", SYNC, step_territory),
+            ("city_memory", SYNC, step_city_memory),
+        ],
+    ),
+    (
+        HostPhase::Board,
+        &[
+            // ⚠ The trade routes are restored BEFORE the terrain passes on the
+            // sync and after `city_memory` on the rebuild. Kept where each pass
+            // had them.
+            ("trade_routes", SYNC, step_trade_routes),
+            ("terrain", BOTH, step_terrain),
+            ("territory", BOTH, step_territory),
+            ("tile_memory", BOTH, step_tile_memory),
+            ("city_memory", BOTH, step_city_memory),
+            ("trade_routes", REBUILD, step_trade_routes),
+            ("governor_state", BOTH, step_governor_state),
+            ("host_envoys", BOTH, step_host_envoys),
+            ("great_person_points", BOTH, step_great_person_points),
+            ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
+            ("player_ages", BOTH, step_player_ages),
+            ("host_congress", BOTH, step_host_congress),
+            ("observed_host_metrics", BOTH, step_observed_host_metrics),
+            ("loyalty_doomed_sites", BOTH, step_loyalty_doomed_sites),
+        ],
+    ),
+    (
+        HostPhase::Finish,
+        &[
+            ("player_ages", BOTH, step_player_ages),
+            ("host_climate", BOTH, step_host_climate),
+            ("record_host_observed", BOTH, step_record_host_observed),
+        ],
+    ),
+];
+
+/// The steps of one phase, in the order [`HOST_STATE_STEPS`] lists them.
+fn steps_of(phase: HostPhase) -> &'static [HostStep] {
+    HOST_STATE_STEPS
+        .iter()
+        .find(|(listed, _)| *listed == phase)
+        .map(|(_, steps)| *steps)
+        // A phase with no entry would silently apply nothing, which is the very
+        // failure this table exists to catch — so the recorded-order test names
+        // every phase and every step it must hold.
+        .unwrap_or_default()
+}
+
+/// Run every step of `phase` that `ctx.mode` takes, in table order.
+fn run_host_steps(ctx: &mut HostStepCtx<'_>, phase: HostPhase) {
+    // The list, named, on a live seat: `CIVVIS_MIRROR_STEP_TRACE=1`. Same switch
+    // culture as the `CIVVIS_SYNC_NO_*` bisects — which step a board picked up a
+    // wrong reading from is otherwise invisible from outside the process.
+    let trace = std::env::var("CIVVIS_MIRROR_STEP_TRACE").is_ok();
+    for &(name, modes, run) in steps_of(phase) {
+        if modes & ctx.mode.bit() != 0 {
+            if trace {
+                eprintln!("[host-step] {:?} {:?} {name}", ctx.mode, phase);
+            }
+            run(ctx);
+        }
+    }
+}
+
+/// The ordered step names `mode` runs in `phase` — the driver's own walk, named.
+#[cfg(test)]
+pub(crate) fn host_step_names(mode: MirrorMode, phase: HostPhase) -> Vec<&'static str> {
+    steps_of(phase)
+        .iter()
+        .filter(|(_, modes, _)| modes & mode.bit() != 0)
+        .map(|(name, _, _)| *name)
+        .collect()
+}
+
+// --- the steps ----------------------------------------------------------
+// One body each, whatever the pass. A `ctx.mode` test inside a step is a real
+// difference between the two passes and carries its reason.
+
+fn step_game_speed(ctx: &mut HostStepCtx<'_>) {
+    if let Some(speed) = civvis_game_speed(&ctx.state.seat.speed) {
+        // These are deliberately redundant in `Game` for save compatibility.
+        // The viewer renders `game_speed`; a number of rules still use `speed`
+        // to find the speed spec. A half-update is therefore a visual lie or a
+        // mathematical one depending on which path reads it first.
+        ctx.game.speed = speed.id().to_string();
+        ctx.game.game_speed = speed;
+    }
+}
+
+fn step_seat_victories(ctx: &mut HostStepCtx<'_>) {
+    apply_seat_victories(ctx.game, &ctx.state.seat);
+}
+
+fn step_difficulty(ctx: &mut HostStepCtx<'_>) {
+    if let Some(difficulty) = civvis_difficulty(&ctx.state.seat.difficulty)
+        .filter(|difficulty| ctx.game.rules.difficulties.contains_key(difficulty))
+    {
+        ctx.game.difficulty = difficulty;
+    }
+}
+
+fn step_human_seat(ctx: &mut HostStepCtx<'_>) {
+    // ★★★★ THE MIRRORED SEAT IS THE HUMAN. The difficulty ladder pays its
+    // yield, combat, experience and era-boost handicaps to the AI seats and
+    // withholds them from the human, and on the host the seat this board
+    // plans for IS the human. Nothing here ever said so, so every mirrored
+    // board paid seat 0 King's own AI bonus: measured over the 150 turns of
+    // run civvis-20260826T184456Z with `tools/civ6_yield_drift.py`, the
+    // model's city production, gold read exactly 1.20× the host's and science,
+    // culture and faith 1.08× — `ai_yield_pct` to the digit, food untouched
+    // because food is never handicapped — in 288 of 299 persistent episodes.
+    // The board's corrected totals hid it; every plan the seat priced on its
+    // own model was priced in a currency 8–20 % richer than the host pays.
+    ctx.game.human_seats.insert(0);
+}
+
+fn step_map_script(ctx: &mut HostStepCtx<'_>) {
+    if let Some(map_script) = civvis_map_script(&ctx.state.seat.map) {
+        ctx.game.map_script = map_script;
+    }
+}
+
+fn step_refused_site_blocks(ctx: &mut HostStepCtx<'_>) {
+    // Sites the host engine has already rejected, so the planner stops re-deriving
+    // them. See `refused_sites_of_kind_through`.
+    ctx.game.blocked_city_sites = ctx.state.refused_sites.clone();
+    ctx.game.blocked_improvement_sites = ctx.state.refused_improves.clone();
+    ctx.game.blocked_trade_routes = ctx.state.refused_trade_routes.clone();
+    let policies = blocked_policies_from(&ctx.state.refused_policy_names, &ctx.game.rules);
+    ctx.game.blocked_policies = policies;
+    let pantheons = blocked_pantheons_from(&ctx.state.refused_pantheons, &ctx.game.rules);
+    ctx.game.blocked_pantheons = pantheons;
+    // ⚠ The district/wonder/production half needs `city_ids`, which is only
+    // complete once every city is planted, so it is wired after the board phase
+    // rather than here. See the note on `HOST_STATE_STEPS`.
+}
+
+fn step_identity(ctx: &mut HostStepCtx<'_>) {
+    // Identity first: city naming reads it, so this cannot wait until after the
+    // cities are placed. See `apply_identity`.
+    //
+    // Rivals are met as the game goes on, so it is not a one-time job at
+    // reconstruction either: a civilization first seen on turn 90 arrives here.
+    let unresolved = apply_identity(ctx.game, ctx.state);
+    if ctx.mode == MirrorMode::Rebuild {
+        // Only the rebuild reports and files them; the sync path's ledger was
+        // already seeded from the reconstruction and would repeat the line every
+        // turn for the rest of the game.
+        if !unresolved.is_empty() {
+            eprintln!(
+                "mirror: no CIVVIS civilization for {unresolved:?} — those seats keep their \
+                 default roster name and will NOT match the Civilization VI screen"
+            );
+        }
+        ctx.unmapped.extend(unresolved);
+    }
+}
+
+fn step_turn_and_score(ctx: &mut HostStepCtx<'_>) {
+    // ★★★★ TELL CIVVIS WHAT TURN IT IS. `Game::new` starts at the beginning, and the
+    // board is rebuilt from scratch every turn, so without this CIVVIS was answering
+    // TURN 1 for the whole game — every time. Measured consequence on run
+    // civvis-20260730T111953Z: 15 production orders, ALL of them Warrior, no settler
+    // and no district, while its own plan asked for 3 cities. An agent whose strategy
+    // is keyed to era and timing cannot plan from a clock stuck at zero.
+    ctx.game.turn = ctx.state.turn.max(1);
+    ctx.game.observed_score.clear();
+    ctx.game.observed_military_power.clear();
+    if ctx.state.score >= 0 {
+        ctx.game.observed_score.insert(0, ctx.state.score);
+    }
+    if ctx.state.military.is_finite() && ctx.state.military >= 0.0 {
+        ctx.game
+            .observed_military_power
+            .insert(0, ctx.state.military);
+    }
+}
+
+fn step_max_turns(ctx: &mut HostStepCtx<'_>) {
+    // ★★★ AND HOW MANY TURNS ARE LEFT. `rebuild_game` hardcodes 500; this build's real
+    // limit at Tiny/Online reads 250 (`seat.max_turns`, and the HUD shows TURN n/250).
+    // CIVVIS keys several windows on the remaining turns — `expansion_pays_back_for`
+    // asks whether a settler can still pay for itself before the game ends, and
+    // `expansion_window_open` reserves the endgame — so a horizon that is twice too
+    // long makes late expansion look affordable when it is not, and distorts every
+    // build-versus-fight trade in the other direction too.
+    //
+    // The sync never rewrites it: the horizon is the reconstruction's answer.
+    ctx.game.max_turns = ctx.max_turns;
+}
+
+fn step_host_gold(ctx: &mut HostStepCtx<'_>) {
+    // The treasury and each city's population are read by CIVVIS's buy and build
+    // decisions. Defaults made a 20-population empire with 600 gold look like a
+    // founding settlement.
+    if ctx.state.gold < 0 {
+        // ⚠ The rebuild wrote the rate even without a treasury reading. Keeping
+        // that: `gold_per_turn` is an independent export field.
+        if ctx.mode == MirrorMode::Rebuild {
+            if let Some(net) = ctx.state.gold_per_turn.filter(|net| net.is_finite()) {
+                ctx.game.players[0].gold_per_turn = net;
+            }
+        }
+        return;
+    }
+    ctx.game.players[0].gold = ctx.state.gold as f64;
+    // ⚠ THE FRESH-BOARD PATH IS THE ONE THAT MATTERS. `civvis_orders --serve
+    // --fresh-board` comes through here every turn, and this rebuild has no
+    // predecessor to difference against, so before this line `gold_per_turn` was
+    // whatever `Player::default` said — 0 — in every live decision.
+    //
+    // The host's own figure first: it needs no history and so survives
+    // `--fresh-board`, which is what kills the derived rate. The sync falls back
+    // to differencing consecutive treasuries only when Firaxis did not answer;
+    // the rebuild has no predecessor and so has no fallback.
+    if let Some(net) = ctx.state.gold_per_turn.filter(|net| net.is_finite()) {
+        ctx.game.players[0].gold_per_turn = net;
+    } else if ctx.mode == MirrorMode::Sync {
+        let turn = ctx.game.turn;
+        let gold = ctx.state.gold as f64;
+        if let Some(net) = mirror_net_income_from(ctx.last_treasury, turn, gold) {
+            ctx.game.players[0].gold_per_turn = net;
+        }
+    }
+}
+
+fn step_host_maintenance(ctx: &mut HostStepCtx<'_>) {
+    apply_host_maintenance(ctx.game, ctx.state);
+}
+
+fn step_faith_and_dvp(ctx: &mut HostStepCtx<'_>) {
+    if ctx.state.faith >= 0 {
+        ctx.game.players[0].faith = ctx.state.faith as f64;
+    }
+    if let Some(dvp) = ctx.state.dvp {
+        ctx.game.players[0].dvp = dvp;
+    }
+}
+
+fn step_congress_dvp(ctx: &mut HostStepCtx<'_>) {
+    apply_congress_dvp(ctx.game, ctx.state);
+}
+
+fn step_host_competitions(ctx: &mut HostStepCtx<'_>) {
+    apply_host_competitions(ctx.game, ctx.state);
+}
+
+fn step_diplomatic_favor(ctx: &mut HostStepCtx<'_>) {
+    if let Some(favor) = ctx.state.favor.filter(|favor| favor.is_finite()) {
+        ctx.game.players[0].diplomatic_favor = favor;
+    }
+}
+
+fn step_mirrored_envoys_free(ctx: &mut HostStepCtx<'_>) {
+    apply_mirrored_envoys_free(ctx.game, ctx.state);
+}
+
+fn step_player_religion(ctx: &mut HostStepCtx<'_>) {
+    apply_player_religion(ctx.game, ctx.state, ctx.unmapped);
+}
+
+fn step_terrain(ctx: &mut HostStepCtx<'_>) {
+    // `place_city` applies native founding rules and clears removable features
+    // from the centre. Firaxis is authoritative here: real city centres can
+    // retain Floodplains, so restore every exported plot after all cities exist.
+    if ctx.skip_terrain {
+        return;
+    }
+    apply_terrain(ctx.game, ctx.snapshot);
+    if ctx.mode == MirrorMode::Sync {
+        // Terrain that was already known does not change, but the frontier has
+        // to be recomputed because its edge just moved. The rebuild grows its
+        // frontier once, before the board is planted.
+        grow_frontier(ctx.game, ctx.snapshot, ctx.frontier_depth);
+    }
+}
+
+fn step_territory(ctx: &mut HostStepCtx<'_>) {
+    // ★★★★ BORDERS MOVE, AND THIS USED TO LEARN THEM ONCE AND NEVER AGAIN.
+    //
+    // `apply_territory` ran only in `rebuild_from_state`, which a persistent mirror
+    // calls exactly once — at construction. Every border that grew afterwards, and
+    // every owned plot revealed afterwards, stayed unowned on CIVVIS's board for
+    // the rest of the game.
+    //
+    // Measured on live run civvis-20260801T012454Z at turn 43, over the 243 plots
+    // paired between the export and the board:
+    //
+    //     Civ 6 says OWNED, CIVVIS says unowned : 28
+    //     CIVVIS says OWNED, Civ 6 says unowned :  0
+    //     agreement                              : 88.5%
+    //
+    // ⚠ The error has a direction, and it is the expensive one.
+    // `Game::valid_improvements` returns an empty list for a tile whose
+    // `owner_city` is None, so a builder standing on ground the seat really owns is
+    // offered NOTHING to build there — the empire silently stops developing the
+    // land it just took.
+    apply_territory(ctx.game, ctx.snapshot, ctx.state);
+}
+
+fn step_tile_memory(ctx: &mut HostStepCtx<'_>) {
+    // ⚠ AFTER territory, not before. `apply_terrain` already recorded the seat's memory
+    // of every revealed plot, but ownership is written there — so a memory taken earlier
+    // would say every fogged tile is unowned, and `obs.rs` reads `memory.owner` for
+    // exactly those tiles. Re-recording is idempotent and costs one pass over the
+    // revealed set.
+    apply_tile_memory(ctx.game, ctx.snapshot);
+}
+
+fn step_city_memory(ctx: &mut HostStepCtx<'_>) {
+    // ⚠ AFTER every city is planted, ours and the rivals', or the seat remembers only
+    // the ones that happened to exist earlier in the pass. Every sync too, not just
+    // the rebuild: rival cities are placed as they are revealed.
+    apply_city_memory(ctx.game);
+}
+
+fn step_trade_routes(ctx: &mut HostStepCtx<'_>) {
+    // Firaxis leaves an active Trader on the map, while CIVVIS normally removes
+    // it into `game.routes`.  Reconstruct the economic state here and retain the
+    // physical unit; the planner removes only active-route traders from its
+    // temporary clone.
+    let active = restore_active_trade_routes(ctx.game, &ctx.state.trade_routes, ctx.known_city_ids);
+    let incoming = restore_incoming_foreign_routes(ctx.game, &ctx.state.cities);
+    match ctx.mode {
+        MirrorMode::Rebuild => {
+            ctx.unmapped.extend(active);
+            ctx.unmapped.extend(incoming);
+            restore_rival_outgoing_routes(ctx.game, &ctx.state.rivals);
+            let options = restore_route_options(
+                ctx.game,
+                ctx.state.route_options.as_deref(),
+                ctx.known_city_ids,
+            );
+            ctx.unmapped.extend(options);
+        }
+        MirrorMode::Sync => {
+            // ⚠ The sync's ledger persists across turns, so an issue it already
+            // holds must not be filed again — and the rival routes are restored
+            // last here because they contribute nothing to file.
+            let options = restore_route_options(
+                ctx.game,
+                ctx.state.route_options.as_deref(),
+                ctx.known_city_ids,
+            );
+            for issue in active.into_iter().chain(incoming).chain(options) {
+                if !ctx.unmapped.contains(&issue) {
+                    ctx.unmapped.push(issue);
+                }
+            }
+            restore_rival_outgoing_routes(ctx.game, &ctx.state.rivals);
+        }
+    }
+}
+
+fn step_governor_state(ctx: &mut HostStepCtx<'_>) {
+    apply_governor_state(ctx.game, ctx.state, ctx.unmapped);
+}
+
+fn step_host_envoys(ctx: &mut HostStepCtx<'_>) {
+    reconcile_host_envoys(ctx.game, ctx.minor_assignments, ctx.seat_of_host);
+}
+
+fn step_great_person_points(ctx: &mut HostStepCtx<'_>) {
+    apply_great_person_points(ctx.game, ctx.state, ctx.unmapped);
+}
+
+fn step_strategic_stockpiles(ctx: &mut HostStepCtx<'_>) {
+    apply_strategic_stockpiles(ctx.game, ctx.state, ctx.unmapped);
+}
+
+fn step_player_ages(ctx: &mut HostStepCtx<'_>) {
+    // The age and its Dedications change what the model pays (Heartbeat of
+    // Steam's Campus Production, Free Inquiry's Science), so they must be on
+    // the seat BEFORE the host-to-model corrections are measured, or the
+    // correction is taken against a Normal-Age model and paid on top of a
+    // Golden-Age one — Ravenna read 14.5 Science against the host's 9.5 on
+    // run civvis-20260816T175306Z.
+    //
+    // ⚠ The `Finish` phase repeats it, and deliberately so: founding a city
+    // AWARDS ERA SCORE — a four-city Rome arrived at Firaxis's 31 plus five of
+    // CIVVIS's own. Firaxis's number is the reading; anything the pass scored
+    // along the way is an artefact of how the board was assembled, so the
+    // host's answer is written after it rather than before. The two calls are
+    // idempotent with each other.
+    apply_player_ages(ctx.game, ctx.state);
+}
+
+fn step_host_congress(ctx: &mut HostStepCtx<'_>) {
+    // The host's World Congress, likewise before the corrections: Trade Policy
+    // and Luxury Policy change what the model pays and supplies.
+    apply_host_congress(ctx.game, ctx.state, ctx.seat_of_host, ctx.unmapped);
+}
+
+fn step_observed_host_metrics(ctx: &mut HostStepCtx<'_>) {
+    apply_observed_host_metrics(ctx.game, ctx.state, Some(ctx.snapshot), ctx.unmapped);
+}
+
+fn step_loyalty_doomed_sites(ctx: &mut HostStepCtx<'_>) {
+    block_loyalty_doomed_settler_sites(ctx.game);
+}
+
+fn step_host_climate(ctx: &mut HostStepCtx<'_>) {
+    // The host's climate needs the finished map (the lowland bands) and the
+    // finished city roster (a Flood Barrier keeps its ground).
+    apply_host_climate(ctx.game, ctx.state);
+}
+
+fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
+    // Last, because it reads the finished board: every rival, minor and
+    // barbarian for this turn is on it by now, and the previous turn's
+    // sightings were removed with them.
+    record_host_observed(ctx.game, ctx.snapshot);
+}
+
+/// The derived net income, and the treasury reading the next call differences
+/// against. Split out of [`Mirror::mirror_net_income`] so the shared
+/// `host_gold` step can reach it with only `last_treasury` borrowed.
+fn mirror_net_income_from(
+    last_treasury: &mut Option<(u32, f64)>,
+    turn: u32,
+    gold: f64,
+) -> Option<f64> {
+    let previous = last_treasury.replace((turn, gold));
+    let (last_turn, last_gold) = previous?;
+    if turn != last_turn + 1 {
+        return None;
+    }
+    let delta = gold - last_gold;
+    match gold <= 0.0 {
+        true => Some(delta.min(-1.0)),
+        false => Some(delta),
+    }
+}
+
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
     snapshot: &Snapshot,
@@ -20828,57 +21704,34 @@ pub fn rebuild_from_state(
     // or territory describes the Firaxis world being mirrored.
     game.clear_mirror_cities();
 
-    if let Some(speed) = civvis_game_speed(&state.seat.speed) {
-        // These are deliberately redundant in `Game` for save compatibility.
-        // The viewer renders `game_speed`; a number of rules still use `speed`
-        // to find the speed spec. A half-update is therefore a visual lie or a
-        // mathematical one depending on which path reads it first.
-        game.speed = speed.id().to_string();
-        game.game_speed = speed;
-    }
-    apply_seat_victories(&mut game, &state.seat);
-
-    if let Some(difficulty) = civvis_difficulty(&state.seat.difficulty)
-        .filter(|difficulty| game.rules.difficulties.contains_key(difficulty))
-    {
-        game.difficulty = difficulty;
-    }
-    // ★★★★ THE MIRRORED SEAT IS THE HUMAN. The difficulty ladder pays its
-    // yield, combat, experience and era-boost handicaps to the AI seats and
-    // withholds them from the human, and on the host the seat this board
-    // plans for IS the human. Nothing here ever said so, so every mirrored
-    // board paid seat 0 King's own AI bonus: measured over the 150 turns of
-    // run civvis-20260826T184456Z with `tools/civ6_yield_drift.py`, the
-    // model's city production, gold read exactly 1.20× the host's and science,
-    // culture and faith 1.08× — `ai_yield_pct` to the digit, food untouched
-    // because food is never handicapped — in 288 of 299 persistent episodes.
-    // The board's corrected totals hid it; every plan the seat priced on its
-    // own model was priced in a currency 8–20 % richer than the host pays.
-    game.human_seats.insert(0);
-
-    if let Some(map_script) = civvis_map_script(&state.seat.map) {
-        game.map_script = map_script;
-    }
-
-    // Sites the host engine has already rejected, so the planner stops re-deriving
-    // them. See `refused_sites_of_kind_through`.
-    game.blocked_city_sites = state.refused_sites.clone();
-    game.blocked_improvement_sites = state.refused_improves.clone();
-    game.blocked_trade_routes = state.refused_trade_routes.clone();
-    game.blocked_policies = blocked_policies_from(&state.refused_policy_names, &game.rules);
-    game.blocked_pantheons = blocked_pantheons_from(&state.refused_pantheons, &game.rules);
-    // ⚠ Wired after `city_ids` below would be too late for the rebuild, so this is
-    // filled in at the end of the function where both are in hand.
-
-    // Identity first: city naming reads it, so this cannot wait until after the
-    // cities are placed. See `apply_identity`.
-    let identity_unmapped = apply_identity(&mut game, state);
-    if !identity_unmapped.is_empty() {
-        eprintln!(
-            "mirror: no CIVVIS civilization for {identity_unmapped:?} — those seats keep their \
-             default roster name and will NOT match the Civilization VI screen"
-        );
-    }
+    // ⚠ ONE ORDERED STEP LIST, WALKED BY BOTH PASSES. Everything this function
+    // and `Mirror::sync` apply from the host state lives in `HOST_STATE_STEPS`,
+    // written once and told apart by `MirrorMode`. What the two passes do
+    // BETWEEN the phases is still their own — this one plants a board from
+    // nothing, the other reconciles one against its Civilization VI ids.
+    let pass = HostPass {
+        mode: MirrorMode::Rebuild,
+        max_turns,
+        frontier_depth,
+        // The bisect switch belongs to the sync path; a rebuild always applies
+        // terrain.
+        skip_terrain: false,
+    };
+    // A rebuild has no predecessor to difference a treasury against, so the
+    // derived-income fallback has nothing to keep and this is never read back.
+    let mut no_treasury: Option<(u32, f64)> = None;
+    let mut unmapped: Vec<String> = Vec::new();
+    run_host_steps(
+        &mut HostStepCtx::new(
+            &mut game,
+            snapshot,
+            state,
+            &mut unmapped,
+            &mut no_treasury,
+            pass,
+        ),
+        HostPhase::Empire,
+    );
 
     // ★★★★★ CLEAR THE STARTING UNITS `Game::new` HANDS OUT. This is the root of the
     // economy failure, and it is invisible from the outside.
@@ -20913,7 +21766,6 @@ pub fn rebuild_from_state(
     // only because order translation must never point a purchase at a rival;
     // active international routes need the broader lookup.
     let mut known_city_ids = std::collections::BTreeMap::new();
-    let mut unmapped = identity_unmapped;
     unmapped.extend(state.schema_gaps.iter().cloned());
     let mut placed_cities = 0;
     let mut placed_units = 0;
@@ -20955,56 +21807,19 @@ pub fn rebuild_from_state(
     // real terrain cannot support is refused by Civilization VI and counted.
     grow_frontier(&mut game, snapshot, frontier_depth);
 
-    // ★★★★ TELL CIVVIS WHAT TURN IT IS. `Game::new` starts at the beginning, and the
-    // board is rebuilt from scratch every turn, so without this CIVVIS was answering
-    // TURN 1 for the whole game — every time. Measured consequence on run
-    // civvis-20260730T111953Z: 15 production orders, ALL of them Warrior, no settler
-    // and no district, while its own plan asked for 3 cities. An agent whose strategy
-    // is keyed to era and timing cannot plan from a clock stuck at zero.
-    game.turn = state.turn.max(1);
-    game.observed_score.clear();
-    game.observed_military_power.clear();
-    if state.score >= 0 {
-        game.observed_score.insert(0, state.score);
-    }
-    if state.military.is_finite() && state.military >= 0.0 {
-        game.observed_military_power.insert(0, state.military);
-    }
-    // ★★★ AND HOW MANY TURNS ARE LEFT. `rebuild_game` hardcodes 500; this build's real
-    // limit at Tiny/Online reads 250 (`seat.max_turns`, and the HUD shows TURN n/250).
-    // CIVVIS keys several windows on the remaining turns — `expansion_pays_back_for`
-    // asks whether a settler can still pay for itself before the game ends, and
-    // `expansion_window_open` reserves the endgame — so a horizon that is twice too
-    // long makes late expansion look affordable when it is not, and distorts every
-    // build-versus-fight trade in the other direction too.
-    game.max_turns = max_turns;
-    // The treasury and each city's population are read by CIVVIS's buy and build
-    // decisions. Defaults made a 20-population empire with 600 gold look like a
-    // founding settlement.
-    if state.gold >= 0 {
-        game.players[0].gold = state.gold as f64;
-    }
-    // ⚠ THE FRESH-BOARD PATH IS THE ONE THAT MATTERS. `civvis_orders --serve
-    // --fresh-board` comes through here every turn, and this rebuild has no
-    // predecessor to difference against, so before this line `gold_per_turn` was
-    // whatever `Player::default` said — 0 — in every live decision.
-    if let Some(net) = state.gold_per_turn.filter(|net| net.is_finite()) {
-        game.players[0].gold_per_turn = net;
-    }
-    apply_host_maintenance(&mut game, state);
-    if state.faith >= 0 {
-        game.players[0].faith = state.faith as f64;
-    }
-    if let Some(dvp) = state.dvp {
-        game.players[0].dvp = dvp;
-    }
-    apply_congress_dvp(&mut game, state);
-    apply_host_competitions(&mut game, state);
-    if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
-        game.players[0].diplomatic_favor = favor;
-    }
-    apply_mirrored_envoys_free(&mut game, state);
-    apply_player_religion(&mut game, state, &mut unmapped);
+    // The seat's own economy readings, still before the board. See
+    // `HOST_STATE_STEPS`.
+    run_host_steps(
+        &mut HostStepCtx::new(
+            &mut game,
+            snapshot,
+            state,
+            &mut unmapped,
+            &mut no_treasury,
+            pass,
+        ),
+        HostPhase::Economy,
+    );
     // Cheap: `rules` is an Arc. Cloned so the city loop below can consult it while
     // holding a mutable borrow of `game`.
     let game_rules = std::sync::Arc::clone(&game.rules);
@@ -21146,6 +21961,20 @@ pub fn rebuild_from_state(
         }
     }
 
+    // Nothing on this path: the rebuild's board does not exist yet, and its own
+    // terrain pass is the board phase below. The call is here so both passes walk
+    // the same list of phases. See `HOST_STATE_STEPS`.
+    run_host_steps(
+        &mut HostStepCtx::new(
+            &mut game,
+            snapshot,
+            state,
+            &mut unmapped,
+            &mut no_treasury,
+            pass,
+        ),
+        HostPhase::Refresh,
+    );
     for city in &state.cities {
         if let Some(cid) = plant_city(&mut game, 0, city) {
             city_ids.insert(cid, city.id);
@@ -21688,56 +22517,20 @@ pub fn rebuild_from_state(
         }
     }
 
-    // `place_city` applies native founding rules and clears removable features
-    // from the centre. Firaxis is authoritative here: real city centres can
-    // retain Floodplains, so restore every exported plot after all cities exist.
-    apply_terrain(&mut game, snapshot);
-    apply_territory(&mut game, snapshot, state);
-    // ⚠ AFTER territory, not before. `apply_terrain` already recorded the seat's memory
-    // of every revealed plot, but ownership is written here — so a memory taken earlier
-    // would say every fogged tile is unowned, and `obs.rs` reads `memory.owner` for
-    // exactly those tiles. Re-recording is idempotent and costs one pass over the
-    // revealed set.
-    apply_tile_memory(&mut game, snapshot);
-    // ⚠ AFTER every city is planted, ours and the rivals', or the seat remembers only
-    // the ones that happened to exist earlier in the rebuild.
-    apply_city_memory(&mut game);
-
-    // Firaxis leaves an active Trader on the map, while CIVVIS normally removes
-    // it into `game.routes`.  Reconstruct the economic state here and retain the
-    // physical unit above; the planner removes only active-route traders from its
-    // temporary clone.
-    unmapped.extend(restore_active_trade_routes(
-        &mut game,
-        &state.trade_routes,
-        &known_city_ids,
-    ));
-    unmapped.extend(restore_incoming_foreign_routes(&mut game, &state.cities));
-    restore_rival_outgoing_routes(&mut game, &state.rivals);
-
-    unmapped.extend(restore_route_options(
-        &mut game,
-        state.route_options.as_deref(),
-        &known_city_ids,
-    ));
-    apply_governor_state(&mut game, state, &mut unmapped);
-    reconcile_host_envoys(&mut game, &minor_assignments, &seat_of_host);
-    apply_great_person_points(&mut game, state, &mut unmapped);
-    apply_strategic_stockpiles(&mut game, state, &mut unmapped);
-    // The age and its Dedications change what the model pays (Heartbeat of
-    // Steam's Campus Production, Free Inquiry's Science), so they must be on
-    // the seat BEFORE the host-to-model corrections are measured, or the
-    // correction is taken against a Normal-Age model and paid on top of a
-    // Golden-Age one — Ravenna read 14.5 Science against the host's 9.5 on
-    // run civvis-20260816T175306Z. The call at the end of this function
-    // repeats it for the era score, which must be written after the cities
-    // are planted; this early call is idempotent with it.
-    apply_player_ages(&mut game, state);
-    // The host's World Congress, likewise before the corrections: Trade Policy
-    // and Luxury Policy change what the model pays and supplies.
-    apply_host_congress(&mut game, state, &seat_of_host, &mut unmapped);
-    apply_observed_host_metrics(&mut game, state, Some(snapshot), &mut unmapped);
-    block_loyalty_doomed_settler_sites(&mut game);
+    // Every whole-board pass, now that every city and unit — ours, the rivals'
+    // and the minors' — is planted. See `HOST_STATE_STEPS`.
+    run_host_steps(
+        &mut HostStepCtx::new(
+            &mut game,
+            snapshot,
+            state,
+            &mut unmapped,
+            &mut no_treasury,
+            pass,
+        )
+        .with_board(&known_city_ids, &minor_assignments, &seat_of_host),
+        HostPhase::Board,
+    );
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
     // because it needs `city_ids`, which is only complete once every city is planted.
@@ -21776,18 +22569,19 @@ pub fn rebuild_from_state(
     game.blocked_promotions =
         blocked_promotions_from(&state.refused_promotions, &unit_ids, &game.rules);
 
-    // ⚠ LAST, and deliberately so. Reconstruction founds this empire's cities on
-    // the board, and founding a city AWARDS ERA SCORE — a four-city Rome
-    // arrived at Firaxis's 31 plus five of CIVVIS's own. Firaxis's number is
-    // the reading; anything the rebuild scored along the way is an artefact of
-    // how the board was assembled, so the host's answer is written after it
-    // rather than before.
-    apply_player_ages(&mut game, state);
-
-    // The host's climate needs the finished map (the lowland bands) and the
-    // finished city roster (a Flood Barrier keeps its ground).
-    apply_host_climate(&mut game, state);
-    record_host_observed(&mut game, snapshot);
+    // The readings that must survive whatever the board passes scored on their
+    // way there. See `HOST_STATE_STEPS`.
+    run_host_steps(
+        &mut HostStepCtx::new(
+            &mut game,
+            snapshot,
+            state,
+            &mut unmapped,
+            &mut no_treasury,
+            pass,
+        ),
+        HostPhase::Finish,
+    );
     Reconstruction {
         game,
         unit_ids,
@@ -22796,16 +23590,7 @@ impl LiveMirror {
     /// gap leaves the previous value alone rather than inventing a rate from a
     /// span of unknown length.
     fn mirror_net_income(&mut self, turn: u32, gold: f64) -> Option<f64> {
-        let previous = self.last_treasury.replace((turn, gold));
-        let (last_turn, last_gold) = previous?;
-        if turn != last_turn + 1 {
-            return None;
-        }
-        let delta = gold - last_gold;
-        match gold <= 0.0 {
-            true => Some(delta.min(-1.0)),
-            false => Some(delta),
-        }
+        mirror_net_income_from(&mut self.last_treasury, turn, gold)
     }
 
     /// Remove only active-route visual stand-ins from a speculative planning game.
@@ -22839,6 +23624,15 @@ impl LiveMirror {
         let skip_terrain = std::env::var("CIVVIS_SYNC_NO_TERRAIN").is_ok();
         let skip_rivals = std::env::var("CIVVIS_SYNC_NO_RIVALS").is_ok();
         let skip_units = std::env::var("CIVVIS_SYNC_NO_UNITS").is_ok();
+        // The constants of this pass; the steps of `HOST_STATE_STEPS` read them.
+        let pass = HostPass {
+            mode: MirrorMode::Sync,
+            // The horizon is the reconstruction's answer — a sync never rewrites
+            // it, so the step that would is not on this path.
+            max_turns: 0,
+            frontier_depth,
+            skip_terrain,
+        };
         self.turns_synced += 1;
         for gap in &state.schema_gaps {
             if !self.unmapped.contains(gap) {
@@ -22949,50 +23743,24 @@ impl LiveMirror {
         self.game.replace_blocked_purchases(blocked_purchases);
         // Unit ids are only in hand here, so the promotion blocks are wired late for
         // the same reason the production blocks are.
-        self.game.blocked_promotions = blocked_promotions_from(
-            &state.refused_promotions,
-            &self.civ6_of,
-            &self.game.rules,
+        self.game.blocked_promotions =
+            blocked_promotions_from(&state.refused_promotions, &self.civ6_of, &self.game.rules);
+        // ⚠ ONE ORDERED STEP LIST, WALKED BY BOTH PASSES. See
+        // `HOST_STATE_STEPS`: everything this method and `rebuild_from_state`
+        // apply from the host state is written there once and told apart by
+        // `MirrorMode`. The refusal and menu wiring above is the deliberate
+        // exception — it UNIONS into what the caller already holds where the
+        // rebuild replaces, and so it runs here rather than after the board.
+        let mut ctx = HostStepCtx::new(
+            &mut self.game,
+            snapshot,
+            state,
+            &mut self.unmapped,
+            &mut self.last_treasury,
+            pass,
         );
-        // Rivals are met as the game goes on, so identity is not a one-time job at
-        // reconstruction: a civilization first seen on turn 90 arrives here.
-        apply_identity(&mut self.game, state);
-        self.game.turn = state.turn.max(1);
-        self.game.observed_score.clear();
-        self.game.observed_military_power.clear();
-        if state.score >= 0 {
-            self.game.observed_score.insert(0, state.score);
-        }
-        if state.military.is_finite() && state.military >= 0.0 {
-            self.game.observed_military_power.insert(0, state.military);
-        }
-        apply_host_maintenance(&mut self.game, state);
-        if state.gold >= 0 {
-            self.game.players[0].gold = state.gold as f64;
-            // The host's own figure first: it needs no history and so survives
-            // `--fresh-board`, which is what kills the derived rate. Fall back to
-            // the delta only when Firaxis did not answer.
-            if let Some(net) = state.gold_per_turn.filter(|net| net.is_finite()) {
-                self.game.players[0].gold_per_turn = net;
-            } else if let Some(net) =
-                self.mirror_net_income(self.game.turn, state.gold as f64)
-            {
-                self.game.players[0].gold_per_turn = net;
-            }
-        }
-        if state.faith >= 0 {
-            self.game.players[0].faith = state.faith as f64;
-        }
-        if let Some(dvp) = state.dvp {
-            self.game.players[0].dvp = dvp;
-        }
-        apply_congress_dvp(&mut self.game, state);
-        apply_host_competitions(&mut self.game, state);
-        if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
-            self.game.players[0].diplomatic_favor = favor;
-        }
-        apply_mirrored_envoys_free(&mut self.game, state);
-        apply_player_religion(&mut self.game, state, &mut self.unmapped);
+        run_host_steps(&mut ctx, HostPhase::Empire);
+        run_host_steps(&mut ctx, HostPhase::Economy);
         if let Some(civ6) = &state.government {
             if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {
                 // Same rule on the sync path: see the rebuild path above.
@@ -23109,40 +23877,20 @@ impl LiveMirror {
         };
         self.game.players[0].civic_overflow = 0.0;
 
-        // Newly revealed ground, and the traversability prior redrawn beyond it.
-        // Terrain that was already known does not change, but the frontier has to be
-        // recomputed because its edge just moved.
-        if !skip_terrain {
-            apply_terrain(&mut self.game, snapshot);
-            grow_frontier(&mut self.game, snapshot, frontier_depth);
-        }
-        // ★★★★ BORDERS MOVE, AND THIS USED TO LEARN THEM ONCE AND NEVER AGAIN.
-        //
-        // `apply_territory` ran only in `rebuild_from_state`, which a persistent mirror
-        // calls exactly once — at construction. Every border that grew afterwards, and
-        // every owned plot revealed afterwards, stayed unowned on CIVVIS's board for
-        // the rest of the game.
-        //
-        // Measured on live run civvis-20260801T012454Z at turn 43, over the 243 plots
-        // paired between the export and the board:
-        //
-        //     Civ 6 says OWNED, CIVVIS says unowned : 28
-        //     CIVVIS says OWNED, Civ 6 says unowned :  0
-        //     agreement                              : 88.5%
-        //
-        // ⚠ The error has a direction, and it is the expensive one.
-        // `Game::valid_improvements` returns an empty list for a tile whose
-        // `owner_city` is None, so a builder standing on ground the seat really owns is
-        // offered NOTHING to build there — the empire silently stops developing the
-        // land it just took. It also under-reports the seat's own territory to every
-        // consumer that reasons about it.
-        //
-        // It is cheap: one pass over the revealed set, the same work the rebuild does.
-        apply_territory(&mut self.game, snapshot, state);
-        // ⚠ Every sync, not just the rebuild. Rival cities are placed as they are
-        // revealed, so a memory taken once at construction would hold only whatever
-        // existed on turn 1 — the same staleness `apply_territory` above was fixed for.
-        apply_city_memory(&mut self.game);
+        // Newly revealed ground, the traversability prior redrawn beyond it, and
+        // the borders and city memory that moved with it — the mid-pass only this
+        // path takes. See `HOST_STATE_STEPS`.
+        run_host_steps(
+            &mut HostStepCtx::new(
+                &mut self.game,
+                snapshot,
+                state,
+                &mut self.unmapped,
+                &mut self.last_treasury,
+                pass,
+            ),
+            HostPhase::Refresh,
+        );
 
         // --- our units -------------------------------------------------------
         if !skip_units {
@@ -23771,54 +24519,20 @@ impl LiveMirror {
         }
 
         self.active_trade_route_traders = active_trade_route_traders(state);
-        for issue in
-            restore_active_trade_routes(&mut self.game, &state.trade_routes, &self.known_city_ids)
-                .into_iter()
-                .chain(restore_incoming_foreign_routes(
-                    &mut self.game,
-                    &state.cities,
-                ))
-                .chain(restore_route_options(
-                    &mut self.game,
-                    state.route_options.as_deref(),
-                    &self.known_city_ids,
-                ))
-        {
-            if !self.unmapped.contains(&issue) {
-                self.unmapped.push(issue);
-            }
-        }
-        restore_rival_outgoing_routes(&mut self.game, &state.rivals);
-
-        // City placement is a native CIVVIS action and may clear host terrain;
-        // repeat the authoritative passes only after every new own/rival city is
-        // present, then take fog memory from that final state.
-        if !skip_terrain {
-            apply_terrain(&mut self.game, snapshot);
-            grow_frontier(&mut self.game, snapshot, frontier_depth);
-        }
-        apply_territory(&mut self.game, snapshot, state);
-        apply_tile_memory(&mut self.game, snapshot);
-        apply_city_memory(&mut self.game);
-        apply_governor_state(&mut self.game, state, &mut self.unmapped);
-        reconcile_host_envoys(&mut self.game, &minor_assignments, &seat_of_host);
-        apply_great_person_points(&mut self.game, state, &mut self.unmapped);
-        apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
-        // Age and Dedications before the corrections are measured — see the
-        // rebuild path for why; the trailing call repeats it for era score.
-        apply_player_ages(&mut self.game, state);
-        apply_host_congress(&mut self.game, state, &seat_of_host, &mut self.unmapped);
-        apply_observed_host_metrics(&mut self.game, state, Some(snapshot), &mut self.unmapped);
-        block_loyalty_doomed_settler_sites(&mut self.game);
-        // After the city passes, for the same reason as on the rebuild path:
-        // planting a city awards era score, and Firaxis's reading must be what
-        // survives rather than what the sync happened to add on its way there.
-        apply_player_ages(&mut self.game, state);
-        apply_host_climate(&mut self.game, state);
-        // Last, because it reads the finished board: every rival, minor and
-        // barbarian for this turn has been re-planted by now, and the previous
-        // turn's sightings were removed with them.
-        record_host_observed(&mut self.game, snapshot);
+        // Every whole-board pass, now that every city and unit — ours, the
+        // rivals' and the minors' — has been reconciled against its Civ 6 id.
+        // See `HOST_STATE_STEPS`.
+        let mut ctx = HostStepCtx::new(
+            &mut self.game,
+            snapshot,
+            state,
+            &mut self.unmapped,
+            &mut self.last_treasury,
+            pass,
+        )
+        .with_board(&self.known_city_ids, &minor_assignments, &seat_of_host);
+        run_host_steps(&mut ctx, HostPhase::Board);
+        run_host_steps(&mut ctx, HostPhase::Finish);
     }
 }
 

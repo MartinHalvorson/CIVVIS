@@ -2974,8 +2974,8 @@ fn production_advanced_omits_measured_null_arms() {
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        !live_bridge.bounded_recovery,
-        "the live bridge applies the ledger, which demoted the gene on 2026-08-25"
+        live_bridge.bounded_recovery,
+        "the live bridge applies the 2026-08-27 operator default"
     );
 }
 
@@ -3448,34 +3448,105 @@ fn found_test_city(game: &mut Game, pid: usize) -> u32 {
     game.city_at(position).unwrap()
 }
 
-fn install_ai_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
-    let center = game.cities[&city].pos;
-    let position = game.cities[&city]
-        .owned_tiles
-        .iter()
-        .copied()
-        .find(|position| {
-            *position != center
-                && game.map.tiles[position].district.is_none()
-                && game.map.tiles[position].wonder.is_none()
-                && game.map.tiles[position].improvement.is_none()
-        })
-        .expect("test city has an unused district tile");
-    let tile = game.map.tiles.get_mut(&position).unwrap();
-    tile.district = Some(Name::new(district));
-    tile.pillaged = false;
-    game.cities
-        .get_mut(&city)
-        .unwrap()
-        .districts
-        .insert(Name::new(district), position);
-    position
-}
+// One test district helper in the repository. The body that stood here was
+// byte-identical to `game::install_test_district`, and two copies of a fixture
+// builder drift in exactly the way that makes a suite disagree with itself.
+use crate::game::install_test_district as install_ai_test_district;
 
 fn install_test_holy_site(game: &mut Game, city: u32) {
     install_ai_test_district(game, city, "holy_site");
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("shrine"), crate::name!("temple")];
+}
+
+/// A ready-to-fire late-game board with a hard conventional target and a
+/// separate rival Spaceport.  The second city sits inside the ordinary ICBM
+/// range but outside either city's blast disk, so the doctrine has to choose
+/// rather than receiving an accidental two-city strike.
+fn nuclear_war_fixture() -> (Game, u32, u32, u32, Pos) {
+    let mut game = Game::new_full(2, 36, 22, 91_803, 300, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("every major starts with a Settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    // Leave nothing in either future blast ring except the infrastructure
+    // deliberately installed below.
+    for pid in 0..2 {
+        for unit in game.player_unit_ids(pid) {
+            game.remove_unit(unit);
+        }
+    }
+    let launch_city = game.player_city_ids(0)[0];
+    let fortress_city = game.player_city_ids(1)[0];
+    let launch = game.cities[&launch_city].pos;
+    let fortress = game.cities[&fortress_city].pos;
+    // A late-game counter-program needs a city that can actually finish the
+    // Manhattan/Ivy chain before the clock.  This permanent production bonus
+    // keeps the fixture focused on target selection rather than the horizon
+    // refusal that is correct for a one-production outpost.
+    game.map.tiles.get_mut(&launch).unwrap().disaster_production = 100.0;
+    let radius = game.rules.wmds["thermonuclear_device"].blast_radius;
+    let spaceport_site = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && tile.owner_city.is_none()
+                && tile.district.is_none()
+                && tile.wonder.is_none()
+                && game.city_at(tile.pos).is_none()
+                && game.wdist(launch, tile.pos) > radius
+                && game.wdist(launch, tile.pos)
+                    <= game.rules.wmds["nuclear_device"].icbm_strike_range
+                && game.wdist(fortress, tile.pos) > 2 * radius + 1
+                && game
+                    .cities
+                    .values()
+                    .all(|city| game.wdist(city.pos, tile.pos) >= 4)
+        })
+        .map(|tile| tile.pos)
+        .next()
+        .expect("map has a separate ICBM-range city site");
+    let spaceport_city = game.found_city_for(1, spaceport_site, Some("Launch Complex".to_string()));
+    let spaceport = game
+        .map
+        .tiles
+        .values()
+        .find(|position| {
+            game.wdist(position.pos, spaceport_site)
+                == game.rules.wmds["thermonuclear_device"].blast_radius
+                && position.owner_city.is_none()
+                && position.district.is_none()
+                && position.wonder.is_none()
+                && position.improvement.is_none()
+        })
+        .map(|tile| tile.pos)
+        .expect("new city has a Spaceport tile inside thermonuclear but outside nuclear range");
+    let tile = game.map.tiles.get_mut(&spaceport).unwrap();
+    tile.owner_city = Some(spaceport_city);
+    tile.district = Some(crate::name!("spaceport"));
+    tile.pillaged = false;
+    let city = game.cities.get_mut(&spaceport_city).unwrap();
+    city.owned_tiles.push(spaceport);
+    city.districts.insert(crate::name!("spaceport"), spaceport);
+    install_ai_test_district(&mut game, launch_city, "industrial_zone");
+    game.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
+    game.cities.get_mut(&spaceport_city).unwrap().queue = vec![Item::Project {
+        project: crate::name!("lagrange_laser_station"),
+    }];
+    game.players[0].explored.insert(fortress);
+    game.players[0].explored.insert(spaceport_site);
+    game.world_era = 4;
+    (game, launch_city, fortress_city, spaceport_city, spaceport)
 }
 
 /// The research floor is a ramp on the remaining game and is absent from
@@ -5330,27 +5401,150 @@ fn the_doctrine_spares_a_power_it_is_not_fighting() {
 }
 
 #[test]
-fn conquest_prices_the_nuclear_lane_from_the_industrial_era() {
-    let mut game = Game::new_full(2, 24, 16, 91_802, 200, 0, false);
+fn nuclear_doctrine_hits_a_rival_spaceport_before_a_harder_city() {
+    let (mut game, _, fortress_city, spaceport_city, spaceport) = nuclear_war_fixture();
+    let fortress = game.cities[&fortress_city].pos;
+    let launch = game.cities[&game.player_city_ids(0)[0]].pos;
+    game.at_war.insert((0, 1));
+    game.cities.get_mut(&fortress_city).unwrap().wall_hp = 800;
+    game.players[0]
+        .counters
+        .insert("project_effect:thermonuclear_devices".to_string(), 1);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(spaceport_city),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
     let ai = AdvancedAi::targeting(VictoryTarget::Domination);
-    let ancient = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
-    game.world_era = 4;
-    let industrial = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+
     assert!(
-        industrial > ancient + 15.0,
-        "the industrial era prices the lane like a victory beeline: \
-             {industrial:.1} vs {ancient:.1}"
+        game.wdist(launch, game.cities[&spaceport_city].pos)
+            <= game.rules.wmds["thermonuclear_device"].icbm_strike_range,
+        "fixture must offer the Spaceport to the WMD action generator"
+    );
+    ai.advanced_wmd_strikes(&mut game, 0, &plan);
+
+    assert_eq!(
+        game.players[0].counters["project_effect:thermonuclear_devices"], 0,
+        "the arsenal spends a device on the opponent's victory infrastructure"
+    );
+    assert!(
+        game.map.tiles[&spaceport].pillaged,
+        "the blast disables the rival Spaceport and its active launch program"
+    );
+    assert!(
+        game.map.tiles[&game.cities[&spaceport_city].pos].fallout_until > game.turn,
+        "the Spaceport city is the strike target"
+    );
+    assert!(
+        game.map.tiles[&fortress].fallout_until <= game.turn,
+        "a harder conventional city loses to the victory-critical target"
+    );
+}
+
+#[test]
+fn nuclear_program_beelines_only_for_a_reachable_goal_and_stops_at_its_arsenal() {
+    let (mut game, launch_city, fortress_city, spaceport_city, spaceport) = nuclear_war_fixture();
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(spaceport_city),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let goal = ai
+        .nuclear_war_goal(&game, 0, GrandStrategy::Conquest, Some(1))
+        .expect("the revealed launch site must be a nuclear goal");
+    assert!(
+        ai.nuclear_war_goal(&game, 0, GrandStrategy::Conquest, None)
+            .is_some(),
+        "a Domination-targeted research pass must retain the valid nuclear goal without a preselected rival"
+    );
+
+    let mut quiet = game.clone();
+    quiet.players[1].science_projects.clear();
+    quiet
+        .cities
+        .get_mut(&spaceport_city)
+        .unwrap()
+        .districts
+        .remove(Name::new("spaceport"));
+    quiet.map.tiles.get_mut(&spaceport).unwrap().district = None;
+    quiet.cities.get_mut(&fortress_city).unwrap().wall_hp = 0;
+    let quiet_value = ai.tech_value(&quiet, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let urgent_value = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+    assert!(
+        urgent_value > quiet_value + 20.0,
+        "a revealed opponent Spaceport on an Expedition must turn Fission into a fast counter-beeline: \
+             urgent={urgent_value:.1}, quiet={quiet_value:.1}"
+    );
+    let mut unforced = AdvancedAi::new();
+    unforced.plan = Some(plan.clone());
+    let planned_quiet = unforced.tech_value(&quiet, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let planned_urgent = unforced.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+    assert!(
+        planned_urgent > planned_quiet + 20.0,
+        "an ordinary AI's named Conquest target must also start the counter-program: \
+             urgent={planned_urgent:.1}, quiet={planned_quiet:.1}"
+    );
+
+    let ancestors = game.rules.tech_ancestors["nuclear_fission"].clone();
+    game.players[0]
+        .techs
+        .extend(ancestors.into_iter().map(|tech| Name::new(&tech)));
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("nuclear_fission"),
+        "the live research chooser actually starts the nuclear counter-program"
+    );
+
+    assert!(
+        goal.desired_stockpile >= 2,
+        "a rival on the Science clock needs an arsenal, not a lone speculative device"
+    );
+    assert!(
+        goal.needs_thermonuclear,
+        "the Spaceport outside a standard blast disk needs the larger weapon, not a cap full of ordinary devices"
     );
     game.players[0]
         .science_projects
         .insert("manhattan_project".to_string());
-    game.players[0]
-        .science_projects
-        .insert("operation_ivy".to_string());
-    let armed = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let device = Item::Project {
+        project: crate::name!("build_nuclear_device"),
+    };
+    let counts = ai.counts(&game, 0);
+    let arming_value = ai.production_value(&game, 0, launch_city, &device, &plan, &counts);
     assert!(
-        (armed - ancient).abs() < 1e-9,
-        "an open arsenal stops pricing the lane: {armed:.1} vs {ancient:.1}"
+        arming_value > 0.0,
+        "the goal must open actual device production instead of refusing it: {arming_value:.1}"
+    );
+    let ivy = Item::Project {
+        project: crate::name!("operation_ivy"),
+    };
+    let ivy_value = ai.production_value(&game, 0, launch_city, &ivy, &plan, &counts);
+    assert!(
+        ivy_value > arming_value,
+        "the program prioritizes the prerequisite for the device that can actually reach the Spaceport: Ivy={ivy_value:.1}, standard device={arming_value:.1}"
+    );
+    game.players[0].counters.insert(
+        "project_effect:nuclear_devices".to_string(),
+        goal.desired_stockpile.saturating_sub(1),
+    );
+    game.players[0]
+        .counters
+        .insert("project_effect:thermonuclear_devices".to_string(), 1);
+    let capped_value = ai.production_value(&game, 0, launch_city, &device, &plan, &counts);
+    assert!(
+        capped_value < -9_000.0,
+        "once enough reachable targets are covered the AI stops hoarding devices: {capped_value:.1}"
     );
 }
 
@@ -5485,6 +5679,48 @@ fn strategic_settler_routes_to_an_island_beyond_the_local_search_radius() {
         .map
         .get(g.units[&settler].pos)
         .is_some_and(|tile| g.rules.is_water(tile)));
+}
+
+#[test]
+fn overseas_settlement_claims_a_discovered_foreign_landfall_when_home_is_full() {
+    let (mut g, source, target) = island_colony_game();
+    g.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+    g.players[0].explored.extend(explored);
+    let settler = g.spawn_test_unit("settler", 0, source);
+    let home_landmass = BasicAi::capital_landmass(&g, 0);
+    let mut ai = AdvancedAi::new();
+    ai.enable_overseas_settlement();
+
+    assert!(ai.advanced_settler_step(&mut g, 0, settler));
+    let chosen = ai.settler_targets[&settler];
+    assert!(
+        !home_landmass.contains(&chosen),
+        "the gene sends the settler beyond the capital's landmass"
+    );
+    assert!(
+        g.wdist(chosen, target) <= 1,
+        "the nearest discovered overseas landfall is chosen"
+    );
+}
+
+#[test]
+fn island_expansion_genes_are_reversible_opt_ins() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
+
+    ai.enable_island_exploration();
+    ai.enable_overseas_settlement();
+    assert!(ai.base.island_exploration);
+    assert!(ai.overseas_settlement);
+
+    ai.disable_island_exploration();
+    ai.disable_overseas_settlement();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
 }
 
 /// A dodge is a legal move that is not progress. The commitment bound has
@@ -7993,7 +8229,7 @@ fn settlement_atlas_parallel_misses_match_uncached_values_and_invalidate_on_map_
         .collect::<Vec<_>>();
     assert_eq!(positions.len(), 48, "the fixture needs a wide score batch");
 
-    let visible = game.player_vision_now(0);
+    let visible = game.player_vision_frame(0);
     let units = game
         .units
         .values()
@@ -23701,6 +23937,251 @@ fn a_relief_column_aims_at_the_siege_not_at_its_own_doorstep() {
     );
 }
 
+/// A passable, empty land tile exactly `distance` from `home`, at least
+/// `clear` hexes from every `(tile, clear)` in `away`, with at least `room`
+/// such tiles beside it; lowest coordinates first so the pick is
+/// deterministic.
+fn clear_land_at(game: &Game, home: Pos, distance: i32, away: &[(Pos, i32)], room: usize) -> Pos {
+    let open = |pos: Pos| {
+        game.map.get(pos).is_some_and(|tile| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.city_at(pos).is_none()
+                && game.units_at(pos).is_empty()
+        })
+    };
+    let mut candidates: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) == distance && open(*pos))
+        .filter(|pos| {
+            away.iter()
+                .all(|(other, clear)| game.wdist(*pos, *other) >= *clear)
+        })
+        .filter(|pos| {
+            game.nbrs(*pos)
+                .into_iter()
+                .filter(|beside| open(*beside))
+                .count()
+                >= room
+        })
+        .collect();
+    candidates.sort_unstable();
+    *candidates
+        .first()
+        .unwrap_or_else(|| panic!("no clear land tile {distance} hexes from {home:?}"))
+}
+
+/// An empty land neighbour of `of`, lowest coordinates first.
+fn clear_land_beside(game: &Game, of: Pos, not: &[Pos]) -> Pos {
+    let mut candidates: Vec<Pos> = game
+        .nbrs(of)
+        .into_iter()
+        .filter(|pos| {
+            game.map.get(*pos).is_some_and(|tile| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(*pos).is_none()
+                    && game.units_at(*pos).is_empty()
+            }) && !not.contains(pos)
+        })
+        .collect();
+    candidates.sort_unstable();
+    *candidates
+        .first()
+        .unwrap_or_else(|| panic!("no clear land tile beside {of:?}"))
+}
+
+/// ★★★★★ A RELIEF COLUMN MARCHES; THE RING HOLDS.
+///
+/// Run `civvis-20260827T113726Z`, t161–164: Aquileia (pop 15, walled, no
+/// garrison) under a Chinese Artillery, Field Cannon, three Infantry and two
+/// Cuirassiers. Our main army — seven units, **1.58** local strength against
+/// that stack, objective the besieger's own hex at (20,30) — logged "A land
+/// force of 7 will hold … held back to cover a threat" on every frame of
+/// every turn and stood at x=7–13, nine hexes west, until the city fell on
+/// t164. `relieving` was `plan.threatened_city.is_some()` — true for every
+/// group in the empire — and a Hold's mover target is the group's own
+/// anchor. #354 measured the reach test, shipped it off, and #1194 pruned
+/// it.
+///
+/// With the gene: a group beyond `THREAT_RELIEF_RADIUS` of the threatened
+/// city that is locally superior advances on the siege; a group inside the
+/// radius holds its ring exactly as before; the frozen anchor is untouched.
+#[test]
+fn a_relief_column_beyond_the_threat_radius_advances_on_the_siege() {
+    let (mut game, capital, home) = empire_with_a_capital(71_131);
+    let besieger_pos = clear_land_at(&game, home, 1, &[], 0);
+    game.spawn_test_unit("warrior", 1, besieger_pos);
+    // The column: two warriors nine hexes out, side by side, so the group
+    // is fully mustered and twice the besieger's strength.
+    let far = clear_land_at(&game, home, 9, &[], 1);
+    let far_two = clear_land_beside(&game, far, &[]);
+    let column_a = game.spawn_test_unit("warrior", 0, far);
+    let column_b = game.spawn_test_unit("warrior", 0, far_two);
+    // The ring: one warrior three hexes out, out of contact with the
+    // besieger and out of the column's command radius.
+    let near = clear_land_at(
+        &game,
+        home,
+        3,
+        &[(besieger_pos, 3), (far, 7), (far_two, 7)],
+        0,
+    );
+    let ring = game.spawn_test_unit("warrior", 0, near);
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: Some(capital),
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let group_of = |ai: &AdvancedAi, unit: u32| -> ForceGroup {
+        ai.force_groups()
+            .iter()
+            .find(|group| group.units.contains(&unit))
+            .cloned()
+            .unwrap_or_else(|| panic!("unit {unit} receives a force order"))
+    };
+
+    let mut ai = AdvancedAi::new();
+    // The geometry is the question, not what the turn-start frame saw.
+    ai.battlefront_observation = false;
+    assert!(
+        !ai.relief_column_marches,
+        "a repair gene ships off in the constructor"
+    );
+
+    ai.rebuild_force_groups(&game, 0, &plan);
+    let column = group_of(&ai, column_a);
+    assert!(column.units.contains(&column_b), "the pair is one group");
+    assert!(
+        !column.units.contains(&ring),
+        "the ring warrior is not in the column"
+    );
+    assert!(
+        game.wdist(column.anchor, home) > THREAT_RELIEF_RADIUS,
+        "the column stands beyond the relief radius: {}",
+        game.wdist(column.anchor, home)
+    );
+    assert!(
+        column.local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR,
+        "two warriors against one are locally superior: {}",
+        column.local_strength_ratio
+    );
+    assert_eq!(
+        column.objective, besieger_pos,
+        "the objective is the besieger"
+    );
+    assert_eq!(
+        column.posture,
+        ForcePosture::Hold,
+        "the shipped rule: every group holds while any city is threatened — this \
+         is the defect, nine hexes from a city at 145 damage out of 200"
+    );
+    assert_eq!(group_of(&ai, ring).posture, ForcePosture::Hold);
+    assert_eq!(
+        ai.relief_hold_point(&game, &column),
+        None,
+        "with the gene off a Hold stands at its anchor"
+    );
+
+    ai.enable_relief_column_marches();
+    ai.rebuild_force_groups(&game, 0, &plan);
+    let column = group_of(&ai, column_a);
+    assert_eq!(
+        column.posture,
+        ForcePosture::Advance,
+        "a locally superior column beyond the relief radius marches on the siege"
+    );
+    assert_eq!(column.objective, besieger_pos);
+    let ring_group = group_of(&ai, ring);
+    assert!(game.wdist(ring_group.anchor, home) <= THREAT_RELIEF_RADIUS);
+    assert_eq!(
+        ring_group.posture,
+        ForcePosture::Hold,
+        "a group inside the radius is part of the defence and holds its ring"
+    );
+    // Where a Hold stands: the column at the threatened city, the ring at
+    // its own anchor.
+    ai.plan = Some(plan.clone());
+    assert_eq!(
+        ai.relief_hold_point(&game, &column),
+        Some(home),
+        "a column too weak to advance would still hold AT the city"
+    );
+    assert_eq!(ai.relief_hold_point(&game, &ring_group), None);
+
+    let mut legacy = AdvancedAi::legacy();
+    legacy.battlefront_observation = false;
+    legacy.rebuild_force_groups(&game, 0, &plan);
+    assert_eq!(
+        group_of(&legacy, column_a).posture,
+        ForcePosture::Hold,
+        "the frozen anchor keeps the empire-wide hold"
+    );
+}
+
+/// The t160 frame of the same run: the army's posture read "Engage" with
+/// its objective at the Chinese Cuirassier, but the focus — the tile the
+/// Engage mover walks to — was a Chinese Apostle standing beside the
+/// crossbowmen, which every unit then "declines" (worth −∞). While a city is
+/// threatened, a column's focus is a combatant or a city; at peace the gene
+/// changes nothing.
+#[test]
+fn a_relief_columns_focus_is_a_combatant_not_a_civilian() {
+    let (mut game, capital, home) = empire_with_a_capital(71_132);
+    let stand = clear_land_at(&game, home, 5, &[], 2);
+    let ours = game.spawn_test_unit("warrior", 0, stand);
+    let beside = clear_land_beside(&game, stand, &[]);
+    game.spawn_test_unit("builder", 1, beside);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: Some(capital),
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let calm = StrategicPlan {
+        threatened_city: None,
+        ..plan.clone()
+    };
+    let enemies = [1usize];
+    let mut ai = AdvancedAi::new();
+    ai.battlefront_observation = false;
+
+    assert_eq!(
+        ai.force_focus_target(&game, 0, &[ours], &enemies, &plan),
+        Some(beside),
+        "the shipped rule focuses on any enemy tile in reach"
+    );
+    ai.enable_relief_column_marches();
+    assert_eq!(
+        ai.force_focus_target(&game, 0, &[ours], &enemies, &plan),
+        None,
+        "a Builder is not what is shelling the city"
+    );
+    assert_eq!(
+        ai.force_focus_target(&game, 0, &[ours], &enemies, &calm),
+        Some(beside),
+        "with no city threatened the gene is inert"
+    );
+    let other = clear_land_beside(&game, stand, &[beside]);
+    game.spawn_test_unit("warrior", 1, other);
+    assert_eq!(
+        ai.force_focus_target(&game, 0, &[ours], &enemies, &plan),
+        Some(other),
+        "an enemy warrior in reach is still the focus"
+    );
+}
+
 /// ★★★★★ A FOGGED OBJECTIVE IS NOT A DOMINATED ONE.
 ///
 /// `local_strength_ratio` returns `3.0` — its maximum, "we dominate here" —
@@ -33647,17 +34128,17 @@ fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
     );
 }
 
-/// The gene is off in the stock and legacy agents and reaches a seat only
-/// through the ledger: the 2026-08-25 operator directive pinned it on.
+/// The gene is off in the stock and legacy agents and remains off through the
+/// ledger under the 2026-08-27 operator directive.
 #[test]
-fn builder_tries_the_next_tile_is_on_only_through_the_ledger() {
+fn builder_tries_the_next_tile_stays_off_through_the_ledger() {
     assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
     assert!(
-        deployment.base.builder_tries_the_next_tile,
-        "pinned on by the 2026-08-25 operator directive"
+        !deployment.base.builder_tries_the_next_tile,
+        "held off by the 2026-08-27 operator directive"
     );
 }
 

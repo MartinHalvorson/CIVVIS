@@ -266,6 +266,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import functools
 import hashlib
 import json
 import math
@@ -367,8 +368,15 @@ def genes_from_text(text: str) -> list[Gene]:
     return rows
 
 
+@functools.lru_cache(maxsize=None)
 def genes() -> list[Gene]:
-    """The registry in the working tree."""
+    """The registry in the working tree.
+
+    Cached: `REGISTRY_PATH` does not change within one process's lifetime
+    (every caller only reads it), and `Gene` is a frozen dataclass, so the
+    cached list is never mutated out from under a caller. `genes.rs` is
+    2.7 MB; re-parsing it on every one of the hundreds of calls a `check` run
+    makes cost 3 s of the 14.45 s baseline (`_table_body` alone, 549 calls)."""
     return genes_from_text(REGISTRY_PATH.read_text(encoding="utf-8"))
 
 
@@ -514,8 +522,7 @@ DEPLOYMENT_POLICY = "batch-rule+operator-pins"
 #: but cannot silently flip treatments while a historical batch is published.
 RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: ⭐ THE OPERATOR'S PINS — genes that default **on** whatever their batch
-#: columns read. The 2026-08-26 selected defaults extend this list; the
-#: retained deployment selection separately excludes `raid-pillage-prizes`.
+#: columns read. The 2026-08-27 selected defaults extend this list.
 #: For the versioned `settler-target-hysteresis` family the operator moved the
 #: ship from v1 to v2 (2026-08-26): `settler-target-hysteresis-2` is pinned on
 #: here and v1 is held off below, so the family still ships exactly one
@@ -523,54 +530,81 @@ RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: from the pool (`build_ledger` refuses that). Nothing derives this list; it
 #: is the operator's, by name.
 OPERATOR_DEFAULT_ON = (
+    "amenity-project-preemption",
     "apostle-promotion-by-role",
     "army-target-weighs-enemy",
     "barbarian-settler-capture",
+    "blind-objective-strength",
     "boost-wait-research",
-    "builder-supply-floor",
+    "bounded-recovery",
     "buildings-before-projects",
-    "buy-what-cards-cannot-boost",
     "camp-party",
-    "campaign-pillage",
+    "camp-tile-buyout",
+    "canal-city",
+    "chain-payback-window-2",
     "chokepoint-claim",
     "civilian-out-of-reach",
+    "close-as-a-body",
     "coalition-before-war",
+    "coastal-city-sites",
+    "come-ashore",
+    "contested-land-first",
+    "conversion-majority-alarm",
     "deals-at-the-ceiling",
-    "deals-for-our-gain",
+    "defend-where-you-stand",
     "defensible-sites",
+    "district-coverage",
     "district-planning",
+    "early-archers",
     "early-contact-window",
     "elective-war-yields-to-a-lane",
+    "enemy-of-my-enemy",
     "enhancer-for-the-corps",
+    "exchange-is-the-engines",
+    "expansion-pays-back",
     "expansion-schedule",
     "founder-temple",
+    "garrison-under-fire",
     "gold-for-the-young-city",
-    "holy-site-where-the-threat-is-2",
+    "gold-income-floor",
+    "guru-heals-the-corps-2",
+    "holy-site-where-the-threat-is",
     "idle-faith-patronage",
     "lane-great-people",
     "loyalty-rate-alarm",
     "missionary-evades-raiders",
-    "native-emergency-purchase",
     "naval-threat-triage",
-    "never-an-empty-queue",
     "one-launch-pad",
-    "pantheon-board",
+    "one-shot-recovery",
+    "one-war-at-a-time",
+    "order-retry",
+    "peace-when-the-war-does-not-pay",
+    "peacetime-deterrence",
+    "power-the-laboratory-2",
     "quest-boost",
+    "quest-production",
     "quest-trade-route",
+    "raid-pillage-prizes",
     "recon-replacement",
+    "relief-column-marches",
     "relief-targets-the-siege",
+    "religion-race-is-closed",
     "religious-units-heal-first",
     "research-tier-premium",
     "rival-suzerainty-alarm",
     "science-chain-alarm",
+    "science-multiplier-payoff",
+    "score-horizon",
     "settler-screen",
     "settler-target-hysteresis-2",
     "settler-threat-detour",
     "stranded-settler-discount",
+    "threatened-city-reserve",
+    "treasury-at-work",
     "unchosen-war-keeps-the-lane",
     "unit-cost-efficiency",
-    "unit-objective-memory",
-    "wonder-adjacent-sites",
+    "upgrade-the-garrison",
+    "whole-turn-backtrack-guard",
     "wonder-score-tally",
 )
 
@@ -602,19 +636,32 @@ def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
                         if tag not in columns))
 
 #: ⭐ THE OPERATOR'S HOLDS — genes that default **off** whatever their batch
-#: columns read (operator, 2026-08-26). The mirror of `OPERATOR_DEFAULT_ON`,
+#: columns read (operator, 2026-08-27). The mirror of `OPERATOR_DEFAULT_ON`,
 #: and the only thing that can take a gene out of a retained selection. Like a
 #: pin it decides a default and nothing else: the rule's own answer stays
 #: published under `rules.batch_decisions`, and a gene the rule removes from
 #: the pool is still cut. Nothing derives this list either; it is the
 #: operator's, by name.
 OPERATOR_DEFAULT_OFF = (
+    "blind-objective-units",
+    "builder-supply-floor",
+    "builder-tries-the-next-tile",
+    "buy-what-cards-cannot-boost",
+    "campaign-pillage",
     "congress-counter-leader",
+    "deals-for-our-gain",
+    "frontier-massing-alarm",
     "holy-lane-parity",
-    "one-war-at-a-time",
-    "science-multiplier-payoff",
+    "holy-site-where-the-threat-is-2",
+    "lane-space-race",
+    "native-emergency-purchase",
+    "naval-recon",
+    "never-an-empty-queue",
+    "pantheon-board",
     "settler-factory-coordination",
     "settler-target-hysteresis",
+    "unit-objective-memory",
+    "wonder-adjacent-sites",
 )
 
 #: A gene is named by at most one of the two lists — the pair is one selection,
@@ -1311,7 +1358,14 @@ def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
     return ""
 
 
+@functools.lru_cache(maxsize=None)
 def load_source(path: Path) -> dict:
+    """Cached: every caller only reads keys out of the returned dict (via
+    `.get`/`[...]`), never assigns into it, so one parse per distinct path is
+    safe to share across the whole process. A `check` run's ledger sources
+    and reporting batches are each loaded from several call sites; before
+    this cache, `genes()` (a related hot path) alone cost 3 s of re-parsing
+    on 549 calls."""
     data = json.loads(path.read_text())
     if data.get("kind") != "gene_screen_analysis":
         raise SystemExit(f"{path}: not a gene_screen --analyze --json output")
@@ -2502,6 +2556,32 @@ def _first_sentence(doc_lines: str) -> str:
     return sentence
 
 
+#: `pub fn enable_<toggle>(` preceded by its doc-comment block, anywhere in
+#: `treatment_flags.rs`. group(1) is the doc lines, group(2) the toggle name.
+_ENABLE_FN_DOC = re.compile(r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_([a-z0-9_]+)\(")
+#: `<field>: bool,` preceded by its doc-comment block, anywhere in
+#: `advanced.rs` / `ai.rs`. group(1) is the doc lines, group(2) the field name.
+_FIELD_DOC = re.compile(
+    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub(?:\(crate\))? )?([a-z0-9_]+): bool,")
+
+
+def _doc_index(text: str, pattern: re.Pattern) -> dict[str, str]:
+    """name → its doc-comment block (group 1), for every `pattern` match in
+    `text`, keeping the first (leftmost) block when a name repeats — exactly
+    what a per-name `re.search(pattern_for_that_name, text)` would have
+    returned, but from one `finditer` pass over the whole text instead of one
+    scan per name. `descriptions()` used to run a `re.search` like this per
+    gene per source (213 genes × 2 = 426 calls on the real registry): 10.9 s
+    of the 14.45 s `check` baseline, because the nested-quantifier doc-comment
+    group backtracks badly on every miss over these multi-megabyte files."""
+    index: dict[str, str] = {}
+    for match in pattern.finditer(text):
+        name = match.group(2)
+        if name not in index:
+            index[name] = match.group(1)
+    return index
+
+
 def descriptions() -> dict[str, str]:
     """tag → one sentence: the `enable_<field>` toggle's doc, or — when that is
     missing or only says "See …" — the flag field's own doc in `advanced.rs` /
@@ -2509,15 +2589,17 @@ def descriptions() -> dict[str, str]:
     reg = registry()
     flags = FLAGS_RS.read_text()
     fields = ADVANCED_RS.read_text() + "\n" + AI_RS.read_text()
+    toggle_docs = _doc_index(flags, _ENABLE_FN_DOC)
+    field_docs = _doc_index(fields, _FIELD_DOC)
     out: dict[str, str] = {}
     for tag, (field, toggle) in reg.items():
         candidates = []
-        m = re.search(r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_" + re.escape(toggle) + r"\(", flags)
-        if m:
-            candidates.append(_first_sentence(m.group(1)))
-        m = re.search(r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub(?:\(crate\))? )?" + re.escape(field) + r": bool,", fields)
-        if m:
-            candidates.append(_first_sentence(m.group(1)))
+        doc = toggle_docs.get(toggle)
+        if doc is not None:
+            candidates.append(_first_sentence(doc))
+        doc = field_docs.get(field)
+        if doc is not None:
+            candidates.append(_first_sentence(doc))
         usable = [c for c in candidates if c and not c.startswith("See ")]
         out[tag] = (usable or candidates or [""])[0]
     return out

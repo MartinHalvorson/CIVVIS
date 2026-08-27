@@ -47,11 +47,12 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
-def rules_from_engine() -> dict:
-    subprocess.run(
-        ["cargo", "build", "--profile", "ci", "--locked", "--bin", "civvis"],
-        cwd=ROOT, check=True,
-    )
+def rules_from_engine(no_build: bool = False) -> dict:
+    if not no_build:
+        subprocess.run(
+            ["cargo", "build", "--profile", "ci", "--locked", "--bin", "civvis"],
+            cwd=ROOT, check=True,
+        )
     port = free_port()
     server = subprocess.Popen(
         [str(ROOT / "target" / "ci" / "civvis"), "play", "--spectate", "--no-open",
@@ -95,13 +96,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--url", help="a running CIVVIS server to ask")
     parser.add_argument("--check", action="store_true",
                         help="exit 1 if the page would change, writing nothing")
+    parser.add_argument("--no-build", action="store_true",
+                        help="skip `cargo build` and run the target/ci/civvis "
+                             "binary that is already there (ignored with "
+                             "--rules or --url, which never build)")
     args = parser.parse_args(argv)
     if args.rules:
         rules = json.loads(args.rules.read_text(encoding="utf-8"))
     elif args.url:
         rules = rules_from_url(args.url)
     else:
-        rules = rules_from_engine()
+        rules = rules_from_engine(no_build=args.no_build)
     rows = rules["historical_scenarios"]
     if not isinstance(rows, list) or not rows:
         raise SystemExit("/rules carried no historical_scenarios")

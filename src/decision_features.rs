@@ -51,6 +51,7 @@
 //! inference machinery that does not exist; this is not.
 use crate::evolve::features;
 use crate::game::Game;
+use crate::Pos;
 
 /// Width of [`decision_features`]: the 25 empire aggregates plus 9 terms
 /// that respond to unit position, unit condition, city fabric and current
@@ -72,12 +73,6 @@ pub const MEAN_ENEMY_GAP: usize = 30;
 /// is a *symptom* of a strong empire pressing an attack; maximising it is
 /// not the same as pressing an attack.
 pub const CONTACT_TERMS: [usize; 2] = [ADJACENT_ENEMIES, MEAN_ENEMY_GAP];
-
-/// Hex distance on the offset grid the engine stores positions in.
-fn hex_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
-    let (dx, dy) = (a.0 - b.0, a.1 - b.1);
-    (dx.abs() + dy.abs() + (dx + dy).abs()) / 2
-}
 
 /// `evolve::features` extended with terms an action can move.
 ///
@@ -117,11 +112,17 @@ pub fn decision_features(g: &Game, pid: usize) -> Vec<f32> {
     // Contact. These two are what make an ordinary move visible: stepping
     // toward or away from an enemy changes the mean gap, and closing
     // changes the adjacency count.
-    let enemy_positions: Vec<(i32, i32)> = g
+    // ⚠ `Game::wdist`, not a local hex distance. This file carried a fourth
+    // copy of the flat-grid formula until 2026-08-27, and a flat distance is
+    // simply wrong on two of the three world shapes this engine ships: it
+    // walks the long way round a cylinder's wrap seam and knows nothing about
+    // a Planet's poles, so the contact terms it fed a learner disagreed with
+    // every distance the engine itself reasons with. See `world::distance`.
+    let enemy_positions: Vec<Pos> = g
         .units
         .values()
         .filter(|unit| unit.owner != pid)
-        .map(|unit| (unit.pos.0, unit.pos.1))
+        .map(|unit| unit.pos)
         .collect();
     let mut adjacent = 0.0f32;
     let mut gap_total = 0.0f32;
@@ -130,7 +131,7 @@ pub fn decision_features(g: &Game, pid: usize) -> Vec<f32> {
         let pos = g.units[id].pos;
         let mut nearest = i32::MAX;
         for enemy in &enemy_positions {
-            let distance = hex_distance((pos.0, pos.1), *enemy);
+            let distance = g.wdist(pos, *enemy);
             nearest = nearest.min(distance);
             if distance <= 1 {
                 adjacent += 1.0;
