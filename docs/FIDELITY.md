@@ -2528,6 +2528,49 @@ a test pins that the human takes no yield handicap and the rivals keep theirs.
   the `STATE` schema allowlist, so every live record filed a
   `schema:state.strategic_resources` gap that was not one.
 
+### Shipped: the host's production and purchase menus cross, and the board picks from them (item 2)
+
+The mod now exports, for every one of our cities on every state export,
+what the host itself would put on the Production panel (`CivvisMenus` in
+`CivvisControlAgent.lua`; the loops are
+`Base/Assets/UI/Panels/ProductionPanel.lua` 1898–2237 and 1632–1820, the
+queue `ProductionHelper.lua:185`): `buildable` — every unit, building,
+wonder, district and project `BuildQueue:CanProduce(hash, false, true)` says
+can be STARTED now, with `GetXCost(row.Index)` and `GetTurnsLeft(hash)`, a
+Corps/Army row where the results table allows one, and for a district the
+plots `CityManager.GetOperationTargets(BUILD)` offers; `purchasable` — what
+`CityManager.CanStartCommand(city, PURCHASE, …)` says can be BOUGHT now and
+what `CityGold:GetPurchaseCost` charges, in Gold and in Faith; and `queue` —
+the entries behind the head (`BuildQueue:GetAt(i)`), which never crossed.
+Only what can start crosses; a listed-but-disabled item is not a choice.
+
+On the board (`src/mirror.rs` `host_menus_from`, on both import paths):
+`Game::host_buildable`, `Game::host_purchasable` and
+`Game::host_district_plots`, keyed like the refusal sets.
+`Game::can_produce` — the chokepoint `producible_items` and every BasicAi and
+AdvancedAi production chooser read — refuses any unit, formation, building,
+wonder, district or project the host's menu does not list: the positive gate
+beside the `blocked_production` cooldown, which stays as the fallback for an
+older mod. The purchase pricers (`building_purchase_cost`,
+`building_gold_purchase_cost`, `building_faith_purchase_cost`,
+`unit_purchase_cost_for_formation`) and both district-purchase enumerations
+answer from the host's price, and an item off the menu is not for sale;
+`item_cost_for_city` prices from the host's cost; `district_sites` keeps only
+a complete host offer; the queue tail sits behind the head on `City::queue`.
+An export without the keys — the recording this audit was made on — gates
+nothing and prices exactly as before (replayed at t33 and t100 against the
+deployed binary).
+
+Found on the way: sixteen unique units (`UNIT_ROMAN_LEGION`, …), the two
+water districts and three space-race projects had an OUTBOUND spelling in
+`civvis_orders` and no inbound one, so a city building a Legion read as idle
+and a refused Legion never reached `blocked_production`; the aliases are
+symmetric now and `civvis_orders` pins the round trip for every orderable
+name. Not reached: Corps/Army purchase prices (not exported), repairs and
+Corporation products (the gate skips both families), and the engine's own
+turn forecast for a candidate item, which crosses
+(`Game::host_production_turns`) but no planner reads yet.
+
 ### Shipped in #2591: Free Cities on their seat, Amani once, `ri` and `embarked` read
 
 Items 3, 4 and the read half of 11 below.

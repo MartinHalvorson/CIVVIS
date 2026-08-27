@@ -6691,6 +6691,82 @@ fn action_variant(action: &Action) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// ★★★★★ EVERY ITEM THE BOARD CAN ORDER COMES BACK FROM ITS HOST SPELLING
+    /// TO THE SAME KEY. `Game::can_produce` gates on the host's exported menu,
+    /// translated through `mirror::host_production_key`; an orderable item
+    /// whose outbound name did not translate back would be gated off every
+    /// live board forever. Checked for the names the shipped game has
+    /// (`data/civ6_type_names.json`): a CIVVIS-only item can be on no host
+    /// menu and can be ordered nowhere either.
+    #[test]
+    fn every_orderable_item_round_trips_through_the_host_menu_key() {
+        use civvis::game::Item;
+        let rules = civvis::rules::Rules::embedded();
+        let shipped: std::collections::BTreeSet<String> =
+            serde_json::from_str(include_str!("../../data/civ6_type_names.json"))
+                .expect("the type-name snapshot is a JSON list");
+        let mut items: Vec<(Item, String)> = Vec::new();
+        for unit in rules.units.keys() {
+            items.push((Item::Unit { unit: *unit }, format!("unit:{unit}")));
+        }
+        for building in rules.buildings.keys() {
+            items.push((
+                Item::Building {
+                    building: *building,
+                },
+                format!("building:{building}"),
+            ));
+        }
+        for wonder in rules.wonders.keys() {
+            items.push((
+                Item::Wonder {
+                    wonder: *wonder,
+                    pos: (0, 0),
+                },
+                format!("wonder:{wonder}"),
+            ));
+        }
+        for district in rules.districts.keys() {
+            items.push((
+                Item::District {
+                    district: *district,
+                    pos: (0, 0),
+                },
+                format!("district:{district}"),
+            ));
+        }
+        for project in rules.projects.keys() {
+            items.push((
+                Item::Project { project: *project },
+                format!("project:{project}"),
+            ));
+        }
+        let mut broken = Vec::new();
+        let mut checked = 0;
+        for (item, key) in items {
+            let Some(host) = super::civ6_build_name(&item) else {
+                continue;
+            };
+            if !shipped.contains(&host) {
+                continue;
+            }
+            checked += 1;
+            let back = civvis::mirror::host_production_key(&rules, &host, None);
+            if back.as_deref() != Some(key.as_str()) {
+                broken.push(format!("{host} -> {back:?}, the gate wants {key}"));
+            }
+        }
+        assert!(
+            checked > 200,
+            "only {checked} orderable names are in the snapshot"
+        );
+        assert!(
+            broken.is_empty(),
+            "host spellings that do not come back to the board's key:\n{}",
+            broken.join("\n")
+        );
+    }
+
     /// The lane list is the enum's, in the enum's order, with `civvis` in front.
     ///
     /// ⚠ The usage line and the Python launchers' `choices` are both generated

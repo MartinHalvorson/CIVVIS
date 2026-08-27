@@ -8295,6 +8295,275 @@ mod tests {
         );
     }
 
+    /// ★★★★★ THE HOST'S MENU IS THE CATALOGUE. A city whose exported
+    /// `buildable` lacks a Spearman never offers one, however legal the board's
+    /// own rules say it is; its `purchasable` price is the price the buy lane
+    /// pays; a queue two deep reads as two deep; a complete district offer is
+    /// the whole site list; and an export without the keys leaves the board
+    /// exactly as before.
+    #[test]
+    fn a_city_offers_and_prices_only_what_the_hosts_menus_list() {
+        let owned = |x: i32, y: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = 0;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                owned(5, 5),
+                owned(5, 6),
+                owned(6, 5),
+                owned(4, 5),
+                owned(5, 4),
+            ],
+        }]);
+        let row = |t: &str, c: f64, p: f64| StateMenuItem {
+            t: t.to_string(),
+            c,
+            p,
+            ..StateMenuItem::default()
+        };
+        let mut state = StateSnapshot {
+            turn: 12,
+            techs: vec![
+                "TECH_BRONZE_WORKING".to_string(),
+                "TECH_WRITING".to_string(),
+                "TECH_POTTERY".to_string(),
+            ],
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            producing: Some("UNIT_WARRIOR".to_string()),
+            buildable: Some(vec![
+                row("UNIT_WARRIOR", 40.0, 5.0),
+                row("BUILDING_MONUMENT", 61.0, 7.0),
+                row("BUILDING_GRANARY", 65.0, 8.0),
+                StateMenuItem {
+                    t: "DISTRICT_CAMPUS".to_string(),
+                    c: 54.0,
+                    p: 9.0,
+                    n: Some(1),
+                    s: Some(vec![StateMenuPlot { x: 5, y: 6 }]),
+                    ..StateMenuItem::default()
+                },
+            ]),
+            purchasable: Some(vec![
+                StatePurchaseItem {
+                    t: "BUILDING_GRANARY".to_string(),
+                    g: Some(340.0),
+                    f: None,
+                },
+                StatePurchaseItem {
+                    t: "UNIT_BUILDER".to_string(),
+                    g: Some(210.0),
+                    f: Some(105.0),
+                },
+            ]),
+            queue: Some(vec![StateQueueItem {
+                t: "UNIT_SETTLER".to_string(),
+                f: None,
+                pr: Some(3.0),
+            }]),
+            ..StateCity::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let cid = mirror.game.player_city_ids(0)[0];
+        let unit = |name: &str| crate::game::Item::Unit {
+            unit: crate::name::Name::new(name),
+        };
+        let spearman = unit("spearman");
+        let warrior = unit("warrior");
+        let monument = crate::game::Item::Building {
+            building: crate::name!("monument"),
+        };
+        assert!(
+            mirror.game.can_produce(0, cid, &warrior),
+            "a listed item stays producible"
+        );
+        assert!(
+            !mirror.game.can_produce(0, cid, &spearman),
+            "the host did not list a Spearman: not producible, however legal \
+             the board's own rules say it is"
+        );
+        let menu = mirror.game.producible_items(0, cid);
+        assert!(
+            menu.contains(&warrior) && !menu.contains(&spearman),
+            "the menu every chooser reads agrees: {menu:?}"
+        );
+        assert_eq!(
+            mirror.game.item_cost_for_city(0, cid, &monument),
+            61.0,
+            "the planner prices from the host's cost"
+        );
+        assert_eq!(mirror.game.host_production_turns(cid, &monument), Some(7.0));
+
+        // A complete district offer is the whole site list, and a site off it
+        // is not producible.
+        let campus = crate::name!("campus");
+        let offered = crate::hex::offset_to_axial(5, 6);
+        let sites = mirror.game.district_sites(cid, campus);
+        assert_eq!(sites, vec![offered], "sites: {sites:?}");
+        let elsewhere = crate::game::Item::District {
+            district: campus,
+            pos: crate::hex::offset_to_axial(6, 5),
+        };
+        assert!(!mirror.game.can_produce(0, cid, &elsewhere));
+
+        // The queue behind the head.
+        assert_eq!(
+            mirror.game.cities[&cid].queue,
+            vec![warrior.clone(), unit("settler")],
+            "the head and the queue behind it"
+        );
+
+        // The host's price is the price, and off the purchase menu is not for
+        // sale — through the pricers the lanes call and the enumeration.
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold"),
+            Some(340.0)
+        );
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "faith"),
+            None
+        );
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "monument", "gold"),
+            None
+        );
+        assert_eq!(
+            mirror.game.unit_purchase_cost(0, cid, "builder", "gold"),
+            Some(210.0)
+        );
+        assert_eq!(
+            mirror.game.unit_purchase_cost(0, cid, "builder", "faith"),
+            Some(105.0)
+        );
+        assert_eq!(
+            mirror.game.unit_purchase_cost(0, cid, "warrior", "gold"),
+            None
+        );
+        let buys_granary = |game: &crate::game::Game| {
+            game.legal_actions_within(0, crate::game::ActionFamilies::PURCHASES)
+                .iter()
+                .any(|action| {
+                    matches!(
+                        action,
+                        crate::game::Action::BuyBuilding { city, building, currency }
+                            if *city == cid && building == "granary" && currency == "gold"
+                    )
+                })
+        };
+        mirror.game.players[0].gold = 339.0;
+        assert!(
+            !buys_granary(&mirror.game),
+            "339 Gold does not buy a 340 Granary"
+        );
+        mirror.game.players[0].gold = 340.0;
+        assert!(
+            buys_granary(&mirror.game),
+            "the buy lane enumerates from the host's price"
+        );
+
+        // The rebuild path reads the same menus.
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let fresh = rebuilt.game.player_city_ids(0)[0];
+        assert!(!rebuilt.game.can_produce(0, fresh, &spearman));
+        assert_eq!(
+            rebuilt
+                .game
+                .building_purchase_cost(0, fresh, "granary", "gold"),
+            Some(340.0)
+        );
+        assert_eq!(rebuilt.game.cities[&fresh].queue.len(), 2);
+
+        // An EMPTY buildable list is a failed read, not a city that can build
+        // nothing; an empty PURCHASE list is the host saying nothing is for sale.
+        state.cities[0].buildable = Some(Vec::new());
+        state.cities[0].purchasable = Some(Vec::new());
+        state.turn = 13;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_produce(0, cid, &spearman),
+            "an empty menu gates nothing"
+        );
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold"),
+            None
+        );
+
+        // Without the keys — an older mod — the board is exactly as before.
+        state.cities[0].buildable = None;
+        state.cities[0].purchasable = None;
+        state.cities[0].queue = None;
+        state.turn = 14;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.host_buildable.is_empty());
+        assert!(mirror.game.host_purchasable.is_empty());
+        assert!(mirror.game.host_district_plots.is_empty());
+        assert!(mirror.game.can_produce(0, cid, &spearman));
+        assert_eq!(mirror.game.cities[&cid].queue, vec![warrior]);
+        assert!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold")
+                .is_some(),
+            "the model's own price is back"
+        );
+    }
+
+    /// The host's spelling of every production family comes back to the key
+    /// the gate reads, tier included; a name the board does not model is
+    /// dropped rather than guessed.
+    #[test]
+    fn host_menu_rows_translate_to_the_gates_keys() {
+        let rules = crate::rules::Rules::embedded();
+        let key = |civ6: &str, tier: Option<u8>| host_production_key(&rules, civ6, tier);
+        assert_eq!(key("UNIT_WARRIOR", None).as_deref(), Some("unit:warrior"));
+        assert_eq!(
+            key("UNIT_WARRIOR", Some(1)).as_deref(),
+            Some("formation:warrior:1")
+        );
+        assert_eq!(
+            key("UNIT_WARRIOR", Some(2)).as_deref(),
+            Some("formation:warrior:2")
+        );
+        assert_eq!(
+            key("BUILDING_LIBRARY", None).as_deref(),
+            Some("building:library")
+        );
+        assert_eq!(
+            key("BUILDING_PYRAMIDS", None).as_deref(),
+            Some("wonder:pyramids")
+        );
+        assert_eq!(
+            key("DISTRICT_GOVERNMENT", None).as_deref(),
+            Some("district:government_plaza")
+        );
+        assert_eq!(
+            key("PROJECT_ENHANCE_DISTRICT_CAMPUS", None).as_deref(),
+            Some("project:campus_research_grants")
+        );
+        assert_eq!(key("UNIT_NOT_A_UNIT", None), None);
+    }
+
     /// A board with one met rival on seat 1, for the host-diplomacy tests.
     fn diplomacy_board(turn: u32, rival: StateRival) -> (Snapshot, StateSnapshot) {
         let owned = |x: i32, y: i32, owner: i32| {
@@ -11327,6 +11596,61 @@ pub struct StateGovernor {
     pub promotions: Vec<String>,
 }
 
+/// One row of the host's production menu for a city (`StateCity::buildable`):
+/// the Civilization VI type name, the engine's production cost and turns for
+/// it in that city, the formation tier of a Corps/Army row, and for a district
+/// the number of plots the engine offers with up to sixteen of them.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateMenuItem {
+    #[serde(default)]
+    pub t: String,
+    #[serde(default = "unknown_metric")]
+    pub c: f64,
+    #[serde(default = "unknown_metric")]
+    pub p: f64,
+    #[serde(default)]
+    pub f: Option<u8>,
+    #[serde(default)]
+    pub n: Option<i64>,
+    #[serde(default)]
+    pub s: Option<Vec<StateMenuPlot>>,
+}
+
+/// An offset-coordinate plot in a host menu row.
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+pub struct StateMenuPlot {
+    #[serde(default)]
+    pub x: i32,
+    #[serde(default)]
+    pub y: i32,
+}
+
+/// One row of the host's purchase menu (`StateCity::purchasable`): the type
+/// name and the engine's price in Gold and in Faith, each absent where the
+/// host will not sell for that currency.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StatePurchaseItem {
+    #[serde(default)]
+    pub t: String,
+    #[serde(default)]
+    pub g: Option<f64>,
+    #[serde(default)]
+    pub f: Option<f64>,
+}
+
+/// One entry of the build queue BEHIND the head (`StateCity::queue`): the type
+/// name, the formation tier of a Corps/Army, and the production already
+/// invested in it.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateQueueItem {
+    #[serde(default)]
+    pub t: String,
+    #[serde(default)]
+    pub f: Option<u8>,
+    #[serde(default)]
+    pub pr: Option<f64>,
+}
+
 /// One city as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateCity {
@@ -11443,6 +11767,26 @@ pub struct StateCity {
     /// Civilization VI's own estimate of turns remaining on `producing`.
     #[serde(default = "unknown_metric")]
     pub production_turns: f64,
+    /// ★★★★★ THE HOST'S OWN PRODUCTION MENU FOR THIS CITY — every unit,
+    /// building, wonder, district and project `BuildQueue:CanProduce(hash,
+    /// false, true)` says can be STARTED here now, with the engine's cost and
+    /// turns for each: the `ProductionPanel.lua` loops, exported by
+    /// `CivvisMenus.buildable`. Until this crossed the board chose production
+    /// from its own catalogue and learned legality one refusal at a time
+    /// (`refused_production`). `None` on an older mod or a failed read is
+    /// unknown, not empty — the mirror gates nothing then.
+    #[serde(default)]
+    pub buildable: Option<Vec<StateMenuItem>>,
+    /// The host's purchase menu — what `CityManager.CanStartCommand(city,
+    /// PURCHASE, ...)` says can be BOUGHT here now and what
+    /// `CityGold:GetPurchaseCost` charges, in Gold and in Faith. `None` is
+    /// unknown; an empty list is the host saying nothing is for sale.
+    #[serde(default)]
+    pub purchasable: Option<Vec<StatePurchaseItem>>,
+    /// The build queue BEHIND `producing` (`BuildQueue:GetAt(i)`, i >= 1).
+    /// Only the head ever crossed before.
+    #[serde(default)]
+    pub queue: Option<Vec<StateQueueItem>>,
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
     pub food: f64,
@@ -14244,13 +14588,46 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
 /// ⚠ A superset is correct, not an error. Serde aliases mean one field answers to two
 /// names — `kind` also accepts `type` — and only the export side needs both.
 const CITY_KEYS: &[&str] = &[
-    "id", "name", "buildings", "pillaged_buildings", "religion", "religion_next",
+    "id",
+    "name",
+    "buildings",
+    "pillaged_buildings",
+    "religion",
+    "religion_next",
     "religion_turns",
-    "pantheon_active", "districts", "wonders", "worked", "specialists", "great_works",
-    "yields", "producing", "producing_hash", "production_progress", "production",
-    "production_cost", "production_turns", "food", "loyalty_per_turn", "falls_to",
-    "x", "y", "pop", "capital", "defense", "damage", "max_damage", "wall_damage",
-    "max_wall_damage", "loyalty", "housing", "housing_from_improvements",
+    "pantheon_active",
+    "districts",
+    "wonders",
+    "worked",
+    "specialists",
+    "great_works",
+    "yields",
+    "producing",
+    "producing_hash",
+    "production_progress",
+    "production",
+    "production_cost",
+    "production_turns",
+    // The host's menus and the queue behind the head, read by
+    // `host_menus_from` and `host_queue_tail`.
+    "buildable",
+    "purchasable",
+    "queue",
+    "food",
+    "loyalty_per_turn",
+    "falls_to",
+    "x",
+    "y",
+    "pop",
+    "capital",
+    "defense",
+    "damage",
+    "max_damage",
+    "wall_damage",
+    "max_wall_damage",
+    "loyalty",
+    "housing",
+    "housing_from_improvements",
     // The host's own amenity ledger and the multiplier it puts on every non-food
     // yield. `the_schema_allowlists_cover_every_declared_field` caught these missing
     // on the first run, which is the whole reason that test exists.
@@ -14800,6 +15177,50 @@ fn civvis_node_name<T>(
             "gov_culture" => Some("national_history_museum"),
             "gov_science" => Some("royal_society"),
             "gov_military" => Some("war_department"),
+            _ => None,
+        };
+        if let Some(alias) = alias.filter(|alias| table.contains_key(alias)) {
+            return Some(alias.to_string());
+        }
+    }
+    // ★★★★ THE UNIQUE UNITS AND THE TWO WATER DISTRICTS, INBOUND. Civilization
+    // VI files a civilization's unique unit under the civilization
+    // (`UNIT_ROMAN_LEGION`) and the water districts by function
+    // (`DISTRICT_WATER_ENTERTAINMENT_COMPLEX`); `civvis_orders::civ6_unit_type`
+    // and `civ6_district_type` have carried the outbound spellings since #959,
+    // and nothing carried them back. So a city building a Legion read as idle,
+    // a refused Legion never reached `blocked_production`, and — now that
+    // `Game::can_produce` gates on the host's exported menu — every one of
+    // these would have been gated off every live board forever.
+    // `civvis_orders` pins the round trip for every orderable name.
+    if prefix == "UNIT_" {
+        let alias = match base.as_str() {
+            "byzantine_tagma" => Some("tagma"),
+            "roman_legion" => Some("legion"),
+            "portuguese_nau" => Some("nau"),
+            "greek_hoplite" => Some("hoplite"),
+            "aztec_eagle_warrior" => Some("eagle_warrior"),
+            "sumerian_war_cart" => Some("war_cart"),
+            "nubian_pitati" => Some("pitati_archer"),
+            "egyptian_chariot_archer" => Some("maryannu_chariot_archer"),
+            "scythian_horse_archer" => Some("saka_horse_archer"),
+            "mongolian_keshig" => Some("keshig"),
+            "polish_hussar" => Some("winged_hussar"),
+            "ethiopian_oromo_cavalry" => Some("oromo_cavalry"),
+            "maori_toa" => Some("toa"),
+            "chinese_crouching_tiger" => Some("crouching_tiger"),
+            "lahore_nihang" => Some("nihang"),
+            "antiair_gun" => Some("anti_air_gun"),
+            _ => None,
+        };
+        if let Some(alias) = alias.filter(|alias| table.contains_key(alias)) {
+            return Some(alias.to_string());
+        }
+    }
+    if prefix == "DISTRICT_" {
+        let alias = match base.as_str() {
+            "water_entertainment_complex" => Some("water_park"),
+            "water_street_carnival" => Some("copacabana"),
             _ => None,
         };
         if let Some(alias) = alias.filter(|alias| table.contains_key(alias)) {
@@ -15585,6 +16006,140 @@ fn blocked_promotions_from(
     out
 }
 
+/// The typed key the board files a host production item under — the
+/// `Game::production_block_key` vocabulary the refusal sets already use
+/// (`unit:warrior`, `formation:warrior:1`, `building:library`,
+/// `wonder:pyramids`, `district:campus`, `project:campus_research_grants`).
+/// A district needs no plot here; a Corps/Army row carries its tier. `None`
+/// for a host name CIVVIS does not model.
+///
+/// ⚠ This is the one translation the positive gate in `Game::can_produce`
+/// rests on: an item the board can ORDER whose host spelling does not come
+/// back to the same key would be gated off every live board forever.
+/// `civvis_orders` pins the round trip for every orderable item.
+pub fn host_production_key(
+    rules: &crate::rules::Rules,
+    civ6: &str,
+    formation: Option<u8>,
+) -> Option<String> {
+    if let Some(item) = civvis_production_item(rules, Some(civ6), &[], None) {
+        return Some(match (&item, formation) {
+            (crate::game::Item::Unit { unit }, Some(tier @ 1..=2)) => {
+                format!("formation:{unit}:{tier}")
+            }
+            _ => crate::game::Game::production_block_key(&item),
+        });
+    }
+    civvis_node_name(&rules.districts, civ6, "DISTRICT_")
+        .map(|district| format!("district:{district}"))
+}
+
+/// The host's menus translated onto the board, per CIVVIS city id. See
+/// [`crate::game::Game::host_buildable`].
+#[derive(Default)]
+pub(crate) struct HostMenus {
+    pub buildable: BTreeMap<u32, BTreeMap<String, crate::game::HostMenuEntry>>,
+    pub purchasable: BTreeMap<u32, BTreeMap<String, crate::game::HostPurchaseEntry>>,
+    pub district_plots: BTreeMap<u32, BTreeMap<crate::name::Name, BTreeSet<crate::Pos>>>,
+}
+
+fn host_menus_from(
+    cities: &[StateCity],
+    city_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> HostMenus {
+    let reading = |value: f64| (value.is_finite() && value >= 0.0).then_some(value);
+    let mut out = HostMenus::default();
+    for (cid, civ6_id) in city_ids {
+        let Some(city) = cities.iter().find(|city| city.id == *civ6_id) else {
+            continue;
+        };
+        if let Some(menu) = city.buildable.as_deref() {
+            let mut translated = BTreeMap::new();
+            let mut plots: BTreeMap<crate::name::Name, BTreeSet<crate::Pos>> = BTreeMap::new();
+            for row in menu {
+                let Some(key) = host_production_key(rules, &row.t, row.f) else {
+                    continue;
+                };
+                if let Some(district) = key.strip_prefix("district:") {
+                    // Only a COMPLETE offer can say a plot is not legal; a
+                    // capped list says only where some of them are.
+                    if let (Some(sites), Some(offered)) = (row.s.as_ref(), row.n) {
+                        if offered >= 0 && offered as usize == sites.len() {
+                            plots.insert(
+                                crate::name::Name::new(district),
+                                sites
+                                    .iter()
+                                    .map(|plot| crate::hex::offset_to_axial(plot.x, plot.y))
+                                    .collect(),
+                            );
+                        }
+                    }
+                }
+                translated.insert(
+                    key,
+                    crate::game::HostMenuEntry {
+                        cost: reading(row.c),
+                        turns: reading(row.p),
+                    },
+                );
+            }
+            // ⚠ An empty translated menu is a read that failed or a ruleset the
+            // board cannot name, not a city that can build nothing: a
+            // Civilization VI city can always train something. No gate then.
+            if !translated.is_empty() {
+                out.buildable.insert(*cid, translated);
+            }
+            if !plots.is_empty() {
+                out.district_plots.insert(*cid, plots);
+            }
+        }
+        if let Some(menu) = city.purchasable.as_deref() {
+            let translated: BTreeMap<String, crate::game::HostPurchaseEntry> = menu
+                .iter()
+                .filter_map(|row| {
+                    host_production_key(rules, &row.t, None).map(|key| {
+                        (
+                            key,
+                            crate::game::HostPurchaseEntry {
+                                gold: row.g.and_then(reading),
+                                faith: row.f.and_then(reading),
+                            },
+                        )
+                    })
+                })
+                .collect();
+            out.purchasable.insert(*cid, translated);
+        }
+    }
+    out
+}
+
+/// The queue behind the head, translated. A district row has no plot until it
+/// is the head (`ProductionHelper.lua`: "invalid coordinates for everything
+/// but the head node"), so it needs one of the city's placed districts to name
+/// it and is otherwise dropped rather than planted on invented ground.
+fn host_queue_tail(rules: &crate::rules::Rules, city: &StateCity) -> Vec<crate::game::Item> {
+    let centre = Some(crate::hex::offset_to_axial(city.x, city.y));
+    city.queue
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|row| {
+            let item = civvis_production_item(rules, Some(&row.t), &city.districts, centre)?;
+            Some(match (item, row.f) {
+                (crate::game::Item::Unit { unit }, Some(tier @ 1..=2)) => {
+                    crate::game::Item::Formation {
+                        unit,
+                        formation: tier,
+                    }
+                }
+                (item, _) => item,
+            })
+        })
+        .collect()
+}
+
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     city_ids: &std::collections::BTreeMap<u32, i64>,
@@ -15597,14 +16152,7 @@ fn blocked_production_from(
         };
         let translated: std::collections::BTreeSet<String> = names
             .iter()
-            .filter_map(|name| {
-                civvis_production_item(rules, Some(name), &[], None)
-                    .map(|item| crate::game::Game::production_block_key(&item))
-                    .or_else(|| {
-                        civvis_node_name(&rules.districts, name, "DISTRICT_")
-                            .map(|district| format!("district:{district}"))
-                    })
-            })
+            .filter_map(|name| host_production_key(rules, name, None))
             .collect();
         if !translated.is_empty() {
             out.insert(*cid, translated);
@@ -16725,6 +17273,12 @@ fn civvis_production_item(
         "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT" => Some("encampment_training"),
         "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE" => Some("industrial_zone_logistics"),
         "PROJECT_ENHANCE_DISTRICT_THEATER" => Some("theater_square_festival"),
+        // The three space-race rows `civvis_orders` spells the other way; the
+        // fourth, `PROJECT_TERRESTRIAL_LASER`, reaches its CIVVIS name through
+        // the unique-prefix rule in `civvis_node_name`.
+        "PROJECT_LAUNCH_EXOPLANET_EXPEDITION" => Some("exoplanet_expedition"),
+        "PROJECT_LAUNCH_MARS_BASE" => Some("launch_mars_colony"),
+        "PROJECT_ORBITAL_LASER" => Some("lagrange_laser_station"),
         _ => None,
     };
     if let Some(name) = project_alias
@@ -19070,6 +19624,13 @@ pub fn rebuild_from_state(
                         built.queue.push(item);
                     }
                 }
+                // The queue behind the head, so a Settler two places back reads
+                // as coming rather than as absent.
+                for queued in host_queue_tail(&game.rules, city) {
+                    if !built.queue.contains(&queued) {
+                        built.queue.push(queued);
+                    }
+                }
                 if city.production_progress.is_finite() && city.production_progress >= 0.0 {
                     built.production = city.production_progress;
                 }
@@ -19616,6 +20177,12 @@ pub fn rebuild_from_state(
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
+    // ★ The host's menus — the positive gate beside the refusal cooldown
+    // above, and the price list the purchase lanes read. See
+    // `Game::host_buildable`; wired on BOTH paths for the reason the
+    // promotion blocks are.
+    let menus = host_menus_from(&state.cities, &city_ids, &game.rules);
+    game.replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
     seat_live_spies(&mut game);
     block_live_spy_production(&mut game, state.spy_capacity);
     let blocked_purchases =
@@ -20514,6 +21081,19 @@ impl LiveMirror {
             &self.game.rules,
         );
         self.game.replace_blocked_production(blocked_production);
+        // The host's menus, replaced like the cooldown snapshot above so a
+        // city whose export lost the key stops being gated.
+        let menus = host_menus_from(
+            &state.cities,
+            &self
+                .cid_of
+                .iter()
+                .map(|(civ6, cid)| (*cid, *civ6))
+                .collect(),
+            &self.game.rules,
+        );
+        self.game
+            .replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
         let blocked_purchases = blocked_production_from(
             &state.refused_purchases,
             &self
@@ -20961,6 +21541,11 @@ impl LiveMirror {
                     live.queue.clear();
                     if let Some(item) = queued {
                         live.queue.push(item);
+                    }
+                    for queued in host_queue_tail(&self.game.rules, city) {
+                        if !live.queue.contains(&queued) {
+                            live.queue.push(queued);
+                        }
                     }
                     if city.production_progress.is_finite() && city.production_progress >= 0.0 {
                         live.production = city.production_progress;

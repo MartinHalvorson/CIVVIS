@@ -5403,6 +5403,301 @@ end
 -- minutes once already. This runs from `playTurn`, which is once per turn, and
 -- only when `cfg.ExportState` asks for it. Tiles are emitted in chunks so no
 -- single log line is unbounded.
+-- ★★★★★ THE HOST'S OWN PRODUCTION AND PURCHASE MENUS, PER CITY.
+--
+-- Production is the highest-frequency decision the board makes, and until this
+-- block it made that decision from its own catalogue and learned legality only
+-- from refusals -- `civvis_build_unplayable` AFTER the order, one item per city
+-- per turn, never the set. The predicate that decides was already in this
+-- file: `city:GetBuildQueue():CanProduce(hash, false, true)` inside the chooser
+-- above and `city:GetGold():GetPurchaseCost(currency, hash)` inside the purchase
+-- actuator below. Neither was ever exported.
+--
+-- The loops are the shipped `UI/Panels/ProductionPanel.lua`'s, family by
+-- family (districts 1898-2003, buildings 2019-2100, units 2107-2203, projects
+-- 2207-2237): `CanProduce(hash, true)` is the EXCLUSION test that decides
+-- whether an item is listed at all, `CanProduce(hash, false, true)` whether it
+-- can be STARTED now, and the typed cost accessors take `row.Index` -- see
+-- `productionProgress` for what the hash form does. Purchases follow
+-- `ComposeUnitForPurchase` / `ComposeBldgForPurchase` /
+-- `ComposeDistrictForPurchase` (1632-1820): `CityManager.CanStartCommand(city,
+-- PURCHASE, true, params, false)` lists, the same call with `(false, params,
+-- true)` decides, `GetPurchaseCost(yield, hash)` prices. The queue behind the
+-- head is `ProductionHelper.lua:185` -- `GetAt(i)` for i >= 1, each entry a
+-- `Directive` and a typed index.
+--
+-- Only what the host says can START now crosses; a listed-but-disabled item is
+-- not a choice. Compact on purpose, because it rides on every state export of
+-- every city: one `{t, c, p}` per startable item, `f` = 1/2 for a Corps/Army
+-- the results table says the city may train, `n`/`s` the number of plots the
+-- engine offers a district and up to sixteen of them (the mirror trusts the
+-- list only when it is complete). Corps/Army PURCHASES are not priced.
+--
+-- ⚠ Each family is guarded on its own and the whole record under `try` at the
+-- call site: a nil answer is "unknown" on the mirror (no gate), never "nothing
+-- buildable". A global table, not a file-scope local -- the main chunk is at
+-- Lua's 200-local ceiling.
+CivvisMenus = {};
+
+-- `AdjacencyBonusSupport.lua:280`: the engine's own placement offer for a
+-- district. Returns the count and up to sixteen of the plots.
+CivvisMenus.plots = function(city, param, hash)
+	local plots = try(function()
+		local probe = {};
+		probe[param] = hash;
+		local results = CityManager.GetOperationTargets(
+			city, CityOperationTypes.BUILD, probe);
+		return results and results[CityOperationResults.PLOTS] or nil;
+	end);
+	if plots == nil then return nil, nil; end
+	local offered, out = 0, {};
+	for _, plotIndex in pairs(plots) do
+		local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+		local px = plot and try(function() return plot:GetX(); end, -1) or -1;
+		local py = plot and try(function() return plot:GetY(); end, -1) or -1;
+		if px >= 0 and py >= 0 then
+			offered = offered + 1;
+			if #out < 16 then out[#out + 1] = { x = px, y = py }; end
+		end
+	end
+	return offered, out;
+end;
+
+CivvisMenus.buildable = function(city)
+	local queue = city:GetBuildQueue();
+	if queue == nil then return nil; end
+	local function listed(arg)
+		return try(function() return queue:CanProduce(arg, true); end, false) == true;
+	end
+	-- The three-argument form returns (can, results); a raise is "no".
+	local function startable(arg)
+		local ok, can, results = pcall(function()
+			return queue:CanProduce(arg, false, true);
+		end);
+		if ok and can == true then return true, results; end
+		return false, nil;
+	end
+	local out = {};
+	for row in GameInfo.Districts() do
+		if not row.InternalOnly and listed(row.Hash) and startable(row.Hash) then
+			local offered, plots = CivvisMenus.plots(
+				city, CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash);
+			out[#out + 1] = {
+				t = row.DistrictType,
+				c = try(function() return queue:GetDistrictCost(row.Index); end, -1),
+				p = try(function() return queue:GetTurnsLeft(row.DistrictType); end, -1),
+				n = offered,
+				s = plots,
+			};
+		end
+	end
+	for row in GameInfo.Buildings() do
+		if not row.MustPurchase and listed(row.Hash) and startable(row.Hash) then
+			out[#out + 1] = {
+				t = row.BuildingType,
+				c = try(function() return queue:GetBuildingCost(row.Index); end, -1),
+				p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+			};
+		end
+	end
+	-- Both spellings of the tier enum, for the reason `CivvisMilitaryFormation`
+	-- records: the two Lua VMs name the members differently.
+	local tiers = MilitaryFormationTypes or {};
+	local standard = tiers.STANDARD_MILITARY_FORMATION or tiers.STANDARD_FORMATION;
+	local corps = tiers.CORPS_MILITARY_FORMATION or tiers.CORPS_FORMATION;
+	local army = tiers.ARMY_MILITARY_FORMATION or tiers.ARMY_FORMATION;
+	for row in GameInfo.Units() do
+		if not row.MustPurchase then
+			local arg = row.Hash;
+			if standard ~= nil then
+				arg = { UnitType = row.Hash, MilitaryFormationType = standard };
+			end
+			if listed(arg) then
+				local can, results = startable(arg);
+				if can then
+					out[#out + 1] = {
+						t = row.UnitType,
+						c = try(function() return queue:GetUnitCost(row.Index); end, -1),
+						p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+					};
+					-- `ProductionPanel.lua:2150-2172`: the results table says whether
+					-- a Corps or Army may be trained here; each tier is asked again.
+					local canCorps = try(function()
+						return results[CityOperationResults.CAN_TRAIN_CORPS] == true;
+					end, false);
+					if corps ~= nil and canCorps
+							and startable({ UnitType = row.Hash, MilitaryFormationType = corps }) then
+						out[#out + 1] = {
+							t = row.UnitType,
+							f = 1,
+							c = try(function() return queue:GetUnitCorpsCost(row.Index); end, -1),
+							p = try(function() return queue:GetTurnsLeft(row.Hash, corps); end, -1),
+						};
+					end
+					local canArmy = try(function()
+						return results[CityOperationResults.CAN_TRAIN_ARMY] == true;
+					end, false);
+					if army ~= nil and canArmy
+							and startable({ UnitType = row.Hash, MilitaryFormationType = army }) then
+						out[#out + 1] = {
+							t = row.UnitType,
+							f = 2,
+							c = try(function() return queue:GetUnitArmyCost(row.Index); end, -1),
+							p = try(function() return queue:GetTurnsLeft(row.Hash, army); end, -1),
+						};
+					end
+				end
+			end
+		end
+	end
+	for row in GameInfo.Projects() do
+		if listed(row.Hash) and startable(row.Hash) then
+			out[#out + 1] = {
+				t = row.ProjectType,
+				c = try(function() return queue:GetProjectCost(row.Index); end, -1),
+				p = try(function() return queue:GetTurnsLeft(row.ProjectType); end, -1),
+			};
+		end
+	end
+	return out;
+end;
+
+CivvisMenus.purchasable = function(city)
+	local gold = try(function() return GameInfo.Yields["YIELD_GOLD"].Index; end);
+	local faith = try(function() return GameInfo.Yields["YIELD_FAITH"].Index; end);
+	if gold == nil or faith == nil then return nil; end
+	local wallet = try(function() return city:GetGold(); end);
+	if wallet == nil then return nil; end
+	-- `ComposeUnitForPurchase`: UNIT_TYPE and YIELD_TYPE only. The purchase
+	-- actuator below records why the formation parameter must stay off the
+	-- eligibility question.
+	local function price(param, hash, currency)
+		local params = {};
+		params[param] = hash;
+		params[CityCommandTypes.PARAM_YIELD_TYPE] = currency;
+		local shown = try(function()
+			return CityManager.CanStartCommand(
+				city, CityCommandTypes.PURCHASE, true, params, false);
+		end, false);
+		if shown ~= true then return nil; end
+		local ok, can = pcall(function()
+			return CityManager.CanStartCommand(
+				city, CityCommandTypes.PURCHASE, false, params, true);
+		end);
+		if not ok or can ~= true then return nil; end
+		local cost = try(function() return wallet:GetPurchaseCost(currency, hash); end);
+		if type(cost) ~= "number" or cost < 0 then return nil; end
+		return cost;
+	end
+	local out, seen = {}, {};
+	local function record(name, g, f)
+		if name == nil or (g == nil and f == nil) then return; end
+		local entry = seen[name];
+		if entry == nil then
+			entry = { t = name };
+			seen[name] = entry;
+			out[#out + 1] = entry;
+		end
+		if g ~= nil then entry.g = g; end
+		if f ~= nil then entry.f = f; end
+	end
+	for row in GameInfo.Units() do
+		local g, f = nil, nil;
+		if row.PurchaseYield == "YIELD_GOLD" then
+			g = price(CityCommandTypes.PARAM_UNIT_TYPE, row.Hash, gold);
+		end
+		if row.PurchaseYield == "YIELD_FAITH" or try(function()
+			return wallet:IsUnitFaithPurchaseEnabled(row.Hash);
+		end, false) == true then
+			f = price(CityCommandTypes.PARAM_UNIT_TYPE, row.Hash, faith);
+		end
+		record(row.UnitType, g, f);
+	end
+	for row in GameInfo.Buildings() do
+		local g, f = nil, nil;
+		if row.PurchaseYield == "YIELD_GOLD" then
+			g = price(CityCommandTypes.PARAM_BUILDING_TYPE, row.Hash, gold);
+		end
+		if row.PurchaseYield == "YIELD_FAITH" or try(function()
+			return wallet:IsBuildingFaithPurchaseEnabled(row.Hash);
+		end, false) == true then
+			f = price(CityCommandTypes.PARAM_BUILDING_TYPE, row.Hash, faith);
+		end
+		record(row.BuildingType, g, f);
+	end
+	for row in GameInfo.Districts() do
+		if not row.InternalOnly then
+			record(row.DistrictType,
+				price(CityCommandTypes.PARAM_DISTRICT_TYPE, row.Hash, gold),
+				price(CityCommandTypes.PARAM_DISTRICT_TYPE, row.Hash, faith));
+		end
+	end
+	return out;
+end;
+
+-- The queue BEHIND the head. The head crosses as `producing`; until this the
+-- rest of a real multi-item queue never did.
+CivvisMenus.queue = function(city)
+	local queue = city:GetBuildQueue();
+	if queue == nil then return nil; end
+	local size = try(function() return queue:GetSize(); end, 0) or 0;
+	if size <= 1 then return nil; end
+	local directives = CityProductionDirectives;
+	if directives == nil then return nil; end
+	local tiers = MilitaryFormationTypes or {};
+	local out = {};
+	for i = 1, size - 1 do
+		local entry = try(function() return queue:GetAt(i); end);
+		local directive = type(entry) == "table" and entry.Directive or nil;
+		local rec = nil;
+		if directive == nil then
+			rec = nil;
+		elseif directive == directives.TRAIN then
+			local row = try(function() return GameInfo.Units[entry.UnitType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.UnitType,
+					pr = try(function() return queue:GetUnitProgress(row.Index); end),
+				};
+				local tier = entry.MilitaryFormationType;
+				if tier ~= nil and (tier == tiers.CORPS_FORMATION
+						or tier == tiers.CORPS_MILITARY_FORMATION) then
+					rec.f = 1;
+				elseif tier ~= nil and (tier == tiers.ARMY_FORMATION
+						or tier == tiers.ARMY_MILITARY_FORMATION) then
+					rec.f = 2;
+				end
+			end
+		elseif directive == directives.CONSTRUCT then
+			local row = try(function() return GameInfo.Buildings[entry.BuildingType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.BuildingType,
+					pr = try(function() return queue:GetBuildingProgress(row.Index); end),
+				};
+			end
+		elseif directive == directives.ZONE then
+			local row = try(function() return GameInfo.Districts[entry.DistrictType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.DistrictType,
+					pr = try(function() return queue:GetDistrictProgress(row.Index); end),
+				};
+			end
+		elseif directive == directives.PROJECT then
+			local row = try(function() return GameInfo.Projects[entry.ProjectType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.ProjectType,
+					pr = try(function() return queue:GetProjectProgress(row.Index); end),
+				};
+			end
+		end
+		if rec ~= nil then out[#out + 1] = rec; end
+	end
+	return out;
+end;
+
 local function exportState(player, pid, turn, frame)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
@@ -6076,6 +6371,13 @@ local function exportState(player, pid, turn, frame)
 			production_turns = try(function()
 				return city:GetBuildQueue():GetTurnsLeft();
 			end, -1),
+			-- ★ THE HOST'S MENUS -- see `CivvisMenus` above. What this city can
+			-- START now, with the engine's cost and turns; what it can BUY now,
+			-- with the engine's price; and the queue behind `producing`. Each
+			-- is nil when the read fails, which the mirror treats as unknown.
+			buildable = try(function() return CivvisMenus.buildable(city); end),
+			purchasable = try(function() return CivvisMenus.purchasable(city); end),
+			queue = try(function() return CivvisMenus.queue(city); end),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			-- ★★★★★ THE EMPIRE'S HAPPINESS WAS NEVER ASKED FOR, AND IT MULTIPLIES
 			-- EVERY YIELD ON THE BOARD.

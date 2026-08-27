@@ -2735,6 +2735,29 @@ pub enum Item {
     },
 }
 
+/// One row of the host's production menu for a city: what the engine says the
+/// item costs here and how many turns it takes, from
+/// `BuildQueue:GetXCost(row.Index)` and `GetTurnsLeft(hash)`. `None` where the
+/// accessor did not answer. See [`Game::host_buildable`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HostMenuEntry {
+    #[serde(default)]
+    pub cost: Option<f64>,
+    #[serde(default)]
+    pub turns: Option<f64>,
+}
+
+/// One row of the host's purchase menu: the engine's own price in each
+/// currency, `None` where it will not sell for that currency. See
+/// [`Game::host_purchasable`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HostPurchaseEntry {
+    #[serde(default)]
+    pub gold: Option<f64>,
+    #[serde(default)]
+    pub faith: Option<f64>,
+}
+
 /// District placements owned by a city.
 ///
 /// Older saves encoded this as `{ "campus": [q, r] }`, which made it
@@ -5933,6 +5956,31 @@ pub struct Game {
     /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
     #[serde(default)]
     pub blocked_purchases: BTreeMap<u32, BTreeSet<String>>,
+    /// The HOST's production menu per city, keyed like `blocked_production`
+    /// (`unit:warrior`, `formation:warrior:1`, `building:library`,
+    /// `wonder:pyramids`, `district:campus`, `project:...`): every item the
+    /// engine's `BuildQueue:CanProduce(hash, false, true)` says this city can
+    /// START now, with its cost and turns (`StateCity::buildable`). Empty in
+    /// an ordinary game and on an export without the key, so neither changes.
+    /// When a city has an entry, [`Game::can_produce`] refuses any unit,
+    /// formation, building, wonder, district or project the menu does not
+    /// list — the positive gate beside the refusal cooldown — and
+    /// [`Game::item_cost_for_city`] prices from it.
+    #[serde(default)]
+    pub host_buildable: BTreeMap<u32, BTreeMap<String, HostMenuEntry>>,
+    /// The HOST's purchase menu per city, same keys: what
+    /// `CityManager.CanStartCommand(city, PURCHASE, ...)` says this city can
+    /// BUY now and what `CityGold:GetPurchaseCost` charges
+    /// (`StateCity::purchasable`). When a city has an entry the three purchase
+    /// pricers answer from it and nothing else; an item off the menu is not
+    /// for sale.
+    #[serde(default)]
+    pub host_purchasable: BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>,
+    /// The plots the host's `GetOperationTargets(BUILD)` offers a district in
+    /// a city, kept only when the export carried the complete offer. A site
+    /// outside it is not producible and `district_sites` drops it.
+    #[serde(default)]
+    pub host_district_plots: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
     /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
     /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
     ///
@@ -6536,6 +6584,9 @@ impl From<GameSer> for Game {
             host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
+            host_buildable: BTreeMap::new(),
+            host_purchasable: BTreeMap::new(),
+            host_district_plots: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -7172,6 +7223,9 @@ impl Game {
             host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
+            host_buildable: BTreeMap::new(),
+            host_purchasable: BTreeMap::new(),
+            host_district_plots: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -31716,7 +31770,7 @@ impl Game {
             .collect();
         if !self.city_accepts_new_district_site(city, dname) {
             out.sort();
-            return out;
+            return self.host_offered_district_sites(cid, dname, out);
         }
         for pos in &city.owned_tiles {
             if *pos == city.pos || self.wdist(*pos, city.pos) > 3 {
@@ -31871,7 +31925,7 @@ impl Game {
             out.push(*pos);
         }
         out.sort();
-        out
+        self.host_offered_district_sites(cid, dname, out)
     }
 
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
@@ -32206,6 +32260,13 @@ impl Game {
         if currency != "faith" {
             return None;
         }
+        // ★ The host's own answer first — see `building_gold_purchase_cost`.
+        let asked = Item::Building {
+            building: Name::new(building),
+        };
+        if let Some(host) = self.host_purchase_price(cid, &asked, "faith") {
+            return host.filter(|_| !self.purchase_is_blocked(cid, &asked));
+        }
         let discount = self.city_district_effect(city, "gold_faith_purchase_discount_pct");
         Some(spec.cost * 2.0 * (1.0 - discount / 100.0).max(0.0))
     }
@@ -32376,6 +32437,29 @@ impl Game {
     /// of Coastal Lowland tiles they must protect; all other items retain the
     /// civilization-wide cost rules above.
     pub fn item_cost_for_city(&self, pid: usize, cid: u32, item: &Item) -> f64 {
+        // ★ The host's own cost first, when its menu carries this item for
+        // this city (`StateCity::buildable`): `GetXCost(row.Index)` after
+        // every modifier the engine applies. A founded district keeps the cost
+        // it was founded at, exactly as below.
+        if !self.host_buildable.is_empty() {
+            let founded = matches!(item, Item::District { district, pos }
+                if self
+                    .map
+                    .get(*pos)
+                    .and_then(|tile| tile.district_foundation.as_ref())
+                    .is_some_and(|foundation| foundation.district == *district));
+            if !founded {
+                if let Some(cost) = self
+                    .host_buildable
+                    .get(&cid)
+                    .and_then(|menu| menu.get(&Self::production_block_key(item)))
+                    .and_then(|entry| entry.cost)
+                    .filter(|cost| *cost > 0.0)
+                {
+                    return cost;
+                }
+            }
+        }
         if let Item::District { district, pos } = item {
             if let Some(foundation) = self
                 .map
@@ -33283,6 +33367,62 @@ impl Game {
         self.blocked_purchases = blocked;
     }
 
+    /// Replace the host's menus (see [`Game::host_buildable`]). Mirror input
+    /// like `replace_blocked_production`, and for the same reason it clears a
+    /// production menu memoised before the export arrived.
+    pub(crate) fn replace_host_menus(
+        &mut self,
+        buildable: BTreeMap<u32, BTreeMap<String, HostMenuEntry>>,
+        purchasable: BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>,
+        district_plots: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
+    ) {
+        self.host_buildable = buildable;
+        self.host_purchasable = purchasable;
+        self.host_district_plots = district_plots;
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
+    /// The host's own turns-to-complete for an item in this city
+    /// (`BuildQueue:GetTurnsLeft`), when the export carried it.
+    pub fn host_production_turns(&self, cid: u32, item: &Item) -> Option<f64> {
+        self.host_buildable
+            .get(&cid)?
+            .get(&Self::production_block_key(item))?
+            .turns
+    }
+
+    /// Whether the host menu is asked about this kind of item at all. Repairs
+    /// and Corporation products are not among the exported families.
+    fn host_menu_gates(item: &Item) -> bool {
+        !matches!(item, Item::Repair { .. } | Item::Product { .. })
+    }
+
+    /// The host's purchase price for an item in this city in a currency, when
+    /// the export carried this city's purchase menu: `Some(None)` is the host
+    /// declining to sell, `None` is no menu — ask the model.
+    fn host_purchase_price(&self, cid: u32, item: &Item, currency: &str) -> Option<Option<f64>> {
+        let menu = self.host_purchasable.get(&cid)?;
+        let entry = menu.get(&Self::production_block_key(item));
+        Some(match currency {
+            "gold" => entry.and_then(|entry| entry.gold),
+            "faith" => entry.and_then(|entry| entry.faith),
+            _ => None,
+        })
+    }
+
+    /// Keep only the sites the host's own placement offer includes, when the
+    /// export carried the complete offer for this district in this city.
+    fn host_offered_district_sites(&self, cid: u32, dname: Name, mut sites: Vec<Pos>) -> Vec<Pos> {
+        if let Some(offered) = self
+            .host_district_plots
+            .get(&cid)
+            .and_then(|plots| plots.get(&dname))
+        {
+            sites.retain(|pos| offered.contains(pos));
+        }
+        sites
+    }
+
     /// Whether the host recently refused to let this city BUY this item.
     ///
     /// ⚠ `pub(crate)` because the legal-action enumeration is not the only way a
@@ -33372,6 +33512,35 @@ impl Game {
             return false;
         }
         let city = &self.cities[&cid];
+        // ★ THE POSITIVE GATE. The set above says what the host REFUSED; this
+        // one says what the host OFFERS — `BuildQueue:CanProduce(hash, false,
+        // true)` for every family, exported per city (`StateCity::buildable`)
+        // and translated onto the same keys. Empty on an ordinary board and on
+        // an older export, so nothing changes there. The queue is exempt: the
+        // head is the host's own `producing`, listed or not at its discretion.
+        if Self::host_menu_gates(item) {
+            if let Some(menu) = self.host_buildable.get(&cid) {
+                if !menu.contains_key(&blocked)
+                    && !city
+                        .queue
+                        .iter()
+                        .any(|queued| Self::production_block_key(queued) == blocked)
+                {
+                    return false;
+                }
+            }
+            if let Item::District { district, pos } = item {
+                if self
+                    .host_district_plots
+                    .get(&cid)
+                    .and_then(|plots| plots.get(district))
+                    .is_some_and(|plots| !plots.contains(pos))
+                    && !city.queue.contains(item)
+                {
+                    return false;
+                }
+            }
+        }
         match item {
             Item::Formation { unit, formation } => {
                 let Some(spec) = self.rules.units.get(unit) else {
@@ -34123,11 +34292,18 @@ impl Game {
                 if self.map.tiles[pos].district_foundation.is_some() {
                     continue;
                 }
-                let cost = self
+                let modelled = self
                     .game_speed
                     .scale(self.district_cost_for_placement(pid, district, true))
                     * 4.0;
-                if faith_districts && p.faith + f64::EPSILON >= cost {
+                // The host's purchase menu prices a district too, when present.
+                let priced = |currency: &str| match self.host_purchase_price(cid, item, currency) {
+                    Some(host) => host,
+                    None => Some(modelled),
+                };
+                if faith_districts
+                    && priced("faith").is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
                         district: Name::new(district),
@@ -34135,7 +34311,9 @@ impl Game {
                         currency: "faith".to_string(),
                     });
                 }
-                if gold_districts && p.gold + f64::EPSILON >= cost {
+                if gold_districts
+                    && priced("gold").is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+                {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
                         district: Name::new(district),
@@ -34776,11 +34954,19 @@ impl Game {
                         if self.purchase_is_blocked(cid, item) {
                             continue;
                         }
-                        let cost = self
+                        let modelled = self
                             .game_speed
                             .scale(self.district_cost_for_placement(pid, district, true))
                             * 4.0;
-                        if faith_districts && p.faith + f64::EPSILON >= cost {
+                        // The host's purchase menu prices a district too, when present.
+                        let priced =
+                            |currency: &str| match self.host_purchase_price(cid, item, currency) {
+                                Some(host) => host,
+                                None => Some(modelled),
+                            };
+                        if faith_districts
+                            && priced("faith").is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                        {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
                                 district: Name::new(district),
@@ -34788,7 +34974,9 @@ impl Game {
                                 currency: "faith".to_string(),
                             });
                         }
-                        if gold_districts && p.gold + f64::EPSILON >= cost {
+                        if gold_districts
+                            && priced("gold").is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+                        {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
                                 district: Name::new(district),
@@ -39655,9 +39843,18 @@ impl Game {
         if unit == "spy" || formation > 2 || !matches!(currency, "gold" | "faith") {
             return None;
         }
-        if unit == "settler"
-            && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0)
-        {
+        // ★ The host's own answer first, for the standard formation the menu
+        // prices (`StateCity::purchasable`). Corps and Army purchases are not
+        // exported and keep the model's arithmetic below.
+        if formation == 0 {
+            let plain = Item::Unit {
+                unit: Name::new(unit),
+            };
+            if let Some(host) = self.host_purchase_price(cid, &plain, currency) {
+                return host.filter(|_| !self.purchase_is_blocked(cid, &plain));
+            }
+        }
+        if unit == "settler" && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0) {
             return None;
         }
 
@@ -40127,9 +40324,12 @@ impl Game {
         let item = Item::Building {
             building: Name::new(building),
         };
+        // ★ The host's own answer first — see `building_gold_purchase_cost`.
+        if let Some(host) = self.host_purchase_price(cid, &item, "faith") {
+            return host.filter(|_| !self.purchase_is_blocked(cid, &item));
+        }
         let district = spec
             .district
-
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
         // ★★★ CIVILIZATION VI SELLS A CITY DEFENCE FOR NO CURRENCY AT ALL.
@@ -40211,9 +40411,18 @@ impl Game {
         building: &str,
     ) -> Option<f64> {
         let spec = self.rules.buildings.get(building)?;
+        // ★ The host's own answer first. When the export carried this city's
+        // purchase menu (`StateCity::purchasable`) the price is the engine's
+        // `GetPurchaseCost` and an item off the menu is not for sale; the
+        // model's rules below are what the board falls back on without it.
+        let asked = Item::Building {
+            building: Name::new(building),
+        };
+        if let Some(host) = self.host_purchase_price(cid, &asked, "gold") {
+            return host.filter(|_| !self.purchase_is_blocked(cid, &asked));
+        }
         let district = spec
             .district
-
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
         if spec.outer_defense > 0
