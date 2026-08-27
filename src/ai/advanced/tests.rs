@@ -15504,6 +15504,84 @@ fn strategic_gold_purchase_buys_science_tempo_but_preserves_the_reserve() {
 }
 
 #[test]
+fn live_gold_purchase_falls_back_to_a_defender_when_walls_are_not_buyable() {
+    // Civ VI lets this bleeding city queue Ancient Walls, but its live Gold
+    // menu contains military units and not Walls.  The previous emergency
+    // path selected the queue answer, found no matching BuyBuilding action,
+    // and spent nothing while the city fell.  An immediate local defender is
+    // the only purchasable rescue in that position.
+    let (mut game, city, home) = empire_with_a_capital(71_120);
+    let city_pos = game.cities[&city].pos;
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&city).expect("capital exists").hp = 29;
+    let attackers: Vec<Pos> = game
+        .wdisk(home, 2)
+        .into_iter()
+        .filter(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(*position).is_empty()
+        })
+        .take(2)
+        .collect();
+    assert_eq!(attackers.len(), 2, "fixture needs two visible besiegers");
+    for position in attackers {
+        game.spawn_test_unit("warrior", 1, position);
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: Some(city),
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut live = AdvancedAi::new();
+    live.enable_garrison_under_fire();
+    game.players[0].gold = 1_000.0;
+
+    let preferred = live
+        .base
+        .besieged_city_item(&game, 0, city)
+        .expect("the bleeding unwalled city should queue Walls");
+    assert_eq!(
+        preferred,
+        Item::Building {
+            building: crate::name!("walls")
+        }
+    );
+    assert!(
+        !live.legal_purchase_actions(&game, 0).iter().any(|action| {
+            matches!(action,
+                Action::BuyBuilding { city: action_city, building, currency }
+                    if *action_city == city && building == &crate::name!("walls")
+                        && currency == "gold")
+        }),
+        "Ancient Walls are buildable here but not an immediate Gold purchase"
+    );
+
+    let before_units = game.player_unit_ids(0).len();
+    assert!(
+        live.emergency_city_defense_purchase(&mut game, 0, &plan),
+        "an unbuyable wall must fall through to a purchasable local defender"
+    );
+    let bought = game.player_unit_ids(0);
+    assert_eq!(bought.len(), before_units + 1);
+    let defender = &game.units[&bought[bought.len() - 1]];
+    let spec = &game.rules.units[defender.kind];
+    assert_eq!(
+        defender.pos, city_pos,
+        "the rescuer must appear in the city"
+    );
+    assert!(
+        spec.class == "military" && spec.is_melee_capable() && !spec.siege,
+        "the fallback must be a local land defender"
+    );
+}
+
+#[test]
 fn live_gold_purchase_spends_through_the_reserve_to_save_a_besieged_city() {
     // At t136 of the live Rome siege, the capital had 29 of 200 city HP
     // left, a Pike and Shot nine turns from completion, and enough Gold
