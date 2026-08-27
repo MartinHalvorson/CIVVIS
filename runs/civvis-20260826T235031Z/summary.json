@@ -1,0 +1,372 @@
+{
+  "abandoned": null,
+  "cities_at_60": 5,
+  "city_two_turn": 16,
+  "configured": true,
+  "deals": {
+    "closed": 22,
+    "declined": 16,
+    "expired": 0,
+    "peace_accepted": 3,
+    "peace_refused": 1,
+    "sessions_answered": 42,
+    "sessions_opened": 42,
+    "sessions_unanswered": 0,
+    "stood_down": false
+  },
+  "decider_revisions": [
+    "b60814571f4db4bcb5dabb0a1417fdc4b6947eac",
+    "ffe83125e05055ba2a11e091c3f791663cedf9dc",
+    "4d8261f0fa14336ab43215ed169aab63537672c4",
+    "3d2fcdcf6a25ce7f21e9a09300a484fc6753a932",
+    "47dee65efe0c360f7046f8afc8772492f5515f9d",
+    "f4b03308a2bc6f57d8f2b654f2687a2d23f3a2f6",
+    "ae0e8b97d2d48fe39f4f481e2e5444077a10a82d",
+    "0a5368e7d75ba82891ae7fb3fb4a977edb112e3f",
+    "00eed8c280e5c8ca9520c57f1bbe8405e6445d95",
+    "3cc9433068542f54ba6f90526758d9ed9ad89471"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-27T01:13:16Z",
+  "forced": [],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 759,
+  "last_turn": 219,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "orders": {
+    "*": {
+      "applied": 2377,
+      "refused": {
+        "ATTACK": 1,
+        "IMPROVEMENT_FARM": 2,
+        "IMPROVEMENT_INDUSTRY": 3,
+        "IMPROVEMENT_WIND_FARM": 8,
+        "MOVE_TO": 27,
+        "RANGE_ATTACK": 1,
+        "SPY_FABRICATE_SCANDAL": 13,
+        "SPY_GAIN_SOURCES": 29,
+        "TRADE_ROUTE": 2,
+        "UPGRADE": 15,
+        "cannot_FORTIFY": 5,
+        "cannot_PILLAGE": 2,
+        "cannot_REPAIR": 1,
+        "cannot_buy_BUILDING_BARRACKS": 1,
+        "cannot_buy_BUILDING_WATER_MILL": 1,
+        "cannot_form_corps": 1,
+        "cannot_start_DISTRICT_COMMERCIAL_HUB": 25,
+        "cannot_start_DISTRICT_NEIGHBORHOOD": 5,
+        "cannot_start_UNIT_SPY": 27,
+        "delegation_cooldown": 12,
+        "delegation_unaffordable": 2,
+        "found_off_site": 3,
+        "governor_neutralized": 16,
+        "move_no_moves_this_turn": 136,
+        "no_params_BUILDING_ANGKOR_WAT": 1,
+        "no_params_BUILDING_BROADWAY": 1,
+        "no_params_BUILDING_COLOSSEUM": 1,
+        "no_params_BUILDING_ETEMENANKI": 1,
+        "no_params_BUILDING_GOLDEN_GATE_BRIDGE": 1,
+        "no_params_BUILDING_GREAT_BATH": 1,
+        "no_params_BUILDING_GREAT_LIBRARY": 1,
+        "no_params_BUILDING_JEBEL_BARKAL": 1,
+        "no_params_BUILDING_KILWA_KISIWANI": 1,
+        "no_params_BUILDING_MACHU_PICCHU": 1,
+        "no_params_BUILDING_OXFORD_UNIVERSITY": 1,
+        "no_params_BUILDING_STONEHENGE": 1,
+        "no_params_BUILDING_TEMPLE_ARTEMIS": 1,
+        "no_params_BUILDING_TERRACOTTA_ARMY": 1,
+        "no_params_DISTRICT_CAMPUS": 1,
+        "no_params_DISTRICT_COMMERCIAL_HUB": 1,
+        "no_params_DISTRICT_DAM": 1,
+        "no_params_DISTRICT_NEIGHBORHOOD": 2,
+        "no_params_DISTRICT_THEATER": 3,
+        "nothing_tradeable": 2,
+        "obsolete_POLICY_CHARISMATIC_LEADER": 1,
+        "obsolete_POLICY_ILKUM": 1,
+        "obsolete_POLICY_NATURAL_PHILOSOPHY": 1,
+        "obsolete_POLICY_SERFDOM": 1,
+        "obsolete_POLICY_URBAN_PLANNING": 1,
+        "policy_deck_too_large": 1,
+        "queue_prior_refused": 40,
+        "sell_cooldown": 43,
+        "sell_pending": 1,
+        "unit_gone:262146": 1,
+        "unit_gone:327683": 1,
+        "unit_gone:3801094": 1,
+        "unit_gone:524290": 1
+      },
+      "seen": 3020
+    },
+    "city_strike": {
+      "applied": 29,
+      "refused": {},
+      "seen": 29
+    },
+    "civic": {
+      "applied": 33,
+      "refused": {},
+      "seen": 33
+    },
+    "delegation": {
+      "applied": 10,
+      "refused": {
+        "delegation_cooldown": 12,
+        "delegation_unaffordable": 2
+      },
+      "seen": 24
+    },
+    "envoy": {
+      "applied": 48,
+      "refused": {},
+      "seen": 48
+    },
+    "government": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "governor_appoint": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "governor_assign": {
+      "applied": 4,
+      "refused": {
+        "governor_neutralized": 16
+      },
+      "seen": 20
+    },
+    "governor_promote": {
+      "applied": 8,
+      "refused": {},
+      "seen": 8
+    },
+    "gp_patronize_faith": {
+      "applied": 3,
+      "refused": {},
+      "seen": 3
+    },
+    "levy": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "peace": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "policy_deck": {
+      "applied": 83,
+      "refused": {
+        "obsolete_POLICY_CHARISMATIC_LEADER": 1,
+        "obsolete_POLICY_ILKUM": 1,
+        "obsolete_POLICY_NATURAL_PHILOSOPHY": 1,
+        "obsolete_POLICY_SERFDOM": 1,
+        "obsolete_POLICY_URBAN_PLANNING": 1,
+        "policy_deck_too_large": 1
+      },
+      "seen": 89
+    },
+    "produce": {
+      "applied": 254,
+      "refused": {
+        "cannot_start_DISTRICT_COMMERCIAL_HUB": 25,
+        "cannot_start_DISTRICT_NEIGHBORHOOD": 5,
+        "cannot_start_UNIT_SPY": 27,
+        "no_params_BUILDING_ANGKOR_WAT": 1,
+        "no_params_BUILDING_BROADWAY": 1,
+        "no_params_BUILDING_COLOSSEUM": 1,
+        "no_params_BUILDING_ETEMENANKI": 1,
+        "no_params_BUILDING_GOLDEN_GATE_BRIDGE": 1,
+        "no_params_BUILDING_GREAT_BATH": 1,
+        "no_params_BUILDING_GREAT_LIBRARY": 1,
+        "no_params_BUILDING_JEBEL_BARKAL": 1,
+        "no_params_BUILDING_KILWA_KISIWANI": 1,
+        "no_params_BUILDING_MACHU_PICCHU": 1,
+        "no_params_BUILDING_OXFORD_UNIVERSITY": 1,
+        "no_params_BUILDING_STONEHENGE": 1,
+        "no_params_BUILDING_TEMPLE_ARTEMIS": 1,
+        "no_params_BUILDING_TERRACOTTA_ARMY": 1,
+        "no_params_DISTRICT_CAMPUS": 1,
+        "no_params_DISTRICT_COMMERCIAL_HUB": 1,
+        "no_params_DISTRICT_DAM": 1,
+        "no_params_DISTRICT_NEIGHBORHOOD": 2,
+        "no_params_DISTRICT_THEATER": 3
+      },
+      "seen": 333
+    },
+    "produce_next": {
+      "applied": 534,
+      "refused": {},
+      "seen": 534
+    },
+    "purchase": {
+      "applied": 18,
+      "refused": {
+        "cannot_buy_BUILDING_BARRACKS": 1,
+        "cannot_buy_BUILDING_WATER_MILL": 1
+      },
+      "seen": 20
+    },
+    "research": {
+      "applied": 52,
+      "refused": {},
+      "seen": 52
+    },
+    "sell": {
+      "applied": 38,
+      "refused": {
+        "nothing_tradeable": 2,
+        "sell_cooldown": 43,
+        "sell_pending": 1
+      },
+      "seen": 84
+    },
+    "unit": {
+      "applied": 1787,
+      "refused": {
+        "ATTACK": 1,
+        "IMPROVEMENT_FARM": 2,
+        "IMPROVEMENT_INDUSTRY": 3,
+        "IMPROVEMENT_WIND_FARM": 8,
+        "MOVE_TO": 27,
+        "RANGE_ATTACK": 1,
+        "SPY_FABRICATE_SCANDAL": 13,
+        "SPY_GAIN_SOURCES": 29,
+        "TRADE_ROUTE": 2,
+        "UPGRADE": 15,
+        "cannot_FORTIFY": 5,
+        "cannot_PILLAGE": 2,
+        "cannot_REPAIR": 1,
+        "cannot_form_corps": 1,
+        "found_off_site": 3,
+        "move_no_moves_this_turn": 136,
+        "queue_prior_refused": 40,
+        "unit_gone:262146": 1,
+        "unit_gone:327683": 1,
+        "unit_gone:3801094": 1,
+        "unit_gone:524290": 1
+      },
+      "seen": 2080
+    }
+  },
+  "orders_applied": 2065,
+  "orders_seen": 718,
+  "outcome": {
+    "ctx": "agent",
+    "kind": "victory",
+    "local_player": 0,
+    "local_team": 0,
+    "run": "civvis-20260826T235031Z",
+    "score": 759,
+    "team": 2,
+    "turn": 219,
+    "turns_played": 219,
+    "victory": 3,
+    "won": false
+  },
+  "reason": "stopped",
+  "rival_best": 1217,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260826T235031Z",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260826T235031Z",
+  "victory_target": "diplomatic",
+  "withheld": []
+}
