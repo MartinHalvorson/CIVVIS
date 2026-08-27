@@ -9275,6 +9275,74 @@ fn ordinary_religious_plan_routes_research_to_astrology() {
 }
 
 #[test]
+fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
+    let mut game = Game::new_full(4, 30, 18, 76_105, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let opening = |game: &mut Game| {
+        game.players[0].research = None;
+        game.players[0].techs.clear();
+        for tech in ["animal_husbandry", "mining"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+    };
+
+    // The shipped Diplomacy seat beelines Seasteads, and Astrology is a
+    // dead-end branch no goal is an ancestor of: it is never the pick.
+    opening(&mut game);
+    let shipped = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    shipped.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "the shipped beeline never reaches the dead-end branch"
+    );
+
+    // Treated: Astrology as soon as the opening techs are in.
+    opening(&mut game);
+    let mut treated = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    treated.enable_enter_the_prophet_race();
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("astrology"));
+
+    // Not before them: the Builder's techs still open the game.
+    game.players[0].research = None;
+    game.players[0].techs.clear();
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "the opening techs come first"
+    );
+
+    // And not once every Prophet slot is taken: the beeline resumes.
+    opening(&mut game);
+    for player in 1..=game.max_religions() {
+        game.players[player].religion = Some(format!("faith{player}"));
+    }
+    assert!(!treated.prophet_race_open_for(&game, 0));
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "a closed race is not entered"
+    );
+}
+
+#[test]
 fn religious_production_builds_prophet_infrastructure_then_runs_prayers() {
     let mut game = Game::new_full(1, 20, 14, 76_103, 120, 0, false);
     let settler = game

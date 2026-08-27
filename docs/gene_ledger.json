@@ -1171,6 +1171,7 @@
       "elective-war-yields-to-a-lane",
       "enemy-of-my-enemy",
       "enhancer-for-the-corps",
+      "enter-the-prophet-race",
       "exchange-is-the-engines",
       "expansion-pays-back",
       "expansion-schedule",
@@ -1281,6 +1282,7 @@
       "enemy-of-my-enemy",
       "engine-faith-price",
       "enhancer-for-the-corps",
+      "enter-the-prophet-race",
       "escort-unstick",
       "exchange-is-the-engines",
       "expansion-pays-back",
@@ -1882,7 +1884,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 104
+    "default_on": 105
   },
   "genes": [
     {

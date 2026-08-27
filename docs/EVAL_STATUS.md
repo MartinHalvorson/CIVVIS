@@ -12,19 +12,19 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Live-bridge treatments | 67 |
+| Live-bridge treatments | 68 |
 | Firaxis-only treatments | 28 |
-| Native engine-repair treatments | 39 |
-| Withholdable live treatments | 39 |
+| Native engine-repair treatments | 40 |
+| Withholdable live treatments | 40 |
 
 ## Bundle coverage
 
 How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
-- Withholdable live treatments: **39**
+- Withholdable live treatments: **40**
 - Named somewhere in the evidence: **37**
-- **Never named in any round: 2**
+- **Never named in any round: 3**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -39,7 +39,7 @@ over ladder games. This list is the debt neither has touched.
 
 Never named:
 
-`relief-column-marches`, `threatened-city-reserve`
+`enter-the-prophet-race`, `relief-column-marches`, `threatened-city-reserve`
 
 ## Genome coverage
 
@@ -47,8 +47,8 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **227**
-- Reachable as a gene `gene_screen` can vary: **190**
+- Capability toggles on the controller: **228**
+- Reachable as a gene `gene_screen` can vary: **191**
 - Measured by at least one screen: **73**
 - Resolved by the ledger (helps or hurts): **16**
 - **Unreachable by any screen: 37**
