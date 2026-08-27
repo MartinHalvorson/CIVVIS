@@ -142,6 +142,79 @@ fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
     assert!(!Arc::ptr_eq(&moved, &changed_map));
 }
 
+/// The final per-seat signature has a faster memo ahead of it, but that memo
+/// must preserve the old direct handling for the two inputs that do not share
+/// a mutation epoch: raw spies and host-provided mirrored sight.
+#[test]
+fn vision_input_stamp_memo_rekeys_spies_and_bypasses_host_observations() {
+    let (mut game, center) = controlled_game(63_106);
+    let city = game.place_city(0, along(&game, center, 2), None);
+    game.spawn_unit("scout", 0, center);
+
+    let first_frame = game.player_vision_frame(0);
+    let first_stamp = game.vision_input_stamp(0);
+    let before_spy = game
+        .vision_frames
+        .input_stamps
+        .borrow()
+        .clone()
+        .expect("the first frame lookup installs its input signature");
+    assert_eq!(before_spy.1[0], Some(first_stamp));
+    assert_eq!(game.vision_input_stamp(0), first_stamp);
+
+    game.spies.insert(
+        1,
+        Spy {
+            id: 1,
+            owner: 0,
+            level: 0,
+            promotions: BTreeSet::new(),
+            city: Some(city),
+            ready_turn: 0,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        },
+    );
+    let spy_stamp = game.vision_input_stamp(0);
+    let after_spy = game
+        .vision_frames
+        .input_stamps
+        .borrow()
+        .clone()
+        .expect("a changed spy input reinstalls the signature");
+    assert_ne!(spy_stamp, first_stamp, "an established spy is sight");
+    assert_ne!(
+        after_spy.0.spies, before_spy.0.spies,
+        "the memo key must notice direct writes to the public spy map"
+    );
+    let spy_frame = game.player_vision_frame(0);
+    assert!(!Arc::ptr_eq(&first_frame, &spy_frame));
+
+    let host_only = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| !game.sees(&spy_frame, *position))
+        .expect("the controlled board has a tile outside the ordinary view");
+    let before_host = game.vision_frames.input_stamps.borrow().clone();
+    game.host_observed = Arc::new(BTreeSet::from([host_only]));
+    let host_stamp = game.vision_input_stamp(0);
+    assert_ne!(host_stamp, spy_stamp, "the host observation is sight");
+    assert_eq!(
+        *game.vision_frames.input_stamps.borrow(),
+        before_host,
+        "a populated host observation must take the uncached signature path"
+    );
+    let host_frame = game.player_vision_frame(0);
+    assert!(game.sees(&host_frame, host_only));
+    let mut heights = game.height_field();
+    let uncached = game.player_vision(&mut heights, 0);
+    assert!(host_frame.as_ref() == &uncached);
+}
+
 /// The unit half of the sight signature is cached behind the roster's
 /// mutation epoch; this is the city half. Every ask used to rehash every
 /// owned tile of every city the seat holds — about 8.6 M tile hashes over a
@@ -346,6 +419,13 @@ fn vision_frames_follow_a_wholesale_roster_replacement() {
         .push(along(&game, center, 3));
     let other_stamp = other.vision_input_stamp(0);
     assert_ne!(other_stamp, populated_stamp);
+
+    // Give the source roster the same mutation generation through a write
+    // sight ignores. The replacement below must still restamp from city
+    // content rather than mistaking equal counters for equal rosters.
+    game.cities.get_mut(&city).unwrap().food += 1.0;
+    assert_eq!(game.cities.generation(), other.cities.generation());
+    assert_eq!(game.vision_input_stamp(0), populated_stamp);
     game.cities = other.cities.clone();
     assert_eq!(
         game.vision_input_stamp(0),
@@ -366,9 +446,8 @@ fn vision_frames_follow_a_wholesale_roster_replacement() {
 /// to track (suzerainty, a raw envoy count that does not flip it, a unit
 /// move), and that it correctly ignores a spy establishing -- neither
 /// `suzerain_input_map` nor `visibility_viewers` reads a spy, so the
-/// diplomacy epoch must hold still for it even though the overall sight
-/// frame still moves (folded fresh on every ask by
-/// `base_vision_input_stamp`, entirely outside this cache). A unit move gets
+/// diplomacy epoch must hold still even though the overall sight frame moves
+/// through the final memo's separate compact spy signature. A unit move gets
 /// no such epoch-stability claim: `Game::relocate` reveals ground through
 /// `Game::reveal`, which writes the mover's own seat state, so the epoch is
 /// allowed to move there too -- only the answer is required to stay exact.
@@ -438,8 +517,8 @@ fn diplomacy_caches_agree_with_an_uncached_derivation_across_every_input() {
     assert_caches_agree(&game, "after a unit move");
 
     // A spy is the same story for this cache, but not for the overall
-    // stamp: `base_vision_input_stamp` folds live spies directly on every
-    // ask, so the full frame must still notice one appearing.
+    // stamp: the final input memo has a separate compact live-spy signature,
+    // so the full frame must still notice one appearing.
     let epoch_before = game.diplomacy_epoch();
     let overall_before = game.vision_input_stamp(0);
     game.spies.insert(
