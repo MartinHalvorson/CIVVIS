@@ -18964,9 +18964,92 @@ fn a_default_live_bound_guard_rejoins_before_healing() {
 }
 
 #[test]
-fn a_settler_waits_for_its_guard_only_within_patience() {
-    let (mut game, source, target) = stacked_escort_fixture();
-    let settler = game.spawn_test_unit("settler", 0, source);
+fn a_settler_departs_its_city_before_waiting_for_a_guard() {
+    let (mut game, city, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, city);
+    // A guard that cannot close right away would previously consume this
+    // whole turn with a fortify, even though the Settler has just completed
+    // safely inside an owned city.
+    let lagging =
+        game.wdisk(city, 3)
+            .into_iter()
+            .find(|position| {
+                game.wdist(city, *position) == 3
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a lagging guard post");
+    let guard = game.spawn_test_unit("warrior", 0, lagging);
+    // Inside the escort's threat radius but outside capture reach: the only
+    // former reason to wait here is the guard's distance, not survival.
+    let raider_post =
+        game.wdisk(city, 6)
+            .into_iter()
+            .find(|position| {
+                game.wdist(city, *position) == 6
+                    && *position != lagging
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a raider post");
+    game.spawn_test_unit("warrior", 1, raider_post);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_formationless_settler_shadow();
+    ai.settler_targets.insert(settler, target);
+    let log_start = game.log.len();
+
+    assert!(
+        ai.advanced_settler_step(&mut game, 0, settler),
+        "a completed Settler must use its first controllable turn to dispatch"
+    );
+    assert_ne!(
+        game.units[&settler].pos, city,
+        "a lagging guard must not leave a newly completed Settler in its city"
+    );
+    assert!(
+        game.log.since(log_start).any(|(seat, action)| {
+            *seat == 0
+                && matches!(
+                    action,
+                    crate::game::Action::MoveTo { unit, to }
+                        if *unit == settler && *to != city
+                )
+        }),
+        "dispatch must issue a real outbound MoveTo order, not merely select a target"
+    );
+    assert_eq!(
+        ai.settler_guards.get(&settler),
+        Some(&guard),
+        "immediate dispatch retains the guard assignment for the march"
+    );
+    assert!(
+        !ai.guard_wait.contains_key(&settler),
+        "a city departure must not carry an old guard-wait clock forward"
+    );
+}
+
+#[test]
+fn a_settler_waits_for_its_guard_only_within_patience_outside_a_city() {
+    let (mut game, city, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, city);
+    let source = game
+        .route_step(settler, target, 0)
+        .expect("fixture has an outbound staging step");
+    game.apply(
+        0,
+        &crate::game::Action::MoveTo {
+            unit: settler,
+            to: source,
+        },
+    )
+    .expect("the Settler reaches the non-city staging tile");
+    assert!(
+        game.city_at(source).is_none(),
+        "the patience rule belongs to an exposed staging tile, not the city"
+    );
     // A guard that exists but can never close: three tiles away with no
     // movement, refreshed to zero every turn below.
     let lagging =
@@ -19032,15 +19115,31 @@ fn a_settler_waits_for_its_guard_only_within_patience() {
     }
 }
 
-/// A bounded escort wait avoids an opening freeze on quiet ground, but it
-/// must not expire into a route step a visible hostile can capture.  The
+/// A bounded escort response avoids an opening freeze on quiet ground, but it
+/// must not release an exposed Settler into a route step a visible hostile can
+/// capture. The
 /// previous rule released the second Settler of `civvis-20260826T054001Z`
-/// from a safe city tile while its guard was three tiles behind; a barbarian
-/// warrior then took it on turn 14.
+/// from a safe staging tile while its guard was three tiles behind; a
+/// barbarian warrior then took it on turn 14.
 #[test]
 fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
-    let (mut game, source, target) = stacked_escort_fixture();
-    let settler = game.spawn_test_unit("settler", 0, source);
+    let (mut game, city, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, city);
+    let source = game
+        .route_step(settler, target, 0)
+        .expect("fixture has an outbound staging step");
+    game.apply(
+        0,
+        &crate::game::Action::MoveTo {
+            unit: settler,
+            to: source,
+        },
+    )
+    .expect("the Settler reaches the non-city staging tile");
+    assert!(
+        game.city_at(source).is_none(),
+        "a genuinely exposed route step still receives the capture guard"
+    );
     let next = game
         .route_step(settler, target, 0)
         .expect("fixture has a first route step");
@@ -19082,11 +19181,11 @@ fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
 
     assert!(
         ai.stacked_escort_pace(&mut game, 0, settler).is_some(),
-        "a close capture threat keeps the Settler waiting after its ordinary patience"
+        "a close capture threat must handle the exposed Settler instead of releasing its ordinary route"
     );
-    assert_eq!(
-        game.units[&settler].pos, source,
-        "the Settler holds on the safe city tile instead of marching into capture range"
+    assert_ne!(
+        game.units[&settler].pos, next,
+        "the Settler must not march into the capturable route step"
     );
 }
 

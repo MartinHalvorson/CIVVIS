@@ -9,6 +9,16 @@ only live ranking here.** Three sections used to compete for that role; all
 three are still present, under `Superseded ranking` headings, because what was
 believed and why is evidence — but none of them is an instruction any more.
 
+
+> **2026-08-27 — decisions tracked to completion.** `docs/COMMITMENTS.md`:
+> a commitment ledger observes every settle, improve and capture decision at
+> the turn boundary and counts what became of it. First reading, eight
+> deployment maps: 263 conquest decisions → 10 captures; a quarter of
+> settler and Builder commitment-turns forgotten (the owner had movement and
+> did not act), 2,684 of them frozen with a hostile within two; everything
+> at half its priced pace. No existing gene closes a class; the first
+> ledger-acting gene is `capture-go-or-stand-down`.
+
 ## Current ranked next work (2026-08-17)
 
 Ordered by the largest remaining decision risk rather than by how local the next
