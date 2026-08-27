@@ -1500,13 +1500,13 @@ def main() -> int:
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     # Forwarded to civ6_play.py untouched; absent, the harness's own default
-    # holds — 0.70, the operator's one early stop (2026-08-26). See
+    # holds — 0.60, the operator's one early stop. See
     # `civ6_play.below_leader_score_reading`.
     ap.add_argument("--restart-below-leader-ratio", type=float, default=None,
                     help="immediately abandon on a readable turn at or after "
                          "turn 150 when our score is under this share of the "
                          "leader's; 0 plays every game out (forwarded to "
-                         "civ6_play.py; operator request 2026-08-26: 0.70)")
+                         "civ6_play.py; current operator policy: 0.60)")
     # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
     #
     # `civ6_play.py` has taken `--leader` (and verifies the pick off the rendered
