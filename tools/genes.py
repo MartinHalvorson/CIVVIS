@@ -266,6 +266,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import functools
 import hashlib
 import json
 import math
@@ -367,8 +368,15 @@ def genes_from_text(text: str) -> list[Gene]:
     return rows
 
 
+@functools.lru_cache(maxsize=None)
 def genes() -> list[Gene]:
-    """The registry in the working tree."""
+    """The registry in the working tree.
+
+    Cached: `REGISTRY_PATH` does not change within one process's lifetime
+    (every caller only reads it), and `Gene` is a frozen dataclass, so the
+    cached list is never mutated out from under a caller. `genes.rs` is
+    2.7 MB; re-parsing it on every one of the hundreds of calls a `check` run
+    makes cost 3 s of the 14.45 s baseline (`_table_body` alone, 549 calls)."""
     return genes_from_text(REGISTRY_PATH.read_text(encoding="utf-8"))
 
 
@@ -1313,7 +1321,14 @@ def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
     return ""
 
 
+@functools.lru_cache(maxsize=None)
 def load_source(path: Path) -> dict:
+    """Cached: every caller only reads keys out of the returned dict (via
+    `.get`/`[...]`), never assigns into it, so one parse per distinct path is
+    safe to share across the whole process. A `check` run's ledger sources
+    and reporting batches are each loaded from several call sites; before
+    this cache, `genes()` (a related hot path) alone cost 3 s of re-parsing
+    on 549 calls."""
     data = json.loads(path.read_text())
     if data.get("kind") != "gene_screen_analysis":
         raise SystemExit(f"{path}: not a gene_screen --analyze --json output")
@@ -2504,6 +2519,32 @@ def _first_sentence(doc_lines: str) -> str:
     return sentence
 
 
+#: `pub fn enable_<toggle>(` preceded by its doc-comment block, anywhere in
+#: `treatment_flags.rs`. group(1) is the doc lines, group(2) the toggle name.
+_ENABLE_FN_DOC = re.compile(r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_([a-z0-9_]+)\(")
+#: `<field>: bool,` preceded by its doc-comment block, anywhere in
+#: `advanced.rs` / `ai.rs`. group(1) is the doc lines, group(2) the field name.
+_FIELD_DOC = re.compile(
+    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub(?:\(crate\))? )?([a-z0-9_]+): bool,")
+
+
+def _doc_index(text: str, pattern: re.Pattern) -> dict[str, str]:
+    """name → its doc-comment block (group 1), for every `pattern` match in
+    `text`, keeping the first (leftmost) block when a name repeats — exactly
+    what a per-name `re.search(pattern_for_that_name, text)` would have
+    returned, but from one `finditer` pass over the whole text instead of one
+    scan per name. `descriptions()` used to run a `re.search` like this per
+    gene per source (213 genes × 2 = 426 calls on the real registry): 10.9 s
+    of the 14.45 s `check` baseline, because the nested-quantifier doc-comment
+    group backtracks badly on every miss over these multi-megabyte files."""
+    index: dict[str, str] = {}
+    for match in pattern.finditer(text):
+        name = match.group(2)
+        if name not in index:
+            index[name] = match.group(1)
+    return index
+
+
 def descriptions() -> dict[str, str]:
     """tag → one sentence: the `enable_<field>` toggle's doc, or — when that is
     missing or only says "See …" — the flag field's own doc in `advanced.rs` /
@@ -2511,15 +2552,17 @@ def descriptions() -> dict[str, str]:
     reg = registry()
     flags = FLAGS_RS.read_text()
     fields = ADVANCED_RS.read_text() + "\n" + AI_RS.read_text()
+    toggle_docs = _doc_index(flags, _ENABLE_FN_DOC)
+    field_docs = _doc_index(fields, _FIELD_DOC)
     out: dict[str, str] = {}
     for tag, (field, toggle) in reg.items():
         candidates = []
-        m = re.search(r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_" + re.escape(toggle) + r"\(", flags)
-        if m:
-            candidates.append(_first_sentence(m.group(1)))
-        m = re.search(r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub(?:\(crate\))? )?" + re.escape(field) + r": bool,", fields)
-        if m:
-            candidates.append(_first_sentence(m.group(1)))
+        doc = toggle_docs.get(toggle)
+        if doc is not None:
+            candidates.append(_first_sentence(doc))
+        doc = field_docs.get(field)
+        if doc is not None:
+            candidates.append(_first_sentence(doc))
         usable = [c for c in candidates if c and not c.startswith("See ")]
         out[tag] = (usable or candidates or [""])[0]
     return out
