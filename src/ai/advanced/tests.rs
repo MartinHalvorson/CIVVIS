@@ -18133,6 +18133,168 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
     );
 }
 
+/// A live stack is only protection while its military unit can actually hold
+/// the tile.  `stacked_escort_pace` used to retain any living land unit,
+/// including the 21-HP Warrior killed on t37 of civvis-20260826T225804Z and
+/// the Trebuchet a Line Infantry broke before taking the Settler on t120.
+#[test]
+fn a_default_live_escort_replaces_guards_that_cannot_hold() {
+    for (kind, hp, label) in [
+        ("warrior", STACKED_GUARD_MIN_HP - 1, "wounded"),
+        ("trebuchet", 100, "outmatched"),
+    ] {
+        let (mut game, source, target) = stacked_escort_fixture();
+        let settler = game.spawn_test_unit("settler", 0, source);
+        let unsafe_guard = game.spawn_test_unit(kind, 0, source);
+        game.units.get_mut(&unsafe_guard).unwrap().hp = hp;
+        let replacement_at = game
+            .nbrs(source)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .expect("a passable replacement post beside the Settler");
+        let replacement = game.spawn_test_unit("man_at_arms", 0, replacement_at);
+        let raider_at = game
+            .wdisk(source, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(source, *position) == 2
+                    && *position != target
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a visible Line Infantry post in reach of the stack");
+        let raider = game.spawn_test_unit("line_infantry", 1, raider_at);
+        game.players[0].explored.insert(raider_at);
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge();
+        assert!(
+            ai.settler_guard_holds && ai.live_formationless_settler_shadow,
+            "the deployed live seat carries the stack discipline"
+        );
+        let visible = ai.battlefront_visibility(&game, 0);
+        assert!(game.unit_visible_to(raider, 0) && game.sees(&visible, raider_at));
+        let replacement_outmatched =
+            ai.guard_outmatched_at(&game, 0, &game.units[&replacement], source, &visible);
+        assert!(
+            !replacement_outmatched,
+            "the replacement can survive the Line Infantry"
+        );
+        if label == "outmatched" {
+            let unsafe_outmatched =
+                ai.guard_outmatched_at(&game, 0, &game.units[&unsafe_guard], source, &visible);
+            assert!(
+                unsafe_outmatched,
+                "the Trebuchet is not a shield against the Line Infantry"
+            );
+        }
+        ai.settler_targets.insert(settler, target);
+        ai.settler_guards.insert(settler, unsafe_guard);
+
+        let _ = ai.stacked_escort_pace(&mut game, 0, settler);
+        assert_eq!(
+            ai.settler_guards.get(&settler),
+            Some(&replacement),
+            "the {label} guard must be replaced before the Settler acts"
+        );
+    }
+}
+
+/// The emergency civilian pass must apply the same survival test before it
+/// summons a guard.  Otherwise it preferentially calls a nearer Trebuchet,
+/// then records the Settler as stacked even though the visible Line Infantry
+/// will break that guard on the hostile turn.
+#[test]
+fn a_default_live_emergency_guard_rejects_an_outmatched_guard() {
+    let (mut game, source, _target) = stacked_escort_fixture();
+    let field = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable field beside the city");
+    let unsafe_post =
+        game.nbrs(field)
+            .into_iter()
+            .find(|position| {
+                *position != source
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a nearer Trebuchet post");
+    let replacement_post =
+        game.wdisk(field, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(field, *position) == 2
+                    && *position != unsafe_post
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a two-step Knight post");
+    let raider_at =
+        game.wdisk(field, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(field, *position) == 2
+                    && *position != replacement_post
+                    && *position != unsafe_post
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a Line Infantry post in reach of the field");
+    let settler = game.spawn_test_unit("settler", 0, field);
+    let unsafe_guard = game.spawn_test_unit("trebuchet", 0, unsafe_post);
+    let replacement = game.spawn_test_unit("knight", 0, replacement_post);
+    let raider = game.spawn_test_unit("line_infantry", 1, raider_at);
+    game.players[0].explored.insert(raider_at);
+    for unit in [unsafe_guard, replacement] {
+        let moves = game.unit_max_moves(unit);
+        let unit = game.units.get_mut(&unit).unwrap();
+        unit.moves_left = moves;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+    assert!(
+        game.reachable(unsafe_guard).contains(&field),
+        "the nearer Trebuchet can reach the Settler this turn"
+    );
+    assert!(
+        game.reachable(replacement).contains(&field),
+        "the Knight can reach the Settler this turn"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    let visible = ai.battlefront_visibility(&game, 0);
+    assert!(game.unit_visible_to(raider, 0) && game.sees(&visible, raider_at));
+    let unsafe_outmatched =
+        ai.guard_outmatched_at(&game, 0, &game.units[&unsafe_guard], field, &visible);
+    let replacement_outmatched =
+        ai.guard_outmatched_at(&game, 0, &game.units[&replacement], field, &visible);
+    assert!(unsafe_outmatched);
+    assert!(!replacement_outmatched);
+
+    assert!(
+        ai.summon_guard_to(&mut game, 0, settler, field),
+        "the viable guard reaches the Settler"
+    );
+    assert_eq!(ai.settler_guards.get(&settler), Some(&replacement));
+    assert_eq!(game.units[&replacement].pos, field);
+}
+
 /// ★★★★★ Both settlers of civvis-20260819T025840Z were taken one tile outside
 /// Rome, each from a tile a warrior had just been standing on: the step was
 /// priced with any own military unit on the destination as protection (×0.15),

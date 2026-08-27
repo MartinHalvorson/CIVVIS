@@ -344,12 +344,21 @@ impl AdvancedAi {
     }
 
     /// Rule 3: bring the nearest healthy land military unit that can reach
-    /// `pos` this turn onto it and bind it to the settler. `true` when a
-    /// guard now shares the tile.
-    fn summon_guard_to(&mut self, g: &mut Game, pid: usize, settler: u32, pos: Pos) -> bool {
+    /// `pos` this turn and survive there, then bind it to the settler. `true`
+    /// when a guard now shares the tile.
+    pub(super) fn summon_guard_to(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        settler: u32,
+        pos: Pos,
+    ) -> bool {
         if self.bound_guard_protects_settler_at(g, pid, settler, pos) {
             return true;
         }
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
         let bound: Vec<u32> = self.settler_guards.values().copied().collect();
         let mut candidates: Vec<(i32, i32, u32)> = g
             .player_unit_ids(pid)
@@ -362,6 +371,14 @@ impl AdvancedAi {
                     && unit.hp >= STACKED_GUARD_MIN_HP
                     && unit.linked_to.is_none()
                     && (!bound.contains(uid) || self.settler_guards.get(&settler) == Some(uid))
+                    && (!self.settler_guard_holds_on()
+                        || !self.guard_outmatched_at(
+                            g,
+                            pid,
+                            unit,
+                            pos,
+                            visible.as_ref().expect("computed under the flag"),
+                        ))
                     && (unit.pos == pos
                         || (unit.moves_left > 0.0 && g.reachable(*uid).contains(&pos)))
             })
