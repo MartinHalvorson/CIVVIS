@@ -24346,8 +24346,7 @@ mod attack_envelope_key_tests {
         let mine = game.player_unit_ids(0).into_iter().next().unwrap();
         let home = game.units[&mine].pos;
         let dry = |g: &Game, pos: Pos| {
-            g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile))
-                && g.units_at(pos).is_empty()
+            g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile)) && g.units_at(pos).is_empty()
         };
         let far = game
             .map
