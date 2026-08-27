@@ -14117,9 +14117,12 @@ end;
 -- visible barbarian scout, then disappear before the next state export
 -- (civvis-20260826T153014Z, turn 10).  Do not turn that one observation into a
 -- general claim about every scout's behaviour.  Instead, keep this bridge
--- floor deliberately narrow: when an unguarded settler starts on one of our
--- cities and its *actual host leg* would end adjacent to a visible barbarian
--- UNIT_SCOUT, hold the leg for this turn.
+-- When an unguarded settler's *actual host leg* would end within two plots of
+-- a visible barbarian UNIT_SCOUT, hold the leg for this turn.  This applies to
+-- every travel leg, not only its first departure from a city: the scout can
+-- capture the civilian after any exposed step.  The two-plot floor is the
+-- measured live capture reach, rather than a blanket freeze around every
+-- visible scout.
 --
 -- The actual leg is read through `UnitManager.GetMoveToPathEx`, the same host
 -- path query the shipped WorldInput.lua uses to draw a unit route
@@ -14130,14 +14133,6 @@ end;
 CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 	local player = try(function() return Players[pid]; end, nil);
 	if player == nil then return; end
-	local cities = {};
-	eachCity(player, function(city)
-		local x = tonumber(try(function() return city:GetX(); end, nil));
-		local y = tonumber(try(function() return city:GetY(); end, nil));
-		if x ~= nil and y ~= nil then cities[x .. ":" .. y] = true; end
-	end);
-	if next(cities) == nil then return; end
-
 	local visible = function(x, y)
 		return try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) == true;
 	end
@@ -14203,7 +14198,7 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 			if settler ~= nil and unitTypeName(settler) == "UNIT_SETTLER" then
 				local fromX = tonumber(try(function() return settler:GetX(); end, nil));
 				local fromY = tonumber(try(function() return settler:GetY(); end, nil));
-				if fromX ~= nil and fromY ~= nil and cities[fromX .. ":" .. fromY] then
+				if fromX ~= nil and fromY ~= nil then
 					local capped = CivvisBoard.capToTurn(settler, wantX, wantY);
 					if capped ~= false then
 						local sentX, sentY = wantX, wantY;
@@ -14214,7 +14209,7 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 								local distance = tonumber(try(function()
 									return Map.GetPlotDistance(sentX, sentY, scout.x, scout.y);
 								end, -1)) or -1;
-								if distance == 1 then
+								if distance >= 0 and distance <= 2 then
 									held[settlerId] = scout;
 									CivvisBoard.stats.settler_scout_capture_held =
 										CivvisBoard.stats.settler_scout_capture_held + 1;
@@ -14242,8 +14237,8 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
--- The scout floor above is deliberately narrow: a new settler may leave a
--- city beside a scout when the host has proved one escort can share that leg.
+-- A proven escort may make an exposed scout leg, but a lone travelling
+-- settler cannot: the same capture geometry applies after it has left home.
 -- That proof is not sufficient against an actual barbarian combat unit.  In
 -- civvis-20260827T081925Z, turns 82 and 83, a barbarian musketeer and
 -- man-at-arms each killed the synchronized single escort and captured the

@@ -20,11 +20,11 @@
 --      count is reported;
 --  10. a refused settler move cannot draw its guard into a synthetic move;
 --  11. the `orders` event carries the cap and shadow counters.
---  13. an unguarded new settler will not step from its city beside a visible
---      barbarian scout; any settler leg beside a visible barbarian combat unit
---      is held even with a synchronized single escort, while invisible,
---      distant, non-city scout, and proven-scout-escort cases retain their
---      ordinary movement.
+--  13. an unguarded settler will not step into the measured two-plot reach of
+--      a visible barbarian scout; any settler leg beside a visible barbarian
+--      combat unit is held even with a synchronized single escort, while
+--      invisible, distant, and proven-scout-escort cases retain ordinary
+--      movement.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -394,8 +394,8 @@ check("cancel used UNITCOMMAND_CANCEL", host.cmds[1] and host.cmds[1].cmd, "UNIT
 check("queued_paths reported", has(lastEvent("queued_paths"), '"found":2') and has(lastEvent("queued_paths"), '"cancelled":1'), true)
 
 -- 13. The direct live-loss geometry is held: a new settler leaving a city for
--- a tile adjacent to a visible barbarian scout cannot spend its opening turn
--- there without a guard.
+-- a tile within a barbarian scout's measured two-plot reach cannot spend its
+-- opening turn there without a guard.
 reset()
 host.cities[1] = { x = 1, y = 1 }
 host.units[30] = { id = 30, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
@@ -426,15 +426,28 @@ check("capped scout leg: setter stays in city", ops(36), "")
 check("capped scout leg: event distinguishes want from sent", has(lastEvent("settler_scout_capture_hold"), '"want":[1,4]')
 	and has(lastEvent("settler_scout_capture_hold"), '"sent":[1,3]'), true)
 
--- The scout floor remains narrow: no city origin and an invisible scout each
--- preserve a normal move.
+-- The scout floor protects the travelling leg as well as a first city
+-- departure.  A lone settler must not enter the measured two-plot capture
+-- geometry merely because it began this turn outside a city.
 reset()
 host.units[31] = { id = 31, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
-host.barbarians[91] = { id = 91, kind = "UNIT_SCOUT", x = 2, y = 3, moves = 0 }
+host.barbarians[91] = { id = 91, kind = "UNIT_SCOUT", x = 3, y = 4, moves = 0 }
 host.paths["31:" .. plotIndex(1, 2)] = {
 	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
 applyOrders(player, PID, 7, { row(31, "MOVE_TO", 1, 2) })
-check("non-city origin: setter still moves", ops(31), "UNITOPERATION_MOVE_TO@1,2")
+check("travelling setter stays out of two-step scout capture leg", ops(31), "")
+check("travelling setter hold names the scout", has(lastEvent("settler_scout_capture_hold"), '"settler":31')
+	and has(lastEvent("settler_scout_capture_hold"), '"scout":91'), true)
+
+-- The narrowed radius preserves a normal travel leg once the known scout is
+-- outside the measured two-step capture reach.
+reset()
+host.units[41] = { id = 41, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[99] = { id = 99, kind = "UNIT_SCOUT", x = 4, y = 5, moves = 0 }
+host.paths["41:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(41, "MOVE_TO", 1, 2) })
+check("distant scout leaves travelling setter mobile", ops(41), "UNITOPERATION_MOVE_TO@1,2")
 
 reset()
 host.cities[1] = { x = 1, y = 1 }
