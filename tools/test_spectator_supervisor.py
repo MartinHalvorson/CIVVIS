@@ -986,6 +986,38 @@ class SourceSnapshotTests(unittest.TestCase):
                 self.assertTrue(supervisor.prepare_boundary_runtime(7.5))
         retry.assert_called_once_with(7.5)
 
+    def test_boundary_rechecks_canonical_head_after_build(self):
+        with (
+            patch.object(supervisor, "prepare_latest_once", return_value=True) as prepare,
+            patch.object(supervisor, "sync_canonical_source", return_value=True) as sync,
+            patch.object(supervisor, "source_snapshot", return_value="fresh") as snapshot,
+            patch.object(supervisor, "runtime_matches", return_value=True) as matches,
+        ):
+            self.assertTrue(supervisor.prepare_boundary_runtime(15.0))
+
+        prepare.assert_called_once_with()
+        sync.assert_called_once_with()
+        snapshot.assert_called_once_with()
+        matches.assert_called_once_with("fresh")
+
+    def test_boundary_rebuilds_when_head_moves_during_cargo(self):
+        with (
+            patch.object(
+                supervisor, "prepare_latest_once", side_effect=[True, True]
+            ) as prepare,
+            patch.object(
+                supervisor, "sync_canonical_source", side_effect=[True, True]
+            ) as sync,
+            patch.object(supervisor, "source_snapshot", return_value="fresh"),
+            patch.object(
+                supervisor, "runtime_matches", side_effect=[False, True]
+            ),
+        ):
+            self.assertTrue(supervisor.prepare_boundary_runtime(15.0))
+
+        self.assertEqual(prepare.call_count, 2)
+        self.assertEqual(sync.call_count, 2)
+
     def test_live_refresh_requires_both_fresh_code_and_a_safe_checkpoint(self):
         checkpoint = Path("/tmp/civvis-live-refresh.json")
         with (
@@ -2075,7 +2107,7 @@ class RecoveryTests(unittest.TestCase):
         full.assert_not_called()
         stop_build.assert_called_once_with(worker)
 
-    def test_running_prebuild_does_not_delay_a_finished_boundary(self):
+    def test_finished_boundary_stops_a_stale_prebuild_and_rechecks_head(self):
         args = SimpleNamespace(
             port=8766,
             players=4,
@@ -2109,6 +2141,14 @@ class RecoveryTests(unittest.TestCase):
         successor = {"seed": 10, "turn": 1, "current": 0, "winner": None}
         worker = SimpleNamespace(pid=777, poll=lambda: None)
         replacement = SimpleNamespace(pid=654)
+        events = []
+
+        def prepare_boundary(_retry):
+            events.append("fresh-build")
+            return True
+
+        def stop(*_args):
+            events.append("stop")
 
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory) / "save.json"
@@ -2137,9 +2177,12 @@ class RecoveryTests(unittest.TestCase):
                     supervisor, "start_background_prebuild", return_value=worker
                 ),
                 patch.object(supervisor, "stop_background_prebuild") as stop_build,
+                patch.object(
+                    supervisor, "prepare_boundary_runtime", side_effect=prepare_boundary
+                ) as prepare_boundary,
                 patch.object(supervisor, "start_server", return_value=replacement) as start,
                 patch.object(supervisor, "wait_for_server", return_value=successor),
-                patch.object(supervisor, "stop_server"),
+                patch.object(supervisor, "stop_server", side_effect=stop),
                 patch.object(supervisor.time, "sleep"),
             ):
                 self.assertEqual(supervisor.main(), 0)
@@ -2149,7 +2192,9 @@ class RecoveryTests(unittest.TestCase):
         # Five status polls over one whole game, and one full observation:
         # the finished world the archive and the successor's setup read.
         self.assertEqual(full.call_count, 1)
-        stop_build.assert_called_once_with(worker)
+        stop_build.assert_any_call(worker)
+        prepare_boundary.assert_called_once_with(args.build_retry)
+        self.assertLess(events.index("fresh-build"), events.index("stop"))
 
     def test_finished_boundary_preserves_verified_runtime_build_time(self):
         args = SimpleNamespace(
@@ -2201,6 +2246,7 @@ class RecoveryTests(unittest.TestCase):
                 ),
                 patch.object(supervisor, "read_state", return_value=finished),
                 patch.object(supervisor, "archive_result"),
+                patch.object(supervisor, "prepare_boundary_runtime", return_value=True),
                 patch.object(supervisor, "refresh_runtime_metadata") as refresh,
                 patch.object(supervisor, "write_runtime_metadata") as rewrite,
                 patch.object(supervisor, "start_server", return_value=replacement),
@@ -2213,7 +2259,7 @@ class RecoveryTests(unittest.TestCase):
         refresh.assert_called_once_with("verified")
         rewrite.assert_not_called()
 
-    def test_finished_server_starts_successor_without_waiting_for_a_build(self):
+    def test_finished_server_checks_a_fresh_build_before_starting_successor(self):
         args = SimpleNamespace(
             port=8766,
             players=4,
@@ -2285,6 +2331,9 @@ class RecoveryTests(unittest.TestCase):
                 ),
                 patch.object(supervisor, "read_state", return_value=finished),
                 patch.object(supervisor, "archive_result") as archive,
+                patch.object(
+                    supervisor, "prepare_boundary_runtime", return_value=False
+                ) as prepare_boundary,
                 patch.object(supervisor, "stop_server", side_effect=stop),
                 patch.object(supervisor.time, "sleep"),
             ):
@@ -2293,7 +2342,7 @@ class RecoveryTests(unittest.TestCase):
         retired = events.index(("stop", 321))
         launched = events.index(("start", 654))
         self.assertLess(retired, launched)
-        self.assertNotIn(("prepare", None), events)
+        prepare_boundary.assert_called_once_with(args.build_retry)
         archive.assert_called_once_with(8766, finished)
 
     def test_a_player_who_takes_the_seat_during_the_cooldown_keeps_it(self):

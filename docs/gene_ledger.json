@@ -1197,6 +1197,7 @@
       "quest-trade-route",
       "raid-pillage-prizes",
       "recon-replacement",
+      "relief-column-marches",
       "relief-targets-the-siege",
       "religion-race-is-closed",
       "religious-units-heal-first",
@@ -1209,6 +1210,7 @@
       "settler-target-hysteresis-2",
       "settler-threat-detour",
       "stranded-settler-discount",
+      "threatened-city-reserve",
       "treasury-at-work",
       "unchosen-war-keeps-the-lane",
       "unit-cost-efficiency",
@@ -1315,6 +1317,7 @@
       "raid-pillage-prizes",
       "recon-replacement",
       "recorded-tactical-step",
+      "relief-column-marches",
       "relief-targets-the-siege",
       "religion-race-is-closed",
       "religious-units-heal-first",
@@ -1335,6 +1338,7 @@
       "solvency-first-trade-slot",
       "stranded-settler-discount",
       "strike-opening",
+      "threatened-city-reserve",
       "treasury-at-work",
       "unchosen-war-keeps-the-lane",
       "unit-cost-efficiency",
@@ -1878,7 +1882,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 102
+    "default_on": 104
   },
   "genes": [
     {
