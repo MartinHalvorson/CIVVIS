@@ -361,14 +361,17 @@ fn vision_frames_follow_a_wholesale_roster_replacement() {
 /// diplomacy epoch (`Game::diplomacy_epoch`) instead of once per ask -- see
 /// `Game::with_suzerain_input_map` and `Game::with_visibility_viewers` -- so
 /// an input the epoch fails to notice would leave a stale answer installed
-/// silently rather than merely slow. Prove the memoized answer always
-/// agrees with a from-scratch derivation across every input the epoch is
-/// supposed to track (suzerainty, a raw envoy count that does not flip it),
-/// and that it correctly ignores a unit move and a spy move -- neither
-/// `suzerain_input_map` nor `visibility_viewers` reads a unit or a spy, so
-/// the diplomacy epoch must hold still for both even though the overall
-/// sight frame still moves for the spy (folded fresh on every ask by
-/// `base_vision_input_stamp`, entirely outside this cache).
+/// silently rather than merely slow. Prove the memoized answer always agrees
+/// with a from-scratch derivation across every input the epoch is supposed
+/// to track (suzerainty, a raw envoy count that does not flip it, a unit
+/// move), and that it correctly ignores a spy establishing -- neither
+/// `suzerain_input_map` nor `visibility_viewers` reads a spy, so the
+/// diplomacy epoch must hold still for it even though the overall sight
+/// frame still moves (folded fresh on every ask by
+/// `base_vision_input_stamp`, entirely outside this cache). A unit move gets
+/// no such epoch-stability claim: `Game::relocate` reveals ground through
+/// `Game::reveal`, which writes the mover's own seat state, so the epoch is
+/// allowed to move there too -- only the answer is required to stay exact.
 #[test]
 fn diplomacy_caches_agree_with_an_uncached_derivation_across_every_input() {
     let (mut game, center) = controlled_game(63_105);
@@ -423,18 +426,15 @@ fn diplomacy_caches_agree_with_an_uncached_derivation_across_every_input() {
     assert_eq!(game.suzerain_of(minor), Some(0));
     assert_caches_agree(&game, "envoy count changed, suzerain unchanged");
 
-    // A unit move reads neither a suzerain nor a viewer set: the diplomacy
-    // epoch must not move, proving this cache does not pay for a write it
-    // has no business noticing.
+    // A unit move reads neither a suzerain nor a viewer set directly, but
+    // `Game::relocate` reveals ground through `Game::reveal`, which writes
+    // the mover's own `explored`/contact state -- a `Players` write like any
+    // other -- so the diplomacy epoch is allowed to move here. What must not
+    // move is the *answer*: the memoized map and viewer set still have to
+    // match a fresh derivation on the far side of it.
     let scout = game.spawn_unit("scout", 0, along(&game, center, 2));
     assert_caches_agree(&game, "after spawning a unit");
-    let epoch_before = game.diplomacy_epoch();
     game.relocate(scout, along(&game, center, 3));
-    assert_eq!(
-        game.diplomacy_epoch(),
-        epoch_before,
-        "a unit move must not move the diplomacy epoch"
-    );
     assert_caches_agree(&game, "after a unit move");
 
     // A spy is the same story for this cache, but not for the overall
