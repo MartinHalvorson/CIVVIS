@@ -5781,7 +5781,7 @@ impl BasicAi {
             && g.city_district_family_position(city, crate::name!("encampment"))
                 .is_some_and(|source| {
                     g.wdist(source, position) <= 2 && g.line_of_sight_from(source, position)
-            })
+                })
     }
 
     /// Whether an observed hostile attack *could* reach `position` next turn,
@@ -6245,10 +6245,7 @@ impl BasicAi {
         // incoming `0.0` is below any live unit's hit points, so `lethal` was
         // false and with no remembered danger the tile below returns `None` —
         // which is exactly what an unmapped tile's `?` returns too.
-        if remembered.is_none()
-            && hp > 0
-            && !Self::hostile_attack_may_reach(g, pid, here)
-        {
+        if remembered.is_none() && hp > 0 && !Self::hostile_attack_may_reach(g, pid, here) {
             return None;
         }
         let envelopes = self.enemy_attack_envelopes(g, pid);
@@ -25360,7 +25357,9 @@ mod attack_envelope_key_tests {
             .tiles
             .keys()
             .copied()
-            .find(|pos| dry(&game, *pos) && game.nbrs(*pos).into_iter().any(|next| dry(&game, next)))
+            .find(|pos| {
+                dry(&game, *pos) && game.nbrs(*pos).into_iter().any(|next| dry(&game, next))
+            })
             .expect("the fixture needs dry ground with a dry neighbour");
         let enemy = game.spawn_test_unit("warrior", 1, origin);
         assert!(
