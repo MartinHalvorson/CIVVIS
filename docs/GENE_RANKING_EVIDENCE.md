@@ -189,9 +189,11 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `close-as-a-body` | off (unmeasured) | On an advance, no unit ends the turn more than the body's pace plus one tile closer to the objective than the force's anchor stood, so a horseman does not meet the enemy four tiles before the line does. | 1 \| 1 |
 | `coastal-city-sites` | off (unmeasured) | Price a city site's Harbor-eligible coast in the final settlement score. | — \| 2 |
 | `coastal-city-sites-2` | off (unmeasured) | Version 2 keeps the coast baseline and additionally prices the best water-resource adjacency around a prospective Harbor. | — \| 2 |
+| `culture-floor` | off (unmeasured) | `culture-floor`: a culture-yielding building is exempt from the Great Work veto and the Theatre Square is priced while the empire's culture a turn trails the strongest major's by the floor ratio. | 1 \| 1 |
 | `defend-where-you-stand` | off (unmeasured) | Price the defender on the tile it is being asked about, with that tile's own defence, so a unit weighing a hill is credited for the hill. | 1 \| 1 |
 | `exchange-is-the-engines` | off (unmeasured) | Price a strike with the two strengths the engine will resolve it with, so matchup, flanking, adjacent support, ground and the river reach the exchange evaluation. | 1 \| 1 |
 | `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 \| 1 |
+| `gold-income-floor` | off (unmeasured) | `gold-income-floor`: Markets, Lighthouses, gold-yielding buildings and the Commercial Hub or Harbor are priced by the income the empire is short of two Gold a turn per city. | 1 \| 1 |
 | `screen-the-shooters` | off (unmeasured) | A shooter's tile beside a melee friend that stands nearer the enemy earns two screen weights — the arena's own definition of screened, paid to the archer that stays behind the line. | 1 \| 1 |
 | `swap-rotation` | off (unmeasured) | A wounded unit holding a front trades places with the fresh unit behind it — the engine's own `Action::Swap`, which no controller has ever chosen — so the line does not open when it leaves. | 1 \| 1 |
 
