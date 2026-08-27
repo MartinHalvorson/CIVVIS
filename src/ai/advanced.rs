@@ -4671,6 +4671,49 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Enter the finite Great Prophet race from an explicit victory lane.
+    ///
+    /// ★★★★ THE LIVE SEAT NEVER RESEARCHES ASTROLOGY. Every live game runs
+    /// an explicit target (`--victory diplomatic`), and `advanced_research`
+    /// pins that lane's far-era goal — Seasteads for Diplomacy, Printing /
+    /// Radio / Computers for Culture, Rocketry onward for Science — from
+    /// turn 1 until it is researched. Each pick is "the cheapest step
+    /// toward" that goal, and Astrology → Celestial Navigation is a dead-end
+    /// branch nothing else requires, so Astrology is never an ancestor of any
+    /// goal and the `tech_value` fallback is never consulted while one
+    /// stands. MEASURED over 130 live runs (2026-08-27): `TECH_ASTROLOGY`
+    /// researched in ONE game, at t244 — four turns after Seasteads; ONE
+    /// `DISTRICT_HOLY_SITE` in 1,680 district orders (t74, after the race
+    /// had closed); no Shrine anywhere; the host never listed a Missionary
+    /// as purchasable in any of our cities; `prophet_pending` never true;
+    /// 0 of 28 faith patronages went to a Prophet. Rivals fielded religious
+    /// units 20,591 times in the same rows, and the four King religions were
+    /// all founded by median t62 (earliest t38).
+    ///
+    /// Behind that, `take_turn_inner` sets `pursue_religion` false for any
+    /// explicit non-Religion target, so even a seat that stumbled into a Holy
+    /// Site would discard the prize. Four things therefore move together,
+    /// because the entry fee and the prize are separate gates
+    /// (`BasicAi::skip_prophet_race`) and paying one without the other is
+    /// strictly worse than either pure choice:
+    /// 1. `advanced_research` takes Astrology once the first
+    ///    `PROPHET_RACE_OPENING_TECHS` techs are in, while a Prophet slot is
+    ///    still open for this seat (`prophet_race_open_for`). The lane's own
+    ///    beeline resumes the turn Astrology lands.
+    /// 2. `BasicAi::pick_item` puts the empire's FIRST Holy Site at the front
+    ///    of the district order while the race is open (`enter_prophet_race`
+    ///    on the base); the existing one-site reservation is unchanged.
+    /// 3. `advanced_great_people` prices the Great Prophet as a lane great
+    ///    person (650) while the race is open, so a Gold or Faith patronage
+    ///    within 40 % is taken instead of waiting at 15 %.
+    /// 4. `pursue_religion` is true while the race is open for this seat and
+    ///    again once it holds a religion, so the belief pick, the Prophet
+    ///    claim and the Missionary buy run on a Diplomacy, Culture or Science
+    ///    seat.
+    ///
+    /// `religion-race-is-closed` (pinned on) still wins once every slot is
+    /// taken: `prophet_race_open_for` is false the moment the race closes.
+    enter_the_prophet_race: bool,
     /// An Archer for every city, the frontier city first, while the world
     /// is Ancient and Classical, and Archery chased until a city can train
     /// one. Opt-in gene `early-archers`; see `advanced/early_archers.rs`.
@@ -5372,6 +5415,12 @@ pub struct AdvancedAi {
 /// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
 /// floor for its own currency, and this only stops the other lanes pricing
 /// research below their least valuable ordinary yield.
+/// How many techs `enter_the_prophet_race` lets the lane's own opening take
+/// before Astrology: the two 25-cost Ancient techs the beeline reaches first
+/// (Animal Husbandry and Mining on every live opening), so the Builder's work
+/// is not delayed and Astrology still lands by about turn 15.
+pub(crate) const PROPHET_RACE_OPENING_TECHS: usize = 2;
+
 /// What `holy_lane_parity` pays a Religion empire for its own Holy Site.
 ///
 /// Not tuned: it is `(Culture, theater_square)`'s own figure, the largest
@@ -6518,6 +6567,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            enter_the_prophet_race: false,
             early_archers: false,
             fire_plan: false,
             fire_plan_orders: fire_plan::FirePlan::default(),
@@ -12116,6 +12166,17 @@ impl AdvancedAi {
                 _ if plan.rush && !g.players[pid].techs.contains(&crate::name!("horseback_riding")) => {
                     Some("horseback_riding")
                 }
+                // `enter-the-prophet-race`: Astrology is a dead-end branch no
+                // lane goal is an ancestor of, so no beeline ever reaches it.
+                // Take it once the opening techs are in, while a Prophet slot
+                // is still open for this seat.
+                _ if self.enter_the_prophet_race
+                    && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
+                    && !g.players[pid].techs.contains(&crate::name!("astrology"))
+                    && self.prophet_race_open_for(g, pid) =>
+                {
+                    Some("astrology")
+                }
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment => [
@@ -12519,6 +12580,26 @@ impl AdvancedAi {
             && g.religions_founded() >= g.max_religions()
             && g.players[pid].religion.is_none()
             && !g.has_ability(pid, "taxis")
+    }
+
+    /// Whether this seat can still found a religion: none of its own yet, a
+    /// Prophet already claimed or a slot still open once the Prophets other
+    /// majors hold are counted, and the first half of the clock. See
+    /// `enter_the_prophet_race`.
+    fn prophet_race_open_for(&self, g: &Game, pid: usize) -> bool {
+        let player = &g.players[pid];
+        if player.religion.is_some() {
+            return false;
+        }
+        if player.prophet_pending {
+            return true;
+        }
+        let claimed = g.religions_founded()
+            + g.players
+                .iter()
+                .filter(|candidate| candidate.prophet_pending)
+                .count();
+        claimed < g.max_religions() && g.turn * 2 <= g.max_turns.max(1)
     }
 
     /// Whether the assigned victory lane can still be won. See
@@ -16547,6 +16628,13 @@ impl AdvancedAi {
                 (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 650.0,
                 (GrandStrategy::Expansion | GrandStrategy::Recovery, "engineer" | "merchant")
                 | (GrandStrategy::Science | GrandStrategy::Culture, "engineer") => 300.0,
+                // `enter-the-prophet-race`: the Prophet is this seat's lane
+                // great person while a slot is still open for it.
+                (_, "prophet")
+                    if self.enter_the_prophet_race && self.prophet_race_open_for(g, pid) =>
+                {
+                    650.0
+                }
                 (_, "prophet") if g.players[pid].religion.is_some() => -1_000.0,
                 _ => 100.0,
             };
@@ -34217,6 +34305,15 @@ impl AdvancedAi {
         self.base.skip_prophet_race = (self.skip_the_prophet_race || religion_race_closed)
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
+        // `enter-the-prophet-race`: the entry fee AND the prize, together,
+        // while a slot is still open for this seat — and the prize again once
+        // it holds a religion. The closed case above still wins, because
+        // `prophet_race_open_for` is false by then.
+        let prophet_race_open = self.enter_the_prophet_race && self.prophet_race_open_for(g, pid);
+        self.base.enter_prophet_race = prophet_race_open;
+        if prophet_race_open || (self.enter_the_prophet_race && g.players[pid].religion.is_some()) {
+            self.base.pursue_religion = true;
+        }
         self.base.science_building_first = self.science_building_first;
         // One reading a turn: `Game::victory_races` walks every city of every
         // major, and `production_value` asks this question per item per city.
