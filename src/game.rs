@@ -6654,11 +6654,15 @@ impl From<GameSer> for Game {
             observed_yield_adjustments: Arc::new(s.observed_yield_adjustments),
             observed_public_empire_stats: Arc::new(s.observed_public_empire_stats),
             observed_majority_religion: Arc::new(s.observed_majority_religion),
-            observed_visiting_tourists: Arc::new(s.observed_visiting_tourists.into_iter().collect()),
+            observed_visiting_tourists: Arc::new(
+                s.observed_visiting_tourists.into_iter().collect(),
+            ),
             observed_city_yield_adjustments: Arc::new(s.observed_city_yield_adjustments),
             observed_city_amenity_adjustments: Arc::new(s.observed_city_amenity_adjustments),
             observed_city_housing_adjustments: Arc::new(s.observed_city_housing_adjustments),
-            observed_tile_yield_adjustments: Arc::new(s.observed_tile_yield_adjustments.into_iter().collect()),
+            observed_tile_yield_adjustments: Arc::new(
+                s.observed_tile_yield_adjustments.into_iter().collect(),
+            ),
             observed_route_posts: Arc::new(s.observed_route_posts.into_iter().collect()),
             observed_great_work_housing: s.observed_great_work_housing.map(Arc::new),
             observed_route_yields: Arc::new(s.observed_route_yields.into_iter().collect()),
@@ -6874,18 +6878,42 @@ impl From<Game> for GameSer {
             observed_yield_adjustments: Arc::unwrap_or_clone(g.observed_yield_adjustments),
             observed_public_empire_stats: Arc::unwrap_or_clone(g.observed_public_empire_stats),
             observed_majority_religion: Arc::unwrap_or_clone(g.observed_majority_religion),
-            observed_visiting_tourists: Arc::unwrap_or_clone(g.observed_visiting_tourists).into_iter().collect(),
-            observed_city_yield_adjustments: Arc::unwrap_or_clone(g.observed_city_yield_adjustments),
-            observed_city_amenity_adjustments: Arc::unwrap_or_clone(g.observed_city_amenity_adjustments),
-            observed_city_housing_adjustments: Arc::unwrap_or_clone(g.observed_city_housing_adjustments),
-            observed_tile_yield_adjustments: Arc::unwrap_or_clone(g.observed_tile_yield_adjustments).into_iter().collect(),
-            observed_route_posts: Arc::unwrap_or_clone(g.observed_route_posts).into_iter().collect(),
+            observed_visiting_tourists: Arc::unwrap_or_clone(g.observed_visiting_tourists)
+                .into_iter()
+                .collect(),
+            observed_city_yield_adjustments: Arc::unwrap_or_clone(
+                g.observed_city_yield_adjustments,
+            ),
+            observed_city_amenity_adjustments: Arc::unwrap_or_clone(
+                g.observed_city_amenity_adjustments,
+            ),
+            observed_city_housing_adjustments: Arc::unwrap_or_clone(
+                g.observed_city_housing_adjustments,
+            ),
+            observed_tile_yield_adjustments: Arc::unwrap_or_clone(
+                g.observed_tile_yield_adjustments,
+            )
+            .into_iter()
+            .collect(),
+            observed_route_posts: Arc::unwrap_or_clone(g.observed_route_posts)
+                .into_iter()
+                .collect(),
             observed_great_work_housing: g.observed_great_work_housing.map(Arc::unwrap_or_clone),
-            observed_route_yields: Arc::unwrap_or_clone(g.observed_route_yields).into_iter().collect(),
-            observed_route_options: Arc::unwrap_or_clone(g.observed_route_options).into_iter().collect(),
-            observed_appeal: Arc::unwrap_or_clone(g.observed_appeal).into_iter().collect(),
-            observed_fresh_water: Arc::unwrap_or_clone(g.observed_fresh_water).into_iter().collect(),
-            observed_tourism_per_turn: Arc::unwrap_or_clone(g.observed_tourism_per_turn).into_iter().collect(),
+            observed_route_yields: Arc::unwrap_or_clone(g.observed_route_yields)
+                .into_iter()
+                .collect(),
+            observed_route_options: Arc::unwrap_or_clone(g.observed_route_options)
+                .into_iter()
+                .collect(),
+            observed_appeal: Arc::unwrap_or_clone(g.observed_appeal)
+                .into_iter()
+                .collect(),
+            observed_fresh_water: Arc::unwrap_or_clone(g.observed_fresh_water)
+                .into_iter()
+                .collect(),
+            observed_tourism_per_turn: Arc::unwrap_or_clone(g.observed_tourism_per_turn)
+                .into_iter()
+                .collect(),
             observed_climate: g.observed_climate,
             observed_city_worked_tiles: Arc::unwrap_or_clone(g.observed_city_worked_tiles),
             observed_city_specialists: Arc::unwrap_or_clone(g.observed_city_specialists),
@@ -33034,10 +33062,7 @@ impl Game {
         }
     }
 
-    pub(crate) fn replace_blocked_production(
-        &mut self,
-        blocked: BTreeMap<u32, BTreeSet<String>>,
-    ) {
+    pub(crate) fn replace_blocked_production(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
         self.blocked_production = Arc::new(blocked);
         // This field is mirror input rather than an Action, so it does not cross the
         // ordinary successful-apply invalidation below. A menu derived before sync

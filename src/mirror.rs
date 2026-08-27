@@ -3461,7 +3461,9 @@ mod tests {
         let engine_foreign = game.foreign_tourists(1);
         let engine_domestic = game.domestic_tourists(1);
         {
-            let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(1).or_default();
+            let observed = Arc::make_mut(&mut game.observed_public_empire_stats)
+                .entry(1)
+                .or_default();
             observed.foreign_tourists = Some(41);
             observed.domestic_tourists = Some(66);
         }
@@ -3469,7 +3471,9 @@ mod tests {
         assert_eq!(game.domestic_tourists(1), 66);
         // An entry with no counters falls back to the engine's arithmetic.
         {
-            let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(1).or_default();
+            let observed = Arc::make_mut(&mut game.observed_public_empire_stats)
+                .entry(1)
+                .or_default();
             observed.foreign_tourists = None;
             observed.domestic_tourists = None;
         }
@@ -6679,7 +6683,10 @@ mod tests {
         let (district, site) =
             candidate.expect("an unlocked grown city needs a buildable district");
 
-        Arc::make_mut(&mut game.blocked_districts).entry(city).or_default().insert(district);
+        Arc::make_mut(&mut game.blocked_districts)
+            .entry(city)
+            .or_default()
+            .insert(district);
         assert!(
             game.district_sites(city, district).is_empty(),
             "precondition: the paired refusal blocks the normal model"
@@ -6744,7 +6751,10 @@ mod tests {
             "precondition: the configured Pyramids site is buildable"
         );
 
-        Arc::make_mut(&mut game.blocked_wonders).entry(city).or_default().insert(wonder);
+        Arc::make_mut(&mut game.blocked_wonders)
+            .entry(city)
+            .or_default()
+            .insert(wonder);
         assert!(
             game.wonder_sites(city, &wonder).is_empty(),
             "precondition: the paired refusal blocks the normal model"
@@ -14982,7 +14992,9 @@ fn apply_rival_public_economy(
             .then(|| value.round() as usize)
     };
     {
-        let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(owner).or_default();
+        let observed = Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(owner)
+            .or_default();
         // The science lane's own number (`GetNumTechsResearched`) where it
         // crossed, else the counted loop an older mod sends; they agree.
         observed.techs = rival
@@ -15170,11 +15182,19 @@ fn restore_active_trade_routes(
         // And what the host says the route pays its origin, which covers a
         // destination whose districts the seat has never seen.
         if let Some(yields) = route.yields {
-            let finite = [yields.food, yields.production, yields.gold, yields.science, yields.culture, yields.faith]
-                .iter()
-                .all(|value| value.is_finite() && *value >= 0.0);
+            let finite = [
+                yields.food,
+                yields.production,
+                yields.gold,
+                yields.science,
+                yields.culture,
+                yields.faith,
+            ]
+            .iter()
+            .all(|value| value.is_finite() && *value >= 0.0);
             if finite {
-                Arc::make_mut(&mut game.observed_route_yields).insert((origin, destination), yields);
+                Arc::make_mut(&mut game.observed_route_yields)
+                    .insert((origin, destination), yields);
             }
         }
         game.routes.push(crate::game::TradeRoute {
@@ -16175,8 +16195,7 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
     }
     for (index, rival) in state.rivals.iter().enumerate() {
         if !rival.leader.is_empty() {
-            Arc::make_mut(&mut game.observed_leader_types)
-                .insert(index + 1, rival.leader.clone());
+            Arc::make_mut(&mut game.observed_leader_types).insert(index + 1, rival.leader.clone());
         }
     }
     let mut unmapped = Vec::new();
@@ -20524,7 +20543,9 @@ fn apply_observed_host_metrics(
             (value.is_finite() && value >= 0.0 && value <= usize::MAX as f64)
                 .then(|| value.round() as usize)
         };
-        let observed = Arc::make_mut(&mut game.observed_public_empire_stats).entry(0).or_default();
+        let observed = Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(0)
+            .or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
         observed.cities_following_religion = state
@@ -22846,8 +22867,7 @@ fn restore_route_options(
         .iter()
         .all(|value| value.is_finite() && *value >= 0.0);
         if finite {
-            Arc::make_mut(&mut game.observed_route_options)
-                .insert((origin, destination), yields);
+            Arc::make_mut(&mut game.observed_route_options).insert((origin, destination), yields);
         }
     }
     unresolved
@@ -23697,7 +23717,10 @@ impl LiveMirror {
             &self.game.rules,
         );
         for (cid, names) in refused {
-            Arc::make_mut(&mut self.game.blocked_districts).entry(cid).or_default().extend(names);
+            Arc::make_mut(&mut self.game.blocked_districts)
+                .entry(cid)
+                .or_default()
+                .extend(names);
         }
         self.game.host_district_sites = Arc::new(host_district_sites_from(
             &state.host_district_sites,
@@ -23716,7 +23739,10 @@ impl LiveMirror {
             &self.game.rules,
         );
         for (cid, names) in refused_wonders {
-            Arc::make_mut(&mut self.game.blocked_wonders).entry(cid).or_default().extend(names);
+            Arc::make_mut(&mut self.game.blocked_wonders)
+                .entry(cid)
+                .or_default()
+                .extend(names);
         }
         let unavailable_wonders =
             host_unavailable_wonders_from(&state.host_unavailable_wonders, &self.game.rules);
@@ -24276,8 +24302,7 @@ impl LiveMirror {
                 break;
             }
             if rival.military.is_finite() && rival.military >= 0.0 {
-                Arc::make_mut(&mut self.game.observed_military_power)
-                    .insert(owner, rival.military);
+                Arc::make_mut(&mut self.game.observed_military_power).insert(owner, rival.military);
             }
             if rival.score >= 0 {
                 Arc::make_mut(&mut self.game.observed_score).insert(owner, rival.score);

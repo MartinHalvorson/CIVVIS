@@ -11333,8 +11333,7 @@ fn an_amenity_district_is_worth_the_arena_it_hosts() {
         "short by two: lift {} against {lift_displeased}, expected ratio 125/90",
         priced_two - stock_two
     );
-    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
-        .insert(capital, -modeled);
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).insert(capital, -modeled);
     let stock_content = ordinary.production_value(&game, 0, capital, &complex, &plan, &counts);
     let priced_content = live.production_value(&game, 0, capital, &complex, &plan, &counts);
     let lift_content = priced_content - stock_content;
@@ -36358,8 +36357,7 @@ fn a_host_priced_route_option_is_what_the_trader_chooser_prices() {
         science: 6.0,
         ..Default::default()
     };
-    std::sync::Arc::make_mut(&mut game.observed_route_options)
-        .insert((origin, destination), host);
+    std::sync::Arc::make_mut(&mut game.observed_route_options).insert((origin, destination), host);
     let priced = ai.trade_route_destination_value_from(
         &game,
         0,
