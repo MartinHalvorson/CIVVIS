@@ -729,6 +729,34 @@ struct Row {
     religious_lost: i64,
     #[serde(default)]
     pillages: i64,
+    /// The seat's decisions, tracked to completion (`commit:*`,
+    /// `docs/COMMITMENTS.md`): settle sites, Builder tiles and the appointed
+    /// war's objective, summed. `forgotten_turns` are open decisions the
+    /// owner did not act on with movement to spend; `stalled_turns` acted on
+    /// without getting closer; `late_turns` open past the ETA they were priced
+    /// at. `open_turns` is their denominator.
+    #[serde(default)]
+    commit_made: i64,
+    #[serde(default)]
+    commit_completed: i64,
+    #[serde(default)]
+    commit_retargeted: i64,
+    #[serde(default)]
+    commit_abandoned: i64,
+    #[serde(default)]
+    commit_lost: i64,
+    #[serde(default)]
+    commit_open_turns: i64,
+    #[serde(default)]
+    commit_forgotten_turns: i64,
+    #[serde(default)]
+    commit_stalled_turns: i64,
+    #[serde(default)]
+    commit_late_turns: i64,
+    #[serde(default)]
+    commit_completion_turns: i64,
+    #[serde(default)]
+    commit_eta_turns: i64,
     /// Settlers counted as prizes at the raids' declarations.
     #[serde(default)]
     raid_settler_prizes: i64,
@@ -1883,6 +1911,17 @@ fn row_for_seat(
         religious_lost: counter("religious_lost_to_barbarians"),
         pillages: counter("pillages"),
         raid_settler_prizes: counter("raid_prize:settler"),
+        commit_made: counter("commit:made"),
+        commit_completed: counter("commit:completed"),
+        commit_retargeted: counter("commit:retargeted"),
+        commit_abandoned: counter("commit:abandoned"),
+        commit_lost: counter("commit:lost"),
+        commit_open_turns: counter("commit:open_turns"),
+        commit_forgotten_turns: counter("commit:forgotten_turns"),
+        commit_stalled_turns: counter("commit:stalled_turns"),
+        commit_late_turns: counter("commit:late_turns"),
+        commit_completion_turns: counter("commit:completion_turns"),
+        commit_eta_turns: counter("commit:eta_turns"),
         dvp: game.players[seat].dvp,
         rival_dvp: rival(&|pid| game.players[pid].dvp),
         tourists: game.foreign_tourists(seat),
@@ -5819,6 +5858,17 @@ mod tests {
             religious_lost: 0,
             pillages: 0,
             raid_settler_prizes: 0,
+            commit_made: 0,
+            commit_completed: 0,
+            commit_retargeted: 0,
+            commit_abandoned: 0,
+            commit_lost: 0,
+            commit_open_turns: 0,
+            commit_forgotten_turns: 0,
+            commit_stalled_turns: 0,
+            commit_late_turns: 0,
+            commit_completion_turns: 0,
+            commit_eta_turns: 0,
             dvp: 0,
             rival_dvp: 0,
             tourists: 0,

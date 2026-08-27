@@ -1464,6 +1464,8 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
+    /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
+    commitments: commitments::CommitmentLedger,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -5829,6 +5831,12 @@ mod camp_buyout;
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
 mod early_archers;
 
+/// Commitments: every multi-turn decision — a settle site, a Builder's tile,
+/// the appointed war's objective — observed at the turn boundary and tracked
+/// to its ending, with what became of it counted. Infrastructure, not a
+/// gene: it changes no decision. See `docs/COMMITMENTS.md`.
+pub mod commitments;
+
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained
@@ -6252,6 +6260,7 @@ impl AdvancedAi {
             war_status: WarPackageStatus::default(),
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
+            commitments: commitments::CommitmentLedger::default(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -34366,6 +34375,9 @@ impl AdvancedAi {
             self.stamp_city_directives(g, pid, &plan);
         }
         self.resolve_city_dispositions(g, pid, plan.strategy);
+        // The last reading of the turn: what became of every decision, with
+        // `Unit::acted` still saying what each unit did. Observes only.
+        self.reconcile_commitments(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }

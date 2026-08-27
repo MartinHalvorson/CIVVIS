@@ -283,6 +283,7 @@ pub use advanced::{
     LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE,
     LAND_GRAB_TILES_PER_CITY, PRODUCTION_CITY_TARGET_FLOOR,
 };
+pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 
 const TECH_PRIORITY: [&str; 15] = [
     "pottery",
