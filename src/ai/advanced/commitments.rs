@@ -27,7 +27,7 @@ use crate::game::Game;
 use crate::name::Name;
 use crate::Pos;
 
-use super::{AdvancedAi, WarPhase};
+use super::{AdvancedAi, GrandStrategy, WarPhase};
 
 /// Turns without a better progress reading before an open commitment counts
 /// as stalled. Three is `SETTLER_STALL_LIMIT`'s value, so the two readings
@@ -41,6 +41,11 @@ pub const CAPTURE_PRESENCE_RADIUS: i32 = 3;
 /// A settler that vanished without a city at its site, but with a new city of
 /// ours this close to where it stood, founded somewhere else.
 const SETTLED_ELSEWHERE_RADIUS: i32 = 3;
+
+/// The ETA a Conquest target carries when no appointed war priced one: the
+/// campaign layer's own patience (`CAMPAIGN_PATIENCE`), the longest the
+/// controller lets a planned city wait before it drops the plan.
+pub const CONQUEST_ETA_TURNS: u32 = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
@@ -148,13 +153,7 @@ impl KindCensus {
 
     /// One line, the way `audit` and the census print it.
     pub fn line(&self) -> String {
-        let pct = |part: u32, whole: u32| {
-            if whole == 0 {
-                0
-            } else {
-                (100 * part) / whole
-            }
-        };
+        let pct = |part: u32, whole: u32| (100 * part).checked_div(whole).unwrap_or(0);
         let mean = |sum: u32, n: u32| {
             if n == 0 {
                 0.0
@@ -314,7 +313,7 @@ impl CommitmentLedger {
     /// rate; hills, rivers and coast make the walk longer, which the
     /// `late` reading then records against this price.
     fn walk_eta(turn: u32, hexes: i32) -> u32 {
-        turn + ((hexes.max(0) as u32) + 1) / 2
+        turn + (hexes.max(0) as u32).div_ceil(2)
     }
 
     /// The unit kinds: compare last turn's openings with the map as it stands
@@ -436,7 +435,9 @@ impl CommitmentLedger {
         }
     }
 
-    /// The appointed war: one commitment per empire, the objective city.
+    /// The city the empire means to take: the appointed war's objective when
+    /// one is appointed, otherwise the grand strategy's Conquest target. One
+    /// commitment per empire.
     fn reconcile_capture(&mut self, g: &Game, pid: usize, war: Option<CaptureReading>) {
         let turn = g.turn;
         let key = (Kind::Capture, Owner::Empire);
@@ -548,7 +549,14 @@ impl AdvancedAi {
             .filter(|city| city.owner == pid && !self.commitments.cities_seen.contains(&city.id))
             .map(|city| city.pos)
             .collect();
-        let war = self.war_plan.as_ref().and_then(|plan| {
+        let presence = |g: &Game, at: Pos| {
+            g.units.values().any(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.wdist(unit.pos, at) <= CAPTURE_PRESENCE_RADIUS
+            })
+        };
+        let appointed = self.war_plan.as_ref().and_then(|plan| {
             let city = g.cities.get(&plan.objective_city)?;
             let phases_to_go = match plan.phase {
                 WarPhase::Research => 4,
@@ -558,12 +566,6 @@ impl AdvancedAi {
                 WarPhase::Exploit => 0,
             };
             let declared = plan.declared_turn.is_some();
-            let present = declared
-                && g.units.values().any(|unit| {
-                    unit.owner == pid
-                        && g.rules.units[unit.kind].class == "military"
-                        && g.wdist(unit.pos, city.pos) <= CAPTURE_PRESENCE_RADIUS
-                });
             Some(CaptureReading {
                 city: plan.objective_city,
                 eta: plan.appointed_turn
@@ -572,9 +574,34 @@ impl AdvancedAi {
                     + plan.estimated_march_turns,
                 reading: phases_to_go * 1000 + city.hp + city.wall_hp,
                 declared,
-                present,
+                present: declared && presence(g, city.pos),
             })
         });
+        let conquest = self.plan.as_ref().and_then(|plan| {
+            if plan.strategy != GrandStrategy::Conquest {
+                return None;
+            }
+            let cid = plan.target_city?;
+            let city = g.cities.get(&cid)?;
+            if city.owner == pid {
+                return None;
+            }
+            let declared = g.is_at_war(pid, city.owner);
+            let eta = self
+                .commitments
+                .open_for(Kind::Capture, Owner::Empire)
+                .filter(|c| c.target == Target::City(cid))
+                .map(|c| c.eta)
+                .unwrap_or(g.turn + CONQUEST_ETA_TURNS);
+            Some(CaptureReading {
+                city: cid,
+                eta,
+                reading: if declared { 0 } else { 1000 } + city.hp + city.wall_hp,
+                declared,
+                present: declared && presence(g, city.pos),
+            })
+        });
+        let war = appointed.or(conquest);
         let ledger = &mut self.commitments;
         ledger.reconcile_units(g, pid, Kind::Settle, &self.settler_targets, &new_cities);
         ledger.reconcile_units(g, pid, Kind::Improve, &self.builder_targets, &new_cities);
