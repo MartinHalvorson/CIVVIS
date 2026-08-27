@@ -668,6 +668,78 @@ fn live_siege_response_replaces_a_queued_siege_with_a_local_defender() {
 }
 
 #[test]
+fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
+    // In the live Aquileia loss at turn 165, the default-on native emergency
+    // had confirmed recent city damage but only 58 Gold, so it could not buy
+    // a defender. The queue still began a Workshop while Artillery, a Field
+    // Cannon, and a Cuirassier finished the city. The damage predicate is
+    // already the deployed treatment; it must also reclaim one unsafe queue
+    // when the purchase lane cannot act.
+    let (mut game, city, _) = empire_with_a_capital(71_130);
+    game.players[0]
+        .techs
+        .extend([crate::name!("masonry"), crate::name!("engineering")]);
+    let city_state = game.cities.get_mut(&city).expect("capital exists");
+    city_state.buildings.push(crate::name!("walls"));
+    city_state.wall_hp = 40;
+    city_state.hp = 55;
+    city_state.last_attacked = 29;
+    game.turn = 30;
+    game.players[0].gold = 0.0;
+
+    let unsafe_queue = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    assert!(game.can_produce(0, city, &unsafe_queue));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: unsafe_queue.clone(),
+        },
+    )
+    .expect("queue an unsafe siege unit");
+
+    let mut native = AdvancedAi::new();
+    native.enable_native_emergency_purchase();
+    assert!(
+        !native.base.garrison_under_fire,
+        "the regression must use the deployed native-damage path, not the held live treatment"
+    );
+    let Item::Unit { unit: defender } = native
+        .native_emergency_item(&game, 0, city)
+        .expect("a breached, recently hit city needs a local defender")
+    else {
+        panic!("walls already stand, so the emergency must name a defender");
+    };
+
+    let mut unaffordable = game.clone();
+    assert!(
+        !native.emergency_city_defense_purchase(
+            &mut unaffordable,
+            0,
+            &StrategicPlan {
+                strategy: GrandStrategy::Recovery,
+                target_player: None,
+                target_city: None,
+                threatened_city: Some(city),
+                desired_cities: 1,
+                assessed_turn: game.turn,
+                rush: false,
+            },
+        ),
+        "zero Gold proves the immediate purchase cannot save this city"
+    );
+
+    native.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&Item::Unit { unit: defender }),
+        "confirmed damage must replace the unsafe queue with the local defender"
+    );
+}
+
+#[test]
 fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
     // Fresh-board planning seeds whatever Firaxis is building, then the
     // bridge intentionally clears a queue it did not order. At t125 of

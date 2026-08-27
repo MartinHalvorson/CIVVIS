@@ -19465,7 +19465,7 @@ impl AdvancedAi {
         }
     }
 
-    /// Let the live city-siege treatment interrupt one unsafe queue.
+    /// Let a confirmed city-siege treatment interrupt one unsafe queue.
     /// `BasicAi::besieged_city_item` normally reaches only an empty queue
     /// through `pick_item`, while Recovery's strategic governor skips a
     /// commitment at its safe default preemption margin. That left a city
@@ -19485,15 +19485,24 @@ impl AdvancedAi {
     /// `release_foreign_production` can also deliberately clear a host-owned
     /// queue just before this pass. The newly empty city needs the same
     /// handoff, or the ordinary governor refills it before the siege evaluator
-    /// can act. This is live-only, preserves repairs, walls, and military
-    /// production, and claims at most one unsafe queue each turn.
+    /// can act.
+    ///
+    /// The default-on `native-emergency-purchase` treatment has the same
+    /// high-confidence evidence after a city has actually been hit. Its Gold
+    /// purchase is immediate when the treasury can pay, but a city must still
+    /// reclaim unsafe production when it cannot. Reuse its exact damage and
+    /// recency predicate here instead of turning a low treasury into a second
+    /// threat heuristic.
+    ///
+    /// Both paths preserve repairs, walls, and military production, and claim
+    /// at most one unsafe queue each turn.
     fn redirect_unsafe_city_queue_for_defense(
         &self,
         g: &mut Game,
         pid: usize,
         threatened_city: Option<u32>,
     ) {
-        if !self.base.garrison_under_fire {
+        if !self.base.garrison_under_fire && !self.native_emergency_purchase {
             return;
         }
 
@@ -19513,7 +19522,11 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let Some(defence) = self.base.besieged_city_item(g, pid, city) else {
+            let Some(defence) = self
+                .base
+                .besieged_city_item(g, pid, city)
+                .or_else(|| self.native_emergency_item(g, pid, city))
+            else {
                 continue;
             };
             let damage = CITY_MAX_HP.saturating_sub(g.cities[&city].hp);
