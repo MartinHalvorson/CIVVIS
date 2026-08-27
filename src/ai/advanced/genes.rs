@@ -1613,6 +1613,28 @@ pub const GENES: &[Gene] = &[
     // screen can price the generic coast repair separately from a resource
     // layout refinement.
     Gene { tag: "coastal-city-sites-2", field: "coastal_city_sites_2", kind: Kind::OptIn, enable: AdvancedAi::enable_coastal_city_sites_2, disable: AdvancedAi::disable_coastal_city_sites_2 },
+    // `culture-floor` / `gold-income-floor` (2026-08-26): the live King seat
+    // `civvis-20260826T184456Z` reached t150 at 46% of the leader with 57
+    // culture to the Aztec 183 (Gaul: 180 from ONE city), one wonder to
+    // seven, 34 techs to 45, still in Classical Republic, after 44 turns at
+    // a treasury of 0 while the engine disbanded the army. Every one of
+    // the day's fifteen King runs that reached t100 shows the same shape:
+    // culture 16–62 against the best rival's 71–133, ZERO Amphitheatres
+    // and ZERO Markets or Lighthouses, one trade route on a capacity of
+    // one, six of them bankrupt for 31–73 turns. Three mechanisms in
+    // `production_value`: the Great Work veto returns −10,000 for the
+    // Amphitheatre (+2 culture, two slots) on every non-Culture seat; the
+    // Theatre Square's lane bonus is 0 under Expansion and Recovery, where
+    // the seat spends 165 of 184 readings; and nothing prices a gold
+    // building or district by the income it is missing — a Market is worth
+    // ≈76 under Expansion with the treasury at 0. See
+    // `advanced/yield_floors.rs`.
+    Gene { tag: "culture-floor", field: "culture_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_floor, disable: AdvancedAi::disable_culture_floor },
+    // The gold half: Markets and Lighthouses (a trade route each), any
+    // gold-yielding building, and the Commercial Hub or Harbor while fewer
+    // than half the cities hold one, priced by the shortfall under two
+    // Gold a turn per city.
+    Gene { tag: "gold-income-floor", field: "gold_income_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_income_floor, disable: AdvancedAi::disable_gold_income_floor },
     // `early-archers` (operator, 2026-08-26): an Archer for every city, the
     // frontier city first, while the world is Ancient and Classical. The
     // shipped army is sized by bodies (one land unit per city, the Scout
