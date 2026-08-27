@@ -19104,8 +19104,9 @@ fn a_settler_waits_for_its_guard_only_within_patience_outside_a_city() {
     }
 }
 
-/// A bounded escort wait avoids an opening freeze on quiet ground, but it
-/// must not expire into a route step a visible hostile can capture.  The
+/// A bounded escort response avoids an opening freeze on quiet ground, but it
+/// must not release an exposed Settler into a route step a visible hostile can
+/// capture. The
 /// previous rule released the second Settler of `civvis-20260826T054001Z`
 /// from a safe staging tile while its guard was three tiles behind; a
 /// barbarian warrior then took it on turn 14.
@@ -19169,7 +19170,7 @@ fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
 
     assert!(
         ai.stacked_escort_pace(&mut game, 0, settler).is_some(),
-        "a close capture threat keeps the Settler waiting after its ordinary patience"
+        "a close capture threat must handle the exposed Settler instead of releasing its ordinary route"
     );
     assert_ne!(
         game.units[&settler].pos, next,
