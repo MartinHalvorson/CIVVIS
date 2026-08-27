@@ -530,7 +530,7 @@ fn run_arm(arm: &str, maps: u64, opt_ins: &[String]) {
         );
     }
     // The worst lives, so a reader can go and look at one.
-    let mut worst: Vec<&Life> = lives.iter().copied().collect();
+    let mut worst: Vec<&Life> = lives.to_vec();
     worst.sort_by(|a, b| {
         b.idle_in_city
             .cmp(&a.idle_in_city)
@@ -547,7 +547,7 @@ fn run_arm(arm: &str, maps: u64, opt_ins: &[String]) {
                 acc
             });
         let mut reasons: Vec<(&str, u32)> = reasons.into_iter().collect();
-        reasons.sort_by(|a, b| b.1.cmp(&a.1));
+        reasons.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
         println!(
             "    seat {} born t{} at {:?}: {} idle-in-city of {} turns, first move {:?}, {:?}; {}",
             life.owner,

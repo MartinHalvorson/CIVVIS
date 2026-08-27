@@ -34667,6 +34667,7 @@ mod science_scaling;
 
 #[cfg(test)]
 mod science_funnel_census;
+#[cfg(test)]
 mod settler_idle_census;
 
 #[cfg(test)]
