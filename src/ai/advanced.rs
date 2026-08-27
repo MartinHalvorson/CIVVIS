@@ -8923,7 +8923,15 @@ impl AdvancedAi {
                         .get(city)
                         .is_some_and(|city| g.city_religion(city) == Some(faith))
                 })
-                .count();
+                .count()
+                // The host's own majority answer, where the mirror recorded
+                // one, counts the cities of theirs we have never seen; on a
+                // native board it is the same test as the count above.
+                .max(if g.civ_follows_religion(other.id, faith) {
+                    majority
+                } else {
+                    0
+                });
             required += majority;
             held += following.min(majority);
         }
@@ -8940,17 +8948,13 @@ impl AdvancedAi {
             .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
             .map(|player| player.id)
             .collect();
+        // `civ_follows_religion` is the engine's `following * 2 > cities`
+        // test on a native board and the host's `GetReligionInMajorityOfCities`
+        // answer on a mirrored one, where a rival's unseen cities count.
         let converted = g.players[pid].religion.as_ref().map_or(0, |religion| {
             living_majors
                 .iter()
-                .filter(|other| {
-                    let cities = g.player_city_ids(**other);
-                    let following = cities
-                        .iter()
-                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
-                        .count();
-                    !cities.is_empty() && following * 2 > cities.len()
-                })
+                .filter(|other| g.civ_follows_religion(**other, religion.as_str()))
                 .count()
         });
         (converted, living_majors.len())
