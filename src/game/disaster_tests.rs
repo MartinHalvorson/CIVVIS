@@ -304,9 +304,9 @@ fn a_volcanic_natural_wonder_erupts_and_leaves_its_own_volcanic_soil() {
         game.resolve_eruption(volcano, 3);
 
         assert!(
-            ring.iter()
-                .all(|position| game.map.tiles[position].feature.as_deref()
-                    == Some("volcanic_soil")),
+            ring.iter().all(
+                |position| game.map.tiles[position].feature.as_deref() == Some("volcanic_soil")
+            ),
             "{wonder} left no Volcanic Soil on the ring it reached"
         );
         assert_eq!(

@@ -14229,7 +14229,12 @@ fetchpriority=\"high\""
             .expect("isVolcano helper");
         assert!(helper.contains("VOLCANO_FEATURES.has(feature)"));
         assert!(helper.contains("RULES.features[feature].volcano"));
-        for volcano in ["\"volcano\"", "\"vesuvius\"", "\"kilimanjaro\"", "\"eyjafjallajokull\""] {
+        for volcano in [
+            "\"volcano\"",
+            "\"vesuvius\"",
+            "\"kilimanjaro\"",
+            "\"eyjafjallajokull\"",
+        ] {
             assert!(
                 EMBEDDED_INDEX
                     .split("const VOLCANO_FEATURES = new Set([")
