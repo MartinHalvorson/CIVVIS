@@ -2956,6 +2956,19 @@ impl AdvancedAi {
         self.screen_the_shooters = false;
     }
 
+    /// An Archer for every city, the frontier city first, while the world
+    /// is Ancient and Classical, and Archery chased until a city can train
+    /// one. Filed here rather than under a marker: a whole function under
+    /// one reads as an entry. See `early_archers`.
+    pub fn enable_early_archers(&mut self) {
+        self.early_archers = true;
+    }
+
+    /// The twin of `enable_early_archers`.
+    pub fn disable_early_archers(&mut self) {
+        self.early_archers = false;
+    }
+
     /// `culture-floor`: a culture-yielding building is exempt from the Great
     /// Work veto and the Theatre Square is priced while the empire's culture
     /// a turn trails the strongest major's by the floor ratio. See
