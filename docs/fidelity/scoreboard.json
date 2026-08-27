@@ -2,6 +2,573 @@
  "generated_by": "tools/live_divergence.py",
  "runs": [
   {
+   "comparable_turns": 148,
+   "compared_turns": 148,
+   "events": "/private/tmp/claude-501/-Users-martbot-mbp-m5-max-128/1fed1a61-675f-4925-8b9f-261a33340ce9/scratchpad/runs/civvis-20260826T184456Z/events.jsonl",
+   "first_turn": 1,
+   "frames": 302,
+   "last_turn": 150,
+   "mode": "projection",
+   "processed_at": "2026-08-26T20:55:44Z",
+   "run": "civvis-20260826T184456Z",
+   "skipped": [
+    "8 deal/peace events recorded, not priced"
+   ],
+   "source_commit": "6e0ca60026fe2c8cd6f5b74da13528b467c931fc",
+   "subsystems": {
+    "city_culture": {
+     "coverage": 1.0,
+     "mae": 0.11563475624256835,
+     "median": 0.002340000000000231,
+     "n": 841,
+     "name": "city_culture",
+     "note": "per-city culture at t+1",
+     "turns": 148,
+     "unit": "yield/turn",
+     "worst": [
+      {
+       "abs": 1.6306000000000012,
+       "key": "Ostia",
+       "live": 15.4844,
+       "sim": 17.115000000000002,
+       "turn": 126
+      },
+      {
+       "abs": 1.5,
+       "key": "Ostia",
+       "live": 17.25,
+       "sim": 15.75,
+       "turn": 116
+      },
+      {
+       "abs": 1.4950000000000028,
+       "key": "Ostia",
+       "live": 17.25,
+       "sim": 15.754999999999997,
+       "turn": 141
+      },
+      {
+       "abs": 1.4950000000000028,
+       "key": "Ostia",
+       "live": 17.25,
+       "sim": 15.754999999999997,
+       "turn": 142
+      },
+      {
+       "abs": 1.4950000000000028,
+       "key": "Ostia",
+       "live": 17.25,
+       "sim": 15.754999999999997,
+       "turn": 143
+      }
+     ]
+    },
+    "city_faith": {
+     "coverage": 1.0,
+     "mae": 0.019305426872770554,
+     "median": 0.0,
+     "n": 841,
+     "name": "city_faith",
+     "note": "per-city faith at t+1",
+     "turns": 148,
+     "unit": "yield/turn",
+     "worst": [
+      {
+       "abs": 2.0,
+       "key": "Rome",
+       "live": 2.0,
+       "sim": 0.0,
+       "turn": 7
+      },
+      {
+       "abs": 1.8,
+       "key": "Brundisium",
+       "live": 0.0,
+       "sim": 1.8,
+       "turn": 139
+      },
+      {
+       "abs": 1.0,
+       "key": "Rome",
+       "live": 1.0,
+       "sim": 2.0,
+       "turn": 15
+      },
+      {
+       "abs": 1.0,
+       "key": "Rome",
+       "live": 2.0,
+       "sim": 1.0,
+       "turn": 30
+      },
+      {
+       "abs": 1.0,
+       "key": "Rome",
+       "live": 0.0,
+       "sim": 1.0,
+       "turn": 61
+      }
+     ]
+    },
+    "city_food": {
+     "coverage": 1.0,
+     "mae": 0.13793103448275862,
+     "median": 0.0,
+     "n": 841,
+     "name": "city_food",
+     "note": "per-city food at t+1",
+     "turns": 148,
+     "unit": "yield/turn",
+     "worst": [
+      {
+       "abs": 5.0,
+       "key": "Arpinum",
+       "live": 17.0,
+       "sim": 12.0,
+       "turn": 49
+      },
+      {
+       "abs": 5.0,
+       "key": "Arpinum",
+       "live": 17.0,
+       "sim": 22.0,
+       "turn": 66
+      },
+      {
+       "abs": 5.0,
+       "key": "Rome",
+       "live": 21.0,
+       "sim": 26.0,
+       "turn": 89
+      },
+      {
+       "abs": 5.0,
+       "key": "Antium",
+       "live": 27.0,
+       "sim": 22.0,
+       "turn": 148
+      },
+      {
+       "abs": 4.0,
+       "key": "Mediolanum",
+       "live": 12.0,
+       "sim": 16.0,
+       "turn": 65
+      }
+     ]
+    },
+    "city_gold": {
+     "coverage": 1.0,
+     "mae": 0.08864666944114151,
+     "median": 0.0023440000000000127,
+     "n": 841,
+     "name": "city_gold",
+     "note": "per-city gold at t+1",
+     "turns": 148,
+     "unit": "yield/turn",
+     "worst": [
+      {
+       "abs": 4.0,
+       "key": "Mediolanum",
+       "live": 4.0,
+       "sim": 0.0,
+       "turn": 148
+      },
+      {
+       "abs": 3.6007799999999994,
+       "key": "Durocortorum",
+       "live": 6.30078,
+       "sim": 2.7,
+       "turn": 142
+      },
+      {
+       "abs": 2.7007999999999974,
+       "key": "Rome",
+       "live": 19.8008,
+       "sim": 17.1,
+       "turn": 138
+      },
+      {
+       "abs": 2.1999999999999993,
+       "key": "Rome",
+       "live": 22.0,
+       "sim": 19.8,
+       "turn": 149
+      },
+      {
+       "abs": 1.8,
+       "key": "Durocortorum",
+       "live": 0.0,
+       "sim": 1.8,
+       "turn": 88
+      }
+     ]
+    },
+    "city_loyalty": {
+     "coverage": 1.0,
+     "mae": 0.12907392236850615,
+     "median": 0.0,
+     "n": 841,
+     "name": "city_loyalty",
+     "note": "per-city loyalty at t+1",
+     "turns": 148,
+     "unit": "loyalty",
+     "worst": [
+      {
+       "abs": 14.219178082191775,
+       "key": "Arpinum",
+       "live": 83.1719,
+       "sim": 97.39107808219177,
+       "turn": 68
+      },
+      {
+       "abs": 13.945205479452056,
+       "key": "Arpinum",
+       "live": 80.0625,
+       "sim": 94.00770547945206,
+       "turn": 67
+      },
+      {
+       "abs": 13.015600000000006,
+       "key": "Arpinum",
+       "live": 86.9844,
+       "sim": 100.0,
+       "turn": 69
+      },
+      {
+       "abs": 10.131147540983605,
+       "key": "Arpinum",
+       "live": 87.2812,
+       "sim": 97.4123475409836,
+       "turn": 64
+      },
+      {
+       "abs": 10.131147540983605,
+       "key": "Arpinum",
+       "live": 83.4062,
+       "sim": 93.5373475409836,
+       "turn": 65
+      }
+     ]
+    },
+    "city_production": {
+     "coverage": 1.0,
+     "mae": 0.24974698692033204,
+     "median": 0.0015600000000000058,
+     "n": 841,
+     "name": "city_production",
+     "note": "per-city production at t+1",
+     "turns": 148,
+     "unit": "yield/turn",
+     "worst": [
+      {
+       "abs": 5.799999999999997,
+       "key": "Rome",
+       "live": 40.0,
+       "sim": 34.2,
+       "turn": 91
+      },
+      {
+       "abs": 4.3,
+       "key": "Antium",
+       "live": 7.0,
+       "sim": 2.7,
+       "turn": 116
+      },
+      {
+       "abs": 4.0,
+       "key": "Antium",
+       "live": 17.0,
+       "sim": 13.0,
+       "turn": 148
+      },
+      {
+       "abs": 3.9000000000000004,
+       "key": "Durocortorum",
+       "live": 12.0,
+       "sim": 8.1,
+       "turn": 106
+      },
+      {
+       "abs": 3.3000000000000007,
+       "key": "Rome",
+       "live": 33.0,
+       "sim": 29.7,
+       "turn": 149
+      }
+     ]
+    },
+    "city_religion": {
+     "coverage": 0.7837837837837838,
+     "mae": 0.03350970017636684,
+     "median": 0.0,
+     "n": 567,
+     "name": "city_religion",
+     "note": "majority religion at t+1; MAE is the disagreement rate",
+     "turns": 116,
+     "unit": "agreement",
+     "worst": [
+      {
+       "abs": 1.0,
+       "key": "Arpinum live=buddhism sim=-",
+       "live": 1.0,
+       "sim": 0.0,
+       "turn": 35
+      },
+      {
+       "abs": 1.0,
+       "key": "Mediolanum live=confucianism sim=-",
+       "live": 1.0,
+       "sim": 0.0,
+       "turn": 45
+      },
+      {
+       "abs": 1.0,
+       "key": "Ostia live=confucianism sim=-",
+       "live": 1.0,
+       "sim": 0.0,
+       "turn": 55
+      },
+      {
+       "abs": 1.0,
+       "key": "Rome live=confucianism sim=-",
+       "live": 1.0,
+       "sim": 0.0,
+       "turn": 57
+      },
+      {
+       "abs": 1.0,
+       "key": "Ostia live=- sim=confucianism",
+       "live": 1.0,
+       "sim": 0.0,
+       "turn": 60
+      }
+     ]
+    },
+    "city_science": {
+     "coverage": 1.0,
+     "mae": 0.4283996646848997,
+     "median": 0.002340000000000231,
+     "n": 841,
+     "name": "city_science",
+     "note": "per-city science at t+1, live export vs engine model",
+     "turns": 148,
+     "unit": "yield/turn",
+     "worst": [
+      {
+       "abs": 4.9483999999999995,
+       "key": "Ostia",
+       "live": 32.7734,
+       "sim": 27.825000000000003,
+       "turn": 149
+      },
+      {
+       "abs": 4.023400000000006,
+       "key": "Ostia",
+       "live": 35.6484,
+       "sim": 31.624999999999996,
+       "turn": 141
+      },
+      {
+       "abs": 4.023400000000006,
+       "key": "Ostia",
+       "live": 35.6484,
+       "sim": 31.624999999999996,
+       "turn": 142
+      },
+      {
+       "abs": 4.023400000000006,
+       "key": "Ostia",
+       "live": 35.6484,
+       "sim": 31.624999999999996,
+       "turn": 143
+      },
+      {
+       "abs": 4.0,
+       "key": "Rome",
+       "live": 5.0,
+       "sim": 9.0,
+       "turn": 46
+      }
+     ]
+    },
+    "combat_damage": {
+     "coverage": 0.0,
+     "mae": null,
+     "median": null,
+     "n": 0,
+     "name": "combat_damage",
+     "note": "ledger `combat` defender damage vs engine expected damage on the t board; needs the tactical ledger",
+     "turns": 0,
+     "unit": "hp",
+     "worst": []
+    },
+    "deal_outcome": {
+     "coverage": 0.0,
+     "mae": null,
+     "median": null,
+     "n": 0,
+     "name": "deal_outcome",
+     "note": "`deal_closed`/`peace_response` events are counted below; the engine's valuation of a live deal is not yet paired",
+     "turns": 0,
+     "unit": "agreement",
+     "worst": []
+    },
+    "empire_faith_delta": {
+     "coverage": 1.0,
+     "mae": 2.0501738108108105,
+     "median": 1.0,
+     "n": 148,
+     "name": "empire_faith_delta",
+     "note": "faith change t -> t+1; the live delta includes faith purchases, read the median",
+     "turns": 148,
+     "unit": "faith",
+     "worst": [
+      {
+       "abs": 14.203124000000003,
+       "key": "faith",
+       "live": 0.0,
+       "sim": 14.203124000000003,
+       "turn": 118
+      },
+      {
+       "abs": 14.0,
+       "key": "faith",
+       "live": -12.0,
+       "sim": 2.0,
+       "turn": 14
+      },
+      {
+       "abs": 13.850779999999986,
+       "key": "faith",
+       "live": 0.0,
+       "sim": 13.850779999999986,
+       "turn": 143
+      },
+      {
+       "abs": 10.102344000000002,
+       "key": "faith",
+       "live": 0.0,
+       "sim": 10.102344000000002,
+       "turn": 89
+      },
+      {
+       "abs": 8.800779999999975,
+       "key": "faith",
+       "live": 0.0,
+       "sim": 8.800779999999975,
+       "turn": 147
+      }
+     ]
+    },
+    "empire_favor_delta": {
+     "coverage": 1.0,
+     "mae": 0.08108108108108109,
+     "median": 0.0,
+     "n": 148,
+     "name": "empire_favor_delta",
+     "note": "diplomatic favor change t -> t+1; needs `favor` in both frames",
+     "turns": 148,
+     "unit": "favor",
+     "worst": [
+      {
+       "abs": 2.0,
+       "key": "favor",
+       "live": 1.0,
+       "sim": 3.0,
+       "turn": 149
+      },
+      {
+       "abs": 1.0,
+       "key": "favor",
+       "live": 1.0,
+       "sim": 0.0,
+       "turn": 30
+      },
+      {
+       "abs": 1.0,
+       "key": "favor",
+       "live": 1.0,
+       "sim": 2.0,
+       "turn": 46
+      },
+      {
+       "abs": 1.0,
+       "key": "favor",
+       "live": 2.0,
+       "sim": 3.0,
+       "turn": 101
+      },
+      {
+       "abs": 1.0,
+       "key": "favor",
+       "live": 2.0,
+       "sim": 3.0,
+       "turn": 126
+      }
+     ]
+    },
+    "empire_gold_delta": {
+     "coverage": 1.0,
+     "mae": 18.058836222972957,
+     "median": 16.160147999999996,
+     "n": 148,
+     "name": "empire_gold_delta",
+     "note": "treasury change t -> t+1, live vs engine's passive turn; the live delta includes purchases and deal income no passive projection can see, so the MEDIAN is the income reading and the worst turns are the seat's spending",
+     "turns": 148,
+     "unit": "gold",
+     "worst": [
+      {
+       "abs": 150.10936800000002,
+       "key": "gold",
+       "live": -120.0,
+       "sim": 30.109368000000018,
+       "turn": 74
+      },
+      {
+       "abs": 35.107020000000006,
+       "key": "gold",
+       "live": 0.0,
+       "sim": 35.107020000000006,
+       "turn": 62
+      },
+      {
+       "abs": 34.910144,
+       "key": "gold",
+       "live": 0.0,
+       "sim": 34.910144,
+       "turn": 67
+      },
+      {
+       "abs": 34.0078,
+       "key": "gold",
+       "live": 0.0,
+       "sim": 34.0078,
+       "turn": 63
+      },
+      {
+       "abs": 33.910144,
+       "key": "gold",
+       "live": 0.0,
+       "sim": 33.910144,
+       "turn": 68
+      }
+     ]
+    },
+    "tourism": {
+     "coverage": 0.0,
+     "mae": null,
+     "median": null,
+     "n": 0,
+     "name": "tourism",
+     "note": "the seat's own tourism per turn is not in the state export (only rivals' is); no pair can be formed",
+     "turns": 0,
+     "unit": "tourism/turn",
+     "worst": []
+    }
+   }
+  },
+  {
    "comparable_turns": 249,
    "compared_turns": 249,
    "events": "/Users/martin/civvis-civ6-runs/control/civvis-20260819T035349Z/events.jsonl",

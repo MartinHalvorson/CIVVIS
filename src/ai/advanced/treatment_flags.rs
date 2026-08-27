@@ -2993,6 +2993,47 @@ impl AdvancedAi {
         self.coastal_city_sites_2 = false;
     }
 
+    // Filed here rather than under a marker: `test_treatment_append_points`
+    // reads every line under a marker as an entry and takes its first
+    // identifier, so a whole function files as `pub` and `self`.
+
+    /// Price a strike with the two strengths the engine will resolve it
+    /// with, so matchup, flanking, adjacent support, ground and the river
+    /// reach the exchange evaluation. See `exchange_is_the_engines`.
+    pub fn enable_exchange_is_the_engines(&mut self) {
+        self.base.exchange_is_the_engines = true;
+    }
+
+    /// The twin of `enable_exchange_is_the_engines`.
+    pub fn disable_exchange_is_the_engines(&mut self) {
+        self.base.exchange_is_the_engines = false;
+    }
+
+    /// Price the defender on the tile it is being asked about, with that
+    /// tile's own defence, so a unit weighing a hill is credited for the
+    /// hill. See `defend_where_you_stand`.
+    pub fn enable_defend_where_you_stand(&mut self) {
+        self.base.defend_where_you_stand = true;
+    }
+
+    /// The twin of `enable_defend_where_you_stand`.
+    pub fn disable_defend_where_you_stand(&mut self) {
+        self.base.defend_where_you_stand = false;
+    }
+
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it — the engine's own `Action::Swap`, which no controller has
+    /// ever chosen — so the line does not open when it leaves. See
+    /// `swap_rotation`.
+    pub fn enable_swap_rotation(&mut self) {
+        self.swap_rotation = true;
+    }
+
+    /// The twin of `enable_swap_rotation`.
+    pub fn disable_swap_rotation(&mut self) {
+        self.swap_rotation = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

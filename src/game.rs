@@ -653,6 +653,9 @@ pub struct VictoryRaces {
     pub religious: f64,
     pub converted_civs: usize,
     pub religious_target: usize,
+    /// Cities anywhere following this seat's religion, the religion lane's
+    /// own number on the shipped overview ([`Game::cities_following_religion`]).
+    pub cities_following_religion: usize,
     pub diplomatic: f64,
     pub diplomatic_points: i64,
     pub domination: f64,
@@ -2735,6 +2738,29 @@ pub enum Item {
     },
 }
 
+/// One row of the host's production menu for a city: what the engine says the
+/// item costs here and how many turns it takes, from
+/// `BuildQueue:GetXCost(row.Index)` and `GetTurnsLeft(hash)`. `None` where the
+/// accessor did not answer. See [`Game::host_buildable`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HostMenuEntry {
+    #[serde(default)]
+    pub cost: Option<f64>,
+    #[serde(default)]
+    pub turns: Option<f64>,
+}
+
+/// One row of the host's purchase menu: the engine's own price in each
+/// currency, `None` where it will not sell for that currency. See
+/// [`Game::host_purchasable`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HostPurchaseEntry {
+    #[serde(default)]
+    pub gold: Option<f64>,
+    #[serde(default)]
+    pub faith: Option<f64>,
+}
+
 /// District placements owned by a city.
 ///
 /// Older saves encoded this as `{ "campus": [q, r] }`, which made it
@@ -3906,6 +3932,16 @@ pub struct ObservedPublicEmpireStats {
     pub foreign_tourists: Option<usize>,
     #[serde(default)]
     pub domestic_tourists: Option<usize>,
+    /// Two more of that screen's own lane numbers: the religion lane's cities
+    /// following this seat's religion (`GetNumCitiesFollowingReligion`, which
+    /// counts cities the seat has never seen) and the domination lane's
+    /// military strength without the treasury
+    /// (`GetMilitaryStrengthWithoutTreasury` — the army alone, where
+    /// `observed_military_power` is the ribbon figure with Gold folded in).
+    #[serde(default)]
+    pub cities_following_religion: Option<usize>,
+    #[serde(default)]
+    pub military_no_treasury: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -5676,6 +5712,21 @@ pub struct Game {
     /// this empty and derive every standing from their full board.
     #[serde(default)]
     pub observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
+    /// The religion a majority of a seat's cities follow, as the host reports
+    /// it for every met major (`GetReligionInMajorityOfCities`, the test the
+    /// shipped religion tab runs to call a civilization converted), keyed by
+    /// seat. [`Game::majority_religion_of`] prefers it to counting the cities
+    /// the board holds, which for a rival are only the ones in view. Empty on
+    /// a native game.
+    #[serde(default)]
+    pub observed_majority_religion: BTreeMap<usize, String>,
+    /// Tourists one seat's culture draws from another as the host counts them
+    /// (`GetTouristsFrom` on the source's culture), keyed (tourism source,
+    /// where the tourists come from) — the order `visiting_tourists_from`
+    /// takes. The mirror records our seat's draw from each met rival, the
+    /// per-rival term of `foreign_tourists`. Empty on a native game.
+    #[serde(default)]
+    pub observed_visiting_tourists: BTreeMap<(usize, usize), i64>,
     /// Per-city host-to-model corrections and exact citizen assignments for a
     /// mirrored Firaxis turn. Native games leave these empty. Corrections are
     /// additive so counterfactual buildings, policies, and assignments still
@@ -5933,6 +5984,31 @@ pub struct Game {
     /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
     #[serde(default)]
     pub blocked_purchases: BTreeMap<u32, BTreeSet<String>>,
+    /// The HOST's production menu per city, keyed like `blocked_production`
+    /// (`unit:warrior`, `formation:warrior:1`, `building:library`,
+    /// `wonder:pyramids`, `district:campus`, `project:...`): every item the
+    /// engine's `BuildQueue:CanProduce(hash, false, true)` says this city can
+    /// START now, with its cost and turns (`StateCity::buildable`). Empty in
+    /// an ordinary game and on an export without the key, so neither changes.
+    /// When a city has an entry, [`Game::can_produce`] refuses any unit,
+    /// formation, building, wonder, district or project the menu does not
+    /// list — the positive gate beside the refusal cooldown — and
+    /// [`Game::item_cost_for_city`] prices from it.
+    #[serde(default)]
+    pub host_buildable: BTreeMap<u32, BTreeMap<String, HostMenuEntry>>,
+    /// The HOST's purchase menu per city, same keys: what
+    /// `CityManager.CanStartCommand(city, PURCHASE, ...)` says this city can
+    /// BUY now and what `CityGold:GetPurchaseCost` charges
+    /// (`StateCity::purchasable`). When a city has an entry the three purchase
+    /// pricers answer from it and nothing else; an item off the menu is not
+    /// for sale.
+    #[serde(default)]
+    pub host_purchasable: BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>,
+    /// The plots the host's `GetOperationTargets(BUILD)` offers a district in
+    /// a city, kept only when the export carried the complete offer. A site
+    /// outside it is not producible and `district_sites` drops it.
+    #[serde(default)]
+    pub host_district_plots: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
     /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
     /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
     ///
@@ -5967,6 +6043,25 @@ pub struct Game {
     /// perfect vision of the entire world.
     #[serde(default)]
     pub host_observed: BTreeSet<Pos>,
+    /// Appeal as the host counts it, per plot (`Plot:GetAppeal` off the tile
+    /// export). [`Game::tile_appeal`] prefers it to the derivation from the
+    /// six neighbours the board can see; empty on a native game.
+    #[serde(default)]
+    pub observed_appeal: BTreeMap<Pos, i32>,
+    /// What the host says a route a Trader could START would pay its origin,
+    /// keyed by (origin, destination) — the shipped TradeRouteChooser's own
+    /// `CalculateOriginYield…` sum, exported while a route slot is open.
+    /// Distinct from [`Game::observed_route_yields`], which is for ACTIVE
+    /// routes and stands in for the model inside `city_yields`; this one is
+    /// read by the trader-destination chooser. Empty on a native game.
+    #[serde(default)]
+    pub observed_route_options: BTreeMap<(u32, u32), crate::rules::Yields>,
+    /// The host's climate readings beyond the phase itself: the world's CO2,
+    /// the temperature, the sea-level and disaster forecasts
+    /// (`GameClimate`, the shipped ClimateScreen's reads). `None` on a native
+    /// game or an export without it.
+    #[serde(default)]
+    pub observed_climate: Option<ObservedClimate>,
     /// Ground a HOST holds for somebody else and will not let this seat's units
     /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
     ///
@@ -6169,6 +6264,33 @@ pub struct Storm {
     pub ends: u32,
 }
 
+/// The host's climate readings a mirrored board carries beside its phase —
+/// `GameClimate` as the shipped ClimateScreen reads it. Each field is `None`
+/// where the accessor was missing on the host's ruleset.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ObservedClimate {
+    /// Degrees above the starting baseline (`GetTemperatureChange`).
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    /// Every civilization's CO2 together (`GetTotalCO2Footprint`), which
+    /// [`Game::global_co2_emissions`] prefers to the board's own sum.
+    #[serde(default)]
+    pub co2_total: Option<f64>,
+    /// Turns until the next sea-level rise (`GetNextSeaLevelRiseTurns`).
+    #[serde(default)]
+    pub sea_level_turns: Option<i64>,
+    /// Tiles the sea has flooded so far (`GetTilesFlooded`).
+    #[serde(default)]
+    pub tiles_flooded: Option<i64>,
+    /// Per-turn percent chance of a storm, a river flood and a drought.
+    #[serde(default)]
+    pub storm_pct: Option<f64>,
+    #[serde(default)]
+    pub flood_pct: Option<f64>,
+    #[serde(default)]
+    pub drought_pct: Option<f64>,
+}
+
 /// A drought in progress. Droughts are the longest-lived disaster, so the
 /// tiles they cover are remembered until the rain returns.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -6307,6 +6429,11 @@ struct GameSer {
     #[serde(default)]
     observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
     #[serde(default)]
+    observed_majority_religion: BTreeMap<usize, String>,
+    /// A list, not a map: JSON cannot key an object by a tuple.
+    #[serde(default)]
+    observed_visiting_tourists: Vec<((usize, usize), i64)>,
+    #[serde(default)]
     observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
     #[serde(default)]
     observed_city_amenity_adjustments: BTreeMap<u32, i64>,
@@ -6321,6 +6448,12 @@ struct GameSer {
     observed_great_work_housing: Option<BTreeMap<u32, BTreeMap<String, usize>>>,
     #[serde(default)]
     observed_route_yields: Vec<((u32, u32), crate::rules::Yields)>,
+    #[serde(default)]
+    observed_route_options: Vec<((u32, u32), crate::rules::Yields)>,
+    #[serde(default)]
+    observed_appeal: Vec<(Pos, i32)>,
+    #[serde(default)]
+    observed_climate: Option<ObservedClimate>,
     #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -6504,6 +6637,8 @@ impl From<GameSer> for Game {
             observed_leader_types: s.observed_leader_types,
             observed_yield_adjustments: s.observed_yield_adjustments,
             observed_public_empire_stats: s.observed_public_empire_stats,
+            observed_majority_religion: s.observed_majority_religion,
+            observed_visiting_tourists: s.observed_visiting_tourists.into_iter().collect(),
             observed_city_yield_adjustments: s.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: s.observed_city_housing_adjustments,
@@ -6511,6 +6646,9 @@ impl From<GameSer> for Game {
             observed_route_posts: s.observed_route_posts.into_iter().collect(),
             observed_great_work_housing: s.observed_great_work_housing,
             observed_route_yields: s.observed_route_yields.into_iter().collect(),
+            observed_route_options: s.observed_route_options.into_iter().collect(),
+            observed_appeal: s.observed_appeal.into_iter().collect(),
+            observed_climate: s.observed_climate,
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
@@ -6536,6 +6674,9 @@ impl From<GameSer> for Game {
             host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
+            host_buildable: BTreeMap::new(),
+            host_purchasable: BTreeMap::new(),
+            host_district_plots: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -6714,6 +6855,8 @@ impl From<Game> for GameSer {
             observed_leader_types: g.observed_leader_types,
             observed_yield_adjustments: g.observed_yield_adjustments,
             observed_public_empire_stats: g.observed_public_empire_stats,
+            observed_majority_religion: g.observed_majority_religion,
+            observed_visiting_tourists: g.observed_visiting_tourists.into_iter().collect(),
             observed_city_yield_adjustments: g.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: g.observed_city_housing_adjustments,
@@ -6721,6 +6864,9 @@ impl From<Game> for GameSer {
             observed_route_posts: g.observed_route_posts.into_iter().collect(),
             observed_great_work_housing: g.observed_great_work_housing,
             observed_route_yields: g.observed_route_yields.into_iter().collect(),
+            observed_route_options: g.observed_route_options.into_iter().collect(),
+            observed_appeal: g.observed_appeal.into_iter().collect(),
+            observed_climate: g.observed_climate,
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
@@ -6810,6 +6956,7 @@ impl Game {
         self.observed_route_posts.clear();
         self.observed_great_work_housing = None;
         self.observed_route_yields.clear();
+        self.observed_route_options.clear();
         self.observed_city_worked_tiles.clear();
         self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
@@ -7142,6 +7289,8 @@ impl Game {
             observed_leader_types: BTreeMap::new(),
             observed_yield_adjustments: BTreeMap::new(),
             observed_public_empire_stats: BTreeMap::new(),
+            observed_majority_religion: BTreeMap::new(),
+            observed_visiting_tourists: BTreeMap::new(),
             observed_city_yield_adjustments: BTreeMap::new(),
             observed_city_amenity_adjustments: BTreeMap::new(),
             observed_city_housing_adjustments: BTreeMap::new(),
@@ -7156,6 +7305,9 @@ impl Game {
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
+            observed_appeal: BTreeMap::new(),
+            observed_route_options: BTreeMap::new(),
+            observed_climate: None,
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
@@ -7172,6 +7324,9 @@ impl Game {
             host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
+            host_buildable: BTreeMap::new(),
+            host_purchasable: BTreeMap::new(),
+            host_district_plots: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -19475,6 +19630,15 @@ impl Game {
     }
 
     pub fn global_co2_emissions(&self) -> f64 {
+        // A mirrored board carries the host's world total; its rivals'
+        // emissions never cross, so the sum below would be ours alone.
+        if let Some(total) = self
+            .observed_climate
+            .as_ref()
+            .and_then(|climate| climate.co2_total)
+        {
+            return total.max(0.0);
+        }
         self.players
             .iter()
             .map(|player| player.co2_emissions)
@@ -19607,6 +19771,45 @@ impl Game {
             tile.coastal_lowland = 0;
             tile.flooded = false;
             tile.submerged = true;
+        }
+    }
+
+    /// Carry the host's climate-change level onto a mirrored board. The level
+    /// is the phase; the bands it has flooded follow the shipped
+    /// `CoastalLowlands` table (`COASTAL_LOWLAND_1M` floods at
+    /// `RANDOM_EVENT_SEA_LEVEL_RISE2`, 2M at RISE3, 3M at RISE5 — the same
+    /// rows [`Game::apply_climate_phase`] runs), marked without the damage,
+    /// the population loss and the moments a native rise books, because the
+    /// host booked those itself and the export already shows their result. A
+    /// band the host has SUBMERGED crosses as coast on the plot record and
+    /// keeps no lowland type, so only flooding is marked here. A city whose
+    /// Flood Barrier stands keeps its ground, as the host's does.
+    pub(crate) fn mirror_set_climate_phase(&mut self, phase: u8) {
+        self.climate_phase = phase.min(7);
+        let flooded_bands: Vec<u8> = [(2u8, 1u8), (3, 2), (5, 3)]
+            .iter()
+            .filter(|(at, _)| self.climate_phase >= *at)
+            .map(|(_, band)| *band)
+            .collect();
+        let positions: Vec<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                tile.coastal_lowland > 0
+                    && !tile.submerged
+                    && !tile.flooded
+                    && flooded_bands.contains(&tile.coastal_lowland)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        for position in positions {
+            if self.lowland_has_barrier(position) {
+                continue;
+            }
+            if let Some(tile) = self.map.tiles.get_mut(&position) {
+                tile.flooded = true;
+            }
         }
     }
 
@@ -26890,6 +27093,13 @@ impl Game {
     }
 
     fn tile_appeal_uncached(&self, position: Pos) -> i32 {
+        // The host's own count where the export carried one. The derivation
+        // below reads the six neighbours the board can see; the host's
+        // reads the ones it has, fog included, plus every modifier the model
+        // does not carry.
+        if let Some(appeal) = self.observed_appeal.get(&position) {
+            return *appeal;
+        }
         let Some(tile) = self.map.get(position) else {
             return 0;
         };
@@ -31718,7 +31928,7 @@ impl Game {
             .collect();
         if !self.city_accepts_new_district_site(city, dname) {
             out.sort();
-            return out;
+            return self.host_offered_district_sites(cid, dname, out);
         }
         for pos in &city.owned_tiles {
             if *pos == city.pos || self.wdist(*pos, city.pos) > 3 {
@@ -31873,7 +32083,7 @@ impl Game {
             out.push(*pos);
         }
         out.sort();
-        out
+        self.host_offered_district_sites(cid, dname, out)
     }
 
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
@@ -32208,6 +32418,13 @@ impl Game {
         if currency != "faith" {
             return None;
         }
+        // ★ The host's own answer first — see `building_gold_purchase_cost`.
+        let asked = Item::Building {
+            building: Name::new(building),
+        };
+        if let Some(host) = self.host_purchase_price(cid, &asked, "faith") {
+            return host.filter(|_| !self.purchase_is_blocked(cid, &asked));
+        }
         let discount = self.city_district_effect(city, "gold_faith_purchase_discount_pct");
         Some(spec.cost * 2.0 * (1.0 - discount / 100.0).max(0.0))
     }
@@ -32378,6 +32595,29 @@ impl Game {
     /// of Coastal Lowland tiles they must protect; all other items retain the
     /// civilization-wide cost rules above.
     pub fn item_cost_for_city(&self, pid: usize, cid: u32, item: &Item) -> f64 {
+        // ★ The host's own cost first, when its menu carries this item for
+        // this city (`StateCity::buildable`): `GetXCost(row.Index)` after
+        // every modifier the engine applies. A founded district keeps the cost
+        // it was founded at, exactly as below.
+        if !self.host_buildable.is_empty() {
+            let founded = matches!(item, Item::District { district, pos }
+                if self
+                    .map
+                    .get(*pos)
+                    .and_then(|tile| tile.district_foundation.as_ref())
+                    .is_some_and(|foundation| foundation.district == *district));
+            if !founded {
+                if let Some(cost) = self
+                    .host_buildable
+                    .get(&cid)
+                    .and_then(|menu| menu.get(&Self::production_block_key(item)))
+                    .and_then(|entry| entry.cost)
+                    .filter(|cost| *cost > 0.0)
+                {
+                    return cost;
+                }
+            }
+        }
         if let Item::District { district, pos } = item {
             if let Some(foundation) = self
                 .map
@@ -33285,6 +33525,62 @@ impl Game {
         self.blocked_purchases = blocked;
     }
 
+    /// Replace the host's menus (see [`Game::host_buildable`]). Mirror input
+    /// like `replace_blocked_production`, and for the same reason it clears a
+    /// production menu memoised before the export arrived.
+    pub(crate) fn replace_host_menus(
+        &mut self,
+        buildable: BTreeMap<u32, BTreeMap<String, HostMenuEntry>>,
+        purchasable: BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>,
+        district_plots: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
+    ) {
+        self.host_buildable = buildable;
+        self.host_purchasable = purchasable;
+        self.host_district_plots = district_plots;
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
+    /// The host's own turns-to-complete for an item in this city
+    /// (`BuildQueue:GetTurnsLeft`), when the export carried it.
+    pub fn host_production_turns(&self, cid: u32, item: &Item) -> Option<f64> {
+        self.host_buildable
+            .get(&cid)?
+            .get(&Self::production_block_key(item))?
+            .turns
+    }
+
+    /// Whether the host menu is asked about this kind of item at all. Repairs
+    /// and Corporation products are not among the exported families.
+    fn host_menu_gates(item: &Item) -> bool {
+        !matches!(item, Item::Repair { .. } | Item::Product { .. })
+    }
+
+    /// The host's purchase price for an item in this city in a currency, when
+    /// the export carried this city's purchase menu: `Some(None)` is the host
+    /// declining to sell, `None` is no menu — ask the model.
+    fn host_purchase_price(&self, cid: u32, item: &Item, currency: &str) -> Option<Option<f64>> {
+        let menu = self.host_purchasable.get(&cid)?;
+        let entry = menu.get(&Self::production_block_key(item));
+        Some(match currency {
+            "gold" => entry.and_then(|entry| entry.gold),
+            "faith" => entry.and_then(|entry| entry.faith),
+            _ => None,
+        })
+    }
+
+    /// Keep only the sites the host's own placement offer includes, when the
+    /// export carried the complete offer for this district in this city.
+    fn host_offered_district_sites(&self, cid: u32, dname: Name, mut sites: Vec<Pos>) -> Vec<Pos> {
+        if let Some(offered) = self
+            .host_district_plots
+            .get(&cid)
+            .and_then(|plots| plots.get(&dname))
+        {
+            sites.retain(|pos| offered.contains(pos));
+        }
+        sites
+    }
+
     /// Whether the host recently refused to let this city BUY this item.
     ///
     /// ⚠ `pub(crate)` because the legal-action enumeration is not the only way a
@@ -33374,6 +33670,35 @@ impl Game {
             return false;
         }
         let city = &self.cities[&cid];
+        // ★ THE POSITIVE GATE. The set above says what the host REFUSED; this
+        // one says what the host OFFERS — `BuildQueue:CanProduce(hash, false,
+        // true)` for every family, exported per city (`StateCity::buildable`)
+        // and translated onto the same keys. Empty on an ordinary board and on
+        // an older export, so nothing changes there. The queue is exempt: the
+        // head is the host's own `producing`, listed or not at its discretion.
+        if Self::host_menu_gates(item) {
+            if let Some(menu) = self.host_buildable.get(&cid) {
+                if !menu.contains_key(&blocked)
+                    && !city
+                        .queue
+                        .iter()
+                        .any(|queued| Self::production_block_key(queued) == blocked)
+                {
+                    return false;
+                }
+            }
+            if let Item::District { district, pos } = item {
+                if self
+                    .host_district_plots
+                    .get(&cid)
+                    .and_then(|plots| plots.get(district))
+                    .is_some_and(|plots| !plots.contains(pos))
+                    && !city.queue.contains(item)
+                {
+                    return false;
+                }
+            }
+        }
         match item {
             Item::Formation { unit, formation } => {
                 let Some(spec) = self.rules.units.get(unit) else {
@@ -34125,11 +34450,18 @@ impl Game {
                 if self.map.tiles[pos].district_foundation.is_some() {
                     continue;
                 }
-                let cost = self
+                let modelled = self
                     .game_speed
                     .scale(self.district_cost_for_placement(pid, district, true))
                     * 4.0;
-                if faith_districts && p.faith + f64::EPSILON >= cost {
+                // The host's purchase menu prices a district too, when present.
+                let priced = |currency: &str| match self.host_purchase_price(cid, item, currency) {
+                    Some(host) => host,
+                    None => Some(modelled),
+                };
+                if faith_districts
+                    && priced("faith").is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
                         district: Name::new(district),
@@ -34137,7 +34469,9 @@ impl Game {
                         currency: "faith".to_string(),
                     });
                 }
-                if gold_districts && p.gold + f64::EPSILON >= cost {
+                if gold_districts
+                    && priced("gold").is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+                {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
                         district: Name::new(district),
@@ -34778,11 +35112,19 @@ impl Game {
                         if self.purchase_is_blocked(cid, item) {
                             continue;
                         }
-                        let cost = self
+                        let modelled = self
                             .game_speed
                             .scale(self.district_cost_for_placement(pid, district, true))
                             * 4.0;
-                        if faith_districts && p.faith + f64::EPSILON >= cost {
+                        // The host's purchase menu prices a district too, when present.
+                        let priced =
+                            |currency: &str| match self.host_purchase_price(cid, item, currency) {
+                                Some(host) => host,
+                                None => Some(modelled),
+                            };
+                        if faith_districts
+                            && priced("faith").is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                        {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
                                 district: Name::new(district),
@@ -34790,7 +35132,9 @@ impl Game {
                                 currency: "faith".to_string(),
                             });
                         }
-                        if gold_districts && p.gold + f64::EPSILON >= cost {
+                        if gold_districts
+                            && priced("gold").is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+                        {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
                                 district: Name::new(district),
@@ -39655,9 +39999,18 @@ impl Game {
         if unit == "spy" || formation > 2 || !matches!(currency, "gold" | "faith") {
             return None;
         }
-        if unit == "settler"
-            && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0)
-        {
+        // ★ The host's own answer first, for the standard formation the menu
+        // prices (`StateCity::purchasable`). Corps and Army purchases are not
+        // exported and keep the model's arithmetic below.
+        if formation == 0 {
+            let plain = Item::Unit {
+                unit: Name::new(unit),
+            };
+            if let Some(host) = self.host_purchase_price(cid, &plain, currency) {
+                return host.filter(|_| !self.purchase_is_blocked(cid, &plain));
+            }
+        }
+        if unit == "settler" && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0) {
             return None;
         }
 
@@ -40127,9 +40480,12 @@ impl Game {
         let item = Item::Building {
             building: Name::new(building),
         };
+        // ★ The host's own answer first — see `building_gold_purchase_cost`.
+        if let Some(host) = self.host_purchase_price(cid, &item, "faith") {
+            return host.filter(|_| !self.purchase_is_blocked(cid, &item));
+        }
         let district = spec
             .district
-
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
         // ★★★ CIVILIZATION VI SELLS A CITY DEFENCE FOR NO CURRENCY AT ALL.
@@ -40211,9 +40567,18 @@ impl Game {
         building: &str,
     ) -> Option<f64> {
         let spec = self.rules.buildings.get(building)?;
+        // ★ The host's own answer first. When the export carried this city's
+        // purchase menu (`StateCity::purchasable`) the price is the engine's
+        // `GetPurchaseCost` and an item off the menu is not for sale; the
+        // model's rules below are what the board falls back on without it.
+        let asked = Item::Building {
+            building: Name::new(building),
+        };
+        if let Some(host) = self.host_purchase_price(cid, &asked, "gold") {
+            return host.filter(|_| !self.purchase_is_blocked(cid, &asked));
+        }
         let district = spec
             .district
-
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
         if spec.outer_defense > 0
@@ -47209,11 +47574,75 @@ impl Game {
         {
             return 0;
         }
+        // The host's own per-pair count where the mirror recorded one
+        // (`GetTouristsFrom`), exactly as `foreign_tourists` prefers the
+        // observed aggregate; a native game has no entries.
+        if let Some(observed) = self.observed_visiting_tourists.get(&(source, target)) {
+            return (*observed).max(0);
+        }
         let divisor = self.starting_major_count() as f64 * TOURISM_PER_VISITOR;
         if divisor <= 0.0 {
             return 0;
         }
         (self.tourism_pressure_against(source, target) / divisor).floor() as i64
+    }
+
+    /// The religion a majority of `pid`'s cities follow — the shipped test for
+    /// a civilization being converted (`GetReligionInMajorityOfCities`,
+    /// WorldRankings.lua:2049): the host's answer where the mirror recorded
+    /// one, else counted off the board by the engine's own rule,
+    /// `following * 2 > cities`. `None` when no religion holds a majority.
+    pub fn majority_religion_of(&self, pid: usize) -> Option<&str> {
+        if let Some(observed) = self.observed_majority_religion.get(&pid) {
+            return Some(observed.as_str());
+        }
+        let cities = self.player_city_ids(pid);
+        if cities.is_empty() {
+            return None;
+        }
+        let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
+        for cid in &cities {
+            if let Some(religion) = self.city_religion(&self.cities[cid]) {
+                *tally.entry(religion).or_insert(0) += 1;
+            }
+        }
+        tally
+            .into_iter()
+            .find(|(_, following)| following * 2 > cities.len())
+            .map(|(religion, _)| religion)
+    }
+
+    /// Whether `pid` counts as converted to `religion` for the Religious
+    /// Victory: a majority of its cities follow it. See
+    /// [`Self::majority_religion_of`] for where the answer comes from.
+    pub fn civ_follows_religion(&self, pid: usize, religion: &str) -> bool {
+        self.majority_religion_of(pid) == Some(religion)
+    }
+
+    /// Cities anywhere following `pid`'s religion — the religion lane's own
+    /// number on the shipped World Rankings overview
+    /// (`GetNumCitiesFollowingReligion`, WorldRankings.lua:44): the host's
+    /// count where the mirror recorded one, since it covers cities the seat
+    /// has never seen, else the board's.
+    pub fn cities_following_religion(&self, pid: usize) -> usize {
+        if let Some(observed) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.cities_following_religion)
+        {
+            return observed;
+        }
+        let Some(religion) = self
+            .players
+            .get(pid)
+            .and_then(|player| player.religion.as_deref())
+        else {
+            return 0;
+        };
+        self.cities
+            .values()
+            .filter(|city| self.city_religion(city) == Some(religion))
+            .count()
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {
@@ -51587,19 +52016,17 @@ impl Game {
             .copied()
             .filter(|candidate| player.team.is_none() || !self.same_team(pid, *candidate))
             .collect::<Vec<_>>();
+        // A civilization is converted when a majority of its cities follow
+        // the religion. `civ_follows_religion` asks the host's own majority
+        // answer where the mirror recorded one — a rival's unseen cities
+        // count there and cannot on the board — and the board's cities
+        // otherwise, by the same `following * 2 > cities` rule as before.
         let converted_civs = religious_rivals
             .iter()
             .filter(|candidate| {
-                let cities = self.player_city_ids(**candidate);
-                !cities.is_empty()
-                    && team_religions.iter().any(|religion| {
-                        cities
-                            .iter()
-                            .filter(|city| self.city_religion(&self.cities[city]) == Some(*religion))
-                            .count()
-                            * 2
-                            > cities.len()
-                    })
+                team_religions
+                    .iter()
+                    .any(|religion| self.civ_follows_religion(**candidate, religion))
             })
             .count();
         let religious_target = religious_rivals.len();
@@ -51684,6 +52111,7 @@ impl Game {
             religious,
             converted_civs,
             religious_target,
+            cities_following_religion: self.cities_following_religion(pid),
             diplomatic,
             diplomatic_points,
             domination,

@@ -610,3 +610,43 @@ machine has held its live games since 2026-08-02); the swap verb is still
 untranslated on the bridge, and `Action::Swap` — implemented, tested and
 refused correctly in the engine since `do_swap` — is still chosen by no
 controller (`docs/MOVEMENT.md` names the `swap-rotation` gene that would).
+## 17. Price it like the engine — and the null it measured (2026-08-26)
+
+Two opt-in genes (`src/ai/advanced/engine_pricing.rs`) replace the
+controller's two hand-written estimates of a fight with the engine's own
+arithmetic: `exchange-is-the-engines` routes `exchange_score`'s defended
+branch through `melee_exchange_strengths` / `ranged_strike_strengths` +
+`expected_damage`, and `defend-where-you-stand` prices the defender on the
+candidate tile with that tile's own defence, in `projected_counter_damage`
+and in `coordinated_tactical_step`'s inline threat term. Both are strictly
+more accurate than what they replace. Both measure **null**: `battle_bench`
++10.9 ± 11.9 and +5.4 ± 16.2, the doctrine curriculum +8.1 ± 10.3 and
++2.1 ± 6.4, the 68-war captured file −10.0 ± 6.7 and −13.9 ± 8.8 with
+healing on — and 79 and 140 of 160 skirmish seeds diverged, so the arms
+fired.
+
+Recorded here because it belongs beside §7's null and §15's positive: the
+tactical layer's accuracy is not obviously its constraint. `docs/AI_GAPS.md`
+carries the hypothesis (`attack_threshold` was calibrated against the biased
+estimate, so exactness without re-fitting the toll is two changes at once)
+and the finding that the engine has no Great General to model.
+## 18. Swap rotation, and what it says about why (2026-08-26)
+
+`Action::Swap` has been legal, tested and correctly refused in the engine
+since `do_swap`, and no controller had ever chosen one. `swap-rotation`
+(`src/ai/advanced/swap_rotation.rs`, opt-in, off) is its first use: a unit
+in contact and at or below `withdraw_hp` trades places with an adjacent
+melee friend that is 25 hp healthier and further from the enemy, ahead of
+the recovery step that would otherwise walk it away and take the tile with
+it.
+
+Positive on every instrument and significant on none: curriculum
++15.6 ± 11.3 with healing on and +14.4 ± 9.6 with it off, the 68-war file
++7.5 ± 6.0, `battle_bench` +20.2 ± 14.9 with the exchange ratio at 1.044
+against 0.958. `the_reserve` — the position built to charge for a line
+handled piecemeal — carries the curriculum at +115.
+
+**The heal-off reading is the finding.** The gene was written expecting to
+need healing, and it does not: the wounded unit never has to come back. What
+pays is that the line does not open when it leaves. That is a different
+claim from "rotate to heal", and it is the one the numbers support.

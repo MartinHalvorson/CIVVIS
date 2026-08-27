@@ -710,6 +710,9 @@ impl GrandStrategy {
 /// time" is not otherwise observable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StrategyCensus {
+    /// Wounded front-liners traded out of the line for a fresh unit. See
+    /// `advanced/swap_rotation.rs`.
+    pub swap_rotations: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -5074,6 +5077,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it, so the line does not open when it leaves. Opt-in gene
+    /// `swap-rotation`; see `advanced/swap_rotation.rs`.
+    swap_rotation: bool,
     /// A shooter's tile beside a melee friend that stands nearer the enemy
     /// earns two screen weights — the arena's own definition of screened.
     /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
@@ -5628,6 +5635,14 @@ mod field_craft;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
+
+/// Price it like the engine: the exact exchange, and the defender priced
+/// where it would stand. Two opt-in genes; see `advanced/engine_pricing.rs`.
+mod engine_pricing;
+
+/// Swap rotation: the wounded front-liner trades places with the fresh unit
+/// behind it. One opt-in gene; see `advanced/swap_rotation.rs`.
+mod swap_rotation;
 
 /// The fire plan: this turn's kills, allocated once from the engine's own
 /// arithmetic, ordering the unit loop and biasing the attack scan. One
@@ -6419,6 +6434,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            swap_rotation: false,
             screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
@@ -8907,7 +8923,15 @@ impl AdvancedAi {
                         .get(city)
                         .is_some_and(|city| g.city_religion(city) == Some(faith))
                 })
-                .count();
+                .count()
+                // The host's own majority answer, where the mirror recorded
+                // one, counts the cities of theirs we have never seen; on a
+                // native board it is the same test as the count above.
+                .max(if g.civ_follows_religion(other.id, faith) {
+                    majority
+                } else {
+                    0
+                });
             required += majority;
             held += following.min(majority);
         }
@@ -8924,17 +8948,13 @@ impl AdvancedAi {
             .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
             .map(|player| player.id)
             .collect();
+        // `civ_follows_religion` is the engine's `following * 2 > cities`
+        // test on a native board and the host's `GetReligionInMajorityOfCities`
+        // answer on a mirrored one, where a rival's unseen cities count.
         let converted = g.players[pid].religion.as_ref().map_or(0, |religion| {
             living_majors
                 .iter()
-                .filter(|other| {
-                    let cities = g.player_city_ids(**other);
-                    let following = cities
-                        .iter()
-                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
-                        .count();
-                    !cities.is_empty() && following * 2 > cities.len()
-                })
+                .filter(|other| g.civ_follows_religion(**other, religion.as_str()))
                 .count()
         });
         (converted, living_majors.len())
@@ -27609,7 +27629,7 @@ impl AdvancedAi {
             .filter(|city| g.can_establish_trade_route(pid, origin, city.id))
             .map(|city| {
                 (
-                    self.trade_route_destination_value(g, pid, city, strategy),
+                    self.trade_route_destination_value_from(g, pid, Some(origin), city, strategy),
                     city.id,
                 )
             })
@@ -27669,7 +27689,27 @@ impl AdvancedAi {
         city: &crate::game::City,
         strategy: GrandStrategy,
     ) -> f64 {
-        let mut value = self.yield_value(g.trade_route_yields(pid, city.id), strategy);
+        self.trade_route_destination_value_from(g, pid, None, city, strategy)
+    }
+
+    /// The same valuation from a known origin. Where the host has priced this
+    /// exact pair (`Game::observed_route_options` — the shipped chooser's own
+    /// `CalculateOriginYieldFromPotentialRoute` sum, exported while a route
+    /// slot is open), its figure stands in for the model's route yields: the
+    /// model cannot see a destination's districts in fog. The premiums on top
+    /// (quest, alliance, tourism) are the board's own either way.
+    pub(crate) fn trade_route_destination_value_from(
+        &self,
+        g: &Game,
+        pid: usize,
+        origin: Option<u32>,
+        city: &crate::game::City,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        let yields = origin
+            .and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied())
+            .unwrap_or_else(|| g.trade_route_yields(pid, city.id));
+        let mut value = self.yield_value(yields, strategy);
         // `quest_trade_route`: the Envoy a city-state asking us for a route
         // pays for one. See `advanced/city_state_quests.rs`.
         value += self.quest_trade_route_premium(g, pid, city.owner, strategy);
@@ -28879,6 +28919,11 @@ impl AdvancedAi {
                     value += self.base.w.mv_support;
                 }
             }
+            // `defend-where-you-stand`: priced once for this tile, and only
+            // if something actually reaches it. `None` with the gene off,
+            // and then the defence below is the snapshot's, as before. See
+            // `advanced/engine_pricing.rs`.
+            let mut standing_defense: Option<f64> = None;
             for enemy in g.units.values().filter(|other| {
                 enemies.contains(&other.owner)
                     && visible.as_ref().is_none_or(|visible| {
@@ -28900,8 +28945,13 @@ impl AdvancedAi {
                 if g.wdist(tile, enemy.pos) <= radius {
                     let attack =
                         crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
-                    let defense =
-                        crate::game::effective_strength(g.unit_strength(&unit, true), unit.hp);
+                    let defense = *standing_defense.get_or_insert_with(|| {
+                        let base = self
+                            .base
+                            .defence_base_where_it_would_stand(g, uid, tile)
+                            .unwrap_or_else(|| g.unit_strength(&unit, true));
+                        crate::game::effective_strength(base, unit.hp)
+                    });
                     value -= self.base.w.mv_threat
                         * threat_caution
                         * 30.0
@@ -30912,6 +30962,15 @@ impl AdvancedAi {
                 || (self.settler_guard_holds_on() && self.formationless_settler_escort()))
         {
             if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
+                return acted;
+            }
+        }
+        // `swap-rotation`: a wounded unit holding a front trades places with
+        // the fresh unit behind it, so the line does not open when it
+        // leaves. Ahead of recovery deliberately — recovery is what walks it
+        // away. `None` with the gene off. See `advanced/swap_rotation.rs`.
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.swap_rotation_step(g, pid, uid) {
                 return acted;
             }
         }
