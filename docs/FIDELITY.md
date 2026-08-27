@@ -3170,7 +3170,8 @@ DiplomacyActionView.lua:469) and the verdict reads the host's own
 `GetDenounceTurn` on the next frame; the mirror remembers the host id of
 every FOREIGN unit it plants (`LiveMirror::foreign_uid_of`, both paths) so
 `live_divergence::combat_pairs` resolves both sides of a `combat` event and
-the `combat_damage` row finally has pairs; the seat's own tourism per turn
+the `combat_damage` row finally has pairs — 58 on `civvis-20260826T184456Z`
+(30 % of turns, MAE 11.8 hp, median 5.6), the first the scoreboard has held; the seat's own tourism per turn
 crosses (`tourism_per_turn`, the same `GetStats():GetTourism()` each rival's
 figure uses), `Game::tourism_per_turn` prefers it and the `tourism` row
 scores the model (`tourism_per_turn_model`) against it; and the host's
