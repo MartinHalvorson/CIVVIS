@@ -845,7 +845,7 @@ mod tests {
         let ring: Vec<Pos> = game
             .wring(around, 2)
             .into_iter()
-            .filter(|pos| game.city_at(*pos).is_none() && game.units_at(*pos).is_empty())
+            .filter(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
             .collect();
         for pos in ring.into_iter().take(count) {
             let uid = game.spawn_test_unit("warrior", pid, pos);
@@ -1049,7 +1049,7 @@ mod tests {
             .filter(|pos| {
                 game.wdist(*pos, home) < game.wdist(weak, home)
                     && game.map.tiles[pos].owner_city.is_none()
-                    && game.units_at(*pos).is_empty()
+                    && game.unit_ids_at(*pos).is_empty()
             })
             .collect();
         assert!(

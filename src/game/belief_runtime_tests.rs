@@ -1733,7 +1733,7 @@ fn god_of_war_pays_half_a_kills_strength_within_eight_of_any_holy_site() {
             game.map
                 .get(position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(position).is_empty()
+                && game.unit_ids_at(position).is_empty()
                 && game.city_at(position).is_none()
         };
         let capital = game.cities[&cities[0]].pos;
@@ -1812,7 +1812,9 @@ fn god_of_healing_lifts_the_rate_beside_our_own_holy_site() {
     let beside = game
         .nbrs(holy_site)
         .into_iter()
-        .find(|position| game.map.get(*position).is_some() && game.units_at(*position).is_empty())
+        .find(|position| {
+            game.map.get(*position).is_some() && game.unit_ids_at(*position).is_empty()
+        })
         .expect("a plot beside the Holy Site");
     let far = game
         .map
@@ -1820,7 +1822,7 @@ fn god_of_healing_lifts_the_rate_beside_our_own_holy_site() {
         .keys()
         .copied()
         .find(|position| {
-            game.wdist(*position, holy_site) > 2 && game.units_at(*position).is_empty()
+            game.wdist(*position, holy_site) > 2 && game.unit_ids_at(*position).is_empty()
         })
         .expect("a plot away from the Holy Site");
 
@@ -1972,7 +1974,7 @@ fn initiation_rites_pays_faith_and_heals_the_unit_that_cleared_the_camp() {
             game.map
                 .get(*position)
                 .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
+                && game.unit_ids_at(*position).is_empty()
         })
         .expect("a plot beside the capital for the camp");
     game.barb_camps.insert(camp, 0);
@@ -1985,7 +1987,7 @@ fn initiation_rites_pays_faith_and_heals_the_unit_that_cleared_the_camp() {
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .expect("a plot to attack the camp from");
     let clearer = game.spawn_test_unit("warrior", 0, from);

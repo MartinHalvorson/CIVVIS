@@ -1895,7 +1895,7 @@ fn wartime_reinforcement_marches_the_standing_rear_to_the_objective() {
         .into_iter()
         .find(|pos| {
             *pos != after
-                && game.units_at(*pos).is_empty()
+                && game.unit_ids_at(*pos).is_empty()
                 && game.city_at(*pos).is_none()
                 && game
                     .map
