@@ -1428,7 +1428,7 @@ fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
     let occupied: BTreeSet<Pos> = game.cities.values().map(|city| city.pos).collect();
     for position in game.map.tiles.keys().copied() {
         if !occupied.contains(&position) {
-            game.blocked_city_sites.insert(position);
+            std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(position);
         }
     }
 
@@ -2974,8 +2974,8 @@ fn production_advanced_omits_measured_null_arms() {
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        !live_bridge.bounded_recovery,
-        "the live bridge applies the ledger, which demoted the gene on 2026-08-25"
+        live_bridge.bounded_recovery,
+        "the live bridge applies the 2026-08-27 operator default"
     );
 }
 
@@ -4295,7 +4295,7 @@ fn live_nobel_peace_prices_favor_buildings_only_before_its_deadline() {
         .push(crate::name!("ancestral_hall"));
     // Keep the fixture inside Nobel Peace's short clock without changing the
     // Foreign Ministry's real cost or its prerequisite chain.
-    game.observed_city_yield_adjustments.insert(
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
         city,
         Yields {
             production: 120.0,
@@ -4396,7 +4396,7 @@ fn live_nobel_peace_prices_monarchy_renaissance_wall_favor() {
     game.cities.get_mut(&city).expect("capital").wall_hp = wall_hp;
     // Keep this defensive building inside Nobel Peace's short clock without
     // changing its real cost or prerequisite chain.
-    game.observed_city_yield_adjustments.insert(
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
         city,
         Yields {
             production: 120.0,
@@ -5682,6 +5682,48 @@ fn strategic_settler_routes_to_an_island_beyond_the_local_search_radius() {
         .is_some_and(|tile| g.rules.is_water(tile)));
 }
 
+#[test]
+fn overseas_settlement_claims_a_discovered_foreign_landfall_when_home_is_full() {
+    let (mut g, source, target) = island_colony_game();
+    g.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+    g.players[0].explored.extend(explored);
+    let settler = g.spawn_test_unit("settler", 0, source);
+    let home_landmass = BasicAi::capital_landmass(&g, 0);
+    let mut ai = AdvancedAi::new();
+    ai.enable_overseas_settlement();
+
+    assert!(ai.advanced_settler_step(&mut g, 0, settler));
+    let chosen = ai.settler_targets[&settler];
+    assert!(
+        !home_landmass.contains(&chosen),
+        "the gene sends the settler beyond the capital's landmass"
+    );
+    assert!(
+        g.wdist(chosen, target) <= 1,
+        "the nearest discovered overseas landfall is chosen"
+    );
+}
+
+#[test]
+fn island_expansion_genes_are_reversible_opt_ins() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
+
+    ai.enable_island_exploration();
+    ai.enable_overseas_settlement();
+    assert!(ai.base.island_exploration);
+    assert!(ai.overseas_settlement);
+
+    ai.disable_island_exploration();
+    ai.disable_overseas_settlement();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
+}
+
 /// A dodge is a legal move that is not progress. The commitment bound has
 /// to expire on one, or a settler beside a roaming hostile holds a site it
 /// is walking away from for the rest of the game — measured on run
@@ -6518,7 +6560,7 @@ fn strategic_planning_excludes_unmet_zero_power_majors() {
         game.players[player].met.clear();
     }
     game.record_contact(0, 1);
-    game.observed_military_power.insert(1, 300.0);
+    std::sync::Arc::make_mut(&mut game.observed_military_power).insert(1, 300.0);
 
     let ai = AdvancedAi::new();
     assert!(
@@ -7892,15 +7934,21 @@ fn the_stock_denial_lanes_get_lead_time_and_refuse_an_inert_counter() {
     // short of the general 90 alarm. WE hold the bar, so racing culture
     // moves it.
     {
-        let observed = game.observed_public_empire_stats.entry(1).or_default();
+        let observed = std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(1)
+            .or_default();
         observed.foreign_tourists = Some(80);
     }
     {
-        let observed = game.observed_public_empire_stats.entry(0).or_default();
+        let observed = std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(0)
+            .or_default();
         observed.domestic_tourists = Some(100);
     }
     {
-        let observed = game.observed_public_empire_stats.entry(2).or_default();
+        let observed = std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(2)
+            .or_default();
         observed.domestic_tourists = Some(10);
     }
 
@@ -7942,11 +7990,15 @@ fn the_stock_denial_lanes_get_lead_time_and_refuse_an_inert_counter() {
     // leader is still past the stock bar but our own culture cannot move
     // its denominator. The counter is inert and the lane keeps its focus.
     {
-        let observed = game.observed_public_empire_stats.entry(2).or_default();
+        let observed = std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(2)
+            .or_default();
         observed.domestic_tourists = Some(110);
     }
     {
-        let observed = game.observed_public_empire_stats.entry(1).or_default();
+        let observed = std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(1)
+            .or_default();
         observed.foreign_tourists = Some(88);
     }
     assert!(
@@ -8188,7 +8240,7 @@ fn settlement_atlas_parallel_misses_match_uncached_values_and_invalidate_on_map_
         .collect::<Vec<_>>();
     assert_eq!(positions.len(), 48, "the fixture needs a wide score batch");
 
-    let visible = game.player_vision_now(0);
+    let visible = game.player_vision_frame(0);
     let units = game
         .units
         .values()
@@ -11438,7 +11490,7 @@ fn an_amenity_district_is_worth_the_arena_it_hosts() {
         .insert(crate::name!("games_recreation"));
     // A Displeased city, host-calibrated the way the live mirror does it.
     let modeled = game.city_amenity_surplus(&game.cities[&capital]);
-    game.observed_city_amenity_adjustments
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
         .insert(capital, -1 - modeled);
     let site = game
         .district_sites(capital, crate::name!("entertainment_complex"))
@@ -11509,7 +11561,7 @@ fn an_amenity_district_is_worth_the_arena_it_hosts() {
     // production and the same normaliser) lifts by exactly 125/90 of one
     // short by one. A Content city produces more, so its normaliser
     // differs; there the lift is only bounded — present, and smaller.
-    game.observed_city_amenity_adjustments
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
         .insert(capital, -2 - modeled);
     let stock_two = ordinary.production_value(&game, 0, capital, &complex, &plan, &counts);
     let priced_two = live.production_value(&game, 0, capital, &complex, &plan, &counts);
@@ -11518,8 +11570,7 @@ fn an_amenity_district_is_worth_the_arena_it_hosts() {
         "short by two: lift {} against {lift_displeased}, expected ratio 125/90",
         priced_two - stock_two
     );
-    game.observed_city_amenity_adjustments
-        .insert(capital, -modeled);
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).insert(capital, -modeled);
     let stock_content = ordinary.production_value(&game, 0, capital, &complex, &plan, &counts);
     let priced_content = live.production_value(&game, 0, capital, &complex, &plan, &counts);
     let lift_content = priced_content - stock_content;
@@ -11528,7 +11579,7 @@ fn an_amenity_district_is_worth_the_arena_it_hosts() {
         "a Content city still values the hosted Arena, less: {lift_content} against \
              {lift_displeased}"
     );
-    game.observed_city_amenity_adjustments
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
         .insert(capital, -1 - modeled);
 
     live.disable_amenity_district_path();
@@ -11918,7 +11969,7 @@ fn a_regional_amenity_building_counts_the_cities_it_reaches() {
         .push(crate::name!("arena"));
     for city in &cities {
         let modeled = game.city_amenity_surplus(&game.cities[city]);
-        game.observed_city_amenity_adjustments
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
             .insert(*city, -1 - modeled);
     }
     let zoo = Item::Building {
@@ -12043,7 +12094,7 @@ fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
     for city in &cities {
         install_ai_test_district(&mut game, *city, "entertainment_complex");
         let modeled = game.city_amenity_surplus(&game.cities[city]);
-        game.observed_city_amenity_adjustments
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
             .insert(*city, -1 - modeled);
         let arena = Item::Building {
             building: crate::name!("arena"),
@@ -12086,12 +12137,11 @@ fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
     // the live run, not a way to override a war queue for one city.
     let mut local = game.clone();
     for city in &cities {
-        local.observed_city_amenity_adjustments.remove(city);
+        std::sync::Arc::make_mut(&mut local.observed_city_amenity_adjustments).remove(city);
     }
     let local_city = cities[1];
     let modeled = local.city_amenity_surplus(&local.cities[&local_city]);
-    local
-        .observed_city_amenity_adjustments
+    std::sync::Arc::make_mut(&mut local.observed_city_amenity_adjustments)
         .insert(local_city, -4 - modeled);
     let mut local_live = AdvancedAi::new();
     local_live.enable_live_bridge_universe();
@@ -12157,7 +12207,7 @@ fn widespread_live_amenity_pressure_starts_one_idle_entertainment_complex() {
         game.cities.get_mut(city).unwrap().pop = 7;
         install_ai_test_district(&mut game, *city, "campus");
         let modeled = game.city_amenity_surplus(&game.cities[city]);
-        game.observed_city_amenity_adjustments
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
             .insert(*city, -1 - modeled);
     }
     assert!(cities.iter().all(|city| {
@@ -12285,7 +12335,7 @@ fn broad_wartime_amenity_pressure_reclaims_one_repeatable_project_before_slots_c
     .expect("a wartime unit/build queue remains out of bounds");
     for (city, target) in cities.iter().zip([-1, -1, -1, 0]) {
         let modeled = game.city_amenity_surplus(&game.cities[city]);
-        game.observed_city_amenity_adjustments
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
             .insert(*city, target - modeled);
     }
     let fixture_shortfalls: Vec<i64> = cities
@@ -12316,8 +12366,7 @@ fn broad_wartime_amenity_pressure_reclaims_one_repeatable_project_before_slots_c
     // A two-city shortfall is still ordinary wartime production, not an
     // excuse to interrupt the project.
     let mut below_threshold = game.clone();
-    *below_threshold
-        .observed_city_amenity_adjustments
+    *std::sync::Arc::make_mut(&mut below_threshold.observed_city_amenity_adjustments)
         .get_mut(&cities[2])
         .expect("the third city has the calibrated -1 adjustment") += 1;
     let mut live = AdvancedAi::new();
@@ -12392,7 +12441,7 @@ fn widespread_observed_amenity_deficits_slot_liberalism_over_aesthetics() {
                 // This is the additive correction the live mirror writes:
                 // hold each city at -4 regardless of its modeled luxuries.
                 let modeled = game.city_amenity_surplus(&game.cities[&city]);
-                game.observed_city_amenity_adjustments
+                std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
                     .insert(city, -4 - modeled);
             }
         }
@@ -12907,7 +12956,7 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
         .copied()
         .filter(|position| *position != target)
         .collect();
-    game.blocked_city_sites.extend(every_other_plot);
+    std::sync::Arc::make_mut(&mut game.blocked_city_sites).extend(every_other_plot);
     let settler = game.spawn_test_unit("settler", 0, source);
     game.units.get_mut(&settler).unwrap().moves_left = 2.0;
     assert!(
@@ -13026,7 +13075,7 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     }
     for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
         if position != target {
-            game.blocked_city_sites.insert(position);
+            std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(position);
         }
     }
     let settler = game.spawn_test_unit("settler", 0, target);
@@ -19496,13 +19545,13 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         ai.settler_targets.insert(settler, first);
         // Frame 1: the cached site stops passing its checks (blocked by
         // the host, the same drop a risk flicker produces).
-        game.blocked_city_sites.insert(first);
+        std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(first);
         game.units.get_mut(&settler).unwrap().moves_left = 2.0;
         let _ = ai.advanced_settler_step(&mut game, 0, settler);
         let after_drop = ai.settler_targets.get(&settler).copied();
         let avoided = ai.settler_avoid.get(&settler).map(|(pos, _)| *pos);
         // Frame 2: the site is valid again — the flicker.
-        game.blocked_city_sites.remove(&first);
+        std::sync::Arc::make_mut(&mut game.blocked_city_sites).remove(&first);
         // Hold the mover at the same point so this frame compares target
         // hysteresis, not the different distance a fallback move created.
         let unit = game.units.get_mut(&settler).unwrap();
@@ -34116,17 +34165,17 @@ fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
     );
 }
 
-/// The gene is off in the stock and legacy agents and reaches a seat only
-/// through the ledger: the 2026-08-25 operator directive pinned it on.
+/// The gene is off in the stock and legacy agents and remains off through the
+/// ledger under the 2026-08-27 operator directive.
 #[test]
-fn builder_tries_the_next_tile_is_on_only_through_the_ledger() {
+fn builder_tries_the_next_tile_stays_off_through_the_ledger() {
     assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
     assert!(
-        deployment.base.builder_tries_the_next_tile,
-        "pinned on by the 2026-08-25 operator directive"
+        !deployment.base.builder_tries_the_next_tile,
+        "held off by the 2026-08-27 operator directive"
     );
 }
 
@@ -35328,7 +35377,7 @@ fn settlement_safety_remembers_a_revealed_city_states_sixth_ring() {
         tile.wonder = None;
     }
     game.players[0].explored.extend(positions.iter().copied());
-    game.blocked_city_sites.extend(
+    std::sync::Arc::make_mut(&mut game.blocked_city_sites).extend(
         positions
             .into_iter()
             .filter(|position| *position != doorstep),
@@ -36549,8 +36598,7 @@ fn a_host_priced_route_option_is_what_the_trader_chooser_prices() {
         science: 6.0,
         ..Default::default()
     };
-    game.observed_route_options
-        .insert((origin, destination), host);
+    std::sync::Arc::make_mut(&mut game.observed_route_options).insert((origin, destination), host);
     let priced = ai.trade_route_destination_value_from(
         &game,
         0,

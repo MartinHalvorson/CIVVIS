@@ -3,7 +3,7 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::sync::Arc;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::name::{AsName, Name};
 use crate::leader_roster;
@@ -1043,6 +1043,14 @@ struct VisionFrame {
     visible: Arc<TileBits>,
 }
 
+/// The folded suzerain-of-every-minor map, beside the diplomacy epoch (see
+/// `Game::diplomacy_epoch`) it was built from.
+type SuzerainMapCache = std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<usize>>)>>;
+/// Per-pid shared-vision viewer sets, beside the diplomacy epoch they were
+/// built from. Indexed by pid; a pid nobody has asked about this epoch keeps
+/// its slot `None` rather than being folded speculatively.
+type ViewersCache = std::cell::RefCell<Option<(u64, Vec<Option<BTreeSet<usize>>>)>>;
+
 /// Runtime-only per-seat visibility frames.  A cloned game inherits its
 /// parent's, because each frame carries the stamp of every input the
 /// derivation reads: a branch that moves its sight sources before its first
@@ -1061,6 +1069,16 @@ struct VisionFrameCache {
     /// lookups are far more frequent than unit writes, so retain that fan-out
     /// until a mutable unit access can have changed one of its inputs.
     unit_stamps: std::cell::RefCell<Option<(u64, Vec<u64>)>>,
+    /// Every minor's current suzerain, folded once per diplomacy epoch
+    /// instead of once per single-seat vision ask.  `suzerain_of` is cheap
+    /// once the relationship is known, but `suzerain_input_map` used to
+    /// allocate this `BTreeMap` fresh on every `player_vision_frame` call.
+    suzerain_map: SuzerainMapCache,
+    /// Per-pid shared-vision viewer sets — team, military-alliance, and live
+    /// emergency partners — folded lazily per pid the first time a
+    /// diplomacy epoch asks for it. `visibility_viewers` used to allocate a
+    /// fresh `BTreeSet` on every ask even when nothing diplomatic had moved.
+    viewers: ViewersCache,
 }
 
 impl Clone for VisionFrameCache {
@@ -1086,6 +1104,8 @@ impl Clone for VisionFrameCache {
             frames: std::cell::RefCell::new(self.frames.borrow().clone()),
             map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
             unit_stamps: std::cell::RefCell::new(self.unit_stamps.borrow().clone()),
+            suzerain_map: std::cell::RefCell::new(self.suzerain_map.borrow().clone()),
+            viewers: std::cell::RefCell::new(self.viewers.borrow().clone()),
         }
     }
 }
@@ -1298,6 +1318,86 @@ pub struct QueryCache {
     // catalog with the next helper in the same decision; retaining it only
     // inside one guard would miss the duplicate scans this cache exists for.
     producible: std::cell::RefCell<BTreeMap<(usize, u32), Vec<Item>>>,
+    // What a read-only sweep asked one seat's policy deck, while a
+    // `Game::trace_policy_reads` guard is alive. Nothing records unless a
+    // caller opens a trace, so the ordinary path pays one predicted `Cell`
+    // load per policy question and nothing else. It lives here rather than on
+    // `Game` for the same two reasons the rest of this struct does: it is
+    // derived, and a clone must start empty.
+    policy_reads_on: std::cell::Cell<bool>,
+    policy_reads: std::cell::RefCell<PolicyReadSet>,
+}
+
+/// What one read-only sweep asked a seat's policy deck — see
+/// [`Game::trace_policy_reads`].
+///
+/// Every route from a slotted card to an answer runs through
+/// [`Game::policy_effect`], [`Game::policy_effect_for_unit`] or
+/// [`Game::has_policy`]; outside those three the deck is touched only by the
+/// mutators that seat and drop cards, and by [`Game::modifier_context`], whose
+/// callers are gated below. So a card naming none of the effect keys and none
+/// of the card names recorded here cannot move a single number the sweep
+/// produced: every lookup returns the value it already returned, the two runs
+/// stay in lockstep, and the result is bit-for-bit the same `f64`.
+#[derive(Clone, Debug, Default)]
+pub struct PolicyReadSet {
+    /// Effect keys the sweep asked for, restricted to keys some card in the
+    /// ruleset grants — a key no card grants cannot be a card's key.
+    effects: BTreeSet<String>,
+    /// Cards the sweep named to [`Game::has_policy`].
+    cards: BTreeSet<Name>,
+    /// The traced seat carries a runtime modifier attachment. Those are
+    /// matched against the whole deck by name in
+    /// [`crate::rules::ModifierRequirements`] rather than by effect key, so a
+    /// trace taken on such a seat can rule nothing inert.
+    opaque: bool,
+}
+
+impl PolicyReadSet {
+    /// Whether slotting or unslotting `card` is guaranteed to leave every
+    /// number the traced sweep produced bit-for-bit identical.
+    ///
+    /// Conservative in one direction only. An unknown card, an effect key the
+    /// sweep did ask for, or a seat carrying an attachment all answer `false`,
+    /// which costs the caller exactly the sweep it would have run anyway.
+    pub fn card_is_inert(&self, rules: &Rules, card: Name) -> bool {
+        if self.opaque || self.cards.contains(&card) {
+            return false;
+        }
+        match rules.policies.get_interned(card) {
+            Some(spec) => !spec
+                .effects
+                .keys()
+                .any(|key| self.effects.contains(key.as_str())),
+            None => false,
+        }
+    }
+
+    /// Whether this trace can rule anything inert at all.
+    pub fn is_opaque(&self) -> bool {
+        self.opaque
+    }
+}
+
+/// Records what the sweep running under it asks the policy deck. Recording
+/// stops when the guard is dropped, whether or not the caller took the answer.
+pub struct PolicyReadTrace<'a> {
+    game: &'a Game,
+}
+
+impl PolicyReadTrace<'_> {
+    /// Stop recording and take what was recorded.
+    pub fn finish(&self) -> PolicyReadSet {
+        self.game.query_memo.policy_reads_on.set(false);
+        std::mem::take(&mut *self.game.query_memo.policy_reads.borrow_mut())
+    }
+}
+
+impl Drop for PolicyReadTrace<'_> {
+    fn drop(&mut self) {
+        self.game.query_memo.policy_reads_on.set(false);
+        *self.game.query_memo.policy_reads.borrow_mut() = PolicyReadSet::default();
+    }
 }
 
 impl Clone for QueryCache {
@@ -1485,6 +1585,49 @@ impl VisionCache {
             self.built_wonders = Some(wonders);
         }
     }
+}
+
+/// The expensive, viewer-independent part of one unit's attack envelope.
+///
+/// An AI still decides whether this unit is hostile and visible to its own
+/// seat. Once those filters have selected a unit, though,
+/// [`Game::attack_reach_from_flood`] reads only the board and that unit. Keep
+/// both products together: the target list is the answer callers need and the
+/// flood is the exact sensitivity input the envelope cache needs to decide
+/// whether that answer survives a later board change.
+#[derive(Debug)]
+pub(crate) struct AttackReachFromFlood {
+    targets: Vec<Pos>,
+    flood: Vec<Pos>,
+}
+
+impl AttackReachFromFlood {
+    #[inline]
+    pub(crate) fn targets(&self) -> &[Pos] {
+        &self.targets
+    }
+
+    #[inline]
+    pub(crate) fn flood(&self) -> &[Pos] {
+        &self.flood
+    }
+}
+
+/// Reach answers for one complete envelope-board fingerprint.
+///
+/// `BasicAi` already computes this fingerprint before it asks for an envelope.
+/// Storing only one board at a time is deliberate: a speculative branch that
+/// changes a unit must never be served its parent's reach, and retaining a
+/// table for every short-lived tactical branch would trade flood work for an
+/// unbounded cache. A matching board, however, is common when separate
+/// controllers inspect the same position, and a game clone shares this cache
+/// through its [`Arc`].
+#[derive(Default)]
+struct AttackReachCache {
+    key: Option<(u32, u64)>,
+    reaches: HashMap<u32, Arc<AttackReachFromFlood>>,
+    #[cfg(test)]
+    computations: u64,
 }
 
 /// Everything about a mover that decides which tiles it could ever stand
@@ -1731,7 +1874,17 @@ struct LoyaltyChange {
 /// through that, so nothing can write through the sharing by accident.
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(from = "Vec<Player>", into = "Vec<Player>")]
-pub struct Players(Vec<Arc<Player>>);
+pub struct Players(
+    Vec<Arc<Player>>,
+    /// Bumped by every route that can reach a `&mut Player`: `get_mut`,
+    /// `IndexMut::index_mut`, `iter_mut`, and `push`. That is the whole
+    /// mutation surface — the wrapped `Vec` is private and nothing else in
+    /// this file reaches inside it — so a caller can tell "no seat changed"
+    /// from one cheap integer compare instead of re-deriving an answer that
+    /// reads the roster. `Game::suzerain_input_map` and
+    /// `Game::visibility_viewers` key their per-ask caches off this.
+    u64,
+);
 
 impl Players {
     pub fn len(&self) -> usize {
@@ -1744,6 +1897,7 @@ impl Players {
 
     pub fn push(&mut self, player: Player) {
         self.0.push(Arc::new(player));
+        self.1 = self.1.wrapping_add(1);
     }
 
     pub fn get(&self, index: usize) -> Option<&Player> {
@@ -1751,6 +1905,7 @@ impl Players {
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut Player> {
+        self.1 = self.1.wrapping_add(1);
         self.0.get_mut(index).map(Arc::make_mut)
     }
 
@@ -1759,7 +1914,14 @@ impl Players {
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Player> {
+        self.1 = self.1.wrapping_add(1);
         self.0.iter_mut().map(Arc::make_mut)
+    }
+
+    /// See the tuple field's doc comment.
+    #[inline]
+    fn epoch(&self) -> u64 {
+        self.1
     }
 }
 
@@ -1775,13 +1937,15 @@ impl std::ops::Index<usize> for Players {
 impl std::ops::IndexMut<usize> for Players {
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Player {
+        self.1 = self.1.wrapping_add(1);
         Arc::make_mut(&mut self.0[index])
     }
 }
 
 impl<'a> IntoIterator for &'a Players {
     type Item = &'a Player;
-    type IntoIter = std::iter::Map<std::slice::Iter<'a, Arc<Player>>, fn(&'a Arc<Player>) -> &'a Player>;
+    type IntoIter =
+        std::iter::Map<std::slice::Iter<'a, Arc<Player>>, fn(&'a Arc<Player>) -> &'a Player>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter().map(|seat| &**seat)
@@ -1790,7 +1954,7 @@ impl<'a> IntoIterator for &'a Players {
 
 impl From<Vec<Player>> for Players {
     fn from(players: Vec<Player>) -> Players {
-        Players(players.into_iter().map(Arc::new).collect())
+        Players(players.into_iter().map(Arc::new).collect(), 0)
     }
 }
 
@@ -1806,7 +1970,7 @@ impl From<Players> for Vec<Player> {
 
 impl FromIterator<Player> for Players {
     fn from_iter<I: IntoIterator<Item = Player>>(players: I) -> Players {
-        Players(players.into_iter().map(Arc::new).collect())
+        Players(players.into_iter().map(Arc::new).collect(), 0)
     }
 }
 
@@ -2497,6 +2661,13 @@ mod city_roster {
     pub struct Cities {
         map: BTreeMap<u32, City>,
         vision: std::cell::RefCell<Option<Arc<CityVisionStamps>>>,
+        /// Bumped alongside every `invalidate()`, so a caller outside this
+        /// module can tell "some city was exposed mutably since I last
+        /// looked" without paying for a content fold. `Game::suzerain_of`
+        /// reads a governor's established city, so the per-ask suzerain-map
+        /// and shared-vision-viewer caches key off this in addition to the
+        /// roster epoch.
+        generation: u64,
     }
 
     impl Cities {
@@ -2505,6 +2676,14 @@ mod city_roster {
         #[inline]
         fn invalidate(&mut self) {
             *self.vision.get_mut() = None;
+            self.generation = self.generation.wrapping_add(1);
+        }
+
+        /// See the `generation` field doc: a cheap "did any city change"
+        /// signal for caches this module does not otherwise know about.
+        #[inline]
+        pub(super) fn generation(&self) -> u64 {
+            self.generation
         }
 
         /// The folded city inputs to sight, rebuilt only after a mutation.
@@ -2570,6 +2749,7 @@ mod city_roster {
             Self {
                 map: self.map.clone(),
                 vision: std::cell::RefCell::new(self.vision.borrow().clone()),
+                generation: self.generation,
             }
         }
     }
@@ -2596,6 +2776,7 @@ mod city_roster {
             Self {
                 map: items.into_iter().collect(),
                 vision: std::cell::RefCell::new(None),
+                generation: 0,
             }
         }
     }
@@ -5609,6 +5790,12 @@ pub struct Game {
     /// can change its inputs; empty in any clone.
     #[serde(skip)]
     query_memo: QueryCache,
+    /// Raw next-turn attack reaches, shared by controller instances that read
+    /// this exact board and by their speculative clones. The cache is keyed
+    /// by the same complete board fingerprint that gates AI attack envelopes;
+    /// it is never serialized and can always be discarded.
+    #[serde(skip)]
+    attack_reach_cache: Arc<std::sync::Mutex<AttackReachCache>>,
     /// The state of the world each seat's remembered map was last taken
     /// under — the whole of it, then the narrower part the tile memory is
     /// drawn from — and the tiles it was taken over. Empty means "assume
@@ -5775,42 +5962,42 @@ pub struct Game {
     /// score to the player. Keeping the host score here lets the ordinary AI use
     /// the public information without inventing hidden unit positions.
     #[serde(default)]
-    pub observed_military_power: BTreeMap<usize, f64>,
+    pub observed_military_power: Arc<BTreeMap<usize, f64>>,
     /// Per-unit facts an authoritative host exported about the mirrored
     /// seat's units — the upgrade verdict and bill, the per-type upkeep, the
     /// movement allowance, a Spy's operation and menu. See [`HostUnitFacts`]
     /// for which decision reads each. Empty in native games.
     #[serde(default)]
-    pub host_unit_facts: BTreeMap<u32, HostUnitFacts>,
+    pub host_unit_facts: Arc<BTreeMap<u32, HostUnitFacts>>,
     /// The host treasury's bill by source for mirrored seats, read by
     /// [`Game::unit_gold_maintenance`] and
     /// [`Game::infrastructure_gold_maintenance`] in place of the board's own
     /// sums. Empty in native games.
     #[serde(default)]
-    pub host_maintenance: BTreeMap<usize, HostMaintenance>,
+    pub host_maintenance: Arc<BTreeMap<usize, HostMaintenance>>,
     /// Public host score for mirrored seats. Empty in native CIVVIS games.
     #[serde(default)]
-    pub observed_score: BTreeMap<usize, i64>,
+    pub observed_score: Arc<BTreeMap<usize, i64>>,
     /// Exact host trade-route capacity for mirrored seats. Native games derive
     /// this from their own infrastructure and leave the map empty.
     #[serde(default)]
-    pub observed_trade_capacity: BTreeMap<usize, i64>,
+    pub observed_trade_capacity: Arc<BTreeMap<usize, i64>>,
     /// Exact Firaxis leader type for mirrored seats. CIVVIS models one leader
     /// per civilization, while Civ VI can seat alternates and personas; keeping
     /// the host type separate preserves identity without claiming their rules
     /// have been folded into the modeled civilization.
     #[serde(default)]
-    pub observed_leader_types: BTreeMap<usize, String>,
+    pub observed_leader_types: Arc<BTreeMap<usize, String>>,
     /// Host-to-model yield corrections for mirrored empires. Native games leave
     /// this empty. A correction, rather than an absolute replacement, preserves
     /// counterfactual deltas when the AI evaluates a policy or build on a clone.
     #[serde(default)]
-    pub observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    pub observed_yield_adjustments: Arc<BTreeMap<usize, crate::rules::Yields>>,
     /// Public empire-wide figures from an authoritative host which cannot be
     /// reconstructed from fog-limited city and unit records. Native games leave
     /// this empty and derive every standing from their full board.
     #[serde(default)]
-    pub observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
+    pub observed_public_empire_stats: Arc<BTreeMap<usize, ObservedPublicEmpireStats>>,
     /// The religion a majority of a seat's cities follow, as the host reports
     /// it for every met major (`GetReligionInMajorityOfCities`, the test the
     /// shipped religion tab runs to call a civilization converted), keyed by
@@ -5818,33 +6005,33 @@ pub struct Game {
     /// the board holds, which for a rival are only the ones in view. Empty on
     /// a native game.
     #[serde(default)]
-    pub observed_majority_religion: BTreeMap<usize, String>,
+    pub observed_majority_religion: Arc<BTreeMap<usize, String>>,
     /// Tourists one seat's culture draws from another as the host counts them
     /// (`GetTouristsFrom` on the source's culture), keyed (tourism source,
     /// where the tourists come from) — the order `visiting_tourists_from`
     /// takes. The mirror records our seat's draw from each met rival, the
     /// per-rival term of `foreign_tourists`. Empty on a native game.
     #[serde(default)]
-    pub observed_visiting_tourists: BTreeMap<(usize, usize), i64>,
+    pub observed_visiting_tourists: Arc<BTreeMap<(usize, usize), i64>>,
     /// Per-city host-to-model corrections and exact citizen assignments for a
     /// mirrored Firaxis turn. Native games leave these empty. Corrections are
     /// additive so counterfactual buildings, policies, and assignments still
     /// contribute their modeled delta instead of being hidden by an override.
     #[serde(default)]
-    pub observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
+    pub observed_city_yield_adjustments: Arc<BTreeMap<u32, crate::rules::Yields>>,
     /// Per-city host-to-model Amenity-surplus corrections for a mirrored
     /// Firaxis turn. Native games leave this empty. Like yield corrections,
     /// these are additive: a planned Arena, Luxury, or policy still changes
     /// the projected surplus instead of being masked by a frozen host value.
     #[serde(default)]
-    pub observed_city_amenity_adjustments: BTreeMap<u32, i64>,
+    pub observed_city_amenity_adjustments: Arc<BTreeMap<u32, i64>>,
     /// Per-city host-to-model Housing corrections for a mirrored Firaxis
     /// turn, the Amenity map's twin: `host - model`, added inside
     /// [`Game::city_housing`] so the board reads the host's ceiling while a
     /// planned Granary or Aqueduct still moves the projection by its modeled
     /// amount. Native games leave this empty.
     #[serde(default)]
-    pub observed_city_housing_adjustments: BTreeMap<u32, f64>,
+    pub observed_city_housing_adjustments: Arc<BTreeMap<u32, f64>>,
     /// Per-plot host-to-model yield corrections for a mirrored Firaxis turn:
     /// `Plot:GetYield` minus CIVVIS's own tile model, on the plots the host
     /// reports worked. Added inside [`Game::workable_tile_yields`], so the
@@ -5855,14 +6042,14 @@ pub struct Game {
     /// improvement still moves the tile by its modeled amount. Native games
     /// leave this empty.
     #[serde(default)]
-    pub observed_tile_yield_adjustments: BTreeMap<Pos, crate::rules::Yields>,
+    pub observed_tile_yield_adjustments: Arc<BTreeMap<Pos, crate::rules::Yields>>,
     /// Trading Posts on the host's own path for one of our routes, keyed by
     /// (origin, destination) city and filed (own cities, foreign cities). The
     /// host's pathfinder follows roads the model's straight-line walk does
     /// not; where the mirror knows the host's answer it is the one that pays
     /// (`trading_post_route_gold`). Empty on a native game.
     #[serde(default)]
-    pub observed_route_posts: BTreeMap<(u32, u32), (i64, i64)>,
+    pub observed_route_posts: Arc<BTreeMap<(u32, u32), (i64, i64)>>,
     /// Where the host houses this seat's Great Works, by city and kind, when
     /// the mirror has read it: the host's own placement is the one that
     /// pays, not the model's best-slot heuristic (a Relic the host kept in
@@ -5870,27 +6057,27 @@ pub struct Game {
     /// it in Mediolanum's St. Basil's, run civvis-20260816T233226Z t154+).
     /// `None` on a native game or an export without the works.
     #[serde(default)]
-    pub observed_great_work_housing: Option<BTreeMap<u32, BTreeMap<String, usize>>>,
+    pub observed_great_work_housing: Option<Arc<BTreeMap<u32, BTreeMap<String, usize>>>>,
     /// What the host says one of our routes pays its ORIGIN, keyed by
     /// (origin, destination) city — the Trade Overview's own sum of route,
     /// path and modifier yields under the international multiplier. Stands
     /// in for the model's route yield where present; empty on a native game.
     #[serde(default)]
-    pub observed_route_yields: BTreeMap<(u32, u32), crate::rules::Yields>,
+    pub observed_route_yields: Arc<BTreeMap<(u32, u32), crate::rules::Yields>>,
     #[serde(default)]
-    pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
+    pub observed_city_worked_tiles: Arc<BTreeMap<u32, Vec<Pos>>>,
     #[serde(default)]
-    pub observed_city_specialists: BTreeMap<u32, Vec<String>>,
+    pub observed_city_specialists: Arc<BTreeMap<u32, Vec<String>>>,
     /// Host loyalty rates and banner defense strengths for reconstructed cities.
     /// Keys are CIVVIS city ids, populated only by the live mirror.
     #[serde(default)]
-    pub observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
+    pub observed_city_loyalty_per_turn: Arc<BTreeMap<u32, f64>>,
     #[serde(default)]
-    pub observed_city_strength: BTreeMap<u32, f64>,
+    pub observed_city_strength: Arc<BTreeMap<u32, f64>>,
     /// Host-reported outer-defense capacity for mirrored cities. Native games
     /// derive this from wall buildings and leave the override empty.
     #[serde(default)]
-    pub observed_city_max_wall_hp: BTreeMap<u32, i32>,
+    pub observed_city_max_wall_hp: Arc<BTreeMap<u32, i32>>,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -5906,7 +6093,7 @@ pub struct Game {
     /// would only have made the turn do nothing — CIVVIS would never learn to pick
     /// somewhere else.
     #[serde(default)]
-    pub blocked_city_sites: BTreeSet<Pos>,
+    pub blocked_city_sites: Arc<BTreeSet<Pos>>,
     /// Tiles a HOST ruleset will not let a builder improve, for the same reasons and
     /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -5917,7 +6104,7 @@ pub struct Game {
     /// reporting an undeveloped empire, CIVVIS orders another builder. One run ended
     /// with seven builders alive against an army of one.
     #[serde(default)]
-    pub blocked_improvement_sites: BTreeSet<Pos>,
+    pub blocked_improvement_sites: Arc<BTreeSet<Pos>>,
     /// ★★★★ GROUND A GREAT PERSON STANDS ON, keyed to its owner. Empty in an
     /// ordinary game; the live mirror fills it because CIVVIS does not model
     /// Great People as units and drops them from the board (see
@@ -5964,12 +6151,12 @@ pub struct Game {
     /// another unit of the same kind may legitimately take the promotion this one
     /// cannot.
     #[serde(default)]
-    pub blocked_promotions: BTreeMap<u32, BTreeSet<Name>>,
+    pub blocked_promotions: Arc<BTreeMap<u32, BTreeSet<Name>>>,
     /// Origin/destination pairs a host engine rejected for a trade route.
     /// Native games leave this empty; a live mirror learns it from Firaxis so an
     /// unreachable city is not offered again every turn on geometric range alone.
     #[serde(default)]
-    pub blocked_trade_routes: BTreeSet<(Pos, Pos)>,
+    pub blocked_trade_routes: Arc<BTreeSet<(Pos, Pos)>>,
     /// Policy cards a HOST ruleset has retired, for the same reasons and with the
     /// same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -5992,7 +6179,7 @@ pub struct Game {
     /// without pretending to fix the ruleset — and an ordinary CIVVIS game leaves it
     /// empty, so nothing about simulated play changes.
     #[serde(default)]
-    pub blocked_policies: BTreeSet<Name>,
+    pub blocked_policies: Arc<BTreeSet<Name>>,
     /// Pantheon beliefs a HOST has already granted to another player, for the same
     /// reasons and with the same emptiness in an ordinary game as
     /// [`Game::blocked_city_sites`].
@@ -6008,7 +6195,7 @@ pub struct Game {
     /// (`refused_pantheons`); an ordinary CIVVIS game leaves it empty. See
     /// `AdvancedAi::expansion_pantheon` for the choice this protects.
     #[serde(default)]
-    pub blocked_pantheons: BTreeSet<Name>,
+    pub blocked_pantheons: Arc<BTreeSet<Name>>,
     /// Districts a HOST ruleset will not place, per city, for the same reasons and
     /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -6027,19 +6214,19 @@ pub struct Game {
     /// small waste for a large one. The mod now sends the city id with the refusal so
     /// the block can be scoped; before this it sent only a bare hash.
     #[serde(default)]
-    pub blocked_districts: BTreeMap<u32, BTreeSet<Name>>,
+    pub blocked_districts: Arc<BTreeMap<u32, BTreeSet<Name>>>,
     /// Fresh district plots Firaxis explicitly approved after rejecting a different
     /// CIVVIS coordinate. Native games leave this empty. A positive host candidate
     /// wins over the accompanying temporary refusal, so the next planner decision
     /// can select a real placement instead of waiting out the cooldown.
     #[serde(default)]
-    pub host_district_sites: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
+    pub host_district_sites: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
     /// Fresh wonder plots Firaxis explicitly approved after rejecting a different
     /// CIVVIS coordinate. Like [`Game::host_district_sites`], this is bridge-only
     /// feedback: a positive host answer wins over its paired temporary refusal so
     /// the next decision can start the same wonder on legal ground.
     #[serde(default)]
-    pub host_wonder_sites: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
+    pub host_wonder_sites: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
     /// Wonders a HOST engine says have no legal plot IN THIS CITY, scoped for the
     /// same reason as [`Game::blocked_districts`] — Hanging Gardens needs a river
     /// and Great Bath floodplains, so one city having no ground says nothing about
@@ -6053,7 +6240,7 @@ pub struct Game {
     /// **53 consecutive turns** at worst of one city ordering one wonder Firaxis had
     /// no ground for. `HANGING_GARDENS` 159, `GREAT_BATH` 129, `TEMPLE_ARTEMIS` 45.
     #[serde(default)]
-    pub blocked_wonders: BTreeMap<u32, BTreeSet<Name>>,
+    pub blocked_wonders: Arc<BTreeMap<u32, BTreeSet<Name>>>,
     /// World-unique wonders the live host has ruled out everywhere.
     ///
     /// `blocked_wonders` is deliberately city-local: an ordinary zero-site answer
@@ -6065,7 +6252,7 @@ pub struct Game {
     /// does not spend a production decision rediscovering it. Native games leave
     /// the set empty.
     #[serde(default)]
-    pub host_unavailable_wonders: BTreeSet<Name>,
+    pub host_unavailable_wonders: Arc<BTreeSet<Name>>,
     /// Production choices a HOST ruleset has refused in a particular city.
     ///
     /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
@@ -6074,7 +6261,7 @@ pub struct Game {
     /// on every turn. Keys are typed (`building:library`, `unit:warrior`, ...), so a
     /// name shared by two production tables cannot suppress the wrong kind of item.
     #[serde(default)]
-    pub blocked_production: BTreeMap<u32, BTreeSet<String>>,
+    pub blocked_production: Arc<BTreeMap<u32, BTreeSet<String>>>,
     /// Purchases a HOST ruleset has recently refused in a particular city.
     ///
     /// This is deliberately separate from [`Game::blocked_production`]. A host may
@@ -6082,7 +6269,7 @@ pub struct Game {
     /// the two would turn an actuation mismatch into the exact production starvation
     /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
     #[serde(default)]
-    pub blocked_purchases: BTreeMap<u32, BTreeSet<String>>,
+    pub blocked_purchases: Arc<BTreeMap<u32, BTreeSet<String>>>,
     /// The HOST's production menu per city, keyed like `blocked_production`
     /// (`unit:warrior`, `formation:warrior:1`, `building:library`,
     /// `wonder:pyramids`, `district:campus`, `project:...`): every item the
@@ -6094,7 +6281,7 @@ pub struct Game {
     /// list — the positive gate beside the refusal cooldown — and
     /// [`Game::item_cost_for_city`] prices from it.
     #[serde(default)]
-    pub host_buildable: BTreeMap<u32, BTreeMap<String, HostMenuEntry>>,
+    pub host_buildable: Arc<BTreeMap<u32, BTreeMap<String, HostMenuEntry>>>,
     /// The HOST's purchase menu per city, same keys: what
     /// `CityManager.CanStartCommand(city, PURCHASE, ...)` says this city can
     /// BUY now and what `CityGold:GetPurchaseCost` charges
@@ -6102,12 +6289,12 @@ pub struct Game {
     /// pricers answer from it and nothing else; an item off the menu is not
     /// for sale.
     #[serde(default)]
-    pub host_purchasable: BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>,
+    pub host_purchasable: Arc<BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>>,
     /// The plots the host's `GetOperationTargets(BUILD)` offers a district in
     /// a city, kept only when the export carried the complete offer. A site
     /// outside it is not producible and `district_sites` drops it.
     #[serde(default)]
-    pub host_district_plots: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
+    pub host_district_plots: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
     /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
     /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
     ///
@@ -6141,24 +6328,24 @@ pub struct Game {
     /// the full simulation, and reading it the same way would hand every AI player
     /// perfect vision of the entire world.
     #[serde(default)]
-    pub host_observed: BTreeSet<Pos>,
+    pub host_observed: Arc<BTreeSet<Pos>>,
     /// Appeal as the host counts it, per plot (`Plot:GetAppeal` off the tile
     /// export). [`Game::tile_appeal`] prefers it to the derivation from the
     /// six neighbours the board can see; empty on a native game.
     #[serde(default)]
-    pub observed_appeal: BTreeMap<Pos, i32>,
+    pub observed_appeal: Arc<BTreeMap<Pos, i32>>,
     /// The host's own `Plot:IsFreshWater()` per revealed plot, which
     /// `city_water` prefers to the river/lake/oasis derivation for a city
     /// centre. Exported as `fw` since the tiles export began and read by
     /// nothing until 2026-08-27.
     #[serde(default)]
-    pub observed_fresh_water: BTreeMap<Pos, bool>,
+    pub observed_fresh_water: Arc<BTreeMap<Pos, bool>>,
     /// A seat's tourism per turn as the host reports it — ours from the
     /// state's `tourism_per_turn`, a rival's from `rivals[].tourism`.
     /// `tourism_per_turn` prefers it; `tourism_per_turn_model` is the
     /// engine's own figure for the instrument that measures the gap.
     #[serde(default)]
-    pub observed_tourism_per_turn: BTreeMap<usize, f64>,
+    pub observed_tourism_per_turn: Arc<BTreeMap<usize, f64>>,
     /// What the host says a route a Trader could START would pay its origin,
     /// keyed by (origin, destination) — the shipped TradeRouteChooser's own
     /// `CalculateOriginYield…` sum, exported while a route slot is open.
@@ -6166,7 +6353,7 @@ pub struct Game {
     /// routes and stands in for the model inside `city_yields`; this one is
     /// read by the trader-destination chooser. Empty on a native game.
     #[serde(default)]
-    pub observed_route_options: BTreeMap<(u32, u32), crate::rules::Yields>,
+    pub observed_route_options: Arc<BTreeMap<(u32, u32), crate::rules::Yields>>,
     /// The host's climate readings beyond the phase itself: the world's CO2,
     /// the temperature, the sea-level and disaster forecasts
     /// (`GameClimate`, the shipped ClimateScreen's reads). `None` on a native
@@ -6313,7 +6500,7 @@ pub struct Game {
     /// Native games leave this empty, so host-only projects cannot leak into
     /// offline production menus.
     #[serde(default)]
-    pub host_competitions: Vec<HostCompetition>,
+    pub host_competitions: Arc<Vec<HostCompetition>>,
     /// The scored competition CIVVIS is running itself, if any. Off unless
     /// `native_competitions` is set. See [`Competition`].
     #[serde(default)]
@@ -6701,6 +6888,7 @@ impl From<GameSer> for Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
@@ -6744,56 +6932,60 @@ impl From<GameSer> for Game {
             spies: s.spies.into_iter().map(|spy| (spy.id, spy)).collect(),
             cities: s.cities.into_iter().map(|c| (c.id, c)).collect(),
             at_war: s.at_war.into_iter().collect(),
-            observed_military_power: s.observed_military_power,
-            host_unit_facts: s.host_unit_facts,
-            host_maintenance: s.host_maintenance,
-            observed_score: s.observed_score,
-            observed_trade_capacity: s.observed_trade_capacity,
-            observed_leader_types: s.observed_leader_types,
-            observed_yield_adjustments: s.observed_yield_adjustments,
-            observed_public_empire_stats: s.observed_public_empire_stats,
-            observed_majority_religion: s.observed_majority_religion,
-            observed_visiting_tourists: s.observed_visiting_tourists.into_iter().collect(),
-            observed_city_yield_adjustments: s.observed_city_yield_adjustments,
-            observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
-            observed_city_housing_adjustments: s.observed_city_housing_adjustments,
-            observed_tile_yield_adjustments: s.observed_tile_yield_adjustments.into_iter().collect(),
-            observed_route_posts: s.observed_route_posts.into_iter().collect(),
-            observed_great_work_housing: s.observed_great_work_housing,
-            observed_route_yields: s.observed_route_yields.into_iter().collect(),
-            observed_route_options: s.observed_route_options.into_iter().collect(),
-            observed_appeal: s.observed_appeal.into_iter().collect(),
-            observed_fresh_water: s.observed_fresh_water.into_iter().collect(),
-            observed_tourism_per_turn: s.observed_tourism_per_turn.into_iter().collect(),
+            observed_military_power: Arc::new(s.observed_military_power),
+            host_unit_facts: Arc::new(s.host_unit_facts),
+            host_maintenance: Arc::new(s.host_maintenance),
+            observed_score: Arc::new(s.observed_score),
+            observed_trade_capacity: Arc::new(s.observed_trade_capacity),
+            observed_leader_types: Arc::new(s.observed_leader_types),
+            observed_yield_adjustments: Arc::new(s.observed_yield_adjustments),
+            observed_public_empire_stats: Arc::new(s.observed_public_empire_stats),
+            observed_majority_religion: Arc::new(s.observed_majority_religion),
+            observed_visiting_tourists: Arc::new(
+                s.observed_visiting_tourists.into_iter().collect(),
+            ),
+            observed_city_yield_adjustments: Arc::new(s.observed_city_yield_adjustments),
+            observed_city_amenity_adjustments: Arc::new(s.observed_city_amenity_adjustments),
+            observed_city_housing_adjustments: Arc::new(s.observed_city_housing_adjustments),
+            observed_tile_yield_adjustments: Arc::new(
+                s.observed_tile_yield_adjustments.into_iter().collect(),
+            ),
+            observed_route_posts: Arc::new(s.observed_route_posts.into_iter().collect()),
+            observed_great_work_housing: s.observed_great_work_housing.map(Arc::new),
+            observed_route_yields: Arc::new(s.observed_route_yields.into_iter().collect()),
+            observed_route_options: Arc::new(s.observed_route_options.into_iter().collect()),
+            observed_appeal: Arc::new(s.observed_appeal.into_iter().collect()),
+            observed_fresh_water: Arc::new(s.observed_fresh_water.into_iter().collect()),
+            observed_tourism_per_turn: Arc::new(s.observed_tourism_per_turn.into_iter().collect()),
             observed_climate: s.observed_climate,
-            observed_city_worked_tiles: s.observed_city_worked_tiles,
-            observed_city_specialists: s.observed_city_specialists,
-            observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
-            observed_city_strength: s.observed_city_strength,
-            observed_city_max_wall_hp: s.observed_city_max_wall_hp,
+            observed_city_worked_tiles: Arc::new(s.observed_city_worked_tiles),
+            observed_city_specialists: Arc::new(s.observed_city_specialists),
+            observed_city_loyalty_per_turn: Arc::new(s.observed_city_loyalty_per_turn),
+            observed_city_strength: Arc::new(s.observed_city_strength),
+            observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
-            blocked_city_sites: BTreeSet::new(),
-            host_observed: BTreeSet::new(),
+            blocked_city_sites: Arc::new(BTreeSet::new()),
+            host_observed: Arc::new(BTreeSet::new()),
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
-            blocked_improvement_sites: BTreeSet::new(),
+            blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
-            blocked_promotions: BTreeMap::new(),
-            blocked_trade_routes: BTreeSet::new(),
-            blocked_policies: BTreeSet::new(),
-            blocked_pantheons: BTreeSet::new(),
-            blocked_districts: BTreeMap::new(),
-            host_district_sites: BTreeMap::new(),
-            host_wonder_sites: BTreeMap::new(),
-            blocked_wonders: BTreeMap::new(),
-            host_unavailable_wonders: BTreeSet::new(),
-            blocked_production: BTreeMap::new(),
-            blocked_purchases: BTreeMap::new(),
-            host_buildable: BTreeMap::new(),
-            host_purchasable: BTreeMap::new(),
-            host_district_plots: BTreeMap::new(),
+            blocked_promotions: Arc::new(BTreeMap::new()),
+            blocked_trade_routes: Arc::new(BTreeSet::new()),
+            blocked_policies: Arc::new(BTreeSet::new()),
+            blocked_pantheons: Arc::new(BTreeSet::new()),
+            blocked_districts: Arc::new(BTreeMap::new()),
+            host_district_sites: Arc::new(BTreeMap::new()),
+            host_wonder_sites: Arc::new(BTreeMap::new()),
+            blocked_wonders: Arc::new(BTreeMap::new()),
+            host_unavailable_wonders: Arc::new(BTreeSet::new()),
+            blocked_production: Arc::new(BTreeMap::new()),
+            blocked_purchases: Arc::new(BTreeMap::new()),
+            host_buildable: Arc::new(BTreeMap::new()),
+            host_purchasable: Arc::new(BTreeMap::new()),
+            host_district_plots: Arc::new(BTreeMap::new()),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -6826,7 +7018,7 @@ impl From<GameSer> for Game {
             next_deal_id: s.next_deal_id,
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
-            host_competitions: s.host_competitions,
+            host_competitions: Arc::new(s.host_competitions),
             competition: s.competition,
             competition_lockout_until: s.competition_lockout_until,
             native_competitions: s.native_competitions,
@@ -6964,33 +7156,57 @@ impl From<Game> for GameSer {
             next_id: g.next_id,
             rng: g.rng,
             at_war: g.at_war.into_iter().collect(),
-            observed_military_power: g.observed_military_power,
-            host_unit_facts: g.host_unit_facts,
-            host_maintenance: g.host_maintenance,
-            observed_score: g.observed_score,
-            observed_trade_capacity: g.observed_trade_capacity,
-            observed_leader_types: g.observed_leader_types,
-            observed_yield_adjustments: g.observed_yield_adjustments,
-            observed_public_empire_stats: g.observed_public_empire_stats,
-            observed_majority_religion: g.observed_majority_religion,
-            observed_visiting_tourists: g.observed_visiting_tourists.into_iter().collect(),
-            observed_city_yield_adjustments: g.observed_city_yield_adjustments,
-            observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
-            observed_city_housing_adjustments: g.observed_city_housing_adjustments,
-            observed_tile_yield_adjustments: g.observed_tile_yield_adjustments.into_iter().collect(),
-            observed_route_posts: g.observed_route_posts.into_iter().collect(),
-            observed_great_work_housing: g.observed_great_work_housing,
-            observed_route_yields: g.observed_route_yields.into_iter().collect(),
-            observed_route_options: g.observed_route_options.into_iter().collect(),
-            observed_appeal: g.observed_appeal.into_iter().collect(),
-            observed_fresh_water: g.observed_fresh_water.into_iter().collect(),
-            observed_tourism_per_turn: g.observed_tourism_per_turn.into_iter().collect(),
+            observed_military_power: Arc::unwrap_or_clone(g.observed_military_power),
+            host_unit_facts: Arc::unwrap_or_clone(g.host_unit_facts),
+            host_maintenance: Arc::unwrap_or_clone(g.host_maintenance),
+            observed_score: Arc::unwrap_or_clone(g.observed_score),
+            observed_trade_capacity: Arc::unwrap_or_clone(g.observed_trade_capacity),
+            observed_leader_types: Arc::unwrap_or_clone(g.observed_leader_types),
+            observed_yield_adjustments: Arc::unwrap_or_clone(g.observed_yield_adjustments),
+            observed_public_empire_stats: Arc::unwrap_or_clone(g.observed_public_empire_stats),
+            observed_majority_religion: Arc::unwrap_or_clone(g.observed_majority_religion),
+            observed_visiting_tourists: Arc::unwrap_or_clone(g.observed_visiting_tourists)
+                .into_iter()
+                .collect(),
+            observed_city_yield_adjustments: Arc::unwrap_or_clone(
+                g.observed_city_yield_adjustments,
+            ),
+            observed_city_amenity_adjustments: Arc::unwrap_or_clone(
+                g.observed_city_amenity_adjustments,
+            ),
+            observed_city_housing_adjustments: Arc::unwrap_or_clone(
+                g.observed_city_housing_adjustments,
+            ),
+            observed_tile_yield_adjustments: Arc::unwrap_or_clone(
+                g.observed_tile_yield_adjustments,
+            )
+            .into_iter()
+            .collect(),
+            observed_route_posts: Arc::unwrap_or_clone(g.observed_route_posts)
+                .into_iter()
+                .collect(),
+            observed_great_work_housing: g.observed_great_work_housing.map(Arc::unwrap_or_clone),
+            observed_route_yields: Arc::unwrap_or_clone(g.observed_route_yields)
+                .into_iter()
+                .collect(),
+            observed_route_options: Arc::unwrap_or_clone(g.observed_route_options)
+                .into_iter()
+                .collect(),
+            observed_appeal: Arc::unwrap_or_clone(g.observed_appeal)
+                .into_iter()
+                .collect(),
+            observed_fresh_water: Arc::unwrap_or_clone(g.observed_fresh_water)
+                .into_iter()
+                .collect(),
+            observed_tourism_per_turn: Arc::unwrap_or_clone(g.observed_tourism_per_turn)
+                .into_iter()
+                .collect(),
             observed_climate: g.observed_climate,
-            observed_city_worked_tiles: g.observed_city_worked_tiles,
-            observed_city_specialists: g.observed_city_specialists,
-            observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
-            observed_city_strength: g.observed_city_strength,
-            observed_city_max_wall_hp: g.observed_city_max_wall_hp,
+            observed_city_worked_tiles: Arc::unwrap_or_clone(g.observed_city_worked_tiles),
+            observed_city_specialists: Arc::unwrap_or_clone(g.observed_city_specialists),
+            observed_city_loyalty_per_turn: Arc::unwrap_or_clone(g.observed_city_loyalty_per_turn),
+            observed_city_strength: Arc::unwrap_or_clone(g.observed_city_strength),
+            observed_city_max_wall_hp: Arc::unwrap_or_clone(g.observed_city_max_wall_hp),
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
             concluded_wars: g.concluded_wars,
@@ -7022,7 +7238,7 @@ impl From<Game> for GameSer {
             next_deal_id: g.next_deal_id,
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
-            host_competitions: g.host_competitions,
+            host_competitions: Arc::unwrap_or_clone(g.host_competitions),
             competition: g.competition,
             competition_lockout_until: g.competition_lockout_until,
             native_competitions: g.native_competitions,
@@ -7065,19 +7281,19 @@ impl Game {
         self.cities.clear();
         self.city_by_pos.clear();
         self.routes.clear();
-        self.observed_city_loyalty_per_turn.clear();
-        self.observed_city_strength.clear();
-        self.observed_city_max_wall_hp.clear();
-        self.observed_city_yield_adjustments.clear();
-        self.observed_city_amenity_adjustments.clear();
-        self.observed_city_housing_adjustments.clear();
-        self.observed_tile_yield_adjustments.clear();
-        self.observed_route_posts.clear();
+        Arc::make_mut(&mut self.observed_city_loyalty_per_turn).clear();
+        Arc::make_mut(&mut self.observed_city_strength).clear();
+        Arc::make_mut(&mut self.observed_city_max_wall_hp).clear();
+        Arc::make_mut(&mut self.observed_city_yield_adjustments).clear();
+        Arc::make_mut(&mut self.observed_city_amenity_adjustments).clear();
+        Arc::make_mut(&mut self.observed_city_housing_adjustments).clear();
+        Arc::make_mut(&mut self.observed_tile_yield_adjustments).clear();
+        Arc::make_mut(&mut self.observed_route_posts).clear();
         self.observed_great_work_housing = None;
-        self.observed_route_yields.clear();
-        self.observed_route_options.clear();
-        self.observed_city_worked_tiles.clear();
-        self.observed_city_specialists.clear();
+        Arc::make_mut(&mut self.observed_route_yields).clear();
+        Arc::make_mut(&mut self.observed_route_options).clear();
+        Arc::make_mut(&mut self.observed_city_worked_tiles).clear();
+        Arc::make_mut(&mut self.observed_city_specialists).clear();
         for tile in self.map.tiles.values_mut() {
             tile.owner_city = None;
             let had_infrastructure = tile.district.is_some()
@@ -7141,14 +7357,14 @@ impl Game {
                 tile.pillaged = false;
             }
         }
-        self.observed_city_loyalty_per_turn.remove(&cid);
-        self.observed_city_strength.remove(&cid);
-        self.observed_city_max_wall_hp.remove(&cid);
-        self.observed_city_yield_adjustments.remove(&cid);
-        self.observed_city_amenity_adjustments.remove(&cid);
-        self.observed_city_housing_adjustments.remove(&cid);
-        self.observed_city_worked_tiles.remove(&cid);
-        self.observed_city_specialists.remove(&cid);
+        Arc::make_mut(&mut self.observed_city_loyalty_per_turn).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_strength).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_max_wall_hp).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_yield_adjustments).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_amenity_adjustments).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_housing_adjustments).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_worked_tiles).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_specialists).remove(&cid);
         for player in self.players.iter_mut() {
             player.city_directives.remove(&cid);
         }
@@ -7358,6 +7574,7 @@ impl Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
@@ -7400,54 +7617,54 @@ impl Game {
             spies: BTreeMap::new(),
             cities: Cities::default(),
             at_war: BTreeSet::new(),
-            observed_military_power: BTreeMap::new(),
-            host_unit_facts: BTreeMap::new(),
-            host_maintenance: BTreeMap::new(),
-            observed_score: BTreeMap::new(),
-            observed_trade_capacity: BTreeMap::new(),
-            observed_leader_types: BTreeMap::new(),
-            observed_yield_adjustments: BTreeMap::new(),
-            observed_public_empire_stats: BTreeMap::new(),
-            observed_majority_religion: BTreeMap::new(),
-            observed_visiting_tourists: BTreeMap::new(),
-            observed_city_yield_adjustments: BTreeMap::new(),
-            observed_city_amenity_adjustments: BTreeMap::new(),
-            observed_city_housing_adjustments: BTreeMap::new(),
-            observed_tile_yield_adjustments: BTreeMap::new(),
-            observed_route_posts: BTreeMap::new(),
-            observed_great_work_housing: None,
-            observed_route_yields: BTreeMap::new(),
-            observed_city_worked_tiles: BTreeMap::new(),
-            observed_city_specialists: BTreeMap::new(),
-            observed_city_loyalty_per_turn: BTreeMap::new(),
-            observed_city_strength: BTreeMap::new(),
-            observed_city_max_wall_hp: BTreeMap::new(),
-            blocked_city_sites: BTreeSet::new(),
-            host_observed: BTreeSet::new(),
-            observed_appeal: BTreeMap::new(),
-            observed_fresh_water: BTreeMap::new(),
-            observed_tourism_per_turn: BTreeMap::new(),
-            observed_route_options: BTreeMap::new(),
+            observed_military_power: Arc::new(BTreeMap::new()),
+            host_unit_facts: Arc::new(BTreeMap::new()),
+            host_maintenance: Arc::new(BTreeMap::new()),
+            observed_score: Arc::new(BTreeMap::new()),
+            observed_trade_capacity: Arc::new(BTreeMap::new()),
+            observed_leader_types: Arc::new(BTreeMap::new()),
+            observed_yield_adjustments: Arc::new(BTreeMap::new()),
+            observed_public_empire_stats: Arc::new(BTreeMap::new()),
+            observed_majority_religion: Arc::new(BTreeMap::new()),
+            observed_visiting_tourists: Arc::new(BTreeMap::new()),
+            observed_city_yield_adjustments: Arc::new(BTreeMap::new()),
+            observed_city_amenity_adjustments: Arc::new(BTreeMap::new()),
+            observed_city_housing_adjustments: Arc::new(BTreeMap::new()),
+            observed_tile_yield_adjustments: Arc::new(BTreeMap::new()),
+            observed_route_posts: Arc::new(BTreeMap::new()),
+            observed_great_work_housing: None.map(Arc::new),
+            observed_route_yields: Arc::new(BTreeMap::new()),
+            observed_city_worked_tiles: Arc::new(BTreeMap::new()),
+            observed_city_specialists: Arc::new(BTreeMap::new()),
+            observed_city_loyalty_per_turn: Arc::new(BTreeMap::new()),
+            observed_city_strength: Arc::new(BTreeMap::new()),
+            observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
+            blocked_city_sites: Arc::new(BTreeSet::new()),
+            host_observed: Arc::new(BTreeSet::new()),
+            observed_appeal: Arc::new(BTreeMap::new()),
+            observed_fresh_water: Arc::new(BTreeMap::new()),
+            observed_tourism_per_turn: Arc::new(BTreeMap::new()),
+            observed_route_options: Arc::new(BTreeMap::new()),
             observed_climate: None,
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
-            blocked_improvement_sites: BTreeSet::new(),
+            blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
-            blocked_promotions: BTreeMap::new(),
-            blocked_trade_routes: BTreeSet::new(),
-            blocked_policies: BTreeSet::new(),
-            blocked_pantheons: BTreeSet::new(),
-            blocked_districts: BTreeMap::new(),
-            host_district_sites: BTreeMap::new(),
-            host_wonder_sites: BTreeMap::new(),
-            blocked_wonders: BTreeMap::new(),
-            host_unavailable_wonders: BTreeSet::new(),
-            blocked_production: BTreeMap::new(),
-            blocked_purchases: BTreeMap::new(),
-            host_buildable: BTreeMap::new(),
-            host_purchasable: BTreeMap::new(),
-            host_district_plots: BTreeMap::new(),
+            blocked_promotions: Arc::new(BTreeMap::new()),
+            blocked_trade_routes: Arc::new(BTreeSet::new()),
+            blocked_policies: Arc::new(BTreeSet::new()),
+            blocked_pantheons: Arc::new(BTreeSet::new()),
+            blocked_districts: Arc::new(BTreeMap::new()),
+            host_district_sites: Arc::new(BTreeMap::new()),
+            host_wonder_sites: Arc::new(BTreeMap::new()),
+            blocked_wonders: Arc::new(BTreeMap::new()),
+            host_unavailable_wonders: Arc::new(BTreeSet::new()),
+            blocked_production: Arc::new(BTreeMap::new()),
+            blocked_purchases: Arc::new(BTreeMap::new()),
+            host_buildable: Arc::new(BTreeMap::new()),
+            host_purchasable: Arc::new(BTreeMap::new()),
+            host_district_plots: Arc::new(BTreeMap::new()),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -7480,7 +7697,7 @@ impl Game {
             next_deal_id: 1,
             congress: None,
             active_congress_effects: Vec::new(),
-            host_competitions: Vec::new(),
+            host_competitions: Arc::new(Vec::new()),
             competition: None,
             competition_lockout_until: BTreeMap::new(),
             native_competitions: false,
@@ -10808,7 +11025,47 @@ impl Game {
     }
 
     pub fn has_policy(&self, pid: usize, name: &str) -> bool {
-        !self.in_anarchy(pid) && self.players[pid].policies.contains(&Name::new(name))
+        let card = Name::new(name);
+        self.note_policy_card_read(card);
+        !self.in_anarchy(pid) && self.players[pid].policies.contains(&card)
+    }
+
+    /// Record every question the next read-only sweep asks `pid`'s policy
+    /// deck, so a caller that runs the same sweep once per candidate card can
+    /// tell which candidates it already holds the answer for. See
+    /// [`PolicyReadSet`].
+    ///
+    /// One trace covers one sweep; opening a second while the first is alive
+    /// restarts the recording rather than nesting.
+    pub fn trace_policy_reads(&self, pid: usize) -> PolicyReadTrace<'_> {
+        *self.query_memo.policy_reads.borrow_mut() = PolicyReadSet {
+            // A runtime attachment is matched against the deck by card name,
+            // not by effect key, so a seat carrying one is not classifiable.
+            opaque: !self.has_no_attachments(pid),
+            ..PolicyReadSet::default()
+        };
+        self.query_memo.policy_reads_on.set(true);
+        PolicyReadTrace { game: self }
+    }
+
+    #[inline]
+    fn note_policy_effect_read(&self, effect: &str) {
+        if !self.query_memo.policy_reads_on.get() {
+            return;
+        }
+        // `insert` would build the `String` before discovering it is already
+        // there, and a sweep asks the same few dozen keys once per city.
+        let mut seen = self.query_memo.policy_reads.borrow_mut();
+        if !seen.effects.contains(effect) {
+            seen.effects.insert(effect.to_string());
+        }
+    }
+
+    #[inline]
+    fn note_policy_card_read(&self, card: Name) {
+        if self.query_memo.policy_reads_on.get() {
+            self.query_memo.policy_reads.borrow_mut().cards.insert(card);
+        }
     }
 
     /// Sum a reusable modifier bundle attached directly to one player.
@@ -10981,7 +11238,13 @@ impl Game {
         // A runtime attachment can carry any key at all, and the table it
         // comes from is swapped in after the ruleset is indexed, so the
         // index only settles this for a seat carrying no attachments.
-        if !self.rules.effect_index.policies(effect) && self.has_no_attachments(pid) {
+        let granted = self.rules.effect_index.policies(effect);
+        if granted {
+            // A key no card in the ruleset grants cannot be a card's key, so
+            // a trace loses nothing by recording only the ones that are.
+            self.note_policy_effect_read(effect);
+        }
+        if !granted && self.has_no_attachments(pid) {
             return 0.0;
         }
         // The generic empire/city path collects player-wide and city-wide
@@ -11120,6 +11383,7 @@ impl Game {
 
     /// Sums a policy effect over the cards whose era window admits `era`.
     fn policy_effect_for_unit(&self, pid: usize, effect: &str, unit: &str) -> f64 {
+        self.note_policy_effect_read(effect);
         let attached = self.player_modifier_effect_in_collections(
             pid,
             effect,
@@ -23488,13 +23752,110 @@ impl Game {
             .collect()
     }
 
+    /// A number that changes whenever anything `suzerain_input_map` or
+    /// `visibility_viewers` reads, besides units and map geometry (which
+    /// already have their own epochs above), could have changed: envoys,
+    /// governor assignments, a governor's city changing hands, team
+    /// membership and alliances all move only through a `Players` write; a
+    /// turn boundary matters too, because alliance/emergency expiry and
+    /// governor establishment are all `self.turn` comparisons.
+    ///
+    /// Emergency membership is folded directly rather than through a bumped
+    /// counter: `active_emergencies` is a plain `pub Vec`, not a wrapper with
+    /// a closed mutation surface like `Players` or `Cities` above, and a
+    /// couple of engine paths (plus several tests) write it in place. The
+    /// vector holds at most a handful of live emergencies, so folding the two
+    /// fields `visibility_viewers` actually reads (`ends`, `members`) costs
+    /// nothing close to the `BTreeSet` allocation this is guarding, and it
+    /// cannot miss a write the way a counter at only two call sites could.
+    fn diplomacy_epoch(&self) -> u64 {
+        let mut stamp = vision_key(&[
+            self.players.epoch(),
+            self.cities.generation(),
+            self.turn as u64,
+            self.active_emergencies.len() as u64,
+        ]);
+        for emergency in &self.active_emergencies {
+            stamp = vision_key(&[stamp, emergency.ends as u64, emergency.members.len() as u64]);
+            for member in &emergency.members {
+                stamp = vision_key(&[stamp, *member as u64]);
+            }
+        }
+        stamp
+    }
+
+    /// Reuse the folded suzerain-of-every-minor map until the diplomacy
+    /// epoch moves. `suzerain_of` is already a cheap lookup once the
+    /// per-pass memo (`with_suzerain_read_memo`) is installed; this is what
+    /// stopped the map itself from being a fresh `BTreeMap` allocation on
+    /// every single-seat vision ask.
+    fn with_suzerain_input_map<R>(
+        &self,
+        read: impl FnOnce(&BTreeMap<usize, Option<usize>>) -> R,
+    ) -> R {
+        let epoch = self.diplomacy_epoch();
+        let stale = match self.vision_frames.suzerain_map.borrow().as_ref() {
+            Some((cached_epoch, _)) => *cached_epoch != epoch,
+            None => true,
+        };
+        if stale {
+            let map = self.suzerain_input_map();
+            *self.vision_frames.suzerain_map.borrow_mut() = Some((epoch, map));
+        }
+        let cache = self.vision_frames.suzerain_map.borrow();
+        let (_, map) = cache
+            .as_ref()
+            .expect("suzerain input map is installed before use");
+        read(map)
+    }
+
+    /// Reuse one pid's shared-vision viewer set until the diplomacy epoch
+    /// moves, folding a pid's entry lazily so one nobody asks about this
+    /// epoch is never built.
+    fn with_visibility_viewers<R>(
+        &self,
+        pid: usize,
+        read: impl FnOnce(&BTreeSet<usize>) -> R,
+    ) -> R {
+        let epoch = self.diplomacy_epoch();
+        {
+            let cache = self.vision_frames.viewers.borrow();
+            if let Some((cached_epoch, entries)) = cache.as_ref() {
+                if *cached_epoch == epoch {
+                    if let Some(Some(viewers)) = entries.get(pid) {
+                        return read(viewers);
+                    }
+                }
+            }
+        }
+        let viewers = self.visibility_viewers(pid);
+        let mut cache = self.vision_frames.viewers.borrow_mut();
+        match cache.as_mut() {
+            Some((cached_epoch, entries)) if *cached_epoch == epoch => {
+                if entries.len() <= pid {
+                    entries.resize_with(pid + 1, || None);
+                }
+                entries[pid] = Some(viewers);
+            }
+            _ => {
+                let mut entries = vec![None; self.players.len().max(pid + 1)];
+                entries[pid] = Some(viewers);
+                *cache = Some((epoch, entries));
+            }
+        }
+        let installed = cache.as_ref().expect("just installed").1[pid]
+            .as_ref()
+            .expect("just installed");
+        read(installed)
+    }
+
     fn vision_input_stamp_with_suzerains(
         &self,
         pid: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
         unit_stamps: &[u64],
     ) -> u64 {
-        let mut stamp = vision_key(&[
+        let stamp = vision_key(&[
             self.vision_geometry_stamp(),
             pid as u64,
             self.is_arena() as u64,
@@ -23503,22 +23864,20 @@ impl Game {
         if self.is_arena() && !self.tactics.fog {
             return stamp;
         }
-        let viewers = self.visibility_viewers(pid);
-        stamp = vision_key(&[stamp, viewers.len() as u64]);
-        for viewer in viewers {
-            stamp = vision_key(&[
-                stamp,
-                viewer as u64,
-                self.base_vision_input_stamp(viewer, suzerains, unit_stamps),
-            ]);
-        }
-        if pid == MIRRORED_SEAT {
-            for position in &self.host_observed {
+        let mut stamp = self.with_visibility_viewers(pid, |viewers| {
+            let mut stamp = vision_key(&[stamp, viewers.len() as u64]);
+            for &viewer in viewers {
                 stamp = vision_key(&[
                     stamp,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
+                    viewer as u64,
+                    self.base_vision_input_stamp(viewer, suzerains, unit_stamps),
                 ]);
+            }
+            stamp
+        });
+        if pid == MIRRORED_SEAT {
+            for position in self.host_observed.iter() {
+                stamp = vision_key(&[stamp, position.0 as i64 as u64, position.1 as i64 as u64]);
             }
         }
         stamp
@@ -23527,9 +23886,10 @@ impl Game {
     #[cfg(test)]
     fn vision_input_stamp(&self, pid: usize) -> u64 {
         self.with_suzerain_read_memo(|| {
-            let suzerains = self.suzerain_input_map();
-            self.with_unit_vision_input_stamps(|unit_stamps| {
-                self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps)
+            self.with_suzerain_input_map(|suzerains| {
+                self.with_unit_vision_input_stamps(|unit_stamps| {
+                    self.vision_input_stamp_with_suzerains(pid, suzerains, unit_stamps)
+                })
             })
         })
     }
@@ -23540,17 +23900,18 @@ impl Game {
     /// the map-sized bit vector merely to borrow it for a membership check.
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
         self.with_suzerain_read_memo(|| {
-            let suzerains = self.suzerain_input_map();
-            self.with_unit_vision_input_stamps(|unit_stamps| {
-                let input_stamp =
-                    self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps);
-                if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
-                    visible
-                } else {
-                    let visible = Arc::new(self.player_vision(heights, pid));
-                    self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
-                    visible
-                }
+            self.with_suzerain_input_map(|suzerains| {
+                self.with_unit_vision_input_stamps(|unit_stamps| {
+                    let input_stamp =
+                        self.vision_input_stamp_with_suzerains(pid, suzerains, unit_stamps);
+                    if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
+                        visible
+                    } else {
+                        let visible = Arc::new(self.player_vision(heights, pid));
+                        self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
+                        visible
+                    }
+                })
             })
         })
     }
@@ -23663,6 +24024,12 @@ impl Game {
         self.vision_frame(pid, &mut self.height_field())
     }
 
+    /// An owned copy of the current frame, for a caller that genuinely needs
+    /// one to mutate or move independently of the engine's cache. Every
+    /// production call site turned out to be a pure read and now takes
+    /// [`Self::player_vision_frame`] instead; this stays for tests that want
+    /// an owned snapshot without depending on the `Arc`.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn player_vision_now(&self, pid: usize) -> TileBits {
         self.player_vision_frame(pid).as_ref().clone()
     }
@@ -23724,7 +24091,7 @@ impl Game {
         // and the only one the set is ever populated for. An ordinary CIVVIS game
         // leaves it empty, so this loop does not run.
         if pid == MIRRORED_SEAT && !self.host_observed.is_empty() {
-            for pos in &self.host_observed {
+            for pos in self.host_observed.iter() {
                 if let Some(index) = self.map.tiles.index_of(*pos) {
                     visible.insert(index);
                 }
@@ -24504,16 +24871,17 @@ impl Game {
         let mut cached = Vec::<(usize, u64, Arc<TileBits>)>::new();
         let mut pending = Vec::<(usize, u64)>::new();
         self.with_suzerain_read_memo(|| {
-            let suzerains = self.suzerain_input_map();
-            self.with_unit_vision_input_stamps(|unit_stamps| {
-                for pid in &players {
-                    let input_stamp =
-                        self.vision_input_stamp_with_suzerains(*pid, &suzerains, unit_stamps);
-                    match self.matching_vision_frame(*pid, input_stamp) {
-                        Some(visible) => cached.push((*pid, input_stamp, visible)),
-                        None => pending.push((*pid, input_stamp)),
+            self.with_suzerain_input_map(|suzerains| {
+                self.with_unit_vision_input_stamps(|unit_stamps| {
+                    for pid in &players {
+                        let input_stamp =
+                            self.vision_input_stamp_with_suzerains(*pid, suzerains, unit_stamps);
+                        match self.matching_vision_frame(*pid, input_stamp) {
+                            Some(visible) => cached.push((*pid, input_stamp, visible)),
+                            None => pending.push((*pid, input_stamp)),
+                        }
                     }
-                }
+                });
             });
         });
 
@@ -25709,6 +26077,48 @@ impl Game {
     /// matter. The returned order is stable for explainers and tests.
     pub fn attack_reach(&self, uid: u32) -> Vec<Pos> {
         self.attack_reach_from_flood(uid).0
+    }
+
+    /// The cached form of [`Self::attack_reach_from_flood`] for an AI envelope
+    /// query. `key` is the caller's full board fingerprint; on a mismatch the
+    /// old snapshot is discarded before this unit's reach can be read.
+    ///
+    /// The answer deliberately remains viewer-independent. Sharing an
+    /// already-filtered hostile table would be wrong because different seats
+    /// see and fight different units; sharing this raw flood is exact because
+    /// `attack_reach_from_flood` receives only `self` and `uid`.
+    pub(crate) fn cached_attack_reach_from_flood(
+        &self,
+        key: (u32, u64),
+        uid: u32,
+    ) -> Arc<AttackReachFromFlood> {
+        let mut cache = self
+            .attack_reach_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.key != Some(key) {
+            cache.key = Some(key);
+            cache.reaches.clear();
+        }
+        if let Some(reach) = cache.reaches.get(&uid) {
+            return Arc::clone(reach);
+        }
+        let (targets, flood) = self.attack_reach_from_flood(uid);
+        let reach = Arc::new(AttackReachFromFlood { targets, flood });
+        #[cfg(test)]
+        {
+            cache.computations += 1;
+        }
+        cache.reaches.insert(uid, Arc::clone(&reach));
+        reach
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attack_reach_cache_computations(&self) -> u64 {
+        self.attack_reach_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .computations
     }
 
     /// `attack_reach`, and the tiles the unit walked to get there.
@@ -33188,11 +33598,8 @@ impl Game {
         }
     }
 
-    pub(crate) fn replace_blocked_production(
-        &mut self,
-        blocked: BTreeMap<u32, BTreeSet<String>>,
-    ) {
-        self.blocked_production = blocked;
+    pub(crate) fn replace_blocked_production(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
+        self.blocked_production = Arc::new(blocked);
         // This field is mirror input rather than an Action, so it does not cross the
         // ordinary successful-apply invalidation below. A menu derived before sync
         // must not survive after the host has rejected one of its entries.
@@ -33204,8 +33611,8 @@ impl Game {
     /// competition starting or ending must explicitly retire any menu cached
     /// before the new snapshot arrived.
     pub(crate) fn replace_host_competitions(&mut self, competitions: Vec<HostCompetition>) {
-        if self.host_competitions != competitions {
-            self.host_competitions = competitions;
+        if *self.host_competitions != competitions {
+            self.host_competitions = Arc::new(competitions);
             self.query_memo.producible.borrow_mut().clear();
         }
     }
@@ -33706,7 +34113,7 @@ impl Game {
     }
 
     pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
-        self.blocked_purchases = blocked;
+        self.blocked_purchases = Arc::new(blocked);
     }
 
     /// Replace the host's menus (see [`Game::host_buildable`]). Mirror input
@@ -33718,9 +34125,9 @@ impl Game {
         purchasable: BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>,
         district_plots: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
     ) {
-        self.host_buildable = buildable;
-        self.host_purchasable = purchasable;
-        self.host_district_plots = district_plots;
+        self.host_buildable = Arc::new(buildable);
+        self.host_purchasable = Arc::new(purchasable);
+        self.host_district_plots = Arc::new(district_plots);
         self.query_memo.producible.borrow_mut().clear();
     }
 
@@ -34792,9 +35199,9 @@ impl Game {
         };
         let needs_visibility = want_core || want_units;
         let current_visibility = if needs_visibility {
-            self.player_vision_now(pid)
+            self.player_vision_frame(pid)
         } else {
-            TileBits::default()
+            Arc::new(TileBits::default())
         };
         let visibility_viewers = if needs_visibility {
             self.visibility_viewers(pid)

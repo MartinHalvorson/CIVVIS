@@ -63,7 +63,7 @@ fn a_mirrored_board_adds_the_correction_to_the_total_and_not_to_a_category() {
     let before = game.city_housing_sources(&game.cities[&id]);
     let modelled = game.city_housing(&game.cities[&id]);
 
-    game.observed_city_housing_adjustments.insert(id, 3.0);
+    std::sync::Arc::make_mut(&mut game.observed_city_housing_adjustments).insert(id, 3.0);
     let after = game.city_housing_sources(&game.cities[&id]);
 
     assert_eq!(before, after, "the correction must not move a category");

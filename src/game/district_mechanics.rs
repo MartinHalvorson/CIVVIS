@@ -64,7 +64,7 @@ fn a_wonder_the_host_will_not_place_is_blocked_in_that_city_only() {
         })
         .expect("some wonder must be sitable in both cities for this to prove anything");
 
-    game.blocked_wonders
+    std::sync::Arc::make_mut(&mut game.blocked_wonders)
         .entry(blocked_city)
         .or_default()
         .insert(wonder);

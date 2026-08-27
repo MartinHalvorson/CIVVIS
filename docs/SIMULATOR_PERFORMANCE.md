@@ -2854,6 +2854,105 @@ Two things worth keeping from the pair of readings:
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
 
+## 2026-08-27: per-ask vision allocations paid for answers that had not moved
+
+Vision sat at roughly 9% of the main thread, and a chunk of that share was
+small, high-frequency allocations that answered no differently from a cached
+borrow. Two exact changes, both in the single-seat sight-frame path
+(`Game::player_vision_frame` / `Game::vision_frame`):
+
+1. **16 non-test call sites cloned a whole `TileBits` for a read-only
+   membership check.** `player_vision_now` returns an owned `TileBits`,
+   cloned out of the engine's own `Arc<TileBits>` cache
+   (`player_vision_frame`). Every production call site only ever read the
+   bits afterwards — `Game::sees`, `ranged_order_is_legal`,
+   `combat_target_visible_at`, and the rest — so all 16 switch to
+   `player_vision_frame`'s `Arc`. `AdvancedAi::BattlefrontFrame` followed the
+   same change: it stored a fresh clone of the turn-start frame every turn,
+   and now stores the `Arc` instead. `player_vision_now` itself stays,
+   `#[cfg_attr(not(test), allow(dead_code))]`, for the handful of test call
+   sites that want an owned snapshot on purpose.
+
+2. **`vision_input_stamp_with_suzerains` rebuilt its own inputs on every
+   ask, cache hit or not.** Deciding whether the *cached* sight frame was
+   still valid required building a fresh `BTreeMap<minor, suzerain>`
+   (`suzerain_input_map`) and a fresh `BTreeSet<viewer>`
+   (`visibility_viewers`) on every single call — including a repeat ask on a
+   board that had not moved at all. Both are now memoized behind a new
+   `Game::diplomacy_epoch`, following the same discipline `map_geometry` and
+   `unit_stamps` already use above it in `VisionFrameCache`: `Players` gets
+   a `Units`-style mutation epoch (bumped in the three routes that reach
+   `&mut Player` — `get_mut`, `IndexMut::index_mut`, `iter_mut` — plus
+   `push`; the wrapped `Vec` is private, so that is the whole surface).
+   `Cities` gets an analogous `generation` counter bumped inside its
+   existing `invalidate()`, riding the same eager, exhaustive-by-construction
+   guarantee `city_roster`'s sight fold already documents. `active_emergencies`
+   is different: it is a plain `pub Vec<Emergency>` a couple of engine paths
+   and several tests write in place, not a closed type like the two above, so
+   a bumped counter at its two real mutation sites (declare, resolve) could
+   silently miss a direct write — an early version of this change did exactly
+   that and a test that warmed the cache before pushing straight onto
+   `active_emergencies` would have gone stale. `diplomacy_epoch` folds its
+   live content instead (`ends`, `members` — the two fields
+   `visibility_viewers` reads), which cannot be bypassed and costs nothing
+   next to the allocation it is guarding, since the vector holds at most a
+   handful of live emergencies.
+
+### Measured
+
+Temporary `AtomicU64` counters on `suzerain_input_map`, `visibility_viewers`,
+and the `TileBits` clone inside `player_vision_now` (not committed — added to
+a scratch clone of the pre-change commit for "before", and to this branch for
+"after"), one 150-turn game, `--jobs 1` (seed 7320000, 6p 74×46, 9 city-states,
+online, continents):
+
+| per game | before | after | Δ |
+| --- | ---: | ---: | ---: |
+| `suzerain_input_map` calls | 69,022 | 26,944 | **-61.0%** |
+| `visibility_viewers` calls | 101,585 | 83,435 | **-17.9%** |
+| `TileBits` clones (`player_vision_now`) | 19,443 | 0 | **-100%** |
+
+The remaining `visibility_viewers` calls are the roughly-dozen direct
+(uncached) call sites elsewhere in `game.rs` this change deliberately left
+alone — see "What was left out" below; `suzerain_input_map` has no such
+direct callers left, so its whole remaining count is genuine diplomacy-epoch
+misses (a suzerainty, envoy, city, or turn change) rather than redundant
+re-asks.
+
+### Exactness
+
+`tools/speed_ab.py` (seeds 7320000-7320001, 2 paired 150-turn games, same
+shape as the counters above) reports the same game on every seed — identical
+report digests, baseline against candidate — and
+`advanced_v1_plays_the_same_game_it_always_did` passes. A new test,
+`diplomacy_caches_agree_with_an_uncached_derivation_across_every_input` in
+`src/game/visibility_tests.rs`, asserts the memoized suzerain map and viewer
+set equal a from-scratch derivation across a suzerainty change, an envoy
+change that does not flip it, a unit move, and a spy move — and separately
+that the last two correctly leave `diplomacy_epoch` untouched, since neither
+`suzerain_input_map` nor `visibility_viewers` reads a unit or a spy (the spy
+still moves the *overall* stamp, folded fresh on every ask by
+`base_vision_input_stamp`, entirely outside this cache).
+
+### What was left out
+
+- The larger per-tile viewer-count redesign this task named was explicitly
+  out of scope.
+- `battlefront_visibility`'s roughly two dozen other call sites in
+  `ai/advanced.rs` needed no edits beyond the `Arc<TileBits>` return-type
+  change: the type flows through `let visible = self.battlefront_visibility(...)`
+  by inference, since every one of them only ever reads `&visible`. The one
+  site that did need a fix was a direct `BattlefrontFrame { visible, .. }`
+  construction in `src/ai/advanced/tests.rs`, where a `TileBits` local no
+  longer matched the field's new type.
+- A handful of direct (uncached) `self.visibility_viewers(pid)` call sites
+  remain scattered through `game.rs` outside `vision_input_stamp_with_suzerains`
+  (legal-action-enumeration-shaped functions, mostly). Routing them through
+  `with_visibility_viewers` would mean restructuring each function's control
+  flow into the closure-based API for a caller that, unlike the per-ask sight
+  path, is not obviously asked the same question twice — left alone rather
+  than widen this pass.
+
 ## 2026-08-27 — the envelope table opened one memo scope per flood, and swept a cache that had nothing to sweep
 
 `docs/AI_GAPS.md`'s late-game crawl (#2611) and today's profile both put
@@ -3021,6 +3120,70 @@ on every seed"** — the two binaries produce byte-identical reports.
 run is not quoted: the host was at load 61 with a sibling simulation on it, and
 `docs/speed_ledger.json`'s conditions block is right that a number measured
 there is a measurement of the machine.
+
+## 2026-08-27 — the forcing-reply tie-break stopped formatting a `Debug` string it usually never needs
+
+`forcing_reply_penalty_applied` / `forcing_reply_line` (7-14% of the main
+thread; see the profiles above) hard-coded its search shape and built a
+sort-tie-break `String` eagerly for every candidate reply, whether or not the
+sort ever looked at it. Three decision-neutral changes, none touching what
+the search decides:
+
+- The extension depth (`2`, at the `forcing_reply_line` call inside
+  `forcing_reply_penalty_from_position`) and the move-ordering width
+  (`.take(4)`) are now `AdvancedAi::FORCING_REPLY_DEPTH` and
+  `FORCING_REPLY_WIDTH`, same values, with the reasoning attached at the
+  declaration instead of left implicit at the call site.
+- `reply_branches`/`ordered` used to store `format!("{reply:?}")` (or
+  `format!("{movement:?} -> {followup:?}")`) as the sort key the moment a
+  candidate was built. They now store the raw `Action`(s); the `sort_by`'s
+  `then_with` only calls the new `forcing_reply_label` helper — the same two
+  `format!` bodies, unmoved — when two candidates already tie on the primary
+  `f64` score. `total_cmp`/`String::cmp` semantics are unchanged, so the
+  final order cannot move; a unit test
+  (`ai::advanced::forcing_reply_lazy_key_tests::lazy_tie_break_matches_eager_key_ordering`)
+  sorts one synthetic candidate list (including a three-way tie) both the old
+  eager way and the new lazy way and asserts the two orders — and a
+  hand-checked expected order — are identical.
+- **Measured with a temporary, uncommitted counter** (one `AtomicU64` behind
+  `forcing_reply_label`, one at the point a candidate is queued — deleted
+  before this shipped): one 150-turn, 6-player, 9-city-state game (seed
+  7,320,000, online speed, `AdvancedAi::new()` in every seat) queued **5,913**
+  reply candidates — what the old code would have formatted unconditionally
+  — and the lazy tie-break actually called `forcing_reply_label` **2,752**
+  times, a 53.5% cut in that allocation. (The remaining 2,752 is not noise:
+  a large share of candidates score exactly `0.0` — a reply that never
+  connects with the victim — so ties are common at that one value, and
+  `sort_by`, unlike `sort_by_cached_key`, can re-invoke the comparator on the
+  same pair more than once during the sort.)
+
+**Not done, and why:** `forcing_reply_penalty_from_position` clones the
+position once per enemy seat (`after.speculative_clone()`) before resetting
+that seat's move/attack/strike state for the search. Skipping that clone for
+a seat that provably has no reachable reply would be exact, but "provably
+no reachable reply" has to reproduce two different distance thresholds
+exactly — the direct-attack test inside `forcing_attacks_to` (adjacency for
+melee, `attack_range` for ranged, plus the city/encampment strike range) and
+the wider `attack_range + 2` mobile-attacker test inside `forcing_reply_line`
+itself — kept in lockstep with whichever of those two changes next. That
+duplication risk, in a file several other agents are editing concurrently
+this session, is not a decision-neutral change I could sign off on in this
+pass, so the clone stayed. Clone/`speculative_clone` counts are therefore
+unchanged by this entry. Separately, `forcing_reply_penalty` (the
+`#[allow(dead_code)]`, tests-only sibling of `forcing_reply_penalty_applied`)
+already carries its own justification comment from #2578 explaining why it
+is kept; its callers live in `src/ai/advanced/tests.rs`, a path this task did
+not claim (owned by a concurrent PR), so it was left untouched rather than
+edited out from under that PR.
+
+Exactness: `tools/speed_ab.py` on 2 games/seed 7,320,000 (6p, 74x46, 9CS,
+150t, online) reported *"the two metrics agree, as they must when both arms
+play the same game"* — no digest mismatch across either pair. `cargo test
+--profile ci --locked advanced_v1_plays_the_same_game_it_always_did` passed.
+Per the note above the 2026-08-23 entries, the timing number from that
+`speed_ab` run is not quoted here: the host was carrying another CIVVIS
+process at the time (load average 43-49), so only the identity result is
+load-bearing.
 
 ## 2026-08-27 — three copies of the movement flood became one, and the tie-break inside it was the whole risk
 
@@ -3249,3 +3412,290 @@ in: their stdout (turn timer aside) is byte-identical.
 `advanced_v1_plays_the_same_game_it_always_did` passes, and the full suite
 (`cargo test --profile ci --locked`) is green: 2,586 lib tests plus every
 integration and protocol-parity suite, 0 failures.
+
+## 2026-08-27 — the policy review valued the whole empire to price a Great-Scientist card
+
+`AdvancedAi::production_weights` sets `PolicyDeck::Live`, so every deployment
+game runs the counterfactual policy deck. `revise_policy_deck` reviews the deck
+every turn while a slot stands empty and every `POLICY_REVIEW_EVERY = 8` turns
+once it is full, and `policy_card_score` prices each candidate — every card
+`available_policies` offers, plus every card already slotted — by running one
+**whole-empire `empire_reading` sweep** with that card added or removed.
+
+Today's profile of a culture-win seed puts the chain at **7% of the main
+thread**, with `city_yields_inner` at 11% inclusive:
+
+    research_with_government → revise_policy_deck → policy_card_score
+        → empire_reading → city_yields → city_yields_inner
+                         → item_prod_mult
+
+### What that sweep actually reads
+
+`empire_reading` is five terms, and this is the whole list:
+
+1. `city_yields(cid)` for every city the seat owns;
+2. `item_prod_mult(pid, cid, queued)`, the production multiplier toward the item
+   that city is building;
+3. `observed_yield_adjustments`, a live-bridge correction no card can move;
+4. `unit_strength(unit, false)` and `unit_strength(unit, true)` for every unit;
+5. `policy_effect(pid, "influence_per_turn")`, plus `unit_gold_maintenance(pid)`
+   behind `maintenance_aware_deck`.
+
+Most of the catalogue reaches none of them. `data/policies.json` ships 129 cards
+carrying 157 distinct effect keys between them — Great-Person points, envoys,
+espionage, tourism, war weariness, loyalty, upgrade and purchase discounts,
+grievances — and one sweep asks for a few dozen. For every other card the sweep
+recomputes a number the review already had in hand: it had valued the unchanged
+empire one line earlier, as `current_reading`.
+
+### The classifier is a trace, not an allow-list
+
+The obvious implementation is a hand-written allow-list of inert effect keys.
+It was rejected. Being right about 157 keys means being right about every branch
+of `city_yields_inner`, `player_tile_yields`, `item_prod_mult`, `unit_strength`
+and the maintenance bill, in a call graph nobody holds in their head — and an
+allow-list that is wrong is wrong *silently*, in the direction that changes
+decisions. It also goes stale the first time a card or a yield path is added,
+with nothing to say so.
+
+`Game::trace_policy_reads` records instead. While its guard is alive, the three
+functions that are the only routes from a slotted card to an answer —
+`policy_effect`, `policy_effect_for_unit`, `has_policy` — note the effect key or
+card name they were asked for. The review opens the trace over the one sweep it
+runs anyway, and gets back the exact set of questions that sweep asked this
+seat's deck on this board.
+
+The argument the skip rests on is three sentences. A card whose effect keys all
+sit outside the recorded set changes no answer the sweep read. The two runs
+therefore return the same value at every lookup, take the same branch at every
+branch, and ask the same next question. So the second sweep lands on the same
+`f64` bits as the first, and running it is a way of finding out something
+already known.
+
+Three holes, each closed rather than argued away:
+
+- **A card read by name.** `has_policy(pid, "x")` names a card rather than a
+  key, so the trace records card names too and a named card is never inert.
+- **Runtime modifier attachments.** `Game::modifier_context` hands the whole
+  deck to `ModifierRequirements::matches`, which can gate a modifier on holding
+  one named card — by name, not by key. A trace taken on a seat carrying any
+  attachment is therefore marked *opaque* and rules nothing inert. It is the
+  same seat class `policy_effect`'s own index short-circuit already excludes.
+- **Anything reading `players[pid].policies` directly.** `grep` over `src/`
+  finds five non-test sites: `has_policy`, `modifier_context`, `policy_effect`,
+  `policy_effect_for_unit`, and the mutators (`trim_policies_to_slots`,
+  `prune_policies_to_government`, `policies_fit`, `available_policies`,
+  `Game::apply`) — none of which the reading calls. That grep is the
+  completeness claim, and it is cheap to re-run.
+
+**It can only be wrong slowly.** An unknown card, a key the sweep did ask for,
+an attachment, a seat in anarchy: every unclassifiable case answers "not inert"
+and pays exactly the sweep it would have paid anyway. No arm of this is fast
+and wrong.
+
+### Counted, not clocked
+
+Three `AtomicU64`s on a scratch build — one on `empire_reading`, one on the
+skip, one on `city_yields_inner` — plus an env switch that restores the old
+behaviour, so **one binary measures both arms of the same game**. Seed 7320000,
+6 players, 74×46, 9 city-states, 150 turns, Continents, `--jobs 1`:
+
+| per 150-turn game | before | after | |
+| --- | ---: | ---: | ---: |
+| policy reviews | 155 | 155 | — |
+| `empire_reading` sweeps | 4,665 | **1,317** | **−71.8%** |
+| ↳ candidate sweeps (excl. the 155 baseline readings) | 4,510 | 1,162 | −74.2% |
+| `city_yields_inner` calls, **all callers, whole game** | 29,927 | **19,623** | **−34.4%** |
+
+**A third of every city-yield derivation in the simulator was the policy review
+rediscovering that a Great-Person card is worth nothing.** 10,304 of the 29,927
+went to candidate cards that could not move the answer, and the review as a
+whole runs 3,348 fewer whole-empire sweeps per game.
+
+### ⚠⚠ The clock is not quoted, and the control is why
+
+Four paired runs were taken today, every one of them reporting *same game on
+every seed*. **One of them compares the baseline binary with a byte-for-byte
+copy of itself.**
+
+| run | arms | load, start → end | median s/turn | resolves |
+| --- | --- | --- | ---: | ---: |
+| A | base vs change | 84 → 60 | +11.17% | ±30.06% |
+| B | base vs change | 67 → 13 | +14.32% | ±23.22% |
+| **C** | **base vs a copy of base — identical machine code** | 32 → 16 | **−13.18%** | ±12.12% |
+| D | base vs change | 16 → 9 | +10.14% | ±19.07% |
+
+**Run C is the whole finding.** The same 27,929,584 bytes against themselves
+measured −13.18% per completed turn, pooled −15.19%, with an IQR spanning
+[−27.33%, −6.05%]. Nothing was changed and a 15% improvement was reported. On a
+host shared with ten sibling agents, this instrument cannot resolve anything
+smaller than about ±15% today, and A, B and D all sit inside that.
+
+Note the *signs*. `speed_ab` runs baseline then candidate within each pair, so
+whichever way the host's load is drifting during a run biases the second arm.
+Run C's load fell throughout and it reported the second arm 13% faster; runs A,
+B and D each began under heavier contention than they ended. That is a
+mechanism, not a mystery, and it is worth remembering that alternating arms
+*within* a pair does not remove a drift that is monotone *across* a pair.
+
+**Take a same-binary control whenever a paired reading has to carry weight on a
+loaded host.** It costs two more games and it is the difference between a
+number and a story. The counter above does not care what else the machine is
+doing, and neither does the report digest.
+
+### The identity, three ways
+
+1. `tools/speed_ab.py`, the merge-base binary against the change, on **14
+   paired 150-turn games** across runs A, B and D above (seeds 7320000–7320001,
+   7320010–7320015, 7320040–7320043), 6p 74×46 9CS online continents:
+   **`same game on every seed`**, every run.
+2. The counter run: the same scratch binary with the skip on and off produced
+   **the same report digest** (`f7b56b14…`) while running 3,348 fewer sweeps.
+   Same code, same seed, one switch — the cleanest form of the claim, because
+   it holds the compiler constant too.
+3. `a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero`:
+   1,032 verdicts checked against the sweep itself, on `to_bits`.
+4. `advanced_v1_plays_the_same_game_it_always_did`, the frozen-identity anchor.
+
+
+### The test is the implication, card by card
+
+`a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero` plays
+four majors and six city-states forward 110 turns under the production
+controller, then walks **every card in the ruleset on every major seat**: it
+asks the classifier, runs the sweep the classifier called unnecessary, and
+asserts `to_bits()` equality — not an epsilon, because the skip reuses a number
+and anything short of bit equality is a defect. Both sides of the counterfactual
+(removal for a card the seat holds, slotting for one it does not) and both
+`net_maintenance` arms, **1,032 verdicts** on one board:
+
+| seat | cities / districts / units | inert, no maintenance | inert, with |
+| ---: | --- | ---: | ---: |
+| 0 | 3 / 1 / 15 | 104 of 129 | 101 |
+| 1 | 3 / 1 / 10 | **109** of 129 | 106 |
+| 2 | 2 / 3 / 24 | 105 of 129 | 102 |
+| 3 | 1 / 2 / 20 | 105 of 129 | 102 |
+
+**113 cards were inert on some seat and 38 were live on some seat**, and the two
+sets overlap: the verdict is a property of the *board*, not of the card. A seat
+whose capital is queueing a Settler asks `item_prod_mult` for
+`settler_production_pct` and a seat queueing a Granary does not, so Colonization
+is live on the first and inert on the second. That overlap is asserted, because
+a classifier that answered the same on every board would not have needed the
+trace.
+
+`conscription` is the boundary case worth remembering, and the existing
+maintenance test now pins it from both sides: its whole effect is
+`unit_maintenance_discount`, so with the bill unread it is inert and the review
+skips it, and under `maintenance_aware_deck` the same sweep asks for that key
+and the same card is live. **The classifier describes the sweep, not the card.**
+
+### What was not done: memoizing city yields across candidates
+
+The other half of the idea was to memoize per-city yields across candidate
+cards. `empire_reading` already opens a `query_memo` scope per call, so the
+yields are shared *within* one sweep; sharing them *between* sweeps needs a key
+on the yield-relevant policy subset, which is the classification above — and
+once a card is classified inert there is no second sweep left to memoize. What
+remains is a *per-city* trace: a card that can only reach cities with a Campus
+leaves every other city's yields untouched, so a sweep that still has to run
+could skip most of its cities. That is the next step here, and it needs the same
+lockstep argument at city granularity.
+
+## 2026-08-27 — 44 of the board's fields belong to the host, and no search branch has ever written one
+
+The 2026-08-26 entry above found `Vec::clone ← Game::clone` and
+`Vec::clone ← speculative_clone` inside the unnamed third of the profile,
+**2.19% of the busiest thread between them** — and that is only the `Vec` half
+of what a whole-board copy costs. `Game` has 139 fields. **82 of them are a
+`BTreeMap`, `BTreeSet` or `Vec`**, and each one was deep-copied, tree node by
+tree node, on every clone; there are 40 `speculative_clone` call sites and the
+board is cloned outright in hundreds more places.
+
+**45 of those 82 fields are not the simulator's state at all.** They are the
+live bridge's import of what Civilization VI told this seat: `observed_*` (25),
+`host_*` (10), `blocked_*` (10). Every write of all 45 was enumerated — `x =`,
+`.x.insert(`, `.x.clear(`, `.x.entry(`, `.x.extend(`, `&mut g.x`,
+`mem::take(&mut g.x)` — and every one lands in one of three places:
+`src/mirror.rs`'s host-state steps, `Game`'s own mirror setters
+(`replace_host_menus`, `replace_blocked_production`,
+`replace_blocked_purchases`, `replace_host_competitions`,
+`clear_mirror_cities`, `mirror_remove_city`), or a test fixture building the
+board a live import would have produced. **Not one is written by `Game::apply`,
+`begin_turn`, `do_end_turn`, or by anything reachable from `BasicAi` or
+`AdvancedAi`.** A search branch reads them and never touches them.
+
+44 of the 45 now hold an `Arc`, so cloning one is a refcount increment. Where a
+write does happen it goes through `Arc::make_mut` — copy-on-write, so the
+semantics are the same even if some future caller writes to a board it shares —
+or rebuilds and `Arc::new`s in the mirror setters. Reads deref and did not
+change. `GameSer`, the struct `Game` serializes through, was left holding the
+plain collections, so no `Arc` reaches the wire and the JSON a save or `/state`
+carries is byte-for-byte what it was;
+`arc_shared_host_imports_keep_the_save_format_they_had` asserts that from
+outside, including that the refusal sets the save format has always omitted are
+still omitted.
+
+### The counter, and the thing it says that a clock would have hidden
+
+A scratch zero-sized field whose `Clone` impl bumps an `AtomicU64` counts every
+derived `Game::clone`, `speculative_clone` included. One 150-turn game, seed
+7320000, at the screen's shape (6 players, 74x46, 9 city-states, `online`,
+`continents`), `ci` profile:
+
+| | |
+| --- | ---: |
+| whole-`Game` clones in the game | **111,458** |
+| collections each clone no longer walks | 44 |
+| `size_of::<Game>()` after | 3,456 B |
+| the 44 fields' own bytes, before → after | 1,064 B → 352 B |
+| struct memcpy removed, per clone | **712 B** |
+| struct memcpy removed, over the game | ~79 MB |
+| **entries those 44 fields held at turn 150** | **0** |
+
+That last row is the finding, and it is the one no A/B could have told us.
+**In a game the simulator plays by itself, all 44 fields are empty on every
+turn** — nothing but the live bridge ever fills them — so the deep copy this
+removes is, in the benchmark, 44 branches on an empty root and 712 bytes of
+`memcpy`, repeated 111,458 times. The tree-walking half of the saving is
+entirely a *live-bridge* saving, and that is where it is large: `host_observed`
+alone is every plot the seat has revealed, `host_buildable` and
+`host_purchasable` are a menu row per item per city, and
+`host_district_sites` / `host_wonder_sites` / `host_district_plots` are
+`BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>`. A mirrored board carries
+thousands of entries there and cloned all of them per search branch. There is
+no recorded host state in the tree to put a number on that, so this entry does
+not invent one.
+
+### What was left, and why
+
+- **`observed_climate`**, the 45th, stays a plain `Option<ObservedClimate>`:
+  seven `Option<f64>`/`Option<i64>` and not one heap allocation, so an `Arc`
+  would add a pointer chase to a 112-byte memcpy rather than remove one.
+- **`occ: BTreeMap<Pos, Vec<u32>>` and `city_by_pos: BTreeMap<Pos, u32>`** were
+  considered and rejected. They are derived indexes that the simulation itself
+  rewrites — every unit step, every founding, every capture — so they are
+  written on the search path by definition. `Arc::make_mut` would deep-copy the
+  whole index on a branch's first move and charge the `Arc` on top of that:
+  strictly worse than the copy it replaces.
+
+### Exactness
+
+`tools/speed_ab.py`, two paired 150-turn games at the shape above, run three
+times — twice against the merge-base and once against the `origin/main` this
+branch merged: **"same game on every seed"** every time, byte-identical
+reports. `advanced_v1_plays_the_same_game_it_always_did` passes; `mirror` is
+224 tests green.
+
+The timing half is not quoted, and here is why in one line: the same two-pair
+comparison read **-11.23%** at load 27, **+1.59% (resolves ±1.66%)** at load
+4.5, and **-13.40% (resolves ±0.63%)** at load 13 — three runs of the same
+question, and one of them is the wrong sign. Two pairs do not resolve a change
+of this size on a host shared with a dozen agents, which is the whole reason
+the evidence above is a counter.
+
+⚠ **`rustfmt --edition 2021 src/game.rs` reformats every `src/game/*.rs`
+submodule too** — 41 files, 1,677 lines here, none of them yours. `game.rs`
+declares those modules and rustfmt follows `mod`. The narrower trap beside the
+known `cargo fmt -- <file>` one; check `git status`, not just the file you
+named.

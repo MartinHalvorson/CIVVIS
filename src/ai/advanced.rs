@@ -324,8 +324,10 @@ const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 /// catches that unresolved fifth-ring attribution without rejecting ordinary
 /// known-city sites. See `frontier_loyalty` and `Game::unseen_major_borders`.
 const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
-/// New-target picks re-asked after a doomed forecast. Exhaustion holds the
-/// Settler rather than routing it through the unfiltered baseline picker.
+/// Preferred new-target picks re-asked after a doomed forecast. If they all
+/// fail, the live controller probes one nearby alternative with the same
+/// safety guards; remaining exhaustion holds rather than routing the Settler
+/// through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
 /// A stalled Settler may finish on the tile it reached, but not when a known
 /// enemy city can support a counterattack before our own nearest city can.
@@ -1058,7 +1060,10 @@ pub struct ForceGroup {
 /// detector moves even if a tile was already visible.
 #[derive(Clone)]
 struct BattlefrontFrame {
-    visible: TileBits,
+    /// An `Arc` into the engine's own per-seat vision cache (see
+    /// `Game::player_vision_frame`) rather than an owned copy: every reader
+    /// below only ever borrows this, and there can be many readers per turn.
+    visible: Arc<TileBits>,
     units: BTreeSet<u32>,
 }
 
@@ -4899,6 +4904,10 @@ pub struct AdvancedAi {
     /// spent BEFORE the city converts, which is why the ordering rather than
     /// some later reaction is the fix.
     moksha_defends_the_faithless: bool,
+    /// Give a Settler a discovered overseas colony before spending the last
+    /// practical spaces on the capital's landmass. Opt-in gene
+    /// `overseas-settlement`.
+    overseas_settlement: bool,
     /// Let the assigned diplomatic lane size its own Congress ballot.
     ///
     /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
@@ -5752,6 +5761,11 @@ mod expansion_schedule;
 /// `advanced/growth_to_settle.rs`.
 mod growth_to_settle;
 
+/// `overseas-settlement`: when the capital's connected land is nearly full,
+/// send the next Settler to the nearest viable discovered foreign landmass.
+/// See `advanced/island_expansion.rs`.
+mod island_expansion;
+
 /// `order-retry`: a refused order falls through to the next-best candidate
 /// the planner already ranked. One opt-in gene; see
 /// `advanced/order_retry.rs`.
@@ -6492,6 +6506,7 @@ impl AdvancedAi {
 
             // ---- append: l-o ----------------------------------------
             moksha_defends_the_faithless: false,
+            overseas_settlement: false,
             lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
@@ -8173,7 +8188,7 @@ impl AdvancedAi {
             self.battlefront_frame = None;
             return;
         }
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         let units = g
             .units
             .values()
@@ -8185,11 +8200,11 @@ impl AdvancedAi {
 
     /// The battlefront's turn-start tile frame, or current vision when this
     /// helper is used outside a controller turn (including focused tests).
-    fn battlefront_visibility(&self, g: &Game, pid: usize) -> TileBits {
+    fn battlefront_visibility(&self, g: &Game, pid: usize) -> Arc<TileBits> {
         self.battlefront_frame
             .as_ref()
-            .map(|frame| frame.visible.clone())
-            .unwrap_or_else(|| g.player_vision_now(pid))
+            .map(|frame| Arc::clone(&frame.visible))
+            .unwrap_or_else(|| g.player_vision_frame(pid))
     }
 
     /// Whether a unit belonged to the same turn-start observation frame.
@@ -8215,13 +8230,13 @@ impl AdvancedAi {
 
     #[cfg(test)]
     fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         Self::city_pressure_with_visibility(g, pid, cid, &visible)
     }
 
     #[cfg(test)]
     fn belief_city_pressure(&self, g: &Game, pid: usize, cid: u32) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         self.city_pressure_with_belief(g, pid, cid, &visible)
     }
 
@@ -8230,7 +8245,7 @@ impl AdvancedAi {
     /// the simulation thread first, so workers share no `Game` caches and the
     /// floating-point sums retain unit-ID order exactly.
     fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         let Some(pool) = self.work_pool.as_ref() else {
             return cities
                 .iter()
@@ -8502,7 +8517,7 @@ impl AdvancedAi {
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
@@ -26779,7 +26794,25 @@ impl AdvancedAi {
         } else {
             avoid
         };
-        let target = valid_target.or_else(|| {
+        // Preserve a colony already under way, but replace a merely cached
+        // home-island target once the overseas gene finds a discovered foreign
+        // landfall and the home landmass has genuinely run short of room.
+        let overseas_target = if self.overseas_settlement
+            && !(valid_target == Some(current) && g.can_found_city(uid))
+        {
+            let home_landmass = BasicAi::capital_landmass(g, pid);
+            valid_target
+                .filter(|target| !home_landmass.contains(target))
+                .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
+        } else {
+            None
+        };
+        if let Some(target) = overseas_target {
+            self.settler_targets.insert(uid, target);
+            self.settler_stalls.remove(&uid);
+            self.settler_closest.remove(&uid);
+        }
+        let target = overseas_target.or(valid_target).or_else(|| {
             // Ask the forecast before the walk. The mirror can only reject a
             // doomed site after the Settler stands on it, which previously
             // spent a long frontier walk merely to discover the city would
@@ -26788,7 +26821,22 @@ impl AdvancedAi {
             // the next candidate is genuinely distinct.
             let mut rejected = 0;
             loop {
-                let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                // The preferred ranking is allowed to pay a premium for a
+                // rich, distant site. That is normally right, but three
+                // distinct frontier colonies can all fail the live Loyalty
+                // forecast while an already-ranked, reachable local site
+                // remains. Do not turn that bounded safety retry into a
+                // parked Settler: after the preferred attempts, ask the local
+                // ranking once.
+                // It carries the same site, route, dead-site, and threat
+                // filters; it merely declines the global premium.
+                let local_fallback = rejected >= SETTLE_TARGET_FORECAST_RETRIES;
+                let candidate = if local_fallback {
+                    self.best_reachable_settle_site_except(g, pid, uid, 8, avoid)
+                } else {
+                    self.best_settler_target(g, pid, uid, 8, avoid)
+                };
+                let Some((pos, _)) = candidate else {
                     break None;
                 };
                 let verdict = if self.base.loyalty_rate_alarm {
@@ -26797,6 +26845,13 @@ impl AdvancedAi {
                     self.settle_site_frontier_loyalty_verdict(g, pid, pos)
                 };
                 let Some(why) = verdict else {
+                    if local_fallback {
+                        think!(self.journal(), Expansion, Detail,
+                               "Settler falls back to a nearby safe site";
+                               "{SETTLE_TARGET_FORECAST_RETRIES} higher-priority sites failed the \
+                                live Loyalty forecast; this ranked local site still passes it";
+                               pos);
+                    }
                     self.settler_targets.insert(uid, pos);
                     break Some(pos);
                 };
@@ -26807,10 +26862,10 @@ impl AdvancedAi {
                     pos,
                     g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
                 );
-                rejected += 1;
-                if rejected >= SETTLE_TARGET_FORECAST_RETRIES {
+                if local_fallback {
                     break None;
                 }
+                rejected += 1;
             }
         });
         let Some(mut target) = target else {
@@ -29581,7 +29636,8 @@ impl AdvancedAi {
             if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
                 value -= crate::ai::WATER_MARCH_PENALTY;
             }
-            value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
+            value +=
+                self.strike_opening_value(g, pid, uid, tile, group, enemies, visible.as_deref());
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
@@ -29854,6 +29910,34 @@ impl AdvancedAi {
         replies
     }
 
+    /// One-ply-then-extend search depth used to price a forcing reply: the
+    /// direct reply ply, plus one further extension ply chosen by
+    /// [`Self::forcing_reply_line`]'s own recursion. Named so the value only
+    /// has to be justified once, at its declaration, instead of read back
+    /// out of a bare `2` at the call site in
+    /// [`Self::forcing_reply_penalty_from_position`].
+    const FORCING_REPLY_DEPTH: usize = 2;
+
+    /// Chess-style move-ordering width: after every forcing reply at a node
+    /// is generated and scored, only this many of the strongest
+    /// captures/checks are extended into another ply. Named so the value is
+    /// documented once instead of read back out of a bare `.take(4)`.
+    const FORCING_REPLY_WIDTH: usize = 4;
+
+    /// Debug text for one forcing-reply candidate, used only as a sort
+    /// tie-break key when two candidates already share the same primary
+    /// score (see the `sort_by` in [`Self::forcing_reply_line`]). Takes the
+    /// raw `Action`(s) rather than a precomputed `String` so the
+    /// (allocating) `Debug` formatting happens lazily, inside the
+    /// comparator's `then_with`, and only for the rare pair that actually
+    /// ties — every other candidate never pays for a label at all.
+    fn forcing_reply_label(reply: &Action, followup: &Option<Action>) -> String {
+        match followup {
+            Some(followup) => format!("{reply:?} -> {followup:?}"),
+            None => format!("{reply:?}"),
+        }
+    }
+
     fn forcing_reply_line(
         work_pool: Option<&Arc<WorkPool>>,
         position: &Game,
@@ -29884,7 +29968,9 @@ impl AdvancedAi {
             if branch.apply(enemy, &reply).is_err() {
                 continue;
             }
-            reply_branches.push((format!("{reply:?}"), branch, reply_unit, reply_hp));
+            // `reply` itself (not a formatted String) is stored so its Debug
+            // text is only built lazily, in the sort tie-break below.
+            reply_branches.push((reply, None, branch, reply_unit, reply_hp));
         }
 
         // A Civ unit can normally move and attack in the same turn. Search
@@ -29925,7 +30011,8 @@ impl AdvancedAi {
                         continue;
                     }
                     reply_branches.push((
-                        format!("{movement:?} -> {followup:?}"),
+                        movement.clone(),
+                        Some(followup),
                         branch,
                         Some(attacker),
                         Some(reply_hp),
@@ -29935,7 +30022,7 @@ impl AdvancedAi {
         }
 
         let mut ordered = Vec::new();
-        for (label, branch, reply_unit, reply_hp) in reply_branches {
+        for (reply, followup, branch, reply_unit, reply_hp) in reply_branches {
             let loss = branch
                 .units
                 .get(&victim)
@@ -29949,23 +30036,34 @@ impl AdvancedAi {
                     .unwrap_or(hp as f64 + 20.0),
                 _ => 0.0,
             };
-            ordered.push(((loss - 0.35 * counter_loss).max(0.0), label, branch));
+            ordered.push((
+                (loss - 0.35 * counter_loss).max(0.0),
+                reply,
+                followup,
+                branch,
+            ));
         }
 
         // Chess-style move ordering keeps the extension bounded: examine all
-        // forcing replies at the frontier, but only extend the four strongest
-        // captures/checks into another focus-fire action.
+        // forcing replies at the frontier, but only extend the
+        // FORCING_REPLY_WIDTH strongest captures/checks into another
+        // focus-fire action. The tie-break Debug text is built lazily,
+        // inside `then_with`, so it is only paid for the rare pair of
+        // candidates that actually share the same primary score.
         ordered.sort_by(|left, right| {
-            right
-                .0
-                .total_cmp(&left.0)
-                .then_with(|| left.1.cmp(&right.1))
+            right.0.total_cmp(&left.0).then_with(|| {
+                Self::forcing_reply_label(&left.1, &left.2)
+                    .cmp(&Self::forcing_reply_label(&right.1, &right.2))
+            })
         });
-        let continuations = ordered.into_iter().take(4).collect::<Vec<_>>();
+        let continuations = ordered
+            .into_iter()
+            .take(Self::FORCING_REPLY_WIDTH)
+            .collect::<Vec<_>>();
         let values = match work_pool {
             Some(pool) if continuations.len() > 1 => {
                 let nested_pool = Arc::clone(pool);
-                pool.map_owned(continuations, move |(immediate, _, branch)| {
+                pool.map_owned(continuations, move |(immediate, _, _, branch)| {
                     immediate
                         + Self::forcing_reply_line(
                             Some(&nested_pool),
@@ -29978,7 +30076,7 @@ impl AdvancedAi {
             }
             _ => continuations
                 .into_iter()
-                .map(|(immediate, _, branch)| {
+                .map(|(immediate, _, _, branch)| {
                     immediate
                         + Self::forcing_reply_line(
                             work_pool,
@@ -30475,7 +30573,7 @@ impl AdvancedAi {
                     &reply_position,
                     enemy,
                     *victim,
-                    2,
+                    Self::FORCING_REPLY_DEPTH,
                 ));
             }
         }
@@ -31889,10 +31987,12 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
-        // Hoisted out of the tile loop below: `player_vision_now` clones a
-        // whole `TileBits` and `visibility_viewers` walks the alliance graph,
-        // and neither can move while this loop applies nothing. Built lazily,
-        // because most units reach no enemy tile at all.
+        // Hoisted out of the tile loop below: `visibility_viewers` walks the
+        // alliance graph, and neither frame can move while this loop applies
+        // nothing. Built lazily, because most units reach no enemy tile at
+        // all. `player_vision_frame` hands back the engine's own `Arc`, so
+        // even that one build is a refcount bump rather than a `TileBits`
+        // clone.
         let mut vision_frames = None;
         for pos in g.wdisk(unit.pos, radius) {
             if spec.class != "military" {
@@ -31937,12 +32037,11 @@ impl AdvancedAi {
             // truthful, which matters to anything that trusts it.
             //
             // ⚠⚠ The first version of this gate was a **+6.43% pessimization**
-            // because it called `combat_target_visible`, which recomputes
-            // `player_vision_now` -- a whole `TileBits` clone -- per call. The
-            // frames are hoisted below for that reason. Do not inline them
-            // back.
+            // because it called `combat_target_visible`, which recomputes the
+            // full vision and viewer derivation per call. The frames are
+            // hoisted below for that reason. Do not inline them back.
             let frames = vision_frames
-                .get_or_insert_with(|| (g.player_vision_now(pid), g.visibility_viewers(pid)));
+                .get_or_insert_with(|| (g.player_vision_frame(pid), g.visibility_viewers(pid)));
             if spec.has_ranged_attack()
                 && distance <= g.unit_attack_range(uid)
                 && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
@@ -33142,7 +33241,7 @@ impl AdvancedAi {
     /// Whether this hull is on the sea-scout roster this turn. See
     /// `naval_explorer`.
     fn is_naval_explorer(&self, g: &Game, pid: usize, uid: u32) -> bool {
-        self.base.naval_recon
+        (self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
             && self.naval_explorer(g, pid).contains(&uid)
     }
@@ -33170,7 +33269,9 @@ impl AdvancedAi {
     /// arm still buys only the first ship; this merely lets a spare hull open
     /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
     fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
-        if !self.base.naval_recon_on() || !BasicAi::unseen_water_remains(g, pid) {
+        if !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
+            || !BasicAi::unseen_water_remains(g, pid)
+        {
             return Vec::new();
         }
         let mut ships = g
@@ -34370,6 +34471,125 @@ mod live_bundle_tests {
         assert!(!live.base.explore_commit);
         assert!(!live.bank_envoys);
         assert!(!live.base.bank_envoys);
+    }
+}
+
+// This module lives here, rather than in `src/ai/advanced/tests.rs`, because
+// it is exercising `AdvancedAi::forcing_reply_label`, a private associated
+// item declared inside the `impl AdvancedAi` block just above this file's
+// `forcing_reply_line` — a plain `mod` cannot nest inside an `impl`, and
+// `advanced.rs`'s single giant `impl AdvancedAi` block spans essentially the
+// whole file, so a top-level test module can only land in a gap like this
+// one (see `live_bundle_tests` immediately above, which does the same).
+#[cfg(test)]
+mod forcing_reply_lazy_key_tests {
+    use super::AdvancedAi;
+    use crate::game::Action;
+
+    /// Reimplements the *old*, eager form of the forcing-reply tie-break:
+    /// format every candidate's Debug label up front, then sort on
+    /// `(score desc, label asc)`.
+    fn eager_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut eager: Vec<(f64, String)> = candidates
+            .iter()
+            .map(|(score, reply, followup)| {
+                (*score, AdvancedAi::forcing_reply_label(reply, followup))
+            })
+            .collect();
+        eager.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        eager.into_iter().map(|(_, label)| label).collect()
+    }
+
+    /// The *new*, lazy form actually used by `forcing_reply_line`: sort
+    /// directly on the raw candidates, formatting a label only inside
+    /// `then_with`, i.e. only for a pair that ties on score.
+    fn lazy_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut lazy = candidates.to_vec();
+        lazy.sort_by(|left, right| {
+            right.0.total_cmp(&left.0).then_with(|| {
+                AdvancedAi::forcing_reply_label(&left.1, &left.2)
+                    .cmp(&AdvancedAi::forcing_reply_label(&right.1, &right.2))
+            })
+        });
+        lazy.into_iter()
+            .map(|(_, reply, followup)| AdvancedAi::forcing_reply_label(&reply, &followup))
+            .collect()
+    }
+
+    #[test]
+    fn lazy_tie_break_matches_eager_key_ordering() {
+        let candidates: Vec<(f64, Action, Option<Action>)> = vec![
+            (
+                8.0,
+                Action::Ranged {
+                    unit: 9,
+                    target: (1, 1),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 5,
+                    target: (2, 3),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 1,
+                    target: (0, 0),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Move {
+                    unit: 2,
+                    to: (4, 4),
+                },
+                Some(Action::Attack {
+                    unit: 2,
+                    target: (5, 5),
+                }),
+            ),
+            (
+                1.0,
+                Action::Attack {
+                    unit: 3,
+                    target: (9, 9),
+                },
+                None,
+            ),
+        ];
+
+        let lazy = lazy_order(&candidates);
+        let eager = eager_order(&candidates);
+        assert_eq!(
+            lazy, eager,
+            "lazily-formatted tie-break keys must sort identically to eagerly-formatted ones"
+        );
+
+        // A concrete regression check on top of the equivalence check above:
+        // the 8.0 candidate leads; the three 5.0 candidates tie and fall
+        // back to ascending Debug-text order ("Attack ... unit: 1" <
+        // "Attack ... unit: 5" < "Move ..."); the 1.0 candidate trails.
+        assert_eq!(
+            lazy,
+            vec![
+                "Ranged { unit: 9, target: (1, 1) }".to_string(),
+                "Attack { unit: 1, target: (0, 0) }".to_string(),
+                "Attack { unit: 5, target: (2, 3) }".to_string(),
+                "Move { unit: 2, to: (4, 4) } -> Attack { unit: 2, target: (5, 5) }".to_string(),
+                "Attack { unit: 3, target: (9, 9) }".to_string(),
+            ]
+        );
     }
 }
 
