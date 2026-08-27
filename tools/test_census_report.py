@@ -216,6 +216,26 @@ class FilteringNarrowsBothSides(unittest.TestCase):
                 code = census.main(["--check", "--only", "wanted"])
         self.assertEqual(code, 0)
 
+    def test_only_writes_into_the_ledger_and_not_over_it(self):
+        """A filtered `--write` once dropped the other 28 readings (#2653)."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(json.dumps({
+                "wanted": {"ok": True, "output": ["n = 6"]},
+                "other": {"ok": True, "output": ["m = 1"]},
+            }))
+            fresh = {"wanted": {"ok": True, "output": ["n = 7"], "note": "census"}}
+            with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
+                 mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
+                 mock.patch.object(census, "take", lambda timeout, only, jobs=1: fresh):
+                code = census.main(["--write", "--only", "wanted"])
+            after = json.loads((tmp / "census.json").read_text())
+            rendered = (tmp / "CENSUS.md").read_text()
+        self.assertEqual(code, 0)
+        self.assertEqual(after["wanted"]["output"], ["n = 7"], "the reading taken is recorded")
+        self.assertEqual(after["other"]["output"], ["m = 1"], "the reading not taken survives")
+        self.assertIn("## other", rendered)
+
 
 class AStopwatchIsNotADeterminismReading(unittest.TestCase):
     """The reason the gate could not go green even with a fresh baseline.
