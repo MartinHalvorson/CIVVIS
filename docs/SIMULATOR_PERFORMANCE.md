@@ -3809,7 +3809,10 @@ the evidence above is a counter.
 submodule too** — 41 files, 1,677 lines here, none of them yours. `game.rs`
 declares those modules and rustfmt follows `mod`. The narrower trap beside the
 known `cargo fmt -- <file>` one; check `git status`, not just the file you
-named.
+named. Since 2026-08-27 the sweep reaches two more of them: the `city helpers`
+and `action layer` sections of the single `impl Game` were carved into
+`src/game/city.rs` and `src/game/actions.rs`, leaving `game.rs` itself at
+about 35k lines of its former 53k.
 
 ## 2026-08-27 — movement loops stop measuring edges they just enumerated
 
