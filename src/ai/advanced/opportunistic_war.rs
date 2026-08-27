@@ -706,6 +706,104 @@ impl AdvancedAi {
 #[cfg(test)]
 mod raid_score_safety_tests {
     use super::{AdvancedAi, RaidPrize, SETTLER_PRIZE};
+    use crate::game::Game;
+    use crate::Pos;
+    use std::sync::Arc;
+
+    /// A two-major board with six visible enemy mines inside a warrior's
+    /// two-turn reach.  It is deliberately a pillage-only opportunity: the
+    /// score guard, rather than a missing prize or power gate, must decide it.
+    fn pillage_raid_board() -> Game {
+        let mut game = Game::new_full(2, 28, 18, 8_131, 250, 0, false);
+        let mut capitals = Vec::new();
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each fixture major begins with a Settler");
+            let position = game.units[&settler].pos;
+            capitals.push(game.found_city_for(pid, position, None));
+            game.remove_unit(settler);
+        }
+        for pid in 0..2 {
+            for uid in game.player_unit_ids(pid) {
+                game.remove_unit(uid);
+            }
+        }
+
+        let ours = game.cities[&capitals[0]].pos;
+        let theirs = game.cities[&capitals[1]].pos;
+        let second_city = game
+            .map
+            .tiles
+            .iter()
+            .find_map(|(position, tile)| {
+                (game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.wdist(*position, ours) >= 3
+                    && game.wdist(*position, theirs) >= 3)
+                    .then_some(*position)
+            })
+            .expect("fixture has a legal second-city tile");
+        game.found_city_for(0, second_city, None);
+
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let water = {
+                let tile = game.map.tiles.get(&position).unwrap();
+                game.rules.is_water(tile)
+            };
+            if !water {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+                tile.hills = false;
+                tile.wonder = None;
+            }
+            game.players[0].explored.insert(position);
+        }
+        game.record_contact(0, 1);
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        game.turn = 30;
+        game.current = 0;
+
+        let enemy_city = game.player_city_ids(1)[0];
+        let mines: Vec<Pos> = game.cities[&enemy_city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| {
+                *position != theirs
+                    && game
+                        .map
+                        .tiles
+                        .get(position)
+                        .is_some_and(|tile| !game.rules.is_water(tile))
+            })
+            .take(6)
+            .collect();
+        assert_eq!(mines.len(), 6, "fixture capital owns six usable mine tiles");
+        for position in mines {
+            game.map.tiles.get_mut(&position).unwrap().improvement = Some(crate::name!("mine"));
+        }
+        let warrior_at = game
+            .map
+            .tiles
+            .iter()
+            .find_map(|(position, tile)| {
+                (game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.units_at(*position).is_empty()
+                    && game.wdist(*position, theirs) == 2)
+                    .then_some(*position)
+            })
+            .expect("fixture has a nearby warrior post");
+        game.spawn_test_unit("warrior", 0, warrior_at);
+        game.world_era = 2;
+        game
+    }
 
     #[test]
     fn pillage_only_raids_do_not_challenge_a_score_leader() {
@@ -729,6 +827,28 @@ mod raid_score_safety_tests {
         assert!(
             AdvancedAi::raid_prizes_can_challenge_score_leader(272, 479, &decisive_settler),
             "a capturable Settler remains worth a bounded opportunity against a leader"
+        );
+    }
+
+    #[test]
+    fn pillage_raid_selection_respects_the_public_score_lead() {
+        let mut game = pillage_raid_board();
+        let mut ai = AdvancedAi::new();
+        ai.enable_opportunistic_war();
+        ai.enable_raid_pillage_prizes();
+
+        Arc::make_mut(&mut game.observed_score).insert(0, 272);
+        Arc::make_mut(&mut game.observed_score).insert(1, 479);
+        assert!(
+            ai.raid_opportunity(&game, 0).is_none(),
+            "a three-mine raid must not reopen the 272-to-479 score-leader loss"
+        );
+
+        Arc::make_mut(&mut game.observed_score).insert(0, 479);
+        Arc::make_mut(&mut game.observed_score).insert(1, 272);
+        assert!(
+            ai.raid_opportunity(&game, 0).is_some(),
+            "the same legal, power-safe pillage raid remains available at score parity or better"
         );
     }
 }
