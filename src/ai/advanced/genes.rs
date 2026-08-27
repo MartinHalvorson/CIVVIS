@@ -1595,6 +1595,12 @@ pub const GENES: &[Gene] = &[
     // hill. `incoming_damage` has always cloned the unit onto the tile
     // first; the movers never learned.
     Gene { tag: "defend-where-you-stand", field: "defend_where_you_stand", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_where_you_stand, disable: AdvancedAi::disable_defend_where_you_stand },
+    // `Action::Swap` has been legal, tested and refused correctly in the
+    // engine since `do_swap`, and no controller has ever chosen one —
+    // `docs/MOVEMENT.md` names this gene as its obvious first use. Today a
+    // wounded front-liner is walked away by recovery and the tile it held
+    // goes with it; this trades it for the fresh unit behind, in one action.
+    Gene { tag: "swap-rotation", field: "swap_rotation", kind: Kind::OptIn, enable: AdvancedAi::enable_swap_rotation, disable: AdvancedAi::disable_swap_rotation },
     // The full modern settlement score pays coastal Housing and a small,
     // half-weighted Harbor adjacency, but never the usable coast itself. The
     // global prefilter and legacy scorer retain a six-point coast credit;
