@@ -411,8 +411,12 @@ mod seating_tests;
 #[cfg(test)]
 mod modifier_attachment_tests;
 
+/// Put `district` on a free tile of a test city and register it.
+///
+/// One copy for the whole repository: `src/ai/advanced/tests.rs` carried a
+/// byte-identical `install_ai_test_district` until 2026-08-27.
 #[cfg(test)]
-fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
+pub(crate) fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     let center = game.cities[&city].pos;
     let position = game.cities[&city]
         .owned_tiles
@@ -1606,6 +1610,101 @@ struct ReverseFlowField {
 }
 
 const MAX_REVERSE_FLOW_FIELDS: usize = 8;
+
+/// What one tile of a movement flood remembers.
+///
+/// The three floods in `game.rs` — [`Game::flow_past`], [`Game::path_to`] and
+/// [`Game::approach_reach`] — were three copies of one relaxation loop and
+/// differed in exactly two places: which step test they use, and what entering
+/// a zone of control does to the movement recorded on arrival. The step test is
+/// a closure on [`Game::relax_movement`]; this trait is the second difference.
+///
+/// `flow_past` and `path_to` write 0 there, which is the right answer to "can
+/// it move on". `approach_reach` keeps the movement and marks the tile as one
+/// nothing expands from, which is the right answer to "can it still strike": a
+/// unit stopped by a zone of control keeps its unused movement for the blow
+/// (`do_attack`, `do_ranged`, `can_pay_melee_entry`).
+trait FloodArrival: Copy {
+    /// The unit's own tile, before it has spent anything.
+    fn start(moves: f64) -> Self;
+    /// A neighbour reached with `rem` movement left, `zoc` telling whether
+    /// arriving there entered an enemy zone of control.
+    fn arrival(rem: f64, zoc: bool) -> Self;
+    /// Movement kept here — the value the relaxation compares.
+    fn remaining(self) -> f64;
+    /// Whether the flood must not expand past this tile.
+    fn stopped(self) -> bool;
+}
+
+impl FloodArrival for f64 {
+    fn start(moves: f64) -> Self {
+        moves
+    }
+
+    fn arrival(rem: f64, zoc: bool) -> Self {
+        if zoc {
+            0.0 // entering enemy ZOC ends movement
+        } else {
+            rem
+        }
+    }
+
+    fn remaining(self) -> f64 {
+        self
+    }
+
+    fn stopped(self) -> bool {
+        false // zero movement already stops the expansion
+    }
+}
+
+impl FloodArrival for (f64, bool) {
+    fn start(moves: f64) -> Self {
+        (moves, false)
+    }
+
+    fn arrival(rem: f64, zoc: bool) -> Self {
+        (rem, zoc)
+    }
+
+    fn remaining(self) -> f64 {
+        self.0
+    }
+
+    fn stopped(self) -> bool {
+        self.1
+    }
+}
+
+/// The terms of [`Game::unit_max_moves_at`] which name the unit rather than
+/// the tile: which unit's allowance a tile is read for, and whether a linked
+/// pair takes the slower of the two. A movement flood asks that question once
+/// per neighbour of every tile it expands and the answer cannot change between
+/// them, so [`Game::relax_movement`] settles it once and then only reads the
+/// tile.
+#[derive(Clone, Copy)]
+enum MovesCap {
+    /// The unit's own allowance.
+    Own,
+    /// A linked escort's allowance, in place of the unit's own.
+    Peer(u32),
+    /// The slower of the unit's own and the linked peer's.
+    Min(u32),
+}
+
+/// The terms of [`Game::formation_enters_enemy_zoc`] which name the formation
+/// rather than the tile: which units of a linked pair are subject to zone of
+/// control at all. Hoisted for the same reason as [`MovesCap`] — `unit_ignores_zoc`
+/// is a ruleset lookup and a handful of string comparisons, and the flood was
+/// paying for it once per neighbour.
+#[derive(Clone, Copy)]
+struct ZocTest {
+    /// The moving unit, unless it ignores zone of control.
+    mover: Option<u32>,
+    /// Its linked peer, when this unit leads the pair and the peer does not
+    /// ignore zone of control.
+    peer: Option<u32>,
+}
 
 #[derive(Default)]
 struct RouteScratch {
@@ -23026,20 +23125,39 @@ impl Game {
                 > 0.0
     }
 
-    fn unit_max_moves_at(&self, uid: u32, pos: Pos) -> f64 {
-        let base = self.unit_base_max_moves_at(uid, pos);
+    /// Whose allowance [`Game::unit_max_moves_at`] reads on a tile, decided
+    /// without naming one — a linked pair, an escort's mobility promotion and
+    /// the unit's own class are all facts about the units, so a flood settles
+    /// this once and then only reads tiles. See [`MovesCap`].
+    fn unit_moves_cap(&self, uid: u32) -> MovesCap {
         let unit = &self.units[&uid];
         let Some(linked) = unit.linked_to.and_then(|id| self.units.get(&id)) else {
-            return base;
+            return MovesCap::Own;
         };
         let spec = &self.rules.units[unit.kind];
         if spec.class != "military" && self.unit_shares_escort_movement(linked) {
-            self.unit_base_max_moves_at(linked.id, pos)
+            MovesCap::Peer(linked.id)
         } else if spec.class != "military" || self.unit_shares_escort_movement(unit) {
-            base
+            MovesCap::Own
         } else {
-            base.min(self.unit_base_max_moves_at(linked.id, pos))
+            MovesCap::Min(linked.id)
         }
+    }
+
+    /// The tile half of [`Game::unit_max_moves_at`], once the unit half is
+    /// settled.
+    fn capped_moves_at(&self, uid: u32, cap: &MovesCap, pos: Pos) -> f64 {
+        match *cap {
+            MovesCap::Own => self.unit_base_max_moves_at(uid, pos),
+            MovesCap::Peer(peer) => self.unit_base_max_moves_at(peer, pos),
+            MovesCap::Min(peer) => self
+                .unit_base_max_moves_at(uid, pos)
+                .min(self.unit_base_max_moves_at(peer, pos)),
+        }
+    }
+
+    fn unit_max_moves_at(&self, uid: u32, pos: Pos) -> f64 {
+        self.capped_moves_at(uid, &self.unit_moves_cap(uid), pos)
     }
 
     /// Full movement allowance for a fresh turn, including embarkation, tech,
@@ -24777,19 +24895,32 @@ impl Game {
             || (self.is_linked_leader(uid) && self.units[&uid].linked_to.is_some_and(action_locked))
     }
 
-    fn formation_enters_enemy_zoc(&self, uid: u32, pos: Pos) -> bool {
-        if !self.unit_ignores_zoc(uid) && self.in_enemy_zoc_for(uid, pos) {
-            return true;
+    /// Which units of a formation a tile has to be tested against, decided
+    /// without naming one. See [`ZocTest`].
+    fn formation_zoc_test(&self, uid: u32) -> ZocTest {
+        ZocTest {
+            mover: (!self.unit_ignores_zoc(uid)).then_some(uid),
+            peer: self
+                .units
+                .get(&uid)
+                .filter(|_| self.is_linked_leader(uid))
+                .and_then(|unit| unit.linked_to)
+                .filter(|peer| !self.unit_ignores_zoc(*peer)),
         }
-        let Some(peer) = self
-            .units
-            .get(&uid)
-            .filter(|_| self.is_linked_leader(uid))
-            .and_then(|unit| unit.linked_to)
-        else {
-            return false;
-        };
-        !self.unit_ignores_zoc(peer) && self.in_enemy_zoc_for(peer, pos)
+    }
+
+    /// The tile half of [`Game::formation_enters_enemy_zoc`], once the
+    /// formation half is settled.
+    fn enters_enemy_zoc(&self, test: &ZocTest, pos: Pos) -> bool {
+        test.mover
+            .is_some_and(|uid| self.in_enemy_zoc_for(uid, pos))
+            || test
+                .peer
+                .is_some_and(|peer| self.in_enemy_zoc_for(peer, pos))
+    }
+
+    fn formation_enters_enemy_zoc(&self, uid: u32, pos: Pos) -> bool {
+        self.enters_enemy_zoc(&self.formation_zoc_test(uid), pos)
     }
 
     fn stop_unit_by_zoc(&mut self, uid: u32) {
@@ -25467,40 +25598,22 @@ impl Game {
             return out;
         };
         let (start, moves) = (unit.pos, unit.moves_left);
-        let max_moves = self.unit_max_moves(uid);
         if moves <= 0.0 || self.formation_movement_locked_by_zoc(uid) {
             return out;
         }
         let _memo = self.query_memo();
         // Per tile: movement kept on arrival, and whether the arrival stopped
         // the unit (zone of control) so nothing expands from it.
-        let mut best: BTreeMap<Pos, (f64, bool)> = BTreeMap::new();
         let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
-        best.insert(start, (moves, false));
-        let mut queue = vec![start];
-        while let Some(cur) = queue.pop() {
-            let (rem, stopped) = best[&cur];
-            if rem <= 0.0 || stopped {
-                continue;
-            }
-            for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n) || !self.can_pass(uid, cur, n) {
-                    continue;
-                }
-                let cost = self.unit_step_cost(uid, cur, n);
-                let fresh = cur == start && rem >= max_moves;
-                if rem < cost && !fresh {
-                    continue; // MP paid up front (Civ 6)
-                }
-                let new_rem = (rem - cost).max(0.0).min(self.unit_max_moves_at(uid, n));
-                let stops = self.formation_enters_enemy_zoc(uid, n);
-                if best.get(&n).map(|b| new_rem > b.0).unwrap_or(true) {
-                    best.insert(n, (new_rem, stops));
-                    parent.insert(n, cur);
-                    queue.push(n);
-                }
-            }
-        }
+        let best: BTreeMap<Pos, (f64, bool)> = self.relax_movement(
+            uid,
+            start,
+            moves,
+            |cur, n| self.can_pass(uid, cur, n),
+            |n, cur| {
+                parent.insert(n, cur);
+            },
+        );
         for (pos, (rem, _)) in best {
             // The flood crosses our own column and never ends on it, so a
             // stand behind a friendly unit is a step on the way and not a
@@ -26513,6 +26626,90 @@ impl Game {
         Some(self.map.tiles.values().as_slice()[step].pos)
     }
 
+    /// The one movement relaxation in the engine: every tile this unit's
+    /// remaining movement can occupy or cross, with what it keeps there.
+    ///
+    /// `passable` is the whole difference between a flood that reads the board
+    /// as it stands and one that reads through what is parked on it; `V`
+    /// carries the zone-of-control rule (see [`FloodArrival`]);
+    /// `record_parent(tile, from)` is called on exactly the relaxations that
+    /// improve a tile, so a caller that wants the walk gets the flood's own
+    /// parents and a caller that does not pays nothing for them.
+    ///
+    /// ⚠ THE VISITATION ORDER IS PART OF THE ANSWER, not an implementation
+    /// detail. The stack is LIFO and re-pushes a tile every time it improves,
+    /// the neighbour order is `nbrs`, and the improvement test is a strict
+    /// `>`; between them they decide which parent wins a tie, and therefore
+    /// which of several equally long walks `path_to` returns. Two floods can
+    /// agree on every distance and still hand back different paths. Change any
+    /// of the three and the engine plays a different game.
+    ///
+    /// The caller opens the [`Game::query_memo`] scope and applies its own
+    /// guards (`formation_movement_locked_by_zoc`) before calling: the three
+    /// callers return different empty answers, and two of them read the flood's
+    /// parents after it, still inside their scope.
+    fn relax_movement<V, P, R>(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        passable: P,
+        mut record_parent: R,
+    ) -> BTreeMap<Pos, V>
+    where
+        V: FloodArrival,
+        P: Fn(Pos, Pos) -> bool,
+        R: FnMut(Pos, Pos),
+    {
+        let max_moves = self.unit_max_moves(uid);
+        // Both of these ask the unit, never the tile, and the loop below asks
+        // them once per neighbour of every tile it expands — see
+        // `Game::unit_moves_cap` and `Game::formation_zoc_test`.
+        let cap = self.unit_moves_cap(uid);
+        let zoc = self.formation_zoc_test(uid);
+        let mut best: BTreeMap<Pos, V> = BTreeMap::new();
+        best.insert(start, V::start(moves));
+        let mut queue = vec![start];
+        while let Some(cur) = queue.pop() {
+            let here = best[&cur];
+            let rem = here.remaining();
+            if rem <= 0.0 || here.stopped() {
+                continue;
+            }
+            for n in self.nbrs(cur) {
+                if !self.map.tiles.contains_key(&n) || !passable(cur, n) {
+                    continue;
+                }
+                let cost = self.unit_step_cost(uid, cur, n);
+                let fresh = cur == start && rem >= max_moves;
+                if rem < cost && !fresh {
+                    continue; // MP paid up front (Civ 6)
+                }
+                let new_rem = (rem - cost)
+                    .max(0.0)
+                    .min(self.capped_moves_at(uid, &cap, n));
+                let arrival = V::arrival(new_rem, self.enters_enemy_zoc(&zoc, n));
+                // ⚠ The zone-of-control rule is applied BEFORE the improvement
+                // test, not after it: `flow_past` and `path_to` compare the
+                // zeroed value, so a second arrival at a tile inside a zone of
+                // control never improves on the first and never re-parents it.
+                // Comparing the pre-ZOC movement instead leaves every distance
+                // identical and hands `path_to` a different walk to a
+                // destination under a zone of control.
+                if best
+                    .get(&n)
+                    .map(|b| arrival.remaining() > b.remaining())
+                    .unwrap_or(true)
+                {
+                    best.insert(n, arrival);
+                    record_parent(n, cur);
+                    queue.push(n);
+                }
+            }
+        }
+        best
+    }
+
     fn flow(&self, uid: u32, start: Pos, moves: f64) -> BTreeMap<Pos, f64> {
         self.flow_past(uid, start, moves, false)
     }
@@ -26533,41 +26730,17 @@ impl Game {
         moves: f64,
         through_units: bool,
     ) -> BTreeMap<Pos, f64> {
-        let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return BTreeMap::new();
         }
         let _memo = self.query_memo();
-        let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
-        best.insert(start, moves);
-        let mut queue = vec![start];
-        while let Some(cur) = queue.pop() {
-            let rem = best[&cur];
-            if rem <= 0.0 {
-                continue;
-            }
-            for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n)
-                    || self.entry_at(uid, cur, n, through_units) == Entry::Blocked
-                {
-                    continue;
-                }
-                let cost = self.unit_step_cost(uid, cur, n);
-                let fresh = cur == start && rem >= max_moves;
-                if rem < cost && !fresh {
-                    continue; // MP paid up front (Civ 6)
-                }
-                let mut new_rem = (rem - cost).max(0.0).min(self.unit_max_moves_at(uid, n));
-                if self.formation_enters_enemy_zoc(uid, n) {
-                    new_rem = 0.0; // entering enemy ZOC ends movement
-                }
-                if best.get(&n).map(|b| new_rem > *b).unwrap_or(true) {
-                    best.insert(n, new_rem);
-                    queue.push(n);
-                }
-            }
-        }
-        best
+        self.relax_movement(
+            uid,
+            start,
+            moves,
+            |cur, n| self.entry_at(uid, cur, n, through_units) != Entry::Blocked,
+            |_, _| {}, // nobody asks this flood for the walk
+        )
     }
 
     /// This turn's cheapest legal path to `to`, or `None` when the unit cannot
@@ -26595,40 +26768,22 @@ impl Game {
         if self.wdist(start, to) == 1 {
             return self.can_move(uid, to).then_some(vec![to]);
         }
-        let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return None;
         }
         let _memo = self.query_memo();
-        let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
-        best.insert(start, moves);
-        let mut queue = vec![start];
-        while let Some(cur) = queue.pop() {
-            let rem = best[&cur];
-            if rem <= 0.0 {
-                continue;
-            }
-            for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n) || !self.can_pass(uid, cur, n) {
-                    continue;
-                }
-                let cost = self.unit_step_cost(uid, cur, n);
-                let fresh = cur == start && rem >= max_moves;
-                if rem < cost && !fresh {
-                    continue;
-                }
-                let mut new_rem = (rem - cost).max(0.0).min(self.unit_max_moves_at(uid, n));
-                if self.formation_enters_enemy_zoc(uid, n) {
-                    new_rem = 0.0;
-                }
-                if best.get(&n).map(|b| new_rem > *b).unwrap_or(true) {
-                    best.insert(n, new_rem);
-                    parent.insert(n, cur);
-                    queue.push(n);
-                }
-            }
-        }
+        // Run for its parents: `f64` is the zone-of-control rule `flow` uses,
+        // which is what this path has always been read against.
+        let _reach: BTreeMap<Pos, f64> = self.relax_movement(
+            uid,
+            start,
+            moves,
+            |cur, n| self.can_pass(uid, cur, n),
+            |n, cur| {
+                parent.insert(n, cur);
+            },
+        );
         parent.get(&to)?;
         let mut path = vec![to];
         let mut cur = to;
@@ -40585,27 +40740,36 @@ impl Game {
         Ok(())
     }
 
-    /// Faith price for a building unlocked by a Worship belief, Jesuit
-    /// Education, or Valletta. Valletta uses the normal 2:1 Faith conversion
-    /// for City Center and Encampment buildings, while the three wall tiers
-    /// (including unique replacements) receive its 50% discount.
-    pub(crate) fn building_faith_purchase_cost(
+    /// The half of a building purchase gate that does not depend on the
+    /// currency.
+    ///
+    /// ⚠ One engine, two purchase paths. `building_faith_purchase_cost` and
+    /// `building_gold_purchase_cost` asked the same three questions in two
+    /// hand-copied preambles, and the last time those drifted the Faith path
+    /// sold a city defence the Gold path had always refused — 99 purchases the
+    /// live host rejected, recorded in the comment below. They now ask them
+    /// once.
+    ///
+    /// `Err` is an answer the gate has already settled: the host's own price
+    /// (or its refusal), or a building the shipped ruleset sells for no
+    /// currency at all. `Ok` hands back the item and its district family for
+    /// the currency's own rules to price.
+    fn building_purchase_gate(
         &self,
-        pid: usize,
         cid: u32,
         building: &str,
-    ) -> Option<f64> {
-        let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
-        let spec = self.rules.buildings.get(building)?;
-        if city.buildings.iter().any(|owned| owned == building) {
-            return None;
-        }
+        spec: &crate::rules::BuildingSpec,
+        currency: &str,
+    ) -> Result<(Item, Name), Option<f64>> {
         let item = Item::Building {
             building: Name::new(building),
         };
-        // ★ The host's own answer first — see `building_gold_purchase_cost`.
-        if let Some(host) = self.host_purchase_price(cid, &item, "faith") {
-            return host.filter(|_| !self.purchase_is_blocked(cid, &item));
+        // ★ The host's own answer first. When the export carried this city's
+        // purchase menu (`StateCity::purchasable`) the price is the engine's
+        // `GetPurchaseCost` and an item off the menu is not for sale; the
+        // model's rules below are what the board falls back on without it.
+        if let Some(host) = self.host_purchase_price(cid, &item, currency) {
+            return Err(host.filter(|_| !self.purchase_is_blocked(cid, &item)));
         }
         let district = spec
             .district
@@ -40625,21 +40789,41 @@ impl Game {
         // cost modifiers beside it are vestigial -- they discount a purchase
         // the game never offers.
         //
-        // This function granted the opposite, and `building_gold_purchase_cost`
-        // twelve lines below has always refused the same buildings for the same
-        // reason ("City defenses ... remain Production-only"). One engine, two
-        // purchase paths, opposite answers for one building.
-        //
-        // The live seat paid for it: runs `civvis-20260818T113115Z` and
-        // `104654Z`, the two whose minors list carries Valletta with this seat
-        // as suzerain, issued 99 Faith purchases of `BUILDING_CASTLE` (53),
+        // The Faith path granted the opposite until 2026-08-18, while the Gold
+        // path had always refused the same buildings for the same reason. The
+        // live seat paid for it: runs `civvis-20260818T113115Z` and `104654Z`,
+        // the two whose minors list carries Valletta with this seat as
+        // suzerain, issued 99 Faith purchases of `BUILDING_CASTLE` (53),
         // `BUILDING_STAR_FORT` (32) and `BUILDING_WALLS` (14). The host refused
         // every one, with no reason text and with all four of the mod's probed
         // parameter shapes answering `can = false`. The other six runs, which
-        // have no Valletta, refused none.
+        // have no Valletta, refused none. Two copies of a gate is how that
+        // happens; this is the copy that is left.
         if spec.outer_defense > 0 {
+            return Err(None);
+        }
+        Ok((item, district))
+    }
+
+    /// Faith price for a building unlocked by a Worship belief, Jesuit
+    /// Education, or Valletta. Valletta uses the normal 2:1 Faith conversion
+    /// for City Center and Encampment buildings, while the three wall tiers
+    /// (including unique replacements) receive its 50% discount.
+    pub(crate) fn building_faith_purchase_cost(
+        &self,
+        pid: usize,
+        cid: u32,
+        building: &str,
+    ) -> Option<f64> {
+        let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
+        let spec = self.rules.buildings.get(building)?;
+        if city.buildings.iter().any(|owned| owned == building) {
             return None;
         }
+        let (item, district) = match self.building_purchase_gate(cid, building, spec, "faith") {
+            Ok(gate) => gate,
+            Err(settled) => return settled,
+        };
         let valletta = self.grants_city_state_unique_bonus(pid, "Valletta")
             && matches!(district.as_str(), "city_center" | "encampment")
             && self.can_produce(pid, cid, &item);
@@ -40690,22 +40874,11 @@ impl Game {
         building: &str,
     ) -> Option<f64> {
         let spec = self.rules.buildings.get(building)?;
-        // ★ The host's own answer first. When the export carried this city's
-        // purchase menu (`StateCity::purchasable`) the price is the engine's
-        // `GetPurchaseCost` and an item off the menu is not for sale; the
-        // model's rules below are what the board falls back on without it.
-        let asked = Item::Building {
-            building: Name::new(building),
+        let (item, district) = match self.building_purchase_gate(cid, building, spec, "gold") {
+            Ok(gate) => gate,
+            Err(settled) => return settled,
         };
-        if let Some(host) = self.host_purchase_price(cid, &asked, "gold") {
-            return host.filter(|_| !self.purchase_is_blocked(cid, &asked));
-        }
-        let district = spec
-            .district
-            .map(|district| self.district_family(district))
-            .unwrap_or(crate::name!("city_center"));
-        if spec.outer_defense > 0
-            || spec.wonder
+        if spec.wonder
             || district == "government_plaza"
             || spec
                 .effects
@@ -40713,24 +40886,13 @@ impl Game {
                 .copied()
                 .unwrap_or(0.0)
                 > 0.0
-            || !self.can_produce(
-                pid,
-                cid,
-                &Item::Building {
-                    building: Name::new(building),
-                },
-            )
+            || !self.can_produce(pid, cid, &item)
             // ⚠ `can_produce` reads `blocked_production`; a PURCHASE refusal lands
             // in `blocked_purchases`, a different set with a different meaning —
             // "the host will not sell this here right now" rather than "this city
             // cannot build it". Without this the two never met and a refused
             // purchase was re-offered every turn.
-            || self.purchase_is_blocked(
-                cid,
-                &Item::Building {
-                    building: Name::new(building),
-                },
-            )
+            || self.purchase_is_blocked(cid, &item)
         {
             return None;
         }
@@ -40738,16 +40900,7 @@ impl Game {
             .city_district_effect(&self.cities[&cid], "gold_faith_purchase_discount_pct")
             + self.gov_effects(pid).gold_purchase_discount_pct)
             .clamp(0.0, 100.0);
-        Some(
-            self.item_cost_for_city(
-                pid,
-                cid,
-                &Item::Building {
-                    building: Name::new(building),
-                },
-            ) * 4.0
-                * (1.0 - discount / 100.0),
-        )
+        Some(self.item_cost_for_city(pid, cid, &item) * 4.0 * (1.0 - discount / 100.0))
     }
 
     fn finish_purchased_building(&mut self, cid: u32, item: &Item) {

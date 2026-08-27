@@ -142,14 +142,7 @@ impl AdvancedAi {
             return score;
         }
         let projected = |at: Pos, weight: f64| {
-            let yields = Self::projected_neighbour_yields(g, at);
-            weight
-                * (yields.food * 2.0
-                    + yields.production * 2.2
-                    + yields.gold * 0.7
-                    + yields.science * 1.2
-                    + yields.culture * 1.2
-                    + yields.faith * 0.4)
+            weight * Self::settlement_yield_value(Self::projected_neighbour_yields(g, at))
         };
         let mut projection = projected(pos, 1.5);
         for neighbour in g.nbrs(pos) {

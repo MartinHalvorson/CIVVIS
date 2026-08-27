@@ -2296,16 +2296,30 @@ impl Session {
         self.resumed_next_game_params.take()
     }
 
+    /// Whether this process may roll a finished world into its successor.
+    ///
+    /// A supervised exhibition deliberately leaves its terminal world in
+    /// place for `spectator_supervisor.py`: that boundary fetches and builds
+    /// canonical head before it replaces this process.  Starting here would
+    /// let the old binary begin the next verification game first.
+    fn may_start_automatic_successor(&self) -> bool {
+        !self.params.supervised
+    }
+
     /// Start the next world, from whatever setup the viewer queued for it.
     ///
     /// The queue is passed in rather than read from here: it is written by a
     /// setup control that must never wait on the simulation, so it lives
     /// beside the session rather than inside it.
-    fn start_automatic_next_game(&mut self, queued: Option<Params>) {
+    fn start_automatic_next_game(&mut self, queued: Option<Params>) -> bool {
+        if !self.may_start_automatic_successor() {
+            return false;
+        }
         let next_seed = automatic_successor_seed(self.params.seed);
         let mut params = queued.unwrap_or_else(|| self.params.clone());
         params.seed = next_seed;
         *self = Session::new(params);
+        true
     }
 
     /// An agent's plan as the spectator sees it. City ids mean nothing to a
@@ -3877,10 +3891,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     sh.finale_hold.fetch_add(1, Ordering::Relaxed);
                 }
                 let t0 = over_since.unwrap_or_else(Instant::now);
-                let left = final_countdown_ms(&sh)
-                    .saturating_sub(t0.elapsed().as_millis() as u64);
+                let left = final_countdown_ms(&sh).saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
-                if left == 0 {
+                if left == 0 && s.may_start_automatic_successor() {
                     // A Tactics match is a series, and the series outlives
                     // the battle: score this one and set the next one's sides
                     // before the world it was played on is replaced.
@@ -3888,7 +3901,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                         .take_next_game_params()
                         .or_else(|| s.params.tactics.best_of.gt(&1).then(|| s.params.clone()));
                     let queued = sh.advance_match(&s.game, queued);
-                    s.start_automatic_next_game(queued);
+                    assert!(s.start_automatic_next_game(queued));
                     sh.current_seed.store(s.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&s.params);
                     over_since = None;
@@ -14456,11 +14469,11 @@ fetchpriority=\"high\""
         );
 
         let queued = shared.take_next_game_params();
-        shared
+        assert!(shared
             .session
             .lock()
             .unwrap()
-            .start_automatic_next_game(queued);
+            .start_automatic_next_game(queued));
 
         let session = shared.session.lock().unwrap();
         assert_ne!(session.game.seed, original_seed);
@@ -14473,6 +14486,21 @@ fetchpriority=\"high\""
         drop(session);
         // The queue is spent: the world after this one is this one's settings.
         assert!(decorated_state(&shared)["next_game_settings"].is_null());
+    }
+
+    #[test]
+    fn supervised_result_requires_a_process_successor() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let mut session = Session::new(params);
+        session.game.winner = Some(0);
+        let finished_seed = session.game.seed;
+
+        assert!(!session.may_start_automatic_successor());
+        assert!(!session.start_automatic_next_game(None));
+        assert_eq!(session.game.seed, finished_seed);
+        assert!(session.game.is_finished());
     }
 
     #[test]
