@@ -2146,6 +2146,31 @@ impl AdvancedAi {
         self.growth_to_settle = false;
     }
 
+    /// Once the Palace landmass has at most two independent city sites left,
+    /// rebuild a naval eye and favor water that can reveal a known foreign
+    /// landfall. Opt-in gene `island-exploration`; see `BasicAi`'s
+    /// `island_exploration_active` and `exploration_goal`.
+    pub fn enable_island_exploration(&mut self) {
+        self.base.island_exploration = true;
+    }
+
+    /// The twin of `enable_island_exploration`.
+    pub fn disable_island_exploration(&mut self) {
+        self.base.island_exploration = false;
+    }
+
+    /// When the main landmass has little room left, route a Settler to the
+    /// nearest viable foreign site the player has discovered. Opt-in gene
+    /// `overseas-settlement`; see `advanced/island_expansion.rs`.
+    pub fn enable_overseas_settlement(&mut self) {
+        self.overseas_settlement = true;
+    }
+
+    /// The twin of `enable_overseas_settlement`.
+    pub fn disable_overseas_settlement(&mut self) {
+        self.overseas_settlement = false;
+    }
+
     /// Fall through to the next-best candidate the planner already ranked when
     /// an order is refused, instead of losing the turn. Opt-in gene
     /// `order-retry`; see `advanced/order_retry.rs`.
@@ -3070,6 +3095,31 @@ impl AdvancedAi {
     /// The twin of `enable_swap_rotation`.
     pub fn disable_swap_rotation(&mut self) {
         self.swap_rotation = false;
+    }
+
+    /// A force group beyond `THREAT_RELIEF_RADIUS` of the threatened city is
+    /// a relief column: it advances on the siege when locally superior,
+    /// holds at the city when too weak, and while a city is threatened
+    /// focuses only on combatants and cities. See `relief_column_marches`.
+    pub fn enable_relief_column_marches(&mut self) {
+        self.relief_column_marches = true;
+    }
+
+    /// The twin of `enable_relief_column_marches`.
+    pub fn disable_relief_column_marches(&mut self) {
+        self.relief_column_marches = false;
+    }
+
+    /// While a city of ours is threatened or bleeding, every ordinary Gold
+    /// purchase leaves one emergency defender's price in the treasury. See
+    /// `threatened_city_reserve`.
+    pub fn enable_threatened_city_reserve(&mut self) {
+        self.threatened_city_reserve = true;
+    }
+
+    /// The twin of `enable_threatened_city_reserve`.
+    pub fn disable_threatened_city_reserve(&mut self) {
+        self.threatened_city_reserve = false;
     }
 
     // ---- append: a-b ------------------------------------------------

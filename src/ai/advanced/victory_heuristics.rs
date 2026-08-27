@@ -440,28 +440,28 @@ mod tests {
         for rival in 1..4 {
             game.record_contact(0, rival);
         }
-        game.observed_public_empire_stats.insert(
+        std::sync::Arc::make_mut(&mut game.observed_public_empire_stats).insert(
             0,
             ObservedPublicEmpireStats {
                 domestic_tourists: Some(10),
                 ..ObservedPublicEmpireStats::default()
             },
         );
-        game.observed_public_empire_stats.insert(
+        std::sync::Arc::make_mut(&mut game.observed_public_empire_stats).insert(
             1,
             ObservedPublicEmpireStats {
                 foreign_tourists: Some(150),
                 ..ObservedPublicEmpireStats::default()
             },
         );
-        game.observed_public_empire_stats.insert(
+        std::sync::Arc::make_mut(&mut game.observed_public_empire_stats).insert(
             2,
             ObservedPublicEmpireStats {
                 domestic_tourists: Some(150),
                 ..ObservedPublicEmpireStats::default()
             },
         );
-        game.observed_public_empire_stats.insert(
+        std::sync::Arc::make_mut(&mut game.observed_public_empire_stats).insert(
             3,
             ObservedPublicEmpireStats {
                 domestic_tourists: Some(20),

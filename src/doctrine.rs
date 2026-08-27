@@ -1893,7 +1893,7 @@ pub fn build_engagement(spec: &Engagement, seed: u64) -> Option<Game> {
         // mirror uses for the host's number states the pool directly, so a
         // walled position is walled and an unwalled one cannot silently grow
         // a wall from a ruleset default.
-        g.observed_city_max_wall_hp.insert(cid, held.wall_hp.max(0));
+        std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, held.wall_hp.max(0));
     }
 
     // The muster: each unit takes the nearest usable tile to where the

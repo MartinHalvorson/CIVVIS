@@ -476,11 +476,11 @@ class TheBatchRule(unittest.TestCase):
 
 
 class TheOperatorPins(unittest.TestCase):
-    """⭐ THE OPERATOR'S PINS (2026-08-26): nine genes named on by hand, above
-    the batch rule. The pin moves the default and nothing else — the rule's own
-    answer stays published, a pin cannot rescue a gene the rule removes from
-    the pool, and a pin naming a gene the registry does not screen is a hard
-    error rather than a silent no-op."""
+    """⭐ THE OPERATOR'S PINS (2026-08-27): operator-selected genes named
+    on by hand, above the batch rule. The pin moves the default and nothing
+    else — the rule's own answer stays published, a pin cannot rescue a gene
+    the rule removes from the pool, and a pin naming a gene the registry
+    does not screen is a hard error rather than a silent no-op."""
 
     def build(self, batches: list[int | None], pins: tuple[str, ...]):
         """A ledger for one gene `g` from its batch readings, newest first,
@@ -534,59 +534,86 @@ class TheOperatorPins(unittest.TestCase):
         rules = ledger["rules"]
         pins = rules["operator_default_on"]
         expected_pins = {
+            "amenity-project-preemption",
             "apostle-promotion-by-role",
             "army-target-weighs-enemy",
             "barbarian-settler-capture",
+            "blind-objective-strength",
             "boost-wait-research",
-            "builder-supply-floor",
+            "bounded-recovery",
             "buildings-before-projects",
-            "buy-what-cards-cannot-boost",
             "camp-party",
-            "campaign-pillage",
+            "camp-tile-buyout",
+            "canal-city",
+            "chain-payback-window-2",
             "chokepoint-claim",
             "civilian-out-of-reach",
+            "close-as-a-body",
             "coalition-before-war",
+            "coastal-city-sites",
+            "come-ashore",
+            "contested-land-first",
+            "conversion-majority-alarm",
             "deals-at-the-ceiling",
-            "deals-for-our-gain",
+            "defend-where-you-stand",
             "defensible-sites",
+            "district-coverage",
             "district-planning",
+            "early-archers",
             "early-contact-window",
             "elective-war-yields-to-a-lane",
+            "enemy-of-my-enemy",
             "enhancer-for-the-corps",
+            "exchange-is-the-engines",
+            "expansion-pays-back",
             "expansion-schedule",
             "founder-temple",
+            "garrison-under-fire",
             "gold-for-the-young-city",
-            "holy-site-where-the-threat-is-2",
+            "gold-income-floor",
+            "guru-heals-the-corps-2",
+            "holy-site-where-the-threat-is",
             "idle-faith-patronage",
             "lane-great-people",
             "loyalty-rate-alarm",
             "missionary-evades-raiders",
-            "native-emergency-purchase",
             "naval-threat-triage",
-            "never-an-empty-queue",
             "one-launch-pad",
-            "pantheon-board",
+            "one-shot-recovery",
+            "one-war-at-a-time",
+            "order-retry",
+            "peace-when-the-war-does-not-pay",
+            "peacetime-deterrence",
+            "power-the-laboratory-2",
             "quest-boost",
+            "quest-production",
             "quest-trade-route",
+            "raid-pillage-prizes",
             "recon-replacement",
+            "relief-column-marches",
             "relief-targets-the-siege",
+            "religion-race-is-closed",
             "religious-units-heal-first",
             "research-tier-premium",
             "rival-suzerainty-alarm",
             "science-chain-alarm",
+            "science-multiplier-payoff",
+            "score-horizon",
             "settler-screen",
             "settler-target-hysteresis-2",
             "settler-threat-detour",
             "stranded-settler-discount",
+            "threatened-city-reserve",
+            "treasury-at-work",
             "unchosen-war-keeps-the-lane",
             "unit-cost-efficiency",
-            "unit-objective-memory",
-            "wonder-adjacent-sites",
+            "upgrade-the-garrison",
+            "whole-turn-backtrack-guard",
             "wonder-score-tally",
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 49)
+        self.assertEqual(len(pins), 76)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         # ⭐ The versioned family the operator moved on 2026-08-26: the ship
@@ -594,7 +621,7 @@ class TheOperatorPins(unittest.TestCase):
         # ships exactly one version.
         self.assertIn("settler-target-hysteresis-2", genome)
         self.assertNotIn("settler-target-hysteresis", genome)
-        self.assertNotIn("raid-pillage-prizes", genome)
+        self.assertIn("raid-pillage-prizes", genome)
         retained = rules["deployment_policy"] == gene_ledger.RETAINED_DEPLOYMENT_POLICY
         for tag in pins:
             self.assertIn(tag, screenable, tag)
@@ -624,7 +651,7 @@ class TheOperatorPins(unittest.TestCase):
 
 
 class TheOperatorHolds(unittest.TestCase):
-    """⭐ THE OPERATOR'S HOLDS (2026-08-26): the mirror of the pins — genes
+    """⭐ THE OPERATOR'S HOLDS (2026-08-27): the mirror of the pins — genes
     named **off** by hand, above the batch rule and above a retained
     selection. A hold moves the default and nothing else: the rule's own
     answer stays published, the gene keeps its row and its code, and no gene
@@ -683,16 +710,29 @@ class TheOperatorHolds(unittest.TestCase):
         self.assertEqual(ledger["rules"]["batch_decisions"], {"g": "remove"})
         self.assertEqual(ledger["rules"]["removals_due"], ["g"])
 
-    def test_the_checked_in_holds_are_the_operators_four_plus_the_moved_version(self):
+    def test_the_checked_in_holds_follow_the_operator_default_policy(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         expected_holds = {
+            "blind-objective-units",
+            "builder-supply-floor",
+            "builder-tries-the-next-tile",
+            "buy-what-cards-cannot-boost",
+            "campaign-pillage",
             "congress-counter-leader",
+            "deals-for-our-gain",
+            "frontier-massing-alarm",
             "holy-lane-parity",
-            "one-war-at-a-time",
-            "science-multiplier-payoff",
+            "holy-site-where-the-threat-is-2",
+            "lane-space-race",
+            "native-emergency-purchase",
+            "naval-recon",
+            "never-an-empty-queue",
+            "pantheon-board",
             "settler-factory-coordination",
             "settler-target-hysteresis",
+            "unit-objective-memory",
+            "wonder-adjacent-sites",
         }
         self.assertEqual(tuple(sorted(expected_holds)), gene_ledger.OPERATOR_DEFAULT_OFF)
         self.assertEqual(rules["operator_default_off"], sorted(expected_holds))
@@ -703,10 +743,8 @@ class TheOperatorHolds(unittest.TestCase):
             self.assertNotIn(tag, genome, f"{tag} is held off but ships anyway")
             self.assertNotIn(tag, rules["operator_default_on"], tag)
         # ⭐ WHY A HOLD WAS NEEDED AT ALL. Under `operator-retained-selection`
-        # a rotation carries the recorded genome forward, so the batch rule
-        # reading a gene `off` does not take it out — most of these read off
-        # and shipped anyway. `settler-target-hysteresis` the rule reads `on`.
-        # Both routes need naming, and neither is the rule.
+        # a rotation carries the recorded genome forward, so a hold explicitly
+        # takes a named gene out while its batch-rule reading stays evidence.
         self.assertEqual(rules["deployment_policy"],
                          gene_ledger.RETAINED_DEPLOYMENT_POLICY)
         # ⭐ AND `remove` IS A THIRD ROUTE, added 2026-08-27. A hold may sit on
@@ -1952,6 +1990,44 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertGreater(len(desc), 50)
         self.assertTrue(desc["recon-replacement"].startswith("Rebuild the recon arm"))
         self.assertTrue(desc["loyalty-rate-alarm"].startswith("Rank loyalty emergencies"))
+
+    def test_descriptions_matches_the_slow_per_gene_regex_search(self):
+        """`descriptions()` was rewritten from one `re.search` pair per gene
+        (426 calls on the real registry — 10.9 s of the 14.45 s `check`
+        baseline; the nested-quantifier doc-comment group backtracks badly
+        on every miss) into two `re.finditer` passes with a dict lookup per
+        gene. This runs the ORIGINAL per-gene implementation over the real
+        registry and the real `treatment_flags.rs` / `advanced.rs` / `ai.rs`
+        sources and checks every tag's sentence is identical to the new
+        implementation's — so the rewrite is proven output-preserving, not
+        just plausible."""
+
+        def descriptions_slow() -> dict[str, str]:
+            reg = genes.registry()
+            flags = genes.FLAGS_RS.read_text()
+            fields = genes.ADVANCED_RS.read_text() + "\n" + genes.AI_RS.read_text()
+            out: dict[str, str] = {}
+            for tag, (field, toggle) in reg.items():
+                candidates = []
+                m = re.search(
+                    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_"
+                    + re.escape(toggle) + r"\(", flags)
+                if m:
+                    candidates.append(genes._first_sentence(m.group(1)))
+                m = re.search(
+                    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub(?:\(crate\))? )?"
+                    + re.escape(field) + r": bool,", fields)
+                if m:
+                    candidates.append(genes._first_sentence(m.group(1)))
+                usable = [c for c in candidates if c and not c.startswith("See ")]
+                out[tag] = (usable or candidates or [""])[0]
+            return out
+
+        slow = descriptions_slow()
+        fast = ranking.descriptions()
+        self.assertEqual(set(fast), set(slow))
+        for tag in slow:
+            self.assertEqual(fast[tag], slow[tag], tag)
 
     def test_operator_columns_are_in_the_requested_order(self):
         header = next(

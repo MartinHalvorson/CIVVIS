@@ -439,7 +439,7 @@ mod tests {
         // On the live board a rival's culture arrives as the host's per-seat
         // correction, not as modelled cities: the floor reads it.
         let mut g = g;
-        g.observed_yield_adjustments.insert(
+        std::sync::Arc::make_mut(&mut g.observed_yield_adjustments).insert(
             0,
             crate::rules::Yields {
                 culture: 1_000.0,

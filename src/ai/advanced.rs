@@ -324,8 +324,10 @@ const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 /// catches that unresolved fifth-ring attribution without rejecting ordinary
 /// known-city sites. See `frontier_loyalty` and `Game::unseen_major_borders`.
 const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
-/// New-target picks re-asked after a doomed forecast. Exhaustion holds the
-/// Settler rather than routing it through the unfiltered baseline picker.
+/// Preferred new-target picks re-asked after a doomed forecast. If they all
+/// fail, the live controller probes one nearby alternative with the same
+/// safety guards; remaining exhaustion holds rather than routing the Settler
+/// through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
 /// A stalled Settler may finish on the tile it reached, but not when a known
 /// enemy city can support a counterattack before our own nearest city can.
@@ -1058,7 +1060,10 @@ pub struct ForceGroup {
 /// detector moves even if a tile was already visible.
 #[derive(Clone)]
 struct BattlefrontFrame {
-    visible: TileBits,
+    /// An `Arc` into the engine's own per-seat vision cache (see
+    /// `Game::player_vision_frame`) rather than an owned copy: every reader
+    /// below only ever borrows this, and there can be many readers per turn.
+    visible: Arc<TileBits>,
     units: BTreeSet<u32>,
 }
 
@@ -1202,6 +1207,23 @@ struct VictoryFocus {
     strategy: GrandStrategy,
     progress: i32,
 }
+
+/// A nuclear response that has a reachable opponent, a meaningful target, and
+/// a bounded number of devices worth paying to create.  The production and
+/// research paths both consume this same reading so an attractive warhead is
+/// never priced without a reason to get there.
+#[derive(Clone, Copy)]
+struct NuclearWarGoal {
+    pressure: VictoryFocus,
+    desired_stockpile: i64,
+    priority: f64,
+    /// The highest-value reachable target needs the larger blast or ICBM
+    /// range, so a pile of standard devices is not an adequate response.
+    needs_thermonuclear: bool,
+}
+
+const NUCLEAR_STRATEGIC_TARGET_FLOOR: f64 = 180.0;
+const NUCLEAR_ARSENAL_CAP: i64 = 3;
 
 impl EmpireCounts {
     fn add_unit(&mut self, g: &Game, name: &str) {
@@ -4882,6 +4904,10 @@ pub struct AdvancedAi {
     /// spent BEFORE the city converts, which is why the ordering rather than
     /// some later reaction is the fix.
     moksha_defends_the_faithless: bool,
+    /// Give a Settler a discovered overseas colony before spending the last
+    /// practical spaces on the capital's landmass. Opt-in gene
+    /// `overseas-settlement`.
+    overseas_settlement: bool,
     /// Let the assigned diplomatic lane size its own Congress ballot.
     ///
     /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
@@ -5011,6 +5037,26 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// `relief-column-marches`: a force group standing beyond
+    /// `THREAT_RELIEF_RADIUS` of the threatened city is a relief column, not
+    /// part of that city's defence. It advances on the siege when it is
+    /// locally superior; too weak, it holds AT the city — reinforcing the
+    /// garrison — rather than at its own centroid; and while any city is
+    /// threatened its focus is a combatant or a city, never a religious or
+    /// civilian unit. A group inside the radius holds its ring as before.
+    ///
+    /// ⚠ Run `civvis-20260827T113726Z`, t160–164: China declared at 430
+    /// military against our 1,071 and put Artillery, a Field Cannon, three
+    /// Infantry and two Cuirassiers on Aquileia (pop 15, walled, no
+    /// garrison). Our main army — seven units, 1.58 local strength against
+    /// that stack, objective the besieger at (20,30) — logged "will hold —
+    /// held back to cover a threat" on every frame of every turn and stood
+    /// at x=7–13, nine hexes west, because `relieving` was
+    /// `plan.threatened_city.is_some()` and Hold's mover target is the
+    /// group's own anchor. The city fell on t164. #354 shipped this reach
+    /// test off as `scoped_relief_hold` after an inconclusive sim pairing;
+    /// #1194 pruned it. See `rebuild_force_groups`.
+    relief_column_marches: bool,
     /// Stop paying the entry fee for a religion race that is already closed.
     ///
     /// ★★★★ THE PRIZE IS GATED AND THE FEE IS NOT -- AND THE RACE IS OVER.
@@ -5205,6 +5251,16 @@ pub struct AdvancedAi {
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-city-reserve`: while a city of ours is threatened
+    /// (`plan.threatened_city`) or bleeding (`native_city_emergency`), every
+    /// ordinary Gold purchase — the strategic buyer here and the baseline
+    /// `spend_gold` — leaves one emergency defender's price in the treasury.
+    /// The same run bought a Water Mill in Rome at t160 (399 Gold, Aquileia
+    /// named under threat that turn, a Line Infantry at 360) and a Market in
+    /// Aquileia itself at t162 with its walls half down, leaving 29 Gold the
+    /// turn the emergency purchase first became legal. See
+    /// `advanced/gold_and_cards.rs`.
+    threatened_city_reserve: bool,
     /// The two yield-floor shortfalls, computed once a seat-turn. See
     /// `advanced/yield_floors.rs`.
     yield_floor_frame: RefCell<yield_floors::YieldFloorFrame>,
@@ -5704,6 +5760,11 @@ mod expansion_schedule;
 /// build a Settler, the citizens work food. One opt-in gene; see
 /// `advanced/growth_to_settle.rs`.
 mod growth_to_settle;
+
+/// `overseas-settlement`: when the capital's connected land is nearly full,
+/// send the next Settler to the nearest viable discovered foreign landmass.
+/// See `advanced/island_expansion.rs`.
+mod island_expansion;
 
 /// `order-retry`: a refused order falls through to the next-best candidate
 /// the planner already ranked. One opt-in gene; see
@@ -6445,6 +6506,7 @@ impl AdvancedAi {
 
             // ---- append: l-o ----------------------------------------
             moksha_defends_the_faithless: false,
+            overseas_settlement: false,
             lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
@@ -6459,6 +6521,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            relief_column_marches: false,
             religion_race_is_closed: false,
             peace_when_war_does_not_pay: false,
             quest_production: false,
@@ -6484,6 +6547,7 @@ impl AdvancedAi {
             siege_is_progress_2: false,
 
             // ---- append: t-z ----------------------------------------
+            threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
             treasury_at_work: false,
             treasury_at_work_2: false,
@@ -8124,7 +8188,7 @@ impl AdvancedAi {
             self.battlefront_frame = None;
             return;
         }
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         let units = g
             .units
             .values()
@@ -8136,11 +8200,11 @@ impl AdvancedAi {
 
     /// The battlefront's turn-start tile frame, or current vision when this
     /// helper is used outside a controller turn (including focused tests).
-    fn battlefront_visibility(&self, g: &Game, pid: usize) -> TileBits {
+    fn battlefront_visibility(&self, g: &Game, pid: usize) -> Arc<TileBits> {
         self.battlefront_frame
             .as_ref()
-            .map(|frame| frame.visible.clone())
-            .unwrap_or_else(|| g.player_vision_now(pid))
+            .map(|frame| Arc::clone(&frame.visible))
+            .unwrap_or_else(|| g.player_vision_frame(pid))
     }
 
     /// Whether a unit belonged to the same turn-start observation frame.
@@ -8166,13 +8230,13 @@ impl AdvancedAi {
 
     #[cfg(test)]
     fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         Self::city_pressure_with_visibility(g, pid, cid, &visible)
     }
 
     #[cfg(test)]
     fn belief_city_pressure(&self, g: &Game, pid: usize, cid: u32) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         self.city_pressure_with_belief(g, pid, cid, &visible)
     }
 
@@ -8181,7 +8245,7 @@ impl AdvancedAi {
     /// the simulation thread first, so workers share no `Game` caches and the
     /// floating-point sums retain unit-ID order exactly.
     fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         let Some(pool) = self.work_pool.as_ref() else {
             return cities
                 .iter()
@@ -8453,7 +8517,7 @@ impl AdvancedAi {
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
-        let visible = g.player_vision_now(pid);
+        let visible = g.player_vision_frame(pid);
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
@@ -13527,31 +13591,45 @@ impl AdvancedAi {
             }
         }
         value += self.science_drive_tech_bonus(g, pid, tech);
-        // The nuclear lane used to carry a terminal reward and no
-        // instrumental one: a Conquest empire prices a finished device at
-        // 2,600 but the technology that permits one at barely two points, so
-        // no empire ever researched its way to the doctrine it already had.
-        // Price the path like the other victory beelines, from the industrial
-        // era on so the ancient rush book keeps its own ordering. Gated on
-        // victory_planning like the strike doctrine itself, which keeps the
-        // frozen advanced_v1 anchor's research untouched.
-        if self.victory_planning && strategy == GrandStrategy::Conquest && g.world_era >= 4 {
-            let arsenal = &g.players[pid].science_projects;
-            let milestone = if !arsenal.contains("manhattan_project") {
-                Some("nuclear_fission")
-            } else if !arsenal.contains("operation_ivy") {
-                Some("nuclear_fusion")
-            } else {
-                // Both gates are open: the lane is production now, not
-                // research.
-                None
-            };
-            if milestone.is_some_and(|milestone| self.tech_leads_to(g, tech, milestone)) {
-                value += if self.victory_target == Some(VictoryTarget::Domination) {
-                    900.0
+        // A device is only a victory beeline when somebody we can actually
+        // reach has infrastructure worth breaking.  The old path fired for
+        // every Industrial-era Conquest plan, even across a quiet border or
+        // after the only useful target had already been neutralised.  Price
+        // the prerequisites aggressively once the shared nuclear-goal reader
+        // names a reachable victory threat (or a Domination objective), then
+        // stand down at its bounded stockpile.  Gated on victory planning so
+        // the frozen advanced_v1 anchor's research remains untouched.
+        let nuclear_path_candidate = self.tech_leads_to(g, tech, "nuclear_fission")
+            || self.tech_leads_to(g, tech, "nuclear_fusion");
+        if self.victory_planning
+            && matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+            && g.world_era >= 4
+            && nuclear_path_candidate
+        {
+            if let Some(goal) = self.nuclear_war_goal(g, pid, strategy, None) {
+                let completed = &g.players[pid].science_projects;
+                let milestone = if !completed.contains("manhattan_project") {
+                    Some("nuclear_fission")
+                } else if goal.needs_thermonuclear
+                    && g.players[pid]
+                        .counters
+                        .get("project_effect:thermonuclear_devices")
+                        .copied()
+                        .unwrap_or(0)
+                        <= 0
+                    && !completed.contains("operation_ivy")
+                {
+                    Some("nuclear_fusion")
                 } else {
-                    260.0
+                    None
                 };
+                if milestone.is_some_and(|milestone| self.tech_leads_to(g, tech, milestone)) {
+                    let urgency = f64::from(goal.pressure.progress.max(0));
+                    value += 340.0 + urgency * 4.0 + goal.priority.min(1_000.0) * 0.25;
+                    if self.victory_target == Some(VictoryTarget::Domination) {
+                        value += 300.0;
+                    }
+                }
             }
         }
         // One-step lookahead prevents cheap prerequisites from being ignored.
@@ -15054,9 +15132,9 @@ impl AdvancedAi {
             .filter(|pos| {
                 *pos != objective
                     && g.unit_can_traverse(uid, *pos)
-                    && g.units_at(*pos).iter().all(|other| {
-                        g.units.get(other).is_some_and(|other| other.owner != pid)
-                    })
+                    && g.unit_ids_at(*pos)
+                        .iter()
+                        .all(|other| g.units.get(other).is_some_and(|other| other.owner != pid))
             })
             .collect();
         if ring.is_empty() {
@@ -15141,7 +15219,7 @@ impl AdvancedAi {
                 .into_iter()
                 .filter(|position| {
                     self.campaign_staging_position(g, pid, target, uid, objective, *position)
-                        && g.units_at(*position).is_empty()
+                        && g.unit_ids_at(*position).is_empty()
                 })
                 .collect()
         };
@@ -15246,7 +15324,7 @@ impl AdvancedAi {
                 .into_iter()
                 .filter(|position| {
                     (3..=5).contains(&g.wdist(*position, objective))
-                        && g.units_at(*position).is_empty()
+                        && g.unit_ids_at(*position).is_empty()
                         && g.city_at(*position).is_none()
                         && g.map
                             .get(*position)
@@ -15388,7 +15466,7 @@ impl AdvancedAi {
         let defender_in_the_way = g
             .nbrs(unit.pos)
             .into_iter()
-            .flat_map(|position| g.units_at(position))
+            .flat_map(|position| g.unit_ids_at(position))
             .any(|other| {
                 g.units.get(&other).is_some_and(|other| {
                     other.owner == war.target_player
@@ -16711,6 +16789,10 @@ impl AdvancedAi {
         // unchanged while both versions are off. See
         // `advanced/gold_and_cards.rs`.
         let reserve = self.working_treasury_reserve(g, pid, reserve);
+        // `threatened-city-reserve`: never below one emergency defender
+        // while a city of ours is threatened or bleeding. `stock` comes back
+        // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
+        let reserve = self.reserve_for_the_threatened_city(g, pid, plan, reserve);
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -18584,6 +18666,390 @@ impl AdvancedAi {
         };
         let production = g.city_yields(cid).production.max(1.0);
         total / production <= remaining_turns
+    }
+
+    /// The normal denial alarm starts at 78, which is right for an army that
+    /// can move now but too late for a technology and two production projects.
+    /// A Space Race gets the earlier warning because an Expedition is already
+    /// an irreversible countdown; religious victories advance in coarse jumps
+    /// and need the same lead time.
+    fn nuclear_victory_threat(pressure: VictoryFocus) -> bool {
+        match pressure.strategy {
+            GrandStrategy::Science => pressure.progress >= 65,
+            GrandStrategy::Religion => pressure.progress >= 67,
+            GrandStrategy::Culture
+            | GrandStrategy::Diplomacy
+            | GrandStrategy::Conquest
+            | GrandStrategy::Expansion => pressure.progress >= 78,
+            GrandStrategy::Recovery => false,
+        }
+    }
+
+    /// How much a functioning district matters to one particular victory.
+    /// These are disruption values, not construction values: WMD damage
+    /// pillages the district and every building attached to it, which makes a
+    /// Spaceport running a launch much more valuable than a generic Campus.
+    fn nuclear_victory_district_value(strategy: GrandStrategy, family: &str) -> f64 {
+        let general = match family {
+            "spaceport" => 320.0,
+            "campus" => 150.0,
+            "theater_square" | "holy_site" => 160.0,
+            "diplomatic_quarter" => 140.0,
+            "commercial_hub" | "harbor" => 100.0,
+            "industrial_zone" | "encampment" => 90.0,
+            "aerodrome" => 70.0,
+            _ => 25.0,
+        };
+        general
+            + match (strategy, family) {
+                (GrandStrategy::Science, "spaceport") => 850.0,
+                (GrandStrategy::Science, "campus") => 260.0,
+                (GrandStrategy::Science, "industrial_zone") => 180.0,
+                (GrandStrategy::Culture, "theater_square") => 760.0,
+                (GrandStrategy::Culture, "commercial_hub" | "harbor") => 160.0,
+                (GrandStrategy::Religion, "holy_site") => 820.0,
+                (GrandStrategy::Diplomacy, "diplomatic_quarter") => 720.0,
+                (GrandStrategy::Diplomacy, "commercial_hub" | "harbor") => 240.0,
+                (GrandStrategy::Conquest, "encampment") => 440.0,
+                _ => 0.0,
+            }
+    }
+
+    /// Value the exact disruption a blast can cause at a city centre.  WMD
+    /// resolution destroys deployed forces, strips population and walls, and
+    /// pillages each district/building in its disk.  Scoring those effects is
+    /// what makes a threatened Spaceport, Holy Site, or Diplomatic Quarter
+    /// beat a merely walled city when it is the rival's actual win engine.
+    fn nuclear_target_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Pos,
+        thermonuclear: bool,
+    ) -> Option<f64> {
+        let target_city = g.city_at(target)?;
+        let target_ref = g.cities.get(&target_city)?;
+        if target_ref.owner == pid {
+            return None;
+        }
+        let radius = g.rules.wmds[if thermonuclear {
+            "thermonuclear_device"
+        } else {
+            "nuclear_device"
+        }]
+        .blast_radius;
+        let blast = g.wdisk(target, radius);
+        let garrison = blast
+            .iter()
+            .flat_map(|position| g.unit_ids_at(*position))
+            .filter(|unit| g.is_at_war(pid, g.units[unit].owner))
+            .count();
+        let hardness = g.city_strength(target_city) + target_ref.wall_hp as f64 / 10.0;
+        let mut strategic = 0.0;
+        for position in &blast {
+            let Some(tile) = g.map.get(*position) else {
+                continue;
+            };
+            let Some(hit_city_id) = tile.owner_city else {
+                continue;
+            };
+            let Some(hit_city) = g.cities.get(&hit_city_id) else {
+                continue;
+            };
+            // A target that overlaps our own or a neutral city's assets is
+            // never a legal shot.  The live strike pass performs the same
+            // safety check for units and every owned tile; doing the
+            // permanent-city half here prevents research from chasing a
+            // strategic asset it could not actually disrupt.
+            if hit_city.owner == pid
+                || (hit_city.owner != target_ref.owner && !g.is_at_war(pid, hit_city.owner))
+            {
+                return None;
+            }
+            let pressure = if g
+                .players
+                .get(hit_city.owner)
+                .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+            {
+                self.rival_victory_pressure(g, hit_city.owner)
+            } else {
+                VictoryFocus {
+                    strategy: GrandStrategy::Expansion,
+                    progress: 0,
+                }
+            };
+            if g.city_at(*position) == Some(hit_city_id) {
+                // A blast halves population, so dense and capital cities still
+                // matter even when the opponent's victory asset is next door.
+                strategic += hit_city.pop.max(1) as f64 * 3.0;
+                if hit_city.is_capital {
+                    strategic += if pressure.strategy == GrandStrategy::Conquest {
+                        300.0
+                    } else {
+                        130.0
+                    };
+                }
+            }
+            let Some(district) = tile.district else {
+                continue;
+            };
+            if tile.pillaged {
+                continue;
+            }
+            let family = g.district_family(district);
+            let urgency = 0.5 + f64::from(pressure.progress.clamp(0, 100)) / 100.0;
+            strategic +=
+                Self::nuclear_victory_district_value(pressure.strategy, family.as_str()) * urgency;
+            // `damage_tile_area` also pillages every building that belongs to
+            // this district.  Construction cost is a conservative proxy for
+            // the repair delay; the victory-specific district bonus above is
+            // deliberately the larger term.
+            strategic += hit_city
+                .buildings
+                .iter()
+                .filter(|building| !hit_city.pillaged_buildings.contains(*building))
+                .filter_map(|building| g.rules.buildings.get(building.as_str()))
+                .filter(|building| {
+                    building
+                        .district
+                        .is_some_and(|required| g.district_family(required) == family)
+                })
+                .map(|building| building.cost * 0.18)
+                .sum::<f64>();
+            let queued_project = match hit_city.queue.first() {
+                Some(Item::Project { project }) => match (pressure.strategy, family.as_str()) {
+                    (GrandStrategy::Science, "spaceport")
+                        if matches!(
+                            project.as_str(),
+                            "launch_earth_satellite"
+                                | "launch_moon_landing"
+                                | "launch_mars_colony"
+                                | "exoplanet_expedition"
+                                | "lagrange_laser_station"
+                                | "terrestrial_laser_station"
+                        ) =>
+                    {
+                        700.0
+                    }
+                    (GrandStrategy::Religion, "holy_site") => 180.0,
+                    (GrandStrategy::Culture, "theater_square") => 140.0,
+                    (GrandStrategy::Diplomacy, "diplomatic_quarter") => 180.0,
+                    _ => 0.0,
+                },
+                _ => 0.0,
+            };
+            strategic += queued_project * urgency;
+        }
+        // Preserve the old doctrine's hard-target floor, but let an exposed
+        // win-condition asset clear it even when the city has not yet built
+        // walls or a garrison.
+        if hardness < 50.0 && garrison < 3 && strategic < 125.0 {
+            return None;
+        }
+        Some(hardness + garrison as f64 * 12.0 + strategic)
+    }
+
+    /// Find a late-game nuclear response that can affect the board now.  A
+    /// target must be revealed and inside a current city launcher's range:
+    /// this is a quick counter-program, not a hope that a future silo or
+    /// submarine might eventually reach an unseen opponent.
+    fn nuclear_war_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        target_player: Option<usize>,
+    ) -> Option<NuclearWarGoal> {
+        if !self.victory_planning
+            || g.world_era < 4
+            || !matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+        {
+            return None;
+        }
+        let launchers = g.player_city_ids(pid);
+        if launchers.is_empty()
+            || !launchers.iter().any(|city| {
+                g.cities[city].districts.iter().any(|(district, position)| {
+                    g.district_family(*district) == crate::name!("industrial_zone")
+                        && !g.map.tiles[position].pillaged
+                })
+            })
+        {
+            return None;
+        }
+        let nuclear_range = g.rules.wmds["nuclear_device"].icbm_strike_range;
+        let thermonuclear_range = g.rules.wmds["thermonuclear_device"].icbm_strike_range;
+        let range = nuclear_range.max(thermonuclear_range);
+        let mut best: Option<(f64, NuclearWarGoal)> = None;
+        for rival in g.players.iter().filter(|rival| {
+            rival.id != pid
+                && rival.alive
+                && !rival.is_minor
+                && !rival.is_barbarian
+                && !g.same_team(pid, rival.id)
+        }) {
+            let at_war = g.is_at_war(pid, rival.id);
+            if strategy == GrandStrategy::Recovery && !at_war {
+                continue;
+            }
+            let pressure = self.rival_victory_pressure(g, rival.id);
+            let denial = Self::nuclear_victory_threat(pressure);
+            let planned_target = self.plan.as_ref().is_some_and(|plan| {
+                plan.strategy == GrandStrategy::Conquest && plan.target_player == Some(rival.id)
+            });
+            let committed = strategy == GrandStrategy::Conquest
+                && (target_player == Some(rival.id)
+                    || planned_target
+                    || (target_player.is_none()
+                        && self.victory_target == Some(VictoryTarget::Domination)));
+            if !denial && !committed && !at_war {
+                continue;
+            }
+            let target_values: Vec<(f64, bool)> = g
+                .cities
+                .values()
+                .filter(|city| city.owner == rival.id)
+                .filter(|city| g.players[pid].explored.contains(&city.pos))
+                .filter(|city| {
+                    launchers
+                        .iter()
+                        .any(|launcher| g.wdist(g.cities[launcher].pos, city.pos) <= range)
+                })
+                // Plan from the best device the program can unlock.  A
+                // Spaceport two tiles from its centre is a real
+                // thermonuclear target even if a standard device's smaller
+                // blast cannot quite reach it; rejecting that board state
+                // would strand the Fusion half of a useful counter-program.
+                .filter_map(|city| {
+                    let standard = launchers
+                        .iter()
+                        .any(|launcher| g.wdist(g.cities[launcher].pos, city.pos) <= nuclear_range)
+                        .then(|| self.nuclear_target_value(g, pid, city.pos, false))
+                        .flatten();
+                    let thermonuclear = launchers
+                        .iter()
+                        .any(|launcher| {
+                            g.wdist(g.cities[launcher].pos, city.pos) <= thermonuclear_range
+                        })
+                        .then(|| self.nuclear_target_value(g, pid, city.pos, true))
+                        .flatten();
+                    let priority = standard
+                        .into_iter()
+                        .chain(thermonuclear)
+                        .max_by(f64::total_cmp)?;
+                    let needs_thermonuclear = thermonuclear.is_some_and(|value| {
+                        standard.is_none_or(|ordinary| {
+                            value >= ordinary + NUCLEAR_STRATEGIC_TARGET_FLOOR
+                        })
+                    });
+                    Some((priority, needs_thermonuclear))
+                })
+                .collect();
+            let Some((priority, needs_thermonuclear)) = target_values
+                .iter()
+                .copied()
+                .max_by(|left, right| left.0.total_cmp(&right.0))
+            else {
+                continue;
+            };
+            let strategic_targets = target_values
+                .iter()
+                .filter(|(value, _)| *value >= NUCLEAR_STRATEGIC_TARGET_FLOOR)
+                .count();
+            let desired_stockpile = if pressure.progress >= 90 {
+                NUCLEAR_ARSENAL_CAP
+            } else if denial || strategic_targets >= 2 {
+                2
+            } else {
+                1
+            };
+            let score = priority
+                + f64::from(pressure.progress.max(0)) * 7.0
+                + if committed { 190.0 } else { 0.0 }
+                + if at_war { 55.0 } else { 0.0 };
+            if best.as_ref().is_none_or(|(current, _)| score > *current) {
+                best = Some((
+                    score,
+                    NuclearWarGoal {
+                        pressure,
+                        desired_stockpile,
+                        priority,
+                        needs_thermonuclear,
+                    },
+                ));
+            }
+        }
+        best.map(|(_, goal)| goal)
+    }
+
+    /// One scoring path for Manhattan, Ivy, and the devices themselves.  It
+    /// deliberately caps the arsenal: once the reachable targets have enough
+    /// warheads assigned to them, infrastructure and the field army resume
+    /// competing on their ordinary terms instead of an empire hoarding bombs.
+    fn nuclear_project_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        project: &str,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        let Some(goal) = self.nuclear_war_goal(g, pid, plan.strategy, plan.target_player) else {
+            return -10_000.0;
+        };
+        let nuclear_devices = g.players[pid]
+            .counters
+            .get("project_effect:nuclear_devices")
+            .copied()
+            .unwrap_or(0)
+            .max(0);
+        let thermonuclear_devices = g.players[pid]
+            .counters
+            .get("project_effect:thermonuclear_devices")
+            .copied()
+            .unwrap_or(0)
+            .max(0);
+        let stockpile = nuclear_devices + thermonuclear_devices;
+        let thermonuclear_needed = goal.needs_thermonuclear && thermonuclear_devices == 0;
+        if stockpile >= goal.desired_stockpile && !thermonuclear_needed {
+            return -10_000.0;
+        }
+        if self.score_horizon && !self.nuclear_lane_can_finish(g, pid, cid, project) {
+            return 0.0;
+        }
+        let completed = &g.players[pid].science_projects;
+        let base = 760.0
+            + f64::from(goal.pressure.progress.max(0)) * 7.0
+            + goal.priority.min(1_200.0) * 0.28;
+        let standard_stockpile_cap = goal
+            .desired_stockpile
+            .saturating_sub(i64::from(goal.needs_thermonuclear));
+        match project {
+            "manhattan_project" if !completed.contains(project) => base + 1_300.0,
+            "operation_ivy"
+                if goal.needs_thermonuclear
+                    && completed.contains("manhattan_project")
+                    && !completed.contains(project) =>
+            {
+                base + 2_500.0
+            }
+            "build_nuclear_device"
+                if completed.contains("manhattan_project")
+                    && nuclear_devices < standard_stockpile_cap =>
+            {
+                base + if goal.needs_thermonuclear {
+                    1_100.0
+                } else {
+                    1_450.0
+                }
+            }
+            "build_thermonuclear_device"
+                if completed.contains("operation_ivy") && thermonuclear_needed =>
+            {
+                base + 2_800.0
+            }
+            _ => -10_000.0,
+        }
     }
 
     /// The science lane's production pass, behind the turn-limit horizon:
@@ -23189,33 +23655,11 @@ impl AdvancedAi {
                                     }
                             }
                         }
-                        "manhattan_project" | "operation_ivy"
-                            if self.score_horizon
-                                && !self.nuclear_lane_can_finish(g, pid, cid, project) =>
-                        {
-                            0.0
-                        }
-                        "manhattan_project" | "operation_ivy" => {
-                            if plan.strategy == GrandStrategy::Conquest {
-                                2_200.0
-                            } else {
-                                350.0
-                            }
-                        }
-                        "build_nuclear_device" | "build_thermonuclear_device"
-                            if self.score_horizon
-                                && !self.nuclear_lane_can_finish(g, pid, cid, project) =>
-                        {
-                            0.0
-                        }
-                        "build_nuclear_device" | "build_thermonuclear_device" => {
-                            if plan.strategy == GrandStrategy::Conquest {
-                                2_600.0
-                            } else if plan.target_player.is_some() {
-                                850.0
-                            } else {
-                                250.0
-                            }
+                        "manhattan_project"
+                        | "operation_ivy"
+                        | "build_nuclear_device"
+                        | "build_thermonuclear_device" => {
+                            self.nuclear_project_value(g, pid, cid, project, plan)
                         }
                         _ if spec.requires_host_competition() => {
                             // See `competition_victory_points`: first place in
@@ -23617,14 +24061,37 @@ impl AdvancedAi {
             return 0.0;
         }
         let potential = g.settlement_adjacency_summary_from_positions(pid, pos, positions);
-        ((potential.food * 2.0
-            + potential.production * 2.2
-            + potential.gold * 0.7
-            + potential.science * 1.2
-            + potential.culture * 1.2
-            + potential.faith * 0.4)
-            * 0.5)
-            .min(24.0)
+        (Self::settlement_yield_value(potential) * 0.5).min(24.0)
+    }
+
+    /// What a settlement scan pays for one point of each yield.
+    ///
+    /// One vector, four readers: the prefilter's own tile score, the adjacency
+    /// projection it is compared against, the frozen legacy site value, and
+    /// the wonder-site projection in `wonder_sites.rs`. They were four
+    /// hand-copied literals, which is the shape where a re-weighting lands on
+    /// three of four scans and the ranking quietly stops agreeing with the
+    /// score it is a prefilter for.
+    const SETTLEMENT_YIELD_WEIGHTS: Yields = Yields {
+        food: 2.0,
+        production: 2.2,
+        gold: 0.7,
+        science: 1.2,
+        culture: 1.2,
+        faith: 0.4,
+    };
+
+    /// `yields` priced at [`AdvancedAi::SETTLEMENT_YIELD_WEIGHTS`], summed in
+    /// the order the four copies summed it — a settle ranking is decided on
+    /// hundredths, so the association is part of the answer.
+    fn settlement_yield_value(yields: Yields) -> f64 {
+        let weights = Self::SETTLEMENT_YIELD_WEIGHTS;
+        yields.food * weights.food
+            + yields.production * weights.production
+            + yields.gold * weights.gold
+            + yields.science * weights.science
+            + yields.culture * weights.culture
+            + yields.faith * weights.faith
     }
 
     /// Order a global candidate scan before invoking the full growth,
@@ -23640,14 +24107,7 @@ impl AdvancedAi {
                     _ => 1.5,
                 }
             });
-            weight
-                * (yields.food * 2.0
-                    + yields.production * 2.2
-                    + yields.gold * 0.7
-                    + yields.science * 1.2
-                    + yields.culture * 1.2
-                    + yields.faith * 0.4
-                    + resource)
+            weight * (Self::settlement_yield_value(yields) + resource)
         };
         let tile = &g.map.tiles[&pos];
         let mut value = value_of(tile, 1.5);
@@ -23676,13 +24136,7 @@ impl AdvancedAi {
             }
             let y = g.rules.tile_yields(t);
             let ring_discount = if g.wdist(pos, p) <= 1 { 1.0 } else { 0.45 };
-            value += ring_discount
-                * (y.food * 2.0
-                    + y.production * 2.2
-                    + y.gold * 0.7
-                    + y.science * 1.2
-                    + y.culture * 1.2
-                    + y.faith * 0.4);
+            value += ring_discount * Self::settlement_yield_value(y);
             if let Some(resource) = &t.resource {
                 value += match g.rules.resources[resource].class.as_str() {
                     "luxury" => 5.0,
@@ -26003,8 +26457,8 @@ impl AdvancedAi {
                 .settler_guard_holds
                 .then(|| self.battlefront_visibility(g, pid));
             let guarded_here = g.city_at(current).is_some()
-                || g.units_at(current).into_iter().any(|other| {
-                    other != uid
+                || g.unit_ids_at(current).iter().any(|other| {
+                    *other != uid
                         && g.units.get(&other).is_some_and(|unit| {
                             unit.owner == pid
                                 && g.rules.units[unit.kind].class == "military"
@@ -26340,7 +26794,25 @@ impl AdvancedAi {
         } else {
             avoid
         };
-        let target = valid_target.or_else(|| {
+        // Preserve a colony already under way, but replace a merely cached
+        // home-island target once the overseas gene finds a discovered foreign
+        // landfall and the home landmass has genuinely run short of room.
+        let overseas_target = if self.overseas_settlement
+            && !(valid_target == Some(current) && g.can_found_city(uid))
+        {
+            let home_landmass = BasicAi::capital_landmass(g, pid);
+            valid_target
+                .filter(|target| !home_landmass.contains(target))
+                .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
+        } else {
+            None
+        };
+        if let Some(target) = overseas_target {
+            self.settler_targets.insert(uid, target);
+            self.settler_stalls.remove(&uid);
+            self.settler_closest.remove(&uid);
+        }
+        let target = overseas_target.or(valid_target).or_else(|| {
             // Ask the forecast before the walk. The mirror can only reject a
             // doomed site after the Settler stands on it, which previously
             // spent a long frontier walk merely to discover the city would
@@ -26349,7 +26821,22 @@ impl AdvancedAi {
             // the next candidate is genuinely distinct.
             let mut rejected = 0;
             loop {
-                let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                // The preferred ranking is allowed to pay a premium for a
+                // rich, distant site. That is normally right, but three
+                // distinct frontier colonies can all fail the live Loyalty
+                // forecast while an already-ranked, reachable local site
+                // remains. Do not turn that bounded safety retry into a
+                // parked Settler: after the preferred attempts, ask the local
+                // ranking once.
+                // It carries the same site, route, dead-site, and threat
+                // filters; it merely declines the global premium.
+                let local_fallback = rejected >= SETTLE_TARGET_FORECAST_RETRIES;
+                let candidate = if local_fallback {
+                    self.best_reachable_settle_site_except(g, pid, uid, 8, avoid)
+                } else {
+                    self.best_settler_target(g, pid, uid, 8, avoid)
+                };
+                let Some((pos, _)) = candidate else {
                     break None;
                 };
                 let verdict = if self.base.loyalty_rate_alarm {
@@ -26358,6 +26845,13 @@ impl AdvancedAi {
                     self.settle_site_frontier_loyalty_verdict(g, pid, pos)
                 };
                 let Some(why) = verdict else {
+                    if local_fallback {
+                        think!(self.journal(), Expansion, Detail,
+                               "Settler falls back to a nearby safe site";
+                               "{SETTLE_TARGET_FORECAST_RETRIES} higher-priority sites failed the \
+                                live Loyalty forecast; this ranked local site still passes it";
+                               pos);
+                    }
                     self.settler_targets.insert(uid, pos);
                     break Some(pos);
                 };
@@ -26368,10 +26862,10 @@ impl AdvancedAi {
                     pos,
                     g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
                 );
-                rejected += 1;
-                if rejected >= SETTLE_TARGET_FORECAST_RETRIES {
+                if local_fallback {
                     break None;
                 }
+                rejected += 1;
             }
         });
         let Some(mut target) = target else {
@@ -26563,28 +27057,29 @@ impl AdvancedAi {
                 "it is already standing on its target".to_string()
             } else {
                 match g.route_step(uid, target, 0) {
-                None => "no route to it on our own board".to_string(),
-                Some(step) if !g.can_move(uid, step) => {
-                    let occupant = g
-                        .units_at(step)
-                        .into_iter()
-                        .filter(|other| *other != uid)
-                        .find_map(|other| {
-                            g.units.get(&other).map(|unit| (unit.owner, unit.kind))
-                        });
-                    match occupant {
-                        Some((owner, kind)) if owner == pid => {
-                            format!("our own {kind} is standing on the next tile")
+                    None => "no route to it on our own board".to_string(),
+                    Some(step) if !g.can_move(uid, step) => {
+                        let occupant = g
+                            .unit_ids_at(step)
+                            .iter()
+                            .filter(|other| **other != uid)
+                            .find_map(|other| {
+                                g.units.get(other).map(|unit| (unit.owner, unit.kind))
+                            });
+                        match occupant {
+                            Some((owner, kind)) if owner == pid => {
+                                format!("our own {kind} is standing on the next tile")
+                            }
+                            Some((_, kind)) => format!("a foreign {kind} holds the next tile"),
+                            None if g.units[&uid].moves_left <= 0.0 => {
+                                "it had no movement left".to_string()
+                            }
+                            None => {
+                                "the next tile refuses it and nothing is standing there".to_string()
+                            }
                         }
-                        Some((_, kind)) => format!("a foreign {kind} holds the next tile"),
-                        None if g.units[&uid].moves_left <= 0.0 => {
-                            "it had no movement left".to_string()
-                        }
-                        None => "the next tile refuses it and nothing is standing there"
-                            .to_string(),
                     }
-                }
-                Some(_) => "the safe-step guard rejected every neighbour".to_string(),
+                    Some(_) => "the safe-step guard rejected every neighbour".to_string(),
                 }
             };
             think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
@@ -26898,7 +27393,7 @@ impl AdvancedAi {
                 .is_some_and(|city| city.owner != pid)
         });
         let hostile_nearby = g.wdisk(pos, 4).into_iter().any(|neighbor| {
-            g.units_at(neighbor).into_iter().any(|uid| {
+            g.unit_ids_at(neighbor).iter().any(|uid| {
                 let unit = &g.units[&uid];
                 unit.owner != pid && g.is_at_war(pid, unit.owner)
             })
@@ -28072,8 +28567,8 @@ impl AdvancedAi {
             .filter_map(|action| match action {
                 Action::TheologicalAttack { unit, target } if *unit == uid => {
                     let defender_hp = g
-                        .units_at(*target)
-                        .into_iter()
+                        .unit_ids_at(*target)
+                        .iter()
                         .filter(|other| {
                             let other = &g.units[other];
                             g.rules.units[other.kind].class == "religious"
@@ -28158,7 +28653,7 @@ impl AdvancedAi {
                     .is_some_and(|former| g.players.get(former).is_some_and(|p| p.alive))
             })
             .filter(|city| {
-                !g.units_at(city.pos).into_iter().any(|unit| {
+                !g.unit_ids_at(city.pos).iter().any(|unit| {
                     g.units[&unit].owner == pid
                         && g.rules.units[g.units[&unit].kind].class == "military"
                 })
@@ -28204,6 +28699,26 @@ impl AdvancedAi {
             }
         }
         None
+    }
+
+    /// `relief_column_marches`: where a holding group stands while a city of
+    /// ours is threatened and the group is beyond `THREAT_RELIEF_RADIUS` of
+    /// it — the city itself, so a column too weak to break the siege still
+    /// reinforces the garrison instead of standing at its own centroid. The
+    /// mover's role spacing then arranges it around the centre the way it
+    /// arranges a ring around any objective. `None` for a group inside the
+    /// radius (it holds its ring as before), with no threatened city, and
+    /// with the gene off.
+    fn relief_hold_point(&self, g: &Game, group: &ForceGroup) -> Option<Pos> {
+        if !self.relief_column_marches {
+            return None;
+        }
+        let city = self
+            .plan
+            .as_ref()?
+            .threatened_city
+            .and_then(|cid| g.cities.get(&cid))?;
+        (g.wdist(group.anchor, city.pos) > THREAT_RELIEF_RADIUS).then_some(city.pos)
     }
 
     fn force_anchor(g: &Game, units: &[u32]) -> Pos {
@@ -28406,6 +28921,14 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> Option<Pos> {
         let visible = self.battlefront_visibility(g, pid);
+        // `relief_column_marches`: with a city under threat, only a
+        // combatant or a city can be the force's focus. See
+        // `rebuild_force_groups`.
+        let combatants_only = self.relief_column_marches && plan.threatened_city.is_some();
+        let is_contact = |other: u32| {
+            enemies.contains(&g.units[&other].owner)
+                && (!combatants_only || g.rules.units[g.units[&other].kind].class == "military")
+        };
         let mut targets = BTreeSet::new();
         for uid in units {
             let unit = &g.units[uid];
@@ -28424,10 +28947,13 @@ impl AdvancedAi {
                         && (g
                             .city_at(pos)
                             .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
-                            || g.units_at(pos).into_iter().any(|other| {
-                                enemies.contains(&g.units[&other].owner)
-                                    && self.battlefront_unit_visible(g, pid, other)
+                            || g.unit_ids_at(pos).iter().any(|other| {
+                                is_contact(*other) && self.battlefront_unit_visible(g, pid, *other)
                             }))
+                } else if combatants_only {
+                    g.city_at(pos)
+                        .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
+                        || g.units_at(pos).into_iter().any(is_contact)
                 } else {
                     self.base.is_enemy_tile(g, pos, enemies)
                 };
@@ -28469,7 +28995,7 @@ impl AdvancedAi {
                     score += 35.0;
                 }
                 if let Some(hp) = g
-                    .units_at(target)
+                    .unit_ids_at(target)
                     .iter()
                     .filter_map(|uid| {
                         (enemies.contains(&g.units[uid].owner)
@@ -28705,11 +29231,11 @@ impl AdvancedAi {
             let average_hp = units.iter().map(|uid| g.units[uid].hp).sum::<i32>() as f64
                 / units.len().max(1) as f64;
             let forcing_focus = focus_target.is_some_and(|target| {
-                let low_hp_unit = g.units_at(target).into_iter().any(|unit| {
+                let low_hp_unit = g.unit_ids_at(target).iter().any(|unit| {
                     enemies.contains(&g.units[&unit].owner)
                         && (!self.battlefront_observation
                             || (g.sees(&visible, target)
-                                && self.battlefront_unit_visible(g, pid, unit)))
+                                && self.battlefront_unit_visible(g, pid, *unit)))
                         && g.units[&unit].hp <= 35
                 });
                 let capturable_city = g.city_at(target).is_some_and(|city| {
@@ -28725,7 +29251,27 @@ impl AdvancedAi {
                 low_hp_unit || capturable_city
             });
             let arena = g.is_arena();
-            let relieving = plan.threatened_city.is_some();
+            // `relief_column_marches`: how far this group stands from the
+            // threatened city, when there is one. Inside
+            // `THREAT_RELIEF_RADIUS` it is part of the defence and holds its
+            // ring; beyond it, it is a column that has to get there.
+            let relief_distance = plan
+                .threatened_city
+                .and_then(|cid| g.cities.get(&cid))
+                .map(|city| g.wdist(anchor, city.pos));
+            let relieving = if self.relief_column_marches {
+                relief_distance.is_some_and(|distance| distance <= THREAT_RELIEF_RADIUS)
+            } else {
+                plan.threatened_city.is_some()
+            };
+            let relief_column = self.relief_column_marches
+                && !arena
+                && relief_distance.is_some_and(|distance| distance > THREAT_RELIEF_RADIUS);
+            // While a city is threatened a column's contact is a combatant:
+            // an Apostle or a Builder standing beside the army must not hold
+            // it in "Engage" nine hexes from the siege (t160 of the same run,
+            // "crossbowman declines apostle" on every frame).
+            let combatants_only = self.relief_column_marches && plan.threatened_city.is_some();
             // Recovery is a bounded defensive posture when it was selected
             // solely because the empire is globally outmatched. A fogged
             // enemy city can still make the local ratio read 3.00, but that
@@ -28785,6 +29331,7 @@ impl AdvancedAi {
                                 || (g.sees(&visible, enemy.pos)
                                     && self.battlefront_unit_visible(g, pid, enemy.id)))
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
+                            && (!combatants_only || g.rules.units[enemy.kind].class == "military")
                             && (locally_superior
                                 || plan.threatened_city.is_some()
                                 || enemy.hp <= 35)
@@ -28792,6 +29339,11 @@ impl AdvancedAi {
                 }))
             {
                 ForcePosture::Engage
+            } else if relief_column && locally_superior {
+                // `relief_column_marches`: a column strong enough to break
+                // the siege marches on it now — it does not wait to muster,
+                // because the city cannot wait for its stragglers.
+                ForcePosture::Advance
             } else if !arena && (relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR) {
                 ForcePosture::Hold
             } else if !arena && units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
@@ -28907,6 +29459,9 @@ impl AdvancedAi {
         let role = Self::force_role(g, uid);
         let spec = &g.rules.units[unit.kind];
         let target = match group.posture {
+            ForcePosture::Hold if self.relief_column_marches => {
+                self.relief_hold_point(g, group).unwrap_or(group.anchor)
+            }
             ForcePosture::Muster | ForcePosture::Hold | ForcePosture::Recover => group.anchor,
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             ForcePosture::Advance => group.objective,
@@ -29081,7 +29636,8 @@ impl AdvancedAi {
             if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
                 value -= crate::ai::WATER_MARCH_PENALTY;
             }
-            value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
+            value +=
+                self.strike_opening_value(g, pid, uid, tile, group, enemies, visible.as_deref());
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
@@ -29147,7 +29703,7 @@ impl AdvancedAi {
                 .filter(|pos| g.can_move(uid, *pos))
                 .filter(|pos| {
                     !(decline_settlers
-                        && g.units_at(*pos).iter().any(|other| {
+                        && g.unit_ids_at(*pos).iter().any(|other| {
                             let other = &g.units[other];
                             other.owner != pid
                                 && g.is_at_war(pid, other.owner)
@@ -29183,7 +29739,7 @@ impl AdvancedAi {
         for pos in g.nbrs(upos).into_iter().filter(|pos| {
             g.can_move(uid, *pos)
                 && !(decline_settlers
-                    && g.units_at(*pos).iter().any(|other| {
+                    && g.unit_ids_at(*pos).iter().any(|other| {
                         let other = &g.units[other];
                         other.owner != pid
                             && g.is_at_war(pid, other.owner)
@@ -29242,7 +29798,7 @@ impl AdvancedAi {
                 .filter(|pos| g.can_move(uid, *pos))
                 .filter(|pos| {
                     !(decline_settlers
-                        && g.units_at(*pos).iter().any(|other| {
+                        && g.unit_ids_at(*pos).iter().any(|other| {
                             let other = &g.units[other];
                             other.owner != pid
                                 && g.is_at_war(pid, other.owner)
@@ -29354,6 +29910,34 @@ impl AdvancedAi {
         replies
     }
 
+    /// One-ply-then-extend search depth used to price a forcing reply: the
+    /// direct reply ply, plus one further extension ply chosen by
+    /// [`Self::forcing_reply_line`]'s own recursion. Named so the value only
+    /// has to be justified once, at its declaration, instead of read back
+    /// out of a bare `2` at the call site in
+    /// [`Self::forcing_reply_penalty_from_position`].
+    const FORCING_REPLY_DEPTH: usize = 2;
+
+    /// Chess-style move-ordering width: after every forcing reply at a node
+    /// is generated and scored, only this many of the strongest
+    /// captures/checks are extended into another ply. Named so the value is
+    /// documented once instead of read back out of a bare `.take(4)`.
+    const FORCING_REPLY_WIDTH: usize = 4;
+
+    /// Debug text for one forcing-reply candidate, used only as a sort
+    /// tie-break key when two candidates already share the same primary
+    /// score (see the `sort_by` in [`Self::forcing_reply_line`]). Takes the
+    /// raw `Action`(s) rather than a precomputed `String` so the
+    /// (allocating) `Debug` formatting happens lazily, inside the
+    /// comparator's `then_with`, and only for the rare pair that actually
+    /// ties — every other candidate never pays for a label at all.
+    fn forcing_reply_label(reply: &Action, followup: &Option<Action>) -> String {
+        match followup {
+            Some(followup) => format!("{reply:?} -> {followup:?}"),
+            None => format!("{reply:?}"),
+        }
+    }
+
     fn forcing_reply_line(
         work_pool: Option<&Arc<WorkPool>>,
         position: &Game,
@@ -29384,7 +29968,9 @@ impl AdvancedAi {
             if branch.apply(enemy, &reply).is_err() {
                 continue;
             }
-            reply_branches.push((format!("{reply:?}"), branch, reply_unit, reply_hp));
+            // `reply` itself (not a formatted String) is stored so its Debug
+            // text is only built lazily, in the sort tie-break below.
+            reply_branches.push((reply, None, branch, reply_unit, reply_hp));
         }
 
         // A Civ unit can normally move and attack in the same turn. Search
@@ -29425,7 +30011,8 @@ impl AdvancedAi {
                         continue;
                     }
                     reply_branches.push((
-                        format!("{movement:?} -> {followup:?}"),
+                        movement.clone(),
+                        Some(followup),
                         branch,
                         Some(attacker),
                         Some(reply_hp),
@@ -29435,7 +30022,7 @@ impl AdvancedAi {
         }
 
         let mut ordered = Vec::new();
-        for (label, branch, reply_unit, reply_hp) in reply_branches {
+        for (reply, followup, branch, reply_unit, reply_hp) in reply_branches {
             let loss = branch
                 .units
                 .get(&victim)
@@ -29449,23 +30036,34 @@ impl AdvancedAi {
                     .unwrap_or(hp as f64 + 20.0),
                 _ => 0.0,
             };
-            ordered.push(((loss - 0.35 * counter_loss).max(0.0), label, branch));
+            ordered.push((
+                (loss - 0.35 * counter_loss).max(0.0),
+                reply,
+                followup,
+                branch,
+            ));
         }
 
         // Chess-style move ordering keeps the extension bounded: examine all
-        // forcing replies at the frontier, but only extend the four strongest
-        // captures/checks into another focus-fire action.
+        // forcing replies at the frontier, but only extend the
+        // FORCING_REPLY_WIDTH strongest captures/checks into another
+        // focus-fire action. The tie-break Debug text is built lazily,
+        // inside `then_with`, so it is only paid for the rare pair of
+        // candidates that actually share the same primary score.
         ordered.sort_by(|left, right| {
-            right
-                .0
-                .total_cmp(&left.0)
-                .then_with(|| left.1.cmp(&right.1))
+            right.0.total_cmp(&left.0).then_with(|| {
+                Self::forcing_reply_label(&left.1, &left.2)
+                    .cmp(&Self::forcing_reply_label(&right.1, &right.2))
+            })
         });
-        let continuations = ordered.into_iter().take(4).collect::<Vec<_>>();
+        let continuations = ordered
+            .into_iter()
+            .take(Self::FORCING_REPLY_WIDTH)
+            .collect::<Vec<_>>();
         let values = match work_pool {
             Some(pool) if continuations.len() > 1 => {
                 let nested_pool = Arc::clone(pool);
-                pool.map_owned(continuations, move |(immediate, _, branch)| {
+                pool.map_owned(continuations, move |(immediate, _, _, branch)| {
                     immediate
                         + Self::forcing_reply_line(
                             Some(&nested_pool),
@@ -29478,7 +30076,7 @@ impl AdvancedAi {
             }
             _ => continuations
                 .into_iter()
-                .map(|(immediate, _, branch)| {
+                .map(|(immediate, _, _, branch)| {
                     immediate
                         + Self::forcing_reply_line(
                             work_pool,
@@ -29533,8 +30131,8 @@ impl AdvancedAi {
         let attacker_hp = after.units[&uid].hp;
         let attacker_cost = after.rules.units[after.units[&uid].kind].cost;
         let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = after
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter_map(|unit| {
                 let defender = &after.units[&unit];
                 let spec = &after.rules.units[defender.kind];
@@ -29546,7 +30144,7 @@ impl AdvancedAi {
                         spec.class == "military"
                     })
                 .then_some((
-                    unit,
+                    *unit,
                     defender.hp,
                     after.unit_strength(defender, true),
                     spec.cost,
@@ -29745,12 +30343,13 @@ impl AdvancedAi {
     ) -> Option<(f64, usize)> {
         let (uid, target) = Self::unit_strike_actor_and_target(action)?;
         let threatened: Vec<u32> = g
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter(|other| {
                 let other = &g.units[other];
                 other.owner != pid && g.is_at_war(pid, other.owner)
             })
+            .copied()
             .collect();
         if threatened.is_empty() {
             return None;
@@ -29943,8 +30542,17 @@ impl AdvancedAi {
             .map(|player| player.id)
             .collect();
         let mut worst_reply = 0.0_f64;
+        // With one front there is no clone to save, so retain the original
+        // path exactly. The broad geometry scan only earns its keep when it
+        // can eliminate one or more other warring seats.
+        let has_multiple_enemies = enemies.len() > 1;
 
         for enemy in enemies {
+            if has_multiple_enemies
+                && !Self::enemy_can_force_a_reply_against_any(after, enemy, &victims)
+            {
+                continue;
+            }
             let mut reply_position = after.speculative_clone();
             reply_position.current = enemy;
             for unit in reply_position
@@ -29974,11 +30582,70 @@ impl AdvancedAi {
                     &reply_position,
                     enemy,
                     *victim,
-                    2,
+                    Self::FORCING_REPLY_DEPTH,
                 ));
             }
         }
         worst_reply
+    }
+
+    /// Whether an enemy can *possibly* make one of the forcing replies this
+    /// search admits on its next turn.  A negative answer is enough to avoid
+    /// cloning the whole board for that enemy; a positive answer deliberately
+    /// remains only a broad prefilter and the cloned `Game::apply` below is
+    /// still the authority on terrain, line of sight, occupancy, and costs.
+    ///
+    /// The reply position resets the enemy's moves, attacks, and city strikes
+    /// before searching it.  This predicate must therefore not use their
+    /// current availability.  It mirrors the geometry of `forcing_attacks_to`:
+    /// direct air strikes, direct or one-step land attacks, and city or
+    /// encampment strikes.  City checks are intentionally looser than the
+    /// engine (range only), which preserves every uncertain branch rather than
+    /// proving a legal counterattack away from the search.
+    fn enemy_can_force_a_reply_against_any(position: &Game, enemy: usize, victims: &[u32]) -> bool {
+        let unit_can_reach_a_victim = position
+            .units
+            .values()
+            .filter(|unit| unit.owner == enemy)
+            .any(|unit| {
+                let spec = &position.rules.units[unit.kind];
+                let reach = position.unit_attack_range(unit.id);
+                if spec.domain.as_deref() == Some("air") {
+                    return victims.iter().any(|victim| {
+                        position
+                            .units
+                            .get(victim)
+                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach)
+                    });
+                }
+                spec.class == "military"
+                    && victims.iter().any(|victim| {
+                        position
+                            .units
+                            .get(victim)
+                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach + 2)
+                    })
+                    && !position.is_embarked(unit)
+            });
+        if unit_can_reach_a_victim {
+            return true;
+        }
+
+        position
+            .cities
+            .values()
+            .filter(|city| city.owner == enemy)
+            .any(|city| {
+                victims.iter().any(|victim| {
+                    let Some(victim) = position.units.get(victim) else {
+                        return false;
+                    };
+                    position.wdist(city.pos, victim.pos) <= 2
+                        || position
+                            .city_district_family_position(city, crate::name!("encampment"))
+                            .is_some_and(|source| position.wdist(source, victim.pos) <= 2)
+                })
+            })
     }
 
     /// Price a forcing reply against an untouched board, cloning and applying
@@ -30041,7 +30708,7 @@ impl AdvancedAi {
             }
             _ => return None,
         };
-        let victim = g.units_at(target).into_iter().find(|other| {
+        let victim = g.unit_ids_at(target).iter().find(|other| {
             let defender = &g.units[other];
             defender.owner != pid
                 && g.is_at_war(pid, defender.owner)
@@ -30269,7 +30936,7 @@ impl AdvancedAi {
             .flatten();
         let target_unit = (target_city.is_none() && target_encampment.is_none())
             .then(|| {
-                g.units_at(target).into_iter().find(|other| {
+                g.unit_ids_at(target).iter().find(|other| {
                     let defender = &g.units[other];
                     defender.owner != pid
                         && g.is_at_war(pid, defender.owner)
@@ -30341,13 +31008,13 @@ impl AdvancedAi {
         let attacker_spec = &g.rules.units[attacker.kind];
         let before_tile = &g.map.tiles[&target];
         let before_aircraft: Vec<(u32, f64)> = g
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter_map(|unit| {
                 let candidate = &g.units[&unit];
                 (candidate.owner != pid
                     && g.rules.units[candidate.kind].domain.as_deref() == Some("air"))
-                .then_some((unit, g.rules.units[candidate.kind].cost))
+                .then_some((*unit, g.rules.units[candidate.kind].cost))
             })
             .collect();
         let city_id = before_tile.owner_city;
@@ -31042,7 +31709,7 @@ impl AdvancedAi {
         };
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
-                g.units_at(position).iter().any(|other| {
+                g.unit_ids_at(position).iter().any(|other| {
                     let other = &g.units[other];
                     other.owner != pid
                         && g.is_at_war(pid, other.owner)
@@ -31284,8 +31951,8 @@ impl AdvancedAi {
             if self.base.camp_bounty {
                 if let Some(camp) = self.base.camp_bounty_target(g, pid, uid) {
                     let defended = g
-                        .units_at(camp)
-                        .into_iter()
+                        .unit_ids_at(camp)
+                        .iter()
                         .any(|oid| Some(g.units[&oid].owner) == g.barb_pid);
                     if !defended {
                         // Walking onto the empty camp is the clear itself.
@@ -31388,10 +32055,12 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
-        // Hoisted out of the tile loop below: `player_vision_now` clones a
-        // whole `TileBits` and `visibility_viewers` walks the alliance graph,
-        // and neither can move while this loop applies nothing. Built lazily,
-        // because most units reach no enemy tile at all.
+        // Hoisted out of the tile loop below: `visibility_viewers` walks the
+        // alliance graph, and neither frame can move while this loop applies
+        // nothing. Built lazily, because most units reach no enemy tile at
+        // all. `player_vision_frame` hands back the engine's own `Arc`, so
+        // even that one build is a refcount bump rather than a `TileBits`
+        // clone.
         let mut vision_frames = None;
         for pos in g.wdisk(unit.pos, radius) {
             if spec.class != "military" {
@@ -31401,7 +32070,7 @@ impl AdvancedAi {
                 continue;
             }
             let unusable_settler = g
-                .units_at(pos)
+                .unit_ids_at(pos)
                 .iter()
                 .any(|oid| g.units[oid].kind == "settler" && decline_settlers);
             if unusable_settler && g.city_at(pos).is_none() {
@@ -31436,12 +32105,11 @@ impl AdvancedAi {
             // truthful, which matters to anything that trusts it.
             //
             // ⚠⚠ The first version of this gate was a **+6.43% pessimization**
-            // because it called `combat_target_visible`, which recomputes
-            // `player_vision_now` -- a whole `TileBits` clone -- per call. The
-            // frames are hoisted below for that reason. Do not inline them
-            // back.
+            // because it called `combat_target_visible`, which recomputes the
+            // full vision and viewer derivation per call. The frames are
+            // hoisted below for that reason. Do not inline them back.
             let frames = vision_frames
-                .get_or_insert_with(|| (g.player_vision_now(pid), g.visibility_viewers(pid)));
+                .get_or_insert_with(|| (g.player_vision_frame(pid), g.visibility_viewers(pid)));
             if spec.has_ranged_attack()
                 && distance <= g.unit_attack_range(uid)
                 && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
@@ -31536,7 +32204,7 @@ impl AdvancedAi {
             {
                 score += 28.0;
             }
-            if g.units_at(pos).iter().any(|oid| g.units[oid].hp <= 35) {
+            if g.unit_ids_at(pos).iter().any(|oid| g.units[oid].hp <= 35) {
                 score += 16.0;
             }
             if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
@@ -31583,8 +32251,8 @@ impl AdvancedAi {
             let focus = group.as_ref().and_then(|orders| orders.focus_target);
             let mut volley_indices: Vec<usize> = (0..scored.len())
                 .filter(|index| {
-                    g.units_at(scored[*index].target).into_iter().any(|other| {
-                        let defender = &g.units[&other];
+                    g.unit_ids_at(scored[*index].target).iter().any(|other| {
+                        let defender = &g.units[other];
                         defender.owner != pid
                             && g.is_at_war(pid, defender.owner)
                             && g.rules.units[defender.kind].class == "military"
@@ -31657,7 +32325,7 @@ impl AdvancedAi {
                         .and_then(|cid| g.cities.get(&cid))
                         .map(|city| city.name.clone())
                         .or_else(|| {
-                            g.units_at(at)
+                            g.unit_ids_at(at)
                                 .first()
                                 .map(|oid| plain(&g.units[oid].kind))
                         })
@@ -31709,7 +32377,9 @@ impl AdvancedAi {
                     .and_then(|cid| g.cities.get(&cid))
                     .map(|city| city.name.clone())
                     .or_else(|| {
-                        g.units_at(at).first().map(|oid| plain(&g.units[oid].kind))
+                        g.unit_ids_at(at)
+                            .first()
+                            .map(|oid| plain(&g.units[oid].kind))
                     })
                     .unwrap_or_else(|| format!("{at:?}"));
                 think!(self.journal(), Military, Detail,
@@ -32111,8 +32781,8 @@ impl AdvancedAi {
         for with in support {
             let pos = g.units[&with].pos;
             let escort = g
-                .units_at(pos)
-                .into_iter()
+                .unit_ids_at(pos)
+                .iter()
                 .filter(|unit| {
                     let unit = &g.units[unit];
                     unit.owner == pid
@@ -32128,7 +32798,7 @@ impl AdvancedAi {
                     )
                 });
             if let Some(unit) = escort {
-                let _ = g.apply(pid, &Action::LinkUnits { unit, with });
+                let _ = g.apply(pid, &Action::LinkUnits { unit: *unit, with });
             }
         }
 
@@ -32160,8 +32830,8 @@ impl AdvancedAi {
         for with in land_settlers {
             let pos = g.units[&with].pos;
             let escort = g
-                .units_at(pos)
-                .into_iter()
+                .unit_ids_at(pos)
+                .iter()
                 .filter(|unit| {
                     let unit = &g.units[unit];
                     let spec = &g.rules.units[unit.kind];
@@ -32182,7 +32852,7 @@ impl AdvancedAi {
                     )
                 });
             if let Some(unit) = escort {
-                let _ = g.apply(pid, &Action::LinkUnits { unit, with });
+                let _ = g.apply(pid, &Action::LinkUnits { unit: *unit, with });
             }
         }
 
@@ -32215,14 +32885,14 @@ impl AdvancedAi {
                 .collect()
         };
         for with in embarked_settlers {
-            let escort = g.units_at(g.units[&with].pos).into_iter().find(|uid| {
+            let escort = g.unit_ids_at(g.units[&with].pos).iter().find(|uid| {
                 let unit = &g.units[uid];
                 unit.owner == pid
                     && unit.linked_to.is_none()
                     && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
             });
             if let Some(unit) = escort {
-                let _ = g.apply(pid, &Action::LinkUnits { unit, with });
+                let _ = g.apply(pid, &Action::LinkUnits { unit: *unit, with });
             }
         }
     }
@@ -32233,8 +32903,8 @@ impl AdvancedAi {
             _ => return f64::NEG_INFINITY,
         };
         let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = g
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter_map(|unit| {
                 let defender = &g.units[&unit];
                 let spec = &g.rules.units[defender.kind];
@@ -32242,7 +32912,7 @@ impl AdvancedAi {
                     && g.is_at_war(pid, defender.owner)
                     && spec.class == "military")
                     .then_some((
-                        unit,
+                        *unit,
                         defender.hp,
                         g.unit_strength(defender, true),
                         spec.cost,
@@ -32339,9 +33009,10 @@ impl AdvancedAi {
     }
 
     /// Nuclear doctrine: an empire at war spends a stockpiled device on the
-    /// hardest enemy city in range — the one whose walls and garrison would
-    /// cost the most to break conventionally — and never on a blast that
-    /// would touch its own cities or units, or anyone it is not fighting.
+    /// most disruptive enemy city in range — its defenses and deployed forces,
+    /// plus the districts and projects that advance a victory — and never on
+    /// a blast that would touch its own cities or units, or anyone it is not
+    /// fighting.
     ///
     /// A Conquest empire strikes to open its campaign. Any other posture
     /// strikes only while besieged — Recovery, or a named threatened city —
@@ -32388,8 +33059,8 @@ impl AdvancedAi {
                     .and_then(|tile| tile.owner_city)
                     .and_then(|city| g.cities.get(&city))
                     .map(|city| city.owner);
-                g.units_at(*position)
-                    .into_iter()
+                g.unit_ids_at(*position)
+                    .iter()
                     .map(|uid| g.units[&uid].owner)
                     .chain(g.city_at(*position).map(|city| g.cities[&city].owner))
                     .chain(g.encampment_at(*position).map(|city| g.cities[&city].owner))
@@ -32406,21 +33077,9 @@ impl AdvancedAi {
             if exposure {
                 continue;
             }
-            let Some(city) = g.city_at(target) else {
+            let Some(value) = self.nuclear_target_value(g, pid, target, thermonuclear) else {
                 continue;
             };
-            let garrison = blast
-                .iter()
-                .flat_map(|position| g.units_at(*position))
-                .filter(|uid| g.is_at_war(pid, g.units[uid].owner))
-                .count();
-            let city_ref = &g.cities[&city];
-            let hardness = g.city_strength(city) + city_ref.wall_hp as f64 / 10.0;
-            // A device is worth spending only on a genuinely hard target.
-            if hardness < 50.0 && garrison < 3 {
-                continue;
-            }
-            let value = hardness + garrison as f64 * 12.0;
             if best.as_ref().is_none_or(|(current, _)| value > *current) {
                 best = Some((value, action));
             }
@@ -32446,7 +33105,7 @@ impl AdvancedAi {
             if g.apply(pid, &action).is_ok() {
                 think!(self.journal(), Military, Decision,
                        "Authorizing a {} against {}", weapon, struck;
-                       "the hardest reachable city, worth {:.0} in walls and garrison, {}",
+                       "the highest-value reachable disruption, worth {:.0} in defenses, forces, and victory infrastructure, {}",
                        value,
                        if offensive { "to open the campaign" } else { "to break the siege" });
             }
@@ -32650,7 +33309,7 @@ impl AdvancedAi {
     /// Whether this hull is on the sea-scout roster this turn. See
     /// `naval_explorer`.
     fn is_naval_explorer(&self, g: &Game, pid: usize, uid: u32) -> bool {
-        self.base.naval_recon
+        (self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
             && self.naval_explorer(g, pid).contains(&uid)
     }
@@ -32678,7 +33337,9 @@ impl AdvancedAi {
     /// arm still buys only the first ship; this merely lets a spare hull open
     /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
     fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
-        if !self.base.naval_recon_on() || !BasicAi::unseen_water_remains(g, pid) {
+        if !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
+            || !BasicAi::unseen_water_remains(g, pid)
+        {
             return Vec::new();
         }
         let mut ships = g
@@ -33804,6 +34465,10 @@ impl AdvancedAi {
         {
             let counts = self.counts(g, pid);
             let cities = g.player_city_ids(pid);
+            // `threatened-city-reserve`: the baseline buyer is the one that
+            // actually spends on the live seat (its wartime reserve is
+            // 40 + 10 a city); hand it the same floor for this call only.
+            self.base.reserve_floor = self.threatened_city_gold_floor(g, pid, &plan);
             self.base.spend_gold(
                 g,
                 pid,
@@ -33815,6 +34480,7 @@ impl AdvancedAi {
                 counts.melee,
                 counts.ranged,
             );
+            self.base.reserve_floor = 0.0;
         }
         if self.victory_planning {
             self.advanced_command_actions(g, pid, &plan);
@@ -33873,6 +34539,125 @@ mod live_bundle_tests {
         assert!(!live.base.explore_commit);
         assert!(!live.bank_envoys);
         assert!(!live.base.bank_envoys);
+    }
+}
+
+// This module lives here, rather than in `src/ai/advanced/tests.rs`, because
+// it is exercising `AdvancedAi::forcing_reply_label`, a private associated
+// item declared inside the `impl AdvancedAi` block just above this file's
+// `forcing_reply_line` — a plain `mod` cannot nest inside an `impl`, and
+// `advanced.rs`'s single giant `impl AdvancedAi` block spans essentially the
+// whole file, so a top-level test module can only land in a gap like this
+// one (see `live_bundle_tests` immediately above, which does the same).
+#[cfg(test)]
+mod forcing_reply_lazy_key_tests {
+    use super::AdvancedAi;
+    use crate::game::Action;
+
+    /// Reimplements the *old*, eager form of the forcing-reply tie-break:
+    /// format every candidate's Debug label up front, then sort on
+    /// `(score desc, label asc)`.
+    fn eager_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut eager: Vec<(f64, String)> = candidates
+            .iter()
+            .map(|(score, reply, followup)| {
+                (*score, AdvancedAi::forcing_reply_label(reply, followup))
+            })
+            .collect();
+        eager.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        eager.into_iter().map(|(_, label)| label).collect()
+    }
+
+    /// The *new*, lazy form actually used by `forcing_reply_line`: sort
+    /// directly on the raw candidates, formatting a label only inside
+    /// `then_with`, i.e. only for a pair that ties on score.
+    fn lazy_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut lazy = candidates.to_vec();
+        lazy.sort_by(|left, right| {
+            right.0.total_cmp(&left.0).then_with(|| {
+                AdvancedAi::forcing_reply_label(&left.1, &left.2)
+                    .cmp(&AdvancedAi::forcing_reply_label(&right.1, &right.2))
+            })
+        });
+        lazy.into_iter()
+            .map(|(_, reply, followup)| AdvancedAi::forcing_reply_label(&reply, &followup))
+            .collect()
+    }
+
+    #[test]
+    fn lazy_tie_break_matches_eager_key_ordering() {
+        let candidates: Vec<(f64, Action, Option<Action>)> = vec![
+            (
+                8.0,
+                Action::Ranged {
+                    unit: 9,
+                    target: (1, 1),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 5,
+                    target: (2, 3),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 1,
+                    target: (0, 0),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Move {
+                    unit: 2,
+                    to: (4, 4),
+                },
+                Some(Action::Attack {
+                    unit: 2,
+                    target: (5, 5),
+                }),
+            ),
+            (
+                1.0,
+                Action::Attack {
+                    unit: 3,
+                    target: (9, 9),
+                },
+                None,
+            ),
+        ];
+
+        let lazy = lazy_order(&candidates);
+        let eager = eager_order(&candidates);
+        assert_eq!(
+            lazy, eager,
+            "lazily-formatted tie-break keys must sort identically to eagerly-formatted ones"
+        );
+
+        // A concrete regression check on top of the equivalence check above:
+        // the 8.0 candidate leads; the three 5.0 candidates tie and fall
+        // back to ascending Debug-text order ("Attack ... unit: 1" <
+        // "Attack ... unit: 5" < "Move ..."); the 1.0 candidate trails.
+        assert_eq!(
+            lazy,
+            vec![
+                "Ranged { unit: 9, target: (1, 1) }".to_string(),
+                "Attack { unit: 1, target: (0, 0) }".to_string(),
+                "Attack { unit: 5, target: (2, 3) }".to_string(),
+                "Move { unit: 2, to: (4, 4) } -> Attack { unit: 2, target: (5, 5) }".to_string(),
+                "Attack { unit: 3, target: (9, 9) }".to_string(),
+            ]
+        );
     }
 }
 

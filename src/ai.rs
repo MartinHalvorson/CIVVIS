@@ -2,7 +2,8 @@
 //! sparring partner, not a fair-play agent.
 use crate::name::{AsName, Name};
 use crate::game::{
-    effective_strength, expected_damage, Action, ActionFamilies, Game, Item, TraversalClass,
+    effective_strength, expected_damage, Action, ActionFamilies, Game, Item, PolicyReadSet,
+    TraversalClass,
 };
 use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
@@ -247,6 +248,9 @@ const NAVAL_RECON_WARTIME_ARM_MAX: usize = 2;
 /// dead-end nibble of fog from the edge of a broad unexplored region, without
 /// making every scout sweep the whole world every turn.
 const EXPLORATION_FRONTIER_LOOKAHEAD: i32 = 4;
+/// Once the capital's connected land has at most this many independently
+/// settleable sites left, the island-exploration gene starts looking offshore.
+const ISLAND_EXPLORATION_HOME_SITE_LIMIT: usize = 2;
 
 /// How far a reconnaissance unit will detour for a tribal village it has
 /// already charted but cannot reach this turn. See `BasicAi::village_seeking`.
@@ -810,6 +814,7 @@ fn policy_card_score(
     w: &Weights,
     candidate: &(usize, String, Name),
     current_reading: f64,
+    reads: &PolicyReadSet,
     net_maintenance: bool,
 ) -> (f64, usize, String, Name) {
     let (priority, slot, card) = candidate;
@@ -822,7 +827,18 @@ fn policy_card_score(
     // into the batch makes the score incremental: one whole-empire sweep for a
     // challenger, and one removal sweep for an incumbent.  The authoritative
     // candidate order and the exact `empire_reading` arithmetic are unchanged.
-    let (without, with) = if incumbent {
+    // The other side of the counterfactual is also already known whenever the
+    // card cannot reach anything `empire_reading` reads. `reads` is the record
+    // of every question the unchanged sweep asked the deck; a card naming none
+    // of those keys and none of those card names leaves every lookup returning
+    // the value it already returned, so the two runs stay in lockstep and the
+    // sweep lands on the same bits. Ten Great-Person, envoy and espionage
+    // cards move only quantities this reading never looks at, and the review
+    // used to pay a whole-empire sweep to rediscover that once per card, every
+    // eight turns, for the rest of the game.
+    let (without, with) = if reads.card_is_inert(&g.rules, *card) {
+        (current_reading, current_reading)
+    } else if incumbent {
         g.players[pid].policies.remove(card);
         let without = empire_reading(g, pid, w, net_maintenance);
         g.players[pid].policies.insert(*card);
@@ -842,6 +858,24 @@ fn policy_card_score(
         0.0
     };
     (gain + hysteresis, *priority, slot.clone(), *card)
+}
+
+/// The unchanged reading every candidate is compared against, together with
+/// the record of what it asked `pid`'s policy deck.
+///
+/// The trace costs one interned-name or one string comparison per policy
+/// question of one sweep the review runs anyway, and it is what lets
+/// [`policy_card_score`] answer a card without running a second one.
+fn reading_with_policy_trace(
+    g: &Game,
+    pid: usize,
+    w: &Weights,
+    net_maintenance: bool,
+) -> (f64, PolicyReadSet) {
+    let trace = g.trace_policy_reads(pid);
+    let reading = empire_reading(g, pid, w, net_maintenance);
+    let reads = trace.finish();
+    (reading, reads)
 }
 
 fn revise_policy_deck(
@@ -919,7 +953,10 @@ fn revise_policy_deck(
                     // The branch is reused for all indices claimed by this
                     // worker.  Compute the unchanged slate once, before the
                     // candidate mutations begin, rather than once per card.
-                    let current_reading = empire_reading(&branch, pid, &weights, net_maintenance);
+                    // The trace is taken on the branch, so each worker records
+                    // its own and nothing crosses a thread.
+                    let (current_reading, reads) =
+                        reading_with_policy_trace(&branch, pid, &weights, net_maintenance);
                     indices
                         .map(|index| {
                             (
@@ -930,6 +967,7 @@ fn revise_policy_deck(
                                     &weights,
                                     &candidates[index],
                                     current_reading,
+                                    &reads,
                                     net_maintenance,
                                 ),
                             )
@@ -939,11 +977,19 @@ fn revise_policy_deck(
             )
         }
         None => {
-            let current_reading = empire_reading(g, pid, w, net_maintenance);
+            let (current_reading, reads) = reading_with_policy_trace(g, pid, w, net_maintenance);
             candidates
                 .iter()
                 .map(|candidate| {
-                    policy_card_score(g, pid, w, candidate, current_reading, net_maintenance)
+                    policy_card_score(
+                        g,
+                        pid,
+                        w,
+                        candidate,
+                        current_reading,
+                        &reads,
+                        net_maintenance,
+                    )
                 })
                 .collect()
         }
@@ -1955,6 +2001,13 @@ struct EnemyEnvelope {
     sensitive: std::sync::Arc<std::collections::HashSet<Pos>>,
 }
 
+/// The multiplier and the seed the three envelope fingerprints mix with — the
+/// golden-ratio constant `vision_key` uses in `src/game.rs`. Shared so the
+/// three cannot drift apart, never so that two of them may be compared: each
+/// hashes a different set of fields and only ever meets its own previous
+/// value.
+const FINGERPRINT_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+
 /// One unit, in exactly the terms an envelope can notice.
 #[derive(PartialEq, Eq)]
 struct EnvelopeUnit {
@@ -1969,6 +2022,24 @@ struct EnvelopeUnit {
     /// whole flood, and regains it next turn.
     locked: (bool, bool, bool),
     linked_to: Option<u32>,
+}
+
+impl EnvelopeUnit {
+    /// One unit's board record. The field set is
+    /// `the_delta_tracks_every_field_the_board_key_hashes`'s business, not
+    /// this function's: it exists so the two rosters are read the same way.
+    fn of(unit: &crate::game::Unit) -> Self {
+        Self {
+            pos: unit.pos,
+            kind: unit.kind.id(),
+            owner: unit.owner,
+            formation: unit.formation,
+            zoc_stopped: unit.zoc_stopped,
+            patrol: unit.air_patrol.then_some(unit.air_patrol_pos).flatten(),
+            locked: (unit.started_turn_in_zoc, unit.acted, unit.moved),
+            linked_to: unit.linked_to,
+        }
+    }
 }
 
 /// The board the per-enemy envelopes were last measured against.
@@ -1997,7 +2068,25 @@ struct EnvelopeBoard {
     /// patrol changes an envelope without the unit moving at all. Tracking
     /// only place, spec and owner let that change produce an *empty* delta, so
     /// every envelope was reused across it.
-    units: HashMap<u32, EnvelopeUnit>,
+    ///
+    /// ⚠ ASCENDING BY ID, WHICH IS WHAT MAKES THE DIFF A MERGE. `Game.units`
+    /// is a `BTreeMap` and iterates in the same order, so the two boards are
+    /// compared by walking them side by side — no hash of every id on every
+    /// ask, and no second table allocated to be thrown away. It was a
+    /// `HashMap` and the diff hashed each id twice, once to build the new
+    /// board and once to look the old one up.
+    units: Vec<(u32, EnvelopeUnit)>,
+}
+
+/// What [`BasicAi::envelope_board_change`] found, for the two questions the
+/// envelope table asks of it.
+struct EnvelopeChange {
+    /// The tiles a change touched, or `None` for "assume everything changed".
+    touched: Option<Vec<Pos>>,
+    /// Whether any unit the previous board held is gone from this one — or,
+    /// conservatively, `true` whenever the delta is `None` and nothing is
+    /// known. Only the per-enemy store's cleanup reads it; see the call site.
+    removed: bool,
 }
 
 #[derive(Clone)]
@@ -2071,6 +2160,13 @@ pub struct BasicAi {
     /// proof of siege that fog cannot suppress, and it self-clears because
     /// Civ 6 city health regenerates once the siege lifts.
     pub(crate) garrison_under_fire: bool,
+    /// `threatened-city-reserve`: Gold `spend_gold` must leave in the
+    /// treasury on top of its own reserve. The deployed controller sets it
+    /// to one emergency defender's price while a city of ours is threatened
+    /// or bleeding, and back to 0.0 after the call, so the baseline buyer
+    /// cannot spend the defender money on a Market in the city being shelled
+    /// (run civvis-20260827T113726Z, t162). 0.0 everywhere else.
+    pub(crate) reserve_floor: f64,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Version 2 of `district_coverage`: the same coverage term with a
@@ -2254,6 +2350,10 @@ pub struct BasicAi {
     /// exactly as before. Implies version 1; its enable turns version 1 off.
     /// Opt-in gene `naval-recon-2`.
     pub(crate) naval_recon_2: bool,
+    /// When the capital's landmass is nearly full, chart water toward known
+    /// foreign landfalls rather than treating every coast as interchangeable.
+    /// Opt-in gene `island-exploration`.
+    pub(crate) island_exploration: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -2449,7 +2549,7 @@ pub struct BasicAi {
     attack_envelope_cache:
         std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
     /// Per enemy, its last envelope. Consulted only when the board key missed,
-    /// and reused when [`Self::envelope_board_delta`] says nothing inside that
+    /// and reused when [`Self::envelope_board_change`] says nothing inside that
     /// enemy's radius moved. See [`EnemyEnvelope`].
     enemy_envelope_cache: std::sync::Arc<std::sync::Mutex<HashMap<u32, EnemyEnvelope>>>,
     /// The board those envelopes were measured against. See [`EnvelopeBoard`].
@@ -4128,7 +4228,7 @@ impl BasicAi {
             match doctrine {
                 UnitDoctrine::Siege => 14.0,
                 UnitDoctrine::Mobile
-                    if g.units_at(target).iter().any(|other| {
+                    if g.unit_ids_at(target).iter().any(|other| {
                         g.rules.units[g.units[other].kind].class != "military"
                             || g.units[other].hp <= 40
                     }) =>
@@ -4145,8 +4245,8 @@ impl BasicAi {
         let bargain = if self.barbarian_bargain
             && !self.barb
             && g.barb_pid.is_some_and(|barb| {
-                g.units_at(target)
-                    .into_iter()
+                g.unit_ids_at(target)
+                    .iter()
                     .any(|other| g.units[&other].owner == barb)
             }) {
             BARBARIAN_BARGAIN_DISCOUNT
@@ -4245,7 +4345,7 @@ impl BasicAi {
                 .iter()
                 .find(|action| match action {
                     Action::AirStrike { unit, target } if *unit == uid => {
-                        g.units_at(*target).iter().any(|other| {
+                        g.unit_ids_at(*target).iter().any(|other| {
                             let other = &g.units[other];
                             other.owner != pid
                                 && g.rules.units[other.kind].domain.as_deref()
@@ -4310,7 +4410,7 @@ impl BasicAi {
                     .filter_map(|action| match action {
                         Action::AirStrike { unit, target } if *unit == uid => {
                             let target_hp = g
-                                .units_at(*target)
+                                .unit_ids_at(*target)
                                 .iter()
                                 .filter_map(|other| {
                                     let other = &g.units[other];
@@ -4417,6 +4517,7 @@ impl BasicAi {
             barbarian_tactics: true,
             amenity_districts: false,
             garrison_under_fire: false,
+            reserve_floor: 0.0,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -4430,6 +4531,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            island_exploration: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -4807,7 +4909,7 @@ impl BasicAi {
             // camp in fog into an AI objective merely because its coordinate
             // happens to be present in the model.
             .filter(|position| g.player_can_see(pid, *position))
-            .filter(|position| g.units_at(*position).is_empty())
+            .filter(|position| g.unit_ids_at(*position).is_empty())
             .filter(|position| g.can_move(uid, *position))
             .collect();
         // `enemy_of_my_enemy`: a camp that raids the neighbour is left to it.
@@ -4833,6 +4935,7 @@ impl BasicAi {
             barbarian_tactics: true,
             amenity_districts: false,
             garrison_under_fire: false,
+            reserve_floor: 0.0,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -4846,6 +4949,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            island_exploration: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -5141,7 +5245,25 @@ impl BasicAi {
             }
         }
         drop(slot);
-        let envelopes = std::sync::Arc::new(self.compute_enemy_attack_envelopes(g, pid));
+        // ★★★★ ONE MEMO SCOPE FOR THE WHOLE TABLE, NOT ONE PER ENEMY.
+        // `Game::flow_past` opens `query_memo()` itself, so with no scope
+        // around this every enemy's flood was the *outermost* scope of its
+        // own: `air_patrols` — a scan of every unit in the world, hoisted out
+        // of `can_enter_past` precisely because a flood asks it once per
+        // neighbour of every tile it expands — was rebuilt once per enemy, and
+        // so were `passage_improvements`, `traversal` and `movement`. One
+        // 150-turn game at the standard shape computes 35,181 tables from
+        // 218,269 floods, so 83.9% of those scopes were the second flood of a
+        // table paying again for the first one's answers.
+        //
+        // Exact because a memo scope is only ever a lie if the board moves
+        // under it, and this one is opened over `&Game`: nothing inside can
+        // mutate it. It is dropped before this function returns, so no caller
+        // inherits it.
+        let envelopes = std::sync::Arc::new({
+            let _memo = g.query_memo();
+            self.compute_enemy_attack_envelopes(g, pid)
+        });
         let mut slot = self
             .attack_envelope_cache
             .lock()
@@ -5159,15 +5281,25 @@ impl BasicAi {
     /// owner and place, the map epoch, and the war ledger. FNV-1a over those
     /// fields in table order, so equal boards hash equal. `skip_owner` leaves
     /// one seat's units out — see `envelope_cache_across_own_moves`.
+    ///
+    /// ★★★ A WORD AT A TIME. This is the most-executed loop in the envelope
+    /// machinery — one 150-turn game at the standard shape asks 51,500 times
+    /// and mixes 13,118,014 units doing it — and FNV-1a is defined a *byte* at
+    /// a time, so each of the seven fields per unit cost eight rounds of
+    /// xor-and-multiply: 734 million rounds a game to answer "is this the same
+    /// board". The mix is now the one `vision_key` in `src/game.rs` uses, a
+    /// round per field, which is the shape this repository already trusts for
+    /// the sight cache's keys.
+    ///
+    /// Nothing reads the number. It is compared for equality against the
+    /// previous ask's and thrown away, so the only property that matters is
+    /// that different boards keep giving different values — the field set and
+    /// its order are untouched.
     fn attack_envelope_fingerprint(g: &Game, skip_owner: Option<usize>) -> u64 {
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut hash = OFFSET;
+        let mut hash = FINGERPRINT_SEED;
         let mut mix = |value: u64| {
-            for byte in value.to_le_bytes() {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(PRIME);
-            }
+            hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+            hash ^= hash >> 29;
         };
         mix(g.map.tiles.epoch());
         mix(g.wars.len() as u64);
@@ -5344,7 +5476,26 @@ impl BasicAi {
     /// ⚠ The induction only holds while this is refreshed on *every* ask.
     /// `None` means "assume everything changed", which is what a first ask, a
     /// map edit, a war, or any city change returns.
+    /// The tiles the changes touched — see [`Self::envelope_board_change`],
+    /// which this is the delta half of. Kept because the invariants above are
+    /// pinned on the delta alone, and a test should not have to know that the
+    /// store's cleanup rides along with it.
+    #[cfg(test)]
     fn envelope_board_delta(&self, g: &Game) -> Option<Vec<Pos>> {
+        self.envelope_board_change(g).touched
+    }
+
+    /// ★★★ THE DIFF IS A MERGE, NOT A REBUILD. Both rosters are ordered by
+    /// id — `Game.units` is a `BTreeMap` and the stored board is kept in the
+    /// same order — so the two are walked side by side. What this replaces
+    /// built a fresh `HashMap` of *every unit in the game* on *every ask*,
+    /// hashed each id once to insert it and once more to look up its
+    /// predecessor, and then threw the old table away. The comparison it
+    /// makes, field for field, is identical: `EnvelopeUnit`'s `PartialEq` is
+    /// the same one, over the same fields, and the tiles reported are the
+    /// same set. Only the order within the returned `Vec` differs, and its
+    /// single reader asks whether a sensitive set contains any of them.
+    fn envelope_board_change(&self, g: &Game) -> EnvelopeChange {
         let mut previous = self
             .envelope_board
             .lock()
@@ -5354,55 +5505,65 @@ impl BasicAi {
             Self::envelope_belligerence_fingerprint(g),
             Self::envelope_city_fingerprint(g),
         );
-        let mut current: HashMap<u32, EnvelopeUnit> = HashMap::with_capacity(g.units.len());
-        for unit in g.units.values() {
-            current.insert(
-                unit.id,
-                EnvelopeUnit {
-                    pos: unit.pos,
-                    kind: unit.kind.id(),
-                    owner: unit.owner,
-                    formation: unit.formation,
-                    zoc_stopped: unit.zoc_stopped,
-                    patrol: unit.air_patrol.then_some(unit.air_patrol_pos).flatten(),
-                    locked: (unit.started_turn_in_zoc, unit.acted, unit.moved),
-                    linked_to: unit.linked_to,
-                },
-            );
-        }
-        let delta = match previous.as_ref() {
+        let mut units: Vec<(u32, EnvelopeUnit)> = Vec::with_capacity(g.units.len());
+        let change = match previous.as_ref() {
             Some(prior) if prior.stamp == stamp => {
                 let mut touched = Vec::new();
-                for (id, now) in &current {
-                    match prior.units.get(id) {
-                        Some(before) if before == now => {}
-                        Some(before) => {
-                            touched.push(before.pos);
-                            touched.push(now.pos);
-                            touched.extend(before.patrol);
-                            touched.extend(now.patrol);
+                let mut removed = false;
+                let mut before = prior.units.iter().peekable();
+                for (id, unit) in g.units.iter() {
+                    let now = EnvelopeUnit::of(unit);
+                    // Everything the old board held below this id is gone from
+                    // the new one: both walks are ascending.
+                    while before.peek().is_some_and(|(gone, _)| gone < id) {
+                        let (_, gone) = before.next().expect("peeked");
+                        removed = true;
+                        touched.push(gone.pos);
+                        touched.extend(gone.patrol);
+                    }
+                    match before.peek() {
+                        Some((same, was)) if same == id => {
+                            if *was != now {
+                                touched.push(was.pos);
+                                touched.push(now.pos);
+                                touched.extend(was.patrol);
+                                touched.extend(now.patrol);
+                            }
+                            before.next();
                         }
-                        None => {
+                        _ => {
                             touched.push(now.pos);
                             touched.extend(now.patrol);
                         }
                     }
+                    units.push((*id, now));
                 }
-                for (id, before) in &prior.units {
-                    if !current.contains_key(id) {
-                        touched.push(before.pos);
-                        touched.extend(before.patrol);
-                    }
+                for (_, gone) in before {
+                    removed = true;
+                    touched.push(gone.pos);
+                    touched.extend(gone.patrol);
                 }
-                Some(touched)
+                EnvelopeChange {
+                    touched: Some(touched),
+                    removed,
+                }
             }
-            _ => None,
+            _ => {
+                units.extend(
+                    g.units
+                        .iter()
+                        .map(|(id, unit)| (*id, EnvelopeUnit::of(unit))),
+                );
+                // Nothing is known about what left the board, so the store's
+                // cleanup must run.
+                EnvelopeChange {
+                    touched: None,
+                    removed: true,
+                }
+            }
         };
-        *previous = Some(EnvelopeBoard {
-            stamp,
-            units: current,
-        });
-        delta
+        *previous = Some(EnvelopeBoard { stamp, units });
+        change
     }
 
     /// Who is at war with whom, as `attack_reach` sees it.
@@ -5421,14 +5582,10 @@ impl BasicAi {
     /// passed throughout — the anchor's five profiles do not move an envoy in
     /// a way that matters.
     fn envelope_belligerence_fingerprint(g: &Game) -> u64 {
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut hash = OFFSET;
+        let mut hash = FINGERPRINT_SEED;
         let mut mix = |value: u64| {
-            for byte in value.to_le_bytes() {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(PRIME);
-            }
+            hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+            hash ^= hash >> 29;
         };
         mix(g.wars.len() as u64);
         for (left, right) in &g.at_war {
@@ -5448,9 +5605,7 @@ impl BasicAi {
 
     /// The cities as `attack_reach` sees them: identity, owner and place.
     fn envelope_city_fingerprint(g: &Game) -> u64 {
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut hash = OFFSET;
+        let mut hash = FINGERPRINT_SEED;
         for city in g.cities.values() {
             for value in [
                 u64::from(city.id),
@@ -5458,21 +5613,28 @@ impl BasicAi {
                 city.pos.0 as u64,
                 city.pos.1 as u64,
             ] {
-                for byte in value.to_le_bytes() {
-                    hash ^= u64::from(byte);
-                    hash = hash.wrapping_mul(PRIME);
-                }
+                hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+                hash ^= hash >> 29;
             }
         }
         hash
     }
 
     fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
+        // `attack_envelope_cache` may intentionally omit this seat while the
+        // evaluator prices the stale-own-moves treatment. The raw reach is
+        // not allowed to do that: another unit's position can stop an enemy
+        // in zone of control, so every controller must share only a key over
+        // the complete board.
+        let reach_key = (g.turn, Self::attack_envelope_fingerprint(g, None));
         let mut store = self
             .enemy_envelope_cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let delta = self.envelope_board_delta(g);
+        let EnvelopeChange {
+            touched: delta,
+            removed,
+        } = self.envelope_board_change(g);
         let out: AttackEnvelopes = g
             .units
             .values()
@@ -5514,16 +5676,18 @@ impl BasicAi {
                 // ⚠ `attack_reach_from_flood` already returns these ascending
                 // and distinct; re-collecting them into a second set was
                 // building the same answer twice.
-                let (targets, flood) = g.attack_reach_from_flood(unit.id);
+                let cached = g.cached_attack_reach_from_flood(reach_key, unit.id);
                 let reach: std::sync::Arc<EnvelopeReach> =
-                    std::sync::Arc::new(EnvelopeReach::from_tiles(targets));
+                    std::sync::Arc::new(EnvelopeReach::from_tiles(cached.targets().to_vec()));
                 if reusable {
                     store.insert(
                         unit.id,
                         EnemyEnvelope {
                             reach: std::sync::Arc::clone(&reach),
                             sensitive: std::sync::Arc::new(Self::envelope_sensitive_tiles(
-                                g, unit, &flood,
+                                g,
+                                unit,
+                                cached.flood(),
                             )),
                         },
                     );
@@ -5533,7 +5697,29 @@ impl BasicAi {
             .collect();
         // A unit that died or left sight is never asked about again; drop it so
         // a long game does not carry an envelope per unit ever seen.
-        store.retain(|id, _| g.units.contains_key(id));
+        //
+        // ★★★ ONLY WHEN SOMETHING LEFT THE BOARD, AND THE DELTA IS WHAT KNOWS.
+        // This walked the whole per-enemy cache on every ask, hit or miss, to
+        // find the removals of a board that usually has none. `removed` is
+        // `true` for exactly the asks where the previous board held an id this
+        // one does not — and `true` whenever the delta gave up, which is the
+        // case where nothing is known.
+        //
+        // ⚠ The induction, which is the whole of why the skip is exact: every
+        // id inserted above belongs to `g.units`, so after a walk the store
+        // holds only ids of the board just asked about, and the board this
+        // walk is judged against is the one the delta was taken from — the
+        // store and the board move together under this same lock. If that
+        // board loses no id, every id the store holds is still on this one and
+        // a walk would find nothing to drop. That argument does not care which
+        // board the previous ask was about, which matters: a speculative clone
+        // draws its new ids from the same `next_id` as the board it was cloned
+        // from, so two branches *can* mint the same id for different units —
+        // and the branch that goes away takes its ids with it, which is a
+        // removal, which is a walk.
+        if removed {
+            store.retain(|id, _| g.units.contains_key(id));
+        }
         out
     }
 
@@ -8311,7 +8497,7 @@ impl BasicAi {
             if g.city_can_strike(&g.cities[cid]) {
                 let cpos = g.cities[cid].pos;
                 for pos in g.wdisk(cpos, 2) {
-                    let hit = g.units_at(pos).into_iter().any(|oid| {
+                    let hit = g.unit_ids_at(pos).iter().any(|oid| {
                         let o = &g.units[&oid];
                         o.owner != pid && g.is_at_war(pid, o.owner)
                     });
@@ -8668,7 +8854,7 @@ impl BasicAi {
                     // only bites the live bridge. The refusals are all live.
                     let center = g.cities[cid].pos;
                     let occupied = self.live_religious_purchase_guard
-                        && g.units_at(center).into_iter().any(|uid| {
+                        && g.unit_ids_at(center).iter().any(|uid| {
                             let unit = &g.units[&uid];
                             unit.owner == pid
                                 && g.rules
@@ -9127,7 +9313,10 @@ impl BasicAi {
     }
 
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
-        if !self.naval_recon_on() || self.minor || self.barb {
+        if !(self.naval_recon_on() || self.island_exploration_active(g, pid))
+            || self.minor
+            || self.barb
+        {
             return false;
         }
         if !Self::unseen_water_remains(g, pid) {
@@ -9583,7 +9772,10 @@ impl BasicAi {
             40.0 + 10.0 * n_cities as f64
         } else {
             100.0 + 25.0 * n_cities as f64
-        };
+        }
+        // See `reserve_floor`: 0.0 unless the deployed controller is holding
+        // an emergency defender's price back for a threatened city.
+        .max(self.reserve_floor);
         let want_ranged = melee > ranged;
 
         // Gold defense is city-local: buying the strongest unit in a safe
@@ -11509,12 +11701,12 @@ impl BasicAi {
             let mut s = -3.0 * progress * depth_error as f64;
             let mut adjacent_support = 0;
             for n in g.nbrs(tile) {
-                for oid in g.units_at(n) {
+                for oid in g.unit_ids_at(n) {
                     let o = &g.units[&oid];
                     if g.rules.units[o.kind].class != "military" {
                         continue;
                     }
-                    if o.owner == pid && oid != uid {
+                    if o.owner == pid && *oid != uid {
                         adjacent_support += 1;
                     } else if enemy_ids.contains(&o.owner) {
                         let att = effective_strength(g.unit_strength(o, false), o.hp);
@@ -11948,6 +12140,82 @@ impl BasicAi {
             && tile
                 .owner_city
                 .is_none_or(|cid| g.cities[&cid].owner == pid)
+    }
+
+    /// The connected dry ground underneath the Palace city. `Tile::continent`
+    /// is a map-script annotation and can be absent or split a single island,
+    /// so these genes use the map's actual dry-land connectivity instead.
+    pub(crate) fn capital_landmass(g: &Game, pid: usize) -> BTreeSet<Pos> {
+        let Some(home) = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| g.cities.get(&cid))
+            .min_by_key(|city| (std::cmp::Reverse(g.city_has_palace(city)), city.id))
+            .map(|city| city.pos)
+        else {
+            return BTreeSet::new();
+        };
+        let mut landmass = BTreeSet::new();
+        let mut frontier = VecDeque::from([home]);
+        while let Some(pos) = frontier.pop_front() {
+            if !landmass.insert(pos) {
+                continue;
+            }
+            for next in g.nbrs(pos) {
+                if landmass.contains(&next) {
+                    continue;
+                }
+                if g.map
+                    .get(next)
+                    .is_some_and(|tile| !g.rules.is_unknown(tile) && !g.rules.is_water(tile))
+                {
+                    frontier.push_back(next);
+                }
+            }
+        }
+        landmass
+    }
+
+    /// Count only mutually usable city sites on the capital's connected dry
+    /// ground. A cluster of plots inside one city radius is one future city,
+    /// not several reasons to postpone an overseas search.
+    fn main_landmass_settlement_room(
+        &self,
+        g: &Game,
+        pid: usize,
+        landmass: &BTreeSet<Pos>,
+        wanted: usize,
+    ) -> usize {
+        let mut sites = Vec::new();
+        for pos in landmass {
+            if self.valid_settle_site(g, pid, *pos)
+                && sites
+                    .iter()
+                    .all(|taken| g.wdist(*taken, *pos) as f64 >= self.w.min_city_dist)
+            {
+                sites.push(*pos);
+                if sites.len() >= wanted {
+                    break;
+                }
+            }
+        }
+        sites.len()
+    }
+
+    /// Whether `island-exploration` should spend a naval turn finding a new
+    /// landmass now, rather than while the capital still has ordinary room.
+    pub(crate) fn island_exploration_active(&self, g: &Game, pid: usize) -> bool {
+        if !self.island_exploration {
+            return false;
+        }
+        let landmass = Self::capital_landmass(g, pid);
+        !landmass.is_empty()
+            && self.main_landmass_settlement_room(
+                g,
+                pid,
+                &landmass,
+                ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+            ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT
     }
 
     pub fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
@@ -12784,7 +13052,7 @@ impl BasicAi {
     }
 
     fn is_enemy_tile(&self, g: &Game, pos: Pos, enemy_ids: &[usize]) -> bool {
-        for oid in g.units_at(pos) {
+        for oid in g.unit_ids_at(pos) {
             if enemy_ids.contains(&g.units[&oid].owner) {
                 return true;
             }
@@ -12812,8 +13080,8 @@ impl BasicAi {
             }
         }
         let defender = g
-            .units_at(pos)
-            .into_iter()
+            .unit_ids_at(pos)
+            .iter()
             .map(|oid| &g.units[&oid])
             .filter(|o| g.rules.units[o.kind].class == "military")
             .max_by(|a, b| {
@@ -12899,7 +13167,7 @@ impl BasicAi {
         // strength bearing down, then the most damage already taken.
         let mut wanting: Vec<(i64, Pos)> = Vec::new();
         for city in g.cities.values().filter(|city| city.owner == pid) {
-            let held = g.units_at(city.pos).into_iter().any(|uid| {
+            let held = g.unit_ids_at(city.pos).iter().any(|uid| {
                 g.units[&uid].owner == pid && g.rules.units[g.units[&uid].kind].class == "military"
             });
             if held {
@@ -13110,7 +13378,7 @@ impl BasicAi {
         if !g.rules.units[shooter.kind].has_ranged_attack() {
             return false;
         }
-        let frames = (g.player_vision_now(pid), g.visibility_viewers(pid));
+        let frames = (g.player_vision_frame(pid), g.visibility_viewers(pid));
         let range = g.unit_attack_range(uid);
         g.units.values().any(|target| {
             Some(target.owner) == g.barb_pid
@@ -13136,7 +13404,7 @@ impl BasicAi {
         if !self.naval_threat_triage || !ranged {
             return 0.0;
         }
-        let harmless_ship = g.units_at(target).into_iter().any(|other| {
+        let harmless_ship = g.unit_ids_at(target).iter().any(|other| {
             let unit = &g.units[&other];
             Some(unit.owner) == g.barb_pid
                 && Self::is_barbarian_raider(g, unit)
@@ -13238,8 +13506,8 @@ impl BasicAi {
                 // standing on it.
                 let ranked = distance.min(3);
                 let defender = g
-                    .units_at(*camp)
-                    .into_iter()
+                    .unit_ids_at(*camp)
+                    .iter()
                     .filter_map(|other| g.units.get(&other))
                     .filter(|other| {
                         enemy_ids.contains(&other.owner)
@@ -13454,7 +13722,7 @@ impl BasicAi {
                     g.cities
                         .values()
                         .any(|city| city.owner == *enemy && city.pos == target)
-                        || g.units_at(target)
+                        || g.unit_ids_at(target)
                             .iter()
                             .any(|other| enemy_ids.contains(&g.units[other].owner))
                 }) {
@@ -13635,6 +13903,27 @@ impl BasicAi {
             .count()
     }
 
+    /// Known, usable foreign land a ship would be able to see after reaching
+    /// `target`. This is limited to the player's explored set: an explorer may
+    /// choose a visible landfall, but never a hidden island from full-map data.
+    fn island_landfall_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+        home_landmass: &BTreeSet<Pos>,
+    ) -> usize {
+        g.wdisk(target, g.unit_sight(uid))
+            .into_iter()
+            .filter(|pos| {
+                !home_landmass.contains(pos)
+                    && g.players[pid].explored.contains(pos)
+                    && self.valid_settle_site(g, pid, *pos)
+            })
+            .count()
+    }
+
     /// Ground another own explorer is already committed to; empty unless
     /// `explore_commit` holds goals. See `explore_commit`.
     fn reserved_explore_goals(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
@@ -13679,10 +13968,26 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
+        let island_home = if self.island_exploration
+            && !dry_only
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
+        {
+            let landmass = Self::capital_landmass(g, pid);
+            (!landmass.is_empty()
+                && self.main_landmass_settlement_room(
+                    g,
+                    pid,
+                    &landmass,
+                    ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+                ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
+                .then_some(landmass)
+        } else {
+            None
+        };
         // Visible hostiles at war with us: ground around them is not a goal.
         // Live vision only — a threat the seat cannot see does not steer it.
         let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
-            let visible = g.player_vision_now(pid);
+            let visible = g.player_vision_frame(pid);
             g.units
                 .values()
                 .filter(|unit| {
@@ -13736,7 +14041,7 @@ impl BasicAi {
             }
         }
         let reserved = self.reserved_explore_goals(g, pid, uid);
-        let lookahead = if self.explore_commit {
+        let lookahead = if self.explore_commit || island_home.is_some() {
             EXPLORE_COMMIT_LOOKAHEAD
         } else {
             EXPLORATION_FRONTIER_LOOKAHEAD
@@ -13790,12 +14095,25 @@ impl BasicAi {
                 radius += 1;
                 continue;
             };
-            if !self.explore_commit || radius >= first + lookahead {
+            if !(self.explore_commit || island_home.is_some()) || radius >= first + lookahead {
                 break;
             }
             radius += 1;
         }
-        let chosen = if self.explore_commit {
+        let chosen = if let Some(home_landmass) = island_home.as_ref() {
+            // Once home is nearly full, a visible foreign landfall outranks an
+            // equally revealing patch of empty water. If none is visible, the
+            // normal frontier term still sends the ship into fresh water.
+            candidates.into_iter().max_by_key(|target| {
+                (
+                    self.island_landfall_value(g, pid, uid, *target, home_landmass),
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    home.map_or(0, |home| g.wdist(home, *target)),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                )
+            })
+        } else if self.explore_commit {
             // The most revealing goal, and among those the one farthest from
             // home: the walk sweeps outward and along the frontier instead of
             // hugging the fringe nearest the unit. See `explore_commit`.
@@ -13916,7 +14234,7 @@ impl BasicAi {
                 return Some(village);
             }
         } else if self.hut_collection {
-            let visible = g.player_vision_now(pid);
+            let visible = g.player_vision_frame(pid);
             if let Some(village) = g
                 .reachable(uid)
                 .into_iter()
@@ -14080,7 +14398,7 @@ impl BasicAi {
                     !g.rules.is_water(tile)
                         && g.rules.is_passable(tile)
                         && g.unit_can_traverse(uid, **pos)
-                        && g.units_at(**pos).is_empty()
+                        && g.unit_ids_at(**pos).is_empty()
                 })
                 .map(|(pos, tile)| {
                     let ours = tile
@@ -14566,7 +14884,7 @@ impl BasicAi {
             None
         };
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
-            g.units_at(position).into_iter().any(|other| {
+            g.unit_ids_at(position).iter().any(|other| {
                 g.units[&other].owner != pid
                     && g.is_at_war(pid, g.units[&other].owner)
                     && g.units[&other].kind == "settler"
@@ -14643,11 +14961,14 @@ impl BasicAi {
             };
             let mut best: Option<(f64, Pos, Action)> = None;
             // Hoisted out of the candidate loop below (see
-            // `Game::ranged_order_is_legal`): `player_vision_now` clones a
-            // whole `TileBits`, and neither frame can move while this loop
-            // applies nothing. Built lazily — most units reach no enemy tile.
+            // `Game::ranged_order_is_legal`): neither frame can move while
+            // this loop applies nothing, so it is built at most once here
+            // rather than once per candidate tile. Built lazily — most units
+            // reach no enemy tile. `player_vision_frame` hands back the
+            // engine's own `Arc`, so even that one build is a refcount bump
+            // rather than a `TileBits` clone.
             let mut vision_frames: Option<(
-                crate::world::TileBits,
+                std::sync::Arc<crate::world::TileBits>,
                 std::collections::BTreeSet<usize>,
             )> = None;
             for pos in g.wdisk(upos, radius) {
@@ -14675,7 +14996,7 @@ impl BasicAi {
                     && distance <= g.unit_attack_range(uid)
                     && (!(self.legal_tactical_candidates || self.naval_threat_triage) || {
                         let frames = vision_frames.get_or_insert_with(|| {
-                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                            (g.player_vision_frame(pid), g.visibility_viewers(pid))
                         });
                         g.ranged_order_is_legal(pid, uid, pos, &frames.0, &frames.1)
                     })
@@ -14693,7 +15014,7 @@ impl BasicAi {
                     && g.priority_support_target_at(pid, pos).is_some()
                     && (!self.legal_tactical_candidates || {
                         let frames = vision_frames.get_or_insert_with(|| {
-                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                            (g.player_vision_frame(pid), g.visibility_viewers(pid))
                         });
                         g.units[&uid].attacks_left > 0
                             && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
@@ -14837,8 +15158,8 @@ impl BasicAi {
                     return None;
                 }
                 let value = g
-                    .units_at(position)
-                    .into_iter()
+                    .unit_ids_at(position)
+                    .iter()
                     .filter_map(|other| {
                         let other = &g.units[&other];
                         if other.owner == pid || !g.is_at_war(pid, other.owner) {
@@ -14909,8 +15230,8 @@ impl BasicAi {
         }
         let here = unit.pos;
         let target_unit = g
-            .units_at(here)
-            .into_iter()
+            .unit_ids_at(here)
+            .iter()
             .filter(|oid| {
                 let other = &g.units[oid];
                 other.owner != pid
@@ -14931,7 +15252,7 @@ impl BasicAi {
             pid,
             &Action::CondemnHeretic {
                 unit: uid,
-                target_unit,
+                target_unit: *target_unit,
             },
         )
         .is_ok()
@@ -15011,8 +15332,8 @@ impl BasicAi {
         // A unit standing on or beside one of our own settlers is plausibly
         // its escort; rescuing one civilian must not expose another.
         let beside_own_settler = g.nbrs(origin).into_iter().chain([origin]).any(|position| {
-            g.units_at(position).into_iter().any(|other| {
-                other != uid && g.units[&other].owner == pid && g.units[&other].kind == "settler"
+            g.unit_ids_at(position).iter().any(|other| {
+                *other != uid && g.units[other].owner == pid && g.units[other].kind == "settler"
             })
         });
         if beside_own_settler {
@@ -15023,8 +15344,8 @@ impl BasicAi {
         let lone_garrison = g
             .city_at(origin)
             .is_some_and(|cid| g.cities[&cid].owner == pid)
-            && g.units_at(origin)
-                .into_iter()
+            && g.unit_ids_at(origin)
+                .iter()
                 .filter(|other| {
                     let other = &g.units[other];
                     other.owner == pid && g.rules.units[other.kind].class == "military"
@@ -15077,7 +15398,7 @@ impl BasicAi {
                 }
                 // A civilian standing under an enemy military unit cannot be
                 // captured by entering; that tile is an attack problem.
-                let guarded = g.units_at(other.pos).into_iter().any(|oid| {
+                let guarded = g.unit_ids_at(other.pos).iter().any(|oid| {
                     let blocker = &g.units[&oid];
                     blocker.owner != pid && g.rules.units[blocker.kind].class == "military"
                 });
@@ -15444,8 +15765,7 @@ mod tests {
         // On, first choice held by a rival: the next founding pantheon, not
         // the shipped list's first name.
         let mut contested = board(6_101);
-        contested
-            .blocked_pantheons
+        std::sync::Arc::make_mut(&mut contested.blocked_pantheons)
             .insert(crate::name!("religious_settlements"));
         live.research_with_government(&mut contested, 0, false, None);
         assert_eq!(
@@ -15675,6 +15995,152 @@ mod tests {
         }
     }
 
+    /// The whole claim the sweep skip rests on, checked card by card against
+    /// the sweep itself on a played-forward board.
+    ///
+    /// `PolicyReadSet::card_is_inert` says a card cannot move
+    /// [`empire_reading`]. This asserts the implication over **every card in
+    /// the ruleset**, on both sides of the counterfactual the review runs
+    /// (removal for a card the seat holds, slotting for one it does not) and
+    /// under both `net_maintenance` arms, and it compares raw bits rather than
+    /// an epsilon: the skip reuses a number, so anything short of bit equality
+    /// is a defect.
+    ///
+    /// The board is a real one — four majors and six city-states playing
+    /// seventy turns of the Basic agent — because a hand-built fixture only
+    /// exercises the yield paths its author thought of, and the read set is
+    /// exactly the set of paths the board happens to open.
+    #[test]
+    fn a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero() {
+        let mut game = Game::new_full(4, 44, 30, 7_320_017, 300, 6, true);
+        game.set_fog_memory(false);
+        let mut ais: Vec<AdvancedAi> = game.players.iter().map(|_| AdvancedAi::new()).collect();
+        while game.winner.is_none() && game.turn <= 110 {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        let cards: Vec<Name> = game.rules.policies.keys().copied().collect();
+        let weights = Weights::default();
+        let mut ever_live: std::collections::BTreeSet<&str> = Default::default();
+        let mut ever_inert: std::collections::BTreeSet<&str> = Default::default();
+        let mut checked = 0usize;
+        // Every major, because the read set is a property of the board: a seat
+        // whose capital is queueing a Settler asks `item_prod_mult` for
+        // `settler_production_pct` and a seat queueing a Granary does not, so
+        // one seat exercises only the paths its own position opens.
+        for pid in 0..4 {
+            let cities = game.player_city_ids(pid);
+            let districts: usize = cities
+                .iter()
+                .map(|cid| game.cities[cid].districts.len())
+                .sum();
+            let buildings: usize = cities
+                .iter()
+                .map(|cid| game.cities[cid].buildings.len())
+                .sum();
+            let routes = game
+                .routes
+                .iter()
+                .filter(|route| route.owner == pid)
+                .count();
+            println!(
+                "fixture seat {pid}: {} cities, {districts} districts, {buildings} buildings, \
+                 {routes} trade routes, {} units, religion {:?}, pantheon {:?}, {} cards slotted",
+                cities.len(),
+                game.player_unit_ids(pid).len(),
+                game.players[pid].religion,
+                game.players[pid].pantheon,
+                game.players[pid].policies.len(),
+            );
+            assert!(!cities.is_empty(), "a seat with no cities reads nothing");
+            for net_maintenance in [false, true] {
+                let (base, reads) =
+                    reading_with_policy_trace(&game, pid, &weights, net_maintenance);
+                assert!(
+                    !reads.is_opaque(),
+                    "an ordinary seat carries no runtime attachment"
+                );
+                let mut inert: Vec<&str> = Vec::new();
+                let mut live: Vec<&str> = Vec::new();
+                for card in cards.iter().copied() {
+                    let verdict = reads.card_is_inert(&game.rules, card);
+                    let held = game.players[pid].policies.contains(&card);
+                    if held {
+                        game.players[pid].policies.remove(&card);
+                    } else {
+                        game.players[pid].policies.insert(card);
+                    }
+                    let other = empire_reading(&game, pid, &weights, net_maintenance);
+                    if held {
+                        game.players[pid].policies.insert(card);
+                    } else {
+                        game.players[pid].policies.remove(&card);
+                    }
+                    checked += 1;
+                    if verdict {
+                        assert_eq!(
+                            other.to_bits(),
+                            base.to_bits(),
+                            "{} is classified reading-inert but the sweep moved: {other} against \
+                             {base} (seat={pid}, held={held}, net_maintenance={net_maintenance})",
+                            card.as_str()
+                        );
+                        inert.push(card.as_str());
+                        ever_inert.insert(card.as_str());
+                    } else {
+                        live.push(card.as_str());
+                        ever_live.insert(card.as_str());
+                    }
+                }
+                println!(
+                    "  seat {pid} net_maintenance={net_maintenance}: {} of {} cards \
+                     reading-inert, so the review skips that many whole-empire sweeps",
+                    inert.len(),
+                    cards.len()
+                );
+                if pid == 0 && !net_maintenance {
+                    println!("  inert on seat 0: {}", inert.join(" "));
+                }
+                // Non-vacuous in both directions on every seat: the classifier
+                // has to rule cards out as well as in, or it measures nothing.
+                assert!(
+                    inert.len() >= 20,
+                    "expected the Great-Person, envoy and espionage families to be inert on \
+                     seat {pid}, got {}",
+                    inert.len()
+                );
+                assert!(!live.is_empty(), "the yield cards must not be skipped");
+                // Two named controls, one each way. A Great-Person card moves
+                // points `empire_reading` has no term for; an influence card
+                // moves the one non-yield rate it does read.
+                assert!(
+                    inert.contains(&"inspiration"),
+                    "a card whose whole effect is Great Scientist points is inert"
+                );
+                assert!(
+                    live.contains(&"charismatic_leader"),
+                    "influence_per_turn is a term of the reading, so its cards are not inert"
+                );
+            }
+        }
+        println!(
+            "{checked} (seat, card, maintenance-arm) verdicts checked against the sweep; \
+             {} cards were live somewhere and {} inert somewhere",
+            ever_live.len(),
+            ever_inert.len()
+        );
+        // The verdict is a property of the board, not of the card: some cards
+        // are inert on one seat and live on another, which is the whole reason
+        // this is traced per review rather than tabulated once.
+        assert!(
+            ever_live.intersection(&ever_inert).next().is_some(),
+            "a classifier that answered the same on every board would not need the trace"
+        );
+    }
+
     #[test]
     fn the_barbarian_responder_matches_a_galley_to_an_offshore_raider() {
         let mut g = Game::new_full(2, 24, 16, 91_484, 60, 0, true);
@@ -15713,7 +16179,7 @@ mod tests {
             .filter(|pos| g.wdist(home, *pos) == 2)
             .find(|pos| {
                 g.map.get(*pos).is_some_and(|t| !g.rules.is_water(t))
-                    && g.units_at(*pos).is_empty()
+                    && g.unit_ids_at(*pos).is_empty()
             })
             .expect("open land two tiles from the capital");
         let our_galley = g.spawn_test_unit("galley", 0, water[0]);
@@ -15751,7 +16217,7 @@ mod tests {
             .filter(|(pos, tile)| {
                 game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
-                    && game.units_at(**pos).is_empty()
+                    && game.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .take(3)
@@ -15770,14 +16236,23 @@ mod tests {
 
         // Blind (production today): the discount is an empire-level payment
         // no city yield carries, so the counterfactual reads 0.0 exactly.
-        let current = empire_reading(&game, 0, &weights, false);
-        let (blind, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
+        // It is also the classifier's own boundary: with the bill unread the
+        // sweep never asks for `unit_maintenance_discount`, so the card is
+        // reading-inert and the skip returns the same exact 0.0.
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
+        assert!(reads.card_is_inert(&game.rules, card));
+        let (blind, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
         assert_eq!(blind, 0.0, "the defect under test: the card is invisible");
 
         // Aware: the with-side bill is lower by one Gold per unit, so the
-        // gain is the discount at the gold weight — strictly positive.
-        let current = empire_reading(&game, 0, &weights, true);
-        let (aware, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, true);
+        // gain is the discount at the gold weight — strictly positive. The
+        // same card is now live to the classifier, because the same sweep now
+        // asks the deck for the discount.
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, true);
+        assert!(!reads.card_is_inert(&game.rules, card));
+        let (aware, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, true);
         assert!(
             aware > 0.0,
             "the maintenance discount must score its own relief, got {aware}"
@@ -15815,20 +16290,20 @@ mod tests {
 
         // Challenger: the current slate is the exact `without` side, so the
         // incremental scorer must agree with the old two-sweep reading.
-        let current = empire_reading(&game, 0, &weights, false);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
         let mut full = game.clone();
         let without = empire_reading(&full, 0, &weights, false);
         full.players[0].policies.insert(card);
         let with = empire_reading(&full, 0, &weights, false);
         let expected_gain = with - without;
         let expected = (expected_gain, candidate.0, candidate.1.clone(), candidate.2);
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
         assert_eq!(actual, expected);
 
         // Incumbent: after putting the card on the slate, the current reading
         // is the exact `with` side and only removal needs a fresh sweep.
         game.players[0].policies.insert(card);
-        let current = empire_reading(&game, 0, &weights, false);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
         let mut full = game.clone();
         full.players[0].policies.remove(&card);
         let without = empire_reading(&full, 0, &weights, false);
@@ -15839,7 +16314,7 @@ mod tests {
             candidate.1.clone(),
             candidate.2,
         );
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
         assert_eq!(actual, expected);
         assert!(game.players[0].policies.contains(&card));
     }
@@ -16999,7 +17474,7 @@ mod tests {
             .owned_tiles
             .iter()
             .copied()
-            .find(|position| game.units_at(*position).is_empty())
+            .find(|position| game.unit_ids_at(*position).is_empty())
             .unwrap();
         game.players[0].techs.insert(crate::name!("archery"));
         game.players[0].gold = 180.0;
@@ -17266,8 +17741,7 @@ mod tests {
         ));
 
         let (mut refused, city) = activation_board();
-        refused
-            .blocked_wonders
+        std::sync::Arc::make_mut(&mut refused.blocked_wonders)
             .entry(city)
             .or_default()
             .insert(crate::name!("pyramids"));
@@ -17301,8 +17775,8 @@ mod tests {
         // Civilization VI's own export, so this is the live representation and
         // not a test-only back door — and it makes the case unconditional
         // instead of a test that quietly passes when nothing is falling.
-        game.observed_city_loyalty_per_turn.insert(bleeding, -12.0);
-        game.observed_city_loyalty_per_turn.insert(stable, 1.0);
+        std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(bleeding, -12.0);
+        std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(stable, 1.0);
         let bleed_rate = game.city_loyalty_per_turn(&game.cities[&bleeding]);
         let stable_rate = game.city_loyalty_per_turn(&game.cities[&stable]);
         assert_eq!(bleed_rate, -12.0, "the injected rate must be what the AI reads");
@@ -17848,7 +18322,7 @@ mod tests {
         // The live mirror records `build_no_plot` as an exact Wonder block.
         // After one such response, generic fallback production must return to
         // its non-Wonder choices instead of trying the next catalog entry.
-        game.blocked_wonders
+        std::sync::Arc::make_mut(&mut game.blocked_wonders)
             .entry(city)
             .or_default()
             .insert(crate::name!("pyramids"));
@@ -18826,6 +19300,45 @@ mod tests {
     }
 
     #[test]
+    fn island_exploration_prefers_the_known_foreign_landfall() {
+        let (mut g, source, target) = island_colony_game(1);
+        g.players[0].techs.insert(crate::name!("sailing"));
+        let landfall = g
+            .nbrs(target)
+            .into_iter()
+            .find(|pos| g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile)))
+            .expect("the island has a coastal approach");
+        let start = g
+            .nbrs(landfall)
+            .into_iter()
+            .find(|pos| {
+                g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile))
+                    && g.wdist(*pos, target) == 2
+            })
+            .expect("the approach has an outer water tile");
+        let galley = g.spawn_test_unit("galley", 0, start);
+        let empty_water = g
+            .nbrs(start)
+            .into_iter()
+            .find(|pos| {
+                *pos != landfall
+                    && g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile))
+                    && g.wdist(*pos, target) > g.unit_sight(galley)
+            })
+            .expect("the approach has an equally close empty-water choice");
+        let all_tiles: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        g.players[0].explored.extend(all_tiles);
+        g.players[0].explored.remove(&landfall);
+        g.players[0].explored.remove(&empty_water);
+        let mut ai = BasicAi::new();
+        ai.island_exploration = true;
+
+        assert!(ai.island_exploration_active(&g, 0));
+        assert_eq!(ai.exploration_goal(&g, 0, galley, false), Some(landfall));
+        assert_ne!(source, target, "the fixture has distinct landmasses");
+    }
+
+    #[test]
     fn settler_routes_to_distant_land_before_embarkation() {
         let mut game = Game::new_full(1, 18, 10, 91_002, 120, 0, false);
         let founding_settler = game
@@ -19474,7 +19987,7 @@ mod tests {
         let (mut game, ours, front, _home) = a_warrior_under_one_archer();
         game.units.get_mut(&ours).unwrap().hp = 60;
         for position in game.nbrs(front) {
-            if game.units_at(position).is_empty() && game.city_at(position).is_none() {
+            if game.unit_ids_at(position).is_empty() && game.city_at(position).is_none() {
                 game.spawn_test_unit("warrior", 1, position);
             }
         }
@@ -19550,7 +20063,7 @@ mod tests {
                 let t = &g.map.tiles[p];
                 g.rules.is_passable(t)
                     && !g.rules.is_water(t)
-                    && g.units_at(*p).is_empty()
+                    && g.unit_ids_at(*p).is_empty()
                     && g.city_at(*p).is_none()
             })
             .expect("open land tile next to the city");
@@ -19588,7 +20101,7 @@ mod tests {
                     && tile.owner_city.is_none()
                     && g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .expect("the test map has a second city site");
@@ -19631,7 +20144,7 @@ mod tests {
                     && g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
                     && g.city_at(**pos).is_none()
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .expect("the city has an open tile outside immediate attack range");
@@ -19697,7 +20210,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile) && !g.rules.is_water(tile)
                         })
-                        && g.units_at(*pos).is_empty()
+                        && g.unit_ids_at(*pos).is_empty()
                         && g.city_at(*pos).is_none()
                 })
                 .min()
@@ -19759,7 +20272,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile) && !g.rules.is_water(tile)
                         })
-                        && g.units_at(*pos).is_empty()
+                        && g.unit_ids_at(*pos).is_empty()
                         && g.city_at(*pos).is_none()
                 })
                 .min()
@@ -19818,7 +20331,7 @@ mod tests {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
                     && g.city_at(**pos).is_none()
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .collect();
@@ -19852,7 +20365,7 @@ mod tests {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
                     && g.city_at(**pos).is_none()
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .collect();
@@ -19921,7 +20434,7 @@ mod tests {
                 let t = &g.map.tiles[p];
                 g.rules.is_passable(t)
                     && !g.rules.is_water(t)
-                    && g.units_at(*p).is_empty()
+                    && g.unit_ids_at(*p).is_empty()
                     && g.city_at(*p).is_none()
             })
             .expect("open land tile next to the warrior");
@@ -20711,7 +21224,7 @@ mod tests {
                 g.map.get(*pos).is_some_and(|tile| {
                     g.rules.is_passable(tile)
                         && !g.rules.is_water(tile)
-                        && g.units_at(*pos).is_empty()
+                        && g.unit_ids_at(*pos).is_empty()
                 })
             })
             .take(5)
@@ -20758,7 +21271,7 @@ mod tests {
             .filter(|(pos, tile)| {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**pos).is_empty()
+                    && g.unit_ids_at(**pos).is_empty()
                     // The campaign must march, not brawl: keep the arena away
                     // from everyone's starting units.
                     && g.units.values().all(|unit| g.wdist(unit.pos, **pos) > 8)
@@ -20772,7 +21285,7 @@ mod tests {
                             && g.map.get(*pos).is_some_and(|tile| {
                                 g.rules.is_passable(tile)
                                     && !g.rules.is_water(tile)
-                                    && g.units_at(*pos).is_empty()
+                                    && g.unit_ids_at(*pos).is_empty()
                             })
                             // Troops staged here must be able to march out.
                             && g.nbrs(*pos)
@@ -20842,7 +21355,7 @@ mod tests {
             .tiles
             .keys()
             .copied()
-            .filter(|pos| g.units_at(*pos).is_empty())
+            .filter(|pos| g.unit_ids_at(*pos).is_empty())
             .take(9)
             .collect();
         let cases = [
@@ -20972,7 +21485,7 @@ mod tests {
 
         // Engine preconditions: the wall makes one shot illegal, not both.
         let (g, archer, _, _, blocked_pos, clear_pos) = build();
-        let frames = (g.player_vision_now(0), g.visibility_viewers(0));
+        let frames = (g.player_vision_frame(0), g.visibility_viewers(0));
         assert!(
             !g.ranged_order_is_legal(0, archer, blocked_pos, &frames.0, &frames.1),
             "the walled corridor must refuse the shot"
@@ -21176,7 +21689,9 @@ mod tests {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .find_map(|(center, _)| {
                 let ring: Vec<Pos> = g
@@ -21186,7 +21701,7 @@ mod tests {
                         g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                     })
                     .collect();
@@ -21254,7 +21769,7 @@ mod tests {
             .filter(|(origin, tile)| {
                 g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**origin).is_empty()
+                    && g.unit_ids_at(**origin).is_empty()
                     && g.city_at(**origin).is_none()
             })
             .find_map(|(origin, _)| {
@@ -21265,7 +21780,7 @@ mod tests {
                         g.map.get(*position).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*position).is_empty()
+                                && g.unit_ids_at(*position).is_empty()
                                 && g.city_at(*position).is_none()
                         })
                     })
@@ -21556,7 +22071,9 @@ mod tests {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             // Demand elbow room rather than taking whichever tiles the map
             // lists first: the air base needs a free land tile beside it that
@@ -21568,7 +22085,7 @@ mod tests {
                         g.map.get(*neighbor).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*neighbor).is_empty()
+                                && g.unit_ids_at(*neighbor).is_empty()
                         })
                     })
                     .count()
@@ -21585,7 +22102,7 @@ mod tests {
                     && g.map.get(*pos).is_some_and(|tile| {
                         g.rules.is_passable(tile)
                             && !g.rules.is_water(tile)
-                            && g.units_at(*pos).is_empty()
+                            && g.unit_ids_at(*pos).is_empty()
                     })
             })
             .expect("test map needs a land target beside the air base");
@@ -21698,7 +22215,9 @@ mod tests {
             .tiles
             .iter()
             .filter(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .find_map(|(target, _)| {
                 let ranged = g.wdisk(*target, 2).into_iter().find(|pos| {
@@ -21706,7 +22225,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                 })?;
                 let mobile = g.wdisk(*target, 4).into_iter().find(|pos| {
@@ -21715,7 +22234,7 @@ mod tests {
                         && g.map.get(*pos).is_some_and(|tile| {
                             g.rules.is_passable(tile)
                                 && !g.rules.is_water(tile)
-                                && g.units_at(*pos).is_empty()
+                                && g.unit_ids_at(*pos).is_empty()
                         })
                 })?;
                 Some((*target, ranged, mobile))
@@ -21974,7 +22493,7 @@ mod tests {
             .filter(|position| {
                 game.wdist(origin, *position) == distance
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
             })
             .collect();
         tiles.sort_unstable();
@@ -22280,6 +22799,40 @@ mod tests {
         )));
     }
 
+    /// `threatened-city-reserve`: the floor the deployed controller sets is
+    /// money the baseline buyer cannot see. Same board as the surplus test
+    /// above; with the floor raised past the bank, the Monument stays on the
+    /// shelf and the treasury is untouched.
+    #[test]
+    fn gold_spending_keeps_the_reserve_floor_it_was_handed() {
+        let mut g = Game::new_full(1, 20, 14, 320, 30, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "monument");
+        let mut ai = BasicAi::new();
+        assert_eq!(ai.reserve_floor, 0.0, "the floor ships at zero");
+        g.players[0].gold = 365.0;
+        ai.reserve_floor = 360.0;
+        assert!(
+            !ai.spend_gold(&mut g, 0, &[cid], 1, 1, 1, 2, 1, 1),
+            "a 240 Monument cannot come out of a bank of 365 with 360 held back"
+        );
+        assert_eq!(g.players[0].gold, 365.0);
+        assert!(!g.cities[&cid].buildings.iter().any(|b| b == "monument"));
+        ai.reserve_floor = 0.0;
+        assert!(ai.spend_gold(&mut g, 0, &[cid], 1, 1, 1, 2, 1, 1));
+        assert_eq!(g.players[0].gold, 125.0);
+    }
+
     /// ⚠⚠ A HOST PURCHASE REFUSAL MUST REACH THE BUYERS THAT NEVER ENUMERATE.
     ///
     /// `purchase_action_is_blocked` was applied only where legal actions are
@@ -22570,7 +23123,7 @@ mod tests {
                 (4..=15).contains(&distance)
                     && g.rules.is_passable(tile)
                     && !g.rules.is_water(tile)
-                    && g.units_at(**position).is_empty()
+                    && g.unit_ids_at(**position).is_empty()
             })
             .map(|(position, _)| *position)
             .expect("the recovery Trader needs a reachable destination");
@@ -22672,7 +23225,7 @@ mod tests {
                 game.wdist(**position, first_center) >= 4
                     && game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
-                    && game.units_at(**position).is_empty()
+                    && game.unit_ids_at(**position).is_empty()
             })
             .map(|(position, _)| *position)
             .next()
@@ -22825,7 +23378,9 @@ mod tests {
             .tiles
             .iter()
             .find(|(pos, tile)| {
-                g.rules.is_passable(tile) && !g.rules.is_water(tile) && g.units_at(**pos).is_empty()
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
             })
             .map(|(pos, _)| *pos)
             .unwrap();
@@ -23149,7 +23704,7 @@ mod tests {
             .owned_tiles
             .iter()
             .copied()
-            .find(|position| *position != center && game.units_at(*position).is_empty())
+            .find(|position| *position != center && game.unit_ids_at(*position).is_empty())
             .unwrap();
         let center_edge = game.map.direction_to(site, center).unwrap();
         {
@@ -23265,7 +23820,7 @@ mod tests {
             .iter()
             .copied()
             .find(|position| {
-                g.wdist(*position, g.cities[&city].pos) == 1 && g.units_at(*position).is_empty()
+                g.wdist(*position, g.cities[&city].pos) == 1 && g.unit_ids_at(*position).is_empty()
             })
             .unwrap();
         let tile = g.map.tiles.get_mut(&site).unwrap();
@@ -24255,6 +24810,147 @@ mod attack_envelope_key_tests {
         );
     }
 
+    /// The merge diff reports exactly what a whole-board diff reports.
+    ///
+    /// ★★★★ THE DIFF IS THE ONE THING THAT MAY NOT GET CHEAPER BY GETTING
+    /// WEAKER. `envelope_board_change` walks the two rosters side by side
+    /// because both are ordered by id, instead of building a `HashMap` of
+    /// every unit in the game per ask and looking each id up in the last one.
+    /// That is only a saving if it still names every tile the table it
+    /// replaced named, so the table it replaced is written out here and the
+    /// two are compared as sets — with all four kinds of change in flight at
+    /// once, which is where a merge with a mis-stepped cursor goes wrong and a
+    /// one-change-at-a-time test does not look.
+    #[test]
+    fn the_merge_diff_reports_what_a_whole_board_diff_would() {
+        let whole_board_diff = |before: &HashMap<u32, EnvelopeUnit>, g: &Game| -> Vec<Pos> {
+            let mut current: HashMap<u32, EnvelopeUnit> = HashMap::new();
+            for unit in g.units.values() {
+                current.insert(unit.id, EnvelopeUnit::of(unit));
+            }
+            let mut touched = Vec::new();
+            for (id, now) in &current {
+                match before.get(id) {
+                    Some(was) if was == now => {}
+                    Some(was) => {
+                        touched.push(was.pos);
+                        touched.push(now.pos);
+                        touched.extend(was.patrol);
+                        touched.extend(now.patrol);
+                    }
+                    None => {
+                        touched.push(now.pos);
+                        touched.extend(now.patrol);
+                    }
+                }
+            }
+            for (id, was) in before {
+                if !current.contains_key(id) {
+                    touched.push(was.pos);
+                    touched.extend(was.patrol);
+                }
+            }
+            touched.sort_unstable();
+            touched.dedup();
+            touched
+        };
+
+        let mut game = Game::new_full(2, 24, 16, 4_242, 300, 0, false);
+        let ai = BasicAi::new();
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let doomed = game.spawn_test_unit("warrior", 0, home);
+        let flier = game.spawn_test_unit("warrior", 1, home);
+        assert!(ai.envelope_board_delta(&game).is_none(), "the first ask");
+        assert_eq!(
+            ai.envelope_board_delta(&game),
+            Some(Vec::new()),
+            "an unchanged board"
+        );
+
+        // The board the delta will be taken against, kept the old way.
+        let mut before: HashMap<u32, EnvelopeUnit> = HashMap::new();
+        for unit in game.units.values() {
+            before.insert(unit.id, EnvelopeUnit::of(unit));
+        }
+
+        // Every kind of change the diff distinguishes, at once: a unit that
+        // moved, one that was born, one that died, and one that changed only
+        // the tile it is patrolling. The born and the dead sit on ids either
+        // side of the moved one so the merge cursor has to step over both.
+        let step = game.nbrs(home).into_iter().next().unwrap();
+        let patrolled = game.nbrs(home).into_iter().next_back().unwrap();
+        game.units.get_mut(&mine).unwrap().pos = step;
+        game.units.remove(&doomed);
+        {
+            let flier = game.units.get_mut(&flier).unwrap();
+            flier.air_patrol = true;
+            flier.air_patrol_pos = Some(patrolled);
+        }
+        let born = game.spawn_test_unit("warrior", 0, home);
+        assert!(born > flier, "the new id must sort after the changed ones");
+
+        let mut merged = ai
+            .envelope_board_delta(&game)
+            .expect("four unit changes are not wholesale");
+        merged.sort_unstable();
+        merged.dedup();
+        assert_eq!(
+            merged,
+            whole_board_diff(&before, &game),
+            "the merge reported a different set of tiles than a whole-board diff"
+        );
+        assert!(
+            merged.contains(&home) && merged.contains(&step) && merged.contains(&patrolled),
+            "non-vacuity: the tile left, the tile arrived on and the patrolled \
+             tile must all be in there, or the comparison above is between two \
+             empty answers"
+        );
+    }
+
+    /// A unit that leaves the board still clears its entry from the per-enemy
+    /// store, now that the sweep runs only when something left.
+    ///
+    /// ★★★ THE SWEEP IS NOT MERELY HYGIENE. Two branches of one game draw
+    /// their new unit ids from the same counter, so a speculative board and
+    /// the real one can mint the same id for different units — and an entry
+    /// left behind by a board that no longer exists would then be read as
+    /// belonging to a unit it never described. `compute_enemy_attack_envelopes`
+    /// skips the sweep only when the delta says nothing left the board; this
+    /// holds it to that.
+    #[test]
+    fn a_removal_still_clears_the_per_enemy_store() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let beside = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t))
+                    && game.unit_ids_at(*pos).is_empty()
+            })
+            .expect("the fixture offers dry ground beside the capital");
+        let enemy = game.spawn_test_unit("warrior", 1, beside);
+
+        let ai = BasicAi::new();
+        let _ = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            ai.enemy_envelope_cache.lock().unwrap().contains_key(&enemy),
+            "the fixture must put the enemy in the store, or the removal below \
+             is asserted against an empty cache"
+        );
+
+        game.units.remove(&enemy);
+        let _ = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            !ai.enemy_envelope_cache.lock().unwrap().contains_key(&enemy),
+            "a unit left the board and its envelope stayed in the store"
+        );
+    }
+
     /// A warm per-enemy cache answers exactly what a cold one computes.
     #[test]
     fn a_warm_envelope_cache_answers_what_a_cold_one_computes() {
@@ -24264,7 +24960,7 @@ mod attack_envelope_key_tests {
         let mine = game.player_unit_ids(0).into_iter().next().unwrap();
         let home = game.units[&mine].pos;
         let dry = |g: &Game, pos: Pos| {
-            g.map.get(pos).is_some_and(|t| !g.rules.is_water(t)) && g.units_at(pos).is_empty()
+            g.map.get(pos).is_some_and(|t| !g.rules.is_water(t)) && g.unit_ids_at(pos).is_empty()
         };
         let far = game
             .map
@@ -24324,6 +25020,71 @@ mod attack_envelope_key_tests {
         );
     }
 
+    /// The expensive raw flood belongs to the board, not to one controller.
+    ///
+    /// A fresh `BasicAi` must reuse it, and a speculative `Game` clone must
+    /// reuse it too. The clone check is important: tactical search makes many
+    /// clones, which was the source of the repeated flood work this cache is
+    /// meant to remove.
+    #[test]
+    fn raw_enemy_reach_is_shared_by_controllers_and_game_clones() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let dry = |g: &Game, pos: Pos| {
+            g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile)) && g.units_at(pos).is_empty()
+        };
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, home) > 12 && dry(&game, *pos))
+            .min_by_key(|pos| (game.wdist(*pos, home), *pos))
+            .expect("the fixture offers distant open land");
+        let enemy = game.spawn_test_unit("warrior", 1, far);
+
+        let expected = BasicAi::new().enemy_attack_envelopes(&game, 0).to_vec();
+        assert!(
+            !expected.is_empty(),
+            "the fixture must cause at least one raw enemy reach to be cached"
+        );
+        let after_first_controller = game.attack_reach_cache_computations();
+        assert!(after_first_controller > 0);
+
+        let from_second_controller = BasicAi::new().enemy_attack_envelopes(&game, 0).to_vec();
+        assert_eq!(from_second_controller, expected);
+        assert_eq!(
+            game.attack_reach_cache_computations(),
+            after_first_controller,
+            "a new controller on the same board must reuse the raw flood"
+        );
+
+        let clone = game.clone();
+        let from_clone = BasicAi::new().enemy_attack_envelopes(&clone, 0).to_vec();
+        assert_eq!(from_clone, expected);
+        assert_eq!(
+            clone.attack_reach_cache_computations(),
+            after_first_controller,
+            "a speculative clone must share the parent's raw flood"
+        );
+
+        let mut changed_clone = clone;
+        let to = changed_clone
+            .nbrs(changed_clone.units[&enemy].pos)
+            .into_iter()
+            .next_back()
+            .unwrap();
+        changed_clone.units.get_mut(&enemy).unwrap().pos = to;
+        let _ = BasicAi::new().enemy_attack_envelopes(&changed_clone, 0);
+        assert!(
+            changed_clone.attack_reach_cache_computations() > after_first_controller,
+            "a changed speculative board must discard the parent snapshot"
+        );
+    }
+
     /// ★★★★ THE ORDER IS THE PART THAT COULD CHANGE A GAME. An envelope is
     /// unioned into the whole-map safety scan and `evacuation_tile_cmp` breaks
     /// its last tie on `Pos`, so a sorted `Vec` replacing a `BTreeSet` is only
@@ -24377,7 +25138,7 @@ mod attack_envelope_key_tests {
                 game.map
                     .get(*pos)
                     .is_some_and(|tile| !game.rules.is_water(tile))
-                    && game.units_at(*pos).is_empty()
+                    && game.unit_ids_at(*pos).is_empty()
             })
             .expect("the fixture offers dry ground beside the starting unit");
         game.spawn_test_unit("warrior", 1, beside);
