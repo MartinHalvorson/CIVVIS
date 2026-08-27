@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -125,6 +129,30 @@ class SynchronizedProgressTokenTest(unittest.TestCase):
             {"server_instance": True, "turn": 184, "frame_sequence": 912},
             [{"kind": "turn", "turn": 184}],
         ))
+
+    def test_progress_cli_uses_the_current_run_as_its_stale_mirror_fence(self) -> None:
+        status = {
+            "server_instance": 321,
+            "turn": 184,
+            "frame_sequence": 912,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "turn", "turn": 184}) + "\n")
+            command = [
+                sys.executable, str(STATE_PATH), "--progress", str(events),
+            ]
+            live = subprocess.run(
+                command, input=json.dumps(status), text=True, check=True,
+                capture_output=True,
+            )
+            self.assertEqual(live.stdout, "321 184 912 184\n")
+            events.write_text(json.dumps({"kind": "turn", "turn": 170}) + "\n")
+            stale = subprocess.run(
+                command, input=json.dumps(status), text=True, check=True,
+                capture_output=True,
+            )
+            self.assertEqual(stale.stdout, "")
 
 
 class WatchdogWiringTest(unittest.TestCase):
