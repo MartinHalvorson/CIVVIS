@@ -7153,16 +7153,16 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
-        // A live gene the batch rule holds off as of the 2026-08-25 batches;
-        // pick another from `ledger_held_live_treatments()` if a batch flips it.
+        // A live gene the operator currently holds off; pick another from
+        // `ledger_held_live_treatments()` if the deployment selection changes.
         let forced = super::forced_live_treatments(&[
-            "whole-turn-backtrack-guard".to_string(),
-            "whole-turn-backtrack-guard".to_string(),
+            "blind-objective-units".to_string(),
+            "blind-objective-units".to_string(),
         ])
         .expect("a named ledger-held gene is a valid live arm");
         assert_eq!(
             forced,
-            vec!["whole-turn-backtrack-guard"],
+            vec!["blind-objective-units"],
             "the arm is deduplicated"
         );
 
@@ -7171,11 +7171,12 @@ mod tests {
             .expect("the validated arm configures the live controller");
         assert!(
             civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
-                .contains(&"whole-turn-backtrack-guard"),
+                .contains(&"blind-objective-units"),
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.blind_objective_strength,
+            !civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
+                .contains(&"naval-recon"),
             "another held gene stays off until the experiment names it"
         );
 
@@ -7210,7 +7211,7 @@ mod tests {
         );
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
-        assert!(unknown.contains("whole-turn-backtrack-guard"), "{unknown}");
+        assert!(unknown.contains("blind-objective-units"), "{unknown}");
     }
 
     use super::*;
