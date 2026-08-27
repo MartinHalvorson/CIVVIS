@@ -1188,8 +1188,7 @@ impl DoctrineLedger {
             foot_arrival: spread(obs.foot_n, obs.foot_sum, obs.foot_sq),
             absent: (obs.deployed > 0.0).then(|| obs.absent / obs.deployed),
             vanguard: (obs.vanguard_n > 0.0).then(|| obs.vanguard_sum / obs.vanguard_n),
-            vanguard_clean: (obs.vanguard_n > 0.0)
-                .then(|| obs.vanguard_clean / obs.vanguard_n),
+            vanguard_clean: (obs.vanguard_n > 0.0).then(|| obs.vanguard_clean / obs.vanguard_n),
             salvageable: (self.losses > 0)
                 .then(|| self.losses_when_salvageable as f64 / self.losses as f64),
         }
