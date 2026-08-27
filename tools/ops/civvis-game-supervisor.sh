@@ -245,6 +245,31 @@ trap 'exit 0' HUP INT TERM
 
 consecutive_failures=0
 
+# The installation lock establishes exclusive access to Civilization VI, but it
+# does not identify which supervisor owns that access. A newly started
+# supervisor can find a healthy harness inherited from an older supervisor (or
+# an operator's recovery run) in the lock and mistake it for its own stale
+# child. Its play log belongs to the older owner, so the orphan check would
+# otherwise terminate a game that is still advancing.
+#
+# Treat a harness as ours only when it is actually below this supervisor in the
+# process tree. Anything else is handled by `unowned_harness_pid` and left
+# alone until its own harness exits.
+supervisor_owns_process() {
+  local cursor="$1" parent="" hops=0
+  while [[ "$cursor" =~ '^[0-9]+$' ]] && (( hops < 64 )); do
+    [[ "$cursor" == "$$" ]] && return 0
+    parent=$(ps -p "$cursor" -o ppid= 2>/dev/null | tr -d '[:space:]')
+    case "$parent" in
+      ''|*[!0-9]*|0|1) return 1 ;;
+    esac
+    [[ "$parent" == "$cursor" ]] && return 1
+    cursor="$parent"
+    hops=$(( hops + 1 ))
+  done
+  return 1
+}
+
 # The harness publishes its exact PID before it starts interacting with Civ VI.
 # Never accept an untyped global `pgrep` result as ownership: other CIVVIS
 # worktrees (or an operator's separate run) can legitimately contain a
@@ -263,6 +288,7 @@ owned_harness_pid() {
   kill -0 "$pid" 2>/dev/null || return 1
   command=$(ps -p "$pid" -o command= 2>/dev/null)
   [[ "$command" == *"civ6_play.py"* ]] || return 1
+  supervisor_owns_process "$pid" || return 1
   print -r -- "$pid"
 }
 
