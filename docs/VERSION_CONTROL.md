@@ -612,6 +612,15 @@ PRs document non-overlapping hunks and an integration order. Long term, split
 the largest source and UI files along stable module boundaries; Git workflow
 can control concurrency but cannot eliminate collisions inside monoliths.
 
+A module's tests live in a file of their own — `src/<module>/tests.rs`, declared
+from the parent as `#[cfg(test)] mod tests;` after all of its production code —
+never as an inline `mod tests { … }` block with production code below it.
+
+That layout is what produced #2606: `src/mirror.rs` opened its test module at
+line 477 and carried ~15,000 lines of production code underneath, so a hunk
+appended "at the end of the tests" landed on the far side of a brace and four
+tests never ran, with nothing in the compiler or CI to say so.
+
 ## Fleet migration and incident recovery
 
 When adopting this workflow on machines that already contain active work:
