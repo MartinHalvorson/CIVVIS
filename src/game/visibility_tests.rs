@@ -357,6 +357,119 @@ fn vision_frames_follow_a_wholesale_roster_replacement() {
     assert!(game.vision_frame(0, &mut game.height_field()).as_ref() == &uncached);
 }
 
+/// The suzerain map and shared-vision viewer set are folded once per
+/// diplomacy epoch (`Game::diplomacy_epoch`) instead of once per ask -- see
+/// `Game::with_suzerain_input_map` and `Game::with_visibility_viewers` -- so
+/// an input the epoch fails to notice would leave a stale answer installed
+/// silently rather than merely slow. Prove the memoized answer always
+/// agrees with a from-scratch derivation across every input the epoch is
+/// supposed to track (suzerainty, a raw envoy count that does not flip it),
+/// and that it correctly ignores a unit move and a spy move -- neither
+/// `suzerain_input_map` nor `visibility_viewers` reads a unit or a spy, so
+/// the diplomacy epoch must hold still for both even though the overall
+/// sight frame still moves for the spy (folded fresh on every ask by
+/// `base_vision_input_stamp`, entirely outside this cache).
+#[test]
+fn diplomacy_caches_agree_with_an_uncached_derivation_across_every_input() {
+    let (mut game, center) = controlled_game(63_105);
+    game.players[1].is_minor = true;
+    let minor = 1usize;
+    let city = game.found_city_for(minor, center, Some("Sight State".to_string()));
+
+    let assert_caches_agree = |game: &Game, label: &str| {
+        let fresh_suzerains = game.suzerain_input_map();
+        let memo_suzerains = game.with_suzerain_input_map(|suzerains| suzerains.clone());
+        assert_eq!(
+            memo_suzerains, fresh_suzerains,
+            "{label}: memoized suzerain map must match a fresh derivation"
+        );
+        let fresh_viewers = game.visibility_viewers(0);
+        let memo_viewers = game.with_visibility_viewers(0, |viewers| viewers.clone());
+        assert_eq!(
+            memo_viewers, fresh_viewers,
+            "{label}: memoized viewer set must match a fresh derivation"
+        );
+        let mut heights = game.height_field();
+        let uncached = game.player_vision(&mut heights, 0);
+        assert!(
+            game.player_vision_frame(0).as_ref() == &uncached,
+            "{label}: the full sight frame must match an uncached derivation"
+        );
+    };
+
+    // Baseline: no envoys placed yet.
+    assert_eq!(game.suzerain_of(minor), None);
+    assert_caches_agree(&game, "no envoys");
+
+    // Suzerainty change: crossing the three-envoy threshold.
+    game.players[0].envoys.push((minor, 3));
+    assert_eq!(game.suzerain_of(minor), Some(0));
+    assert_caches_agree(&game, "suzerainty gained");
+
+    // An envoy change that does not flip the suzerain still has to move the
+    // diplomacy epoch -- a `Players` write happened -- even though the
+    // derived map ends up with the same content either way.
+    let epoch_before = game.diplomacy_epoch();
+    for entry in game.players[0].envoys.iter_mut() {
+        if entry.0 == minor {
+            entry.1 += 3;
+        }
+    }
+    assert_ne!(
+        game.diplomacy_epoch(),
+        epoch_before,
+        "an envoy write must move the diplomacy epoch even without flipping suzerainty"
+    );
+    assert_eq!(game.suzerain_of(minor), Some(0));
+    assert_caches_agree(&game, "envoy count changed, suzerain unchanged");
+
+    // A unit move reads neither a suzerain nor a viewer set: the diplomacy
+    // epoch must not move, proving this cache does not pay for a write it
+    // has no business noticing.
+    let scout = game.spawn_unit("scout", 0, along(&game, center, 2));
+    assert_caches_agree(&game, "after spawning a unit");
+    let epoch_before = game.diplomacy_epoch();
+    game.relocate(scout, along(&game, center, 3));
+    assert_eq!(
+        game.diplomacy_epoch(),
+        epoch_before,
+        "a unit move must not move the diplomacy epoch"
+    );
+    assert_caches_agree(&game, "after a unit move");
+
+    // A spy is the same story for this cache, but not for the overall
+    // stamp: `base_vision_input_stamp` folds live spies directly on every
+    // ask, so the full frame must still notice one appearing.
+    let epoch_before = game.diplomacy_epoch();
+    let overall_before = game.vision_input_stamp(0);
+    game.spies.insert(
+        1,
+        Spy {
+            id: 1,
+            owner: 0,
+            level: 0,
+            promotions: BTreeSet::new(),
+            city: Some(city),
+            ready_turn: 0,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        },
+    );
+    assert_eq!(
+        game.diplomacy_epoch(),
+        epoch_before,
+        "establishing a spy must not move the diplomacy epoch"
+    );
+    assert_ne!(
+        game.vision_input_stamp(0),
+        overall_before,
+        "a spy is still a live sight source, folded outside this cache"
+    );
+    assert_caches_agree(&game, "after a spy is established");
+}
+
 fn observed_tile(observation: &serde_json::Value, position: Pos) -> &serde_json::Value {
     observation["map"]["tiles"]
         .as_array()

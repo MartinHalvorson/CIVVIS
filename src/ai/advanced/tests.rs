@@ -7993,7 +7993,7 @@ fn settlement_atlas_parallel_misses_match_uncached_values_and_invalidate_on_map_
         .collect::<Vec<_>>();
     assert_eq!(positions.len(), 48, "the fixture needs a wide score batch");
 
-    let visible = game.player_vision_now(0);
+    let visible = game.player_vision_frame(0);
     let units = game
         .units
         .values()

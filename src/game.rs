@@ -1057,6 +1057,16 @@ struct VisionFrameCache {
     /// lookups are far more frequent than unit writes, so retain that fan-out
     /// until a mutable unit access can have changed one of its inputs.
     unit_stamps: std::cell::RefCell<Option<(u64, Vec<u64>)>>,
+    /// Every minor's current suzerain, folded once per diplomacy epoch
+    /// instead of once per single-seat vision ask.  `suzerain_of` is cheap
+    /// once the relationship is known, but `suzerain_input_map` used to
+    /// allocate this `BTreeMap` fresh on every `player_vision_frame` call.
+    suzerain_map: std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<usize>>)>>,
+    /// Per-pid shared-vision viewer sets — team, military-alliance, and live
+    /// emergency partners — folded lazily per pid the first time a
+    /// diplomacy epoch asks for it. `visibility_viewers` used to allocate a
+    /// fresh `BTreeSet` on every ask even when nothing diplomatic had moved.
+    viewers: std::cell::RefCell<Option<(u64, Vec<Option<BTreeSet<usize>>>)>>,
 }
 
 impl Clone for VisionFrameCache {
@@ -1082,6 +1092,8 @@ impl Clone for VisionFrameCache {
             frames: std::cell::RefCell::new(self.frames.borrow().clone()),
             map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
             unit_stamps: std::cell::RefCell::new(self.unit_stamps.borrow().clone()),
+            suzerain_map: std::cell::RefCell::new(self.suzerain_map.borrow().clone()),
+            viewers: std::cell::RefCell::new(self.viewers.borrow().clone()),
         }
     }
 }
@@ -1632,7 +1644,17 @@ struct LoyaltyChange {
 /// through that, so nothing can write through the sharing by accident.
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(from = "Vec<Player>", into = "Vec<Player>")]
-pub struct Players(Vec<Arc<Player>>);
+pub struct Players(
+    Vec<Arc<Player>>,
+    /// Bumped by every route that can reach a `&mut Player`: `get_mut`,
+    /// `IndexMut::index_mut`, `iter_mut`, and `push`. That is the whole
+    /// mutation surface — the wrapped `Vec` is private and nothing else in
+    /// this file reaches inside it — so a caller can tell "no seat changed"
+    /// from one cheap integer compare instead of re-deriving an answer that
+    /// reads the roster. `Game::suzerain_input_map` and
+    /// `Game::visibility_viewers` key their per-ask caches off this.
+    u64,
+);
 
 impl Players {
     pub fn len(&self) -> usize {
@@ -1645,6 +1667,7 @@ impl Players {
 
     pub fn push(&mut self, player: Player) {
         self.0.push(Arc::new(player));
+        self.1 = self.1.wrapping_add(1);
     }
 
     pub fn get(&self, index: usize) -> Option<&Player> {
@@ -1652,6 +1675,7 @@ impl Players {
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut Player> {
+        self.1 = self.1.wrapping_add(1);
         self.0.get_mut(index).map(Arc::make_mut)
     }
 
@@ -1660,7 +1684,14 @@ impl Players {
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Player> {
+        self.1 = self.1.wrapping_add(1);
         self.0.iter_mut().map(Arc::make_mut)
+    }
+
+    /// See the tuple field's doc comment.
+    #[inline]
+    fn epoch(&self) -> u64 {
+        self.1
     }
 }
 
@@ -1676,6 +1707,7 @@ impl std::ops::Index<usize> for Players {
 impl std::ops::IndexMut<usize> for Players {
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Player {
+        self.1 = self.1.wrapping_add(1);
         Arc::make_mut(&mut self.0[index])
     }
 }
@@ -1691,7 +1723,7 @@ impl<'a> IntoIterator for &'a Players {
 
 impl From<Vec<Player>> for Players {
     fn from(players: Vec<Player>) -> Players {
-        Players(players.into_iter().map(Arc::new).collect())
+        Players(players.into_iter().map(Arc::new).collect(), 0)
     }
 }
 
@@ -1707,7 +1739,7 @@ impl From<Players> for Vec<Player> {
 
 impl FromIterator<Player> for Players {
     fn from_iter<I: IntoIterator<Item = Player>>(players: I) -> Players {
-        Players(players.into_iter().map(Arc::new).collect())
+        Players(players.into_iter().map(Arc::new).collect(), 0)
     }
 }
 
@@ -2398,6 +2430,13 @@ mod city_roster {
     pub struct Cities {
         map: BTreeMap<u32, City>,
         vision: std::cell::RefCell<Option<Arc<CityVisionStamps>>>,
+        /// Bumped alongside every `invalidate()`, so a caller outside this
+        /// module can tell "some city was exposed mutably since I last
+        /// looked" without paying for a content fold. `Game::suzerain_of`
+        /// reads a governor's established city, so the per-ask suzerain-map
+        /// and shared-vision-viewer caches key off this in addition to the
+        /// roster epoch.
+        generation: u64,
     }
 
     impl Cities {
@@ -2406,6 +2445,14 @@ mod city_roster {
         #[inline]
         fn invalidate(&mut self) {
             *self.vision.get_mut() = None;
+            self.generation = self.generation.wrapping_add(1);
+        }
+
+        /// See the `generation` field doc: a cheap "did any city change"
+        /// signal for caches this module does not otherwise know about.
+        #[inline]
+        pub(super) fn generation(&self) -> u64 {
+            self.generation
         }
 
         /// The folded city inputs to sight, rebuilt only after a mutation.
@@ -2471,6 +2518,7 @@ mod city_roster {
             Self {
                 map: self.map.clone(),
                 vision: std::cell::RefCell::new(self.vision.borrow().clone()),
+                generation: self.generation,
             }
         }
     }
@@ -2497,6 +2545,7 @@ mod city_roster {
             Self {
                 map: items.into_iter().collect(),
                 vision: std::cell::RefCell::new(None),
+                generation: 0,
             }
         }
     }
@@ -23366,13 +23415,103 @@ impl Game {
             .collect()
     }
 
+    /// A number that changes whenever anything `suzerain_input_map` or
+    /// `visibility_viewers` reads, besides units and map geometry (which
+    /// already have their own epochs above), could have changed: envoys,
+    /// governor assignments, a governor's city changing hands, team
+    /// membership and alliances all move only through a `Players` write; a
+    /// turn boundary matters too, because alliance/emergency expiry and
+    /// governor establishment are all `self.turn` comparisons.
+    ///
+    /// Emergency membership is folded directly rather than through a bumped
+    /// counter: `active_emergencies` is a plain `pub Vec`, not a wrapper with
+    /// a closed mutation surface like `Players` or `Cities` above, and a
+    /// couple of engine paths (plus several tests) write it in place. The
+    /// vector holds at most a handful of live emergencies, so folding the two
+    /// fields `visibility_viewers` actually reads (`ends`, `members`) costs
+    /// nothing close to the `BTreeSet` allocation this is guarding, and it
+    /// cannot miss a write the way a counter at only two call sites could.
+    fn diplomacy_epoch(&self) -> u64 {
+        let mut stamp = vision_key(&[
+            self.players.epoch(),
+            self.cities.generation(),
+            self.turn as u64,
+            self.active_emergencies.len() as u64,
+        ]);
+        for emergency in &self.active_emergencies {
+            stamp = vision_key(&[stamp, emergency.ends as u64, emergency.members.len() as u64]);
+            for member in &emergency.members {
+                stamp = vision_key(&[stamp, *member as u64]);
+            }
+        }
+        stamp
+    }
+
+    /// Reuse the folded suzerain-of-every-minor map until the diplomacy
+    /// epoch moves. `suzerain_of` is already a cheap lookup once the
+    /// per-pass memo (`with_suzerain_read_memo`) is installed; this is what
+    /// stopped the map itself from being a fresh `BTreeMap` allocation on
+    /// every single-seat vision ask.
+    fn with_suzerain_input_map<R>(&self, read: impl FnOnce(&BTreeMap<usize, Option<usize>>) -> R) -> R {
+        let epoch = self.diplomacy_epoch();
+        let stale = match self.vision_frames.suzerain_map.borrow().as_ref() {
+            Some((cached_epoch, _)) => *cached_epoch != epoch,
+            None => true,
+        };
+        if stale {
+            let map = self.suzerain_input_map();
+            *self.vision_frames.suzerain_map.borrow_mut() = Some((epoch, map));
+        }
+        let cache = self.vision_frames.suzerain_map.borrow();
+        let (_, map) = cache
+            .as_ref()
+            .expect("suzerain input map is installed before use");
+        read(map)
+    }
+
+    /// Reuse one pid's shared-vision viewer set until the diplomacy epoch
+    /// moves, folding a pid's entry lazily so one nobody asks about this
+    /// epoch is never built.
+    fn with_visibility_viewers<R>(&self, pid: usize, read: impl FnOnce(&BTreeSet<usize>) -> R) -> R {
+        let epoch = self.diplomacy_epoch();
+        {
+            let cache = self.vision_frames.viewers.borrow();
+            if let Some((cached_epoch, entries)) = cache.as_ref() {
+                if *cached_epoch == epoch {
+                    if let Some(Some(viewers)) = entries.get(pid) {
+                        return read(viewers);
+                    }
+                }
+            }
+        }
+        let viewers = self.visibility_viewers(pid);
+        let mut cache = self.vision_frames.viewers.borrow_mut();
+        match cache.as_mut() {
+            Some((cached_epoch, entries)) if *cached_epoch == epoch => {
+                if entries.len() <= pid {
+                    entries.resize_with(pid + 1, || None);
+                }
+                entries[pid] = Some(viewers);
+            }
+            _ => {
+                let mut entries = vec![None; self.players.len().max(pid + 1)];
+                entries[pid] = Some(viewers);
+                *cache = Some((epoch, entries));
+            }
+        }
+        let installed = cache.as_ref().expect("just installed").1[pid]
+            .as_ref()
+            .expect("just installed");
+        read(installed)
+    }
+
     fn vision_input_stamp_with_suzerains(
         &self,
         pid: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
         unit_stamps: &[u64],
     ) -> u64 {
-        let mut stamp = vision_key(&[
+        let stamp = vision_key(&[
             self.vision_geometry_stamp(),
             pid as u64,
             self.is_arena() as u64,
@@ -23381,15 +23520,17 @@ impl Game {
         if self.is_arena() && !self.tactics.fog {
             return stamp;
         }
-        let viewers = self.visibility_viewers(pid);
-        stamp = vision_key(&[stamp, viewers.len() as u64]);
-        for viewer in viewers {
-            stamp = vision_key(&[
-                stamp,
-                viewer as u64,
-                self.base_vision_input_stamp(viewer, suzerains, unit_stamps),
-            ]);
-        }
+        let mut stamp = self.with_visibility_viewers(pid, |viewers| {
+            let mut stamp = vision_key(&[stamp, viewers.len() as u64]);
+            for &viewer in viewers {
+                stamp = vision_key(&[
+                    stamp,
+                    viewer as u64,
+                    self.base_vision_input_stamp(viewer, suzerains, unit_stamps),
+                ]);
+            }
+            stamp
+        });
         if pid == MIRRORED_SEAT {
             for position in &self.host_observed {
                 stamp = vision_key(&[
@@ -23405,9 +23546,10 @@ impl Game {
     #[cfg(test)]
     fn vision_input_stamp(&self, pid: usize) -> u64 {
         self.with_suzerain_read_memo(|| {
-            let suzerains = self.suzerain_input_map();
-            self.with_unit_vision_input_stamps(|unit_stamps| {
-                self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps)
+            self.with_suzerain_input_map(|suzerains| {
+                self.with_unit_vision_input_stamps(|unit_stamps| {
+                    self.vision_input_stamp_with_suzerains(pid, suzerains, unit_stamps)
+                })
             })
         })
     }
@@ -23418,17 +23560,18 @@ impl Game {
     /// the map-sized bit vector merely to borrow it for a membership check.
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
         self.with_suzerain_read_memo(|| {
-            let suzerains = self.suzerain_input_map();
-            self.with_unit_vision_input_stamps(|unit_stamps| {
-                let input_stamp =
-                    self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps);
-                if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
-                    visible
-                } else {
-                    let visible = Arc::new(self.player_vision(heights, pid));
-                    self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
-                    visible
-                }
+            self.with_suzerain_input_map(|suzerains| {
+                self.with_unit_vision_input_stamps(|unit_stamps| {
+                    let input_stamp =
+                        self.vision_input_stamp_with_suzerains(pid, suzerains, unit_stamps);
+                    if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
+                        visible
+                    } else {
+                        let visible = Arc::new(self.player_vision(heights, pid));
+                        self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
+                        visible
+                    }
+                })
             })
         })
     }
@@ -23541,6 +23684,12 @@ impl Game {
         self.vision_frame(pid, &mut self.height_field())
     }
 
+    /// An owned copy of the current frame, for a caller that genuinely needs
+    /// one to mutate or move independently of the engine's cache. Every
+    /// production call site turned out to be a pure read and now takes
+    /// [`Self::player_vision_frame`] instead; this stays for tests that want
+    /// an owned snapshot without depending on the `Arc`.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn player_vision_now(&self, pid: usize) -> TileBits {
         self.player_vision_frame(pid).as_ref().clone()
     }
@@ -24382,16 +24531,17 @@ impl Game {
         let mut cached = Vec::<(usize, u64, Arc<TileBits>)>::new();
         let mut pending = Vec::<(usize, u64)>::new();
         self.with_suzerain_read_memo(|| {
-            let suzerains = self.suzerain_input_map();
-            self.with_unit_vision_input_stamps(|unit_stamps| {
-                for pid in &players {
-                    let input_stamp =
-                        self.vision_input_stamp_with_suzerains(*pid, &suzerains, unit_stamps);
-                    match self.matching_vision_frame(*pid, input_stamp) {
-                        Some(visible) => cached.push((*pid, input_stamp, visible)),
-                        None => pending.push((*pid, input_stamp)),
+            self.with_suzerain_input_map(|suzerains| {
+                self.with_unit_vision_input_stamps(|unit_stamps| {
+                    for pid in &players {
+                        let input_stamp =
+                            self.vision_input_stamp_with_suzerains(*pid, suzerains, unit_stamps);
+                        match self.matching_vision_frame(*pid, input_stamp) {
+                            Some(visible) => cached.push((*pid, input_stamp, visible)),
+                            None => pending.push((*pid, input_stamp)),
+                        }
                     }
-                }
+                });
             });
         });
 
@@ -34638,9 +34788,9 @@ impl Game {
         };
         let needs_visibility = want_core || want_units;
         let current_visibility = if needs_visibility {
-            self.player_vision_now(pid)
+            self.player_vision_frame(pid)
         } else {
-            TileBits::default()
+            Arc::new(TileBits::default())
         };
         let visibility_viewers = if needs_visibility {
             self.visibility_viewers(pid)
