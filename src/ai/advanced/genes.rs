@@ -1648,6 +1648,29 @@ pub const GENES: &[Gene] = &[
     // Archery until a city can train one. Closes with the first Medieval
     // technology. See `advanced/early_archers.rs`.
     Gene { tag: "early-archers", field: "early_archers", kind: Kind::OptIn, enable: AdvancedAi::enable_early_archers, disable: AdvancedAi::disable_early_archers },
+    // `relief-column-marches` / `threatened-city-reserve` (operator,
+    // 2026-08-27): the live King seat `civvis-20260827T113726Z` lost
+    // Aquileia (pop 15, walled) on t164 to a Chinese stack of seven while
+    // holding 2.5× China's military. Its main army — seven units, 1.58 local
+    // strength against the besiegers, objective the besieger's own hex —
+    // logged "will hold — held back to cover a threat" on every frame from
+    // t161 and stood nine hexes west, because `relieving` was
+    // `plan.threatened_city.is_some()` for every group in the empire and a
+    // Hold's mover target is the group's own centroid; the weak southern
+    // group of three collapsed onto ITS centroid, away from the city. The
+    // first gene restores #354's reach test (pruned by #1194) and adds the
+    // march: a group beyond `THREAT_RELIEF_RADIUS` advances on the siege when
+    // locally superior, holds at the city when not, and while a city is
+    // threatened focuses only on combatants (the t160 army sat in "Engage"
+    // against an Apostle it declined to strike).
+    Gene { tag: "relief-column-marches", field: "relief_column_marches", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_relief_column_marches, disable: AdvancedAi::disable_relief_column_marches },
+    // The treasury half: the same seat bought a Water Mill in Rome at t160
+    // (399 Gold, Aquileia named under threat, a Line Infantry at 360) and a
+    // Market in Aquileia itself at t162 with the walls half down, and had 29
+    // Gold on t163 when the emergency purchase first became legal. While a
+    // city is threatened or bleeding, both Gold buyers keep one emergency
+    // defender's price back.
+    Gene { tag: "threatened-city-reserve", field: "threatened_city_reserve", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_threatened_city_reserve, disable: AdvancedAi::disable_threatened_city_reserve },
     // A nearly full capital landmass makes unexplored water an expansion
     // frontier: keep one sea scout and favor water that opens a known foreign
     // landfall, while the ordinary naval-recon policy stays unchanged.
@@ -1730,6 +1753,7 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "quest-trade-route",
     "recon-replacement",
     "recorded-tactical-step",
+    "relief-column-marches",
     "relief-targets-the-siege",
     "religious-units-heal-first",
     "religious-veto-defence",
@@ -1747,6 +1771,7 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "solvency-first-trade-slot",
     "stranded-settler-discount",
     "strike-opening",
+    "threatened-city-reserve",
     "unchosen-war-keeps-the-lane",
     "unit-cost-efficiency",
     "unit-objective-memory",
@@ -1795,6 +1820,7 @@ pub(super) const OPERATOR_DEFAULT_ON: &[&str] = &[
     "quest-boost",
     "quest-trade-route",
     "recon-replacement",
+    "relief-column-marches",
     "relief-targets-the-siege",
     "religious-units-heal-first",
     "research-tier-premium",
@@ -1804,6 +1830,7 @@ pub(super) const OPERATOR_DEFAULT_ON: &[&str] = &[
     "settler-target-hysteresis-2",
     "settler-threat-detour",
     "stranded-settler-discount",
+    "threatened-city-reserve",
     "unchosen-war-keeps-the-lane",
     "unit-cost-efficiency",
     "unit-objective-memory",

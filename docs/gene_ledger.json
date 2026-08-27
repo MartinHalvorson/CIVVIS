@@ -1176,6 +1176,7 @@
       "quest-boost",
       "quest-trade-route",
       "recon-replacement",
+      "relief-column-marches",
       "relief-targets-the-siege",
       "religious-units-heal-first",
       "research-tier-premium",
@@ -1185,6 +1186,7 @@
       "settler-target-hysteresis-2",
       "settler-threat-detour",
       "stranded-settler-discount",
+      "threatened-city-reserve",
       "unchosen-war-keeps-the-lane",
       "unit-cost-efficiency",
       "unit-objective-memory",
@@ -1262,6 +1264,7 @@
       "quest-trade-route",
       "recon-replacement",
       "recorded-tactical-step",
+      "relief-column-marches",
       "relief-targets-the-siege",
       "religious-units-heal-first",
       "religious-veto-defence",
@@ -1279,6 +1282,7 @@
       "solvency-first-trade-slot",
       "stranded-settler-discount",
       "strike-opening",
+      "threatened-city-reserve",
       "unchosen-war-keeps-the-lane",
       "unit-cost-efficiency",
       "unit-objective-memory",
@@ -1817,7 +1821,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 83
+    "default_on": 85
   },
   "genes": [
     {

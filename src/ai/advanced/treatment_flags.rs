@@ -3097,6 +3097,31 @@ impl AdvancedAi {
         self.swap_rotation = false;
     }
 
+    /// A force group beyond `THREAT_RELIEF_RADIUS` of the threatened city is
+    /// a relief column: it advances on the siege when locally superior,
+    /// holds at the city when too weak, and while a city is threatened
+    /// focuses only on combatants and cities. See `relief_column_marches`.
+    pub fn enable_relief_column_marches(&mut self) {
+        self.relief_column_marches = true;
+    }
+
+    /// The twin of `enable_relief_column_marches`.
+    pub fn disable_relief_column_marches(&mut self) {
+        self.relief_column_marches = false;
+    }
+
+    /// While a city of ours is threatened or bleeding, every ordinary Gold
+    /// purchase leaves one emergency defender's price in the treasury. See
+    /// `threatened_city_reserve`.
+    pub fn enable_threatened_city_reserve(&mut self) {
+        self.threatened_city_reserve = true;
+    }
+
+    /// The twin of `enable_threatened_city_reserve`.
+    pub fn disable_threatened_city_reserve(&mut self) {
+        self.threatened_city_reserve = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
