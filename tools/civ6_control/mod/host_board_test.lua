@@ -439,6 +439,42 @@ check("travelling setter stays out of two-step scout capture leg", ops(31), "")
 check("travelling setter hold names the scout", has(lastEvent("settler_scout_capture_hold"), '"settler":31')
 	and has(lastEvent("settler_scout_capture_hold"), '"scout":91'), true)
 
+-- A scout hold protects the current tile too.  The live loss at turn 47 of
+-- civvis-20260827T183146Z held the Settler's unsafe leg but let a warrior
+-- sharing its current tile take an unrelated route; the scout then captured
+-- the now-lone Settler.  Keep that guard put while the scout covers both
+-- the rejected leg and the tile the Settler must remain on.
+reset()
+host.units[42] = { id = 42, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[43] = { id = 43, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[100] = { id = 100, kind = "UNIT_SCOUT", x = 3, y = 3, moves = 0 }
+host.paths["42:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.paths["43:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(42, "MOVE_TO", 2, 1), row(43, "MOVE_TO", 1, 2) })
+check("scout-held setter stays put", ops(42), "")
+check("scout-held co-located guard does not leave", ops(43), "")
+check("scout-held guard is held off fallback", board.escortHolds[43], true)
+check("scout-held guard event identifies both units", has(lastEvent("settler_scout_guard_hold"), '"settler":42')
+	and has(lastEvent("settler_scout_guard_hold"), '"guard":43'), true)
+
+-- A scout that covers only the rejected destination leaves a co-located guard
+-- mobile: the Settler is safe on its current tile, so retaining the guard
+-- would turn an actuation floor into needless army paralysis.
+reset()
+host.units[44] = { id = 44, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[45] = { id = 45, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[101] = { id = 101, kind = "UNIT_SCOUT", x = 1, y = 4, moves = 0 }
+host.paths["44:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+host.paths["45:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(44, "MOVE_TO", 1, 2), row(45, "MOVE_TO", 2, 1) })
+check("destination-only scout still holds setter", ops(44), "")
+check("destination-only scout leaves guard mobile", ops(45), "UNITOPERATION_MOVE_TO@2,1")
+check("destination-only scout emits no guard hold", lastEvent("settler_scout_guard_hold"), nil)
+
 -- The narrowed radius preserves a normal travel leg once the known scout is
 -- outside the measured two-step capture reach.
 reset()

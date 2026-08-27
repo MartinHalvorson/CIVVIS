@@ -13919,6 +13919,7 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         escort_shadow_applied = 0, escort_shadow_refused = 0,
 	                         escort_shadow_held = 0,
 	                         settler_scout_capture_held = 0,
+	                         settler_scout_guard_held = 0,
 	                         settler_barbarian_combat_capture_held = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
@@ -13927,6 +13928,7 @@ CivvisBoard.reset = function()
 	                     escort_shadow_applied = 0, escort_shadow_refused = 0,
 	                     escort_shadow_held = 0,
 	                     settler_scout_capture_held = 0,
+	                     settler_scout_guard_held = 0,
 	                     settler_barbarian_combat_capture_held = 0 };
 	CivvisBoard.escortHolds = {};
 end;
@@ -14233,6 +14235,53 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 		if held[tonumber(row.subject)] ~= nil and tostring(row.kind or "") == "unit"
 				and tostring(row.verb or "") == "MOVE_TO" then
 			row._civvis_settler_scout_hold = true;
+		end
+	end
+	-- Holding only the civilian can make the host create the exact capture it
+	-- meant to prevent.  In live game `civvis-20260827T183146Z`, turn 47, a
+	-- barbarian scout stood two plots from both a travelling Settler and its
+	-- planned leg.  The bridge refused the Settler's leg, then accepted a
+	-- co-located warrior's unrelated MOVE_TO.  The warrior walked away and the
+	-- scout captured the lone Settler before the next export.  A shared combat
+	-- unit blocks that capture, but only while it remains shared.
+	--
+	-- Retain each co-located combat unit when the named scout also covers the
+	-- Settler's CURRENT tile.  A scout that threatens only the rejected
+	-- destination does not justify freezing the guard on otherwise safe ground.
+	-- Mark every departure verb, not just MOVE_TO: a melee attack or CAPTURE
+	-- likewise leaves the civilian alone.  `escortHolds` additionally prevents
+	-- the unmentioned-unit explore fallback from walking the guard away.
+	for settlerId, scout in pairs(held) do
+		local settler = liveUnit(pid, settlerId);
+		if settler ~= nil then
+			local fromX = tonumber(try(function() return settler:GetX(); end, nil));
+			local fromY = tonumber(try(function() return settler:GetY(); end, nil));
+			local currentDistance = tonumber(try(function()
+				return Map.GetPlotDistance(fromX, fromY, scout.x, scout.y);
+			end, -1)) or -1;
+			if fromX ~= nil and fromY ~= nil and currentDistance >= 0 and currentDistance <= 2 then
+				eachUnit(player, function(candidate)
+					if not CivvisBoard.isCombatEscort(candidate) then return; end
+					local guardId = tonumber(try(function() return candidate:GetID(); end, nil));
+					local guardX = tonumber(try(function() return candidate:GetX(); end, nil));
+					local guardY = tonumber(try(function() return candidate:GetY(); end, nil));
+					if guardId == nil or guardId == settlerId or guardX ~= fromX or guardY ~= fromY then return; end
+					CivvisBoard.escortHolds[guardId] = true;
+					CivvisBoard.stats.settler_scout_guard_held =
+						CivvisBoard.stats.settler_scout_guard_held + 1;
+					emit("settler_scout_guard_hold", {
+						turn = turn, settler = settlerId, guard = guardId,
+						at = { fromX, fromY }, scout = scout.id, scout_pos = { scout.x, scout.y },
+					});
+					for _, row in ipairs(rows) do
+						local verb = tostring(row.verb or "");
+						if tostring(row.kind or "") == "unit" and tonumber(row.subject) == guardId
+								and (verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE") then
+							row._civvis_settler_scout_guard_hold = true;
+						end
+					end
+				end);
+			end
 		end
 	end
 end;
@@ -14604,6 +14653,11 @@ local function applyOrders(player, pid, turn, rows)
 			ordered[index] = true;
 			return false, "settler_scout_capture_hold";
 		end
+		if row._civvis_settler_scout_guard_hold == true then
+			countRefusal(kind, "settler_scout_guard_hold");
+			ordered[index] = true;
+			return false, "settler_scout_guard_hold";
+		end
 		local fromX, fromY;
 		local watched = (kind == "unit" and verb == "MOVE_TO"
 			and subject ~= nil and wantX ~= nil and wantY ~= nil);
@@ -14851,6 +14905,9 @@ local function applyOrders(player, pid, turn, rows)
 		-- Settler legs held because their actual host destination was adjacent
 		-- to a visible barbarian scout and no proven guard could share it.
 		settler_scout_capture_held = CivvisBoard.stats.settler_scout_capture_held,
+		-- A scout-held Settler's current tile was also inside capture reach, so
+		-- a combat unit already sharing that tile was kept from departing.
+		settler_scout_guard_held = CivvisBoard.stats.settler_scout_guard_held,
 		-- A visible non-scout barbarian combat unit can remove a synchronized
 		-- single guard and capture its settler in one hostile turn, so both
 		-- matching legs are held instead of counting the guard as coverage.
