@@ -546,6 +546,48 @@ current controller does not solve and the current genes do not address, and
 now it is a thirty-four-turn board rather than a two-hundred-and-fifty-turn
 game.
 
+### The instrument says how units are being lost (2026-08-27)
+
+`salvag.` is the share of a side's losses that were **already at or below 30
+hit points the turn before they died** — losses the controller had a turn's
+warning of and could have answered by rotating, withdrawing or healing. The
+rest were killed from a health it had no reason to act on. `DoctrineLedger`
+counts them (`losses_when_salvageable`), the profile reports the share, and
+`tools/civ6_tactics_ledger.py` computes the same figure on a live run
+(`lost_when_salvageable` / `salvageable_share`, threshold shared as
+`SALVAGEABLE_HP`), so an arena number and a live number are the same number.
+
+Thirty rather than forty-five: below `withdraw_hp`, the line the controller's
+own recovery already uses, so the column counts units it had *already been
+told* to pull out and did not — not every unit that happened to be scratched.
+
+The distinction only became worth making when a board could heal (`--heal`).
+With nothing to recover to, "should have pulled it out" was not a real
+alternative — which is why `swap-rotation` measured the same with healing on
+and off.
+
+**What it says about the deployed controller** (`--profile advanced`, 14
+seeds): on three of four positions the **winning** side has the *higher*
+share — `central_position` 50 % against the loser's 26 %, `the_defile` 71 %
+against 26 %, `the_reserve` 39 % against 28 %. That is the expected shape: a
+side that is winning loses units it has worn down, and a side that is losing
+has them killed outright.
+
+`the_storming` inverts it, and that is the finding. The besieger **loses the
+position by 291 a seed and its losses are 52 % salvageable** — it is worn
+down and then killed wounded, rather than overwhelmed. Beside an arrival
+spread of 7–11 turns, that is one story: the siege train arrives piecemeal,
+is ground down at the wall, and dies there instead of being pulled out.
+
+**The obvious answer does not work, and the column is how we know.**
+`swap-rotation` is the gene for pulling a wounded unit out of a line, and on
+`the_storming` it reads **−9.8 ± 33.8**, fires on only 9 of 40 seeds, and
+moves the salvageable share not at all (50 % against 48 %). The reason is in
+its own predicate: the relief must stand *further from the enemy* than the
+unit it replaces, and on a ring around a city every besieger is about
+equally far from it. A rotation measured against **the city** rather than the
+nearest enemy is a different gene, and this board can now price it.
+
 ## What this does not license
 
 The same two limits `src/skirmish.rs` states, and one more.

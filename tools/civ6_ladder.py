@@ -369,6 +369,9 @@ def combat_totals(events_path: Path) -> dict | None:
         "cities_taken": combat["cities_taken"],
         "cities_lost": combat["cities_lost"],
         "military_units_gone": roster["military_units_gone"],
+        # How many of those the seat saw coming; see
+        # `civ6_tactics_ledger.SALVAGEABLE_HP`.
+        "lost_when_salvageable": roster["lost_when_salvageable"],
     }
 
 

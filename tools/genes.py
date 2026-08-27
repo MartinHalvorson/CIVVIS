@@ -545,7 +545,6 @@ OPERATOR_DEFAULT_ON = (
     "expansion-schedule",
     "founder-temple",
     "gold-for-the-young-city",
-    "holy-lane-parity",
     "holy-site-where-the-threat-is-2",
     "idle-faith-patronage",
     "lane-great-people",
@@ -579,13 +578,28 @@ OPERATOR_DEFAULT_ON = (
 #: operator may well mean exactly that, and on 2026-08-26 did:
 #: `barbarian-settler-capture` was asked for by name after the live seat
 #: fortified beside a free settler for twenty turns (civvis-20260826T194422Z),
-#: and no reporting batch has run since. Each such pin is named here so the
-#: genome stays explicable (the Rust ledger test carries the same list as
-#: `PINNED_BEFORE_PRICING`); the next batch prices it like any other gene, and
-#: its row leaves the day a batch column exists.
-PINNED_BEFORE_PRICING = (
-    "barbarian-settler-capture",
-)
+#: before any reporting batch had run. Such a pin is marked *(unmeasured)* in
+#: the ranking's *Awaiting measurement* section until a batch prices it.
+#:
+#: ⚠⚠ THIS WAS A HAND-WRITTEN TUPLE AND IT DEADLOCKED ITS OWN FIRST
+#: PUBLICATION. The rule was "its row leaves the day a batch column exists" —
+#: but the only thing that creates that column is a reporting batch, and the
+#: scheduler publishes a batch by regenerating the four generated artifacts and
+#: nothing else. It cannot edit this file. So on 2026-08-26 the 2,064-game
+#: batch priced `barbarian-settler-capture` at +23, and the publication of that
+#: very batch failed its own regression gate, naming the tag, with no
+#: automated way to clear it. Derived from the ledger, the set empties itself
+#: the moment the column it is waiting for exists.
+def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
+    """The operator's pins that no reporting batch has priced yet, sorted.
+
+    Derived from the ledger the caller is judging — never a list kept beside
+    it, which is a second copy of the same fact and goes stale exactly when it
+    matters (see the warning above).
+    """
+    columns = rules.get("batch_columns") or {}
+    return tuple(sorted(tag for tag in (rules.get("operator_default_on") or ())
+                        if tag not in columns))
 
 #: ⭐ THE OPERATOR'S HOLDS — genes that default **off** whatever their batch
 #: columns read (operator, 2026-08-26). The mirror of `OPERATOR_DEFAULT_ON`,
@@ -596,6 +610,7 @@ PINNED_BEFORE_PRICING = (
 #: operator's, by name.
 OPERATOR_DEFAULT_OFF = (
     "congress-counter-leader",
+    "holy-lane-parity",
     "one-war-at-a-time",
     "science-multiplier-payoff",
     "settler-factory-coordination",

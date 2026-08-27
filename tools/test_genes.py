@@ -556,7 +556,6 @@ class TheOperatorPins(unittest.TestCase):
             "expansion-schedule",
             "founder-temple",
             "gold-for-the-young-city",
-            "holy-lane-parity",
             "holy-site-where-the-threat-is-2",
             "idle-faith-patronage",
             "lane-great-people",
@@ -587,7 +586,7 @@ class TheOperatorPins(unittest.TestCase):
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 50)
+        self.assertEqual(len(pins), 49)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         # ⭐ The versioned family the operator moved on 2026-08-26: the ship
@@ -604,19 +603,16 @@ class TheOperatorPins(unittest.TestCase):
         # decision beside every pin is recorded, rather than treating a
         # reporting-only refresh as a reason to re-select defaults.
         readings = {tag: rules["batch_decisions"].get(tag) for tag in pins}
-        # ⭐ A pin over a gene no batch has priced has no reading beside it;
-        # every such pin is named in `PINNED_BEFORE_PRICING`, and leaves it
-        # the day a batch prices it.
-        unpriced = set(gene_ledger.PINNED_BEFORE_PRICING)
+        # ⭐ A pin over a gene no batch has priced has no reading beside it.
+        # `pinned_before_pricing` DERIVES that set from this ledger, so it
+        # empties itself the day a batch supplies the column.
+        unpriced = set(gene_ledger.pinned_before_pricing(rules))
         self.assertTrue(unpriced <= set(pins), unpriced - set(pins))
         self.assertTrue(
             all(call in {"on", "off", "unresolved"} or (call is None and tag in unpriced)
                 for tag, call in readings.items()),
             readings,
         )
-        for tag in unpriced:
-            self.assertIsNone(
-                readings[tag], f"{tag} is priced now; its PINNED_BEFORE_PRICING row has done its job")
 
 
 class TheOperatorHolds(unittest.TestCase):
@@ -684,6 +680,7 @@ class TheOperatorHolds(unittest.TestCase):
         rules = ledger["rules"]
         expected_holds = {
             "congress-counter-leader",
+            "holy-lane-parity",
             "one-war-at-a-time",
             "science-multiplier-payoff",
             "settler-factory-coordination",
@@ -1928,7 +1925,8 @@ class TheTableIsDerived(unittest.TestCase):
                 self.assertIn("## Awaiting measurement", text)
                 # No batch priced it, so the batch rule reads it as off —
                 # unless the operator pinned it on by name.
-                default = "**on**" if tag in gene_ledger.PINNED_BEFORE_PRICING else "off"
+                unpriced = gene_ledger.pinned_before_pricing(ledger["rules"])
+                default = "**on**" if tag in unpriced else "off"
                 self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
 
     def test_descriptions_come_from_the_toggle_docs(self):
@@ -2340,7 +2338,7 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
                       if tag not in recorded]
         self.assertTrue(batch_only, "some gene is on from its batch columns alone")
         for tag in batch_only:
-            if tag in gene_ledger.PINNED_BEFORE_PRICING:
+            if tag in gene_ledger.pinned_before_pricing(self.ledger["rules"]):
                 # On by the operator's name, not by a column: awaiting
                 # measurement, and marked on there.
                 self.assertNotIn(tag, displayed, tag)

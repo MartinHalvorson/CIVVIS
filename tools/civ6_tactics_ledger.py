@@ -348,11 +348,18 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
     }
 
 
+#: A unit at or below this the last time we saw it was one the controller had
+#: a turn's warning about — below `withdraw_hp` (45), the line its own
+#: recovery uses. The arena's twin is `doctrine::SALVAGEABLE_HP`.
+SALVAGEABLE_HP = 30
+
+
 def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
     states = _states(events)
     turns = sorted(states)
     gone: collections.Counter = collections.Counter()
     gone_by_kind: collections.Counter = collections.Counter()
+    salvageable = 0
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
@@ -365,14 +372,25 @@ def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
             gone_by_kind[kind] += 1
             pos = (int(unit["x"]), int(unit["y"]))
             near = any(hex_distance(pos, plot) <= 2 for plot in hostiles)
+            if (unit.get("hp") or 0) <= SALVAGEABLE_HP:
+                salvageable += 1
             if (unit.get("hp") or 0) >= 100 and isinstance(gold, (int, float)) and gold <= 0:
                 gone["full_hp_treasury_empty"] += 1
             elif near:
                 gone["hostile_within_2"] += 1
             else:
                 gone["no_visible_threat"] += 1
+    lost = sum(gone.values())
     return {
-        "military_units_gone": sum(gone.values()),
+        "military_units_gone": lost,
+        # ⭐ HOW MANY OF THEM THE SEAT SAW COMING. A unit last seen at or
+        # below `SALVAGEABLE_HP` is one the controller had a turn's warning
+        # about and could have rotated, withdrawn or healed out of; the rest
+        # were killed from a health it had no reason to act on. The two are
+        # different failures and only one of them is worth a preservation
+        # change. The arena reports the same share as `salvag.`.
+        "lost_when_salvageable": salvageable,
+        "salvageable_share": round(salvageable / lost, 2) if lost else None,
         "context_at_last_sight": dict(gone),
         "by_kind": dict(gone_by_kind.most_common()),
     }
@@ -555,6 +573,12 @@ def render(report: dict[str, Any]) -> str:
         f"  roster   {roster['military_units_gone']} military units left the board: "
         + ", ".join(f"{k} {n}" for k, n in roster["context_at_last_sight"].items())
     )
+    if roster["military_units_gone"]:
+        lines.append(
+            f"           {roster['lost_when_salvageable']} were last seen at or below "
+            f"{SALVAGEABLE_HP} hp ({_fmt_share(roster['salvageable_share'])}) — the losses the "
+            f"seat had a turn's warning of"
+        )
     hover = report["hover"]
     lines.append(
         f"  hover    {hover['hovering_unit_turns']} of {hover['unit_turns_2_to_4_from_a_hostile']} "

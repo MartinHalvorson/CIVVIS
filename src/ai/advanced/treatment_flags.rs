@@ -2956,6 +2956,31 @@ impl AdvancedAi {
         self.screen_the_shooters = false;
     }
 
+    /// `culture-floor`: a culture-yielding building is exempt from the Great
+    /// Work veto and the Theatre Square is priced while the empire's culture
+    /// a turn trails the strongest major's by the floor ratio. See
+    /// `advanced/yield_floors.rs`.
+    pub fn enable_culture_floor(&mut self) {
+        self.culture_floor = true;
+    }
+
+    /// The twin of `enable_culture_floor`.
+    pub fn disable_culture_floor(&mut self) {
+        self.culture_floor = false;
+    }
+
+    /// `gold-income-floor`: Markets, Lighthouses, gold-yielding buildings and
+    /// the Commercial Hub or Harbor are priced by the income the empire is
+    /// short of two Gold a turn per city. See `advanced/yield_floors.rs`.
+    pub fn enable_gold_income_floor(&mut self) {
+        self.gold_income_floor = true;
+    }
+
+    /// The twin of `enable_gold_income_floor`.
+    pub fn disable_gold_income_floor(&mut self) {
+        self.gold_income_floor = false;
+    }
+
     /// A settler in the barbarians' hands is taken back: exempt from the
     /// duplicate-settler guard, first among adjacent captures, pursued out to
     /// `BARBARIAN_SETTLER_PURSUIT_RADIUS`. Gene `barbarian-settler-capture`;
