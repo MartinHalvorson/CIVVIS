@@ -129,7 +129,7 @@ fn adjacency_sources_account_for_every_point_a_district_earns() {
         .get_mut(&capital)
         .unwrap()
         .districts
-        .remove(&crate::name!("holy_site"));
+        .remove(crate::name!("holy_site"));
     let sources = game.district_adjacency_sources(crate::name!("campus"), site);
 
     let sum = |sources: &[AdjacencySource]| {
@@ -1049,7 +1049,7 @@ fn rationalism_pays_in_halves_not_a_flat_double() {
         }
         let raw = game.district_yields(crate::name!("campus"), site).science;
         assert!(
-            raw >= 2.0 && raw < 4.0,
+            (2.0..4.0).contains(&raw),
             "raw adjacency below the clause: {raw}"
         );
         game.players[0]

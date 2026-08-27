@@ -478,9 +478,9 @@ impl HostPeaceRetries {
     }
 
     fn permits(&self, target: i64, turn: u32) -> bool {
-        self.last_request.get(&target).map_or(true, |asked| {
-            turn.saturating_sub(*asked) >= HOST_PEACE_RETRY_TURNS
-        })
+        self.last_request
+            .get(&target)
+            .is_none_or(|asked| turn.saturating_sub(*asked) >= HOST_PEACE_RETRY_TURNS)
     }
 
     fn record(&mut self, target: i64, turn: u32) {

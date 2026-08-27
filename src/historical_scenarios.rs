@@ -722,7 +722,7 @@ mod tests {
             for force in scenario.forces {
                 for unit in force.units {
                     assert!(
-                        rules.units.contains_key(*unit),
+                        rules.units.contains_key(unit),
                         "{} names unknown unit {unit}",
                         scenario.id
                     );

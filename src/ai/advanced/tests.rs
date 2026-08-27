@@ -2947,20 +2947,21 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
     // stream 18000000; see `promoted_policy_envoy`). Off in BOTH
     // constructors now: their withhold arms are declared aliases of
     // `advanced`, and the re-addition treatment is `advanced_war_half`.
-    for (flag, on_anchor, in_production) in [(
+    // One flag is left; the destructure keeps the table shape, so re-adding a
+    // row is a `for ... in [a, b]` again rather than a rewrite.
+    let (flag, on_anchor, in_production) = (
         "unit_objective_memory",
         frozen.base.unit_objective_memory,
         production.base.unit_objective_memory,
-    )] {
-        assert!(
-                !on_anchor,
-                "{flag} is on for advanced_v1: the war-half removal re-pinned                  the source contract as behaviour-free for the anchor, and                  this is the assertion that keeps that claim honest"
-            );
-        assert!(
-                !in_production,
-                "{flag} is on in production: the war-half removal shipped on a                  corrected-gate PASS, so turning it back on needs its own                  matrix run through `advanced_war_half`, not a default"
-            );
-    }
+    );
+    assert!(
+        !on_anchor,
+        "{flag} is on for advanced_v1: the war-half removal re-pinned                  the source contract as behaviour-free for the anchor, and                  this is the assertion that keeps that claim honest"
+    );
+    assert!(
+        !in_production,
+        "{flag} is on in production: the war-half removal shipped on a                  corrected-gate PASS, so turning it back on needs its own                  matrix run through `advanced_war_half`, not a default"
+    );
 }
 
 #[test]

@@ -18287,7 +18287,7 @@ fn resolved_civvis_unit_name(rules: &crate::rules::Rules, civ6: &str) -> Option<
     let bare = civvis_unit_name_unqualified(civ6);
     if let Some(bare) = bare
         .as_deref()
-        .filter(|bare| rules.units.contains_key(*bare))
+        .filter(|bare| rules.units.contains_key(bare))
     {
         return Some(bare.to_string());
     }
@@ -19418,7 +19418,10 @@ fn host_sites_through(
         return BTreeMap::new();
     };
     let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
-    let mut newest: BTreeMap<(i64, String), (u64, Option<BTreeSet<crate::Pos>>)> = BTreeMap::new();
+    // Keyed by (player, item); the newest refusal turn for that pair and the
+    // plots it named, if it named any.
+    type Newest = BTreeMap<(i64, String), (u64, Option<BTreeSet<crate::Pos>>)>;
+    let mut newest: Newest = BTreeMap::new();
     for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
@@ -24353,10 +24356,10 @@ fn apply_territory(game: &mut crate::game::Game, snapshot: &Snapshot, state: &St
 /// district. Rebuilt from the export each time it arrives, so a razed or
 /// captured district does not linger.
 fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapshot) {
-    let mut placed: std::collections::BTreeMap<
-        u32,
-        (Vec<(Name, crate::Pos)>, Vec<(Name, crate::Pos)>),
-    > = Default::default();
+    // Per player: the districts seen on their plots, and the wonders.
+    type Placed =
+        std::collections::BTreeMap<u32, (Vec<(Name, crate::Pos)>, Vec<(Name, crate::Pos)>)>;
+    let mut placed: Placed = Default::default();
     let mut any_seen: std::collections::BTreeSet<u32> = Default::default();
     for y in 0..snapshot.height.max(1) {
         for x in 0..snapshot.width.max(1) {

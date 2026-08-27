@@ -16623,8 +16623,10 @@ impl AdvancedAi {
             return false;
         }
 
-        let mut candidates: Vec<((i32, i32, i32, std::cmp::Reverse<u32>), u32, String, Item)> =
-            Vec::new();
+        // One emergency-purchase option: the sort key (see the push below),
+        // the city that would buy it, its name, and the item itself.
+        type Candidate = ((i32, i32, i32, std::cmp::Reverse<u32>), u32, String, Item);
+        let mut candidates: Vec<Candidate> = Vec::new();
         for city_id in g.player_city_ids(pid) {
             let Some(defence) = self
                 .base
@@ -30600,7 +30602,7 @@ impl AdvancedAi {
             };
             let mut after_second = after_first.speculative_clone();
             if after_second.apply(pid, &followup).is_err()
-                || after_second.units.contains_key(&victim)
+                || after_second.units.contains_key(victim)
             {
                 continue;
             }

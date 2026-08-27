@@ -40700,7 +40700,7 @@ impl Game {
                         && self
                             .rules
                             .buildings
-                            .get(*building)
+                            .get(building)
                             .is_some_and(|building_spec| {
                                 building_spec.district.is_some_and(|district| {
                                     self.district_is_family(district, crate::name!("encampment"))
@@ -44645,8 +44645,8 @@ impl Game {
                 }
                 self.unit_ids_at(**position).iter().all(|other_id| {
                     *other_id == unit_id
-                        || (self.units[&other_id].owner == unit.owner
-                            && self.rules.units[self.units[&other_id].kind].class != spec.class)
+                        || (self.units[other_id].owner == unit.owner
+                            && self.rules.units[self.units[other_id].kind].class != spec.class)
                 })
             })
             .map(|(position, tile)| {
