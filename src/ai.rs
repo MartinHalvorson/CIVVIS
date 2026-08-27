@@ -2,7 +2,8 @@
 //! sparring partner, not a fair-play agent.
 use crate::name::{AsName, Name};
 use crate::game::{
-    effective_strength, expected_damage, Action, ActionFamilies, Game, Item, TraversalClass,
+    effective_strength, expected_damage, Action, ActionFamilies, Game, Item, PolicyReadSet,
+    TraversalClass,
 };
 use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
@@ -810,6 +811,7 @@ fn policy_card_score(
     w: &Weights,
     candidate: &(usize, String, Name),
     current_reading: f64,
+    reads: &PolicyReadSet,
     net_maintenance: bool,
 ) -> (f64, usize, String, Name) {
     let (priority, slot, card) = candidate;
@@ -822,7 +824,18 @@ fn policy_card_score(
     // into the batch makes the score incremental: one whole-empire sweep for a
     // challenger, and one removal sweep for an incumbent.  The authoritative
     // candidate order and the exact `empire_reading` arithmetic are unchanged.
-    let (without, with) = if incumbent {
+    // The other side of the counterfactual is also already known whenever the
+    // card cannot reach anything `empire_reading` reads. `reads` is the record
+    // of every question the unchanged sweep asked the deck; a card naming none
+    // of those keys and none of those card names leaves every lookup returning
+    // the value it already returned, so the two runs stay in lockstep and the
+    // sweep lands on the same bits. Ten Great-Person, envoy and espionage
+    // cards move only quantities this reading never looks at, and the review
+    // used to pay a whole-empire sweep to rediscover that once per card, every
+    // eight turns, for the rest of the game.
+    let (without, with) = if reads.card_is_inert(&g.rules, *card) {
+        (current_reading, current_reading)
+    } else if incumbent {
         g.players[pid].policies.remove(card);
         let without = empire_reading(g, pid, w, net_maintenance);
         g.players[pid].policies.insert(*card);
@@ -842,6 +855,24 @@ fn policy_card_score(
         0.0
     };
     (gain + hysteresis, *priority, slot.clone(), *card)
+}
+
+/// The unchanged reading every candidate is compared against, together with
+/// the record of what it asked `pid`'s policy deck.
+///
+/// The trace costs one interned-name or one string comparison per policy
+/// question of one sweep the review runs anyway, and it is what lets
+/// [`policy_card_score`] answer a card without running a second one.
+fn reading_with_policy_trace(
+    g: &Game,
+    pid: usize,
+    w: &Weights,
+    net_maintenance: bool,
+) -> (f64, PolicyReadSet) {
+    let trace = g.trace_policy_reads(pid);
+    let reading = empire_reading(g, pid, w, net_maintenance);
+    let reads = trace.finish();
+    (reading, reads)
 }
 
 fn revise_policy_deck(
@@ -919,7 +950,10 @@ fn revise_policy_deck(
                     // The branch is reused for all indices claimed by this
                     // worker.  Compute the unchanged slate once, before the
                     // candidate mutations begin, rather than once per card.
-                    let current_reading = empire_reading(&branch, pid, &weights, net_maintenance);
+                    // The trace is taken on the branch, so each worker records
+                    // its own and nothing crosses a thread.
+                    let (current_reading, reads) =
+                        reading_with_policy_trace(&branch, pid, &weights, net_maintenance);
                     indices
                         .map(|index| {
                             (
@@ -930,6 +964,7 @@ fn revise_policy_deck(
                                     &weights,
                                     &candidates[index],
                                     current_reading,
+                                    &reads,
                                     net_maintenance,
                                 ),
                             )
@@ -939,11 +974,19 @@ fn revise_policy_deck(
             )
         }
         None => {
-            let current_reading = empire_reading(g, pid, w, net_maintenance);
+            let (current_reading, reads) = reading_with_policy_trace(g, pid, w, net_maintenance);
             candidates
                 .iter()
                 .map(|candidate| {
-                    policy_card_score(g, pid, w, candidate, current_reading, net_maintenance)
+                    policy_card_score(
+                        g,
+                        pid,
+                        w,
+                        candidate,
+                        current_reading,
+                        &reads,
+                        net_maintenance,
+                    )
                 })
                 .collect()
         }
@@ -15671,6 +15714,125 @@ mod tests {
                 serde_json::to_value(&serial).unwrap(),
                 serde_json::to_value(&parallel).unwrap(),
                 "worker completion order must not change the authoritative game (threads={threads})"
+            );
+        }
+    }
+
+    /// The whole claim the sweep skip rests on, checked card by card against
+    /// the sweep itself on a played-forward board.
+    ///
+    /// `PolicyReadSet::card_is_inert` says a card cannot move
+    /// [`empire_reading`]. This asserts the implication over **every card in
+    /// the ruleset**, on both sides of the counterfactual the review runs
+    /// (removal for a card the seat holds, slotting for one it does not) and
+    /// under both `net_maintenance` arms, and it compares raw bits rather than
+    /// an epsilon: the skip reuses a number, so anything short of bit equality
+    /// is a defect.
+    ///
+    /// The board is a real one — four majors and six city-states playing
+    /// seventy turns of the Basic agent — because a hand-built fixture only
+    /// exercises the yield paths its author thought of, and the read set is
+    /// exactly the set of paths the board happens to open.
+    #[test]
+    fn a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero() {
+        let mut game = Game::new_full(4, 44, 30, 7_320_017, 200, 6, true);
+        game.set_fog_memory(false);
+        let mut ais: Vec<BasicAi> = game.players.iter().map(|_| BasicAi::new()).collect();
+        while game.winner.is_none() && game.turn <= 70 {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        let pid = (0..4)
+            .max_by_key(|seat| game.player_city_ids(*seat).len())
+            .unwrap();
+        let cities = game.player_city_ids(pid);
+        let districts: usize = cities
+            .iter()
+            .map(|cid| game.cities[cid].districts.len())
+            .sum();
+        let buildings: usize = cities
+            .iter()
+            .map(|cid| game.cities[cid].buildings.len())
+            .sum();
+        let routes = game.routes.iter().filter(|route| route.owner == pid).count();
+        println!(
+            "fixture: seat {pid} holds {} cities, {districts} districts, {buildings} buildings, \
+             {routes} trade routes, religion {:?}, pantheon {:?}, {} cards slotted",
+            cities.len(),
+            game.players[pid].religion,
+            game.players[pid].pantheon,
+            game.players[pid].policies.len(),
+        );
+        // Non-vacuous: the sweep has to have something to read.
+        assert!(cities.len() >= 3, "the fixture needs a real empire");
+        assert!(districts >= 1 && buildings >= 1);
+        assert!(!game.players[pid].policies.is_empty(), "no incumbent to test");
+
+        let weights = Weights::default();
+        for net_maintenance in [false, true] {
+            let (base, reads) = reading_with_policy_trace(&game, pid, &weights, net_maintenance);
+            assert!(
+                !reads.is_opaque(),
+                "an ordinary seat carries no runtime attachment"
+            );
+            let cards: Vec<Name> = game.rules.policies.keys().copied().collect();
+            let mut inert: Vec<&str> = Vec::new();
+            let mut live: Vec<&str> = Vec::new();
+            for card in cards {
+                let verdict = reads.card_is_inert(&game.rules, card);
+                let held = game.players[pid].policies.contains(&card);
+                if held {
+                    game.players[pid].policies.remove(&card);
+                } else {
+                    game.players[pid].policies.insert(card);
+                }
+                let other = empire_reading(&game, pid, &weights, net_maintenance);
+                if held {
+                    game.players[pid].policies.insert(card);
+                } else {
+                    game.players[pid].policies.remove(&card);
+                }
+                if verdict {
+                    assert_eq!(
+                        other.to_bits(),
+                        base.to_bits(),
+                        "{} is classified reading-inert but the sweep moved: \
+                         {other} against {base} (held={held}, net_maintenance={net_maintenance})",
+                        card.as_str()
+                    );
+                    inert.push(card.as_str());
+                } else {
+                    live.push(card.as_str());
+                }
+            }
+            println!(
+                "net_maintenance={net_maintenance}: {} of {} cards are reading-inert; \
+                 the review skips a whole-empire sweep for each of them",
+                inert.len(),
+                inert.len() + live.len()
+            );
+            println!("  inert: {}", inert.join(" "));
+            // Non-vacuous in both directions: the classifier has to rule some
+            // cards out as well as in, or it is measuring nothing.
+            assert!(
+                inert.len() >= 20,
+                "expected the Great-Person, envoy and espionage families to be inert, got {}",
+                inert.len()
+            );
+            assert!(!live.is_empty(), "the yield cards must not be skipped");
+            // Two named controls, one each way. A Great-Person card moves
+            // points `empire_reading` has no term for; an influence card moves
+            // the one non-yield rate it does read, and must never be skipped.
+            assert!(
+                inert.contains(&"inspiration"),
+                "a card whose whole effect is Great Scientist points is inert"
+            );
+            assert!(
+                live.contains(&"charismatic_leader"),
+                "influence_per_turn is a term of the reading, so its cards are not inert"
             );
         }
     }
