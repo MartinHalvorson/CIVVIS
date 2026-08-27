@@ -3528,15 +3528,18 @@ not invent one.
 
 ### Exactness
 
-`tools/speed_ab.py`, two paired 150-turn games at the shape above, run twice:
-**"same game on every seed"** both times — the two binaries produce
-byte-identical reports. `advanced_v1_plays_the_same_game_it_always_did` passes;
-`mirror` is 224 tests green.
+`tools/speed_ab.py`, two paired 150-turn games at the shape above, run three
+times — twice against the merge-base and once against the `origin/main` this
+branch merged: **"same game on every seed"** every time, byte-identical
+reports. `advanced_v1_plays_the_same_game_it_always_did` passes; `mirror` is
+224 tests green.
 
 The timing half is not quoted, and here is why in one line: the same two-pair
-comparison read **-11.23%** at load 27 and **+1.59% (resolves ±1.66%)** at load
-4.5, on identical binaries. Two pairs cannot resolve a change of this size on a
-shared host, which is the whole reason the evidence above is a counter.
+comparison read **-11.23%** at load 27, **+1.59% (resolves ±1.66%)** at load
+4.5, and **-13.40% (resolves ±0.63%)** at load 13 — three runs of the same
+question, and one of them is the wrong sign. Two pairs do not resolve a change
+of this size on a host shared with a dozen agents, which is the whole reason
+the evidence above is a counter.
 
 ⚠ **`rustfmt --edition 2021 src/game.rs` reformats every `src/game/*.rs`
 submodule too** — 41 files, 1,677 lines here, none of them yours. `game.rs`
