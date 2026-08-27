@@ -21,8 +21,10 @@
 --  10. a refused settler move cannot draw its guard into a synthetic move;
 --  11. the `orders` event carries the cap and shadow counters.
 --  13. an unguarded new settler will not step from its city beside a visible
---      barbarian scout, while invisible, non-scout, non-city, and proven-
---      escort cases retain their ordinary movement.
+--      barbarian scout; any settler leg beside a visible barbarian combat unit
+--      is held even with a synchronized single escort, while invisible,
+--      distant, non-city scout, and proven-scout-escort cases retain their
+--      ordinary movement.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -424,8 +426,8 @@ check("capped scout leg: setter stays in city", ops(36), "")
 check("capped scout leg: event distinguishes want from sent", has(lastEvent("settler_scout_capture_hold"), '"want":[1,4]')
 	and has(lastEvent("settler_scout_capture_hold"), '"sent":[1,3]'), true)
 
--- The floor is not a broad civilian or barbarian policy: no city origin, an
--- invisible scout, and a visible non-scout each preserve a normal move.
+-- The scout floor remains narrow: no city origin and an invisible scout each
+-- preserve a normal move.
 reset()
 host.units[31] = { id = 31, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
 host.barbarians[91] = { id = 91, kind = "UNIT_SCOUT", x = 2, y = 3, moves = 0 }
@@ -444,14 +446,50 @@ host.paths["32:" .. plotIndex(1, 2)] = {
 applyOrders(player, PID, 7, { row(32, "MOVE_TO", 1, 2) })
 check("invisible scout: setter still moves", ops(32), "UNITOPERATION_MOVE_TO@1,2")
 
+-- The live loss geometry: a visible non-scout combat unit beside the actual
+-- leg holds both a travelling settler and the explicit escort that the host
+-- synchronized to it.  This is intentionally not limited to a city origin.
 reset()
-host.cities[1] = { x = 1, y = 1 }
 host.units[33] = { id = 33, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
-host.barbarians[93] = { id = 93, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 0 }
+host.units[34] = { id = 34, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[93] = { id = 93, kind = "UNIT_MAN_AT_ARMS", x = 2, y = 3, moves = 2 }
 host.paths["33:" .. plotIndex(1, 2)] = {
 	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
-applyOrders(player, PID, 7, { row(33, "MOVE_TO", 1, 2) })
-check("non-scout: setter still moves", ops(33), "UNITOPERATION_MOVE_TO@1,2")
+host.paths["34:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(33, "MOVE_TO", 1, 2), row(34, "MOVE_TO", 1, 2) })
+check("visible combat: setter stays out of capture leg", ops(33), "")
+check("visible combat: synced guard stays with setter", ops(34), "")
+check("visible combat: hold names hostile and exact setter", has(lastEvent("settler_barbarian_combat_capture_hold"), '"settler":33')
+	and has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile":93'), true)
+check("visible combat: order reports combat hold", has(lastEvent("orders"), '"settler_barbarian_combat_capture_held":1'), true)
+check("visible combat: guard is held off automation", board.escortHolds[34], true)
+
+-- The same safety applies when the host had to synthesize the matching guard
+-- row.  Refusing the settler must not send that host-only escort ahead alone.
+reset()
+host.units[37] = { id = 37, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[38] = { id = 38, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[97] = { id = 97, kind = "UNIT_MUSKETMAN", x = 2, y = 3, moves = 2 }
+host.paths["37:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+host.paths["38:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(37, "MOVE_TO", 1, 2) })
+check("visible combat shadow: setter stays out of capture leg", ops(37), "")
+check("visible combat shadow: synthetic guard stays with setter", ops(38), "")
+check("visible combat shadow: host row was held, not applied", has(lastEvent("orders"), '"escort_shadow_injected":1')
+	and has(lastEvent("orders"), '"escort_shadow_refused":1'), true)
+
+-- A visible combat unit outside the adjacent-capture geometry does not freeze
+-- normal expansion movement.
+reset()
+host.units[39] = { id = 39, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[98] = { id = 98, kind = "UNIT_WARRIOR", x = 4, y = 4, moves = 2 }
+host.paths["39:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(39, "MOVE_TO", 1, 2) })
+check("distant combat: setter still moves", ops(39), "UNITOPERATION_MOVE_TO@1,2")
 
 -- A proven co-located escort may make the exact same leg, including the
 -- synthesized row from the existing host escort reconciliation.

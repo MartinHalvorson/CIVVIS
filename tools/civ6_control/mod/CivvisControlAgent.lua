@@ -13918,14 +13918,16 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         escort_cap_unresolved = 0, escort_shadow_injected = 0,
 	                         escort_shadow_applied = 0, escort_shadow_refused = 0,
 	                         escort_shadow_held = 0,
-	                         settler_scout_capture_held = 0 }, escortHolds = {} };
+	                         settler_scout_capture_held = 0,
+	                         settler_barbarian_combat_capture_held = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
 	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                     escort_cap_unresolved = 0, escort_shadow_injected = 0,
 	                     escort_shadow_applied = 0, escort_shadow_refused = 0,
 	                     escort_shadow_held = 0,
-	                     settler_scout_capture_held = 0 };
+	                     settler_scout_capture_held = 0,
+	                     settler_barbarian_combat_capture_held = 0 };
 	CivvisBoard.escortHolds = {};
 end;
 
@@ -14240,6 +14242,127 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
+-- The scout floor above is deliberately narrow: a new settler may leave a
+-- city beside a scout when the host has proved one escort can share that leg.
+-- That proof is not sufficient against an actual barbarian combat unit.  In
+-- civvis-20260827T081925Z, turns 82 and 83, a barbarian musketeer and
+-- man-at-arms each killed the synchronized single escort and captured the
+-- settler in the same hostile turn.  The AI had ordered both units onto the
+-- same tile, and `escort_cap_synced` recorded that the host sent both there;
+-- the bridge must therefore not treat one shared guard as an exemption here.
+--
+-- Hold only a leg whose *actual host destination* is adjacent to a visible
+-- non-scout barbarian combat unit.  That is the observed capture geometry,
+-- uses only the local player's ordinary visibility, and applies while the
+-- settler is travelling as well as on its first city departure.  Its matching
+-- escort row is held too, so refusing the civilian cannot leave the soldier
+-- walking into the threat or being handed to explore automation.
+CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
+	local player = try(function() return Players[pid]; end, nil);
+	if player == nil then return; end
+	local visible = function(x, y)
+		return try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) == true;
+	end
+	local threats = {};
+	pcall(function()
+		for _, otherId in ipairs(PlayerManager.GetAliveIDs() or {}) do
+			if otherId ~= pid then
+				local other = Players[otherId];
+				local barbarian = other ~= nil
+					and try(function() return other:IsBarbarian(); end, false) == true;
+				if barbarian then
+					eachUnit(other, function(unit)
+						local name = unitTypeName(unit);
+						if name == "UNIT_SCOUT" or not CivvisBoard.isCombatEscort(unit) then return; end
+						local x = tonumber(try(function() return unit:GetX(); end, nil));
+						local y = tonumber(try(function() return unit:GetY(); end, nil));
+						if x ~= nil and y ~= nil and visible(x, y) then
+							threats[#threats + 1] = {
+								id = tonumber(try(function() return unit:GetID(); end, nil)),
+								name = name, x = x, y = y,
+							};
+						end
+					end);
+				end
+			end
+		end
+	end);
+	if #threats == 0 then return; end
+
+	local held = {};
+	for _, row in ipairs(rows) do
+		local settlerId = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and row._civvis_settler_scout_hold ~= true
+				and settlerId ~= nil and wantX ~= nil and wantY ~= nil and held[settlerId] == nil then
+			local settler = liveUnit(pid, settlerId);
+			if settler ~= nil and unitTypeName(settler) == "UNIT_SETTLER" then
+				local fromX = tonumber(try(function() return settler:GetX(); end, nil));
+				local fromY = tonumber(try(function() return settler:GetY(); end, nil));
+				local capped = CivvisBoard.capToTurn(settler, wantX, wantY);
+				if fromX ~= nil and fromY ~= nil and capped ~= false then
+					local sentX, sentY = wantX, wantY;
+					if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
+					if CivvisBoard.reachesThisTurn(settler, sentX, sentY) then
+						for _, threat in ipairs(threats) do
+							local distance = tonumber(try(function()
+								return Map.GetPlotDistance(sentX, sentY, threat.x, threat.y);
+							end, -1)) or -1;
+							if distance == 1 then
+								held[settlerId] = {
+									settler = settlerId, fromX = fromX, fromY = fromY,
+									wantX = wantX, wantY = wantY,
+									sentX = sentX, sentY = sentY, threat = threat,
+								};
+								CivvisBoard.stats.settler_barbarian_combat_capture_held =
+									CivvisBoard.stats.settler_barbarian_combat_capture_held + 1;
+								emit("settler_barbarian_combat_capture_hold", {
+									turn = turn, settler = settlerId,
+									from = { fromX, fromY }, want = { wantX, wantY }, sent = { sentX, sentY },
+									hostile = threat.id, hostile_type = threat.name,
+									hostile_pos = { threat.x, threat.y },
+								});
+								break;
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	if next(held) == nil then return; end
+
+	-- Refuse all follow-up moves for the held settler, then any co-located
+	-- combat row that the synchronization pass proved would share this exact
+	-- leg.  The latter includes host-only shadow rows.
+	for _, row in ipairs(rows) do
+		local heldLeg = held[tonumber(row.subject)];
+		if heldLeg ~= nil and tostring(row.kind or "") == "unit"
+				and tostring(row.verb or "") == "MOVE_TO" then
+			row._civvis_settler_barbarian_combat_hold = true;
+		end
+	end
+	for _, heldLeg in pairs(held) do
+		for _, row in ipairs(rows) do
+			local guardId = tonumber(row.subject);
+			if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+					and guardId ~= nil and guardId ~= heldLeg.settler
+					and tonumber(row.x) == heldLeg.sentX and tonumber(row.y) == heldLeg.sentY then
+				local guard = liveUnit(pid, guardId);
+				local guardX = tonumber(try(function() return guard:GetX(); end, nil));
+				local guardY = tonumber(try(function() return guard:GetY(); end, nil));
+				if guard ~= nil and guardX == heldLeg.fromX and guardY == heldLeg.fromY
+						and CivvisBoard.isCombatEscort(guard)
+						and CivvisBoard.reachesThisTurn(guard, heldLeg.sentX, heldLeg.sentY) then
+					row._civvis_settler_barbarian_combat_hold = true;
+					CivvisBoard.escortHolds[guardId] = true;
+				end
+			end
+		end
+	end
+end;
+
 -- Cancel queued paths on combat units at the start of our turn, and report
 -- how many units entered the turn with one at all.
 CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
@@ -14413,6 +14536,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- counts and verdict: it is an actuation safety repair, not a new decision.
 	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
 	CivvisBoard.holdVisibleScoutCaptureLegs(pid, turn, rows);
+	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -14471,6 +14595,15 @@ local function applyOrders(player, pid, turn, rows)
 		-- This move is still a CIVVIS decision and must remain in the order
 		-- accounting.  The bridge declined only its exposed host hand-off; emit
 		-- the named refusal instead of silently deleting a planned expansion leg.
+		if row._civvis_settler_barbarian_combat_hold == true then
+			if shadow then
+				CivvisBoard.stats.escort_shadow_refused = CivvisBoard.stats.escort_shadow_refused + 1;
+			else
+				countRefusal(kind, "settler_barbarian_combat_capture_hold");
+			end
+			ordered[index] = true;
+			return false, "settler_barbarian_combat_capture_hold";
+		end
 		if row._civvis_settler_scout_hold == true then
 			countRefusal(kind, "settler_scout_capture_hold");
 			ordered[index] = true;
@@ -14723,6 +14856,11 @@ local function applyOrders(player, pid, turn, rows)
 		-- Settler legs held because their actual host destination was adjacent
 		-- to a visible barbarian scout and no proven guard could share it.
 		settler_scout_capture_held = CivvisBoard.stats.settler_scout_capture_held,
+		-- A visible non-scout barbarian combat unit can remove a synchronized
+		-- single guard and capture its settler in one hostile turn, so both
+		-- matching legs are held instead of counting the guard as coverage.
+		settler_barbarian_combat_capture_held =
+			CivvisBoard.stats.settler_barbarian_combat_capture_held,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
