@@ -6048,6 +6048,18 @@ pub struct Game {
     /// six neighbours the board can see; empty on a native game.
     #[serde(default)]
     pub observed_appeal: BTreeMap<Pos, i32>,
+    /// The host's own `Plot:IsFreshWater()` per revealed plot, which
+    /// `city_water` prefers to the river/lake/oasis derivation for a city
+    /// centre. Exported as `fw` since the tiles export began and read by
+    /// nothing until 2026-08-27.
+    #[serde(default)]
+    pub observed_fresh_water: BTreeMap<Pos, bool>,
+    /// A seat's tourism per turn as the host reports it — ours from the
+    /// state's `tourism_per_turn`, a rival's from `rivals[].tourism`.
+    /// `tourism_per_turn` prefers it; `tourism_per_turn_model` is the
+    /// engine's own figure for the instrument that measures the gap.
+    #[serde(default)]
+    pub observed_tourism_per_turn: BTreeMap<usize, f64>,
     /// What the host says a route a Trader could START would pay its origin,
     /// keyed by (origin, destination) — the shipped TradeRouteChooser's own
     /// `CalculateOriginYield…` sum, exported while a route slot is open.
@@ -6453,6 +6465,10 @@ struct GameSer {
     #[serde(default)]
     observed_appeal: Vec<(Pos, i32)>,
     #[serde(default)]
+    observed_fresh_water: Vec<(Pos, bool)>,
+    #[serde(default)]
+    observed_tourism_per_turn: Vec<(usize, f64)>,
+    #[serde(default)]
     observed_climate: Option<ObservedClimate>,
     #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
@@ -6648,6 +6664,8 @@ impl From<GameSer> for Game {
             observed_route_yields: s.observed_route_yields.into_iter().collect(),
             observed_route_options: s.observed_route_options.into_iter().collect(),
             observed_appeal: s.observed_appeal.into_iter().collect(),
+            observed_fresh_water: s.observed_fresh_water.into_iter().collect(),
+            observed_tourism_per_turn: s.observed_tourism_per_turn.into_iter().collect(),
             observed_climate: s.observed_climate,
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
@@ -6866,6 +6884,8 @@ impl From<Game> for GameSer {
             observed_route_yields: g.observed_route_yields.into_iter().collect(),
             observed_route_options: g.observed_route_options.into_iter().collect(),
             observed_appeal: g.observed_appeal.into_iter().collect(),
+            observed_fresh_water: g.observed_fresh_water.into_iter().collect(),
+            observed_tourism_per_turn: g.observed_tourism_per_turn.into_iter().collect(),
             observed_climate: g.observed_climate,
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
@@ -7306,6 +7326,8 @@ impl Game {
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
             observed_appeal: BTreeMap::new(),
+            observed_fresh_water: BTreeMap::new(),
+            observed_tourism_per_turn: BTreeMap::new(),
             observed_route_options: BTreeMap::new(),
             observed_climate: None,
             closed_borders: BTreeSet::new(),
@@ -17898,6 +17920,14 @@ impl Game {
                     .get(*n)
                     .is_some_and(|t| t.terrain == "lake" || t.feature.as_deref() == Some("oasis"))
             });
+        // The host's own answer for the centre plot, when a live mirror has it:
+        // `Plot:IsFreshWater()` already folds in rivers, lakes and oases, and a
+        // lake the export names `TERRAIN_COAST` is one the derivation misses.
+        let fresh = self
+            .observed_fresh_water
+            .get(&city.pos)
+            .copied()
+            .unwrap_or(fresh);
         let coastal = self.nbrs(city.pos).iter().any(|n| {
             self.map
                 .get(*n)
@@ -48634,6 +48664,15 @@ impl Game {
     }
 
     pub fn tourism_per_turn(&self, pid: usize) -> f64 {
+        if let Some(&observed) = self.observed_tourism_per_turn.get(&pid) {
+            return observed;
+        }
+        self.tourism_components_per_turn(pid).0
+    }
+
+    /// The engine's own tourism per turn, ignoring any host reading — what
+    /// `live_divergence` scores against the next export.
+    pub fn tourism_per_turn_model(&self, pid: usize) -> f64 {
         self.tourism_components_per_turn(pid).0
     }
 

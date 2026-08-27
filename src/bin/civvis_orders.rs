@@ -1986,7 +1986,8 @@ fn append_aid_gift_order(
     };
     let target = emergency.target;
     if orders.iter().any(|order| {
-        order.subject == Some(target) && matches!(order.kind, "war" | "peace" | "delegation")
+        order.subject == Some(target)
+            && matches!(order.kind, "war" | "peace" | "delegation" | "denounce")
     }) {
         return Some("aid_gift_hold:diplomacy_conflict");
     }
@@ -4428,6 +4429,19 @@ fn translate(
             verb: Some("RESIDENT_EMBASSY".to_string()),
             pos: None,
         }),
+        // A denouncement is a diplomatic SESSION on the host, not a player
+        // operation: the shipped view opens it with
+        // `DiplomacyManager.RequestSession(local, other, "DENOUNCE")`
+        // (DiplomacyActionView.lua:469), the same call the delegation arm
+        // above makes with its own session name. Until 2026-08-27 the action
+        // fell through `_ => None` and the host's grievances the board now
+        // reads (#2590) could raise a denouncement it had no way to deliver.
+        Action::Denounce { player } => Some(Order {
+            kind: "denounce",
+            subject: host_player_target(mirror_state, state, *player),
+            verb: Some("DENOUNCE".to_string()),
+            pos: None,
+        }),
         // ★★★★★ THE ENVOYS THE SEAT IS HOLDING, SPENT. `SendEnvoy` never reached
         // this match — not because it had no counterpart, but because the
         // mirror never carried `envoys_free`, so the planning board never
@@ -4764,6 +4778,17 @@ fn at_war_with(state: &civvis::mirror::StateSnapshot, player: i64) -> Option<boo
                 .find(|m| m.player as i64 == player)
                 .map(|m| m.at_war)
         })
+}
+
+/// The turn we denounced `player` as the host records it (`-1` for never):
+/// `Some(None)` when the rival is in the frame but an older mod did not
+/// export the field, `None` when the rival is not in the frame at all.
+fn our_denounce_turn_of(state: &civvis::mirror::StateSnapshot, player: i64) -> Option<Option<i64>> {
+    state
+        .rivals
+        .iter()
+        .find(|r| r.player as i64 == player)
+        .map(|r| r.our_denounce_turn)
 }
 
 /// Whether whatever stood on `pos` before the order is damaged, gone, or ours.
@@ -5194,6 +5219,15 @@ fn verify_order(
         "war" => match order.subject.and_then(|p| at_war_with(after, p)) {
             Some(true) => Verdict::Verified,
             Some(false) => failed("not_at_war".to_string()),
+            None => failed("player_unseen".to_string()),
+        },
+        // The host's own record of OUR denouncement (`GetDenounceTurn`, the
+        // turn it was made, -1 for none) crosses on every rival since #2590;
+        // a session asked this turn lands on the next frame with that turn.
+        "denounce" => match order.subject.and_then(|p| our_denounce_turn_of(after, p)) {
+            Some(Some(since)) if since >= turn as i64 => Verdict::Verified,
+            Some(Some(_)) => failed("not_denounced".to_string()),
+            Some(None) => Verdict::Unverifiable,
             None => failed("player_unseen".to_string()),
         },
         "governor_appoint" | "governor_assign" => {
@@ -10392,6 +10426,12 @@ mod tests {
         assert_eq!(delegation.subject, Some(4));
         assert_eq!(delegation.verb.as_deref(), Some("DIPLOMATIC_DELEGATION"));
 
+        let denounce = translate(&Action::Denounce { player: 1 }, &mirror, &state)
+            .expect("a denouncement of a mapped rival translates");
+        assert_eq!(denounce.kind, "denounce");
+        assert_eq!(denounce.subject, Some(4));
+        assert_eq!(denounce.verb.as_deref(), Some("DENOUNCE"));
+
         let embassy = translate(&Action::SendEmbassy { player: 1 }, &mirror, &state)
             .expect("an embassy to a mapped rival translates");
         assert_eq!(embassy.kind, "delegation");
@@ -11859,7 +11899,7 @@ mod tests {
             o: -1,
             w: false,
             i: false,
-            fw: false,
+            fw: None,
             im: None,
             rv: 0,
             ri: false,
@@ -12563,6 +12603,44 @@ mod order_postcondition_tests {
         assert_eq!(
             check(&envoy, &before, &held, &[]),
             failed("envoys_unchanged")
+        );
+    }
+
+    /// A denouncement is verified by the host's own `GetDenounceTurn` on the
+    /// next frame (#2590 exports it as `our_denounce_turn`), never by the
+    /// session having been asked.
+    #[test]
+    fn a_denouncement_is_verified_by_the_hosts_own_denounce_turn() {
+        let rival = |since: Option<i64>| StateRival {
+            player: 2,
+            our_denounce_turn: since,
+            ..StateRival::default()
+        };
+        let mut before = frame(80);
+        before.rivals = vec![rival(Some(-1))];
+        let denounce = order("denounce", Some(2), Some("DENOUNCE"), None);
+
+        let mut after = frame(81);
+        after.rivals = vec![rival(Some(80))];
+        assert_eq!(check(&denounce, &before, &after, &[]), Verdict::Verified);
+
+        after.rivals = vec![rival(Some(-1))];
+        assert_eq!(
+            check(&denounce, &before, &after, &[]),
+            failed("not_denounced")
+        );
+
+        after.rivals = vec![rival(None)];
+        assert_eq!(
+            check(&denounce, &before, &after, &[]),
+            Verdict::Unverifiable,
+            "an older mod that does not export the turn cannot answer"
+        );
+
+        after.rivals = Vec::new();
+        assert_eq!(
+            check(&denounce, &before, &after, &[]),
+            failed("player_unseen")
         );
     }
 
