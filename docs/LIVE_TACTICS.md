@@ -630,3 +630,23 @@ tactical layer's accuracy is not obviously its constraint. `docs/AI_GAPS.md`
 carries the hypothesis (`attack_threshold` was calibrated against the biased
 estimate, so exactness without re-fitting the toll is two changes at once)
 and the finding that the engine has no Great General to model.
+## 18. Swap rotation, and what it says about why (2026-08-26)
+
+`Action::Swap` has been legal, tested and correctly refused in the engine
+since `do_swap`, and no controller had ever chosen one. `swap-rotation`
+(`src/ai/advanced/swap_rotation.rs`, opt-in, off) is its first use: a unit
+in contact and at or below `withdraw_hp` trades places with an adjacent
+melee friend that is 25 hp healthier and further from the enemy, ahead of
+the recovery step that would otherwise walk it away and take the tile with
+it.
+
+Positive on every instrument and significant on none: curriculum
++15.6 ± 11.3 with healing on and +14.4 ± 9.6 with it off, the 68-war file
++7.5 ± 6.0, `battle_bench` +20.2 ± 14.9 with the exchange ratio at 1.044
+against 0.958. `the_reserve` — the position built to charge for a line
+handled piecemeal — carries the curriculum at +115.
+
+**The heal-off reading is the finding.** The gene was written expecting to
+need healing, and it does not: the wounded unit never has to come back. What
+pays is that the line does not open when it leaves. That is a different
+claim from "rotate to heal", and it is the one the numbers support.

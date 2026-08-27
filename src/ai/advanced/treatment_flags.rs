@@ -3021,6 +3021,19 @@ impl AdvancedAi {
         self.base.defend_where_you_stand = false;
     }
 
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it — the engine's own `Action::Swap`, which no controller has
+    /// ever chosen — so the line does not open when it leaves. See
+    /// `swap_rotation`.
+    pub fn enable_swap_rotation(&mut self) {
+        self.swap_rotation = true;
+    }
+
+    /// The twin of `enable_swap_rotation`.
+    pub fn disable_swap_rotation(&mut self) {
+        self.swap_rotation = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

@@ -710,6 +710,9 @@ impl GrandStrategy {
 /// time" is not otherwise observable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StrategyCensus {
+    /// Wounded front-liners traded out of the line for a fresh unit. See
+    /// `advanced/swap_rotation.rs`.
+    pub swap_rotations: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -5074,6 +5077,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A wounded unit holding a front trades places with the fresh unit
+    /// behind it, so the line does not open when it leaves. Opt-in gene
+    /// `swap-rotation`; see `advanced/swap_rotation.rs`.
+    swap_rotation: bool,
     /// A shooter's tile beside a melee friend that stands nearer the enemy
     /// earns two screen weights — the arena's own definition of screened.
     /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
@@ -5632,6 +5639,10 @@ mod recon_disruption;
 /// Price it like the engine: the exact exchange, and the defender priced
 /// where it would stand. Two opt-in genes; see `advanced/engine_pricing.rs`.
 mod engine_pricing;
+
+/// Swap rotation: the wounded front-liner trades places with the fresh unit
+/// behind it. One opt-in gene; see `advanced/swap_rotation.rs`.
+mod swap_rotation;
 
 /// The fire plan: this turn's kills, allocated once from the engine's own
 /// arithmetic, ordering the unit loop and biasing the attack scan. One
@@ -6423,6 +6434,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            swap_rotation: false,
             screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
@@ -8911,7 +8923,15 @@ impl AdvancedAi {
                         .get(city)
                         .is_some_and(|city| g.city_religion(city) == Some(faith))
                 })
-                .count();
+                .count()
+                // The host's own majority answer, where the mirror recorded
+                // one, counts the cities of theirs we have never seen; on a
+                // native board it is the same test as the count above.
+                .max(if g.civ_follows_religion(other.id, faith) {
+                    majority
+                } else {
+                    0
+                });
             required += majority;
             held += following.min(majority);
         }
@@ -8928,17 +8948,13 @@ impl AdvancedAi {
             .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
             .map(|player| player.id)
             .collect();
+        // `civ_follows_religion` is the engine's `following * 2 > cities`
+        // test on a native board and the host's `GetReligionInMajorityOfCities`
+        // answer on a mirrored one, where a rival's unseen cities count.
         let converted = g.players[pid].religion.as_ref().map_or(0, |religion| {
             living_majors
                 .iter()
-                .filter(|other| {
-                    let cities = g.player_city_ids(**other);
-                    let following = cities
-                        .iter()
-                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
-                        .count();
-                    !cities.is_empty() && following * 2 > cities.len()
-                })
+                .filter(|other| g.civ_follows_religion(**other, religion.as_str()))
                 .count()
         });
         (converted, living_majors.len())
@@ -30972,6 +30988,15 @@ impl AdvancedAi {
                 || (self.settler_guard_holds_on() && self.formationless_settler_escort()))
         {
             if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
+                return acted;
+            }
+        }
+        // `swap-rotation`: a wounded unit holding a front trades places with
+        // the fresh unit behind it, so the line does not open when it
+        // leaves. Ahead of recovery deliberately — recovery is what walks it
+        // away. `None` with the gene off. See `advanced/swap_rotation.rs`.
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.swap_rotation_step(g, pid, uid) {
                 return acted;
             }
         }

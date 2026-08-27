@@ -193,6 +193,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `exchange-is-the-engines` | off (unmeasured) | Price a strike with the two strengths the engine will resolve it with, so matchup, flanking, adjacent support, ground and the river reach the exchange evaluation. | 1 \| 1 |
 | `fire-plan` | off (unmeasured) | The turn's fire is planned once from the engine's own arithmetic — the kills that can be finished, their shooters first in the unit order, ranged before the melee finisher, each biased toward its planned target — without a clone. | 1 \| 1 |
 | `screen-the-shooters` | off (unmeasured) | A shooter's tile beside a melee friend that stands nearer the enemy earns two screen weights — the arena's own definition of screened, paid to the archer that stays behind the line. | 1 \| 1 |
+| `swap-rotation` | off (unmeasured) | A wounded unit holding a front trades places with the fresh unit behind it — the engine's own `Action::Swap`, which no controller has ever chosen — so the line does not open when it leaves. | 1 \| 1 |
 
 ## Removed from the code
 

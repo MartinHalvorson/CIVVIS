@@ -653,6 +653,9 @@ pub struct VictoryRaces {
     pub religious: f64,
     pub converted_civs: usize,
     pub religious_target: usize,
+    /// Cities anywhere following this seat's religion, the religion lane's
+    /// own number on the shipped overview ([`Game::cities_following_religion`]).
+    pub cities_following_religion: usize,
     pub diplomatic: f64,
     pub diplomatic_points: i64,
     pub domination: f64,
@@ -3929,6 +3932,16 @@ pub struct ObservedPublicEmpireStats {
     pub foreign_tourists: Option<usize>,
     #[serde(default)]
     pub domestic_tourists: Option<usize>,
+    /// Two more of that screen's own lane numbers: the religion lane's cities
+    /// following this seat's religion (`GetNumCitiesFollowingReligion`, which
+    /// counts cities the seat has never seen) and the domination lane's
+    /// military strength without the treasury
+    /// (`GetMilitaryStrengthWithoutTreasury` — the army alone, where
+    /// `observed_military_power` is the ribbon figure with Gold folded in).
+    #[serde(default)]
+    pub cities_following_religion: Option<usize>,
+    #[serde(default)]
+    pub military_no_treasury: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -5699,6 +5712,21 @@ pub struct Game {
     /// this empty and derive every standing from their full board.
     #[serde(default)]
     pub observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
+    /// The religion a majority of a seat's cities follow, as the host reports
+    /// it for every met major (`GetReligionInMajorityOfCities`, the test the
+    /// shipped religion tab runs to call a civilization converted), keyed by
+    /// seat. [`Game::majority_religion_of`] prefers it to counting the cities
+    /// the board holds, which for a rival are only the ones in view. Empty on
+    /// a native game.
+    #[serde(default)]
+    pub observed_majority_religion: BTreeMap<usize, String>,
+    /// Tourists one seat's culture draws from another as the host counts them
+    /// (`GetTouristsFrom` on the source's culture), keyed (tourism source,
+    /// where the tourists come from) — the order `visiting_tourists_from`
+    /// takes. The mirror records our seat's draw from each met rival, the
+    /// per-rival term of `foreign_tourists`. Empty on a native game.
+    #[serde(default)]
+    pub observed_visiting_tourists: BTreeMap<(usize, usize), i64>,
     /// Per-city host-to-model corrections and exact citizen assignments for a
     /// mirrored Firaxis turn. Native games leave these empty. Corrections are
     /// additive so counterfactual buildings, policies, and assignments still
@@ -6401,6 +6429,11 @@ struct GameSer {
     #[serde(default)]
     observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
     #[serde(default)]
+    observed_majority_religion: BTreeMap<usize, String>,
+    /// A list, not a map: JSON cannot key an object by a tuple.
+    #[serde(default)]
+    observed_visiting_tourists: Vec<((usize, usize), i64)>,
+    #[serde(default)]
     observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
     #[serde(default)]
     observed_city_amenity_adjustments: BTreeMap<u32, i64>,
@@ -6604,6 +6637,8 @@ impl From<GameSer> for Game {
             observed_leader_types: s.observed_leader_types,
             observed_yield_adjustments: s.observed_yield_adjustments,
             observed_public_empire_stats: s.observed_public_empire_stats,
+            observed_majority_religion: s.observed_majority_religion,
+            observed_visiting_tourists: s.observed_visiting_tourists.into_iter().collect(),
             observed_city_yield_adjustments: s.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: s.observed_city_housing_adjustments,
@@ -6820,6 +6855,8 @@ impl From<Game> for GameSer {
             observed_leader_types: g.observed_leader_types,
             observed_yield_adjustments: g.observed_yield_adjustments,
             observed_public_empire_stats: g.observed_public_empire_stats,
+            observed_majority_religion: g.observed_majority_religion,
+            observed_visiting_tourists: g.observed_visiting_tourists.into_iter().collect(),
             observed_city_yield_adjustments: g.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: g.observed_city_housing_adjustments,
@@ -7252,6 +7289,8 @@ impl Game {
             observed_leader_types: BTreeMap::new(),
             observed_yield_adjustments: BTreeMap::new(),
             observed_public_empire_stats: BTreeMap::new(),
+            observed_majority_religion: BTreeMap::new(),
+            observed_visiting_tourists: BTreeMap::new(),
             observed_city_yield_adjustments: BTreeMap::new(),
             observed_city_amenity_adjustments: BTreeMap::new(),
             observed_city_housing_adjustments: BTreeMap::new(),
@@ -47535,11 +47574,75 @@ impl Game {
         {
             return 0;
         }
+        // The host's own per-pair count where the mirror recorded one
+        // (`GetTouristsFrom`), exactly as `foreign_tourists` prefers the
+        // observed aggregate; a native game has no entries.
+        if let Some(observed) = self.observed_visiting_tourists.get(&(source, target)) {
+            return (*observed).max(0);
+        }
         let divisor = self.starting_major_count() as f64 * TOURISM_PER_VISITOR;
         if divisor <= 0.0 {
             return 0;
         }
         (self.tourism_pressure_against(source, target) / divisor).floor() as i64
+    }
+
+    /// The religion a majority of `pid`'s cities follow — the shipped test for
+    /// a civilization being converted (`GetReligionInMajorityOfCities`,
+    /// WorldRankings.lua:2049): the host's answer where the mirror recorded
+    /// one, else counted off the board by the engine's own rule,
+    /// `following * 2 > cities`. `None` when no religion holds a majority.
+    pub fn majority_religion_of(&self, pid: usize) -> Option<&str> {
+        if let Some(observed) = self.observed_majority_religion.get(&pid) {
+            return Some(observed.as_str());
+        }
+        let cities = self.player_city_ids(pid);
+        if cities.is_empty() {
+            return None;
+        }
+        let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
+        for cid in &cities {
+            if let Some(religion) = self.city_religion(&self.cities[cid]) {
+                *tally.entry(religion).or_insert(0) += 1;
+            }
+        }
+        tally
+            .into_iter()
+            .find(|(_, following)| following * 2 > cities.len())
+            .map(|(religion, _)| religion)
+    }
+
+    /// Whether `pid` counts as converted to `religion` for the Religious
+    /// Victory: a majority of its cities follow it. See
+    /// [`Self::majority_religion_of`] for where the answer comes from.
+    pub fn civ_follows_religion(&self, pid: usize, religion: &str) -> bool {
+        self.majority_religion_of(pid) == Some(religion)
+    }
+
+    /// Cities anywhere following `pid`'s religion — the religion lane's own
+    /// number on the shipped World Rankings overview
+    /// (`GetNumCitiesFollowingReligion`, WorldRankings.lua:44): the host's
+    /// count where the mirror recorded one, since it covers cities the seat
+    /// has never seen, else the board's.
+    pub fn cities_following_religion(&self, pid: usize) -> usize {
+        if let Some(observed) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.cities_following_religion)
+        {
+            return observed;
+        }
+        let Some(religion) = self
+            .players
+            .get(pid)
+            .and_then(|player| player.religion.as_deref())
+        else {
+            return 0;
+        };
+        self.cities
+            .values()
+            .filter(|city| self.city_religion(city) == Some(religion))
+            .count()
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {
@@ -51913,19 +52016,17 @@ impl Game {
             .copied()
             .filter(|candidate| player.team.is_none() || !self.same_team(pid, *candidate))
             .collect::<Vec<_>>();
+        // A civilization is converted when a majority of its cities follow
+        // the religion. `civ_follows_religion` asks the host's own majority
+        // answer where the mirror recorded one — a rival's unseen cities
+        // count there and cannot on the board — and the board's cities
+        // otherwise, by the same `following * 2 > cities` rule as before.
         let converted_civs = religious_rivals
             .iter()
             .filter(|candidate| {
-                let cities = self.player_city_ids(**candidate);
-                !cities.is_empty()
-                    && team_religions.iter().any(|religion| {
-                        cities
-                            .iter()
-                            .filter(|city| self.city_religion(&self.cities[city]) == Some(*religion))
-                            .count()
-                            * 2
-                            > cities.len()
-                    })
+                team_religions
+                    .iter()
+                    .any(|religion| self.civ_follows_religion(**candidate, religion))
             })
             .count();
         let religious_target = religious_rivals.len();
@@ -52010,6 +52111,7 @@ impl Game {
             religious,
             converted_civs,
             religious_target,
+            cities_following_religion: self.cities_following_religion(pid),
             diplomatic,
             diplomatic_points,
             domination,
