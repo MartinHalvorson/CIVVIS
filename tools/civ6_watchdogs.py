@@ -67,6 +67,9 @@ from pathlib import Path
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 HERE = Path(__file__).resolve().parent
+
+sys.path.insert(0, str(HERE))
+import _common  # noqa: E402
 GREAT_PERSON_UNIQUE_TYPES = {"UNIT_COMANDANTE_GENERAL"}
 GOVERNOR_BASE_PROMOTIONS = {
     "GOVERNOR_THE_AMBASSADOR": "GOVERNOR_PROMOTION_AMBASSADOR_MESSENGER",
@@ -88,8 +91,7 @@ def is_bridge_managed_great_person(unit: dict) -> bool:
 
 
 def newest_run() -> Path | None:
-    runs = [p for p in RUN_ROOT.iterdir() if (p / "events.jsonl").exists()]
-    return max(runs, key=lambda p: (p / "events.jsonl").stat().st_mtime) if runs else None
+    return _common.newest_run(RUN_ROOT, "events.jsonl")
 
 
 def read_events(run: Path) -> list[dict]:

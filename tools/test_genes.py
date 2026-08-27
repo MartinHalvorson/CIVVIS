@@ -569,6 +569,7 @@ class TheOperatorPins(unittest.TestCase):
             "quest-boost",
             "quest-trade-route",
             "recon-replacement",
+            "relief-column-marches",
             "relief-targets-the-siege",
             "religious-units-heal-first",
             "research-tier-premium",
@@ -578,6 +579,7 @@ class TheOperatorPins(unittest.TestCase):
             "settler-target-hysteresis-2",
             "settler-threat-detour",
             "stranded-settler-discount",
+            "threatened-city-reserve",
             "unchosen-war-keeps-the-lane",
             "unit-cost-efficiency",
             "unit-objective-memory",
@@ -586,7 +588,7 @@ class TheOperatorPins(unittest.TestCase):
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 49)
+        self.assertEqual(len(pins), 51)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         # ⭐ The versioned family the operator moved on 2026-08-26: the ship
@@ -1952,6 +1954,44 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertGreater(len(desc), 50)
         self.assertTrue(desc["recon-replacement"].startswith("Rebuild the recon arm"))
         self.assertTrue(desc["loyalty-rate-alarm"].startswith("Rank loyalty emergencies"))
+
+    def test_descriptions_matches_the_slow_per_gene_regex_search(self):
+        """`descriptions()` was rewritten from one `re.search` pair per gene
+        (426 calls on the real registry — 10.9 s of the 14.45 s `check`
+        baseline; the nested-quantifier doc-comment group backtracks badly
+        on every miss) into two `re.finditer` passes with a dict lookup per
+        gene. This runs the ORIGINAL per-gene implementation over the real
+        registry and the real `treatment_flags.rs` / `advanced.rs` / `ai.rs`
+        sources and checks every tag's sentence is identical to the new
+        implementation's — so the rewrite is proven output-preserving, not
+        just plausible."""
+
+        def descriptions_slow() -> dict[str, str]:
+            reg = genes.registry()
+            flags = genes.FLAGS_RS.read_text()
+            fields = genes.ADVANCED_RS.read_text() + "\n" + genes.AI_RS.read_text()
+            out: dict[str, str] = {}
+            for tag, (field, toggle) in reg.items():
+                candidates = []
+                m = re.search(
+                    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_"
+                    + re.escape(toggle) + r"\(", flags)
+                if m:
+                    candidates.append(genes._first_sentence(m.group(1)))
+                m = re.search(
+                    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub(?:\(crate\))? )?"
+                    + re.escape(field) + r": bool,", fields)
+                if m:
+                    candidates.append(genes._first_sentence(m.group(1)))
+                usable = [c for c in candidates if c and not c.startswith("See ")]
+                out[tag] = (usable or candidates or [""])[0]
+            return out
+
+        slow = descriptions_slow()
+        fast = ranking.descriptions()
+        self.assertEqual(set(fast), set(slow))
+        for tag in slow:
+            self.assertEqual(fast[tag], slow[tag], tag)
 
     def test_operator_columns_are_in_the_requested_order(self):
         header = next(

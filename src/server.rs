@@ -58,6 +58,18 @@ fn process_identity() -> u32 {
     }
 }
 
+/// A panic anywhere in the request-handling thread while it holds one of
+/// these locks — malformed input reaching an `unwrap` deeper in the call
+/// tree, say — poisons the mutex. `Mutex::lock` then errors forever after,
+/// which used to take the whole exhibition offline: one bad request killed
+/// every request behind it. The data behind a poisoned lock was left in
+/// whatever state it was in the instant its holder panicked, which for every
+/// mutex in this file is a plain value type with no invariant that spans two
+/// fields, so reading it back is safe; recover the guard and keep serving.
+fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
 #[cfg(not(target_arch = "wasm32"))]
@@ -257,7 +269,7 @@ static MACHINE_METRICS_CACHE: OnceLock<Mutex<Option<MachineMetricsSnapshot>>> = 
 fn sampled_machine_metrics() -> MachineMetrics {
     let cache = MACHINE_METRICS_CACHE.get_or_init(|| Mutex::new(None));
     let now = Instant::now();
-    let mut held = cache.lock().unwrap();
+    let mut held = lock_or_recover(cache);
     if let Some(snapshot) = *held {
         if now.duration_since(snapshot.sampled_at) < MACHINE_METRICS_SAMPLE_INTERVAL {
             return snapshot.metrics;
@@ -299,7 +311,7 @@ fn cpu_percent_from_ticks(previous: (u64, u64), current: (u64, u64)) -> Option<f
 fn host_cpu_percent() -> Option<f64> {
     static PREVIOUS: OnceLock<Mutex<Option<(u64, u64)>>> = OnceLock::new();
     let current = linux_cpu_ticks(&std::fs::read_to_string("/proc/stat").ok()?)?;
-    let mut held = PREVIOUS.get_or_init(|| Mutex::new(None)).lock().unwrap();
+    let mut held = lock_or_recover(PREVIOUS.get_or_init(|| Mutex::new(None)));
     let measured = (*held).and_then(|previous| cpu_percent_from_ticks(previous, current));
     *held = Some(current);
     measured.and_then(bounded_percent)
@@ -1643,7 +1655,7 @@ fn blend(slot: &AtomicU64, sample: u64) {
 impl Shared {
     /// Announce a finished turn to the pages parked waiting for one.
     fn note_turn_ready(&self, frame: SpectatorFrame) {
-        *self.latest.lock().unwrap() = Some(frame);
+        *lock_or_recover(&self.latest) = Some(frame);
         self.turn_ready.notify_all();
     }
 
@@ -1657,7 +1669,7 @@ impl Shared {
     fn wait_for_next_turn(&self, have: Option<SpectatorFrame>) {
         let Some(held) = have else { return };
         let deadline = Instant::now() + STATE_LONG_POLL;
-        let mut latest = self.latest.lock().unwrap();
+        let mut latest = lock_or_recover(&self.latest);
         loop {
             // What the game is on, rather than only what the stepper last
             // announced. A world replaced outright — a new game, a save loaded
@@ -1668,7 +1680,7 @@ impl Shared {
             // between looking and listening. Nothing holds the session lock
             // while ringing it, so taking them in this order is safe.
             let current = {
-                let session = self.session.lock().unwrap();
+                let session = lock_or_recover(&self.session);
                 spectator_frame(
                     &session.game,
                     self.frame_sequence.load(Ordering::Relaxed),
@@ -1685,17 +1697,11 @@ impl Shared {
     }
 
     fn note_frame_delivered(&self, viewer: &str, frame: SpectatorFrame) {
-        self.frame_delivery
-            .lock()
-            .unwrap()
-            .frame_delivered(viewer, frame, Instant::now());
+        lock_or_recover(&self.frame_delivery).frame_delivered(viewer, frame, Instant::now());
     }
 
     fn note_viewer_request(&self, viewer: &str, painted: Option<SpectatorFrame>) {
-        self.frame_delivery
-            .lock()
-            .unwrap()
-            .viewer_request(viewer, painted, Instant::now());
+        lock_or_recover(&self.frame_delivery).viewer_request(viewer, painted, Instant::now());
         // This is the only event that can satisfy Martin's complete-frame
         // simulation gate. Merely writing the state to a socket must never
         // advance the simulation.
@@ -1709,7 +1715,7 @@ impl Shared {
     /// denominator: turns it simulated, so zero can be told apart from a game
     /// where nobody ever pressed it.
     fn frame_audit(&self) -> (u64, Option<SpectatorFrame>, usize, u64) {
-        let mut delivery = self.frame_delivery.lock().unwrap();
+        let mut delivery = lock_or_recover(&self.frame_delivery);
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
         let painted = delivery
@@ -1756,7 +1762,7 @@ impl Shared {
         };
         let marks: Vec<u64> = tiles.iter().map(tile_mark).collect();
         let now = Instant::now();
-        let mut delivery = self.frame_delivery.lock().unwrap();
+        let mut delivery = lock_or_recover(&self.frame_delivery);
         let seat = delivery.seat(viewer, now);
         let changed: Option<Vec<Value>> = seat
             .tiles
@@ -1803,7 +1809,7 @@ impl Shared {
     /// control is to get out of the world that is running, so it cannot be the
     /// one request that waits on it: see the `supervisor_request` field.
     fn request_supervised_new_game(&self, request: &Value) -> Result<(), String> {
-        let base = self.live_params.lock().unwrap().clone();
+        let base = lock_or_recover(&self.live_params).clone();
         if !base.supervised {
             return Err("fresh-code launches require the spectator supervisor".into());
         }
@@ -1838,7 +1844,7 @@ impl Shared {
             // This exceptional path may take the simulation lock. A genuine
             // finale has no AI turn in flight, while manual Restart remains
             // lock-free so it can still escape a long or wedged turn.
-            let session = self.session.lock().unwrap();
+            let session = lock_or_recover(&self.session);
             let human_was_eliminated = !session.params.spectate
                 && session
                     .game
@@ -1863,7 +1869,7 @@ impl Shared {
             .unwrap_or_else(|| self.paused.load(Ordering::Relaxed));
         let mut params = new_game_params(&base, request);
         params.spectate = true;
-        *self.supervisor_request.lock().unwrap() = Some(json!({
+        *lock_or_recover(&self.supervisor_request) = Some(json!({
             "mode": mode,
             "source": restart_source,
             "server_instance": process_identity(),
@@ -1882,16 +1888,14 @@ impl Shared {
 
     /// Queue setup controls for the next world without changing this one.
     fn stage_next_game_settings(&self, request: &Value) {
-        let base = self.live_params.lock().unwrap().clone();
+        let base = lock_or_recover(&self.live_params).clone();
         let (params, _) = crate::routes::next_game_settings(&base, request);
-        *self.next_game_params.lock().unwrap() = Some(params);
+        *lock_or_recover(&self.next_game_params) = Some(params);
     }
 
     /// What the next world will be started from, as the setup panel reads it.
     fn staged_next_game_settings(&self) -> Value {
-        self.next_game_params
-            .lock()
-            .unwrap()
+        lock_or_recover(&self.next_game_params)
             .as_ref()
             .map(simulation_settings)
             .unwrap_or(Value::Null)
@@ -1899,12 +1903,12 @@ impl Shared {
 
     /// Hand the queue to the world that is about to consume it.
     fn take_next_game_params(&self) -> Option<Params> {
-        self.next_game_params.lock().unwrap().take()
+        lock_or_recover(&self.next_game_params).take()
     }
 
     /// The Tactics match in progress, for `/state`.
     fn match_series(&self) -> Option<crate::setup::MatchSeries> {
-        self.match_series.lock().unwrap().clone()
+        lock_or_recover(&self.match_series).clone()
     }
 
     /// Carry a Tactics match on past the battle that just finished.
@@ -1918,7 +1922,7 @@ impl Shared {
     /// endless tally.
     fn advance_match(&self, finished: &Game, next: Option<Params>) -> Option<Params> {
         let mut next = next?;
-        let mut held = self.match_series.lock().unwrap();
+        let mut held = lock_or_recover(&self.match_series);
         if !next.map_script.is_battlefield() || next.tactics.best_of <= 1 {
             *held = None;
             return Some(next);
@@ -1955,13 +1959,13 @@ impl Shared {
 
     /// The request the supervisor is being asked to act on, if any.
     fn pending_new_game_request(&self) -> Option<Value> {
-        self.supervisor_request.lock().unwrap().clone()
+        lock_or_recover(&self.supervisor_request).clone()
     }
 
     /// Adopt the settings a freshly started world runs under, so the next
     /// new-game request can be normalized against them without the lock.
     fn adopt_live_params(&self, params: &Params) {
-        *self.live_params.lock().unwrap() = params.clone();
+        *lock_or_recover(&self.live_params) = params.clone();
     }
 
     /// Whether any viewer still present is owed `frame`.
@@ -1970,15 +1974,13 @@ impl Shared {
     /// stepper uses it to re-confirm, under the frame gate, that the answer it
     /// waited for outside the gate is still true.
     fn frame_outstanding(&self, frame: SpectatorFrame) -> bool {
-        self.frame_delivery
-            .lock()
-            .unwrap()
+        lock_or_recover(&self.frame_delivery)
             .wait_remaining(frame, Instant::now())
             .is_some()
     }
 
     fn wait_for_turn_frame(&self, frame: SpectatorFrame) {
-        let mut delivery = self.frame_delivery.lock().unwrap();
+        let mut delivery = lock_or_recover(&self.frame_delivery);
         loop {
             let Some(remaining) = delivery.wait_remaining(frame, Instant::now()) else {
                 return;
@@ -3806,7 +3808,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // until the end of the whole `if`, so testing the lock inline would
         // hold the *session* across the sleep below and stall every request
         // that needs it.
-        let being_played_by_hand = !sh.session.lock().unwrap().params.spectate;
+        let being_played_by_hand = !lock_or_recover(&sh.session).params.spectate;
         if being_played_by_hand {
             std::thread::sleep(Duration::from_millis(300));
             continue;
@@ -3831,11 +3833,11 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // because seating happens under the gate too.
         let simulation_frame_gate = loop {
             let current_frame = {
-                let s = sh.session.lock().unwrap();
+                let s = lock_or_recover(&sh.session);
                 spectator_frame(&s.game, sh.frame_sequence.load(Ordering::Relaxed))
             };
             sh.wait_for_turn_frame(current_frame);
-            let gate = sh.simulation_frame_gate.lock().unwrap();
+            let gate = lock_or_recover(&sh.simulation_frame_gate);
             if !sh.frame_outstanding(current_frame) {
                 break gate;
             }
@@ -3856,7 +3858,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
         let mut waiting = false; // between games nothing is being simulated
         let mut completed_frame = None;
         {
-            let mut s = sh.session.lock().unwrap();
+            let mut s = lock_or_recover(&sh.session);
             if !s.params.spectate {
                 // Seating can change between the check above and this one, so
                 // this stays as the authority — but it releases the gate
@@ -4067,7 +4069,14 @@ fn decorate(o: &mut Value, sh: &Shared) {
 }
 
 fn handle(stream: &mut TcpStream, sh: &Shared) {
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    // A duplicated socket handle can fail under fd exhaustion or a raced
+    // shutdown; the connection is not worth serving without a reader, and
+    // `stream` itself is not yet in a state answerable with a response, so
+    // this is dropped exactly as a failed first `read_line` is below.
+    let Ok(clone) = stream.try_clone() else {
+        return;
+    };
+    let mut reader = BufReader::new(clone);
     let mut line = String::new();
     if reader.read_line(&mut line).is_err() || line.is_empty() {
         return;
@@ -4202,7 +4211,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // long polls and full-map resyncs: those must reach the server
             // carrying the painted acknowledgement that releases it.
             let _first_frame = if painting_viewer == Some("") && have.is_none() {
-                Some(sh.simulation_frame_gate.lock().unwrap())
+                Some(lock_or_recover(&sh.simulation_frame_gate))
             } else {
                 None
             };
@@ -4240,7 +4249,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let wants_reasoning = query_value(&request_target, "think")
                 .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
             let (mut o, frame) = {
-                let session = sh.session.lock().unwrap();
+                let session = lock_or_recover(&sh.session);
                 let frame = spectator_frame(
                     &session.game,
                     sh.frame_sequence.load(Ordering::Relaxed),
@@ -4282,7 +4291,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // a view nobody looks at.
         ("GET", "/status") => {
             let (frames_missed, frames_painted, viewers, autoplay_turns) = sh.frame_audit();
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let game = &session.game;
             respond_json(
                 stream,
@@ -4363,14 +4372,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             if let Some(v) = parsed["paused"].as_bool() {
                 sh.paused.store(v, Ordering::Relaxed);
             }
-            let mut session = sh.session.lock().unwrap();
+            let mut session = lock_or_recover(&sh.session);
             let mut o = crate::routes::pace(&mut session, &parsed);
             drop(session);
             decorate(&mut o, sh);
             respond_json(stream, &o);
         }
         ("GET", "/save") => {
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let save = crate::routes::save(&session);
             respond_json(stream, &save);
         }
@@ -4381,7 +4390,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // spectator tools and the Civ 6 bridge's site advisor; read-only.
         // `?city=<id>` narrows to one city, the default is every city.
         ("GET", "/adjacency") => {
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let only: Option<u32> = query_value(&request_target, "city")
                 .and_then(|city| city.parse().ok());
             let cities: Vec<Value> = session
@@ -4415,7 +4424,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // which is the one action that may cross, so the engine remains the
         // authority on whether the walk is legal now.
         ("POST", "/route") => {
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let answer = crate::routes::route_step(&session, &parsed);
             drop(session);
             respond_json(stream, &answer);
@@ -4425,7 +4434,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // points at somebody else's unit and gets the two things standing
         // there decides: how far it could move this turn, and what it sees.
         ("POST", "/intel") => {
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let answer = crate::routes::intel(&session, &parsed);
             drop(session);
             respond_json(stream, &answer);
@@ -4441,7 +4450,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 respond_json(stream, &json!({"error": "a save name is letters, digits, - and _"}));
                 return;
             };
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let result = write_save(&session.game, &path);
             let turn = session.game.turn;
             drop(session);
@@ -4459,7 +4468,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // authoritative RNG and world state.
         ("POST", "/load") => {
             let Some(name) = parsed["name"].as_str() else {
-                let mut session = sh.session.lock().unwrap();
+                let mut session = lock_or_recover(&sh.session);
                 let result = crate::routes::load_uploaded(&mut session, &parsed);
                 let mut out = session.state();
                 out["error"] = match result {
@@ -4489,7 +4498,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // mid-game, so refuse rather than pretend otherwise.
                     let active = crate::mods::active_names();
                     if game.mods != active {
-                        let session = sh.session.lock().unwrap();
+                        let session = lock_or_recover(&sh.session);
                         let mut out = session.state();
                         out["error"] = json!(format!(
                             "that save was played with mods {:?}, this server has {:?}",
@@ -4500,14 +4509,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                         respond_json(stream, &out);
                         return;
                     }
-                    let mut session = sh.session.lock().unwrap();
+                    let mut session = lock_or_recover(&sh.session);
                     let params = session.params.clone();
                     *session = Session::from_game(params, game);
                     sh.current_seed
                         .store(session.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&session.params);
                     if let Some(queued) = session.take_resumed_next_game_params() {
-                        *sh.next_game_params.lock().unwrap() = Some(queued);
+                        *lock_or_recover(&sh.next_game_params) = Some(queued);
                     }
                     let mut out = session.state();
                     out["error"] = Value::Null;
@@ -4515,7 +4524,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     out
                 }
                 Err(error) => {
-                    let session = sh.session.lock().unwrap();
+                    let session = lock_or_recover(&sh.session);
                     let mut out = session.state();
                     out["error"] = json!(error);
                     drop(session);
@@ -4526,7 +4535,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(stream, &out);
         }
         ("GET", "/rules") => {
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let answer = crate::routes::rules(&session, true);
             respond_json(stream, &answer);
         }
@@ -4534,7 +4543,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // is a count or the string "all"; `strategy` names who plays, and is
         // remembered on the seat so a run continued in chunks stays one agent.
         ("POST", "/autoplay") => {
-            let mut session = sh.session.lock().unwrap();
+            let mut session = lock_or_recover(&sh.session);
             let outcome =
                 match crate::routes::autoplay(&mut session, &parsed, Some(process_identity())) {
                     Ok(outcome) => outcome,
@@ -4558,10 +4567,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // `last_autoplay_request` without playing anything, and counting
             // there would charge a dropped response twice.
             if !replayed {
-                sh.frame_delivery
-                    .lock()
-                    .unwrap()
-                    .turns_simulated_without_a_frame(played);
+                lock_or_recover(&sh.frame_delivery).turns_simulated_without_a_frame(played);
             }
             decorate(&mut out, sh);
             respond_json(stream, &out);
@@ -4569,13 +4575,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/pedia") => {
             // Generated from the ruleset in play, mods included, so the GUI
             // reference never disagrees with the game it is attached to.
-            let session = sh.session.lock().unwrap();
+            let session = lock_or_recover(&sh.session);
             let answer = crate::routes::pedia(&session);
             drop(session);
             respond_json(stream, &answer);
         }
         ("POST", "/action") => {
-            let mut session = sh.session.lock().unwrap();
+            let mut session = lock_or_recover(&sh.session);
             let spectating = session.params.spectate;
             let outcome = crate::routes::action(&mut session, &parsed);
             let autosave = outcome.autosave_due(spectating);
@@ -4596,7 +4602,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(stream, &out);
         }
         ("POST", "/step") => {
-            let mut session = sh.session.lock().unwrap();
+            let mut session = lock_or_recover(&sh.session);
             let outcome = crate::routes::step(&mut session, &parsed);
             let mut out = outcome.out;
             let completed_frame = outcome.advanced.then(|| {
@@ -4615,8 +4621,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // winner and stop the stepper atomically, rather than racing a second
         // request to /pace against the first continued turn.
         ("POST", "/play-on") => {
-            let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
-            let mut session = sh.session.lock().unwrap();
+            let simulation_frame_gate = lock_or_recover(&sh.simulation_frame_gate);
+            let mut session = lock_or_recover(&sh.session);
             let outcome = match crate::routes::play_on(&mut session, &parsed) {
                 Ok(outcome) => outcome,
                 Err(error) => {
@@ -4641,13 +4647,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(stream, &out);
         }
         ("POST", "/view") => {
-            let mut session = sh.session.lock().unwrap();
+            let mut session = lock_or_recover(&sh.session);
             let out = crate::routes::view(&mut session, &parsed);
             drop(session);
             respond_json(stream, &out);
         }
         ("POST", "/spectator-status") => {
-            let mut session = sh.session.lock().unwrap();
+            let mut session = lock_or_recover(&sh.session);
             let answer = crate::routes::spectator_status(&mut session, &parsed);
             drop(session);
             respond_json(stream, &answer);
@@ -4663,7 +4669,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             );
         }
         ("POST", "/new") => {
-            let mut session = sh.session.lock().unwrap();
+            let mut session = lock_or_recover(&sh.session);
             let result = crate::routes::new_game(&mut session, &parsed);
             if result.is_ok() {
                 sh.current_seed
@@ -14544,6 +14550,61 @@ fetchpriority=\"high\""
         let mut state = shared.session.lock().unwrap().state();
         super::decorate(&mut state, shared);
         state
+    }
+
+    /// Malformed input reaching an `unwrap` deep in a handler used to panic
+    /// the worker thread while it held `session.lock()`, which poisoned the
+    /// mutex: every request behind it hit `.lock().unwrap()` in its turn and
+    /// panicked too, so one bad request took the whole exhibition offline.
+    /// `lock_or_recover` is meant to keep the next request served through
+    /// exactly that. Poison the lock the same way a real panic would — by
+    /// unwinding through a live guard — then confirm a real request over a
+    /// real socket still gets a real answer.
+    #[test]
+    fn a_poisoned_session_lock_still_serves_the_next_request() {
+        let mut params = current();
+        params.num_players = 2;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_827;
+        let shared = shared_for(Session::new(params));
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("a free port");
+        let port = listener.local_addr().unwrap().port();
+        let accept_shared = shared.clone();
+        std::thread::spawn(move || {
+            for mut s in listener.incoming().flatten() {
+                let shared = accept_shared.clone();
+                std::thread::spawn(move || super::handle(&mut s, &shared));
+            }
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "test server never came up");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        let poisoning = shared.clone();
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoning.session.lock().unwrap();
+            panic!("test-induced panic while holding the session lock");
+        }));
+        assert!(
+            panicked.is_err(),
+            "the deliberate panic should have reached catch_unwind"
+        );
+        assert!(
+            shared.session.is_poisoned(),
+            "the panic above should have poisoned the session mutex"
+        );
+
+        let status: Value = serde_json::from_str(
+            &http_get(port, "/status").expect("a response after the lock was poisoned"),
+        )
+        .expect("status is JSON");
+        assert_eq!(status["seed"], json!(20_260_827));
     }
 
     #[test]
