@@ -302,15 +302,6 @@ impl AdvancedAi {
         self.base.disable_live_motion_turn_accounting();
     }
 
-    /// Withholding twin for the base military picker's engine-legality
-    /// candidate screen (`BasicAi::legal_tactical_candidates`), which
-    /// production enables in `promoted_policy_envoy`. Only the
-    /// `advanced_without_legal_candidates` arm calls this, so the axis stays
-    /// measurable after shipping.
-    pub fn disable_legal_tactical_candidates(&mut self) {
-        self.base.legal_tactical_candidates = false;
-    }
-
     /// Refuse any step onto a tile the unit already stood on this turn, closing
     /// three-hop loops too.
     ///
@@ -602,20 +593,6 @@ impl AdvancedAi {
 
     pub fn disable_religion_sues_peace(&mut self) {
         self.religion_sues_peace = false;
-    }
-
-    /// Withhold the tribal-village pickup that production Advanced carries by
-    /// default (see `BasicAi::hut_collection`), so the evaluator arm
-    /// `advanced_without_hut_collection` can price it.
-    pub fn disable_hut_collection(&mut self) {
-        self.base.hut_collection = false;
-    }
-
-    /// Withhold the charted-village detour that production Advanced carries
-    /// by default (see `BasicAi::village_seeking`), so the evaluator arm
-    /// `advanced_without_village_seeking` can price it.
-    pub fn disable_village_seeking(&mut self) {
-        self.base.village_seeking = false;
     }
 
     /// Withhold the committed exploration goal that production Advanced
@@ -1143,17 +1120,6 @@ impl AdvancedAi {
         self.settler_founds_when_stalled = true;
     }
 
-    /// Withhold the call-local Builder floor. Evaluator-only; production keeps
-    /// it until it has a number.
-    pub fn disable_production_builder_floor(&mut self) {
-        self.production_builder_floor = false;
-    }
-
-    /// Withhold the call-local settler-deadline extension. Evaluator-only.
-    pub fn disable_production_settler_deadline(&mut self) {
-        self.production_settler_deadline = false;
-    }
-
     /// Make a Builder retreat from, and never step into, a tile a visible
     /// barbarian can capture next turn. Native opt-in gene
     /// `builder-barbarian-safety`; off in production until its targeted
@@ -1176,38 +1142,6 @@ impl AdvancedAi {
     /// The off toggle, so the registry row has both directions.
     pub fn disable_unit_cost_efficiency(&mut self) {
         self.unit_cost_efficiency = false;
-    }
-
-    /// ★★★★★ BUILD HULLS ONLY WHERE THEY HAVE OPEN WATER TO SAIL INTO.
-    ///
-    /// `BasicAi::best_naval_unit` — the path that actually enqueues warships,
-    /// not `production_value` — gated on `city_is_coastal`, and a **lake is
-    /// water**. A lakeside city therefore built Galleys that spent the whole
-    /// game on the lake. Measured over three 150-turn six-player games at the
-    /// deployment shape, with the flag off: majors built 53 naval hulls,
-    /// **20 of which never moved once**, and only 17.2% of major naval
-    /// unit-turns involved any movement.
-    ///
-    /// With the flag on, on the same three seeds: 26 hulls, **3** that never
-    /// moved, Galley movement up from 13.0% to 43.7% of its turns, and the
-    /// `audit` major idle-field share down from 21.19% to 17.13%.
-    ///
-    /// **Promoted to production 2026-08-18** on the matrix at 200 pairs, seed
-    /// 8700000. `advanced_without_open_water_navy` prices the withhold.
-    pub fn enable_open_water_navy(&mut self) {
-        self.base.open_water_navy = true;
-    }
-
-    /// Withholding twin for `enable_open_water_navy`, so the promoted rule can
-    /// still be priced out of the bundle. See `LIVE_TREATMENTS`.
-    pub fn disable_open_water_navy(&mut self) {
-        self.base.open_water_navy = false;
-    }
-
-    /// Sea threats get sea answers. See `BasicAi::sea_answers`; entrant
-    /// `advanced_sea_answers`.
-    pub fn enable_sea_answers(&mut self) {
-        self.base.sea_answers = true;
     }
 
     /// Build a ranged defender, not a melee one, when the barbarian ring around
@@ -1238,29 +1172,6 @@ impl AdvancedAi {
         self.base.camp_bounty = true;
     }
 
-    /// Walk onto a visible, undefended barbarian camp one legal step away.
-    /// See `BasicAi::adjacent_camp_clear`; withheld by
-    /// `advanced_without_adjacent_camp_clear`.
-    pub fn enable_adjacent_camp_clear(&mut self) {
-        self.base.adjacent_camp_clear = true;
-    }
-
-    pub fn disable_adjacent_camp_clear(&mut self) {
-        self.base.adjacent_camp_clear = false;
-    }
-
-    /// The barbarian seat walks onto religious units and condemns them with
-    /// the movement it arrives with. See `BasicAi::barbarian_heretic_hunt`;
-    /// default-ON, off on the frozen anchor, a controller treatment of the
-    /// world rather than a gene of one seat.
-    pub fn enable_barbarian_heretic_hunt(&mut self) {
-        self.base.barbarian_heretic_hunt = true;
-    }
-
-    pub fn disable_barbarian_heretic_hunt(&mut self) {
-        self.base.barbarian_heretic_hunt = false;
-    }
-
     /// Subtract the unit-maintenance bill inside the policy counterfactual so
     /// maintenance-discount cards score above zero. See
     /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
@@ -1271,30 +1182,6 @@ impl AdvancedAi {
     /// The off toggle, so the registry row has both directions.
     pub fn disable_maintenance_aware_deck(&mut self) {
         self.base.maintenance_aware_deck = false;
-    }
-
-    pub fn disable_amenity_districts(&mut self) {
-        self.base.amenity_districts = false;
-    }
-
-    /// The two base-constructor flags that had no withhold.
-    ///
-    /// `configured` sets ten booleans true for every `AdvancedAi` that is not
-    /// `legacy()`. `deny_leaders` at least had `advanced_blind_to_leaders`;
-    /// these two had nothing, so no arm could price them. The
-    /// `promoted_policy_envoy` audit found a component costing **41 Elo**
-    /// (`city_target_floor`, removed #1504) among flags in exactly this
-    /// condition, so an unpriceable default is a real risk rather than a
-    /// tidiness complaint.
-    ///
-    /// ⚠ `AdvancedAi::legacy()` turns both of these off already, so the frozen
-    /// anchor is unaffected by anything measured through them.
-    pub fn disable_settlement_safety(&mut self) {
-        self.settlement_safety = false;
-    }
-
-    pub fn disable_battlefront_observation(&mut self) {
-        self.battlefront_observation = false;
     }
 
     /// Rank each district family by how much of the empire still lacks it, so
@@ -1375,12 +1262,6 @@ impl AdvancedAi {
     /// The off toggle, so the registry row has both directions.
     pub fn disable_settlement_gap_target(&mut self) {
         self.settlement_gap_reads_city_target = false;
-    }
-
-    /// Withhold the strategic governor from the Recovery lane, so the baseline
-    /// cascade runs those cities too. See `governor_in_recovery`.
-    pub fn disable_governor_in_recovery(&mut self) {
-        self.governor_in_recovery = false;
     }
 
     /// Let a developed live city build the cheapest legal wonder whatever the
@@ -1514,13 +1395,6 @@ impl AdvancedAi {
 
     pub fn disable_culture_building_debt(&mut self) {
         self.culture_building_debt = false;
-    }
-
-    /// Treat a Theater Square, rather than any Great Work slot, as the
-    /// non-Culture lane's veto boundary. Evaluator-only until the targeted
-    /// deployment comparison prices this distinction.
-    pub fn enable_great_work_veto_by_district(&mut self) {
-        self.great_work_veto_by_district = true;
     }
 
     /// Bank an envoy instead of spending it on a placement whose score is
@@ -2994,6 +2868,36 @@ impl AdvancedAi {
         self.early_archers = false;
     }
 
+    /// A declared war's objective nobody of ours has been near for
+    /// `CAPTURE_GO_TURNS` consecutive turns is stood down explicitly and the
+    /// strategy re-assessed, instead of being held unprosecuted. Filed here
+    /// rather than under a marker: a whole function under one reads as an
+    /// entry. See `capture_go_or_stand_down` and `advanced/commitments.rs`.
+    pub fn enable_capture_go_or_stand_down(&mut self) {
+        self.capture_go_or_stand_down = true;
+    }
+
+    /// The twin of `enable_capture_go_or_stand_down`.
+    pub fn disable_capture_go_or_stand_down(&mut self) {
+        self.capture_go_or_stand_down = false;
+        self.capture_stood_down.clear();
+    }
+
+    /// A settle or improve target survives a passing threat, and the
+    /// commitment ledger retires it after `COMMITMENT_PATIENCE` consecutive
+    /// forgotten turns, parking the site. Filed here rather than under a
+    /// marker: a whole function under one reads as an entry. See
+    /// `commitment_patience` and `advanced/commitments.rs`.
+    pub fn enable_commitment_patience(&mut self) {
+        self.commitment_patience = true;
+    }
+
+    /// The twin of `enable_commitment_patience`.
+    pub fn disable_commitment_patience(&mut self) {
+        self.commitment_patience = false;
+        self.builder_avoid.clear();
+    }
+
     /// `culture-floor`: a culture-yielding building is exempt from the Great
     /// Work veto and the Theatre Square is priced while the empire's culture
     /// a turn trails the strongest major's by the floor ratio. See
@@ -3120,6 +3024,34 @@ impl AdvancedAi {
     /// The twin of `enable_threatened_city_reserve`.
     pub fn disable_threatened_city_reserve(&mut self) {
         self.threatened_city_reserve = false;
+    }
+
+    /// A Settler always has somewhere to go: exhaustion asks wider questions
+    /// instead of holding, and a watchdog bounds every other hold. Filed
+    /// above the marker run like `enable_early_archers`: a whole function
+    /// under a marker reads as an entry. See `settler_never_idles` and
+    /// `advanced/settler_never_idles.rs`.
+    pub fn enable_settler_never_idles(&mut self) {
+        self.settler_never_idles = true;
+    }
+
+    /// The twin of `enable_settler_never_idles`.
+    pub fn disable_settler_never_idles(&mut self) {
+        self.settler_never_idles = false;
+    }
+
+    /// Enter the Great Prophet race from an explicit victory lane: Astrology
+    /// after the opening techs, the empire's first Holy Site at the front of
+    /// the district order, the Prophet priced as a lane great person, and
+    /// `pursue_religion` for the prize. See `enter_the_prophet_race`.
+    pub fn enable_enter_the_prophet_race(&mut self) {
+        self.enter_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_enter_the_prophet_race`.
+    pub fn disable_enter_the_prophet_race(&mut self) {
+        self.enter_the_prophet_race = false;
+        self.base.enter_prophet_race = false;
     }
 
     // ---- append: a-b ------------------------------------------------

@@ -72,7 +72,7 @@
 //! not against the assumption that consent is what pays for the lane.
 use std::collections::{BTreeMap, HashSet};
 
-use civvis::ai::{AdvancedAi, Ai};
+use civvis::ai::{AdvancedAi, Ai, CommitmentCensus};
 use civvis::game::{default_speed, Action, Game, GameOptions, WarRecord};
 use civvis::rules::Rules;
 use civvis::setup::MapSize;
@@ -1118,6 +1118,23 @@ fn tourism_trade_route(g: &Game, source: usize, target: usize) -> bool {
 /// agent spent on each grand strategy, so summing it across the majors gives
 /// the board's own answer: a lane nobody adopts is a lane nobody loses, and a
 /// denial experiment run against it measures the arena rather than the agent.
+/// Every major's commitment ledger, pooled. `docs/COMMITMENTS.md`: a decision
+/// nobody acts on is `forgotten`, one acted on without getting closer is
+/// `stalled`, one past the ETA it was priced at is `late`.
+fn commitment_totals(g: &Game, ais: &[AdvancedAi]) -> CommitmentCensus {
+    let mut census = CommitmentCensus::default();
+    for player in g
+        .players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+    {
+        if let Some(ai) = ais.get(player.id) {
+            census.absorb(&ai.commitment_census());
+        }
+    }
+    census
+}
+
 fn audit_strategy_mix(g: &Game, ais: &[AdvancedAi], found: &mut Findings) {
     let mut lanes = [
         ("expansion", 0u32),
@@ -1290,6 +1307,7 @@ fn main() {
 
     let mut totals = Findings::default();
     let mut totals_motion = MotionBreakdown::default();
+    let mut totals_commitments = CommitmentCensus::default();
     for seed in start..start + games {
         let mut options = GameOptions::new(
             players as usize,
@@ -1324,6 +1342,10 @@ fn main() {
         }
         audit_result(&g, &mut found);
         audit_strategy_mix(&g, &ais, &mut found);
+        // What became of every settle, improve and capture decision the
+        // majors made: the reading `docs/COMMITMENTS.md` is built on.
+        let commitments = commitment_totals(&g, &ais);
+        totals_commitments.absorb(&commitments);
         for life in history.lives.values() {
             let entry = motion
                 .major_lives
@@ -1355,6 +1377,9 @@ fn main() {
                 found.symptoms.values().map(|entry| entry.0).sum::<usize>(),
             );
             motion.print("    ");
+            for line in commitments.lines() {
+                println!("    commitments {line}");
+            }
             for (key, (count, detail)) in &found.violations {
                 println!("    VIOLATION x{count:<5} {key} - e.g. {detail}");
             }
@@ -1395,6 +1420,9 @@ fn main() {
         }
     );
     totals_motion.print("");
+    for line in totals_commitments.lines() {
+        println!("commitments {line}");
+    }
     if totals.violations.is_empty() {
         println!("no rule violations");
     }

@@ -1101,6 +1101,23 @@ type SuzerainMapCache = std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<u
 /// its slot `None` rather than being folded speculatively.
 type ViewersCache = std::cell::RefCell<Option<(u64, Vec<Option<BTreeSet<usize>>>)>>;
 
+/// Inputs whose changes can make a cached final visibility signature stale.
+/// They are intentionally broader than that signature itself: an exposed
+/// mutable unit or city is cheap to recognize here, while the slower exact
+/// fold still decides whether the final `TileBits` frame can be reused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VisionInputMemoKey {
+    geometry: u64,
+    units: u64,
+    diplomacy: u64,
+    spies: u64,
+}
+
+/// Per-pid final visibility-input signatures, beside the conservative inputs
+/// that produced them. The final signature is what validates a `VisionFrame`;
+/// this cache only avoids rebuilding it on an unchanged world.
+type InputStampCache = std::cell::RefCell<Option<(VisionInputMemoKey, Vec<Option<u64>>)>>;
+
 /// Runtime-only per-seat visibility frames.  A cloned game inherits its
 /// parent's, because each frame carries the stamp of every input the
 /// derivation reads: a branch that moves its sight sources before its first
@@ -1110,6 +1127,10 @@ type ViewersCache = std::cell::RefCell<Option<(u64, Vec<Option<BTreeSet<usize>>>
 #[derive(Default)]
 struct VisionFrameCache {
     frames: std::cell::RefCell<Vec<Option<VisionFrame>>>,
+    /// Frame hits used to rebuild their full per-viewer signature before they
+    /// could discover that the `TileBits` was reusable. Keep that signature
+    /// per seat behind broad, mutation-safe inputs instead.
+    input_stamps: InputStampCache,
     /// Map writes also cover roads, improvements, and ownership, none of
     /// which alter a sight ray.  Re-fold the small sight-relevant tile view
     /// once per map epoch so those unrelated writes do not evict every seat's
@@ -1152,6 +1173,7 @@ impl Clone for VisionFrameCache {
     fn clone(&self) -> Self {
         Self {
             frames: std::cell::RefCell::new(self.frames.borrow().clone()),
+            input_stamps: std::cell::RefCell::new(self.input_stamps.borrow().clone()),
             map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
             unit_stamps: std::cell::RefCell::new(self.unit_stamps.borrow().clone()),
             suzerain_map: std::cell::RefCell::new(self.suzerain_map.borrow().clone()),
@@ -1270,6 +1292,10 @@ type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
+/// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
+/// guard: keyed on (player, city, unit kind, formation, faith?) → price.
+type PurchasePriceMemo = BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>;
+
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
@@ -1314,6 +1340,19 @@ pub struct QueryCache {
     /// The answers are computed once per unit per memo scope instead.
     movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
+    // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
+    // for every unit kind in the ruleset, at all three formations and both
+    // currencies, and `legal_actions_within`'s purchase family repeats the
+    // same sweep, none of the asks sharing an answer. The price reads live
+    // unit occupancy (`land_combat_purchase_slot_open`) and the production
+    // queue head, both of which a caller can change without going through
+    // `Game::apply` — `relocate` and a direct queue edit are `pub(crate)`,
+    // and `land_combat_purchase_requires_an_unreserved_city_center_combat_layer`
+    // exercises exactly that from a test. So this is scoped like `appeal` and
+    // `movement`, not like `producible`: cached only for the life of one
+    // `QueryMemo` guard, which is also the only span the codebase already
+    // guarantees nothing mutates the world out from under a `&self` query.
+    purchase_price: std::cell::RefCell<Option<PurchasePriceMemo>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
@@ -1553,6 +1592,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.passage_improvements.borrow_mut() = None;
             *self.game.query_memo.movement.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
+            *self.game.query_memo.purchase_price.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
@@ -2571,6 +2611,11 @@ mod city_roster {
         /// encampment damage and every district placement, for every city in
         /// the world regardless of owner.
         pub(super) geometry: u64,
+        /// One compact signature of every city fact that any visibility
+        /// derivation reads.  Unlike a mutation generation this also travels
+        /// with a whole roster assignment, so a cache outside `Cities` can
+        /// distinguish a replacement whose generation happens to match.
+        pub(super) input: u64,
         /// Per owner: identity, centre and every owned tile — the border
         /// reveal `Game::base_player_visibility` unions for a seat's own
         /// cities.
@@ -2584,6 +2629,7 @@ mod city_roster {
         const GEOMETRY_BASE: u64 = 0x67;
         const OWNED_BASE: u64 = 0x68;
         const CENTRE_BASE: u64 = 0x69;
+        const INPUT_BASE: u64 = 0x6a;
 
         /// The empty chain for one owner. An owner with no cities and an owner
         /// whose cities were all folded in must not share a value, and this is
@@ -2609,6 +2655,7 @@ mod city_roster {
         fn build(map: &BTreeMap<u32, City>) -> Self {
             let mut stamps = Self {
                 geometry: vision_key(&[Self::GEOMETRY_BASE, map.len() as u64]),
+                input: 0,
                 owned: BTreeMap::new(),
                 centres: BTreeMap::new(),
             };
@@ -2657,6 +2704,19 @@ mod city_roster {
                     city.pos.1 as i64 as u64,
                 ]);
             }
+            let mut input = vision_key(&[
+                Self::INPUT_BASE,
+                stamps.geometry,
+                stamps.owned.len() as u64,
+                stamps.centres.len() as u64,
+            ]);
+            for (&owner, &owned) in &stamps.owned {
+                input = vision_key(&[input, owner as u64, owned]);
+            }
+            for (&owner, &centres) in &stamps.centres {
+                input = vision_key(&[input, owner as u64, centres]);
+            }
+            stamps.input = input;
             stamps
         }
     }
@@ -3056,6 +3116,44 @@ pub enum Item {
     Product {
         product: Name,
     },
+}
+
+/// [`Item`], reduced to exactly what [`Game::production_block_key`] hashes
+/// into a string — the `pos` an `Item::District`, `Item::Wonder` or
+/// `Item::Repair` carries never enters the key. `Name` is `Copy`, so this
+/// type is too: building one, comparing two, or hashing one touches no
+/// allocator, unlike the `String` `production_block_key` used to be the only
+/// way to ask any of those questions.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) enum ProductionKey {
+    Formation(Name, u8),
+    Unit(Name),
+    Building(Name),
+    District(Name),
+    Wonder(Name),
+    Repair(Name),
+    Project(Name),
+    Product(Name),
+}
+
+impl ProductionKey {
+    /// The `String` form external maps fed by the live mirror are keyed by
+    /// (`blocked_production`, `blocked_purchases`, `host_buildable`,
+    /// `host_purchasable`) — byte-identical to the old `production_block_key`
+    /// output. Allocate only at that boundary; an internal comparison should
+    /// use the key itself instead of calling this.
+    fn to_block_string(self) -> String {
+        match self {
+            ProductionKey::Formation(unit, formation) => format!("formation:{unit}:{formation}"),
+            ProductionKey::Unit(unit) => format!("unit:{unit}"),
+            ProductionKey::Building(building) => format!("building:{building}"),
+            ProductionKey::District(district) => format!("district:{district}"),
+            ProductionKey::Wonder(wonder) => format!("wonder:{wonder}"),
+            ProductionKey::Repair(repair) => format!("repair:{repair}"),
+            ProductionKey::Project(project) => format!("project:{project}"),
+            ProductionKey::Product(product) => format!("product:{product}"),
+        }
+    }
 }
 
 /// One row of the host's production menu for a city: what the engine says the
@@ -23805,7 +23903,10 @@ impl Game {
     /// governor assignments, a governor's city changing hands, team
     /// membership and alliances all move only through a `Players` write; a
     /// turn boundary matters too, because alliance/emergency expiry and
-    /// governor establishment are all `self.turn` comparisons.
+    /// governor establishment are all `self.turn` comparisons. The city
+    /// signature supplements the mutation generation so a whole roster
+    /// replacement cannot accidentally reuse a relationship map from a
+    /// different set of city owners.
     ///
     /// Emergency membership is folded directly rather than through a bumped
     /// counter: `active_emergencies` is a plain `pub Vec`, not a wrapper with
@@ -23816,9 +23917,11 @@ impl Game {
     /// nothing close to the `BTreeSet` allocation this is guarding, and it
     /// cannot miss a write the way a counter at only two call sites could.
     fn diplomacy_epoch(&self) -> u64 {
+        let city_stamps = self.cities.vision_stamps();
         let mut stamp = vision_key(&[
             self.players.epoch(),
             self.cities.generation(),
+            city_stamps.input,
             self.turn as u64,
             self.active_emergencies.len() as u64,
         ]);
@@ -23829,6 +23932,102 @@ impl Game {
             }
         }
         stamp
+    }
+
+    /// A compact fingerprint of the live spy fields visibility reads. Spies
+    /// remain a public `BTreeMap`, rather than a roster with an invalidation
+    /// epoch, so this deliberately folds the tiny relevant view on every
+    /// input-memo lookup. It is still much cheaper than having each shared
+    /// viewer rescan the map while rebuilding its full input signature.
+    fn spies_vision_input_stamp(&self) -> u64 {
+        let mut stamp = vision_key(&[0x6b, self.spies.len() as u64]);
+        for (&map_id, spy) in &self.spies {
+            stamp = vision_key(&[
+                stamp,
+                map_id as u64,
+                spy.id as u64,
+                spy.owner as u64,
+                spy.captured_by
+                    .map(|owner| owner as u64)
+                    .unwrap_or(u64::MAX),
+                spy.ready_turn as u64,
+                spy.city.unwrap_or(u32::MAX) as u64,
+            ]);
+        }
+        stamp
+    }
+
+    /// The broad inputs that decide whether one pid's exact final visibility
+    /// signature may be reused. A visible non-fogged arena reads none of the
+    /// roster, diplomacy, or spy inputs, so leave those at stable sentinels.
+    fn vision_input_memo_key(&self) -> VisionInputMemoKey {
+        let geometry = self.vision_geometry_stamp();
+        if self.is_arena() && !self.tactics.fog {
+            return VisionInputMemoKey {
+                geometry,
+                units: 0,
+                diplomacy: 0,
+                spies: 0,
+            };
+        }
+        VisionInputMemoKey {
+            geometry,
+            units: self.units.vision_epoch(),
+            diplomacy: self.diplomacy_epoch(),
+            spies: self.spies_vision_input_stamp(),
+        }
+    }
+
+    fn matching_vision_input_stamp(&self, pid: usize, key: VisionInputMemoKey) -> Option<u64> {
+        self.vision_frames
+            .input_stamps
+            .borrow()
+            .as_ref()
+            .filter(|(cached_key, _)| *cached_key == key)
+            .and_then(|(_, stamps)| stamps.get(pid).copied().flatten())
+    }
+
+    fn store_vision_input_stamp(&self, pid: usize, key: VisionInputMemoKey, stamp: u64) {
+        let mut cache = self.vision_frames.input_stamps.borrow_mut();
+        match cache.as_mut() {
+            Some((cached_key, stamps)) if *cached_key == key => {
+                if stamps.len() <= pid {
+                    stamps.resize_with(pid + 1, || None);
+                }
+                stamps[pid] = Some(stamp);
+            }
+            _ => {
+                let mut stamps = vec![None; self.players.len().max(pid + 1)];
+                stamps[pid] = Some(stamp);
+                *cache = Some((key, stamps));
+            }
+        }
+    }
+
+    /// Read one pid's exact frame signature, rebuilding it only after a
+    /// conservative input changes. `host_observed` is an externally writable
+    /// `Arc<BTreeSet<_>>` with no mutation epoch, so its populated mirrored
+    /// seat deliberately takes the original exact path instead of risking a
+    /// stale live-host observation.
+    fn with_vision_input_stamp<R>(&self, pid: usize, read: impl FnOnce(u64) -> R) -> R {
+        let key = (pid != MIRRORED_SEAT || self.host_observed.is_empty())
+            .then(|| self.vision_input_memo_key());
+        if let Some(key) = key {
+            if let Some(stamp) = self.matching_vision_input_stamp(pid, key) {
+                return read(stamp);
+            }
+        }
+        self.with_suzerain_read_memo(|| {
+            self.with_suzerain_input_map(|suzerains| {
+                self.with_unit_vision_input_stamps(|unit_stamps| {
+                    let stamp = self.vision_input_stamp_with_suzerains(pid, suzerains, unit_stamps);
+                    if let Some(key) = key {
+                        self.store_vision_input_stamp(pid, key, stamp);
+                    }
+                    read(stamp)
+                })
+            })
+        })
     }
 
     /// Reuse the folded suzerain-of-every-minor map until the diplomacy
@@ -23932,13 +24131,7 @@ impl Game {
 
     #[cfg(test)]
     fn vision_input_stamp(&self, pid: usize) -> u64 {
-        self.with_suzerain_read_memo(|| {
-            self.with_suzerain_input_map(|suzerains| {
-                self.with_unit_vision_input_stamps(|unit_stamps| {
-                    self.vision_input_stamp_with_suzerains(pid, suzerains, unit_stamps)
-                })
-            })
-        })
+        self.with_vision_input_stamp(pid, |stamp| stamp)
     }
 
     /// Return the current sight frame, reusing its dense bitset when the
@@ -23946,20 +24139,19 @@ impl Game {
     /// (action legality, AI perception, and refresh publication) from cloning
     /// the map-sized bit vector merely to borrow it for a membership check.
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
-        self.with_suzerain_read_memo(|| {
-            self.with_suzerain_input_map(|suzerains| {
-                self.with_unit_vision_input_stamps(|unit_stamps| {
-                    let input_stamp =
-                        self.vision_input_stamp_with_suzerains(pid, suzerains, unit_stamps);
-                    if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
-                        visible
-                    } else {
-                        let visible = Arc::new(self.player_vision(heights, pid));
-                        self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
-                        visible
-                    }
+        self.with_vision_input_stamp(pid, |input_stamp| {
+            if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
+                visible
+            } else {
+                // The signature memo and frame cache have separate entries.
+                // Keep any direct derivation under the same suzerain-query
+                // scope the pre-memo path had.
+                self.with_suzerain_read_memo(|| {
+                    let visible = Arc::new(self.player_vision(heights, pid));
+                    self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
+                    visible
                 })
-            })
+            }
         })
     }
 
@@ -24906,25 +25098,21 @@ impl Game {
         if self.visibility_suppressed || players.is_empty() {
             return;
         }
-        // Do the cheap stamp pass on the authoritative world first.  A worker
+        // Do the cheap stamp pass on the authoritative world first. A worker
         // clone starts with no compact frames, so sending an unchanged seat to
-        // a worker would throw away exactly the reuse this cache is for.
+        // a worker would throw away exactly the reuse this cache is for. The
+        // input-stamp memo lets an unchanged seat skip the old per-viewer
+        // signature walk here as well as in single-seat callers.
         let mut cached = Vec::<(usize, u64, Arc<TileBits>)>::new();
         let mut pending = Vec::<(usize, u64)>::new();
-        self.with_suzerain_read_memo(|| {
-            self.with_suzerain_input_map(|suzerains| {
-                self.with_unit_vision_input_stamps(|unit_stamps| {
-                    for pid in &players {
-                        let input_stamp =
-                            self.vision_input_stamp_with_suzerains(*pid, suzerains, unit_stamps);
-                        match self.matching_vision_frame(*pid, input_stamp) {
-                            Some(visible) => cached.push((*pid, input_stamp, visible)),
-                            None => pending.push((*pid, input_stamp)),
-                        }
-                    }
-                });
+        for pid in players.iter().copied() {
+            self.with_vision_input_stamp(pid, |input_stamp| {
+                match self.matching_vision_frame(pid, input_stamp) {
+                    Some(visible) => cached.push((pid, input_stamp, visible)),
+                    None => pending.push((pid, input_stamp)),
+                }
             });
-        });
+        }
 
         let count = pending.len();
         let mut fresh = Vec::<(usize, u64, TileBits)>::with_capacity(count);
@@ -25523,6 +25711,12 @@ impl Game {
         self.entry_at(uid, from, pos, false) == Entry::Stop
     }
 
+    /// [`Self::can_enter`] for a destination returned directly by
+    /// [`Self::nbrs`] for `from`.
+    fn can_enter_neighbor(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+        self.entry_at_neighbor(uid, from, pos, false) == Entry::Stop
+    }
+
     /// Whether this unit may cross `pos` on its way somewhere else.
     ///
     /// Weaker than [`Game::can_enter`] by exactly one rule: a tile held by one
@@ -25530,6 +25724,12 @@ impl Game {
     /// through, and may not be finished on.
     pub(crate) fn can_pass(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         self.entry_at(uid, from, pos, false) != Entry::Blocked
+    }
+
+    /// [`Self::can_pass`] for a destination returned directly by
+    /// [`Self::nbrs`] for `from`.
+    fn can_pass_neighbor(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+        self.entry_at_neighbor(uid, from, pos, false) != Entry::Blocked
     }
 
     /// Whether two units belonging to one player contend for a single
@@ -25623,10 +25823,22 @@ impl Game {
     /// that is not theirs: how far can that thing reach, given that whatever
     /// is parked in front of it can walk away or die before it matters.
     fn entry_at(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> Entry {
-        let u = &self.units[&uid];
         if self.wdist(from, pos) != 1 {
             return Entry::Blocked;
         }
+        self.entry_at_neighbor(uid, from, pos, through_units)
+    }
+
+    /// [`Self::entry_at`] after the caller has obtained `pos` directly from
+    /// [`Self::nbrs`] for `from`.
+    ///
+    /// The one-step check in the general entry gate is vital for ordinary
+    /// callers, but repeating it inside a movement flood is redundant: each
+    /// candidate is already an in-map neighbor, including across a wrap seam
+    /// or around the globe. Keep this helper private so that precondition
+    /// remains local to the few loops that establish it.
+    fn entry_at_neighbor(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> Entry {
+        let u = &self.units[&uid];
         if !self.unit_can_traverse(uid, pos) {
             return Entry::Blocked;
         }
@@ -25954,7 +26166,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.can_pass(uid, cur, n),
+            |cur, n| self.can_pass_neighbor(uid, cur, n),
             |n, cur| {
                 parent.insert(n, cur);
             },
@@ -26011,7 +26223,7 @@ impl Game {
         if !self
             .nbrs(cur)
             .into_iter()
-            .any(|n| self.can_pass(uid, cur, n) && !self.can_stop(uid, n))
+            .any(|n| self.can_pass_neighbor(uid, cur, n) && !self.can_stop(uid, n))
         {
             return None;
         }
@@ -26258,7 +26470,7 @@ impl Game {
                 continue;
             }
             for to in self.nbrs(from) {
-                if !self.map.tiles.contains_key(&to) || !self.can_enter(uid, from, to) {
+                if !self.map.tiles.contains_key(&to) || !self.can_enter_neighbor(uid, from, to) {
                     continue;
                 }
                 let cost = self.unit_step_cost(uid, from, to);
@@ -26376,7 +26588,7 @@ impl Game {
             }
             for n in self.nbrs(cur) {
                 // As in `first_route_step`: the distance test is a array read
-                // and `can_path_through` is a ruleset sweep, so test the
+                // and `can_path_through_known_traversable` is a ruleset sweep, so test the
                 // cheap one first. Every edge cost here is 1, so a neighbour
                 // that cannot improve on the distance already recorded is the
                 // common case, and both orders leave state untouched when
@@ -26389,7 +26601,7 @@ impl Game {
                     continue;
                 }
                 let enterable = if cur == start {
-                    self.can_enter(uid, cur, n)
+                    self.can_enter_neighbor(uid, cur, n)
                 } else {
                     if traversal_zones[index] == 0 {
                         continue;
@@ -26533,22 +26745,20 @@ impl Game {
         routing.city_owner_key = None;
     }
 
-    /// Terrain/domain legality for future route segments. Dynamic unit
-    /// occupancy is enforced on the returned first step; ignoring it deeper
-    /// in the plan avoids expensive scans and lets moving units clear before
-    /// the traveler arrives. Routes are recalculated whenever the immediate
-    /// step remains blocked.
-    fn can_path_through(&self, uid: u32, from: Pos, pos: Pos, territory_access: &[bool]) -> bool {
-        if self.wdist(from, pos) != 1 {
-            return false;
-        }
+    /// Terrain/domain legality for a future route segment whose destination
+    /// came directly from [`Self::nbrs`] for the current route tile. Dynamic
+    /// unit occupancy is enforced on the returned first step; ignoring it
+    /// deeper in the plan avoids expensive scans and lets moving units clear
+    /// before the traveler arrives. Routes are recalculated whenever the
+    /// immediate step remains blocked.
+    fn can_path_through_neighbor(&self, uid: u32, pos: Pos, territory_access: &[bool]) -> bool {
         if !self.unit_can_traverse(uid, pos) {
             return false;
         }
         self.can_path_through_known_traversable(uid, pos, territory_access)
     }
 
-    /// The dynamic half of [`Self::can_path_through`]. The route A* already
+    /// The dynamic half of [`Self::can_path_through_neighbor`]. The route A* already
     /// has a routing-zone label for every neighbor, so it can skip the static
     /// terrain/domain predicate on future segments and retain only these
     /// diplomacy and city gates.
@@ -26800,7 +27010,7 @@ impl Game {
             let Some(index) = self.map.tiles.index_of(next) else {
                 continue;
             };
-            if !self.can_enter(uid, start, next) {
+            if !self.can_enter_neighbor(uid, start, next) {
                 continue;
             }
             let steps = distance[index];
@@ -26882,7 +27092,7 @@ impl Game {
         // already numbers its tiles, so the frontier's bookkeeping is two
         // dense vectors indexed by that number rather than hash maps keyed by
         // a hex coordinate. Every tile a unit may enter is on the map —
-        // `can_enter` and `can_path_through` both go through
+        // `can_enter_neighbor` and `can_path_through_neighbor` both go through
         // `unit_can_traverse`, which rejects a position the grid does not
         // hold — so an index always exists for a reachable neighbour.
         const NO_PARENT: u32 = u32::MAX;
@@ -26915,7 +27125,7 @@ impl Game {
                 // unit may enter. Every interior tile is reached as a
                 // neighbour of all six of its own neighbours, so five of
                 // those six arrivals find it already seen — and asking
-                // `can_path_through` first meant paying for a traversal
+                // `can_path_through_neighbor` first meant paying for a traversal
                 // class, a passability sweep over the ruleset, a territory
                 // owner and a city lookup, only to discard the answer.
                 // Skipping earlier cannot change the walk: both orders
@@ -26927,9 +27137,9 @@ impl Game {
                     continue;
                 }
                 let enterable = if cur == start {
-                    self.can_enter(uid, cur, n)
+                    self.can_enter_neighbor(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, territory_access.as_slice())
+                    self.can_path_through_neighbor(uid, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
@@ -27068,7 +27278,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.entry_at(uid, cur, n, through_units) != Entry::Blocked,
+            |cur, n| self.entry_at_neighbor(uid, cur, n, through_units) != Entry::Blocked,
             |_, _| {}, // nobody asks this flood for the walk
         )
     }
@@ -27109,7 +27319,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.can_pass(uid, cur, n),
+            |cur, n| self.can_pass_neighbor(uid, cur, n),
             |n, cur| {
                 parent.insert(n, cur);
             },
@@ -30551,6 +30761,7 @@ impl Game {
             *self.query_memo.passage_improvements.borrow_mut() = None;
             *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.purchase_price.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
@@ -33596,17 +33807,28 @@ impl Game {
         true
     }
 
-    pub(crate) fn production_block_key(item: &Item) -> String {
+    /// Non-allocating twin of [`Game::production_block_key`], for callers
+    /// that only ever compare or hash the key — never look it up in a
+    /// `String`-keyed map fed by the live mirror (`blocked_production`,
+    /// `blocked_purchases`, `host_buildable`, `host_purchasable`; those stay
+    /// `String`-keyed because they cross the bridge's serde boundary).
+    /// `Name` is already an interned, `Copy` id, so building this key touches
+    /// no allocator.
+    pub(crate) fn production_key(item: &Item) -> ProductionKey {
         match item {
-            Item::Formation { unit, formation } => format!("formation:{unit}:{formation}"),
-            Item::Unit { unit } => format!("unit:{unit}"),
-            Item::Building { building } => format!("building:{building}"),
-            Item::District { district, .. } => format!("district:{district}"),
-            Item::Wonder { wonder, .. } => format!("wonder:{wonder}"),
-            Item::Repair { repair, .. } => format!("repair:{repair}"),
-            Item::Project { project } => format!("project:{project}"),
-            Item::Product { product } => format!("product:{product}"),
+            Item::Formation { unit, formation } => ProductionKey::Formation(*unit, *formation),
+            Item::Unit { unit } => ProductionKey::Unit(*unit),
+            Item::Building { building } => ProductionKey::Building(*building),
+            Item::District { district, .. } => ProductionKey::District(*district),
+            Item::Wonder { wonder, .. } => ProductionKey::Wonder(*wonder),
+            Item::Repair { repair, .. } => ProductionKey::Repair(*repair),
+            Item::Project { project } => ProductionKey::Project(*project),
+            Item::Product { product } => ProductionKey::Product(*product),
         }
+    }
+
+    pub(crate) fn production_block_key(item: &Item) -> String {
+        Self::production_key(item).to_block_string()
     }
 
     pub(crate) fn replace_blocked_production(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
@@ -34263,12 +34485,13 @@ impl Game {
         if self.is_arena() && self.tactics.production == 0 {
             return false;
         }
-        let blocked = Self::production_block_key(item);
-        if self
-            .blocked_production
-            .get(&cid)
-            .is_some_and(|items| items.contains(&blocked))
-        {
+        // Both maps a block key is looked up in are keyed by the live
+        // mirror, and empty otherwise — so build the (allocating) `String`
+        // form only when a map actually holds an entry for this city, not
+        // unconditionally on every candidate item of every ordinary board.
+        if self.blocked_production.get(&cid).is_some_and(|items| {
+            !items.is_empty() && items.contains(Self::production_block_key(item).as_str())
+        }) {
             return false;
         }
         let city = &self.cities[&cid];
@@ -34280,11 +34503,15 @@ impl Game {
         // head is the host's own `producing`, listed or not at its discretion.
         if Self::host_menu_gates(item) {
             if let Some(menu) = self.host_buildable.get(&cid) {
-                if !menu.contains_key(&blocked)
+                // The queue scan below only ever compares keys, never looks
+                // one up in a `String`-keyed map, so it stays on the
+                // non-allocating `ProductionKey` throughout.
+                let key = Self::production_key(item);
+                if !menu.contains_key(key.to_block_string().as_str())
                     && !city
                         .queue
                         .iter()
-                        .any(|queued| Self::production_block_key(queued) == blocked)
+                        .any(|queued| Self::production_key(queued) == key)
                 {
                     return false;
                 }
@@ -40557,7 +40784,52 @@ impl Game {
         })
     }
 
+    /// Memoized front door for [`Game::unit_purchase_cost_for_formation_uncached`],
+    /// scoped like [`Game::tile_appeal`] rather than like `producible_items`:
+    /// cached only for the life of one [`QueryMemo`] guard (see
+    /// `QueryCache::purchase_price`), because the price reads live unit
+    /// occupancy and the production queue head, and a `QueryMemo` guard is
+    /// the one span the codebase already guarantees nothing mutates those
+    /// out from under a `&self` query. Outside any guard every call still
+    /// derives fresh, exactly as before this cache existed.
+    ///
+    /// `legal_purchase_actions_for_city` calls the uncached derivation six
+    /// times per unit kind per city (three formations, two currencies), and
+    /// `legal_actions_within`'s purchase family repeats the identical sweep
+    /// under its own guard — sharing one answer per
+    /// `(pid, cid, unit, formation, currency)` removes the duplication
+    /// between call sites that both run inside the same decision's guard.
     fn unit_purchase_cost_for_formation(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        formation: u8,
+        currency: &str,
+    ) -> Option<f64> {
+        let currency_is_gold = match currency {
+            "gold" => true,
+            "faith" => false,
+            // The uncached path also refuses any other currency; skip the
+            // lookups and the memo entirely rather than cache a key no real
+            // caller asks for.
+            _ => return None,
+        };
+        let key = (pid, cid, Name::new(unit), formation, currency_is_gold);
+        if let Some(memo) = self.query_memo.purchase_price.borrow().as_ref() {
+            if let Some(cached) = memo.get(&key) {
+                return *cached;
+            }
+        }
+        let cost =
+            self.unit_purchase_cost_for_formation_uncached(pid, cid, unit, formation, currency);
+        if let Some(memo) = self.query_memo.purchase_price.borrow_mut().as_mut() {
+            memo.insert(key, cost);
+        }
+        cost
+    }
+
+    fn unit_purchase_cost_for_formation_uncached(
         &self,
         pid: usize,
         cid: u32,
@@ -53151,6 +53423,9 @@ mod world_lap_tests;
 
 #[cfg(test)]
 mod purchase_gate_tests;
+
+#[cfg(test)]
+mod purchase_price_memo_tests;
 
 #[cfg(test)]
 mod unit_upgrade_price_tests;

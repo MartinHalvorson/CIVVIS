@@ -2854,6 +2854,88 @@ Two things worth keeping from the pair of readings:
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
 
+
+## 2026-08-27 — purchase-price memo (scoped to one `QueryMemo` guard) and a non-allocating production block key
+
+`legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
+once per unit kind, formation (0/1/2) and currency (gold/faith) — six full
+price derivations per unit kind per city per ask, each one walking policies,
+buildings, districts, era, game speed and Great People/religion discounts.
+`legal_actions_within`'s purchase family repeats the identical sweep, and
+several AI call sites (`ai.rs`, `ai/advanced.rs`, `gold_and_cards.rs`,
+`religion.rs`) ask the same price again elsewhere in the same turn's
+decision-making.
+
+### ⚠ The first design was wrong, and a pre-existing test caught it before it shipped
+
+The first cut mirrored `producible_items`: a cache keyed on
+`(pid, cid, unit, formation, currency)` that outlives `QueryMemo`, cleared
+only at explicit sites (a successful `Game::apply`, the mirror-input
+`replace_*` calls). `district_building_wonder_runtime_tests::
+land_combat_purchase_requires_an_unreserved_city_center_combat_layer` failed
+against it: `unit_purchase_cost_for_formation` reads live unit occupancy
+through `land_combat_purchase_slot_open` (`self.units_at(city.pos)`) and the
+production queue head (`city.queue.first()`), and that test edits the queue
+and calls `relocate` directly — both `pub(crate)`, neither going through
+`Game::apply` — between two otherwise-identical asks, expecting the second to
+differ. The persistent design served the first answer back stale.
+
+**The fix scopes the cache like `Game::tile_appeal`'s `appeal` field instead**
+(`QueryCache::purchase_price`, now `RefCell<Option<BTreeMap<...>>>`): armed
+only while a `QueryMemo` guard is open, cleared on that guard's outermost
+`Drop`, exactly like `appeal`, `movement`, `unit_ids` and the rest of that
+family. Outside any guard — a bare call, which is what the caught test and
+any direct-mutation caller do — the field stays `None` and every ask derives
+fresh, byte-for-byte the function's behaviour before this cache existed. That
+also makes the fix airtight against the exact bug that broke the first
+design: a `QueryMemo` guard holds `&Game`, so `Game::apply` (`&mut self`)
+cannot be called while one is alive, and `relocate`/a queue edit made outside
+any guard never had a stale answer to leave behind in the first place.
+
+The benefit this design keeps is real but narrower than the persistent one:
+it removes duplication only between calls that share one already-open guard
+(nested `query_memo()` calls inside one decision), not across separate
+top-level calls. `legal_purchase_actions_for_city` itself has no internal
+duplication to remove — each `(unit, formation, currency)` combination is
+asked exactly once per city by construction — so the saving is entirely
+cross-call-site, and how much of it survives the narrower scope depends on
+how much of the AI's purchase-pricing work already runs under one shared
+guard. The scratch `AtomicU64` measurement taken against the first (buggy)
+design read 4,375,259 asks / 2,993,698 derivations over one 150-turn game;
+that number is **retracted** along with the design it measured; a fresh
+measurement against the guard-scoped version is the next reader's first
+follow-up here, not yet re-taken under fleet time pressure.
+
+### The second half, unaffected by the above: a non-allocating production block key
+
+`production_block_key` built a fresh `String` (`format!("formation:{unit}:{formation}")`
+and five siblings) for every candidate item at several call sites, including
+unconditionally at the top of `can_produce` and once per queued item in its
+duplicate-scan. `ProductionKey` is a `Copy` enum over `Name` (already an
+interned `u32`) standing in wherever a key is only compared or hashed;
+`production_block_key` becomes a thin `.to_block_string()` wrapper kept at the
+three external boundaries that still need a `String` — `blocked_production`,
+`blocked_purchases`, `host_buildable`/`host_purchasable` — because those maps
+cross the live mirror's serde boundary (`mirror.rs` calls
+`Game::production_block_key` directly and was left untouched). `can_produce`
+now only builds that `String` when `blocked_production`/`host_buildable`
+actually holds an entry for the city — empty on an ordinary, non-mirrored
+board — and its queue duplicate-scan compares `ProductionKey` values directly
+instead of formatting one `String` per queued item. This half introduces no
+caching and carries none of the risk above: it changes only how a key is
+represented, never when or whether one is computed fresh.
+
+### Exactness
+
+`purchase_price_memo_tests.rs` covers: a warm ask matching a cold ask under
+one shared guard, across a three-city fixture, with every memoized answer
+also checked against an uncached re-derivation for every unit/formation/
+currency/city; the memo field never arming outside a guard (the shape of the
+bug above, pinned directly); and a host-priced answer reflecting a later
+purchase refusal immediately. `tools/speed_ab.py` and
+`advanced_v1_plays_the_same_game_it_always_did` both agree on report digests
+before and after — see the PR body for the exact command and hashes. No
+action list changed order or content.
 ## 2026-08-27: per-ask vision allocations paid for answers that had not moved
 
 Vision sat at roughly 9% of the main thread, and a chunk of that share was
@@ -3699,3 +3781,66 @@ submodule too** — 41 files, 1,677 lines here, none of them yours. `game.rs`
 declares those modules and rustfmt follows `mod`. The narrower trap beside the
 known `cargo fmt -- <file>` one; check `git status`, not just the file you
 named.
+
+## 2026-08-27 — movement loops stop measuring edges they just enumerated
+
+The 2026-08-26 opportunity list measured `Sphere::distance` at 3.31% of
+running self time and its ring `binary_search` at 1.61%. The generic movement
+gate was one of those callers: `Game::entry_at` rejected `wdist(from, pos) !=
+1` even when a flood or route loop had just obtained `pos` from `nbrs(from)`.
+The predicate is necessary for a direct, arbitrary-coordinate `Move` request;
+it is not work a loop needs to repeat for each of its already-adjacent
+candidates.
+
+`entry_at` therefore remains the general gate, with its exact distance guard.
+Its rule body lives in a private `entry_at_neighbor` helper, used only by loops
+whose destination comes directly from `Game::nbrs`: the shared
+`relax_movement` kernel behind `flow_past`, `path_to`, and `approach_reach`;
+`reach_steps`; the pass-through probe; and the first-edge gates in all three
+route finders. The future-route terrain gate has the same private, neighbor-only
+form. No public or arbitrary-coordinate caller lost its guard.
+
+The existing movement counter makes the lower bound concrete: one 150-turn
+deployment-shaped game reached **7,621,833** neighbor examinations in
+`relax_movement` alone. Every one that reaches the gate now skips an exact
+world-distance lookup; the route and per-step callers above are additional
+savings not included in that flood counter.
+
+### The precondition is tested on both world shapes
+
+`neighbor_fast_path_matches_the_generic_entry_gate_on_both_world_shapes`
+enumerates every `nbrs` edge of a wrapped cylinder and a Planet globe. It
+asserts `wdist(from, to) == 1` for every edge, then compares the generic and
+neighbor entry, stop, and crossing gates on every one. That catches the only
+new assumption at the wrap seam and at the globe's pentagons, rather than
+assuming ordinary hex-coordinate arithmetic describes either shape.
+
+The focused 16-test movement suite, the frozen `advanced_v1` identity anchor,
+and the complete local `cargo test --profile ci --locked` suite passed (2,611
+library tests, 44 ignored, plus every binary, integration, protocol, and doc
+target). A fresh 2-game 6-player, 74×46, 9-city-state, Online Continents soak
+reached turns 212 and 243 without a failure.
+
+### The local clock is deliberately not a speed claim
+
+Two independent, two-pair `tools/speed_ab.py` windows at 6 players, 74×46, 9
+city-states, 150 turns, Online Continents each reported **same game on every
+seed**. Their clocks point in opposite directions because the host's load did,
+and neither window resolves a change this small:
+
+| seeds | load, start → end | median / resolution | pooled |
+| --- | ---: | ---: | ---: |
+| 7,320,200–201 | 22.81 → 11.73 | −4.45% / ±12.84% | −5.18% |
+| 7,320,210–211 | 9.27 → 29.29 | +25.78% / ±18.71% | +23.76% |
+
+The equal report hashes are load-bearing; the opposite timing signs are not.
+
+### The first CI gate saw no measurable regression
+
+GitHub's required five-pair deployment gate, against base `49722445`, also
+reported **same game on every seed**: −0.24% median per completed turn, ±1.61%
+resolution, −0.39% pooled (600 turns per arm), at load 4.77 → 1.03. That is
+inside its 1% noise floor and comfortably inside the +8% regression budget:
+the honest conclusion is no measurable change in the runner, not a speed
+claim. The gate will run again after this branch's current-main integration;
+that final result is the merge guard.

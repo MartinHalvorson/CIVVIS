@@ -117,6 +117,18 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.60}",
                       source)
 
+    def test_the_installed_supervisor_freezes_the_fresh_game_revision(self):
+        """A game must not hot-swap the decider after its fresh-head build.
+
+        The supervisor fetches, detaches to, builds, and re-reads ``origin/main``
+        before every batch.  Leaving the climb's refresh option unset then lets
+        ``civ6_brain.py`` re-exec onto a different head at a turn boundary, so
+        the ledger's one source revision lies about what actually made choices.
+        """
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        invocation = EveryLadderLoopCanAskForTheRungAndTheLane._invocation(source)
+        self.assertIn("--refresh-seconds 0", invocation)
+
     def test_the_supervisors_optional_flags_reach_the_climb_as_words(self):
         """⚠ zsh does not word-split an unquoted `${VAR:+--flag "$VAR"}`: set,
         it reached the climb as ONE argument, `--victory science`, which

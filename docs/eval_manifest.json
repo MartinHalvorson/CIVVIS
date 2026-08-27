@@ -1,31 +1,28 @@
 {
   "coverage": {
     "named": 37,
-    "never_named": 2,
+    "never_named": 3,
     "never_named_treatments": [
+      "enter-the-prophet-race",
       "relief-column-marches",
       "threatened-city-reserve"
     ],
-    "withholdable": 39
+    "withholdable": 40
   },
   "derived": {
     "firaxis_only_count": 28,
-    "live_bridge_count": 67,
-    "native_engine_repair_count": 39,
-    "withholdable_live_count": 39
+    "live_bridge_count": 68,
+    "native_engine_repair_count": 40,
+    "withholdable_live_count": 40
   },
   "genome_coverage": {
-    "capability_toggles": 240,
+    "capability_toggles": 230,
     "measured_by_a_screen": 73,
-    "reachable_as_a_gene": 189,
+    "reachable_as_a_gene": 193,
     "resolved_by_a_screen": 16,
-    "unreachable_by_any_screen": 51,
+    "unreachable_by_any_screen": 37,
     "unreachable_toggles": [
-      "adjacent_camp_clear",
-      "amenity_districts",
       "bank_envoys",
-      "barbarian_heretic_hunt",
-      "battlefront_observation",
       "camp_bounty",
       "counter_in_lane",
       "deny_while_targeted",
@@ -43,12 +40,8 @@
       "explore_dead_targets",
       "fog_land_capacity",
       "frontier_loyalty",
-      "governor_in_recovery",
-      "great_work_veto_by_district",
       "host_settler_pop",
-      "hut_collection",
       "land_grab",
-      "legal_tactical_candidates",
       "live_bridge",
       "live_bridge_universe",
       "live_formationless_settler_shadow",
@@ -57,21 +50,15 @@
       "live_trader_route_adapter",
       "live_wonder_race",
       "no_elective_war",
-      "open_water_navy",
       "opening_settler_waits",
       "parallel_settlers",
-      "production_builder_floor",
-      "production_settler_deadline",
       "projected_stock_denial",
-      "sea_answers",
-      "settlement_safety",
       "settler_founds_when_stalled",
       "solvent_faith_army",
       "spy_mission_patience",
       "stock_denial_lead_time",
       "tally_culture",
-      "tally_great_people",
-      "village_seeking"
+      "tally_great_people"
     ]
   },
   "ladder": {
@@ -139,7 +126,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 15,
+      "declared_count": 16,
       "items": [
         "escort-unstick",
         "buildings-before-projects",
@@ -155,11 +142,12 @@
         "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
-        "culture-building-debt"
+        "culture-building-debt",
+        "enter-the-prophet-race"
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 39,
+      "declared_count": 40,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -199,7 +187,8 @@
         "culture-building-debt",
         "barbarian-settler-capture",
         "relief-column-marches",
-        "threatened-city-reserve"
+        "threatened-city-reserve",
+        "enter-the-prophet-race"
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
@@ -265,7 +254,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 67,
+      "declared_count": 68,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -333,7 +322,8 @@
         "escort-patience-runs-out",
         "barbarian-settler-capture",
         "relief-column-marches",
-        "threatened-city-reserve"
+        "threatened-city-reserve",
+        "enter-the-prophet-race"
       ]
     }
   },

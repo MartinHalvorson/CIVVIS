@@ -9273,6 +9273,74 @@ fn ordinary_religious_plan_routes_research_to_astrology() {
 }
 
 #[test]
+fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
+    let mut game = Game::new_full(4, 30, 18, 76_105, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let opening = |game: &mut Game| {
+        game.players[0].research = None;
+        game.players[0].techs.clear();
+        for tech in ["animal_husbandry", "mining"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+    };
+
+    // The shipped Diplomacy seat beelines Seasteads, and Astrology is a
+    // dead-end branch no goal is an ancestor of: it is never the pick.
+    opening(&mut game);
+    let shipped = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    shipped.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "the shipped beeline never reaches the dead-end branch"
+    );
+
+    // Treated: Astrology as soon as the opening techs are in.
+    opening(&mut game);
+    let mut treated = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    treated.enable_enter_the_prophet_race();
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("astrology"));
+
+    // Not before them: the Builder's techs still open the game.
+    game.players[0].research = None;
+    game.players[0].techs.clear();
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "the opening techs come first"
+    );
+
+    // And not once every Prophet slot is taken: the beeline resumes.
+    opening(&mut game);
+    for player in 1..=game.max_religions() {
+        game.players[player].religion = Some(format!("faith{player}"));
+    }
+    assert!(!treated.prophet_race_open_for(&game, 0));
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "a closed race is not entered"
+    );
+}
+
+#[test]
 fn religious_production_builds_prophet_infrastructure_then_runs_prayers() {
     let mut game = Game::new_full(1, 20, 14, 76_103, 120, 0, false);
     let settler = game
@@ -10687,23 +10755,6 @@ fn the_settling_gates_and_the_cascade_disagree_about_the_city_target() {
 }
 
 #[test]
-fn the_governor_recovery_withhold_changes_who_decides_a_recovery_city() {
-    // A pure routing flag can look alive in the struct and be dead in the
-    // dispatch, which is how a withhold arm ends up measuring nothing. Pin
-    // both halves: the shipped controller carries the governor into Recovery,
-    // the withhold arm does not, and nothing else moves.
-    let shipped = AdvancedAi::new();
-    assert!(
-        shipped.governor_in_recovery,
-        "production ships with the governor deciding Recovery cities"
-    );
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_governor_in_recovery();
-    assert!(!withheld.governor_in_recovery);
-    assert_eq!(shipped.victory_planning, withheld.victory_planning);
-}
-
-#[test]
 fn a_spawned_builder_carries_the_charges_production_priced() {
     // `Game::builder_charges` is the number the survey prices; spawning
     // must hand out exactly the same count or the valuation is priced
@@ -11858,7 +11909,7 @@ fn a_district_keyed_great_work_veto_exempts_the_government_plaza() {
 
     let mut slot_keyed = AdvancedAi::targeting(VictoryTarget::Science);
     let mut district_keyed = AdvancedAi::targeting(VictoryTarget::Science);
-    district_keyed.enable_great_work_veto_by_district();
+    district_keyed.great_work_veto_by_district = true;
     slot_keyed.refresh_research_weight(&game);
     district_keyed.refresh_research_weight(&game);
 
@@ -12974,6 +13025,10 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
         "the deployment enables the separate rate forecast"
     );
     live.disable_loyalty_rate_alarm();
+    // `settler-never-idles` (pinned on) would take the retired colony rather
+    // than hold once nothing else is offered — that is its point, and its own
+    // tests cover it. This test is about the guard's verdict, so withhold it.
+    live.disable_settler_never_idles();
     assert_eq!(
         live.best_settler_target(&game, 0, settler, 8, None)
             .map(|(position, _)| position),
@@ -13091,6 +13146,11 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     // safety floor for a city this close to an already visible rival capital.
     let mut default_live = AdvancedAi::new();
     default_live.enable_live_bridge();
+    // `settler-never-idles` (pinned on) takes this colony when it is the only
+    // site on the board and the engine's forecast gives it twenty turns —
+    // its own tests cover that. This test is about the verdicts, so withhold
+    // it by name in both live arms.
+    default_live.disable_settler_never_idles();
     assert!(default_live.frontier_loyalty);
     assert!(default_live.base.loyalty_rate_alarm);
     default_live.disable_loyalty_rate_alarm();
@@ -13109,6 +13169,7 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    live.disable_settler_never_idles();
     // The deployed rate forecast remains independently covered after the
     // withheld frontier-floor control above.
     live.frontier_loyalty = false;
@@ -18960,9 +19021,92 @@ fn a_default_live_bound_guard_rejoins_before_healing() {
 }
 
 #[test]
-fn a_settler_waits_for_its_guard_only_within_patience() {
-    let (mut game, source, target) = stacked_escort_fixture();
-    let settler = game.spawn_test_unit("settler", 0, source);
+fn a_settler_departs_its_city_before_waiting_for_a_guard() {
+    let (mut game, city, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, city);
+    // A guard that cannot close right away would previously consume this
+    // whole turn with a fortify, even though the Settler has just completed
+    // safely inside an owned city.
+    let lagging =
+        game.wdisk(city, 3)
+            .into_iter()
+            .find(|position| {
+                game.wdist(city, *position) == 3
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a lagging guard post");
+    let guard = game.spawn_test_unit("warrior", 0, lagging);
+    // Inside the escort's threat radius but outside capture reach: the only
+    // former reason to wait here is the guard's distance, not survival.
+    let raider_post =
+        game.wdisk(city, 6)
+            .into_iter()
+            .find(|position| {
+                game.wdist(city, *position) == 6
+                    && *position != lagging
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a raider post");
+    game.spawn_test_unit("warrior", 1, raider_post);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_formationless_settler_shadow();
+    ai.settler_targets.insert(settler, target);
+    let log_start = game.log.len();
+
+    assert!(
+        ai.advanced_settler_step(&mut game, 0, settler),
+        "a completed Settler must use its first controllable turn to dispatch"
+    );
+    assert_ne!(
+        game.units[&settler].pos, city,
+        "a lagging guard must not leave a newly completed Settler in its city"
+    );
+    assert!(
+        game.log.since(log_start).any(|(seat, action)| {
+            *seat == 0
+                && matches!(
+                    action,
+                    crate::game::Action::MoveTo { unit, to }
+                        if *unit == settler && *to != city
+                )
+        }),
+        "dispatch must issue a real outbound MoveTo order, not merely select a target"
+    );
+    assert_eq!(
+        ai.settler_guards.get(&settler),
+        Some(&guard),
+        "immediate dispatch retains the guard assignment for the march"
+    );
+    assert!(
+        !ai.guard_wait.contains_key(&settler),
+        "a city departure must not carry an old guard-wait clock forward"
+    );
+}
+
+#[test]
+fn a_settler_waits_for_its_guard_only_within_patience_outside_a_city() {
+    let (mut game, city, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, city);
+    let source = game
+        .route_step(settler, target, 0)
+        .expect("fixture has an outbound staging step");
+    game.apply(
+        0,
+        &crate::game::Action::MoveTo {
+            unit: settler,
+            to: source,
+        },
+    )
+    .expect("the Settler reaches the non-city staging tile");
+    assert!(
+        game.city_at(source).is_none(),
+        "the patience rule belongs to an exposed staging tile, not the city"
+    );
     // A guard that exists but can never close: three tiles away with no
     // movement, refreshed to zero every turn below.
     let lagging =
@@ -19028,15 +19172,31 @@ fn a_settler_waits_for_its_guard_only_within_patience() {
     }
 }
 
-/// A bounded escort wait avoids an opening freeze on quiet ground, but it
-/// must not expire into a route step a visible hostile can capture.  The
+/// A bounded escort response avoids an opening freeze on quiet ground, but it
+/// must not release an exposed Settler into a route step a visible hostile can
+/// capture. The
 /// previous rule released the second Settler of `civvis-20260826T054001Z`
-/// from a safe city tile while its guard was three tiles behind; a barbarian
-/// warrior then took it on turn 14.
+/// from a safe staging tile while its guard was three tiles behind; a
+/// barbarian warrior then took it on turn 14.
 #[test]
 fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
-    let (mut game, source, target) = stacked_escort_fixture();
-    let settler = game.spawn_test_unit("settler", 0, source);
+    let (mut game, city, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, city);
+    let source = game
+        .route_step(settler, target, 0)
+        .expect("fixture has an outbound staging step");
+    game.apply(
+        0,
+        &crate::game::Action::MoveTo {
+            unit: settler,
+            to: source,
+        },
+    )
+    .expect("the Settler reaches the non-city staging tile");
+    assert!(
+        game.city_at(source).is_none(),
+        "a genuinely exposed route step still receives the capture guard"
+    );
     let next = game
         .route_step(settler, target, 0)
         .expect("fixture has a first route step");
@@ -19078,11 +19238,11 @@ fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
 
     assert!(
         ai.stacked_escort_pace(&mut game, 0, settler).is_some(),
-        "a close capture threat keeps the Settler waiting after its ordinary patience"
+        "a close capture threat must handle the exposed Settler instead of releasing its ordinary route"
     );
-    assert_eq!(
-        game.units[&settler].pos, source,
-        "the Settler holds on the safe city tile instead of marching into capture range"
+    assert_ne!(
+        game.units[&settler].pos, next,
+        "the Settler must not march into the capturable route step"
     );
 }
 
@@ -21461,6 +21621,61 @@ fn forcing_reply_search_prices_a_move_then_attack_counter() {
 }
 
 #[test]
+fn forcing_reply_prefilter_keeps_one_step_attackers_and_skips_remote_wars() {
+    let mut game = Game::new_full(3, 24, 16, 81_181, 80, 0, false);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|target| {
+            game.wdisk(*target, 3)
+                .iter()
+                .any(|pos| game.wdist(*target, *pos) == 3)
+                && game
+                    .wdisk(*target, 6)
+                    .iter()
+                    .any(|pos| game.wdist(*target, *pos) == 6)
+                && game
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == 2)
+                    .all(|city| game.wdist(*target, city.pos) > 2)
+        })
+        .expect("fixture needs one-step and remote reply rings");
+    let one_step = game
+        .wdisk(target, 3)
+        .into_iter()
+        .find(|pos| game.wdist(target, *pos) == 3)
+        .expect("fixture has a one-step ranged-counter position");
+    let remote = game
+        .wdisk(target, 6)
+        .into_iter()
+        .find(|pos| game.wdist(target, *pos) == 6)
+        .expect("fixture has a remote position");
+    let exposed = game.spawn_test_unit("warrior", 0, target);
+    game.spawn_test_unit("archer", 1, one_step);
+    game.spawn_test_unit("archer", 2, remote);
+
+    assert!(
+        AdvancedAi::enemy_can_force_a_reply_against_any(&game, 1, &[exposed]),
+        "a ranged unit one step outside direct range remains a forcing branch"
+    );
+    assert!(
+        !AdvancedAi::enemy_can_force_a_reply_against_any(&game, 2, &[exposed]),
+        "a warring army outside the search geometry needs no whole-game clone"
+    );
+}
+
+#[test]
 fn explicit_victory_command_phase_fires_city_center_strikes() {
     let mut game = Game::new_full(2, 20, 14, 8_119, 80, 0, false);
     let settler = game
@@ -23290,9 +23505,6 @@ fn the_adjacent_camp_clear_cannot_reach_the_frozen_anchor() {
          anchor move needs a protocol decision owned by the world rule"
     );
     assert!(AdvancedAi::new().adjacent_camp_clear());
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_adjacent_camp_clear();
-    assert!(!withheld.adjacent_camp_clear());
 }
 
 #[test]
@@ -31093,11 +31305,6 @@ fn the_barbarian_heretic_hunt_cannot_reach_the_frozen_anchor() {
         "the frozen anchor must not hunt heretics"
     );
     assert!(AdvancedAi::new().barbarian_heretic_hunt());
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_barbarian_heretic_hunt();
-    assert!(!withheld.barbarian_heretic_hunt());
-    withheld.enable_barbarian_heretic_hunt();
-    assert!(withheld.barbarian_heretic_hunt());
 }
 
 /// A board with a founder, a rival faith holding its own capital, and a

@@ -1171,6 +1171,7 @@
       "elective-war-yields-to-a-lane",
       "enemy-of-my-enemy",
       "enhancer-for-the-corps",
+      "enter-the-prophet-race",
       "exchange-is-the-engines",
       "expansion-pays-back",
       "expansion-schedule",
@@ -1206,6 +1207,7 @@
       "science-chain-alarm",
       "science-multiplier-payoff",
       "score-horizon",
+      "settler-never-idles",
       "settler-screen",
       "settler-target-hysteresis-2",
       "settler-threat-detour",
@@ -1281,6 +1283,7 @@
       "enemy-of-my-enemy",
       "engine-faith-price",
       "enhancer-for-the-corps",
+      "enter-the-prophet-race",
       "escort-unstick",
       "exchange-is-the-engines",
       "expansion-pays-back",
@@ -1331,6 +1334,7 @@
       "settle-sooner",
       "settlement-gap-target",
       "settler-guard-holds",
+      "settler-never-idles",
       "settler-screen",
       "settler-target-hysteresis-2",
       "settler-threat-detour",
@@ -1882,7 +1886,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 104
+    "default_on": 106
   },
   "genes": [
     {

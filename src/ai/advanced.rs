@@ -1466,6 +1466,8 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
+    /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
+    commitments: commitments::CommitmentLedger,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -1971,6 +1973,18 @@ pub struct AdvancedAi {
     /// `settle_sooner` can price how long it has already been out of a city
     /// when it picks (or re-picks) a site. See `best_reachable_settle_site_except_cached`.
     settler_walk_started: BTreeMap<u32, u32>,
+    /// Where each Settler stood and for how many turns, for the
+    /// `settler-never-idles` watchdog: (tile, turn last noted, streak). See
+    /// `advanced/settler_never_idles.rs`.
+    settler_idle_streak: BTreeMap<u32, (Pos, u32, u32)>,
+    /// Where and when each Settler was last found stranded, so the
+    /// exhaustion search is not repeated every turn from the same tile. See
+    /// `STRANDED_RECHECK_TURNS`.
+    settler_stranded_at: BTreeMap<u32, (Pos, u32)>,
+    /// The target each Settler took from the exhaustion search, so its
+    /// arrival is judged by the same relaxed verdict that chose it. See
+    /// `relaxed_arrival_verdict`.
+    settler_relaxed_targets: BTreeMap<u32, Pos>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -4403,6 +4417,9 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `commitment-patience`: a Builder's retired tile and the turn the
+    /// parking expires; the tile joins `reserved` in the job sweep until then.
+    builder_avoid: BTreeMap<u32, (Pos, u32)>,
     /// A boost already in hand is worth the turns of research it saves, not a
     /// flat credit. Opt-in gene `boost-first-research`; see
     /// `advanced/boost_research.rs`.
@@ -4467,6 +4484,22 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `commitment-patience`: a settle or improve target survives a passing
+    /// threat — the two threat drop reasons and the Builder's reach filter no
+    /// longer drop it — and the ledger retires it after
+    /// `commitments::COMMITMENT_PATIENCE` consecutive forgotten turns, parking
+    /// the site. Opt-in gene; see `advanced/commitments.rs`.
+    commitment_patience: bool,
+    /// `capture-go-or-stand-down`: a declared war's objective that no unit of
+    /// ours has been within `commitments::CAPTURE_PRESENCE_RADIUS` of for
+    /// `commitments::CAPTURE_GO_TURNS` consecutive turns is stood down
+    /// explicitly — excluded from the target ranking for
+    /// `commitments::CAPTURE_STAND_DOWN_TURNS` and the strategy re-assessed
+    /// now — instead of being held, unprosecuted, until the five-turn cadence
+    /// happens to drop it. Opt-in gene; see `advanced/commitments.rs`.
+    capture_go_or_stand_down: bool,
+    /// City id → turn the stand-down expires. Written only by the gene.
+    capture_stood_down: BTreeMap<u32, u32>,
     /// On an advance, no unit ends the turn more than the body's pace plus
     /// one tile closer to the objective than the force's anchor stood. Opt-in
     /// gene `close-as-a-body`; see `advanced/close_as_a_body.rs`.
@@ -4650,6 +4683,49 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Enter the finite Great Prophet race from an explicit victory lane.
+    ///
+    /// ★★★★ THE LIVE SEAT NEVER RESEARCHES ASTROLOGY. Every live game runs
+    /// an explicit target (`--victory diplomatic`), and `advanced_research`
+    /// pins that lane's far-era goal — Seasteads for Diplomacy, Printing /
+    /// Radio / Computers for Culture, Rocketry onward for Science — from
+    /// turn 1 until it is researched. Each pick is "the cheapest step
+    /// toward" that goal, and Astrology → Celestial Navigation is a dead-end
+    /// branch nothing else requires, so Astrology is never an ancestor of any
+    /// goal and the `tech_value` fallback is never consulted while one
+    /// stands. MEASURED over 130 live runs (2026-08-27): `TECH_ASTROLOGY`
+    /// researched in ONE game, at t244 — four turns after Seasteads; ONE
+    /// `DISTRICT_HOLY_SITE` in 1,680 district orders (t74, after the race
+    /// had closed); no Shrine anywhere; the host never listed a Missionary
+    /// as purchasable in any of our cities; `prophet_pending` never true;
+    /// 0 of 28 faith patronages went to a Prophet. Rivals fielded religious
+    /// units 20,591 times in the same rows, and the four King religions were
+    /// all founded by median t62 (earliest t38).
+    ///
+    /// Behind that, `take_turn_inner` sets `pursue_religion` false for any
+    /// explicit non-Religion target, so even a seat that stumbled into a Holy
+    /// Site would discard the prize. Four things therefore move together,
+    /// because the entry fee and the prize are separate gates
+    /// (`BasicAi::skip_prophet_race`) and paying one without the other is
+    /// strictly worse than either pure choice:
+    /// 1. `advanced_research` takes Astrology once the first
+    ///    `PROPHET_RACE_OPENING_TECHS` techs are in, while a Prophet slot is
+    ///    still open for this seat (`prophet_race_open_for`). The lane's own
+    ///    beeline resumes the turn Astrology lands.
+    /// 2. `BasicAi::pick_item` puts the empire's FIRST Holy Site at the front
+    ///    of the district order while the race is open (`enter_prophet_race`
+    ///    on the base); the existing one-site reservation is unchanged.
+    /// 3. `advanced_great_people` prices the Great Prophet as a lane great
+    ///    person (650) while the race is open, so a Gold or Faith patronage
+    ///    within 40 % is taken instead of waiting at 15 %.
+    /// 4. `pursue_religion` is true while the race is open for this seat and
+    ///    again once it holds a religion, so the belief pick, the Prophet
+    ///    claim and the Missionary buy run on a Diplomacy, Culture or Science
+    ///    seat.
+    ///
+    /// `religion-race-is-closed` (pinned on) still wins once every slot is
+    /// taken: `prophet_race_open_for` is false the moment the race closes.
+    enter_the_prophet_race: bool,
     /// An Archer for every city, the frontier city first, while the world
     /// is Ancient and Classical, and Archery chased until a city can train
     /// one. Opt-in gene `early-archers`; see `advanced/early_archers.rs`.
@@ -5141,6 +5217,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A Settler always has somewhere to go: exhaustion asks wider questions
+    /// instead of holding, and a watchdog bounds every other hold. Opt-in
+    /// gene `settler-never-idles`; see `advanced/settler_never_idles.rs`.
+    settler_never_idles: bool,
     /// A wounded unit holding a front trades places with the fresh unit
     /// behind it, so the line does not open when it leaves. Opt-in gene
     /// `swap-rotation`; see `advanced/swap_rotation.rs`.
@@ -5351,6 +5431,12 @@ pub struct AdvancedAi {
 /// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
 /// floor for its own currency, and this only stops the other lanes pricing
 /// research below their least valuable ordinary yield.
+/// How many techs `enter_the_prophet_race` lets the lane's own opening take
+/// before Astrology: the two 25-cost Ancient techs the beeline reaches first
+/// (Animal Husbandry and Mining on every live opening), so the Builder's work
+/// is not delayed and Astrology still lands by about turn 15.
+pub(crate) const PROPHET_RACE_OPENING_TECHS: usize = 2;
+
 /// What `holy_lane_parity` pays a Religion empire for its own Holy Site.
 ///
 /// Not tuned: it is `(Culture, theater_square)`'s own figure, the largest
@@ -5830,6 +5916,16 @@ mod camp_buyout;
 /// the world is Ancient and Classical, and Archery chased until a city can
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
 mod early_archers;
+/// `settler-never-idles`: a Settler always has somewhere to go — exhaustion
+/// asks wider questions instead of holding, and a watchdog bounds every
+/// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
+mod settler_never_idles;
+
+/// Commitments: every multi-turn decision — a settle site, a Builder's tile,
+/// the appointed war's objective — observed at the turn boundary and tracked
+/// to its ending, with what became of it counted. Infrastructure, not a
+/// gene: it changes no decision. See `docs/COMMITMENTS.md`.
+pub mod commitments;
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained
@@ -6133,8 +6229,12 @@ impl AdvancedAi {
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
+        self.settler_idle_streak.clear();
+        self.settler_stranded_at.clear();
+        self.settler_relaxed_targets.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
+        self.builder_avoid.clear();
         self.forget_missionary_explore();
         self.force_groups.clear();
         self.force_groups_dirty = true;
@@ -6152,6 +6252,11 @@ impl AdvancedAi {
         };
         self.settler_targets = remap(&self.settler_targets);
         self.builder_targets = remap(&self.builder_targets);
+        self.builder_avoid = self
+            .builder_avoid
+            .iter()
+            .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
+            .collect();
         self.remap_missionary_explore(map);
         self.settler_stalls = self
             .settler_stalls
@@ -6210,6 +6315,21 @@ impl AdvancedAi {
             .iter()
             .filter_map(|(uid, started)| map.get(uid).map(|new| (*new, *started)))
             .collect();
+        self.settler_idle_streak = self
+            .settler_idle_streak
+            .iter()
+            .filter_map(|(uid, streak)| map.get(uid).map(|new| (*new, *streak)))
+            .collect();
+        self.settler_stranded_at = self
+            .settler_stranded_at
+            .iter()
+            .filter_map(|(uid, stranded)| map.get(uid).map(|new| (*new, *stranded)))
+            .collect();
+        self.settler_relaxed_targets = self
+            .settler_relaxed_targets
+            .iter()
+            .filter_map(|(uid, target)| map.get(uid).map(|new| (*new, *target)))
+            .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
         self.force_groups_dirty = true;
@@ -6251,6 +6371,7 @@ impl AdvancedAi {
             war_status: WarPackageStatus::default(),
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
+            commitments: commitments::CommitmentLedger::default(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -6310,6 +6431,9 @@ impl AdvancedAi {
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             settler_walk_started: BTreeMap::new(),
+            settler_idle_streak: BTreeMap::new(),
+            settler_stranded_at: BTreeMap::new(),
+            settler_relaxed_targets: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -6436,6 +6560,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_avoid: BTreeMap::new(),
             boost_first_research: false,
             boost_wait_research: false,
             boost_unlock_research: false,
@@ -6445,6 +6570,9 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            commitment_patience: false,
+            capture_go_or_stand_down: false,
+            capture_stood_down: BTreeMap::new(),
             close_as_a_body: false,
             culture_floor: false,
             city_target_meets_the_map: false,
@@ -6477,6 +6605,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            enter_the_prophet_race: false,
             early_archers: false,
             fire_plan: false,
             fire_plan_orders: fire_plan::FirePlan::default(),
@@ -6530,6 +6659,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_never_idles: false,
             swap_rotation: false,
             screen_the_shooters: false,
             science_building_first: false,
@@ -6907,6 +7037,14 @@ impl AdvancedAi {
 
     fn plan_stale(&self, g: &Game, pid: usize) -> bool {
         let Some(plan) = &self.plan else { return true };
+        // `capture-go-or-stand-down`: the ledger stood the target down this
+        // turn; re-assess now rather than on the cadence.
+        if plan
+            .target_city
+            .is_some_and(|city| self.capture_stood_down_holds(g, city))
+        {
+            return true;
+        }
         let unavailable_victory_plan = matches!(
             plan.strategy,
             GrandStrategy::Science
@@ -10279,6 +10417,30 @@ impl AdvancedAi {
         } else {
             None
         };
+        // `capture-go-or-stand-down`: a city the ledger stood down is not
+        // ranked again until the stand-down expires; the next-best city of the
+        // same rival takes its place. A home emergency is never stood down.
+        let ranked_target_city = if self.capture_go_or_stand_down && emergency_objective.is_none() {
+            ranked_target_city
+                .filter(|city| !self.capture_stood_down_holds(g, *city))
+                .or_else(|| {
+                    target_player.and_then(|target| {
+                        g.cities
+                            .values()
+                            .filter(|c| {
+                                c.owner == target && !self.capture_stood_down_holds(g, c.id)
+                            })
+                            .min_by(|left, right| {
+                                self.campaign_city_value(g, pid, left, strategy)
+                                    .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
+                                    .then_with(|| left.id.cmp(&right.id))
+                            })
+                            .map(|c| c.id)
+                    })
+                })
+        } else {
+            ranked_target_city
+        };
         let target_city = committed_target_city.or(ranked_target_city);
 
         if let Some(committed_city) =
@@ -11987,6 +12149,17 @@ impl AdvancedAi {
                 {
                     Some("horseback_riding")
                 }
+                // `enter-the-prophet-race`: Astrology is a dead-end branch no
+                // lane goal is an ancestor of, so no beeline ever reaches it.
+                // Take it once the opening techs are in, while a Prophet slot
+                // is still open for this seat.
+                _ if self.enter_the_prophet_race
+                    && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
+                    && !g.players[pid].techs.contains(&crate::name!("astrology"))
+                    && self.prophet_race_open_for(g, pid) =>
+                {
+                    Some("astrology")
+                }
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment => [
@@ -12429,6 +12602,26 @@ impl AdvancedAi {
             && g.religions_founded() >= g.max_religions()
             && g.players[pid].religion.is_none()
             && !g.has_ability(pid, "taxis")
+    }
+
+    /// Whether this seat can still found a religion: none of its own yet, a
+    /// Prophet already claimed or a slot still open once the Prophets other
+    /// majors hold are counted, and the first half of the clock. See
+    /// `enter_the_prophet_race`.
+    fn prophet_race_open_for(&self, g: &Game, pid: usize) -> bool {
+        let player = &g.players[pid];
+        if player.religion.is_some() {
+            return false;
+        }
+        if player.prophet_pending {
+            return true;
+        }
+        let claimed = g.religions_founded()
+            + g.players
+                .iter()
+                .filter(|candidate| candidate.prophet_pending)
+                .count();
+        claimed < g.max_religions() && g.turn * 2 <= g.max_turns.max(1)
     }
 
     /// Whether the assigned victory lane can still be won. See
@@ -16461,6 +16654,13 @@ impl AdvancedAi {
                 (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 650.0,
                 (GrandStrategy::Expansion | GrandStrategy::Recovery, "engineer" | "merchant")
                 | (GrandStrategy::Science | GrandStrategy::Culture, "engineer") => 300.0,
+                // `enter-the-prophet-race`: the Prophet is this seat's lane
+                // great person while a slot is still open for it.
+                (_, "prophet")
+                    if self.enter_the_prophet_race && self.prophet_race_open_for(g, pid) =>
+                {
+                    650.0
+                }
                 (_, "prophet") if g.players[pid].religion.is_some() => -1_000.0,
                 _ => 100.0,
             };
@@ -26059,6 +26259,24 @@ impl AdvancedAi {
             self.guard_wait.remove(&uid);
             return None;
         }
+        // A completed Settler starts on one of our city tiles, which is the
+        // safest place it will be all trip.  Do not spend its first actionable
+        // turn fortifying there just because a newly assigned guard has not
+        // caught up: retain the assignment so the guard still follows, but
+        // hand the Settler to the ordinary safe-step route immediately.  That
+        // route can still reject a genuinely unsafe departure or take a safer
+        // sidestep; it is the open-ended city wait that costs the expansion
+        // window.
+        if g.city_at(current)
+            .is_some_and(|city| g.cities.get(&city).is_some_and(|city| city.owner == pid))
+        {
+            self.guard_wait.remove(&uid);
+            think!(self.journal(), Expansion, Detail,
+                   "Settler departs its city before its guard";
+                   "the guard remains assigned, while the Settler takes the first safe step \
+                    toward its target now");
+            return None;
+        }
         // Counted once per turn: `advance_unit_serial` re-enters a unit up to
         // eight times a turn, and each of those is the same wait.
         let (last_turn, waited) = self.guard_wait.get(&uid).copied().unwrap_or((u32::MAX, 0));
@@ -26138,6 +26356,11 @@ impl AdvancedAi {
         think!(self.journal(), Expansion, Detail, "Settler waits for its guard";
                "{waited} turn(s) so far; marching alone is how the last two settlers \
                 were captured");
+        if self.settler_never_idles {
+            // See `settler_never_idles`: the wait is a hold, and a hold is
+            // the watchdog's to bound — report the turn as not spent.
+            return Some(false);
+        }
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
@@ -26278,8 +26501,37 @@ impl AdvancedAi {
             .is_some_and(|sites| sites.contains_key(&pos))
     }
 
+    /// The Settler's turn: the decision routine below and — under
+    /// `settler-never-idles` — a watchdog that marches a Settler the routine
+    /// has held for `SETTLER_IDLE_PATIENCE` turns. See
+    /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let acted = self.advanced_settler_step_inner(g, pid, uid);
+        if acted || !self.settler_never_idles {
+            return acted;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return acted;
+        };
+        // A Settler the routine left without a target already ran the
+        // exhaustion search this turn (`settler_stranded`), or retired a
+        // doomed arrival for next turn's pick; asking again would only
+        // repeat the scan and the journal line.
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || !self.settler_targets.contains_key(&uid)
+            || self.settler_idle_streak(uid) < settler_never_idles::SETTLER_IDLE_PATIENCE
+        {
+            return acted;
+        }
+        self.settler_watchdog_step(g, pid, uid)
+    }
+
+    fn advanced_settler_step_inner(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
+        if self.settler_never_idles {
+            self.note_settler_idle(g, uid);
+        }
         if self.settle_sooner {
             // The walk clock starts the first turn the Settler is stepped,
             // whichever branch below steps it. See `settle_sooner`.
@@ -26647,7 +26899,12 @@ impl AdvancedAi {
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
             }
-            if self.settler_threat_detour && self.settler_threat_deferrals.contains_key(&target) {
+            // `commitment_patience`: a threat is a hold, not a drop — the
+            // ledger retires the site if the hold outlasts its patience.
+            if self.settler_threat_detour
+                && !self.commitment_patience
+                && self.settler_threat_deferrals.contains_key(&target)
+            {
                 return Some("the approach is temporarily deferred for a visible threat");
             }
             // A momentarily unavailable route is not a bad site. Under
@@ -26658,6 +26915,7 @@ impl AdvancedAi {
                 return Some("no route this turn");
             }
             if self.settlement_safety
+                && !self.commitment_patience
                 && self.settlement_tile_risk(g, pid, Some(uid), target, &visible)
                     > SETTLER_STEP_RISK_LIMIT
             {
@@ -26802,7 +27060,23 @@ impl AdvancedAi {
                 rejected += 1;
             }
         });
+        // See `settler_never_idles`: exhaustion asks two wider questions
+        // before it holds, and a hold is never silent.
+        let target = target.or_else(|| {
+            if !self.settler_never_idles || self.settler_stranded_recently(g, uid) {
+                return None;
+            }
+            let site = self.settler_exhaustion_target(g, pid, uid)?;
+            self.settler_targets.insert(uid, site);
+            self.settler_relaxed_targets.insert(uid, site);
+            self.settler_stalls.remove(&uid);
+            self.settler_closest.remove(&uid);
+            Some(site)
+        });
         let Some(mut target) = target else {
+            if self.settler_never_idles {
+                return self.settler_stranded(g, pid, uid);
+            }
             // Do not let a safe exhaustion fall through to `BasicAi`, which
             // cannot see `settler_dead_sites` and may select the very plot the
             // live forecast just retired. A later board can reveal a safe site
@@ -26824,7 +27098,13 @@ impl AdvancedAi {
             // retains a valid cache rather than paying for a speculative city
             // each turn. Recheck once at arrival, when founding would otherwise
             // make the loss irreversible.
-            let arrival_verdict = if self.base.loyalty_rate_alarm {
+            let relaxed = self.settler_never_idles
+                && self.settler_relaxed_targets.get(&uid) == Some(&current);
+            let arrival_verdict = if relaxed {
+                // See `relaxed_arrival_verdict`: a site the exhaustion search
+                // chose is judged at arrival by the rule that chose it.
+                Self::relaxed_arrival_verdict(g, pid, current)
+            } else if self.base.loyalty_rate_alarm {
                 self.settle_site_loyalty_verdict(g, pid, current)
             } else {
                 self.settle_site_frontier_loyalty_verdict(g, pid, current)
@@ -27821,12 +28101,19 @@ impl AdvancedAi {
             }
             return false;
         }
-        let reserved: HashSet<Pos> = self
+        let mut reserved: HashSet<Pos> = self
             .builder_targets
             .iter()
             .filter(|(other, _)| **other != uid && g.units.contains_key(other))
             .map(|(_, pos)| *pos)
             .collect();
+        // `commitment_patience`: a tile this Builder gave up on stays out of
+        // its own sweep until the parking expires.
+        if let Some((tile, until)) = self.builder_avoid.get(&uid) {
+            if g.turn < *until {
+                reserved.insert(*tile);
+            }
+        }
         // Reading every tile the empire owns: one memo scope so the
         // empire-wide questions each tile asks are answered once for the whole
         // sweep rather than once per tile. The borrow checker rejects the
@@ -27854,7 +28141,7 @@ impl AdvancedAi {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
-                    && job_out_of_reach(*pos)
+                    && (self.commitment_patience || job_out_of_reach(*pos))
                     && (!self
                         .worthwhile_improvements(g, pid, *pos, strategy)
                         .is_empty()
@@ -30470,8 +30757,17 @@ impl AdvancedAi {
             .map(|player| player.id)
             .collect();
         let mut worst_reply = 0.0_f64;
+        // With one front there is no clone to save, so retain the original
+        // path exactly. The broad geometry scan only earns its keep when it
+        // can eliminate one or more other warring seats.
+        let has_multiple_enemies = enemies.len() > 1;
 
         for enemy in enemies {
+            if has_multiple_enemies
+                && !Self::enemy_can_force_a_reply_against_any(after, enemy, &victims)
+            {
+                continue;
+            }
             let mut reply_position = after.speculative_clone();
             reply_position.current = enemy;
             for unit in reply_position
@@ -30506,6 +30802,65 @@ impl AdvancedAi {
             }
         }
         worst_reply
+    }
+
+    /// Whether an enemy can *possibly* make one of the forcing replies this
+    /// search admits on its next turn.  A negative answer is enough to avoid
+    /// cloning the whole board for that enemy; a positive answer deliberately
+    /// remains only a broad prefilter and the cloned `Game::apply` below is
+    /// still the authority on terrain, line of sight, occupancy, and costs.
+    ///
+    /// The reply position resets the enemy's moves, attacks, and city strikes
+    /// before searching it.  This predicate must therefore not use their
+    /// current availability.  It mirrors the geometry of `forcing_attacks_to`:
+    /// direct air strikes, direct or one-step land attacks, and city or
+    /// encampment strikes.  City checks are intentionally looser than the
+    /// engine (range only), which preserves every uncertain branch rather than
+    /// proving a legal counterattack away from the search.
+    fn enemy_can_force_a_reply_against_any(position: &Game, enemy: usize, victims: &[u32]) -> bool {
+        let unit_can_reach_a_victim = position
+            .units
+            .values()
+            .filter(|unit| unit.owner == enemy)
+            .any(|unit| {
+                let spec = &position.rules.units[unit.kind];
+                let reach = position.unit_attack_range(unit.id);
+                if spec.domain.as_deref() == Some("air") {
+                    return victims.iter().any(|victim| {
+                        position
+                            .units
+                            .get(victim)
+                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach)
+                    });
+                }
+                spec.class == "military"
+                    && victims.iter().any(|victim| {
+                        position
+                            .units
+                            .get(victim)
+                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach + 2)
+                    })
+                    && !position.is_embarked(unit)
+            });
+        if unit_can_reach_a_victim {
+            return true;
+        }
+
+        position
+            .cities
+            .values()
+            .filter(|city| city.owner == enemy)
+            .any(|city| {
+                victims.iter().any(|victim| {
+                    let Some(victim) = position.units.get(victim) else {
+                        return false;
+                    };
+                    position.wdist(city.pos, victim.pos) <= 2
+                        || position
+                            .city_district_family_position(city, crate::name!("encampment"))
+                            .is_some_and(|source| position.wdist(source, victim.pos) <= 2)
+                })
+            })
     }
 
     /// Price a forcing reply against an untouched board, cloning and applying
@@ -33438,7 +33793,15 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_walk_started
             .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_idle_streak
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_stranded_at
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_relaxed_targets
+            .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
     }
 
@@ -33950,6 +34313,15 @@ impl AdvancedAi {
         self.base.skip_prophet_race = (self.skip_the_prophet_race || religion_race_closed)
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
+        // `enter-the-prophet-race`: the entry fee AND the prize, together,
+        // while a slot is still open for this seat — and the prize again once
+        // it holds a religion. The closed case above still wins, because
+        // `prophet_race_open_for` is false by then.
+        let prophet_race_open = self.enter_the_prophet_race && self.prophet_race_open_for(g, pid);
+        self.base.enter_prophet_race = prophet_race_open;
+        if prophet_race_open || (self.enter_the_prophet_race && g.players[pid].religion.is_some()) {
+            self.base.pursue_religion = true;
+        }
         self.base.science_building_first = self.science_building_first;
         // One reading a turn: `Game::victory_races` walks every city of every
         // major, and `production_value` asks this question per item per city.
@@ -34340,6 +34712,9 @@ impl AdvancedAi {
             self.stamp_city_directives(g, pid, &plan);
         }
         self.resolve_city_dispositions(g, pid, plan.strategy);
+        // The last reading of the turn: what became of every decision, with
+        // `Unit::acted` still saying what each unit did. Observes only.
+        self.reconcile_commitments(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
@@ -34377,6 +34752,12 @@ mod live_bundle_tests {
         assert!(!live.base.bank_envoys);
     }
 }
+
+/// Shared `#[cfg(test)]` helpers for the gene submodules' own `tests` blocks,
+/// so a check repeated across several modules has one definition. See
+/// `advanced/test_support.rs`.
+#[cfg(test)]
+pub(crate) mod test_support;
 
 // This module lives here, rather than in `src/ai/advanced/tests.rs`, because
 // it is exercising `AdvancedAi::forcing_reply_label`, a private associated
@@ -34504,6 +34885,8 @@ mod science_scaling;
 
 #[cfg(test)]
 mod science_funnel_census;
+#[cfg(test)]
+mod settler_idle_census;
 
 #[cfg(test)]
 mod research_probe;

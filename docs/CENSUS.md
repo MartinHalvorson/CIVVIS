@@ -112,6 +112,83 @@ come_ashore=false unit_turns=39340  embarked= 17.6%  transitions/1000 unit-turns
 come_ashore=true  unit_turns=40451  embarked=  7.2%  transitions/1000 unit-turns=  89.4  embarked-with-attack=2921  CITIES_LOST=5  city-damage-turns=67
 ```
 
+## commitment_census
+
+`src/ai/advanced/commitments.rs:1307` — census, not an assertion; run explicitly with --nocapture
+
+```
+map 98500000 t134:
+  settle  made 88 done 26 (31%) retargeted 43 dropped 12 lost 1 · open turns 331: forgotten 85 (25%) stalled 50 (15%) late 97 (29%) · done in 3.4 turns v eta 2.7
+  improve made 332 done 201 (62%) retargeted 58 dropped 47 lost 14 · open turns 1100: forgotten 299 (27%) stalled 77 (7%) late 362 (32%) · done in 3.6 turns v eta 2.5
+  capture made 22 done 0 (0%) retargeted 2 dropped 18 lost 0 · open turns 83: forgotten 44 (53%) stalled 11 (13%) late 0 (0%) · done in 0.0 turns v eta 0.0
+map 98500001 t244:
+  settle  made 85 done 26 (30%) retargeted 43 dropped 15 lost 1 · open turns 324: forgotten 86 (26%) stalled 19 (5%) late 78 (24%) · done in 3.2 turns v eta 2.5
+  improve made 743 done 453 (62%) retargeted 112 dropped 111 lost 49 · open turns 2852: forgotten 731 (25%) stalled 339 (11%) late 1008 (35%) · done in 4.1 turns v eta 3.1
+  capture made 58 done 0 (0%) retargeted 21 dropped 33 lost 0 · open turns 287: forgotten 58 (20%) stalled 7 (2%) late 9 (3%) · done in 0.0 turns v eta 0.0
+map 98500002 t231:
+  settle  made 147 done 30 (20%) retargeted 79 dropped 31 lost 6 · open turns 733: forgotten 253 (34%) stalled 119 (16%) late 305 (41%) · done in 3.5 turns v eta 3.1
+  improve made 517 done 298 (59%) retargeted 89 dropped 81 lost 30 · open turns 2586: forgotten 951 (36%) stalled 323 (12%) late 1212 (46%) · done in 4.7 turns v eta 2.9
+  capture made 38 done 0 (0%) retargeted 16 dropped 18 lost 0 · open turns 255: forgotten 40 (15%) stalled 15 (5%) late 5 (1%) · done in 0.0 turns v eta 0.0
+map 98500003 t206:
+  settle  made 73 done 30 (41%) retargeted 29 dropped 10 lost 3 · open turns 339: forgotten 128 (37%) stalled 18 (5%) late 131 (38%) · done in 3.9 turns v eta 3.1
+  improve made 542 done 334 (63%) retargeted 73 dropped 81 lost 39 · open turns 1926: forgotten 480 (24%) stalled 291 (15%) late 735 (38%) · done in 3.8 turns v eta 2.7
+  capture made 35 done 1 (3%) retargeted 10 dropped 20 lost 0 · open turns 180: forgotten 58 (32%) stalled 39 (21%) late 0 (0%) · done in 1.0 turns v eta 20.0
+map 98500004 t251:
+  settle  made 87 done 28 (32%) retargeted 41 dropped 14 lost 2 · open turns 667: forgotten 180 (26%) stalled 253 (37%) late 411 (61%) · done in 5.0 turns v eta 3.2
+  improve made 668 done 455 (69%) retargeted 64 dropped 101 lost 33 · open turns 2095: forgotten 327 (15%) stalled 242 (11%) late 601 (28%) · done in 3.8 turns v eta 2.9
+  capture made 48 done 6 (12%) retargeted 10 dropped 31 lost 0 · open turns 353: forgotten 62 (17%) stalled 55 (15%) late 69 (19%) · done in 4.7 turns v eta 20.0
+map 98500005 t120:
+  settle  made 53 done 20 (37%) retargeted 21 dropped 11 lost 1 · open turns 171: forgotten 44 (25%) stalled 10 (5%) late 36 (21%) · done in 4.5 turns v eta 3.0
+  improve made 227 done 157 (71%) retargeted 23 dropped 28 lost 11 · open turns 661: forgotten 152 (22%) stalled 52 (7%) late 232 (35%) · done in 3.3 turns v eta 2.3
+  capture made 13 done 0 (0%) retargeted 0 dropped 10 lost 0 · open turns 152: forgotten 60 (39%) stalled 8 (5%) late 37 (24%) · done in 0.0 turns v eta 0.0
+map 98500006 t251:
+  settle  made 97 done 28 (28%) retargeted 32 dropped 32 lost 5 · open turns 467: forgotten 157 (33%) stalled 70 (14%) late 178 (38%) · done in 3.8 turns v eta 4.5
+  improve made 714 done 460 (65%) retargeted 106 dropped 102 lost 36 · open turns 2222: forgotten 601 (27%) stalled 219 (9%) late 789 (35%) · done in 3.4 turns v eta 2.6
+  capture made 51 done 2 (4%) retargeted 20 dropped 26 lost 0 · open turns 374: forgotten 98 (26%) stalled 25 (6%) late 19 (5%) · done in 6.0 turns v eta 20.0
+map 98500007 t237:
+  settle  made 95 done 24 (25%) retargeted 51 dropped 17 lost 2 · open turns 446: forgotten 144 (32%) stalled 72 (16%) late 208 (46%) · done in 5.9 turns v eta 2.6
+  improve made 799 done 512 (65%) retargeted 119 dropped 108 lost 44 · open turns 2523: forgotten 634 (25%) stalled 241 (9%) late 821 (32%) · done in 3.7 turns v eta 2.8
+  capture made 46 done 2 (4%) retargeted 14 dropped 26 lost 0 · open turns 281: forgotten 63 (22%) stalled 32 (11%) late 24 (8%) · done in 3.0 turns v eta 20.0
+=== 8 maps, deployment genome ===
+settle  made 725 done 212 (29%) retargeted 339 dropped 142 lost 21 · open turns 3478: forgotten 1077 (30%) stalled 611 (17%) late 1444 (41%) · done in 4.1 turns v eta 3.1
+improve made 4542 done 2870 (64%) retargeted 644 dropped 659 lost 256 · open turns 15965: forgotten 4175 (26%) stalled 1784 (11%) late 5760 (36%) · done in 3.8 turns v eta 2.8
+capture made 311 done 11 (3%) retargeted 93 dropped 182 lost 0 · open turns 1965: forgotten 483 (24%) stalled 192 (9%) late 163 (8%) · done in 4.3 turns v eta 20.0
+endings:
+  settle  completed         212
+  settle  dropped           117
+  settle  lost              21
+  settle  retargeted        339
+  settle  retargeted before moving164
+  settle  retargeted en route175
+  settle  settled elsewhere 25
+  improve completed         2870
+  improve dropped           659
+  improve lost              256
+  improve retargeted        644
+  improve retargeted before moving334
+  improve retargeted en route310
+  capture completed         11
+  capture ended, always present137
+  capture ended, nobody ever went50
+  capture ended, went then left88
+  capture retargeted        93
+  capture stood down        182
+open at game end:
+  settle  11
+  improve 113
+  capture 25
+forgotten, by hold:
+  settle  hostile within two              806
+  settle  stall counted (route refused)   47
+  settle  threat forecast on the site     12
+  settle  unexplained                     212
+  improve at the tile, build refused      17
+  improve hostile within two              2142
+  improve in a city                       102
+  improve walk refused or not attempted   1914
+  capture nobody at the objective         483
+```
+
 ## envoy_allocation_census
 
 `src/ai/advanced/tests.rs:27247` — census, not an assertion; run explicitly with --nocapture
@@ -417,6 +494,94 @@ TOTALS n=8 science 893.2 vs 1036.7 | techs 377 vs 373 | campuses 28 vs 33 | scor
   mean settle_value the turn BEFORE the city existed: 140.0
   mean settle_value once the city owns its ring one:  -12.9
   founding the city destroys 109.2% of its own site's measured value
+```
+
+## settler_idle_census
+
+`src/ai/advanced/settler_idle_census.rs:580` — census, not an assertion; run explicitly with --nocapture
+
+```
+=== settler idle census [deployment]: 250 settlers over 8 maps (6p 60x38 online) ===
+  outcomes: founded 238   lost 1   alive at the end 11
+  settler-turns 2526: moved 1988 (78.7%)   founded 238   IDLE 299 (11.8%)
+  idle turns standing on an own city tile: 22 (7.4% of idle, 0.9% of all settler-turns)
+    settlers with >=  1 idle turns in a city:   10 (4.0%)
+    settlers with >=  3 idle turns in a city:    4 (1.6%)
+    settlers with >=  6 idle turns in a city:    1 (0.4%)
+    settlers with >= 10 idle turns in a city:    0 (0.0%)
+  longest idle-in-city streak per settler: mean 0.1   p50 0   p90 0   max 6
+  idle on the tile it was built on, the turn it was built: 9 of 250 (3.6%)
+  turns from build to first move: mean 0.1   p50 0   p90 0   max 6   alive at the end without ever moving: 0
+  idle turns by game turn (all / in a city): t<50 93/21   t50-149 111/1   t150+ 95/0
+  why the settler stood still            idle turns   of which in a city
+       159 ( 53.2%)       11   HELD short of its target: the safe-step guard rejected every neighbour
+        37 ( 12.4%)       11   waits outside a barbarian's reach (civilian-out-of-reach)
+        25 (  8.4%)        0   STRANDED (named): no legal site is reachable and it cannot found here
+        21 (  7.0%)        0   abandons a loyalty-doomed arrival
+        18 (  6.0%)        0   refuses a site before walking (loyalty forecast)
+        13 (  4.3%)        0   NO TARGET although the picker offers a site: the loyalty verdict / hold branch refused it
+        13 (  4.3%)        0   SILENT: holds a target and never stepped
+         7 (  2.3%)        0   sets its target aside (hysteresis): step risk above the limit
+         3 (  1.0%)        0   watchdog holds: every step toward the target is in a hostile's reach
+         1 (  0.3%)        0   'marching' line, no HELD line, no move
+         1 (  0.3%)        0   HELD short of its target: no route to it on our own board
+         1 (  0.3%)        0   HELD short of its target: the next tile refuses it and nothing is standing there
+  the five settlers that idled longest in a city:
+    seat 1 born t27 at (5, 18): 6 idle-in-city of 11 turns, first move Some(6), "founded"; 5x HELD short of its target: the safe-step guard rejected every neighbour; 1x waits outside a barbarian's reach (civilian-out-of-reach)
+    seat 3 born t24 at (21, 11): 3 idle-in-city of 14 turns, first move Some(0), "founded"; 2x waits outside a barbarian's reach (civilian-out-of-reach); 1x HELD short of its target: the safe-step guard rejected every neighbour
+    seat 5 born t47 at (30, 8): 3 idle-in-city of 9 turns, first move Some(3), "founded"; 3x waits outside a barbarian's reach (civilian-out-of-reach)
+    seat 3 born t33 at (21, 11): 3 idle-in-city of 9 turns, first move Some(3), "founded"; 2x waits outside a barbarian's reach (civilian-out-of-reach); 1x HELD short of its target: the safe-step guard rejected every neighbour
+    seat 5 born t33 at (26, 24): 2 idle-in-city of 11 turns, first move Some(2), "founded"; 2x waits outside a barbarian's reach (civilian-out-of-reach)
+  journal turns truncated by the per-turn budget: 0
+=== settler idle census [live]: 679 settlers over 8 maps (6p 60x38 online) ===
+  outcomes: founded 449   lost 0   alive at the end 230
+  settler-turns 30143: moved 16967 (56.3%)   founded 449   IDLE 12727 (42.2%)
+  idle turns standing on an own city tile: 1431 (11.2% of idle, 4.7% of all settler-turns)
+    settlers with >=  1 idle turns in a city:  300 (44.2%)
+    settlers with >=  3 idle turns in a city:   98 (14.4%)
+    settlers with >=  6 idle turns in a city:   42 (6.2%)
+    settlers with >= 10 idle turns in a city:   26 (3.8%)
+  longest idle-in-city streak per settler: mean 1.9   p50 0   p90 3   max 66
+  idle on the tile it was built on, the turn it was built: 192 of 679 (28.3%)
+  turns from build to first move: mean 0.5   p50 0   p90 2   max 9   alive at the end without ever moving: 2
+  idle turns by game turn (all / in a city): t<50 371/204   t50-149 3199/401   t150+ 9157/826
+  why the settler stood still            idle turns   of which in a city
+      7590 ( 59.6%)      677   STRANDED (named): no legal site is reachable and it cannot found here
+      1578 ( 12.4%)      180   HELD short of its target: the safe-step guard rejected every neighbour
+       877 (  6.9%)        7   abandons a loyalty-doomed arrival
+       425 (  3.3%)       72   SILENT: waiting for a guard
+       424 (  3.3%)       68   exhaustion search retargeted, no step
+       353 (  2.8%)       32   HELD short of its target: the next tile refuses it and nothing is standing there
+       341 (  2.7%)       40   sets its target aside (hysteresis): marked dead for this settler
+       281 (  2.2%)      139   waits for its guard (stacked escort, live seat)
+       187 (  1.5%)       28   'marching' line, no HELD line, no move
+       132 (  1.0%)       27   sets its target aside (hysteresis): step risk above the limit
+       109 (  0.9%)       64   watchdog holds: every step toward the target is in a hostile's reach
+        61 (  0.5%)        5   HELD short of its target: our own unit is standing on the next tile
+        57 (  0.4%)        7   sets its target aside (hysteresis): a city within three tiles
+        49 (  0.4%)       16   gives up on a target it kept retreating from
+        48 (  0.4%)        4   HELD short of its target: no route to it on our own board
+        44 (  0.3%)        0   NO TARGET: no legal site anywhere in reach (the map is full for this seat)
+        44 (  0.3%)       15   waits outside a barbarian's reach (civilian-out-of-reach)
+        39 (  0.3%)       27   retreat line but no move
+        30 (  0.2%)        5   refuses a site before walking (loyalty forecast)
+        19 (  0.1%)       10   detours around a visible threat (retargeted, no step)
+        10 (  0.1%)        0   SILENT: holds a target and never stepped
+         9 (  0.1%)        1   sets its target aside (hysteresis): the approach is temporarily deferred for a visible threat
+         5 (  0.0%)        4   falls back to a nearby safe site (retargeted, no step)
+         5 (  0.0%)        1   falls back toward its guard but no move
+         2 (  0.0%)        0   HELD short of its target: a foreign unit holds the next tile
+         2 (  0.0%)        0   NO TARGET although the picker offers a site: the loyalty verdict / hold branch refused it
+         2 (  0.0%)        0   NO TARGET: a legal site exists near a city but none is reachable/ranked for this settler
+         2 (  0.0%)        0   sets its target aside (hysteresis): another empire's ground
+         2 (  0.0%)        2   sidestep line but no move
+  the five settlers that idled longest in a city:
+    seat 0 born t61 at (13, 19): 66 idle-in-city of 190 turns, first move Some(0), "alive at the end"; 66x STRANDED (named): no legal site is reachable and it cannot found here
+    seat 2 born t92 at (7, 19): 54 idle-in-city of 151 turns, first move Some(0), "alive at the end"; 54x STRANDED (named): no legal site is reachable and it cannot found here
+    seat 5 born t111 at (14, 15): 53 idle-in-city of 119 turns, first move Some(0), "alive at the end"; 52x STRANDED (named): no legal site is reachable and it cannot found here; 1x HELD short of its target: our own unit is standing on the next tile
+    seat 3 born t63 at (31, 14): 51 idle-in-city of 168 turns, first move Some(2), "alive at the end"; 49x STRANDED (named): no legal site is reachable and it cannot found here; 2x SILENT: waiting for a guard
+    seat 2 born t150 at (3, 27): 51 idle-in-city of 101 turns, first move Some(0), "alive at the end"; 51x STRANDED (named): no legal site is reachable and it cannot found here
+  journal turns truncated by the per-turn budget: 0
 ```
 
 ## settler_walk_census
