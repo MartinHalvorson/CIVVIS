@@ -90,11 +90,11 @@ fn share(value: Option<f64>) -> String {
 }
 
 const PROFILE_HEADER: &str = "  concentr.  disper.  arrival     foot  absent  vanguard  \
-envelop.  focus  ground  screen  contact";
+envelop.  focus  ground  screen  contact  salvag.";
 
 fn profile_row(label: &str, profile: DoctrineProfile) -> String {
     format!(
-        "{label:<22}{:>9}{:>9}{:>9}{:>9}{:>8}{:>10}{:>10}{:>7}{:>8}{:>8}{:>9}",
+        "{label:<22}{:>9}{:>9}{:>9}{:>9}{:>8}{:>10}{:>10}{:>7}{:>8}{:>8}{:>9}{:>9}",
         cell(profile.concentration),
         cell(profile.dispersion),
         cell(profile.arrival),
@@ -106,6 +106,7 @@ fn profile_row(label: &str, profile: DoctrineProfile) -> String {
         share(profile.ground),
         share(profile.screen),
         share(profile.contact),
+        share(profile.salvageable),
     )
 }
 
@@ -232,6 +233,10 @@ fn profile_run(boards: &[Engagement], name: &str, seeds: usize, start_seed: u64,
         "screen     share of own ranged unit-turns with a friendly between them and the enemy"
     );
     println!("contact    share of turns on which the two forces were within two tiles");
+    println!("salvag.    share of own losses already at or below 30 hp the turn before -- the");
+    println!("           losses the controller had a turn's warning of, and could have rotated,");
+    println!("           withdrawn or healed out of. A high figure is losses worth preventing;");
+    println!("           a low one means the army is being killed from health it could not read.");
     println!();
     println!("The figure beside each role is that role's mean material swing per seed.");
     println!("None of these is a score. An army holding a defile should be dense and static;");

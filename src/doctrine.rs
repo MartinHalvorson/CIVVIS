@@ -1056,6 +1056,17 @@ pub struct DoctrineLedger {
     /// number the live seat has never once put above zero in a real war.
     pub cities_taken: usize,
     pub cities_lost: usize,
+    /// Units lost that were already at or below [`SALVAGEABLE_HP`] on the
+    /// turn before they died — a loss the controller had a turn's warning
+    /// of and could have answered by rotating, withdrawing or healing. The
+    /// rest were killed from a health it had no reason to act on.
+    ///
+    /// The distinction only became worth making when a board could heal
+    /// (`--heal`): with nothing to recover to, "should have pulled it out"
+    /// was not a real alternative, and `swap-rotation` then measured the
+    /// same either way. This is the column that says which kind of loss a
+    /// change is actually preventing.
+    pub losses_when_salvageable: usize,
     /// Board observations, accumulated turn by turn; see [`DoctrineProfile`].
     observations: Observations,
 }
@@ -1130,6 +1141,7 @@ impl DoctrineLedger {
         self.damage_taken += other.damage_taken;
         self.cities_taken += other.cities_taken;
         self.cities_lost += other.cities_lost;
+        self.losses_when_salvageable += other.losses_when_salvageable;
         let mine = &mut self.observations;
         let theirs = &other.observations;
         mine.turns += theirs.turns;
@@ -1178,6 +1190,8 @@ impl DoctrineLedger {
             vanguard: (obs.vanguard_n > 0.0).then(|| obs.vanguard_sum / obs.vanguard_n),
             vanguard_clean: (obs.vanguard_n > 0.0)
                 .then(|| obs.vanguard_clean / obs.vanguard_n),
+            salvageable: (self.losses > 0)
+                .then(|| self.losses_when_salvageable as f64 / self.losses as f64),
         }
     }
 }
@@ -1249,6 +1263,11 @@ pub struct DoctrineProfile {
     /// so the instant is upstream of *almost* every engagement rather than
     /// provably all of them.
     pub vanguard_clean: Option<f64>,
+    /// Share of own losses that were already at or below
+    /// [`SALVAGEABLE_HP`] the turn before — losses the controller had a
+    /// turn's warning of. `None` when nothing was lost, which is a
+    /// different statement from none of them being preventable.
+    pub salvageable: Option<f64>,
 }
 
 /// Population standard deviation from running sums. `None` below two
@@ -1609,8 +1628,12 @@ fn account(
                     .map_or(0.0, |spec| spec.cost);
                 let final_blow = seen.hp as f64;
                 let earlier = pending.remove(uid).unwrap_or(0.0);
+                let salvageable = seen.hp <= SALVAGEABLE_HP;
                 let (mine, theirs) = split(ledgers, side);
                 mine.losses += 1;
+                if salvageable {
+                    mine.losses_when_salvageable += 1;
+                }
                 mine.material_lost += cost;
                 mine.damage_taken += final_blow;
                 theirs.kills += 1;
@@ -1941,6 +1964,13 @@ fn usable(g: &Game, pos: Pos) -> bool {
 /// The range at which a unit is part of an engagement rather than walking
 /// toward it — the contact zone's own threshold, and `note_arrivals`'.
 pub const CONTACT_RANGE: i32 = 2;
+
+/// A unit at or below this on the turn before it died was one the
+/// controller had a turn's warning about. Thirty: below `withdraw_hp` (45,
+/// the line recovery already uses), so the column counts units the
+/// controller had already been told to pull out and did not, rather than
+/// every unit that happened to be scratched.
+pub const SALVAGEABLE_HP: i32 = 30;
 
 /// Land military units of one player: what a captured board can seat. Ships
 /// and aircraft are left out — the arena's muster refuses water, and the
@@ -2990,6 +3020,42 @@ mod tests {
         broken.cities[0].col = 999;
         let error = Engagement::from_json(&Engagement::to_json(&[broken])).unwrap_err();
         assert!(error.contains("off the board"), "{error}");
+    }
+
+    /// A unit killed from a health the controller had a turn's warning of is
+    /// a different loss from one killed outright, and the share of the first
+    /// is what says whether a change that preserves units has anything to
+    /// work with.
+    #[test]
+    fn a_loss_the_controller_saw_coming_is_counted_apart() {
+        let spec = Engagement::from(position("the_reserve").expect("known"));
+        let mut g = build_engagement(&spec, 9).expect("buildable");
+        let ours: Vec<u32> = g.player_unit_ids(0);
+        let (doomed, healthy) = (ours[0], ours[1]);
+        g.units.get_mut(&doomed).expect("unit").hp = SALVAGEABLE_HP;
+        g.units.get_mut(&healthy).expect("unit").hp = 100;
+        let before = snapshot(&g);
+        g.remove_unit(doomed);
+        g.remove_unit(healthy);
+        let after = snapshot(&g);
+        let mut ledgers = (DoctrineLedger::default(), DoctrineLedger::default());
+        let mut pending = BTreeMap::new();
+        account(&before, &after, &g, &mut ledgers, &mut pending);
+        assert_eq!(ledgers.0.losses, 2);
+        assert_eq!(
+            ledgers.0.losses_when_salvageable, 1,
+            "the one at the withdrawal line, not the one at full health"
+        );
+        let profile = ledgers.0.profile();
+        assert!((profile.salvageable.expect("losses were taken") - 0.5).abs() < 1e-9);
+        // A ledger with no losses says nothing rather than zero — the same
+        // rule every other share in the profile follows.
+        assert_eq!(DoctrineLedger::default().profile().salvageable, None);
+        // And it survives the merge the report reads through.
+        let mut merged = DoctrineLedger::default();
+        merged.absorb(&ledgers.0);
+        merged.absorb(&ledgers.0);
+        assert_eq!((merged.losses, merged.losses_when_salvageable), (4, 2));
     }
 
     /// The instrument has to move before it can measure. A position that ends
