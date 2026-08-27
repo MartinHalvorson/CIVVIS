@@ -2071,6 +2071,13 @@ pub struct BasicAi {
     /// proof of siege that fog cannot suppress, and it self-clears because
     /// Civ 6 city health regenerates once the siege lifts.
     pub(crate) garrison_under_fire: bool,
+    /// `threatened-city-reserve`: Gold `spend_gold` must leave in the
+    /// treasury on top of its own reserve. The deployed controller sets it
+    /// to one emergency defender's price while a city of ours is threatened
+    /// or bleeding, and back to 0.0 after the call, so the baseline buyer
+    /// cannot spend the defender money on a Market in the city being shelled
+    /// (run civvis-20260827T113726Z, t162). 0.0 everywhere else.
+    pub(crate) reserve_floor: f64,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Version 2 of `district_coverage`: the same coverage term with a
@@ -4417,6 +4424,7 @@ impl BasicAi {
             barbarian_tactics: true,
             amenity_districts: false,
             garrison_under_fire: false,
+            reserve_floor: 0.0,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -4833,6 +4841,7 @@ impl BasicAi {
             barbarian_tactics: true,
             amenity_districts: false,
             garrison_under_fire: false,
+            reserve_floor: 0.0,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -9583,7 +9592,10 @@ impl BasicAi {
             40.0 + 10.0 * n_cities as f64
         } else {
             100.0 + 25.0 * n_cities as f64
-        };
+        }
+        // See `reserve_floor`: 0.0 unless the deployed controller is holding
+        // an emergency defender's price back for a threatened city.
+        .max(self.reserve_floor);
         let want_ranged = melee > ranged;
 
         // Gold defense is city-local: buying the strongest unit in a safe
@@ -22281,6 +22293,40 @@ mod tests {
             Action::BuyBuilding { building, currency, .. }
                 if building == "monument" && currency == "gold"
         )));
+    }
+
+    /// `threatened-city-reserve`: the floor the deployed controller sets is
+    /// money the baseline buyer cannot see. Same board as the surplus test
+    /// above; with the floor raised past the bank, the Monument stays on the
+    /// shelf and the treasury is untouched.
+    #[test]
+    fn gold_spending_keeps_the_reserve_floor_it_was_handed() {
+        let mut g = Game::new_full(1, 20, 14, 320, 30, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "monument");
+        let mut ai = BasicAi::new();
+        assert_eq!(ai.reserve_floor, 0.0, "the floor ships at zero");
+        g.players[0].gold = 365.0;
+        ai.reserve_floor = 360.0;
+        assert!(
+            !ai.spend_gold(&mut g, 0, &[cid], 1, 1, 1, 2, 1, 1),
+            "a 240 Monument cannot come out of a bank of 365 with 360 held back"
+        );
+        assert_eq!(g.players[0].gold, 365.0);
+        assert!(!g.cities[&cid].buildings.iter().any(|b| b == "monument"));
+        ai.reserve_floor = 0.0;
+        assert!(ai.spend_gold(&mut g, 0, &[cid], 1, 1, 1, 2, 1, 1));
+        assert_eq!(g.players[0].gold, 125.0);
     }
 
     /// ⚠⚠ A HOST PURCHASE REFUSAL MUST REACH THE BUYERS THAT NEVER ENUMERATE.

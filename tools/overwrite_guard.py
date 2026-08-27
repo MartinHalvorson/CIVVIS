@@ -73,6 +73,10 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _common  # noqa: E402
 
 KEEP_DAYS = 7
 PER_VICTIM = 25
@@ -100,11 +104,7 @@ WAIVER = re.compile(
 FENCE = re.compile(r"^ {0,3}(```+|~~~+)")
 
 
-def git(*args: str) -> str:
-    return subprocess.run(
-        ["git", *args], capture_output=True, text=True, encoding="utf-8",
-        errors="replace", check=False,
-    ).stdout
+git = _common.git
 
 
 def git_ok(*args: str) -> bool:
