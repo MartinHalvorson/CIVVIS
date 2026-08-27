@@ -2953,23 +2953,50 @@ rediscovering that a Great-Person card is worth nothing.** 10,304 of the 29,927
 went to candidate cards that could not move the answer, and the review as a
 whole runs 3,348 fewer whole-empire sweeps per game.
 
-The clock is not quoted, and could not be. The paired run below was taken at
-load average 84 with another CIVVIS process on the host; it read +11.17% per
-completed turn with its own resolution at ±30.06%, which resolves nothing in
-either direction. The 2026-08-26 addendum in this file is the precedent: the
-same shape of reading was +7.12% at load 62 and −0.50% once the fleet went
-quiet. The counter does not care what else the machine is doing, and neither
-does the digest.
+### ⚠⚠ The clock is not quoted, and the control is why
+
+Four paired runs were taken today, every one of them reporting *same game on
+every seed*. **One of them compares the baseline binary with a byte-for-byte
+copy of itself.**
+
+| run | arms | load, start → end | median s/turn | resolves |
+| --- | --- | --- | ---: | ---: |
+| A | base vs change | 84 → 60 | +11.17% | ±30.06% |
+| B | base vs change | 67 → 13 | +14.32% | ±23.22% |
+| **C** | **base vs a copy of base — identical machine code** | 32 → 16 | **−13.18%** | ±12.12% |
+| D | base vs change | 16 → 9 | +10.14% | ±19.07% |
+
+**Run C is the whole finding.** The same 27,929,584 bytes against themselves
+measured −13.18% per completed turn, pooled −15.19%, with an IQR spanning
+[−27.33%, −6.05%]. Nothing was changed and a 15% improvement was reported. On a
+host shared with ten sibling agents, this instrument cannot resolve anything
+smaller than about ±15% today, and A, B and D all sit inside that.
+
+Note the *signs*. `speed_ab` runs baseline then candidate within each pair, so
+whichever way the host's load is drifting during a run biases the second arm.
+Run C's load fell throughout and it reported the second arm 13% faster; runs A,
+B and D each began under heavier contention than they ended. That is a
+mechanism, not a mystery, and it is worth remembering that alternating arms
+*within* a pair does not remove a drift that is monotone *across* a pair.
+
+**Take a same-binary control whenever a paired reading has to carry weight on a
+loaded host.** It costs two more games and it is the difference between a
+number and a story. The counter above does not care what else the machine is
+doing, and neither does the report digest.
 
 ### The identity, three ways
 
-1. `tools/speed_ab.py`, baseline `origin/main` against the change, seeds
-   7320000–7320001, 6p 74×46 9CS 150t online continents: **`same game on every
-   seed`** — the report digests match on both paired seeds.
-2. The counter run above: the same scratch binary with the skip on and off
-   produced **the same report digest** (`f7b56b14…`) while running 3,348 fewer
-   sweeps. Same code, same seed, one switch — the cleanest form of the claim.
-3. `advanced_v1_plays_the_same_game_it_always_did`, the frozen-identity anchor.
+1. `tools/speed_ab.py`, the merge-base binary against the change, on **14
+   paired 150-turn games** across runs A, B and D above (seeds 7320000–7320001,
+   7320010–7320015, 7320040–7320043), 6p 74×46 9CS online continents:
+   **`same game on every seed`**, every run.
+2. The counter run: the same scratch binary with the skip on and off produced
+   **the same report digest** (`f7b56b14…`) while running 3,348 fewer sweeps.
+   Same code, same seed, one switch — the cleanest form of the claim, because
+   it holds the compiler constant too.
+3. `a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero`:
+   1,032 verdicts checked against the sweep itself, on `to_bits`.
+4. `advanced_v1_plays_the_same_game_it_always_did`, the frozen-identity anchor.
 
 
 ### The test is the implication, card by card
