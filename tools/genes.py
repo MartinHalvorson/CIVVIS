@@ -560,6 +560,7 @@ OPERATOR_DEFAULT_ON = (
     "elective-war-yields-to-a-lane",
     "enemy-of-my-enemy",
     "enhancer-for-the-corps",
+    "enter-the-prophet-race",
     "exchange-is-the-engines",
     "expansion-pays-back",
     "expansion-schedule",
