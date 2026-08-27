@@ -185,6 +185,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `island-exploration` | off (unmeasured) | Once the Palace landmass has at most two independent city sites left, rebuild a naval eye and favor water that can reveal a known foreign landfall. | 1 \| 1 |
+| `overseas-settlement` | off (unmeasured) | When the main landmass has little room left, route a Settler to the nearest viable foreign site the player has discovered. | 1 \| 1 |
 | `relief-column-marches` | **on** (unmeasured) | A force group beyond `THREAT_RELIEF_RADIUS` of the threatened city is a relief column: it advances on the siege when locally superior, holds at the city when too weak, and while a city is threatened focuses only on combatants and cities. | 1 \| 1 |
 | `threatened-city-reserve` | **on** (unmeasured) | While a city of ours is threatened or bleeding, every ordinary Gold purchase leaves one emergency defender's price in the treasury. | 1 \| 1 |
 

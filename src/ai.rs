@@ -247,6 +247,9 @@ const NAVAL_RECON_WARTIME_ARM_MAX: usize = 2;
 /// dead-end nibble of fog from the edge of a broad unexplored region, without
 /// making every scout sweep the whole world every turn.
 const EXPLORATION_FRONTIER_LOOKAHEAD: i32 = 4;
+/// Once the capital's connected land has at most this many independently
+/// settleable sites left, the island-exploration gene starts looking offshore.
+const ISLAND_EXPLORATION_HOME_SITE_LIMIT: usize = 2;
 
 /// How far a reconnaissance unit will detour for a tribal village it has
 /// already charted but cannot reach this turn. See `BasicAi::village_seeking`.
@@ -2304,6 +2307,10 @@ pub struct BasicAi {
     /// exactly as before. Implies version 1; its enable turns version 1 off.
     /// Opt-in gene `naval-recon-2`.
     pub(crate) naval_recon_2: bool,
+    /// When the capital's landmass is nearly full, chart water toward known
+    /// foreign landfalls rather than treating every coast as interchangeable.
+    /// Opt-in gene `island-exploration`.
+    pub(crate) island_exploration: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -4481,6 +4488,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            island_exploration: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -4898,6 +4906,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            island_exploration: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -9253,7 +9262,10 @@ impl BasicAi {
     }
 
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
-        if !self.naval_recon_on() || self.minor || self.barb {
+        if !(self.naval_recon_on() || self.island_exploration_active(g, pid))
+            || self.minor
+            || self.barb
+        {
             return false;
         }
         if !Self::unseen_water_remains(g, pid) {
@@ -12079,6 +12091,82 @@ impl BasicAi {
                 .is_none_or(|cid| g.cities[&cid].owner == pid)
     }
 
+    /// The connected dry ground underneath the Palace city. `Tile::continent`
+    /// is a map-script annotation and can be absent or split a single island,
+    /// so these genes use the map's actual dry-land connectivity instead.
+    pub(crate) fn capital_landmass(g: &Game, pid: usize) -> BTreeSet<Pos> {
+        let Some(home) = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| g.cities.get(&cid))
+            .min_by_key(|city| (std::cmp::Reverse(g.city_has_palace(city)), city.id))
+            .map(|city| city.pos)
+        else {
+            return BTreeSet::new();
+        };
+        let mut landmass = BTreeSet::new();
+        let mut frontier = VecDeque::from([home]);
+        while let Some(pos) = frontier.pop_front() {
+            if !landmass.insert(pos) {
+                continue;
+            }
+            for next in g.nbrs(pos) {
+                if landmass.contains(&next) {
+                    continue;
+                }
+                if g.map
+                    .get(next)
+                    .is_some_and(|tile| !g.rules.is_unknown(tile) && !g.rules.is_water(tile))
+                {
+                    frontier.push_back(next);
+                }
+            }
+        }
+        landmass
+    }
+
+    /// Count only mutually usable city sites on the capital's connected dry
+    /// ground. A cluster of plots inside one city radius is one future city,
+    /// not several reasons to postpone an overseas search.
+    fn main_landmass_settlement_room(
+        &self,
+        g: &Game,
+        pid: usize,
+        landmass: &BTreeSet<Pos>,
+        wanted: usize,
+    ) -> usize {
+        let mut sites = Vec::new();
+        for pos in landmass {
+            if self.valid_settle_site(g, pid, *pos)
+                && sites
+                    .iter()
+                    .all(|taken| g.wdist(*taken, *pos) as f64 >= self.w.min_city_dist)
+            {
+                sites.push(*pos);
+                if sites.len() >= wanted {
+                    break;
+                }
+            }
+        }
+        sites.len()
+    }
+
+    /// Whether `island-exploration` should spend a naval turn finding a new
+    /// landmass now, rather than while the capital still has ordinary room.
+    pub(crate) fn island_exploration_active(&self, g: &Game, pid: usize) -> bool {
+        if !self.island_exploration {
+            return false;
+        }
+        let landmass = Self::capital_landmass(g, pid);
+        !landmass.is_empty()
+            && self.main_landmass_settlement_room(
+                g,
+                pid,
+                &landmass,
+                ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+            ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT
+    }
+
     pub fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
         let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
         let cartography = g.players[pid].techs.contains(&crate::name!("cartography"));
@@ -13764,6 +13852,27 @@ impl BasicAi {
             .count()
     }
 
+    /// Known, usable foreign land a ship would be able to see after reaching
+    /// `target`. This is limited to the player's explored set: an explorer may
+    /// choose a visible landfall, but never a hidden island from full-map data.
+    fn island_landfall_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+        home_landmass: &BTreeSet<Pos>,
+    ) -> usize {
+        g.wdisk(target, g.unit_sight(uid))
+            .into_iter()
+            .filter(|pos| {
+                !home_landmass.contains(pos)
+                    && g.players[pid].explored.contains(pos)
+                    && self.valid_settle_site(g, pid, *pos)
+            })
+            .count()
+    }
+
     /// Ground another own explorer is already committed to; empty unless
     /// `explore_commit` holds goals. See `explore_commit`.
     fn reserved_explore_goals(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
@@ -13808,6 +13917,22 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
+        let island_home = if self.island_exploration
+            && !dry_only
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
+        {
+            let landmass = Self::capital_landmass(g, pid);
+            (!landmass.is_empty()
+                && self.main_landmass_settlement_room(
+                    g,
+                    pid,
+                    &landmass,
+                    ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+                ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
+                .then_some(landmass)
+        } else {
+            None
+        };
         // Visible hostiles at war with us: ground around them is not a goal.
         // Live vision only — a threat the seat cannot see does not steer it.
         let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
@@ -13865,7 +13990,7 @@ impl BasicAi {
             }
         }
         let reserved = self.reserved_explore_goals(g, pid, uid);
-        let lookahead = if self.explore_commit {
+        let lookahead = if self.explore_commit || island_home.is_some() {
             EXPLORE_COMMIT_LOOKAHEAD
         } else {
             EXPLORATION_FRONTIER_LOOKAHEAD
@@ -13919,12 +14044,25 @@ impl BasicAi {
                 radius += 1;
                 continue;
             };
-            if !self.explore_commit || radius >= first + lookahead {
+            if !(self.explore_commit || island_home.is_some()) || radius >= first + lookahead {
                 break;
             }
             radius += 1;
         }
-        let chosen = if self.explore_commit {
+        let chosen = if let Some(home_landmass) = island_home.as_ref() {
+            // Once home is nearly full, a visible foreign landfall outranks an
+            // equally revealing patch of empty water. If none is visible, the
+            // normal frontier term still sends the ship into fresh water.
+            candidates.into_iter().max_by_key(|target| {
+                (
+                    self.island_landfall_value(g, pid, uid, *target, home_landmass),
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    home.map_or(0, |home| g.wdist(home, *target)),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                )
+            })
+        } else if self.explore_commit {
             // The most revealing goal, and among those the one farthest from
             // home: the walk sweeps outward and along the frontier instead of
             // hugging the fringe nearest the unit. See `explore_commit`.
@@ -18952,6 +19090,45 @@ mod tests {
             .map
             .get(g.units[&settler].pos)
             .is_some_and(|tile| g.rules.is_water(tile)));
+    }
+
+    #[test]
+    fn island_exploration_prefers_the_known_foreign_landfall() {
+        let (mut g, source, target) = island_colony_game(1);
+        g.players[0].techs.insert(crate::name!("sailing"));
+        let landfall = g
+            .nbrs(target)
+            .into_iter()
+            .find(|pos| g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile)))
+            .expect("the island has a coastal approach");
+        let start = g
+            .nbrs(landfall)
+            .into_iter()
+            .find(|pos| {
+                g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile))
+                    && g.wdist(*pos, target) == 2
+            })
+            .expect("the approach has an outer water tile");
+        let galley = g.spawn_test_unit("galley", 0, start);
+        let empty_water = g
+            .nbrs(start)
+            .into_iter()
+            .find(|pos| {
+                *pos != landfall
+                    && g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile))
+                    && g.wdist(*pos, target) > g.unit_sight(galley)
+            })
+            .expect("the approach has an equally close empty-water choice");
+        let all_tiles: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        g.players[0].explored.extend(all_tiles);
+        g.players[0].explored.remove(&landfall);
+        g.players[0].explored.remove(&empty_water);
+        let mut ai = BasicAi::new();
+        ai.island_exploration = true;
+
+        assert!(ai.island_exploration_active(&g, 0));
+        assert_eq!(ai.exploration_goal(&g, 0, galley, false), Some(landfall));
+        assert_ne!(source, target, "the fixture has distinct landmasses");
     }
 
     #[test]

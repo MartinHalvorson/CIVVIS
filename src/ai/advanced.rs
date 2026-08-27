@@ -4899,6 +4899,10 @@ pub struct AdvancedAi {
     /// spent BEFORE the city converts, which is why the ordering rather than
     /// some later reaction is the fix.
     moksha_defends_the_faithless: bool,
+    /// Give a Settler a discovered overseas colony before spending the last
+    /// practical spaces on the capital's landmass. Opt-in gene
+    /// `overseas-settlement`.
+    overseas_settlement: bool,
     /// Let the assigned diplomatic lane size its own Congress ballot.
     ///
     /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
@@ -5752,6 +5756,11 @@ mod expansion_schedule;
 /// `advanced/growth_to_settle.rs`.
 mod growth_to_settle;
 
+/// `overseas-settlement`: when the capital's connected land is nearly full,
+/// send the next Settler to the nearest viable discovered foreign landmass.
+/// See `advanced/island_expansion.rs`.
+mod island_expansion;
+
 /// `order-retry`: a refused order falls through to the next-best candidate
 /// the planner already ranked. One opt-in gene; see
 /// `advanced/order_retry.rs`.
@@ -6492,6 +6501,7 @@ impl AdvancedAi {
 
             // ---- append: l-o ----------------------------------------
             moksha_defends_the_faithless: false,
+            overseas_settlement: false,
             lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
@@ -26779,7 +26789,25 @@ impl AdvancedAi {
         } else {
             avoid
         };
-        let target = valid_target.or_else(|| {
+        // Preserve a colony already under way, but replace a merely cached
+        // home-island target once the overseas gene finds a discovered foreign
+        // landfall and the home landmass has genuinely run short of room.
+        let overseas_target = if self.overseas_settlement
+            && !(valid_target == Some(current) && g.can_found_city(uid))
+        {
+            let home_landmass = BasicAi::capital_landmass(g, pid);
+            valid_target
+                .filter(|target| !home_landmass.contains(target))
+                .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
+        } else {
+            None
+        };
+        if let Some(target) = overseas_target {
+            self.settler_targets.insert(uid, target);
+            self.settler_stalls.remove(&uid);
+            self.settler_closest.remove(&uid);
+        }
+        let target = overseas_target.or(valid_target).or_else(|| {
             // Ask the forecast before the walk. The mirror can only reject a
             // doomed site after the Settler stands on it, which previously
             // spent a long frontier walk merely to discover the city would
@@ -33138,7 +33166,7 @@ impl AdvancedAi {
     /// Whether this hull is on the sea-scout roster this turn. See
     /// `naval_explorer`.
     fn is_naval_explorer(&self, g: &Game, pid: usize, uid: u32) -> bool {
-        self.base.naval_recon
+        (self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
             && self.naval_explorer(g, pid).contains(&uid)
     }
@@ -33166,7 +33194,9 @@ impl AdvancedAi {
     /// arm still buys only the first ship; this merely lets a spare hull open
     /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
     fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
-        if !self.base.naval_recon_on() || !BasicAi::unseen_water_remains(g, pid) {
+        if !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
+            || !BasicAi::unseen_water_remains(g, pid)
+        {
             return Vec::new();
         }
         let mut ships = g
