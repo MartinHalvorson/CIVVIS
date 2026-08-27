@@ -3448,29 +3448,10 @@ fn found_test_city(game: &mut Game, pid: usize) -> u32 {
     game.city_at(position).unwrap()
 }
 
-fn install_ai_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
-    let center = game.cities[&city].pos;
-    let position = game.cities[&city]
-        .owned_tiles
-        .iter()
-        .copied()
-        .find(|position| {
-            *position != center
-                && game.map.tiles[position].district.is_none()
-                && game.map.tiles[position].wonder.is_none()
-                && game.map.tiles[position].improvement.is_none()
-        })
-        .expect("test city has an unused district tile");
-    let tile = game.map.tiles.get_mut(&position).unwrap();
-    tile.district = Some(Name::new(district));
-    tile.pillaged = false;
-    game.cities
-        .get_mut(&city)
-        .unwrap()
-        .districts
-        .insert(Name::new(district), position);
-    position
-}
+// One test district helper in the repository. The body that stood here was
+// byte-identical to `game::install_test_district`, and two copies of a fixture
+// builder drift in exactly the way that makes a suite disagree with itself.
+use crate::game::install_test_district as install_ai_test_district;
 
 fn install_test_holy_site(game: &mut Game, city: u32) {
     install_ai_test_district(game, city, "holy_site");
