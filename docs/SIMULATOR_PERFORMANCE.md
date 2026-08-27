@@ -3252,7 +3252,7 @@ the search decides:
   `format!` bodies, unmoved — when two candidates already tie on the primary
   `f64` score. `total_cmp`/`String::cmp` semantics are unchanged, so the
   final order cannot move; a unit test
-  (`ai::advanced::forcing_reply_lazy_key_tests::lazy_tie_break_matches_eager_key_ordering`)
+  (`ai::advanced::tests::forcing_reply_lazy_key_tests::lazy_tie_break_matches_eager_key_ordering`)
   sorts one synthetic candidate list (including a three-way tie) both the old
   eager way and the new lazy way and asserts the two orders — and a
   hand-checked expected order — are identical.

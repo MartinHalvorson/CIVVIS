@@ -36831,3 +36831,133 @@ fn a_host_priced_route_option_is_what_the_trader_chooser_prices() {
         "another origin is not priced by this pair's projection"
     );
 }
+
+#[test]
+fn live_bridge_and_each_new_withhold_arm_change_the_host_controls() {
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.parallel_settlers);
+    assert!(live.base.parallel_settlers);
+    assert!(live.base.host_settler_pop);
+    assert!(live.base.explore_dead_targets);
+    assert!(live.base.explore_commit);
+    assert!(live.bank_envoys);
+    assert!(live.base.bank_envoys);
+
+    live.disable_parallel_settlers();
+    live.disable_host_settler_pop();
+    live.disable_explore_dead_targets();
+    live.disable_explore_commit();
+    live.disable_bank_envoys();
+    assert!(!live.parallel_settlers);
+    assert!(!live.base.parallel_settlers);
+    assert!(!live.base.host_settler_pop);
+    assert!(!live.base.explore_dead_targets);
+    assert!(!live.base.explore_commit);
+    assert!(!live.bank_envoys);
+    assert!(!live.base.bank_envoys);
+}
+
+mod forcing_reply_lazy_key_tests {
+    use super::*;
+
+    /// Reimplements the old, eager form of the forcing-reply tie-break:
+    /// format every candidate's Debug label up front, then sort on
+    /// score descending and label ascending.
+    fn eager_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut eager: Vec<(f64, String)> = candidates
+            .iter()
+            .map(|(score, reply, followup)| {
+                (*score, AdvancedAi::forcing_reply_label(reply, followup))
+            })
+            .collect();
+        eager.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        eager.into_iter().map(|(_, label)| label).collect()
+    }
+
+    /// The new, lazy form actually used by forcing_reply_line: sort directly
+    /// on raw candidates, formatting a label only for a score tie.
+    fn lazy_order(candidates: &[(f64, Action, Option<Action>)]) -> Vec<String> {
+        let mut lazy = candidates.to_vec();
+        lazy.sort_by(|left, right| {
+            right.0.total_cmp(&left.0).then_with(|| {
+                AdvancedAi::forcing_reply_label(&left.1, &left.2)
+                    .cmp(&AdvancedAi::forcing_reply_label(&right.1, &right.2))
+            })
+        });
+        lazy.into_iter()
+            .map(|(_, reply, followup)| AdvancedAi::forcing_reply_label(&reply, &followup))
+            .collect()
+    }
+
+    #[test]
+    fn lazy_tie_break_matches_eager_key_ordering() {
+        let candidates: Vec<(f64, Action, Option<Action>)> = vec![
+            (
+                8.0,
+                Action::Ranged {
+                    unit: 9,
+                    target: (1, 1),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 5,
+                    target: (2, 3),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 1,
+                    target: (0, 0),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Move {
+                    unit: 2,
+                    to: (4, 4),
+                },
+                Some(Action::Attack {
+                    unit: 2,
+                    target: (5, 5),
+                }),
+            ),
+            (
+                1.0,
+                Action::Attack {
+                    unit: 3,
+                    target: (9, 9),
+                },
+                None,
+            ),
+        ];
+
+        let lazy = lazy_order(&candidates);
+        let eager = eager_order(&candidates);
+        assert_eq!(
+            lazy, eager,
+            "lazily-formatted tie-break keys must sort identically to eagerly-formatted ones"
+        );
+        assert_eq!(
+            lazy,
+            vec![
+                "Ranged { unit: 9, target: (1, 1) }".to_string(),
+                "Attack { unit: 1, target: (0, 0) }".to_string(),
+                "Attack { unit: 5, target: (2, 3) }".to_string(),
+                "Move { unit: 2, to: (4, 4) } -> Attack { unit: 2, target: (5, 5) }".to_string(),
+                "Attack { unit: 3, target: (9, 9) }".to_string(),
+            ]
+        );
+    }
+}
