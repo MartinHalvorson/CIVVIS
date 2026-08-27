@@ -786,7 +786,7 @@ fn live_settler_uses_a_ranked_local_site_after_distant_loyalty_failures() {
     }
     for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
         if position != local && !distant.contains(&position) {
-            game.blocked_city_sites.insert(position);
+            std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(position);
         }
     }
     let settler = game.spawn_test_unit("settler", 0, source);
@@ -1895,7 +1895,7 @@ fn wartime_reinforcement_marches_the_standing_rear_to_the_objective() {
         .into_iter()
         .find(|pos| {
             *pos != after
-                && game.units_at(*pos).is_empty()
+                && game.unit_ids_at(*pos).is_empty()
                 && game.city_at(*pos).is_none()
                 && game
                     .map

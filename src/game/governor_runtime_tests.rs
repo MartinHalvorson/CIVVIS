@@ -420,7 +420,7 @@ fn magnus_executes_harvest_logistics_resources_power_and_integration() {
         .iter()
         .copied()
         .find(|position| {
-            *position != game.cities[&city].pos && game.units_at(*position).is_empty()
+            *position != game.cities[&city].pos && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     {
@@ -2329,7 +2329,7 @@ fn victor_executes_defense_loyalty_resources_strikes_promotions_air_and_nukes() 
                         && *target != owned[1]
                         && game.wdist(encampment, *target) == 1
                         && game.city_at(*target).is_none()
-                        && game.units_at(*target).is_empty()
+                        && game.unit_ids_at(*target).is_empty()
                         && game.map.get(*target).is_some_and(|tile| {
                             game.rules.is_passable(tile) && !game.rules.is_water(tile)
                         })
@@ -2366,7 +2366,7 @@ fn victor_executes_defense_loyalty_resources_strikes_promotions_air_and_nukes() 
             .map
             .get(position)
             .is_some_and(|tile| game.rules.is_passable(tile))
-            && !game.units_at(position).iter().any(|unit| {
+            && !game.unit_ids_at(position).iter().any(|unit| {
                 game.units[unit].owner == 1
                     && game.rules.units[game.units[unit].kind].class == "military"
             })
