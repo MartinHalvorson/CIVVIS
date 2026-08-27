@@ -764,6 +764,93 @@ class SupervisorUnownedHarnessDetection(unittest.TestCase):
         self.assertIn('UNOWNED_PID=$(unowned_harness_pid || true)', source)
         self.assertNotIn("if pgrep -f '[c]iv6_play.py'", source)
 
+    def _owned_detector(self, source: str) -> str:
+        start = source.index("supervisor_owns_process() {")
+        return source[start:source.index("\n# A `pgrep` candidate", start)]
+
+    def test_an_inherited_lock_holder_is_not_our_orphan(self):
+        """A fresh supervisor leaves a live inherited harness alone.
+
+        The game lock is global and only proves exclusive access to Civ VI. It
+        cannot prove that the harness belongs to the supervisor process that
+        has just started, so model a live Python harness whose parent sits
+        outside the shell under test.
+        """
+        detector = self._owned_detector(self.SUPERVISOR.read_text())
+        harness = subprocess.Popen(["/bin/zsh", "-c", "exec sleep 30"])
+        try:
+            with TemporaryDirectory() as raw:
+                tmp = Path(raw)
+                home = tmp / "home"
+                lock = home / ".civvis-civ6-game.lock"
+                lock.mkdir(parents=True)
+                (lock / "holder.json").write_text(
+                    '{\n  "pid": %d\n}\n' % harness.pid)
+                fake_ps = (
+                    "ps() {\n"
+                    "  if [[ \"$4\" == \"command=\" ]]; then\n"
+                    "    print -r -- '/usr/local/bin/python3 -u /tmp/civ6_play.py'\n"
+                    "  elif [[ \"$4\" == \"ppid=\" ]]; then\n"
+                    "    print -r -- 1\n"
+                    "  fi\n"
+                    "}\n")
+                result = subprocess.run(
+                    ["/bin/zsh", "-c",
+                     fake_ps + detector + "\nowned_harness_pid\n"],
+                    env={**os.environ, "HOME": str(home)},
+                    capture_output=True, text=True, timeout=5)
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(result.stdout, "")
+        finally:
+            if harness.poll() is None:
+                harness.terminate()
+                harness.wait(timeout=5)
+
+    def test_a_child_harness_remains_owned_by_its_supervisor(self):
+        """The guard preserves the normal supervisor-to-climb ownership path."""
+        detector = self._owned_detector(self.SUPERVISOR.read_text())
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            fake_ps = (
+                "ps() {\n"
+                "if [[ \"$4\" == \"command=\" ]]; then\n"
+                "  print -r -- '/usr/local/bin/python3 -u /tmp/civ6_play.py'\n"
+                "elif [[ \"$4\" == \"ppid=\" ]]; then\n"
+                "  if [[ \"$2\" == \"$SUPERVISOR_TEST_HARNESS\" ]]; then\n"
+                "    print -r -- \"$SUPERVISOR_TEST_PARENT\"\n"
+                "  else\n"
+                "    print -r -- 1\n"
+                "  fi\n"
+                "fi\n"
+                "}\n")
+            home = tmp / "home"
+            script = (
+                fake_ps
+                + "sleep 30 &\n"
+                "harness=$!\n"
+                "mkdir -p \"$HOME/.civvis-civ6-game.lock\"\n"
+                "{\n"
+                "  print -r -- '{'\n"
+                "  print -r -- \"  \\\"pid\\\": $harness\"\n"
+                "  print -r -- '}'\n"
+                "} > \"$HOME/.civvis-civ6-game.lock/holder.json\"\n"
+                "export SUPERVISOR_TEST_HARNESS=\"$harness\"\n"
+                "export SUPERVISOR_TEST_PARENT=\"$$\"\n"
+                + detector + "\n"
+                + "owned_harness_pid\n"
+                "rc=$?\n"
+                "kill \"$harness\" 2>/dev/null || true\n"
+                "wait \"$harness\" 2>/dev/null || true\n"
+                "exit \"$rc\"\n")
+            result = subprocess.run(
+                ["/bin/zsh", "-c", script],
+                env={**os.environ, "HOME": str(home)},
+                capture_output=True, text=True, timeout=5)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.strip().isdigit(), result.stdout)
+
     def test_a_shell_argument_cannot_delay_the_next_batch(self):
         """Only the candidate whose executable is Python is reported.
 
