@@ -3225,7 +3225,7 @@ mod tests {
         let mut game = Game::new_full(4, 26, 18, 81_006, 100, 1, false);
         // Give the meter an explicit leader instead of relying on generated
         // starts to have founded and scored before this observation-only test.
-        game.observed_score.insert(0, 100);
+        std::sync::Arc::make_mut(&mut game.observed_score).insert(0, 100);
         game.turn = 25;
         let leading = game
             .players
@@ -3490,7 +3490,7 @@ mod tests {
             tile.resource = None;
             tile.improvement = None;
         }
-        game.observed_tile_yield_adjustments.insert(
+        std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
             ground,
             crate::rules::Yields {
                 food: 1.0,
@@ -3504,6 +3504,40 @@ mod tests {
             (json!(3.0), json!(3.0)),
             "host 3/3 against a modelled 2/0: {published}"
         );
+    }
+
+    /// The host-import fields are `Arc`-shared so a search branch bumps a
+    /// refcount instead of deep-copying 44 trees, and sharing must be
+    /// invisible from outside the board. `Game` serializes through `GameSer`,
+    /// which still holds the plain collections, so a save and the `/state`
+    /// endpoint carry exactly the JSON they carried before: the ones the save
+    /// format names come back verbatim, and the refusal sets it deliberately
+    /// omits still come back empty and are rebuilt from the run's event log.
+    #[test]
+    fn arc_shared_host_imports_keep_the_save_format_they_had() {
+        let mut game = Game::new_full(2, 20, 14, 19_071, 120, 1, false);
+        std::sync::Arc::make_mut(&mut game.observed_score).insert(1, 240);
+        std::sync::Arc::make_mut(&mut game.observed_city_max_wall_hp).insert(7, 100);
+        std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert((3, 4));
+
+        let encoded = serde_json::to_string(&game).unwrap();
+        let raw: Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(
+            raw["observed_score"],
+            json!({ "1": 240 }),
+            "an Arc serializes as the map it holds, not as a wrapper: {}",
+            raw["observed_score"]
+        );
+        assert_eq!(raw["observed_city_max_wall_hp"], json!({ "7": 100 }));
+        assert!(
+            raw.get("blocked_city_sites").is_none(),
+            "host refusals were never in the save format and must stay out of it"
+        );
+
+        let restored: Game = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(restored.observed_score.get(&1), Some(&240));
+        assert_eq!(restored.observed_city_max_wall_hp.get(&7), Some(&100));
+        assert!(restored.blocked_city_sites.is_empty());
     }
 
     fn observed_tile(observation: &Value, position: Pos) -> &Value {

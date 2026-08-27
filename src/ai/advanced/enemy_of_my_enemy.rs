@@ -351,7 +351,7 @@ mod tests {
                     && !game.rules.is_water(&game.map.tiles[position])
                     && game.map.tiles[position].owner_city.is_none()
                     && game.city_at(*position).is_none()
-                    && game.units_at(*position).is_empty()
+                    && game.unit_ids_at(*position).is_empty()
                     && keep(*position)
             })
             .min()

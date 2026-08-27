@@ -118,8 +118,8 @@ impl AdvancedAi {
             // The defender the engine will resolve against: the strongest
             // military unit on the tile, as the exchange scorer reads it.
             let Some(defender) = g
-                .units_at(target)
-                .into_iter()
+                .unit_ids_at(target)
+                .iter()
                 .filter(|oid| {
                     let other = &g.units[oid];
                     other.owner != pid
@@ -137,12 +137,12 @@ impl AdvancedAi {
                 continue;
             };
             let damage = if ranged {
-                let Some((att, def)) = g.ranged_strike_strengths(unit, defender, target) else {
+                let Some((att, def)) = g.ranged_strike_strengths(unit, *defender, target) else {
                     continue;
                 };
                 expected_damage(att, def)
             } else {
-                let Some((att, def)) = g.melee_exchange_strengths(unit, defender) else {
+                let Some((att, def)) = g.melee_exchange_strengths(unit, *defender) else {
                     continue;
                 };
                 let dealt = expected_damage(att, def);
@@ -155,7 +155,7 @@ impl AdvancedAi {
             shots.push(Shot {
                 unit,
                 target,
-                defender,
+                defender: *defender,
                 damage,
                 ranged,
             });

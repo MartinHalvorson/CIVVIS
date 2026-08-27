@@ -544,9 +544,14 @@ while true; do
   # the attempt.  Carry the exact selected revision under mirror-only names;
   # the climb promotes them only into that replacement follower, so the game
   # controller never inherits the display server's provenance stamp.
+  # The preflight above selected and built this exact head.  A decision worker
+  # that re-execs onto a newer GitHub revision mid-game turns one fresh-build
+  # game into an unrepeatable mixture of programs; fetch and build again only
+  # at the next game boundary.
   CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
   CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
+      --refresh-seconds 0 \
       --difficulty "$DIFFICULTY" \
       "${WITHOUT_ARGS[@]}" \
       "${WITH_ARGS[@]}" \

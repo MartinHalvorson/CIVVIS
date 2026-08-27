@@ -447,7 +447,7 @@ mod tests {
     /// Put the capital on a chosen research rate.
     fn set_science(game: &mut Game, science: f64) {
         let cid = game.player_city_ids(0)[0];
-        game.observed_city_yield_adjustments.insert(
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
             cid,
             crate::rules::Yields {
                 science,
@@ -589,26 +589,24 @@ mod tests {
             .iter()
             .any(|chase| chase.node == "masonry"));
         // A capital rich enough to finish Masonry inside the horizon.
-        game.observed_city_yield_adjustments.insert(
-            game.player_city_ids(0)[0],
-            crate::rules::Yields {
-                science: game.tech_cost("masonry"),
-                ..Default::default()
-            },
-        );
+        let capital = game.player_city_ids(0)[0];
+        let rich = crate::rules::Yields {
+            science: game.tech_cost("masonry"),
+            ..Default::default()
+        };
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, rich);
         let off = plain.boost_research_value(&game, 0, "masonry", true);
         let on = waiting.boost_research_value(&game, 0, "masonry", true);
         assert_eq!(off, 0.0);
         assert!(on < 0.0, "the node at risk is docked: {on}");
         // Slow the empire down until Masonry is a long node again: nothing
         // is at risk and the wait is silent.
-        game.observed_city_yield_adjustments.insert(
-            game.player_city_ids(0)[0],
-            crate::rules::Yields {
-                science: game.tech_cost("masonry") / (BOOST_WAIT_HORIZON_TURNS * 2.0),
-                ..Default::default()
-            },
-        );
+        let capital = game.player_city_ids(0)[0];
+        let slow = crate::rules::Yields {
+            science: game.tech_cost("masonry") / (BOOST_WAIT_HORIZON_TURNS * 2.0),
+            ..Default::default()
+        };
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, slow);
         assert_eq!(waiting.boost_research_value(&game, 0, "masonry", true), 0.0);
     }
 
@@ -621,13 +619,12 @@ mod tests {
         game.players[0].boosted_techs.insert(name!("masonry"));
         let mut waiting = AdvancedAi::new();
         waiting.enable_boost_wait_research();
-        game.observed_city_yield_adjustments.insert(
-            game.player_city_ids(0)[0],
-            crate::rules::Yields {
-                science: game.tech_cost("masonry"),
-                ..Default::default()
-            },
-        );
+        let capital = game.player_city_ids(0)[0];
+        let rich = crate::rules::Yields {
+            science: game.tech_cost("masonry"),
+            ..Default::default()
+        };
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, rich);
         assert_eq!(
             waiting.boost_research_value(&game, 0, "masonry", true),
             BOOST_IN_HAND_FLAT_VALUE
