@@ -76,7 +76,7 @@ pub(super) const SETTLER_IDLE_PATIENCE: u32 = 2;
 /// A site the engine's own Loyalty calculation says would revolt inside
 /// this many turns is doomed however stranded the Settler is; anything
 /// slower is a city for a while, which beats a Settler for ever.
-const STRANDED_SITE_MIN_HOLD_TURNS: f64 = 12.0;
+pub(super) const STRANDED_SITE_MIN_HOLD_TURNS: f64 = 12.0;
 /// How far a stranded Settler looks for any legal site before Shipbuilding.
 const STRANDED_SITE_RADIUS: i32 = 14;
 /// How many forecast refusals the exhaustion search pays before it stops
@@ -123,6 +123,25 @@ impl AdvancedAi {
             .is_some_and(|(pos, turn)| {
                 g.units.get(&uid).is_some_and(|unit| unit.pos == *pos)
                     && g.turn < turn.saturating_add(STRANDED_RECHECK_TURNS)
+            })
+    }
+
+    /// The arrival verdict for a site the exhaustion search chose: the fog
+    /// guesses had their say when the walk began and may not refuse the
+    /// founding at its end; only the engine's own Loyalty calculation, at
+    /// the same [`STRANDED_SITE_MIN_HOLD_TURNS`] floor the choice used, may.
+    /// Without this a relaxed target was refused on arrival by the strict
+    /// verdict, retired, chosen again by the next exhaustion search, walked
+    /// to again — 1,062 idle turns of that loop in eight live-genome games.
+    pub(super) fn relaxed_arrival_verdict(g: &Game, pid: usize, site: Pos) -> Option<String> {
+        Self::settle_site_forecast_revolt(g, pid, site)
+            .filter(|(_, turns)| *turns < STRANDED_SITE_MIN_HOLD_TURNS)
+            .map(|(per_turn, turns)| {
+                format!(
+                    "the city would lose {:.1} Loyalty a turn and revolt in about {:.0} turns",
+                    -per_turn,
+                    turns.ceil()
+                )
             })
     }
 
@@ -281,6 +300,7 @@ impl AdvancedAi {
             None => match self.settler_exhaustion_target(g, pid, uid) {
                 Some(site) => {
                     self.settler_targets.insert(uid, site);
+                    self.settler_relaxed_targets.insert(uid, site);
                     self.settler_stalls.remove(&uid);
                     self.settler_closest.remove(&uid);
                     site
@@ -513,6 +533,69 @@ mod tests {
         }
         assert!(!ai.settler_watchdog_step(&mut g, 0, settler));
         assert_eq!(g.units[&settler].pos, home, "it stayed in the city");
+    }
+
+    /// A site the exhaustion search chose is founded on arrival even where
+    /// the strict verdict's fog guess would refuse it; the same board with
+    /// the site chosen the ordinary way is still refused. The engine's own
+    /// forecast is the one thing both rules keep.
+    #[test]
+    fn an_exhaustion_site_is_founded_on_arrival_where_the_fog_guess_would_refuse_it() {
+        for relaxed in [true, false] {
+            let mut g = Game::new_full(1, 20, 12, 91_305, 120, 0, false);
+            let founding = g
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .expect("a starting settler");
+            g.apply(0, &Action::FoundCity { unit: founding })
+                .expect("the starting settler founds");
+            let home = g.cities.values().next().expect("a city").pos;
+            // Explore only the home halo so a far site is a fogged frontier.
+            let halo: Vec<Pos> = g.wdisk(home, 5);
+            g.players[0].explored.clear();
+            g.players[0].explored.extend(halo);
+            let far: Vec<Pos> = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| g.wdist(*pos, home) >= 9)
+                .collect();
+            let mut site = None;
+            for pos in far {
+                let probe = g.spawn_test_unit("settler", 0, pos);
+                let legal = g.can_found_city(probe) && AdvancedAi::beyond_loyalty_reach(&g, 0, pos);
+                g.remove_unit(probe);
+                if legal {
+                    site = Some(pos);
+                    break;
+                }
+            }
+            let site = site.expect("fixture needs a legal fogged frontier site");
+            let settler = g.spawn_test_unit("settler", 0, site);
+            g.units.get_mut(&settler).expect("settler").moves_left = 2.0;
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.enable_loyalty_rate_alarm();
+            ai.enable_settler_never_idles();
+            assert!(ai.frontier_loyalty, "the live seat carries the fog guess");
+            ai.settler_targets.insert(settler, site);
+            if relaxed {
+                ai.settler_relaxed_targets.insert(settler, site);
+            }
+            let cities_before = g.player_city_ids(0).len();
+            let acted = ai.advanced_settler_step(&mut g, 0, settler);
+            let founded = g.player_city_ids(0).len() > cities_before;
+            if relaxed {
+                assert!(acted && founded, "the relaxed arrival founds the colony");
+            } else {
+                assert!(
+                    !founded,
+                    "the strict arrival still refuses the fogged frontier"
+                );
+            }
+        }
     }
 
     /// A Settler with no legal site anywhere but the one underfoot founds

@@ -1979,6 +1979,10 @@ pub struct AdvancedAi {
     /// exhaustion search is not repeated every turn from the same tile. See
     /// `STRANDED_RECHECK_TURNS`.
     settler_stranded_at: BTreeMap<u32, (Pos, u32)>,
+    /// The target each Settler took from the exhaustion search, so its
+    /// arrival is judged by the same relaxed verdict that chose it. See
+    /// `relaxed_arrival_verdict`.
+    settler_relaxed_targets: BTreeMap<u32, Pos>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -6152,6 +6156,7 @@ impl AdvancedAi {
         self.settler_walk_started.clear();
         self.settler_idle_streak.clear();
         self.settler_stranded_at.clear();
+        self.settler_relaxed_targets.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
         self.forget_missionary_explore();
@@ -6240,6 +6245,11 @@ impl AdvancedAi {
             .settler_stranded_at
             .iter()
             .filter_map(|(uid, stranded)| map.get(uid).map(|new| (*new, *stranded)))
+            .collect();
+        self.settler_relaxed_targets = self
+            .settler_relaxed_targets
+            .iter()
+            .filter_map(|(uid, target)| map.get(uid).map(|new| (*new, *target)))
             .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
@@ -6343,6 +6353,7 @@ impl AdvancedAi {
             settler_walk_started: BTreeMap::new(),
             settler_idle_streak: BTreeMap::new(),
             settler_stranded_at: BTreeMap::new(),
+            settler_relaxed_targets: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -26941,6 +26952,7 @@ impl AdvancedAi {
             }
             let site = self.settler_exhaustion_target(g, pid, uid)?;
             self.settler_targets.insert(uid, site);
+            self.settler_relaxed_targets.insert(uid, site);
             self.settler_stalls.remove(&uid);
             self.settler_closest.remove(&uid);
             Some(site)
@@ -26970,7 +26982,13 @@ impl AdvancedAi {
             // retains a valid cache rather than paying for a speculative city
             // each turn. Recheck once at arrival, when founding would otherwise
             // make the loss irreversible.
-            let arrival_verdict = if self.base.loyalty_rate_alarm {
+            let relaxed = self.settler_never_idles
+                && self.settler_relaxed_targets.get(&uid) == Some(&current);
+            let arrival_verdict = if relaxed {
+                // See `relaxed_arrival_verdict`: a site the exhaustion search
+                // chose is judged at arrival by the rule that chose it.
+                Self::relaxed_arrival_verdict(g, pid, current)
+            } else if self.base.loyalty_rate_alarm {
                 self.settle_site_loyalty_verdict(g, pid, current)
             } else {
                 self.settle_site_frontier_loyalty_verdict(g, pid, current)
@@ -33670,6 +33688,8 @@ impl AdvancedAi {
         self.settler_idle_streak
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_stranded_at
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_relaxed_targets
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
             .retain(|uid, _| g.units.contains_key(uid));

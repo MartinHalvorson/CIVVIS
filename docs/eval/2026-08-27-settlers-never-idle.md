@@ -150,10 +150,20 @@ city was six turns, with a barbarian in reach of every exit.
 `gene_screen --games 6 --genes settler-never-idles --start-seed 99400000`
 (`docs/gene_screens/fires/settler-never-idles.json`): 36 seats, 22 on /
 14 off, win 22.7% v 7.1% → **+15.6 pp ± 6.9**, share +1.9 pp ± 2.3 — the
-gene fires, on a probe that resolves nothing finer. A 300-game standard
-screen (`--p-default-on 0.5`, seeds 99,500,000+) was started at the same
-time; its reading is in the PR when it lands and in the ledger when a
-reporting batch prices the gene.
+gene fires, on a probe that resolves nothing finer.
+
+A first standard screen (`--games 300 --p-default-on 0.5`, seeds
+99,500,000+) was read at 77 games / 462 seats: win −3.8 pp, z −1.10, 95% CI
+[−10.4, +2.9]; share −0.02 pp — unresolved — **and compute +4.9% ± 2.3 per
+treated seat**. That cost was the first version's exhaustion search: a
+stranded Settler paid the whole search every turn, and the tier-3 scan
+priced every legal plot in a fourteen-tile radius with a growth forecast
+for a tie-break. Both were cut (tier 3 sorts by distance alone; a Settler
+found stranded on a tile is not asked again from it for five turns) and the
+screen was restarted on the shipped code as `--games 200`; its reading is
+below.
+
+{{SCREEN_FINAL}}
 
 ## What is deliberately not done
 
