@@ -623,7 +623,9 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
 /// fixture.  Trafalgar already occupies the base map-script roster and its
 /// map/deployment module is more exact than the generic profile below.
 pub fn generic_scenarios() -> impl Iterator<Item = &'static HistoricalScenario> {
-    SCENARIOS.iter().filter(|scenario| scenario.id != "trafalgar")
+    SCENARIOS
+        .iter()
+        .filter(|scenario| scenario.id != "trafalgar")
 }
 
 pub fn all() -> &'static [HistoricalScenario] {
@@ -689,10 +691,28 @@ mod tests {
 
     #[test]
     fn three_headline_battles_cover_each_historical_era() {
-        for era in ["Ancient", "Classical", "Medieval", "Renaissance", "Industrial", "Modern", "Atomic", "Information"] {
-            assert_eq!(SCENARIOS.iter().filter(|scenario| scenario.era == era).count(), 3, "{era}");
+        for era in [
+            "Ancient",
+            "Classical",
+            "Medieval",
+            "Renaissance",
+            "Industrial",
+            "Modern",
+            "Atomic",
+            "Information",
+        ] {
+            assert_eq!(
+                SCENARIOS
+                    .iter()
+                    .filter(|scenario| scenario.era == era)
+                    .count(),
+                3,
+                "{era}"
+            );
         }
-        assert!(SCENARIOS.iter().all(|scenario| (10..=50).contains(&scenario.turns)));
+        assert!(SCENARIOS
+            .iter()
+            .all(|scenario| (10..=50).contains(&scenario.turns)));
     }
 
     #[test]
@@ -701,7 +721,11 @@ mod tests {
         for scenario in SCENARIOS {
             for force in scenario.forces {
                 for unit in force.units {
-                    assert!(rules.units.contains_key(*unit), "{} names unknown unit {unit}", scenario.id);
+                    assert!(
+                        rules.units.contains_key(unit),
+                        "{} names unknown unit {unit}",
+                        scenario.id
+                    );
                 }
             }
         }

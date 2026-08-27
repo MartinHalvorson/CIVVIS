@@ -119,9 +119,7 @@ fn choose_joint_axes(
     let mut best_target: Option<usize> = None;
     for (index, target) in lanes.iter().enumerate() {
         if target.is_some()
-            && best_target.is_none_or(|best| {
-                values[index][base_index] > values[best][base_index]
-            })
+            && best_target.is_none_or(|best| values[index][base_index] > values[best][base_index])
         {
             best_target = Some(index);
         }
@@ -605,9 +603,7 @@ impl StrategicAi {
         // record a different teammate as the winner. This single-founder
         // value is deliberately disabled there rather than optimizing a
         // geometry that does not match the engine's victory predicate.
-        if !g.victory_conditions.religious
-            || !g.players[pid].alive
-            || g.players[pid].team.is_some()
+        if !g.victory_conditions.religious || !g.players[pid].alive || g.players[pid].team.is_some()
         {
             return None;
         }
@@ -683,9 +679,7 @@ impl StrategicAi {
             _ => return None,
         };
         let state = g.units.get(&unit)?;
-        (state.owner == pid
-            && g.rules.units[state.kind].class == "religious")
-            .then_some(unit)
+        (state.owner == pid && g.rules.units[state.kind].class == "religious").then_some(unit)
     }
 
     /// Best one- or two-action conversion sequence available at the start of
@@ -693,12 +687,7 @@ impl StrategicAi {
     /// deterministic. In checkmate mode the first exact winning sequence is
     /// returned and every non-winning improvement is ignored; otherwise an
     /// empty plan means no sequence improves religious-victory geometry.
-    fn religious_action_plan(
-        &self,
-        g: &Game,
-        pid: usize,
-        checkmate_only: bool,
-    ) -> Vec<Action> {
+    fn religious_action_plan(&self, g: &Game, pid: usize, checkmate_only: bool) -> Vec<Action> {
         let Some(mut best_value) = Self::conversion_value(g, pid) else {
             return Vec::new();
         };
@@ -750,12 +739,7 @@ impl StrategicAi {
         best
     }
 
-    fn apply_religious_action_plan(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        checkmate_only: bool,
-    ) -> bool {
+    fn apply_religious_action_plan(&self, g: &mut Game, pid: usize, checkmate_only: bool) -> bool {
         let plan = self.religious_action_plan(g, pid, checkmate_only);
         if plan.is_empty() {
             return false;
@@ -789,11 +773,7 @@ impl StrategicAi {
                 own = s;
             }
         }
-        let score_share = if total <= 0.0 {
-            0.5
-        } else {
-            own / total
-        };
+        let score_share = if total <= 0.0 { 0.5 } else { own / total };
         if let Some(net) = &self.net {
             let learned = net.eval(&features(g, pid));
             if learned.is_finite() {
@@ -938,7 +918,9 @@ impl StrategicAi {
         }
         let cities = g.player_city_ids(pid);
         let holy_site = cities.iter().any(|city| {
-            g.cities[city].districts.contains_key(crate::name!("holy_site"))
+            g.cities[city]
+                .districts
+                .contains_key(crate::name!("holy_site"))
                 || matches!(
                     g.cities[city].queue.first(),
                     Some(Item::District { district, .. }) if district == "holy_site"
@@ -966,12 +948,16 @@ impl StrategicAi {
         claimed < g.max_religions()
             && cities.len() >= 2
             && cities.iter().any(|city| {
-                g.cities[city].districts.contains_key(crate::name!("holy_site"))
+                g.cities[city]
+                    .districts
+                    .contains_key(crate::name!("holy_site"))
                     || matches!(
                         g.cities[city].queue.first(),
                         Some(Item::District { district, .. }) if district == "holy_site"
                     )
-                    || !g.district_sites(*city, crate::name!("holy_site")).is_empty()
+                    || !g
+                        .district_sites(*city, crate::name!("holy_site"))
+                        .is_empty()
             })
     }
 
@@ -1308,11 +1294,11 @@ impl StrategicAi {
         let best = values
             .iter()
             .copied()
-            .fold(None, |best: Option<(Doctrine, f64)>, candidate| {
-                match best.is_none_or(|best| candidate.1 > best.1) {
-                    true => Some(candidate),
-                    false => best,
-                }
+            .fold(None, |best: Option<(Doctrine, f64)>, candidate| match best
+                .is_none_or(|best| candidate.1 > best.1)
+            {
+                true => Some(candidate),
+                false => best,
             })
             .expect("Doctrine::ALL is not empty");
         match best.1 > current + DOCTRINE_COMMITMENT_MARGIN {
@@ -1551,25 +1537,24 @@ impl StrategicAi {
         let mut sim = g.clone();
         sim.set_fog_memory(false);
         sim.set_war_ledger(false);
-        let ais: Vec<Box<dyn Ai>> = sim
-            .players
-            .iter()
-            .map(|p| {
-                if p.id == pid {
-                    match target {
-                        Some(target) => Box::new(AdvancedAi::with_weights_and_target(
-                            self.weights.clone(),
-                            target,
-                        )) as Box<dyn Ai>,
-                        None => {
-                            Box::new(AdvancedAi::with_weights(self.weights.clone())) as Box<dyn Ai>
+        let ais: Vec<Box<dyn Ai>> =
+            sim.players
+                .iter()
+                .map(|p| {
+                    if p.id == pid {
+                        match target {
+                            Some(target) => Box::new(AdvancedAi::with_weights_and_target(
+                                self.weights.clone(),
+                                target,
+                            )) as Box<dyn Ai>,
+                            None => Box::new(AdvancedAi::with_weights(self.weights.clone()))
+                                as Box<dyn Ai>,
                         }
+                    } else {
+                        self.rival_agent(g, p.id)
                     }
-                } else {
-                    self.rival_agent(g, p.id)
-                }
-            })
-            .collect();
+                })
+                .collect();
         (sim, ais)
     }
 
@@ -1917,9 +1902,7 @@ mod tests {
         let target = game.player_city_ids(1)[0];
         let target_city = game.cities.get_mut(&target).unwrap();
         target_city.atheist_pressure = 0.0;
-        target_city
-            .pressure
-            .insert("Rival Faith".to_string(), 50.0);
+        target_city.pressure.insert("Rival Faith".to_string(), 50.0);
         let missionary = game.spawn_test_unit("missionary", 0, game.cities[&target].pos);
         game.units.get_mut(&missionary).unwrap().religion = Some("Home Faith".to_string());
         game.current = 0;
@@ -1937,12 +1920,15 @@ mod tests {
             ),
             "the exact search should find the stronger move-then-spread sequence: {plan:?}"
         );
-        assert!(game.cities.values().all(|city| city
-            .pressure
-            .get("Home Faith")
-            .copied()
-            .unwrap_or(0.0)
-            == 0.0), "planning must not mutate the live game");
+        assert!(
+            game.cities.values().all(|city| city
+                .pressure
+                .get("Home Faith")
+                .copied()
+                .unwrap_or(0.0)
+                == 0.0),
+            "planning must not mutate the live game"
+        );
 
         assert!(
             stock.religious_action_plan(&game, 0, true).is_empty(),
@@ -1955,7 +1941,10 @@ mod tests {
             .pressure
             .insert("Home Faith".to_string(), 10_000.0);
         let checkmate = stock.religious_action_plan(&game, 0, true);
-        assert!(!checkmate.is_empty(), "the exact winning sequence must be found");
+        assert!(
+            !checkmate.is_empty(),
+            "the exact winning sequence must be found"
+        );
         assert_eq!(game.winner, None, "search must not mutate the live game");
         let mut checkmate_game = game.clone();
         assert!(stock.apply_religious_action_plan(&mut checkmate_game, 0, true));
@@ -1966,13 +1955,7 @@ mod tests {
         let after = StrategicAi::conversion_value(&game, 0).unwrap();
         assert!(after.better_than(&before));
         assert!(game.cities.values().any(|city| {
-            city.owner != 0
-                && city
-                    .pressure
-                    .get("Home Faith")
-                    .copied()
-                    .unwrap_or(0.0)
-                    > 0.0
+            city.owner != 0 && city.pressure.get("Home Faith").copied().unwrap_or(0.0) > 0.0
         }));
         assert!(
             stock.religious_action_plan(&game, 2, false).is_empty(),
@@ -2009,7 +1992,8 @@ mod tests {
         let mut science = Game::new(4, 20, 14, 201, 12, 0);
         science.turn = FIRST_REVIEW_TURN;
         let needed = science.rules.techs.len().div_ceil(6);
-        let techs: Vec<crate::name::Name> = science.rules.techs.keys().take(needed).cloned().collect();
+        let techs: Vec<crate::name::Name> =
+            science.rules.techs.keys().take(needed).cloned().collect();
         science.players[1].techs.extend(techs);
         assert_eq!(
             strategic.inferred_rival_target(&science, 1),
@@ -2250,8 +2234,7 @@ mod tests {
         for base in [Weights::default(), extreme] {
             for doctrine in Doctrine::ALL {
                 let genes = doctrine.apply(&base).to_vec();
-                for (index, (gene, (low, high))) in
-                    genes.iter().zip(Weights::bounds()).enumerate()
+                for (index, (gene, (low, high))) in genes.iter().zip(Weights::bounds()).enumerate()
                 {
                     assert!(
                         *gene >= low && *gene <= high,
@@ -2269,7 +2252,11 @@ mod tests {
     fn the_incumbent_doctrine_changes_nothing() {
         let base = Weights::default();
         assert_eq!(Doctrine::Incumbent.apply(&base).to_vec(), base.to_vec());
-        for doctrine in [Doctrine::Expand, Doctrine::Consolidate, Doctrine::Militarize] {
+        for doctrine in [
+            Doctrine::Expand,
+            Doctrine::Consolidate,
+            Doctrine::Militarize,
+        ] {
             assert_ne!(
                 doctrine.apply(&base).to_vec(),
                 base.to_vec(),
@@ -2490,7 +2477,11 @@ mod tests {
         strategic.horizon = 4;
         strategic.next_review = 0;
         let first = strategic.review(&g, 0);
-        assert_eq!(first, strategic.review(&g, 0), "review must be deterministic");
+        assert_eq!(
+            first,
+            strategic.review(&g, 0),
+            "review must be deterministic"
+        );
         assert_eq!(strategic.current_target(), None);
         strategic.take_turn(&mut g, 0);
         assert_eq!(strategic.current_target(), first);
@@ -2719,7 +2710,10 @@ mod tests {
         strategic.take_turn(&mut game, 0);
         assert_eq!(strategic.current_target(), Some(VictoryTarget::Domination));
         assert_eq!(
-            strategic.inner.current_plan().and_then(|plan| plan.target_player),
+            strategic
+                .inner
+                .current_plan()
+                .and_then(|plan| plan.target_player),
             Some(2),
             "an urgent counter-campaign must pursue the civilization about to win"
         );
@@ -2759,7 +2753,10 @@ mod tests {
         assert_eq!(strategic.current_target(), Some(VictoryTarget::Domination));
         assert_eq!(strategic.inner.forced_target_player(), Some(1));
         assert_eq!(
-            strategic.inner.current_plan().and_then(|plan| plan.target_player),
+            strategic
+                .inner
+                .current_plan()
+                .and_then(|plan| plan.target_player),
             Some(1)
         );
     }

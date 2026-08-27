@@ -435,7 +435,10 @@ mod tests {
 
         for terrain in ["coast", "ocean", "lake"] {
             world.tiles.get_mut(&water).unwrap().terrain = terrain.into();
-            assert!(world.set_cliff_edge(land, water, true), "{terrain} is water");
+            assert!(
+                world.set_cliff_edge(land, water, true),
+                "{terrain} is water"
+            );
             assert!(world.has_cliff_edge(land, water));
             assert!(world.set_cliff_edge(land, water, false));
         }

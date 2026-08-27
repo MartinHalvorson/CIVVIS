@@ -294,8 +294,7 @@ fn harvest(game_id: u64, config: HarvestConfig<'_>) -> Harvest {
                 let start = (picker >> 33) as usize % others.len();
                 for step in 0..config.negatives.min(others.len()) {
                     let other = others[(start + step * stride) % others.len()];
-                    let row =
-                        action_space::features_with_context(&replay, seat, other, &context);
+                    let row = action_space::features_with_context(&replay, seat, other, &context);
                     write_row(
                         &mut rows,
                         game_id,
@@ -409,7 +408,9 @@ fn main() {
         STATE_WIDTH + action_space::FEATURE_WIDTH
     );
 
-    let harvests = parallel::map(games, jobs, move |index| harvest(seed + index as u64, config));
+    let harvests = parallel::map(games, jobs, move |index| {
+        harvest(seed + index as u64, config)
+    });
 
     if let Some(parent) = std::path::Path::new(&out).parent() {
         if !parent.as_os_str().is_empty() {

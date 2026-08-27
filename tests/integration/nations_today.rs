@@ -61,8 +61,16 @@ fn todays_ranking_is_contiguous_named_and_on_the_globe() {
             "{} is ranked twice",
             seat.nation
         );
-        assert!(!seat.nation.trim().is_empty(), "rank {} has no nation", seat.rank);
-        assert!(!seat.leader.trim().is_empty(), "{} has no leader", seat.nation);
+        assert!(
+            !seat.nation.trim().is_empty(),
+            "rank {} has no nation",
+            seat.rank
+        );
+        assert!(
+            !seat.leader.trim().is_empty(),
+            "{} has no leader",
+            seat.nation
+        );
         assert!(
             (-90.0..=90.0).contains(&seat.latitude),
             "{} sits at latitude {}",
@@ -113,5 +121,7 @@ fn the_ranking_is_dated() {
     let parts: Vec<&str> = doc.date.split('-').collect();
     assert_eq!(parts.len(), 3, "date {:?} is not YYYY-MM-DD", doc.date);
     assert_eq!(parts[0].len(), 4);
-    assert!(parts.iter().all(|part| part.chars().all(|c| c.is_ascii_digit())));
+    assert!(parts
+        .iter()
+        .all(|part| part.chars().all(|c| c.is_ascii_digit())));
 }

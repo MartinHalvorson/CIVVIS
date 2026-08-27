@@ -15,7 +15,9 @@ fn trade_game() -> Game {
         game.found_city_for(pid, game.units[&settler].pos, None);
         game.players[pid].gold = 500.0;
         game.players[pid].diplomatic_favor = 100.0;
-        game.players[pid].civics.insert(crate::name!("early_empire"));
+        game.players[pid]
+            .civics
+            .insert(crate::name!("early_empire"));
         for city in game.player_city_ids(pid) {
             for position in game.cities[&city].owned_tiles.clone() {
                 let tile = game.map.tiles.get_mut(&position).unwrap();
@@ -90,11 +92,11 @@ fn great_work_trades_are_permanent_and_require_a_compatible_empty_slot() {
     assert_eq!(game.great_work_inventory(0, "writing"), 1);
     assert_eq!(game.great_work_inventory(1, "writing"), 1);
     assert_eq!(game.housed_great_work_count(0, "writing"), 1);
-    assert!(game.active_trade_deals.iter().all(|contract| contract
-        .offer
-        .great_works
-        .is_empty()
-        && contract.request.great_works.is_empty()));
+    assert!(game
+        .active_trade_deals
+        .iter()
+        .all(|contract| contract.offer.great_works.is_empty()
+            && contract.request.great_works.is_empty()));
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(restored.great_work_inventory(0, "writing"), 1);
     assert_eq!(restored.great_work_inventory(1, "writing"), 1);
@@ -184,7 +186,10 @@ fn gpt_pays_each_turn_and_war_cancels_the_remaining_contract() {
 fn war_eve_quotes_offer_only_what_the_declaration_hands_back() {
     let game = trade_game();
     let deals = game.war_eve_deals(0, 1);
-    assert!(!deals.is_empty(), "a spare luxury copy is a cancellable promise");
+    assert!(
+        !deals.is_empty(),
+        "a spare luxury copy is a cancellable promise"
+    );
     for deal in &deals {
         assert_eq!(deal.partner, 1);
         assert_eq!(deal.direction, "sell");
@@ -215,8 +220,7 @@ fn war_eve_quotes_offer_only_what_the_declaration_hands_back() {
         .windows(2)
         .all(|pair| Game::war_eve_net_gold(&pair[0]) >= Game::war_eve_net_gold(&pair[1])));
     assert!(
-        game.war_eve_deals(1, 1).is_empty()
-            && game.war_eve_deals(0, 9).is_empty(),
+        game.war_eve_deals(1, 1).is_empty() && game.war_eve_deals(0, 9).is_empty(),
         "there is no war-eve market with yourself or with a player who does not exist"
     );
 }
@@ -380,8 +384,7 @@ fn gathering_storm_merchant_republic_uses_governors_and_district_production() {
     assert_eq!(game.trade_capacity(0), baseline_capacity);
     assert!((game.city_yields(city).gold - baseline_gold).abs() < 1e-9);
     assert!(
-        (game.item_prod_mult(0, city, Some(&campus)) - baseline_district_multiplier - 0.15)
-            .abs()
+        (game.item_prod_mult(0, city, Some(&campus)) - baseline_district_multiplier - 0.15).abs()
             < 1e-9
     );
 
