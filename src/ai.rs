@@ -15573,8 +15573,7 @@ mod tests {
         // On, first choice held by a rival: the next founding pantheon, not
         // the shipped list's first name.
         let mut contested = board(6_101);
-        contested
-            .blocked_pantheons
+        std::sync::Arc::make_mut(&mut contested.blocked_pantheons)
             .insert(crate::name!("religious_settlements"));
         live.research_with_government(&mut contested, 0, false, None);
         assert_eq!(
@@ -17395,8 +17394,7 @@ mod tests {
         ));
 
         let (mut refused, city) = activation_board();
-        refused
-            .blocked_wonders
+        std::sync::Arc::make_mut(&mut refused.blocked_wonders)
             .entry(city)
             .or_default()
             .insert(crate::name!("pyramids"));
@@ -17430,8 +17428,8 @@ mod tests {
         // Civilization VI's own export, so this is the live representation and
         // not a test-only back door — and it makes the case unconditional
         // instead of a test that quietly passes when nothing is falling.
-        game.observed_city_loyalty_per_turn.insert(bleeding, -12.0);
-        game.observed_city_loyalty_per_turn.insert(stable, 1.0);
+        std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(bleeding, -12.0);
+        std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(stable, 1.0);
         let bleed_rate = game.city_loyalty_per_turn(&game.cities[&bleeding]);
         let stable_rate = game.city_loyalty_per_turn(&game.cities[&stable]);
         assert_eq!(bleed_rate, -12.0, "the injected rate must be what the AI reads");
@@ -17977,7 +17975,7 @@ mod tests {
         // The live mirror records `build_no_plot` as an exact Wonder block.
         // After one such response, generic fallback production must return to
         // its non-Wonder choices instead of trying the next catalog entry.
-        game.blocked_wonders
+        std::sync::Arc::make_mut(&mut game.blocked_wonders)
             .entry(city)
             .or_default()
             .insert(crate::name!("pyramids"));

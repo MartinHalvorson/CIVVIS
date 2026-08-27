@@ -1629,7 +1629,7 @@ mod tests {
         game.apply(0, &crate::game::Action::FoundCity { unit: settler })
             .unwrap();
         game.players[0].faith = 200.0;
-        game.blocked_pantheons = blocked;
+        game.blocked_pantheons = Arc::new(blocked);
         assert!(game
             .apply(
                 0,
@@ -6579,7 +6579,7 @@ mod tests {
             })
             .expect("some district must be sitable in both cities for this to prove anything");
 
-        game.blocked_districts
+        Arc::make_mut(&mut game.blocked_districts)
             .entry(blocked_city)
             .or_default()
             .insert(district);
@@ -6684,7 +6684,7 @@ mod tests {
             game.district_sites(city, district).is_empty(),
             "precondition: the paired refusal blocks the normal model"
         );
-        game.host_district_sites
+        Arc::make_mut(&mut game.host_district_sites)
             .entry(city)
             .or_default()
             .entry(district)
@@ -6749,7 +6749,7 @@ mod tests {
             game.wonder_sites(city, &wonder).is_empty(),
             "precondition: the paired refusal blocks the normal model"
         );
-        game.host_wonder_sites
+        Arc::make_mut(&mut game.host_wonder_sites)
             .entry(city)
             .or_default()
             .entry(wonder)

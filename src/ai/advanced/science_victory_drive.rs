@@ -1024,7 +1024,7 @@ mod tests {
         install_pad(&mut g, ours);
         // A launch city with a real late-game production line, the way the
         // mirror corrects a live city's yields.
-        g.observed_city_yield_adjustments.insert(
+        std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
             ours,
             crate::rules::Yields {
                 production: 60.0,

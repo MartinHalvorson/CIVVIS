@@ -3225,7 +3225,7 @@ mod tests {
         let mut game = Game::new_full(4, 26, 18, 81_006, 100, 1, false);
         // Give the meter an explicit leader instead of relying on generated
         // starts to have founded and scored before this observation-only test.
-        game.observed_score.insert(0, 100);
+        std::sync::Arc::make_mut(&mut game.observed_score).insert(0, 100);
         game.turn = 25;
         let leading = game
             .players
@@ -3490,7 +3490,7 @@ mod tests {
             tile.resource = None;
             tile.improvement = None;
         }
-        game.observed_tile_yield_adjustments.insert(
+        std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
             ground,
             crate::rules::Yields {
                 food: 1.0,

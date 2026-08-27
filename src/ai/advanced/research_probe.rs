@@ -327,7 +327,7 @@ fn a_settler_on_a_site_it_can_no_longer_found_retires_it_and_moves_on() {
     ai.settler_targets.insert(settler, site);
     // The mirror's loyalty forecast, a host `found_refused`, or a
     // city-state's border all arrive through this one set.
-    game.blocked_city_sites.insert(site);
+    std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(site);
     assert!(!game.can_found_city(settler));
 
     game.units.get_mut(&settler).unwrap().moves_left = 2.0;
@@ -662,7 +662,7 @@ fn a_live_settler_holds_when_every_new_target_is_loyalty_doomed() {
     }
     for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
         if position != doomed {
-            game.blocked_city_sites.insert(position);
+            std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(position);
         }
     }
     let settler = game.spawn_test_unit("settler", 0, doomed);
