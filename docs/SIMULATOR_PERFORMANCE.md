@@ -2816,6 +2816,35 @@ class (`compute_enemy_attack_envelopes` calls split on `BasicAi::minor`/`barb`
 is the obvious one), and treat any clock reading of a length-changing treatment
 as a mixture until both arms are shown to complete the same number of turns.
 
+### Addendum 2026-08-27: a sound geometric prefilter was still the wrong saving
+
+One exact candidate was built and deliberately **not shipped**. Before
+`retreat_step` constructed its hostile-envelope table, it checked whether a
+visible hostile could geometrically reach the current tile next turn. The
+bound used the ruleset's 0.25-MP route floor only when every terrain cost was
+positive and every feature cost non-negative; a custom ruleset that could make
+a step free fell straight through to the existing full calculation. City and
+Encampment strikes stayed exact, air units fell through because their attack
+disk is centred on an operation origin, and every in-range unit still used the
+old terrain-accurate envelope. The helper's negative answer was therefore a
+proof, not a heuristic.
+
+The proof did not pay for its source-roster scan. Applied to every seat it
+read **+3.56% per completed turn** over two 150-turn paired games (reports
+identical; resolution ±2.82%). Scoped to the city-state/barbarian seats this
+section attributes the work to, it read **+0.64%**, inside that run's ±1.0%
+noise floor; again every paired report was identical. The deciding instrument
+was a temporary exact trace on seed 7,320,620 at 6p, 74×46, 9 city-states,
+Online Continents, 150 turns: the gate avoided only **27** calls to
+`enemy_attack_envelopes`. Each would have been one saved table fetch, but the
+gate scanned potential sources on every minor-seat retreat and could not repay
+that fixed cost.
+
+Do not retry this as a radius tweak. A future version needs a maintained,
+cheap local-threat index; without one, the conservative source scan is the
+work. The behavioral `precise_evacuation` switch remains a different question
+and is still subject to the length-confound warning above.
+
 ### ⚠ Addendum, same day: the +7.12% two sections up was load, and the counter was right
 
 The entry on the tactical picker's double clone reports **+7.12% per completed
