@@ -63,7 +63,10 @@ jobs:
           # branch may lack it and no branch may audition its own judge.
           git fetch --quiet origin main
           git show origin/main:tools/overwrite_guard.py > /tmp/overwrite_guard.py
-          git show origin/main:tools/_common.py > /tmp/_common.py
+          # The tool must run alone from /tmp (a test pins that), but export
+          # its sibling helper module too, so a copy of the tool that does
+          # import it (as main's did between #2642 and #2647) still runs.
+          git show origin/main:tools/_common.py > /tmp/_common.py 2>/dev/null || true
           # The tool takes the merge base itself now, and the merge base of a
           # merge base and the head is itself, so this stays correct and keeps
           # the workflow working against main's older copies of the tool.

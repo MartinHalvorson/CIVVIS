@@ -87,6 +87,25 @@ class OverwriteGuardTests(unittest.TestCase):
         finally:
             os.chdir(cwd)
 
+    def test_the_guard_runs_standalone_from_a_temp_dir(self):
+        """`.github/workflows/overwrite-guard.yml` exports main's copy of the
+        tool alone into /tmp and runs it there, so it may not import a sibling
+        module. #2642 made it import `_common` and every PR in the fleet failed
+        the required check. This runs the file exactly the way the workflow
+        does: copied by itself into an empty directory."""
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = pathlib.Path(tmp) / "overwrite_guard.py"
+            shutil.copy(pathlib.Path(overwrite_guard.__file__), copy)
+            result = subprocess.run(
+                [sys.executable, str(copy), "--help"],
+                capture_output=True, text=True, cwd=tmp, check=False,
+            )
+        self.assertEqual(
+            result.returncode, 0,
+            f"the guard cannot run standalone:\n{result.stderr}",
+        )
+
     def test_deleting_young_work_unacknowledged_fails(self):
         head = self.branch_deleting("panel.txt", 0, "Redesign the panel")
         self.assertEqual(self.verdict(head), 1)

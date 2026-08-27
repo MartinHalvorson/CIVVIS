@@ -1958,6 +1958,13 @@ struct EnemyEnvelope {
     sensitive: std::sync::Arc<std::collections::HashSet<Pos>>,
 }
 
+/// The multiplier and the seed the three envelope fingerprints mix with — the
+/// golden-ratio constant `vision_key` uses in `src/game.rs`. Shared so the
+/// three cannot drift apart, never so that two of them may be compared: each
+/// hashes a different set of fields and only ever meets its own previous
+/// value.
+const FINGERPRINT_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+
 /// One unit, in exactly the terms an envelope can notice.
 #[derive(PartialEq, Eq)]
 struct EnvelopeUnit {
@@ -1972,6 +1979,24 @@ struct EnvelopeUnit {
     /// whole flood, and regains it next turn.
     locked: (bool, bool, bool),
     linked_to: Option<u32>,
+}
+
+impl EnvelopeUnit {
+    /// One unit's board record. The field set is
+    /// `the_delta_tracks_every_field_the_board_key_hashes`'s business, not
+    /// this function's: it exists so the two rosters are read the same way.
+    fn of(unit: &crate::game::Unit) -> Self {
+        Self {
+            pos: unit.pos,
+            kind: unit.kind.id(),
+            owner: unit.owner,
+            formation: unit.formation,
+            zoc_stopped: unit.zoc_stopped,
+            patrol: unit.air_patrol.then_some(unit.air_patrol_pos).flatten(),
+            locked: (unit.started_turn_in_zoc, unit.acted, unit.moved),
+            linked_to: unit.linked_to,
+        }
+    }
 }
 
 /// The board the per-enemy envelopes were last measured against.
@@ -2000,7 +2025,25 @@ struct EnvelopeBoard {
     /// patrol changes an envelope without the unit moving at all. Tracking
     /// only place, spec and owner let that change produce an *empty* delta, so
     /// every envelope was reused across it.
-    units: HashMap<u32, EnvelopeUnit>,
+    ///
+    /// ⚠ ASCENDING BY ID, WHICH IS WHAT MAKES THE DIFF A MERGE. `Game.units`
+    /// is a `BTreeMap` and iterates in the same order, so the two boards are
+    /// compared by walking them side by side — no hash of every id on every
+    /// ask, and no second table allocated to be thrown away. It was a
+    /// `HashMap` and the diff hashed each id twice, once to build the new
+    /// board and once to look the old one up.
+    units: Vec<(u32, EnvelopeUnit)>,
+}
+
+/// What [`BasicAi::envelope_board_change`] found, for the two questions the
+/// envelope table asks of it.
+struct EnvelopeChange {
+    /// The tiles a change touched, or `None` for "assume everything changed".
+    touched: Option<Vec<Pos>>,
+    /// Whether any unit the previous board held is gone from this one — or,
+    /// conservatively, `true` whenever the delta is `None` and nothing is
+    /// known. Only the per-enemy store's cleanup reads it; see the call site.
+    removed: bool,
 }
 
 #[derive(Clone)]
@@ -2463,7 +2506,7 @@ pub struct BasicAi {
     attack_envelope_cache:
         std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
     /// Per enemy, its last envelope. Consulted only when the board key missed,
-    /// and reused when [`Self::envelope_board_delta`] says nothing inside that
+    /// and reused when [`Self::envelope_board_change`] says nothing inside that
     /// enemy's radius moved. See [`EnemyEnvelope`].
     enemy_envelope_cache: std::sync::Arc<std::sync::Mutex<HashMap<u32, EnemyEnvelope>>>,
     /// The board those envelopes were measured against. See [`EnvelopeBoard`].
@@ -5159,7 +5202,25 @@ impl BasicAi {
             }
         }
         drop(slot);
-        let envelopes = std::sync::Arc::new(self.compute_enemy_attack_envelopes(g, pid));
+        // ★★★★ ONE MEMO SCOPE FOR THE WHOLE TABLE, NOT ONE PER ENEMY.
+        // `Game::flow_past` opens `query_memo()` itself, so with no scope
+        // around this every enemy's flood was the *outermost* scope of its
+        // own: `air_patrols` — a scan of every unit in the world, hoisted out
+        // of `can_enter_past` precisely because a flood asks it once per
+        // neighbour of every tile it expands — was rebuilt once per enemy, and
+        // so were `passage_improvements`, `traversal` and `movement`. One
+        // 150-turn game at the standard shape computes 35,181 tables from
+        // 218,269 floods, so 83.9% of those scopes were the second flood of a
+        // table paying again for the first one's answers.
+        //
+        // Exact because a memo scope is only ever a lie if the board moves
+        // under it, and this one is opened over `&Game`: nothing inside can
+        // mutate it. It is dropped before this function returns, so no caller
+        // inherits it.
+        let envelopes = std::sync::Arc::new({
+            let _memo = g.query_memo();
+            self.compute_enemy_attack_envelopes(g, pid)
+        });
         let mut slot = self
             .attack_envelope_cache
             .lock()
@@ -5177,15 +5238,25 @@ impl BasicAi {
     /// owner and place, the map epoch, and the war ledger. FNV-1a over those
     /// fields in table order, so equal boards hash equal. `skip_owner` leaves
     /// one seat's units out — see `envelope_cache_across_own_moves`.
+    ///
+    /// ★★★ A WORD AT A TIME. This is the most-executed loop in the envelope
+    /// machinery — one 150-turn game at the standard shape asks 51,500 times
+    /// and mixes 13,118,014 units doing it — and FNV-1a is defined a *byte* at
+    /// a time, so each of the seven fields per unit cost eight rounds of
+    /// xor-and-multiply: 734 million rounds a game to answer "is this the same
+    /// board". The mix is now the one `vision_key` in `src/game.rs` uses, a
+    /// round per field, which is the shape this repository already trusts for
+    /// the sight cache's keys.
+    ///
+    /// Nothing reads the number. It is compared for equality against the
+    /// previous ask's and thrown away, so the only property that matters is
+    /// that different boards keep giving different values — the field set and
+    /// its order are untouched.
     fn attack_envelope_fingerprint(g: &Game, skip_owner: Option<usize>) -> u64 {
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut hash = OFFSET;
+        let mut hash = FINGERPRINT_SEED;
         let mut mix = |value: u64| {
-            for byte in value.to_le_bytes() {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(PRIME);
-            }
+            hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+            hash ^= hash >> 29;
         };
         mix(g.map.tiles.epoch());
         mix(g.wars.len() as u64);
@@ -5362,7 +5433,26 @@ impl BasicAi {
     /// ⚠ The induction only holds while this is refreshed on *every* ask.
     /// `None` means "assume everything changed", which is what a first ask, a
     /// map edit, a war, or any city change returns.
+    /// The tiles the changes touched — see [`Self::envelope_board_change`],
+    /// which this is the delta half of. Kept because the invariants above are
+    /// pinned on the delta alone, and a test should not have to know that the
+    /// store's cleanup rides along with it.
+    #[cfg(test)]
     fn envelope_board_delta(&self, g: &Game) -> Option<Vec<Pos>> {
+        self.envelope_board_change(g).touched
+    }
+
+    /// ★★★ THE DIFF IS A MERGE, NOT A REBUILD. Both rosters are ordered by
+    /// id — `Game.units` is a `BTreeMap` and the stored board is kept in the
+    /// same order — so the two are walked side by side. What this replaces
+    /// built a fresh `HashMap` of *every unit in the game* on *every ask*,
+    /// hashed each id once to insert it and once more to look up its
+    /// predecessor, and then threw the old table away. The comparison it
+    /// makes, field for field, is identical: `EnvelopeUnit`'s `PartialEq` is
+    /// the same one, over the same fields, and the tiles reported are the
+    /// same set. Only the order within the returned `Vec` differs, and its
+    /// single reader asks whether a sensitive set contains any of them.
+    fn envelope_board_change(&self, g: &Game) -> EnvelopeChange {
         let mut previous = self
             .envelope_board
             .lock()
@@ -5372,55 +5462,65 @@ impl BasicAi {
             Self::envelope_belligerence_fingerprint(g),
             Self::envelope_city_fingerprint(g),
         );
-        let mut current: HashMap<u32, EnvelopeUnit> = HashMap::with_capacity(g.units.len());
-        for unit in g.units.values() {
-            current.insert(
-                unit.id,
-                EnvelopeUnit {
-                    pos: unit.pos,
-                    kind: unit.kind.id(),
-                    owner: unit.owner,
-                    formation: unit.formation,
-                    zoc_stopped: unit.zoc_stopped,
-                    patrol: unit.air_patrol.then_some(unit.air_patrol_pos).flatten(),
-                    locked: (unit.started_turn_in_zoc, unit.acted, unit.moved),
-                    linked_to: unit.linked_to,
-                },
-            );
-        }
-        let delta = match previous.as_ref() {
+        let mut units: Vec<(u32, EnvelopeUnit)> = Vec::with_capacity(g.units.len());
+        let change = match previous.as_ref() {
             Some(prior) if prior.stamp == stamp => {
                 let mut touched = Vec::new();
-                for (id, now) in &current {
-                    match prior.units.get(id) {
-                        Some(before) if before == now => {}
-                        Some(before) => {
-                            touched.push(before.pos);
-                            touched.push(now.pos);
-                            touched.extend(before.patrol);
-                            touched.extend(now.patrol);
+                let mut removed = false;
+                let mut before = prior.units.iter().peekable();
+                for (id, unit) in g.units.iter() {
+                    let now = EnvelopeUnit::of(unit);
+                    // Everything the old board held below this id is gone from
+                    // the new one: both walks are ascending.
+                    while before.peek().is_some_and(|(gone, _)| gone < id) {
+                        let (_, gone) = before.next().expect("peeked");
+                        removed = true;
+                        touched.push(gone.pos);
+                        touched.extend(gone.patrol);
+                    }
+                    match before.peek() {
+                        Some((same, was)) if same == id => {
+                            if *was != now {
+                                touched.push(was.pos);
+                                touched.push(now.pos);
+                                touched.extend(was.patrol);
+                                touched.extend(now.patrol);
+                            }
+                            before.next();
                         }
-                        None => {
+                        _ => {
                             touched.push(now.pos);
                             touched.extend(now.patrol);
                         }
                     }
+                    units.push((*id, now));
                 }
-                for (id, before) in &prior.units {
-                    if !current.contains_key(id) {
-                        touched.push(before.pos);
-                        touched.extend(before.patrol);
-                    }
+                for (_, gone) in before {
+                    removed = true;
+                    touched.push(gone.pos);
+                    touched.extend(gone.patrol);
                 }
-                Some(touched)
+                EnvelopeChange {
+                    touched: Some(touched),
+                    removed,
+                }
             }
-            _ => None,
+            _ => {
+                units.extend(
+                    g.units
+                        .iter()
+                        .map(|(id, unit)| (*id, EnvelopeUnit::of(unit))),
+                );
+                // Nothing is known about what left the board, so the store's
+                // cleanup must run.
+                EnvelopeChange {
+                    touched: None,
+                    removed: true,
+                }
+            }
         };
-        *previous = Some(EnvelopeBoard {
-            stamp,
-            units: current,
-        });
-        delta
+        *previous = Some(EnvelopeBoard { stamp, units });
+        change
     }
 
     /// Who is at war with whom, as `attack_reach` sees it.
@@ -5439,14 +5539,10 @@ impl BasicAi {
     /// passed throughout — the anchor's five profiles do not move an envoy in
     /// a way that matters.
     fn envelope_belligerence_fingerprint(g: &Game) -> u64 {
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut hash = OFFSET;
+        let mut hash = FINGERPRINT_SEED;
         let mut mix = |value: u64| {
-            for byte in value.to_le_bytes() {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(PRIME);
-            }
+            hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+            hash ^= hash >> 29;
         };
         mix(g.wars.len() as u64);
         for (left, right) in &g.at_war {
@@ -5466,9 +5562,7 @@ impl BasicAi {
 
     /// The cities as `attack_reach` sees them: identity, owner and place.
     fn envelope_city_fingerprint(g: &Game) -> u64 {
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut hash = OFFSET;
+        let mut hash = FINGERPRINT_SEED;
         for city in g.cities.values() {
             for value in [
                 u64::from(city.id),
@@ -5476,10 +5570,8 @@ impl BasicAi {
                 city.pos.0 as u64,
                 city.pos.1 as u64,
             ] {
-                for byte in value.to_le_bytes() {
-                    hash ^= u64::from(byte);
-                    hash = hash.wrapping_mul(PRIME);
-                }
+                hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+                hash ^= hash >> 29;
             }
         }
         hash
@@ -5490,7 +5582,10 @@ impl BasicAi {
             .enemy_envelope_cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let delta = self.envelope_board_delta(g);
+        let EnvelopeChange {
+            touched: delta,
+            removed,
+        } = self.envelope_board_change(g);
         let out: AttackEnvelopes = g
             .units
             .values()
@@ -5551,7 +5646,29 @@ impl BasicAi {
             .collect();
         // A unit that died or left sight is never asked about again; drop it so
         // a long game does not carry an envelope per unit ever seen.
-        store.retain(|id, _| g.units.contains_key(id));
+        //
+        // ★★★ ONLY WHEN SOMETHING LEFT THE BOARD, AND THE DELTA IS WHAT KNOWS.
+        // This walked the whole per-enemy cache on every ask, hit or miss, to
+        // find the removals of a board that usually has none. `removed` is
+        // `true` for exactly the asks where the previous board held an id this
+        // one does not — and `true` whenever the delta gave up, which is the
+        // case where nothing is known.
+        //
+        // ⚠ The induction, which is the whole of why the skip is exact: every
+        // id inserted above belongs to `g.units`, so after a walk the store
+        // holds only ids of the board just asked about, and the board this
+        // walk is judged against is the one the delta was taken from — the
+        // store and the board move together under this same lock. If that
+        // board loses no id, every id the store holds is still on this one and
+        // a walk would find nothing to drop. That argument does not care which
+        // board the previous ask was about, which matters: a speculative clone
+        // draws its new ids from the same `next_id` as the board it was cloned
+        // from, so two branches *can* mint the same id for different units —
+        // and the branch that goes away takes its ids with it, which is a
+        // removal, which is a walk.
+        if removed {
+            store.retain(|id, _| g.units.contains_key(id));
+        }
         out
     }
 
@@ -24475,6 +24592,147 @@ mod attack_envelope_key_tests {
         assert!(
             ai.envelope_board_delta(&game).is_none(),
             "a map edit must fall back to recomputing everything"
+        );
+    }
+
+    /// The merge diff reports exactly what a whole-board diff reports.
+    ///
+    /// ★★★★ THE DIFF IS THE ONE THING THAT MAY NOT GET CHEAPER BY GETTING
+    /// WEAKER. `envelope_board_change` walks the two rosters side by side
+    /// because both are ordered by id, instead of building a `HashMap` of
+    /// every unit in the game per ask and looking each id up in the last one.
+    /// That is only a saving if it still names every tile the table it
+    /// replaced named, so the table it replaced is written out here and the
+    /// two are compared as sets — with all four kinds of change in flight at
+    /// once, which is where a merge with a mis-stepped cursor goes wrong and a
+    /// one-change-at-a-time test does not look.
+    #[test]
+    fn the_merge_diff_reports_what_a_whole_board_diff_would() {
+        let whole_board_diff = |before: &HashMap<u32, EnvelopeUnit>, g: &Game| -> Vec<Pos> {
+            let mut current: HashMap<u32, EnvelopeUnit> = HashMap::new();
+            for unit in g.units.values() {
+                current.insert(unit.id, EnvelopeUnit::of(unit));
+            }
+            let mut touched = Vec::new();
+            for (id, now) in &current {
+                match before.get(id) {
+                    Some(was) if was == now => {}
+                    Some(was) => {
+                        touched.push(was.pos);
+                        touched.push(now.pos);
+                        touched.extend(was.patrol);
+                        touched.extend(now.patrol);
+                    }
+                    None => {
+                        touched.push(now.pos);
+                        touched.extend(now.patrol);
+                    }
+                }
+            }
+            for (id, was) in before {
+                if !current.contains_key(id) {
+                    touched.push(was.pos);
+                    touched.extend(was.patrol);
+                }
+            }
+            touched.sort_unstable();
+            touched.dedup();
+            touched
+        };
+
+        let mut game = Game::new_full(2, 24, 16, 4_242, 300, 0, false);
+        let ai = BasicAi::new();
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let doomed = game.spawn_test_unit("warrior", 0, home);
+        let flier = game.spawn_test_unit("warrior", 1, home);
+        assert!(ai.envelope_board_delta(&game).is_none(), "the first ask");
+        assert_eq!(
+            ai.envelope_board_delta(&game),
+            Some(Vec::new()),
+            "an unchanged board"
+        );
+
+        // The board the delta will be taken against, kept the old way.
+        let mut before: HashMap<u32, EnvelopeUnit> = HashMap::new();
+        for unit in game.units.values() {
+            before.insert(unit.id, EnvelopeUnit::of(unit));
+        }
+
+        // Every kind of change the diff distinguishes, at once: a unit that
+        // moved, one that was born, one that died, and one that changed only
+        // the tile it is patrolling. The born and the dead sit on ids either
+        // side of the moved one so the merge cursor has to step over both.
+        let step = game.nbrs(home).into_iter().next().unwrap();
+        let patrolled = game.nbrs(home).into_iter().next_back().unwrap();
+        game.units.get_mut(&mine).unwrap().pos = step;
+        game.units.remove(&doomed);
+        {
+            let flier = game.units.get_mut(&flier).unwrap();
+            flier.air_patrol = true;
+            flier.air_patrol_pos = Some(patrolled);
+        }
+        let born = game.spawn_test_unit("warrior", 0, home);
+        assert!(born > flier, "the new id must sort after the changed ones");
+
+        let mut merged = ai
+            .envelope_board_delta(&game)
+            .expect("four unit changes are not wholesale");
+        merged.sort_unstable();
+        merged.dedup();
+        assert_eq!(
+            merged,
+            whole_board_diff(&before, &game),
+            "the merge reported a different set of tiles than a whole-board diff"
+        );
+        assert!(
+            merged.contains(&home) && merged.contains(&step) && merged.contains(&patrolled),
+            "non-vacuity: the tile left, the tile arrived on and the patrolled \
+             tile must all be in there, or the comparison above is between two \
+             empty answers"
+        );
+    }
+
+    /// A unit that leaves the board still clears its entry from the per-enemy
+    /// store, now that the sweep runs only when something left.
+    ///
+    /// ★★★ THE SWEEP IS NOT MERELY HYGIENE. Two branches of one game draw
+    /// their new unit ids from the same counter, so a speculative board and
+    /// the real one can mint the same id for different units — and an entry
+    /// left behind by a board that no longer exists would then be read as
+    /// belonging to a unit it never described. `compute_enemy_attack_envelopes`
+    /// skips the sweep only when the delta says nothing left the board; this
+    /// holds it to that.
+    #[test]
+    fn a_removal_still_clears_the_per_enemy_store() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let beside = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t))
+                    && game.units_at(*pos).is_empty()
+            })
+            .expect("the fixture offers dry ground beside the capital");
+        let enemy = game.spawn_test_unit("warrior", 1, beside);
+
+        let ai = BasicAi::new();
+        let _ = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            ai.enemy_envelope_cache.lock().unwrap().contains_key(&enemy),
+            "the fixture must put the enemy in the store, or the removal below \
+             is asserted against an empty cache"
+        );
+
+        game.units.remove(&enemy);
+        let _ = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            !ai.enemy_envelope_cache.lock().unwrap().contains_key(&enemy),
+            "a unit left the board and its envelope stayed in the store"
         );
     }
 
