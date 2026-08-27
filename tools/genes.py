@@ -595,6 +595,7 @@ OPERATOR_DEFAULT_ON = (
     "science-chain-alarm",
     "science-multiplier-payoff",
     "score-horizon",
+    "settler-never-idles",
     "settler-screen",
     "settler-target-hysteresis-2",
     "settler-threat-detour",
