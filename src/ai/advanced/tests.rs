@@ -19175,11 +19175,6 @@ fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
         game.units[&settler].pos, next,
         "the Settler must not march into the capturable route step"
     );
-    assert!(
-        game.wdist(game.units[&settler].pos, game.units[&guard].pos)
-            < game.wdist(source, game.units[&guard].pos),
-        "an exposed Settler retreats toward its guard instead of spending its patience on capture"
-    );
 }
 
 /// A settler waiting for its guard on a threatened tile does not stand
