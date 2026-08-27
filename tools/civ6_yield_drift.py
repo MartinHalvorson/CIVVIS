@@ -10,6 +10,14 @@ long — and what changed in the host on the turn a gap opened.
                                       [--city NAME] [--json out.json]
 
 The newest run under ~/civvis-civ6-runs/control is used when none is given.
+`--bin` names the `civvis_orders` binary; without it the tool takes the
+worktree's `target/{release,ci,debug}/civvis_orders`, else the newest
+PUBLISHED decider, the one the live seat actually runs:
+`~/.cache/civvis/live-game-runtime/published/<sha>/civvis_orders`. The dump
+is asked for with `--victory civvis` and no `--strategy`: the deployed binary
+refuses `--strategy auto` ("names a league genome, and the league is retired",
+#2357), which is what silently emptied every run of this tool after that
+change — the dump call raised on the empty stdout instead of measuring.
 For every state record the mod exported, the mirror is rebuilt exactly as the
 decider rebuilds it (`civvis_orders --dump-mirror --turn N`) and its per-city
 MODEL yields — `city_yields_model`, the number BEFORE the host-to-model
@@ -148,7 +156,7 @@ def dump_mirror(binary: str, run: str, turn: int, civ: str = "Rome") -> dict:
     """The decider's own reconstruction at `turn`, as `--dump-mirror` prints it."""
     result = subprocess.run(
         [binary, "--mirror", run, "--dump-mirror", "--turn", str(turn),
-         "--victory", "civvis", "--strategy", "auto", "--civ", civ],
+         "--victory", "civvis", "--civ", civ],
         capture_output=True, text=True, timeout=300, check=False,
     )
     return json.loads(result.stdout)

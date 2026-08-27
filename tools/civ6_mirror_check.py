@@ -889,6 +889,15 @@ def production_item_name(value):
             # implementation names such as BUILDING_GOV_CITYSTATES (the
             # player-facing Foreign Ministry), unique units, and era walls.
             name = IDENTIFIER_ALIASES.get(name, name)
+            # Firaxis files every wonder under the BUILDING_ prefix
+            # (BUILDING_TAJ_MAHAL); the board queues it as a `wonder`, the
+            # kind `queue_item_name` reads back. Without this the PRODUCTION
+            # line printed a false MISMATCH for every wonder in production
+            # (run civvis-20260826T184456Z: Civ6=('building','taj_mahal')
+            # against CIVVIS=('wonder','taj_mahal')), a vocabulary error and
+            # not a board error.
+            if kind == "building" and name in MIRRORED_WONDERS:
+                kind = "wonder"
             # Firaxis truncates these district type identifiers; the mirror
             # restores the full CIVVIS names when it resolves the rules table.
             if kind == "district":
