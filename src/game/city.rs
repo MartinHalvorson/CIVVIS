@@ -118,7 +118,7 @@ impl Game {
             .unit_ids_at(city.pos)
             .iter()
             .filter_map(|id| {
-                let u = &self.units[&id];
+                let u = &self.units[id];
                 (u.owner == city.owner && self.rules.units[u.kind].class == "military")
                     .then(|| self.unit_unembarked_strength(u) - city_state_bonus)
             })
@@ -940,6 +940,7 @@ impl Game {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn district_adjacency_assuming_with_family_and_neighbors_and_district_count(
         &self,
         dname: Name,
@@ -961,6 +962,7 @@ impl Game {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn district_adjacency_assuming_with_family_and_neighbors_cached(
         &self,
         dname: Name,
@@ -3536,7 +3538,7 @@ impl Game {
             if coastal(city.pos) {
                 ys.culture += 2.0;
             }
-            for (_, wonder_pos) in city.wonders.iter() {
+            for wonder_pos in city.wonders.values() {
                 if coastal(*wonder_pos) {
                     ys.culture += 2.0;
                 }
@@ -3929,7 +3931,7 @@ impl Game {
                         .as_deref()
                         .or_else(|| self.city_religion(city))
                     {
-                        rys.faith += self.religious_followers_in_city(city, religion) as f64;
+                        rys.faith += self.religious_followers_in_city(city, religion);
                     }
                 }
                 if self.grants_city_state_unique_bonus(city.owner, "Hunza") {
@@ -3948,7 +3950,7 @@ impl Game {
                                 && self
                                     .rules
                                     .districts
-                                    .get(*district)
+                                    .get(district)
                                     .is_some_and(|spec| spec.specialty)
                         })
                         .count() as f64;
@@ -7314,8 +7316,8 @@ impl Game {
                         self.district_is_family(built, d)
                             && self.district_is_active(city, built, *position)
                             && !self.unit_ids_at(*position).iter().any(|unit| {
-                                self.units[&unit].owner != pid
-                                    && self.is_at_war(pid, self.units[&unit].owner)
+                                self.units[unit].owner != pid
+                                    && self.is_at_war(pid, self.units[unit].owner)
                             })
                     }),
                 }
@@ -7361,8 +7363,7 @@ impl Game {
                 if tile.owner_city != Some(cid)
                     || tile.district.is_none()
                     || self.unit_ids_at(*pos).iter().any(|unit| {
-                        self.units[&unit].owner != pid
-                            && self.is_at_war(pid, self.units[&unit].owner)
+                        self.units[unit].owner != pid && self.is_at_war(pid, self.units[unit].owner)
                     })
                 {
                     return false;

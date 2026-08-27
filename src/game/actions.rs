@@ -670,7 +670,7 @@ impl Game {
             {
                 for target in self.nbrs(u.pos) {
                     let rival = self.unit_ids_at(target).iter().any(|id| {
-                        let other = &self.units[&id];
+                        let other = &self.units[id];
                         self.rules.units[other.kind].class == "religious"
                             && other.owner != pid
                             && other.religion.is_some()
@@ -684,7 +684,7 @@ impl Game {
             }
             if spec.class == "military" && u.moves_left > 0.0 {
                 for target_unit in self.unit_ids_at(u.pos) {
-                    let target = &self.units[&target_unit];
+                    let target = &self.units[target_unit];
                     if target.owner != pid
                         && self.rules.units[target.kind].class == "religious"
                         && (self.is_at_war(pid, target.owner)
@@ -704,7 +704,7 @@ impl Game {
                     .wdisk(u.pos, 1)
                     .into_iter()
                     .flat_map(|pos| self.unit_ids_at(pos))
-                    .any(|id| self.units[&id].religion == u.religion && self.units[&id].hp < 100);
+                    .any(|id| self.units[id].religion == u.religion && self.units[id].hp < 100);
                 if damaged {
                     acts.push(Action::HealReligious { unit: uid });
                 }
@@ -776,7 +776,7 @@ impl Game {
                     self.wdisk(u.pos, 1)
                         .into_iter()
                         .flat_map(|position| self.unit_ids_at(position))
-                        .any(|other| self.units[&other].owner == barbarian)
+                        .any(|other| self.units[other].owner == barbarian)
                 })
             {
                 acts.push(Action::ConvertBarbarians { unit: uid });
@@ -1008,7 +1008,7 @@ impl Game {
                             continue;
                         }
                         let hit = self.unit_ids_at(pos).iter().any(|oid| {
-                            let o = &self.units[&oid];
+                            let o = &self.units[oid];
                             o.owner != pid
                                 && self.is_at_war(pid, o.owner)
                                 && self.rules.units[o.kind].class == "military"
@@ -1040,7 +1040,7 @@ impl Game {
                     };
                     for pos in self.wdisk(source, 2) {
                         let hit = self.unit_ids_at(pos).iter().any(|id| {
-                            let other = &self.units[&id];
+                            let other = &self.units[id];
                             other.owner != pid
                                 && self.is_at_war(pid, other.owner)
                                 && self.rules.units[other.kind].class == "military"
@@ -1621,7 +1621,7 @@ impl Game {
 
     pub(super) fn enemy_combat_target_at(&self, pid: usize, pos: Pos) -> bool {
         for oid in self.unit_ids_at(pos) {
-            let unit = &self.units[&oid];
+            let unit = &self.units[oid];
             if unit.owner != pid
                 && self.is_at_war(pid, unit.owner)
                 && self.rules.units[unit.kind].class == "military"
@@ -1664,7 +1664,7 @@ impl Game {
         supports.into_iter().find(|support| {
             let owner = self.units[support].owner;
             self.unit_ids_at(pos).iter().any(|escort| {
-                let escort = &self.units[&escort];
+                let escort = &self.units[escort];
                 escort.owner == owner
                     && self.rules.units[escort.kind].class == "military"
                     && self.rules.units[escort.kind].domain.as_deref() != Some("air")
@@ -1954,36 +1954,36 @@ impl Game {
         // research visibility, but its expensive census only needs rebuilding
         // when the connected/world holdings or suzerainty can change. In a
         // long game most successful actions are ordinary unit orders.
-        let monopoly_context_may_change = match action {
+        let monopoly_context_may_change = !matches!(
+            action,
             Action::Move { .. }
-            | Action::MoveTo { .. }
-            | Action::Ranged { .. }
-            | Action::AirRebase { .. }
-            | Action::AirStrike { .. }
-            | Action::AirPatrol { .. }
-            | Action::ContributeProject { .. }
-            | Action::PerformConcert { .. }
-            | Action::UpgradeUnit { .. }
-            | Action::Fortify { .. }
-            | Action::Promote { .. }
-            | Action::Upgrade { .. }
-            | Action::CombineUnits { .. }
-            | Action::LinkUnits { .. }
-            | Action::UnlinkUnits { .. }
-            | Action::TradeRoute { .. }
-            | Action::BuildRailroad { .. }
-            | Action::Spread { .. }
-            | Action::TheologicalAttack { .. }
-            | Action::CondemnHeretic { .. }
-            | Action::HealReligious { .. }
-            | Action::RemoveHeresy { .. }
-            | Action::LaunchInquisition { .. }
-            | Action::EvangelizeBelief { .. }
-            | Action::ConvertBarbarians { .. }
-            | Action::CityStrike { .. }
-            | Action::EncampmentStrike { .. } => false,
-            _ => true,
-        };
+                | Action::MoveTo { .. }
+                | Action::Ranged { .. }
+                | Action::AirRebase { .. }
+                | Action::AirStrike { .. }
+                | Action::AirPatrol { .. }
+                | Action::ContributeProject { .. }
+                | Action::PerformConcert { .. }
+                | Action::UpgradeUnit { .. }
+                | Action::Fortify { .. }
+                | Action::Promote { .. }
+                | Action::Upgrade { .. }
+                | Action::CombineUnits { .. }
+                | Action::LinkUnits { .. }
+                | Action::UnlinkUnits { .. }
+                | Action::TradeRoute { .. }
+                | Action::BuildRailroad { .. }
+                | Action::Spread { .. }
+                | Action::TheologicalAttack { .. }
+                | Action::CondemnHeretic { .. }
+                | Action::HealReligious { .. }
+                | Action::RemoveHeresy { .. }
+                | Action::LaunchInquisition { .. }
+                | Action::EvangelizeBelief { .. }
+                | Action::ConvertBarbarians { .. }
+                | Action::CityStrike { .. }
+                | Action::EncampmentStrike { .. }
+        );
         if monopoly_context_may_change {
             self.query_memo.monopoly_context.borrow_mut().take();
         }
@@ -2335,7 +2335,7 @@ impl Game {
                 let destination =
                     self.city_active_district_family_position(city, crate::name!("aerodrome"))?;
                 (!self.unit_ids_at(destination).iter().any(|other| {
-                    let other = &self.units[&other];
+                    let other = &self.units[other];
                     other.owner != pid || self.rules.units[other.kind].class == spec.class
                 }))
                 .then_some(destination)
@@ -2575,8 +2575,8 @@ impl Game {
             && self.nbrs(u.pos).into_iter().any(|p| {
                 self.unit_ids_at(p).iter().any(|id| {
                     *id != uid
-                        && self.units[&id].owner == u.owner
-                        && self.units[&id].kind == "hoplite"
+                        && self.units[id].owner == u.owner
+                        && self.units[id].kind == "hoplite"
                 })
             })
         {
@@ -2655,7 +2655,7 @@ impl Game {
                     ally.owner == u.owner
                         && self.rules.units[ally.kind].promotion_class != spec.promotion_class
                 })
-                .map(|id| self.promotion_effect(&self.units[&id], "adjacent_vs_cavalry"))
+                .map(|id| self.promotion_effect(&self.units[id], "adjacent_vs_cavalry"))
                 .sum::<f64>();
         }
         bonus
@@ -2999,7 +2999,7 @@ impl Game {
             self.nbrs(target).into_iter().any(|position| {
                 self.unit_ids_at(position)
                     .iter()
-                    .any(|id| self.units[&id].owner == attacker && self.units[&id].kind == kind)
+                    .any(|id| self.units[id].owner == attacker && self.units[id].kind == kind)
             })
         };
         let ram = adjacent_support("battering_ram")
@@ -3219,7 +3219,7 @@ impl Game {
             }
             if d_dead {
                 let enemy_military_left = self.unit_ids_at(target).iter().any(|id| {
-                    let o = &self.units[&id];
+                    let o = &self.units[id];
                     o.owner != pid && self.rules.units[o.kind].class == "military"
                 });
                 if !enemy_military_left {
@@ -5052,7 +5052,7 @@ impl Game {
             .unit_ids_at(pos)
             .iter()
             .filter(|id| self.units[id].owner == pid && self.units[id].kind == "aircraft_carrier")
-            .map(|id| 2 + self.promotion_effect(&self.units[&id], "aircraft_slots") as i32)
+            .map(|id| 2 + self.promotion_effect(&self.units[id], "aircraft_slots") as i32)
             .sum::<i32>();
         capacity
     }
@@ -5775,7 +5775,7 @@ impl Game {
             })
         };
         if self.unit_ids_at(city.pos).iter().any(|uid| {
-            let other = &self.units[&uid];
+            let other = &self.units[uid];
             other.owner != pid || is_land_combat(&other.kind)
         }) {
             return false;
@@ -7073,7 +7073,7 @@ impl Game {
             let victims = self
                 .unit_ids_at(*position)
                 .iter()
-                .map(|uid| self.units[&uid].owner)
+                .map(|uid| self.units[uid].owner)
                 .chain(self.city_at(*position).map(|c| self.cities[&c].owner))
                 .chain(self.encampment_at(*position).map(|c| self.cities[&c].owner));
             for owner in victims {
