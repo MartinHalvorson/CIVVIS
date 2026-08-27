@@ -101,7 +101,10 @@ fn intensity_zero_leaves_every_volcano_dormant_and_fires_nothing() {
 
     advance(&mut game, 30);
     assert!(game.storms.is_empty(), "no storms form with disasters off");
-    assert!(game.droughts.is_empty(), "no droughts form with disasters off");
+    assert!(
+        game.droughts.is_empty(),
+        "no droughts form with disasters off"
+    );
 }
 
 /// A player who actually loses population to a random disaster receives the
@@ -599,10 +602,7 @@ fn an_eruption_keeps_volcanic_soil_off_mountains_and_every_kind_of_water() {
     let mut game = quiet_game();
     let (volcano, ring) = volcano_and_ring(&game);
     arm_certain_eruption(&mut game, volcano, &ring);
-    for (position, terrain) in ring[..4]
-        .iter()
-        .zip(["mountain", "coast", "lake", "ocean"])
-    {
+    for (position, terrain) in ring[..4].iter().zip(["mountain", "coast", "lake", "ocean"]) {
         game.map.tiles.get_mut(position).unwrap().terrain = Name::new(terrain);
     }
     game.map.tiles.get_mut(&ring[5]).unwrap().terrain = crate::name!("snow");
@@ -757,10 +757,7 @@ fn a_storm_drifts_for_three_turns_and_then_dissipates() {
     advance(&mut game, 3);
     assert!(game.storms.is_empty(), "three turns and it is gone");
     assert!(
-        game.map
-            .tiles
-            .values()
-            .all(|tile| tile.storm.is_none()),
+        game.map.tiles.values().all(|tile| tile.storm.is_none()),
         "and it leaves no marker behind"
     );
 }

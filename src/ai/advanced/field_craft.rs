@@ -16,7 +16,6 @@
 //! `genes.rs`, byte-identical when off. Fires probe under
 //! `docs/gene_screens/fires/`.
 
-
 use super::AdvancedAi;
 use crate::game::Game;
 
@@ -34,7 +33,6 @@ const FLIP_ENEMY_SUZERAIN: i64 = 200;
 const FLIP_RIVAL_SUZERAIN: i64 = 60;
 
 impl AdvancedAi {
-
     // ------------------------------------------------------------------
     // shoot-and-scoot
     // ------------------------------------------------------------------

@@ -1175,7 +1175,8 @@ impl DoctrineLedger {
     pub fn profile(&self) -> DoctrineProfile {
         let obs = &self.observations;
         let per_turn = |total: f64| (obs.turns > 0).then(|| total / obs.turns as f64);
-        let per_contact = |total: f64| (obs.contact_turns > 0).then(|| total / obs.contact_turns as f64);
+        let per_contact =
+            |total: f64| (obs.contact_turns > 0).then(|| total / obs.contact_turns as f64);
         DoctrineProfile {
             concentration: per_contact(obs.local_ratio),
             dispersion: per_turn(obs.dispersion),
@@ -1419,7 +1420,14 @@ fn play_position(
 
     observe(&previous, &game, &mut ledgers);
     note_arrivals(&previous, &game, step, &mut arrival);
-    note_vanguard(&previous, &game, &roster, 0, &mut vanguard_taken, &mut ledgers);
+    note_vanguard(
+        &previous,
+        &game,
+        &roster,
+        0,
+        &mut vanguard_taken,
+        &mut ledgers,
+    );
     while game.winner.is_none() && game.turn < deadline {
         let pid = game.current;
         if pid < 2 {
@@ -1438,7 +1446,14 @@ fn play_position(
         observe(&previous, &game, &mut ledgers);
         note_arrivals(&previous, &game, step, &mut arrival);
         let fallen = roster.len() - previous.len();
-        note_vanguard(&previous, &game, &roster, fallen, &mut vanguard_taken, &mut ledgers);
+        note_vanguard(
+            &previous,
+            &game,
+            &roster,
+            fallen,
+            &mut vanguard_taken,
+            &mut ledgers,
+        );
         // Nothing left to measure once a side has no unit standing.
         if [0usize, 1]
             .iter()

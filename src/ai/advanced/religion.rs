@@ -298,5 +298,4 @@ impl AdvancedAi {
         });
         (defending || campaigning).then_some(score)
     }
-
 }

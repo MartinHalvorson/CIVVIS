@@ -2947,13 +2947,11 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
     // stream 18000000; see `promoted_policy_envoy`). Off in BOTH
     // constructors now: their withhold arms are declared aliases of
     // `advanced`, and the re-addition treatment is `advanced_war_half`.
-    for (flag, on_anchor, in_production) in [
-        (
-            "unit_objective_memory",
-            frozen.base.unit_objective_memory,
-            production.base.unit_objective_memory,
-        ),
-    ] {
+    for (flag, on_anchor, in_production) in [(
+        "unit_objective_memory",
+        frozen.base.unit_objective_memory,
+        production.base.unit_objective_memory,
+    )] {
         assert!(
                 !on_anchor,
                 "{flag} is on for advanced_v1: the war-half removal re-pinned                  the source contract as behaviour-free for the anchor, and                  this is the assertion that keeps that claim honest"
@@ -3417,7 +3415,6 @@ mod flagged_gene_repairs {
             "a granary the capped cities can already order is production's job"
         );
     }
-
 }
 
 fn found_test_city(game: &mut Game, pid: usize) -> u32 {
@@ -15758,11 +15755,19 @@ fn faith_spending_never_buys_walls_and_ignores_gold_actions() {
     );
 
     assert!(
-        !game.cities[&city].buildings.contains(&crate::name!("walls")),
+        !game.cities[&city]
+            .buildings
+            .contains(&crate::name!("walls")),
         "the Faith spender must not buy a city defence the host will not sell"
     );
-    assert_eq!(game.players[0].faith, 200.0, "no Faith spent on a refused item");
-    assert_eq!(game.players[0].gold, 10_000.0, "and the Gold reserve is untouched");
+    assert_eq!(
+        game.players[0].faith, 200.0,
+        "no Faith spent on a refused item"
+    );
+    assert_eq!(
+        game.players[0].gold, 10_000.0,
+        "and the Gold reserve is untouched"
+    );
 }
 
 #[test]
@@ -30637,7 +30642,9 @@ fn the_menu_gains_the_plans_site_and_the_squatter_yields() {
     ];
     ai.district_plan_shape_menu(&game, 0, &plan, city, &mut items);
     assert!(
-        items.iter().any(|item| matches!(item, Item::District { district, pos }
+        items
+            .iter()
+            .any(|item| matches!(item, Item::District { district, pos }
             if district.as_str() == "campus" && *pos == nest)),
         "the campus joins the menu at the nest"
     );
@@ -30649,7 +30656,9 @@ fn the_menu_gains_the_plans_site_and_the_squatter_yields() {
         "the hub is withdrawn from the reserved nest"
     );
     assert!(
-        items.iter().any(|item| matches!(item, Item::District { district, .. }
+        items
+            .iter()
+            .any(|item| matches!(item, Item::District { district, .. }
             if district.as_str() == "commercial_hub")),
         "the hub keeps a candidate of its own"
     );
@@ -30680,9 +30689,7 @@ fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
                     == 3
         })
         .expect("a ring-two corner plot");
-    let raised = raise_mountains_beside(&mut game, target, 3, |g, pos| {
-        g.wdist(pos, center) == 3
-    });
+    let raised = raise_mountains_beside(&mut game, target, 3, |g, pos| g.wdist(pos, center) == 3);
     assert_eq!(raised, 3, "three ring-three mountains ring the target");
     game.players[0].explored.insert(target);
     game.players[0].gold = 1_500.0;
@@ -30705,7 +30712,8 @@ fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
         "an unbought head still leaves the menu an owned candidate"
     );
     let mut cache = DistrictPlanCache::default();
-    let score = ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
+    let score =
+        ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
     assert!(
         score.is_some_and(|s| s >= 120.0),
         "the buy clears the strategic-purchase floor: {score:?}"
@@ -30725,7 +30733,8 @@ fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
         "the nest is annexed"
     );
     assert!(
-        game.district_sites(city, Name::new("campus")).contains(&target),
+        game.district_sites(city, Name::new("campus"))
+            .contains(&target),
         "the bought plot is immediately a legal campus site"
     );
 
@@ -30753,7 +30762,8 @@ fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
         .plot_purchase_cost(0, city, target)
         .expect("the engine quotes ring-two ground");
     let mut cache = DistrictPlanCache::default();
-    let score = ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
+    let score =
+        ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
     assert_eq!(score, None, "two adjacency is not worth Gold");
 }
 

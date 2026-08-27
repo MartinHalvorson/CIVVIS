@@ -75,9 +75,9 @@ fn land_combat_purchase_requires_an_unreserved_city_center_combat_layer() {
         .nbrs(center)
         .into_iter()
         .find(|position| {
-            game.map.get(*position).is_some_and(|tile| {
-                game.rules.is_passable(tile) && !game.rules.is_water(tile)
-            })
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
         })
         .unwrap();
     for unit in game.units_at(center) {
@@ -361,7 +361,10 @@ fn meteors_pepper_open_land_and_grant_advanced_heavy_cavalry() {
     // A stock lobby has the Apocalypse mode off and so never sees one.
     game.turn = game.max_turns;
     game.process_meteors();
-    assert_eq!(game.meteor_strikes, 0, "meteors are an Apocalypse-mode rule");
+    assert_eq!(
+        game.meteor_strikes, 0,
+        "meteors are an Apocalypse-mode rule"
+    );
     game.game_modes.insert("apocalypse".to_string());
     // At the turn limit every remaining strike is forced in, and the
     // budget never exceeds the shipped six per game.
@@ -507,7 +510,8 @@ fn routes_level_per_tile_and_engineers_lay_railroads() {
         .strategic_resources
         .insert(crate::name!("coal"), 1.0);
     assert!(game.can_build_railroad(0, engineer));
-    game.apply(0, &Action::BuildRailroad { unit: engineer }).unwrap();
+    game.apply(0, &Action::BuildRailroad { unit: engineer })
+        .unwrap();
     assert_eq!(game.map.tiles[&b].road, 5);
     assert!((game.strategic_stockpile(0, crate::name!("iron")) - 1.0).abs() < 1e-9);
     assert!(game.strategic_stockpile(0, crate::name!("coal")).abs() < 1e-9);
@@ -895,7 +899,10 @@ fn dar_e_mehr_ages_from_construction_and_resets_when_repaired() {
     };
 
     assert!(game.complete_item(0, city, &dar_e_mehr));
-    assert_eq!(game.cities[&city].building_eras[&Name::new("dar_e_mehr")], 2);
+    assert_eq!(
+        game.cities[&city].building_eras[&Name::new("dar_e_mehr")],
+        2
+    );
     assert!((game.city_yields(city).faith - baseline - 3.0).abs() < 1e-9);
 
     game.world_era = 5;
@@ -915,12 +922,18 @@ fn dar_e_mehr_ages_from_construction_and_resets_when_repaired() {
             pos: position,
         },
     ));
-    assert_eq!(game.cities[&city].building_eras[&Name::new("dar_e_mehr")], 5);
+    assert_eq!(
+        game.cities[&city].building_eras[&Name::new("dar_e_mehr")],
+        5
+    );
     assert!((game.city_yields(city).faith - baseline - 3.0).abs() < 1e-9);
 
     game.world_era = 7;
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
-    assert_eq!(restored.cities[&city].building_eras[&Name::new("dar_e_mehr")], 5);
+    assert_eq!(
+        restored.cities[&city].building_eras[&Name::new("dar_e_mehr")],
+        5
+    );
     assert!((restored.city_yields(city).faith - baseline - 5.0).abs() < 1e-9);
 }
 
@@ -1001,10 +1014,7 @@ fn rock_bands_are_faith_bought_and_perform_at_local_venues() {
         _ => unreachable!(),
     };
     assert_eq!(game.players[0].tourism_lifetime, 750.0 * multiplier);
-    assert_eq!(
-        game.players[0].targeted_tourism[&rival],
-        750.0 * multiplier
-    );
+    assert_eq!(game.players[0].targeted_tourism[&rival], 750.0 * multiplier);
     assert_eq!(game.units.contains_key(&band), survives);
     if survives {
         assert_eq!(game.units[&band].album_sales, albums);
@@ -1118,8 +1128,7 @@ fn resorts_scale_with_appeal_and_ski_resorts_are_spaced_and_unpillageable() {
         amenities_before + 1
     );
     let pillager = game.players.len();
-    game.players
-        .push(Player::new(pillager, "Pillager", false));
+    game.players.push(Player::new(pillager, "Pillager", false));
     game.at_war.insert(pair(0, pillager));
     assert!(!game.pillageable_at(pillager, ski));
 }
@@ -1221,9 +1230,12 @@ fn naturalists_are_escalating_faith_purchases_that_establish_four_tile_parks() {
         game.city_local_amenities(&game.cities[&city]),
         amenities_before + 2
     );
-    assert!(game.district_sites(city, crate::name!("campus")).iter().all(|position| {
-        game.map.tiles[position].improvement.as_deref() != Some("national_park")
-    }));
+    assert!(game
+        .district_sites(city, crate::name!("campus"))
+        .iter()
+        .all(|position| {
+            game.map.tiles[position].improvement.as_deref() != Some("national_park")
+        }));
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(restored.tourism_per_turn(0), game.tourism_per_turn(0));
     assert_eq!(
@@ -1291,8 +1303,7 @@ fn targeted_tourism_only_pressures_its_intended_rival_and_survives_saves() {
 fn rock_band_promotions_unlock_venues_and_raise_matching_venue_levels() {
     let (mut game, city, theater) = one_city(774_4063);
     let rival = game.players.len();
-    game.players
-        .push(Player::new(rival, "Venue Rival", false));
+    game.players.push(Player::new(rival, "Venue Rival", false));
     game.cities.get_mut(&city).unwrap().owner = rival;
     install_district(&mut game, city, theater, "theater_square");
     game.cities
@@ -1670,7 +1681,9 @@ fn flood_defenses_mitigate_damage_and_great_bath_adds_permanent_faith() {
         .push(crate::name!("dar_e_mehr"));
     game.resolve_flood(&[position]);
     assert!(game.map.tiles[&position].pillaged);
-    assert!(!game.cities[&city].pillaged_buildings.contains(&Name::new("dar_e_mehr")));
+    assert!(!game.cities[&city]
+        .pillaged_buildings
+        .contains(&Name::new("dar_e_mehr")));
 }
 
 #[test]
@@ -1857,8 +1870,7 @@ fn nuclear_plants_age_recommission_and_resolve_all_accident_state() {
         .into_iter()
         .find(|candidate| game.map.tiles[candidate].owner_city == Some(city))
         .unwrap();
-    let restored_yields =
-        game.player_tile_yields(0, fallout_tile, &game.map.tiles[&fallout_tile]);
+    let restored_yields = game.player_tile_yields(0, fallout_tile, &game.map.tiles[&fallout_tile]);
     game.resolve_reactor_accident(city, 2);
     assert!(game.cities[&city]
         .pillaged_buildings

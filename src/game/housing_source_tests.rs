@@ -49,7 +49,10 @@ fn the_parts_sum_to_the_total_on_every_city_of_a_played_game() {
         );
         checked += 1;
     }
-    assert!(checked >= 3, "only {checked} cities; the test proved little");
+    assert!(
+        checked >= 3,
+        "only {checked} cities; the test proved little"
+    );
 }
 
 #[test]
@@ -81,11 +84,7 @@ fn the_aqueduct_counts_as_water_not_as_a_district() {
     // comparison found it within one run: every aqueduct city was wrong in
     // `districts` and `water` by exactly equal and opposite amounts, and those
     // amounts were exactly these lifts. The total was right the whole time.
-    for (fresh, coastal, lift) in [
-        (true, false, 2.0),
-        (false, true, 3.0),
-        (false, false, 4.0),
-    ] {
+    for (fresh, coastal, lift) in [(true, false, 2.0), (false, true, 3.0), (false, false, 4.0)] {
         let dry = Game::city_housing_floor(fresh, coastal, false);
         let wet = Game::city_housing_floor(fresh, coastal, true);
         assert_eq!(

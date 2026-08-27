@@ -151,9 +151,15 @@ fn redeclared_inside_peace_treaty(
 fn rapid_recapture_window(war: &WarRecord) -> Option<(String, u32, u32)> {
     let mut captures: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     for highlight in &war.highlights {
-        if matches!(highlight.kind.as_str(), "city_captured" | "capital_captured") {
+        if matches!(
+            highlight.kind.as_str(),
+            "city_captured" | "capital_captured"
+        ) {
             if let Some(city) = &highlight.city {
-                captures.entry(city.clone()).or_default().push(highlight.turn);
+                captures
+                    .entry(city.clone())
+                    .or_default()
+                    .push(highlight.turn);
             }
         }
     }
@@ -530,9 +536,7 @@ fn track_unit(g: &Game, history: &mut History, id: u32, motion: &mut Motion) -> 
         // `unit_can_fortify` is private to the engine, so mirror its three
         // conditions rather than widen the API for a diagnostic.
         let spec = &g.rules.units[unit.kind];
-        if spec.class == "military"
-            && spec.domain.as_deref() != Some("sea")
-            && !g.is_embarked(unit)
+        if spec.class == "military" && spec.domain.as_deref() != Some("sea") && !g.is_embarked(unit)
         {
             motion.idle_could_fortify += 1;
         }
@@ -552,10 +556,7 @@ fn track_unit(g: &Game, history: &mut History, id: u32, motion: &mut Motion) -> 
     track.reported = true;
     Some(format!(
         "unit {id} ({}) of {} circled {:?} for {elapsed} turns from turn {}",
-        unit.kind,
-        g.players[unit.owner].civ,
-        track.tiles,
-        track.since,
+        unit.kind, g.players[unit.owner].civ, track.tiles, track.since,
     ))
 }
 
@@ -628,7 +629,9 @@ fn stalled_settler_context(g: &Game, id: u32) -> String {
         legal_sites.len(),
         reachable,
         exhaustive_step,
-        g.players[pid].techs.contains(&civvis::name!("shipbuilding")),
+        g.players[pid]
+            .techs
+            .contains(&civvis::name!("shipbuilding")),
         unit.linked_to,
     )
 }
@@ -705,21 +708,17 @@ fn bounded_minor_idle(
             district_family(g, *district).as_str() == specialty
         }
         civvis::game::Item::Project { project } => {
-            matches!(project.as_str(), "repair_outer_defenses" | "repair_encampment")
+            matches!(
+                project.as_str(),
+                "repair_outer_defenses" | "repair_encampment"
+            )
         }
         _ => false,
     });
-    g.players[pid].is_minor
-        && military >= 3
-        && !actionable_infrastructure
+    g.players[pid].is_minor && military >= 3 && !actionable_infrastructure
 }
 
-fn audit_turn(
-    g: &Game,
-    history: &mut History,
-    found: &mut Findings,
-    motion: &mut MotionBreakdown,
-) {
+fn audit_turn(g: &Game, history: &mut History, found: &mut Findings, motion: &mut MotionBreakdown) {
     history.tracks.retain(|id, _| g.units.contains_key(id));
     for (id, unit) in &g.units {
         let role = controller_role(g, unit.owner);
@@ -842,7 +841,10 @@ fn audit_turn(
 
     for (id, city) in &g.cities {
         if city.pop < 1 {
-            found.violation("city below one Citizen", format!("city {id} ({})", city.name));
+            found.violation(
+                "city below one Citizen",
+                format!("city {id} ({})", city.name),
+            );
         }
         if !g.players[city.owner].alive {
             found.violation(
@@ -885,9 +887,7 @@ fn audit_turn(
             let military = g
                 .player_unit_ids(city.owner)
                 .into_iter()
-                .filter(|unit| {
-                    g.rules.units[g.units[unit].kind].class == "military"
-                })
+                .filter(|unit| g.rules.units[g.units[unit].kind].class == "military")
                 .count();
             if bounded_minor_idle(g, city.owner, military, &producible) {
                 // City-state governors build only their own district family,
@@ -969,7 +969,10 @@ fn audit_result(g: &Game, found: &mut Findings) {
     let treaty_minimum = g.standard_duration(WAR_MIN_TURNS);
     let mut previous: BTreeMap<(usize, usize), &WarRecord> = BTreeMap::new();
     for war in &g.concluded_wars {
-        let key = (war.aggressor.min(war.defender), war.aggressor.max(war.defender));
+        let key = (
+            war.aggressor.min(war.defender),
+            war.aggressor.max(war.defender),
+        );
         let Some(ended) = war.ended else { continue };
         let sides = (
             g.players[war.aggressor].civ.clone(),
@@ -1040,12 +1043,8 @@ fn audit_result(g: &Game, found: &mut Findings) {
                         {
                             counts.0 += 1
                         }
-                        Action::BuyBuilding { currency, .. } if currency == "gold" => {
-                            counts.1 += 1
-                        }
-                        Action::BuyDistrict { currency, .. } if currency == "gold" => {
-                            counts.2 += 1
-                        }
+                        Action::BuyBuilding { currency, .. } if currency == "gold" => counts.1 += 1,
+                        Action::BuyDistrict { currency, .. } if currency == "gold" => counts.2 += 1,
                         _ => {}
                     }
                     counts
@@ -1269,8 +1268,8 @@ fn main() {
     let size = MapSize::for_players(players as usize);
     let width = number(&args, "--width", size.width as i64).max(8) as i32;
     let height = number(&args, "--height", size.height as i64).max(8) as i32;
-    let city_states = number(&args, "--city-states", size.default_city_states as i64).max(0)
-        as usize;
+    let city_states =
+        number(&args, "--city-states", size.default_city_states as i64).max(0) as usize;
     let rules = Rules::embedded();
     let speed = text(&args, "--speed", &default_speed());
     let speed_turns = rules.speeds.get(&speed).unwrap_or_else(|| {
@@ -1345,8 +1344,14 @@ fn main() {
                 "seed {seed:<5} t{:<4} {:<10} {:<10} violations={} symptoms={}",
                 g.reported_turn(),
                 g.victory_type.clone().unwrap_or_default(),
-                g.winner.map(|w| g.players[w].civ.clone()).unwrap_or_default(),
-                found.violations.values().map(|entry| entry.0).sum::<usize>(),
+                g.winner
+                    .map(|w| g.players[w].civ.clone())
+                    .unwrap_or_default(),
+                found
+                    .violations
+                    .values()
+                    .map(|entry| entry.0)
+                    .sum::<usize>(),
                 found.symptoms.values().map(|entry| entry.0).sum::<usize>(),
             );
             motion.print("    ");
@@ -1527,14 +1532,8 @@ mod tests {
     #[test]
     fn the_war_minimum_applies_only_to_negotiated_peace() {
         assert!(negotiated_war_ended_early(&concluded_war("peace"), 10));
-        assert!(!negotiated_war_ended_early(
-            &concluded_war("conquest"),
-            10
-        ));
-        assert!(!negotiated_war_ended_early(
-            &concluded_war("coalition"),
-            10
-        ));
+        assert!(!negotiated_war_ended_early(&concluded_war("conquest"), 10));
+        assert!(!negotiated_war_ended_early(&concluded_war("coalition"), 10));
         let mut online_length = concluded_war("peace");
         online_length.ended = Some(28);
         online_length.highlights[1].turn = 28;

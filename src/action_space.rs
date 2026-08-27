@@ -384,8 +384,7 @@ pub fn features_with_context(
     if let Some(uid) = acting_unit(action) {
         if let Some(unit) = g.units.get(&uid) {
             row[base + 6] = (unit.hp as f32 / 100.0).clamp(0.0, 1.0);
-            row[base + 7] =
-                (g.unit_strength(unit, false) as f32 / 100.0).clamp(0.0, 1.0);
+            row[base + 7] = (g.unit_strength(unit, false) as f32 / 100.0).clamp(0.0, 1.0);
             row[base + 8] = (unit.moves_left as f32 / 6.0).clamp(0.0, 1.0);
             if let Some(pos) = tile {
                 row[base + 9] = (g.wdist(unit.pos, pos) as f32 / 10.0).clamp(0.0, 1.0);
@@ -424,14 +423,11 @@ pub fn features_with_context(
     let siege = actor_spec.is_some_and(|spec| spec.siege);
     let support = actor_spec.is_some_and(|spec| {
         spec.class == "support"
-            || spec.class == "military"
-                && !spec.is_melee_capable()
-                && !spec.has_ranged_attack()
+            || spec.class == "military" && !spec.is_melee_capable() && !spec.has_ranged_attack()
     });
     let religious = actor_spec.is_some_and(|spec| spec.class == "religious");
-    let civilian = actor_spec.is_some_and(|spec| {
-        !matches!(spec.class.as_str(), "military" | "support" | "religious")
-    });
+    let civilian = actor_spec
+        .is_some_and(|spec| !matches!(spec.class.as_str(), "military" | "support" | "religious"));
     for flag in [
         military, recon, mobile, ranged, siege, support, religious, civilian,
     ] {
@@ -447,7 +443,9 @@ pub fn features_with_context(
                 .min_by_key(|position| (g.wdist(from, *position), *position))
         })
         .or_else(|| context.objectives.first().copied());
-    let objective_before = actor_pos.zip(objective).map(|(from, goal)| g.wdist(from, goal));
+    let objective_before = actor_pos
+        .zip(objective)
+        .map(|(from, goal)| g.wdist(from, goal));
     let objective_after = tile.zip(objective).map(|(to, goal)| g.wdist(to, goal));
     destination.push(objective.is_some() as u8 as f32);
     destination.push(distance_feature(objective_after, 20.0));
@@ -552,7 +550,11 @@ pub fn features_with_context(
         / neighbor_count;
     let exits = neighbors
         .iter()
-        .filter(|position| g.map.get(**position).is_some_and(|cell| g.rules.is_passable(cell)))
+        .filter(|position| {
+            g.map
+                .get(**position)
+                .is_some_and(|cell| g.rules.is_passable(cell))
+        })
         .count() as f32
         / neighbor_count;
     destination.extend([frontier, exits]);
@@ -579,9 +581,7 @@ pub fn features_with_context(
     });
     destination.push(defender_hp);
     destination.push((defender_strength as f32 / 100.0).clamp(0.0, 1.5));
-    destination.push(
-        ((attacker_strength - defender_strength) as f32 / 100.0).clamp(-1.0, 1.0),
-    );
+    destination.push(((attacker_strength - defender_strength) as f32 / 100.0).clamp(-1.0, 1.0));
     let support = tile.map_or(0usize, |position| {
         context
             .friendly
@@ -670,10 +670,10 @@ pub fn legal_encoded_with_objectives(g: &Game, pid: usize, objectives: &[Pos]) -
 #[cfg(all(test, feature = "closed-experiments"))]
 mod tests {
     use super::{
-        features_with_context, kind_index, legal_encoded, FeatureContext, FEATURE_WIDTH,
-        KINDS, LEGACY_NUMERIC_WIDTH,
+        features_with_context, kind_index, legal_encoded, FeatureContext, FEATURE_WIDTH, KINDS,
+        LEGACY_NUMERIC_WIDTH,
     };
-    use crate::ai::{Ai, AdvancedAi};
+    use crate::ai::{AdvancedAi, Ai};
     use crate::game::{Action, Game};
 
     #[test]
@@ -714,7 +714,11 @@ mod tests {
         assert!(e.features.iter().all(|v| v.is_finite()));
         // The mask must agree with the encoded kinds exactly.
         for (index, present) in e.kind_mask.iter().enumerate() {
-            assert_eq!(*present, e.kinds.contains(&index), "mask disagrees at {index}");
+            assert_eq!(
+                *present,
+                e.kinds.contains(&index),
+                "mask disagrees at {index}"
+            );
         }
         // Each row's one-hot names that row's kind.
         for (row, kind) in e.kinds.iter().enumerate() {
@@ -753,8 +757,15 @@ mod tests {
         let second = features_with_context(&g, 0, &second, &context);
         let destination = KINDS.len() + LEGACY_NUMERIC_WIDTH;
         assert_eq!(first[destination + 8], 1.0, "objective-present flag");
-        assert_eq!(first[destination + 9], 0.0, "the objective itself is zero away");
-        assert!(second[destination + 9] > 0.0, "the other destination is farther away");
+        assert_eq!(
+            first[destination + 9],
+            0.0,
+            "the objective itself is zero away"
+        );
+        assert!(
+            second[destination + 9] > 0.0,
+            "the other destination is farther away"
+        );
         assert!(first[destination + 10] > second[destination + 10]);
     }
 }

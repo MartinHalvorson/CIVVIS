@@ -25,8 +25,14 @@ fn production_catalog_is_reused_until_a_successful_action_changes_the_world() {
         unit: crate::name!("warrior"),
     };
     assert!(first.contains(&warrior));
-    game.apply(0, &Action::Produce { city, item: warrior })
-        .expect("a successful action invalidates the cached read state");
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: warrior,
+        },
+    )
+    .expect("a successful action invalidates the cached read state");
     assert!(
         game.query_memo.producible.borrow().is_empty(),
         "the next decision must derive its catalog from the new game state"

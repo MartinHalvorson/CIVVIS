@@ -56,11 +56,7 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
             .into_iter()
             .enumerate()
         {
-            for (poles_index, poles) in MAP_POLES
-                .into_iter()
-                .map(|spec| spec.poles)
-                .enumerate()
-            {
+            for (poles_index, poles) in MAP_POLES.into_iter().map(|spec| spec.poles).enumerate() {
                 let seed = 71_000
                     + 101 * script_index as u64
                     + 7 * shape_index as u64
@@ -156,7 +152,11 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                 }
                 assert_eq!(
                     pentagons,
-                    if shape_built == MapTopology::Planet { 12 } else { 0 },
+                    if shape_built == MapTopology::Planet {
+                        12
+                    } else {
+                        0
+                    },
                     "{case} has the wrong number of pentagons"
                 );
 
@@ -289,7 +289,11 @@ fn every_world_type_starts_a_game_on_either_shape() {
                     .count(),
                 // The arena refuses the city-states it was asked for; every
                 // world seats them all.
-                if spec.script.is_battlefield() { 0 } else { size.default_city_states },
+                if spec.script.is_battlefield() {
+                    0
+                } else {
+                    size.default_city_states
+                },
                 "{case} lost a city-state during setup"
             );
             for unit in game.units.values() {

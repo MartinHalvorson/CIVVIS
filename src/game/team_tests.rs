@@ -53,12 +53,16 @@ fn teams_persist_share_sight_and_grant_completed_technology_eurekas() {
     game.players[1].research = Some("pottery".to_string());
     game.players[1].research_progress = 0.0;
     game.share_team_technology_boost(0, "pottery");
-    assert!(game.players[1].boosted_techs.contains(&crate::name!("pottery")));
+    assert!(game.players[1]
+        .boosted_techs
+        .contains(&crate::name!("pottery")));
     assert_eq!(
         game.players[1].research_progress,
         0.4 * game.tech_cost("pottery")
     );
-    assert!(!game.players[2].boosted_techs.contains(&crate::name!("pottery")));
+    assert!(!game.players[2]
+        .boosted_techs
+        .contains(&crate::name!("pottery")));
 
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(restored.team_members(0), vec![0, 1]);
@@ -121,8 +125,7 @@ fn teammate_population_is_neutral_to_loyalty_pressure() {
 
 #[test]
 fn team_domination_religion_score_and_terminal_credit_follow_stock_rules() {
-    let mut domination =
-        team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_004);
+    let mut domination = team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_004);
     let capitals = found_capitals(&mut domination);
     // A team victory needs both friendly capitals retained and every
     // opponent to lose its own; teammates need not personally hold them.
@@ -136,10 +139,7 @@ fn team_domination_religion_score_and_terminal_credit_follow_stock_rules() {
     let capitals = found_capitals(&mut religion);
     religion.players[0].religion = Some("First Faith".to_string());
     religion.players[1].religion = Some("Second Faith".to_string());
-    for (city, faith) in [
-        (capitals[2], "First Faith"),
-        (capitals[3], "Second Faith"),
-    ] {
+    for (city, faith) in [(capitals[2], "First Faith"), (capitals[3], "Second Faith")] {
         let city = religion.cities.get_mut(&city).unwrap();
         city.atheist_pressure = 0.0;
         city.pressure = BTreeMap::from([(faith.to_string(), 1_000.0)]);

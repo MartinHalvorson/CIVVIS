@@ -70,8 +70,7 @@ fn played_in_game() -> Game {
         }
         let settled = game.turn >= 60 && game.winner.is_none();
         let deals = game.legal_actions_within(game.current, ActionFamilies::DEALS);
-        let diplomacy =
-            game.legal_actions_within(game.current, ActionFamilies::DIPLOMACY);
+        let diplomacy = game.legal_actions_within(game.current, ActionFamilies::DIPLOMACY);
         if settled
             && every_family_drops_something(&game, game.current)
             && deals.iter().any(|action| {
@@ -107,17 +106,23 @@ fn played_in_game() -> Game {
     game
 }
 
-
 #[test]
 fn action_families_partition_the_full_enumeration() {
     let game = played_in_game();
     assert!(game.winner.is_none(), "the position must still be live");
     let pid = game.current;
     let all = labels(&game.legal_actions(pid));
-    assert!(all.len() > 40, "expected a rich position, got {}", all.len());
+    assert!(
+        all.len() > 40,
+        "expected a rich position, got {}",
+        all.len()
+    );
 
     // Asking for everything is the enumeration callers already relied on.
-    assert_eq!(labels(&game.legal_actions_within(pid, ActionFamilies::ALL)), all);
+    assert_eq!(
+        labels(&game.legal_actions_within(pid, ActionFamilies::ALL)),
+        all
+    );
 
     // Dropping one family only ever removes actions.
     for family in FAMILIES {

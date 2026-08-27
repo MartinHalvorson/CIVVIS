@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
-    default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
-    WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
+    default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions, WarRecord,
+    DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::leader_roster;
 use civvis::rules::Rules;
@@ -265,8 +265,12 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
         cities: arg(args, "--tactics-cities", i64::from(stock.cities)).max(0) as u8,
         production: arg(args, "--tactics-production", i64::from(stock.production)).max(0) as u32,
         gold: arg(args, "--tactics-gold", i64::from(stock.gold)).max(0) as u32,
-        turns_per_tech: arg(args, "--tactics-turns-per-tech", i64::from(stock.turns_per_tech))
-            .max(0) as u32,
+        turns_per_tech: arg(
+            args,
+            "--tactics-turns-per-tech",
+            i64::from(stock.turns_per_tech),
+        )
+        .max(0) as u32,
         turn_limit: arg(args, "--tactics-turn-limit", i64::from(stock.turn_limit)).max(0) as u32,
         best_of: arg(args, "--tactics-best-of", i64::from(stock.best_of)).max(1) as u32,
         unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
@@ -349,9 +353,15 @@ fn start_era(args: &[String], seed: u64) -> usize {
         let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
         let known = setup::START_ERAS.iter().any(|spec| spec.id == id);
         if known {
-            eprintln!("cannot open in the {id:?} era yet; choose one of: {}", playable.join(", "));
+            eprintln!(
+                "cannot open in the {id:?} era yet; choose one of: {}",
+                playable.join(", ")
+            );
         } else {
-            eprintln!("unknown start era {id:?}; choose one of: {}", playable.join(", "));
+            eprintln!(
+                "unknown start era {id:?}; choose one of: {}",
+                playable.join(", ")
+            );
         }
         std::process::exit(2);
     })
@@ -371,7 +381,10 @@ fn future_era(args: &[String]) -> setup::FutureEra {
             .filter(|spec| spec.is_playable())
             .map(|spec| spec.id)
             .collect();
-        eprintln!("unknown Future Era {id:?}; choose one of: {}", playable.join(", "));
+        eprintln!(
+            "unknown Future Era {id:?}; choose one of: {}",
+            playable.join(", ")
+        );
         std::process::exit(2);
     })
 }
@@ -389,7 +402,10 @@ fn turn_structure(args: &[String], default: setup::TurnStructure) -> setup::Turn
     let id = arg_text(args, "--turn-structure", default.id());
     setup::turn_structure_from_id(&id).unwrap_or_else(|| {
         let known: Vec<&str> = setup::TURN_STRUCTURES.iter().map(|spec| spec.id).collect();
-        eprintln!("unknown turn structure {id:?}; choose one of: {}", known.join(", "));
+        eprintln!(
+            "unknown turn structure {id:?}; choose one of: {}",
+            known.join(", ")
+        );
         std::process::exit(2);
     })
 }
@@ -428,7 +444,10 @@ fn game_options(
     }
     let speed = arg_text(args, "--speed", &default_speed());
     let Some(speed_spec) = rules.speeds.get(&speed) else {
-        eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
+        eprintln!(
+            "unknown game speed {speed:?}; choose one of {:?}",
+            speeds(&rules)
+        );
         std::process::exit(2);
     };
     let tactics = tactics_rules(args);
@@ -527,9 +546,9 @@ fn game_options(
                 .filter(|civ| !civ.is_empty())
                 .collect();
             for civ in &chosen {
-                if !leader_roster::entry(civ).is_some_and(|entry| {
-                    entry.available && entry.pool == leader_pool
-                }) {
+                if !leader_roster::entry(civ)
+                    .is_some_and(|entry| entry.available && entry.pool == leader_pool)
+                {
                     let mut known: Vec<&str> = leader_pool
                         .entries()
                         .map(|entry| entry.civ.as_str())
@@ -649,7 +668,11 @@ fn standings(g: &Game) {
         let army: Vec<String> = army
             .iter()
             .map(|(kind, count)| {
-                let stale = if g.unit_is_obsolete(pid, civvis::name::Name::new(kind)) { "*" } else { "" };
+                let stale = if g.unit_is_obsolete(pid, civvis::name::Name::new(kind)) {
+                    "*"
+                } else {
+                    ""
+                };
                 format!("{count}x{kind}{stale}")
             })
             .collect();
@@ -877,7 +900,10 @@ fn main() {
                     // Every major's turns, pooled: what the empires in this game
                     // actually spent the game doing.
                     let mut census = civvis::ai::StrategyCensus::default();
-                    for ai in ais.iter().take(g.players.iter().filter(|p| !p.is_minor).count()) {
+                    for ai in ais
+                        .iter()
+                        .take(g.players.iter().filter(|p| !p.is_minor).count())
+                    {
                         census.absorb(&ai.strategy_census());
                     }
                     (g, census, simultaneous)
@@ -934,9 +960,7 @@ fn main() {
                         let (obsolete, ancient, army) = majors
                             .iter()
                             .filter(|p| p.alive)
-                            .flat_map(|p| {
-                                g.units.values().filter(move |unit| unit.owner == p.id)
-                            })
+                            .flat_map(|p| g.units.values().filter(move |unit| unit.owner == p.id))
                             .filter(|unit| g.rules.units[unit.kind].class == "military")
                             .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
                                 (
@@ -969,16 +993,14 @@ fn main() {
                         let all_wars: Vec<&WarRecord> =
                             g.wars.values().chain(g.concluded_wars.iter()).collect();
                         let wars = all_wars.len();
-                        let (units_lost, cities_taken) = all_wars.iter().fold(
-                            (0u32, 0u32),
-                            |(units, cities), war| {
+                        let (units_lost, cities_taken) =
+                            all_wars.iter().fold((0u32, 0u32), |(units, cities), war| {
                                 (
                                     units + war.losses.values().map(|side| side.units).sum::<u32>(),
                                     cities
                                         + war.losses.values().map(|side| side.cities).sum::<u32>(),
                                 )
-                            },
-                        );
+                            });
                         let capitals_taken = all_wars
                             .iter()
                             .flat_map(|war| war.highlights.iter())
@@ -987,16 +1009,14 @@ fn main() {
                         // How long the declarations lasted, because a war that
                         // ends in a handful of turns cannot take a walled city
                         // whatever army was pointed at it.
-                        let (turns_at_war, ended) = all_wars.iter().fold(
-                            (0u32, 0usize),
-                            |(turns, ended), war| {
+                        let (turns_at_war, ended) =
+                            all_wars.iter().fold((0u32, 0usize), |(turns, ended), war| {
                                 let stop = war.ended.unwrap_or(g.turn);
                                 (
                                     turns + stop.saturating_sub(war.started),
                                     ended + war.ended.is_some() as usize,
                                 )
-                            },
-                        );
+                            });
                         let mean_war = if wars > 0 {
                             turns_at_war as f64 / wars as f64
                         } else {
@@ -1097,8 +1117,8 @@ fn main() {
                 }
             });
             let mut fails = 0;
-            let mut series = contenders
-                .map(|civs| setup::MatchSeries::new(match_rules.best_of, civs));
+            let mut series =
+                contenders.map(|civs| setup::MatchSeries::new(match_rules.best_of, civs));
             for (index, line) in lines.into_iter().enumerate() {
                 match line {
                     Some((winner, line)) => {
@@ -1129,7 +1149,11 @@ fn main() {
                         series.best_of
                     ),
                 };
-                println!("best of {}: {} — {verdict}", series.best_of, series.scoreline());
+                println!(
+                    "best of {}: {} — {verdict}",
+                    series.best_of,
+                    series.scoreline()
+                );
             }
             if fails > 0 {
                 std::process::exit(1);
@@ -1162,7 +1186,12 @@ fn main() {
                 "odds-audit: {games} games, {players} players, sampling from turn \
                  {start_turn} every {every}, thresholds {thresholds:?}"
             );
-            type GameAudit = (Option<usize>, Option<String>, u32, Vec<Option<(usize, u32)>>);
+            type GameAudit = (
+                Option<usize>,
+                Option<String>,
+                u32,
+                Vec<Option<(usize, u32)>>,
+            );
             let results: Vec<Option<GameAudit>> =
                 civvis::parallel::map(games as usize, jobs, |index| {
                     let seed = start + index as i64;
@@ -1178,8 +1207,7 @@ fn main() {
                         // headless rollout and the odds read none of them.
                         g.set_fog_memory(false);
                         g.set_war_ledger(false);
-                        let mut crossings: Vec<Option<(usize, u32)>> =
-                            vec![None; thresholds.len()];
+                        let mut crossings: Vec<Option<(usize, u32)>> = vec![None; thresholds.len()];
                         let mut last_turn = g.turn;
                         while g.winner.is_none() && g.turn <= g.max_turns {
                             let pid = g.current;
@@ -1192,8 +1220,7 @@ fn main() {
                             }
                             last_turn = g.turn;
                             let due = g.turn >= start_turn && (g.turn - start_turn) % every == 0;
-                            if !due || g.winner.is_some() || crossings.iter().all(Option::is_some)
-                            {
+                            if !due || g.winner.is_some() || crossings.iter().all(Option::is_some) {
                                 continue;
                             }
                             // A flat 1500 prior for every seat: the audit runs
@@ -1365,8 +1392,7 @@ fn main() {
             for _ in 0..samples {
                 sink += g.speculative_clone().units.len();
             }
-            let speculative_us =
-                speculative_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+            let speculative_us = speculative_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
             // A searching agent mostly applies ordinary moves and only
             // occasionally ends a turn, and the two cost wildly different
             // amounts, so both are reported.
@@ -1420,16 +1446,25 @@ fn main() {
                 g.cities.len(),
                 g.units.len(),
             );
-            println!("clone            {clone_us:8.1} us  = {:.0}/sec", 1e6 / clone_us);
+            println!(
+                "clone            {clone_us:8.1} us  = {:.0}/sec",
+                1e6 / clone_us
+            );
             println!(
                 "speculative clone {speculative_us:7.1} us  = {:.0}/sec",
                 1e6 / speculative_us
             );
             match move_us {
-                Some(us) => println!("clone + move     {us:8.1} us  = {:.0} rollouts/sec", 1e6 / us),
+                Some(us) => println!(
+                    "clone + move     {us:8.1} us  = {:.0} rollouts/sec",
+                    1e6 / us
+                ),
                 None => println!("clone + move          n/a  (no legal move for this seat)"),
             }
-            println!("clone + end turn {end_us:8.1} us  = {:.0}/sec", 1e6 / end_us);
+            println!(
+                "clone + end turn {end_us:8.1} us  = {:.0}/sec",
+                1e6 / end_us
+            );
             if let Some(us) = fast_us {
                 println!(
                     "clone + move (no fog){us:6.1} us  = {:.0} rollouts/sec",
@@ -1542,8 +1577,8 @@ fn main() {
                 .and_then(|index| args.get(index + 1))
                 .map(|dir| {
                     let events = std::path::Path::new(dir).join("events.jsonl");
-                    let snapshot = civvis::mirror::snapshot_from_events(&events)
-                        .unwrap_or_else(|error| {
+                    let snapshot =
+                        civvis::mirror::snapshot_from_events(&events).unwrap_or_else(|error| {
                             eprintln!("cannot read {}: {error}", events.display());
                             std::process::exit(2);
                         });
@@ -1611,16 +1646,23 @@ fn main() {
                             // Loud, because silently mirroring the real board when the
                             // operator asked for a mocked one is a wrong answer that
                             // looks exactly like a right one.
-                            None => println!("  ⚠ could not read --state {path}: using observed board"),
+                            None => {
+                                println!("  ⚠ could not read --state {path}: using observed board")
+                            }
                         }
                     }
-                    let from_value = observed
-                        .as_ref()
-                        .and_then(|v| serde_json::from_value::<civvis::mirror::StateSnapshot>(v.clone()).ok());
+                    let from_value = observed.as_ref().and_then(|v| {
+                        serde_json::from_value::<civvis::mirror::StateSnapshot>(v.clone()).ok()
+                    });
                     match from_value.or_else(|| civvis::mirror::state_from_events(&events, None)) {
                         Some(state) => {
                             let rebuilt = civvis::mirror::rebuild_from_state(
-                                &snapshot, &state, players as usize, 1, 250, 6,
+                                &snapshot,
+                                &state,
+                                players as usize,
+                                1,
+                                250,
+                                6,
                             );
                             println!(
                                 "  empire: {} cities, {} units, {} rival cities, \
@@ -1709,12 +1751,7 @@ fn main() {
             // quietly playing a different game than the flag asked for;
             // `simulate` and `soak` play it headless either way.
             let spectate = args.iter().any(|a| a == "--spectate" || a == "--watch");
-            let play_options = game_options(
-                &args,
-                players,
-                seed,
-                setup::TurnStructure::Sequential,
-            );
+            let play_options = game_options(&args, players, seed, setup::TurnStructure::Sequential);
             if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
                 eprintln!(
                     "a played game is sequential by construction; simultaneous \
@@ -1781,8 +1818,11 @@ fn main() {
                 std::process::exit(1);
             }
             print!("{}", civvis::pedia::render(&found));
-            println!("
-{} entries", found.len());
+            println!(
+                "
+{} entries",
+                found.len()
+            );
         }
         "validate" => {
             let findings = civvis::validate::validate(&Rules::embedded());
@@ -1846,12 +1886,18 @@ mod tests {
         assert_eq!(tactics_rules(&[]), stock, "no flags is the stock arena");
 
         let asked = [
-            "--map".to_string(), "battlefield".to_string(),
-            "--tactics-cities".to_string(), "0".to_string(),
-            "--tactics-production".to_string(), "120".to_string(),
-            "--tactics-gold".to_string(), "0".to_string(),
-            "--tactics-turns-per-tech".to_string(), "0".to_string(),
-            "--tactics-turn-limit".to_string(), "150".to_string(),
+            "--map".to_string(),
+            "battlefield".to_string(),
+            "--tactics-cities".to_string(),
+            "0".to_string(),
+            "--tactics-production".to_string(),
+            "120".to_string(),
+            "--tactics-gold".to_string(),
+            "0".to_string(),
+            "--tactics-turns-per-tech".to_string(),
+            "0".to_string(),
+            "--tactics-turn-limit".to_string(),
+            "150".to_string(),
         ];
         let rules = tactics_rules(&asked);
         assert_eq!(rules.cities, 0);
@@ -1863,9 +1909,11 @@ mod tests {
         // The flag objective travels the same shared reader, and drags the
         // city out of the battle the way every other surface does.
         let flagged = [
-            "--map".to_string(), "battlefield".to_string(),
+            "--map".to_string(),
+            "battlefield".to_string(),
             "--tactics-flag".to_string(),
-            "--tactics-cities".to_string(), "1".to_string(),
+            "--tactics-cities".to_string(),
+            "1".to_string(),
         ];
         let rules = tactics_rules(&flagged);
         assert!(rules.flag);
@@ -1881,25 +1929,37 @@ mod tests {
 
         // Clamped, not trusted: these reach the same sanitiser the server uses.
         let silly = [
-            "--tactics-cities".to_string(), "9".to_string(),
-            "--tactics-production".to_string(), "100000".to_string(),
-            "--tactics-turns-per-tech".to_string(), "100000".to_string(),
+            "--tactics-cities".to_string(),
+            "9".to_string(),
+            "--tactics-production".to_string(),
+            "100000".to_string(),
+            "--tactics-turns-per-tech".to_string(),
+            "100000".to_string(),
         ];
         let rules = tactics_rules(&silly);
         assert_eq!(rules.cities, 1, "an arena seats at most one city a side");
         assert_eq!(rules.production, civvis::setup::TacticsRules::MAX_YIELD);
-        assert_eq!(rules.turns_per_tech, civvis::setup::TacticsRules::MAX_TURNS_PER_TECH);
+        assert_eq!(
+            rules.turns_per_tech,
+            civvis::setup::TacticsRules::MAX_TURNS_PER_TECH
+        );
 
         // And the world path carries the same answer, so a `play` launch and a
         // `soak` launch of the same flags are the same arena.
         let options = game_options(&asked, 2, 7, TurnStructure::Sequential);
         assert_eq!(options.tactics, tactics_rules(&asked));
-        assert_eq!(options.max_turns, 150, "the arena uses its selected deadline");
+        assert_eq!(
+            options.max_turns, 150,
+            "the arena uses its selected deadline"
+        );
 
         let explicit = [
-            "--map".to_string(), "battlefield".to_string(),
-            "--tactics-turn-limit".to_string(), "200".to_string(),
-            "--turns".to_string(), "73".to_string(),
+            "--map".to_string(),
+            "battlefield".to_string(),
+            "--tactics-turn-limit".to_string(),
+            "200".to_string(),
+            "--turns".to_string(),
+            "73".to_string(),
         ];
         assert_eq!(
             game_options(&explicit, 2, 8, TurnStructure::Sequential).max_turns,
@@ -1955,12 +2015,16 @@ mod tests {
     #[test]
     fn a_random_start_era_is_seeded_scattered_and_playable() {
         let args = ["--start-era".to_string(), "random".to_string()];
-        let playable: Vec<usize> =
-            civvis::setup::playable_start_eras().filter_map(|spec| spec.era).collect();
+        let playable: Vec<usize> = civvis::setup::playable_start_eras()
+            .filter_map(|spec| spec.era)
+            .collect();
         let rolled: Vec<usize> = (0..64).map(|seed| start_era(&args, seed)).collect();
 
         for era in &rolled {
-            assert!(playable.contains(era), "rolled an era nobody can open in: {era}");
+            assert!(
+                playable.contains(era),
+                "rolled an era nobody can open in: {era}"
+            );
         }
         let replay: Vec<usize> = (0..64).map(|seed| start_era(&args, seed)).collect();
         assert_eq!(rolled, replay, "the same seed must replay the same era");
@@ -2081,7 +2145,11 @@ mod tests {
             host_default.min(SINGLE_SIMULATION_DEFAULT_MAX_JOBS)
         );
 
-        let explicit = vec!["simulate".to_string(), "--jobs".to_string(), "9".to_string()];
+        let explicit = vec![
+            "simulate".to_string(),
+            "--jobs".to_string(),
+            "9".to_string(),
+        ];
         assert_eq!(jobs_arg(&explicit), 9);
         assert_eq!(single_simulation_jobs_arg(&explicit), 9);
     }
@@ -2308,7 +2376,10 @@ mod tests {
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),
                 ("blind_objective_units", ai.blind_objective_units),
                 ("blind_objective_strength", ai.blind_objective_strength),
-                ("army_target_weighs_the_enemy", ai.army_target_weighs_the_enemy),
+                (
+                    "army_target_weighs_the_enemy",
+                    ai.army_target_weighs_the_enemy,
+                ),
                 ("peacetime_deterrence", ai.peacetime_deterrence),
                 ("strike_opening", ai.strike_opening),
                 // Evaluator-only like the rest of this list: the stalled-settler

@@ -36,9 +36,9 @@ pub mod mapgen;
 pub mod mirror;
 pub mod name;
 pub mod obs;
+pub mod odds;
 pub mod protocol;
 pub mod routes;
-pub mod odds;
 // The oracle's only consumer is `experiments/closed/ablate.rs`, so it rides
 // the same opt-in feature: normal builds and CI skip its ~1,300 lines and 12
 // tests, and `--features closed-experiments` brings the whole ablation
@@ -63,26 +63,26 @@ pub mod rng;
 pub mod rules;
 #[cfg(feature = "closed-experiments")]
 pub mod selfplay;
-pub mod specmap;
 pub mod server;
 pub mod setup;
 pub mod simultaneous;
 pub mod skirmish;
+pub mod specmap;
 pub mod sphere;
 pub mod strategic;
 pub mod trafalgar;
-pub mod valuenet;
 pub mod validate;
+pub mod valuenet;
 pub mod world;
 
 pub type Pos = (i32, i32);
 
 #[cfg(test)]
 mod tests {
-    use crate::name::Name;
     use crate::ai::{run_game, Ai, BasicAi};
     use crate::game::{Action, Game, GameOptions};
     use crate::hex;
+    use crate::name::Name;
     use crate::rules::Rules;
     use std::collections::BTreeSet;
 
@@ -340,11 +340,11 @@ mod tests {
         let item = crate::game::Item::Unit {
             unit: crate::name!("warrior"),
         };
+        assert_eq!(marathon.item_cost(&item), standard.item_cost(&item) * 3.0);
         assert_eq!(
-            marathon.item_cost(&item),
-            standard.item_cost(&item) * 3.0
+            marathon.tech_cost("mining"),
+            standard.tech_cost("mining") * 3.0
         );
-        assert_eq!(marathon.tech_cost("mining"), standard.tech_cost("mining") * 3.0);
         assert_eq!(
             marathon.civic_cost("code_of_laws"),
             standard.civic_cost("code_of_laws") * 3.0
@@ -373,9 +373,9 @@ mod tests {
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
 
         let mine = g.events_for(0);
-        assert!(mine
-            .iter()
-            .any(|e| e.category == "Cities" && e.text.contains("Testopolis") && e.pos == Some(pos)));
+        assert!(mine.iter().any(|e| e.category == "Cities"
+            && e.text.contains("Testopolis")
+            && e.pos == Some(pos)));
         let (aggressor, defender) = (g.players[0].civ.clone(), g.players[1].civ.clone());
         let declaration = format!("{aggressor} declared war on {defender}");
         assert!(mine
@@ -456,7 +456,10 @@ mod tests {
         )
         .unwrap();
         assert!(g.in_anarchy(0));
-        assert_eq!(g.players[0].anarchy_turns, crate::game::GOVERNMENT_BASE_ANARCHY_TURNS);
+        assert_eq!(
+            g.players[0].anarchy_turns,
+            crate::game::GOVERNMENT_BASE_ANARCHY_TURNS
+        );
         assert!(g.players[0].government.is_none());
         let slots = g.gov_slots(0);
         assert_eq!(
@@ -475,10 +478,10 @@ mod tests {
                 },
             )
             .is_err());
-        assert!(!g.legal_actions(0).iter().any(|action| matches!(
-            action,
-            Action::Government { .. }
-        )));
+        assert!(!g
+            .legal_actions(0)
+            .iter()
+            .any(|action| matches!(action, Action::Government { .. })));
 
         // A turn of Anarchy earns the empire nothing.
         let (gold, science) = (g.players[0].gold, g.players[0].research_progress);
@@ -525,11 +528,7 @@ mod tests {
                 let _ = g.apply(pid, &Action::EndTurn);
             }
         }
-        let names: Vec<&str> = g
-            .players
-            .iter()
-            .map(|player| player.civ.as_str())
-            .collect();
+        let names: Vec<&str> = g.players.iter().map(|player| player.civ.as_str()).collect();
         let orphans: Vec<&str> = g
             .events
             .iter()
@@ -622,7 +621,9 @@ mod tests {
         // turn, so the aggressor has to be the seat holding it.
         let treacherous = g.current;
         assert_ne!(treacherous, tomyris);
-        let honest = (0..8).find(|pid| *pid != tomyris && *pid != treacherous).unwrap();
+        let honest = (0..8)
+            .find(|pid| *pid != tomyris && *pid != treacherous)
+            .unwrap();
         assert_eq!(g.agenda_opinion(tomyris, honest), 0.0, "no reason to judge");
         // Declaring war piles grievances on the aggressor, which is exactly
         // the reputation her agenda punishes.
@@ -651,10 +652,7 @@ mod tests {
             .unwrap();
         let (a, b) = (
             (0..8).find(|pid| *pid != tomyris).unwrap(),
-            (0..8)
-                .filter(|pid| *pid != tomyris)
-                .nth(1)
-                .unwrap(),
+            (0..8).filter(|pid| *pid != tomyris).nth(1).unwrap(),
         );
         // An agenda is public knowledge once you have met its leader, so the
         // three seats this test reads across have to have met.
@@ -839,7 +837,10 @@ mod tests {
             map_topology: crate::setup::MapTopology::Planet,
             ..crate::game::GameOptions::new(2, width, height, 4_517, 40, 2)
         });
-        assert_eq!(g.map.tiles.len(), crate::sphere::Sphere::tiles_for(size.globe_frequency));
+        assert_eq!(
+            g.map.tiles.len(),
+            crate::sphere::Sphere::tiles_for(size.globe_frequency)
+        );
         let mut ais = BasicAi::fleet(&g);
         run_game(&mut g, &mut ais);
         assert!(g.turn > 30, "the globe reached turn {}", g.turn);
@@ -873,9 +874,16 @@ mod tests {
         let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
         assert_eq!(restored.map.topology, g.map.topology);
         assert_eq!(restored.map.tiles.len(), g.map.tiles.len());
-        assert!(restored.map.sphere().is_some(), "the globe was rebuilt on load");
+        assert!(
+            restored.map.sphere().is_some(),
+            "the globe was rebuilt on load"
+        );
         for (pos, _) in g.map.tiles.iter() {
-            assert_eq!(*restored.nbrs(*pos), *g.nbrs(*pos), "{pos:?} kept its neighbours");
+            assert_eq!(
+                *restored.nbrs(*pos),
+                *g.nbrs(*pos),
+                "{pos:?} kept its neighbours"
+            );
         }
         let far = *g.map.tiles.keys().last().unwrap();
         let near = *g.map.tiles.keys().next().unwrap();
@@ -884,7 +892,10 @@ mod tests {
         // still the cylinder it always was.
         let flat = Game::new(2, 44, 26, 8_812, 30, 2);
         let mut raw = serde_json::to_value(&flat).unwrap();
-        assert!(raw["map"]["topology"].is_null(), "a cylinder writes no topology");
+        assert!(
+            raw["map"]["topology"].is_null(),
+            "a cylinder writes no topology"
+        );
         raw["map"].as_object_mut().unwrap().remove("topology");
         let legacy: Game = serde_json::from_value(raw).unwrap();
         assert_eq!(legacy.map.topology, crate::world::Topology::Cylinder);
@@ -2447,7 +2458,9 @@ mod tests {
             .find(|id| g.units[id].kind == "settler")
             .unwrap();
         // clear the current player gate for direct checks
-        g.players[greece].techs.insert(crate::name!("bronze_working"));
+        g.players[greece]
+            .techs
+            .insert(crate::name!("bronze_working"));
         while g.current != greece {
             let cur = g.current;
             g.apply(cur, &Action::EndTurn).unwrap();
@@ -2477,7 +2490,9 @@ mod tests {
             }
         ));
         // Greece: Plato's Republic grants an extra wildcard slot
-        g.players[greece].civics.insert(crate::name!("code_of_laws"));
+        g.players[greece]
+            .civics
+            .insert(crate::name!("code_of_laws"));
         g.apply(
             greece,
             &Action::Government {
@@ -2490,7 +2505,9 @@ mod tests {
                                        // China: Dynastic Cycle boosts give 50%, builders +1 charge
         let china = 3;
         assert!(g.has_ability(china, "dynastic_cycle"));
-        g.players[china].boosted_techs.insert(crate::name!("pottery"));
+        g.players[china]
+            .boosted_techs
+            .insert(crate::name!("pottery"));
         while g.current != china {
             let cur = g.current;
             g.apply(cur, &Action::EndTurn).unwrap();
@@ -2686,7 +2703,10 @@ mod tests {
                 );
             }
         }
-        assert!(units_with_moves > 0, "the opening roster has a movable unit");
+        assert!(
+            units_with_moves > 0,
+            "the opening roster has a movable unit"
+        );
     }
 
     #[test]
