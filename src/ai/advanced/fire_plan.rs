@@ -147,7 +147,7 @@ impl AdvancedAi {
                 };
                 let dealt = expected_damage(att, def);
                 let taken = expected_damage(def, att);
-                if taken >= f64::from(attacker.hp) && dealt < f64::from(g.units[&defender].hp) {
+                if taken >= f64::from(attacker.hp) && dealt < f64::from(g.units[defender].hp) {
                     continue;
                 }
                 dealt

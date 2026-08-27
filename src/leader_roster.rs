@@ -95,7 +95,11 @@ impl LeaderPool {
     /// fallback for a stale browser that posts `today` before the corresponding
     /// roster data is installed.
     pub fn available_or_default(self) -> Self {
-        self.is_available().then_some(self).unwrap_or_default()
+        if self.is_available() {
+            self
+        } else {
+            Default::default()
+        }
     }
 }
 

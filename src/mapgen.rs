@@ -2046,7 +2046,7 @@ fn battlefield_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
     // Both snaps drifting toward the middle would be a different battle than
     // the one advertised; ask for at least half the arena between them.
     let apart = offset_distance(starts[0], hex::axial_to_offset(starts[1].0, starts[1].1))
-        >= wm.width.max(wm.height) / 2 + 1;
+        > wm.width.max(wm.height) / 2;
     apart.then_some(starts)
 }
 
@@ -4809,7 +4809,7 @@ fn wonder_anchor(
 fn straight_wonder_step(wm: &WorldMap, from: Pos, next: Pos) -> Option<Pos> {
     let back = wm.direction_to(next, from)?;
     let degree = wm.neighbors(next).len();
-    (degree > 0 && degree % 2 == 0)
+    (degree > 0 && degree.is_multiple_of(2))
         .then(|| wm.step(next, back + degree / 2))
         .flatten()
 }
@@ -5127,7 +5127,7 @@ fn apply_tectonics(
 ) {
     let profile = tectonic_profile(script);
     let (width, height) = (wm.width, wm.height);
-    let mountain_grain = (script == MapScript::Fjords).then_some(4).unwrap_or(3);
+    let mountain_grain = if script == MapScript::Fjords { 4 } else { 3 };
     let mut mountains = Fractal::new_without_index(rng, width, height, mountain_grain);
     let (ridge_blend, fractal_blend) = if script == MapScript::Fjords {
         // Let the collision seams dominate the relief field. The ordinary

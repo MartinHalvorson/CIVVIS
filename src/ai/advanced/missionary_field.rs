@@ -107,7 +107,7 @@ impl AdvancedAi {
             return false;
         }
         let guarded = g.unit_ids_at(pos).iter().any(|other| {
-            let other = &g.units[&other];
+            let other = &g.units[other];
             other.owner == pid && g.rules.units[other.kind].class == "military"
         });
         !guarded && Self::barbarian_capture_reaches(g, pos, threats)

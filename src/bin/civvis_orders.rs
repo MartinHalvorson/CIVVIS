@@ -2464,8 +2464,8 @@ fn adopt_host_production(
     let mut adopted = 0;
     for city in &state.cities {
         if let Some(producing) = city.producing.as_deref() {
-            if !ours.contains_key(&city.id) {
-                ours.insert(city.id, producing.to_string());
+            if let std::collections::btree_map::Entry::Vacant(e) = ours.entry(city.id) {
+                e.insert(producing.to_string());
                 adopted += 1;
             }
         }
@@ -6038,14 +6038,14 @@ fn main() {
         {
             let cid = g.player_city_ids(pid).into_iter().next();
             if let Some(cid) = cid {
-                let mut probe = g.clone();
+                let probe = g.clone();
                 let melee = g
                     .units
                     .values()
                     .filter(|u| u.owner == pid && g.rules.units[u.kind].class == "military")
                     .count();
                 let chosen = ai.pick_item(
-                    &mut probe, pid, cid, n_cities, settlers, 0, 0, 0, military, melee, 0,
+                    &probe, pid, cid, n_cities, settlers, 0, 0, 0, military, melee, 0,
                 );
                 println!("pick_item returns: {chosen:?}");
             }
