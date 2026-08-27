@@ -1294,6 +1294,19 @@ pub struct QueryCache {
     // catalog with the next helper in the same decision; retaining it only
     // inside one guard would miss the duplicate scans this cache exists for.
     producible: std::cell::RefCell<BTreeMap<(usize, u32), Vec<Item>>>,
+    // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
+    // for every unit kind in the ruleset, at all three formations and both
+    // currencies, and `legal_actions_within`'s purchase family repeats the
+    // same sweep — six full price derivations per unit kind per city per ask,
+    // none of them sharing an answer. The price is a pure function of the
+    // board (policies, buildings, districts, era, game speed, Great People
+    // and religion discounts) plus `blocked_purchases`, so it shares
+    // `producible`'s outlives-`QueryMemo` lifetime and every one of
+    // `producible`'s clear sites, with one addition: `replace_blocked_purchases`
+    // also clears it, because a price can depend on `purchase_is_blocked`
+    // through the host-priced branch even though `producible_items` itself
+    // never reads that set.
+    purchase_price: std::cell::RefCell<BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>>,
 }
 
 impl Clone for QueryCache {
@@ -2736,6 +2749,44 @@ pub enum Item {
     Product {
         product: Name,
     },
+}
+
+/// [`Item`], reduced to exactly what [`Game::production_block_key`] hashes
+/// into a string — the `pos` an `Item::District`, `Item::Wonder` or
+/// `Item::Repair` carries never enters the key. `Name` is `Copy`, so this
+/// type is too: building one, comparing two, or hashing one touches no
+/// allocator, unlike the `String` `production_block_key` used to be the only
+/// way to ask any of those questions.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) enum ProductionKey {
+    Formation(Name, u8),
+    Unit(Name),
+    Building(Name),
+    District(Name),
+    Wonder(Name),
+    Repair(Name),
+    Project(Name),
+    Product(Name),
+}
+
+impl ProductionKey {
+    /// The `String` form external maps fed by the live mirror are keyed by
+    /// (`blocked_production`, `blocked_purchases`, `host_buildable`,
+    /// `host_purchasable`) — byte-identical to the old `production_block_key`
+    /// output. Allocate only at that boundary; an internal comparison should
+    /// use the key itself instead of calling this.
+    fn to_block_string(self) -> String {
+        match self {
+            ProductionKey::Formation(unit, formation) => format!("formation:{unit}:{formation}"),
+            ProductionKey::Unit(unit) => format!("unit:{unit}"),
+            ProductionKey::Building(building) => format!("building:{building}"),
+            ProductionKey::District(district) => format!("district:{district}"),
+            ProductionKey::Wonder(wonder) => format!("wonder:{wonder}"),
+            ProductionKey::Repair(repair) => format!("repair:{repair}"),
+            ProductionKey::Project(project) => format!("project:{project}"),
+            ProductionKey::Product(product) => format!("product:{product}"),
+        }
+    }
 }
 
 /// One row of the host's production menu for a city: what the engine says the
@@ -33021,17 +33072,28 @@ impl Game {
         true
     }
 
-    pub(crate) fn production_block_key(item: &Item) -> String {
+    /// Non-allocating twin of [`Game::production_block_key`], for callers
+    /// that only ever compare or hash the key — never look it up in a
+    /// `String`-keyed map fed by the live mirror (`blocked_production`,
+    /// `blocked_purchases`, `host_buildable`, `host_purchasable`; those stay
+    /// `String`-keyed because they cross the bridge's serde boundary).
+    /// `Name` is already an interned, `Copy` id, so building this key touches
+    /// no allocator.
+    pub(crate) fn production_key(item: &Item) -> ProductionKey {
         match item {
-            Item::Formation { unit, formation } => format!("formation:{unit}:{formation}"),
-            Item::Unit { unit } => format!("unit:{unit}"),
-            Item::Building { building } => format!("building:{building}"),
-            Item::District { district, .. } => format!("district:{district}"),
-            Item::Wonder { wonder, .. } => format!("wonder:{wonder}"),
-            Item::Repair { repair, .. } => format!("repair:{repair}"),
-            Item::Project { project } => format!("project:{project}"),
-            Item::Product { product } => format!("product:{product}"),
+            Item::Formation { unit, formation } => ProductionKey::Formation(*unit, *formation),
+            Item::Unit { unit } => ProductionKey::Unit(*unit),
+            Item::Building { building } => ProductionKey::Building(*building),
+            Item::District { district, .. } => ProductionKey::District(*district),
+            Item::Wonder { wonder, .. } => ProductionKey::Wonder(*wonder),
+            Item::Repair { repair, .. } => ProductionKey::Repair(*repair),
+            Item::Project { project } => ProductionKey::Project(*project),
+            Item::Product { product } => ProductionKey::Product(*product),
         }
+    }
+
+    pub(crate) fn production_block_key(item: &Item) -> String {
+        Self::production_key(item).to_block_string()
     }
 
     pub(crate) fn replace_blocked_production(
@@ -33043,6 +33105,7 @@ impl Game {
         // ordinary successful-apply invalidation below. A menu derived before sync
         // must not survive after the host has rejected one of its entries.
         self.query_memo.producible.borrow_mut().clear();
+        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Replace the current live-host competition snapshot. The production
@@ -33053,6 +33116,7 @@ impl Game {
         if self.host_competitions != competitions {
             self.host_competitions = competitions;
             self.query_memo.producible.borrow_mut().clear();
+            self.query_memo.purchase_price.borrow_mut().clear();
         }
     }
 
@@ -33284,6 +33348,7 @@ impl Game {
             scores: BTreeMap::new(),
         });
         self.query_memo.producible.borrow_mut().clear();
+        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Seat Gathering Storm's targeted aid request at its native trigger.
@@ -33323,6 +33388,7 @@ impl Game {
             scores: BTreeMap::new(),
         });
         self.query_memo.producible.borrow_mut().clear();
+        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Whether the game contains the civilization a competition's emergency
@@ -33549,10 +33615,17 @@ impl Game {
         self.competition = None;
         self.competition_lockout_until.insert(kind, until);
         self.query_memo.producible.borrow_mut().clear();
+        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
         self.blocked_purchases = blocked;
+        // Unlike `replace_blocked_production`, this does not touch
+        // `producible`: the production catalog never reads `blocked_purchases`.
+        // But `unit_purchase_cost_for_formation`'s host-priced branch does
+        // (through `purchase_is_blocked`), so the memoized price answers it
+        // feeds must be retired here even though the catalog's need not be.
+        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// Replace the host's menus (see [`Game::host_buildable`]). Mirror input
@@ -33568,6 +33641,7 @@ impl Game {
         self.host_purchasable = purchasable;
         self.host_district_plots = district_plots;
         self.query_memo.producible.borrow_mut().clear();
+        self.query_memo.purchase_price.borrow_mut().clear();
     }
 
     /// The host's own turns-to-complete for an item in this city
@@ -33691,11 +33765,15 @@ impl Game {
         if self.is_arena() && self.tactics.production == 0 {
             return false;
         }
-        let blocked = Self::production_block_key(item);
+        // Both maps a block key is looked up in are keyed by the live
+        // mirror, and empty otherwise — so build the (allocating) `String`
+        // form only when a map actually holds an entry for this city, not
+        // unconditionally on every candidate item of every ordinary board.
         if self
             .blocked_production
             .get(&cid)
-            .is_some_and(|items| items.contains(&blocked))
+            .is_some_and(|items| !items.is_empty())
+            && self.blocked_production[&cid].contains(Self::production_block_key(item).as_str())
         {
             return false;
         }
@@ -33708,11 +33786,15 @@ impl Game {
         // head is the host's own `producing`, listed or not at its discretion.
         if Self::host_menu_gates(item) {
             if let Some(menu) = self.host_buildable.get(&cid) {
-                if !menu.contains_key(&blocked)
+                // The queue scan below only ever compares keys, never looks
+                // one up in a `String`-keyed map, so it stays on the
+                // non-allocating `ProductionKey` throughout.
+                let key = Self::production_key(item);
+                if !menu.contains_key(key.to_block_string().as_str())
                     && !city
                         .queue
                         .iter()
-                        .any(|queued| Self::production_block_key(queued) == blocked)
+                        .any(|queued| Self::production_key(queued) == key)
                 {
                     return false;
                 }
@@ -36449,8 +36531,11 @@ impl Game {
             // `producible_items` is intentionally retained across short
             // read-only decision helpers, rather than only one `QueryMemo`.
             // Once an action succeeds any one of its prerequisites may have
-            // changed, so the next helper must derive a fresh catalog.
+            // changed, so the next helper must derive a fresh catalog. The
+            // purchase-price memo shares its lifetime (see
+            // `QueryCache::purchase_price`).
             self.query_memo.producible.borrow_mut().clear();
+            self.query_memo.purchase_price.borrow_mut().clear();
             // A planning world's EndTurn keeps only what planning reads.
             // On a seat's private copy the close is the last thing the world
             // ever does: the plan harvest reads the actions logged before it,
@@ -40015,7 +40100,44 @@ impl Game {
         })
     }
 
+    /// Memoized front door for [`Game::unit_purchase_cost_for_formation_uncached`].
+    ///
+    /// `legal_purchase_actions_for_city` calls the uncached derivation six
+    /// times per unit kind per city (three formations, two currencies) with
+    /// nothing between those calls that could change the answer — a read-only
+    /// enumeration mutates nothing — and `legal_actions_within`'s purchase
+    /// family repeats the identical sweep. Share one answer per
+    /// `(pid, cid, unit, formation, currency)` the way `producible_items`
+    /// shares one production catalog per `(pid, cid)`: see
+    /// `QueryCache::purchase_price` for the (slightly larger than
+    /// `producible`'s) invalidation surface this depends on.
     fn unit_purchase_cost_for_formation(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        formation: u8,
+        currency: &str,
+    ) -> Option<f64> {
+        let currency_is_gold = match currency {
+            "gold" => true,
+            "faith" => false,
+            // The uncached path also refuses any other currency; skip the
+            // lookups and the memo entirely rather than cache a key no real
+            // caller asks for.
+            _ => return None,
+        };
+        let key = (pid, cid, Name::new(unit), formation, currency_is_gold);
+        if let Some(cached) = self.query_memo.purchase_price.borrow().get(&key) {
+            return *cached;
+        }
+        let cost =
+            self.unit_purchase_cost_for_formation_uncached(pid, cid, unit, formation, currency);
+        self.query_memo.purchase_price.borrow_mut().insert(key, cost);
+        cost
+    }
+
+    fn unit_purchase_cost_for_formation_uncached(
         &self,
         pid: usize,
         cid: u32,
@@ -52655,6 +52777,9 @@ mod world_lap_tests;
 
 #[cfg(test)]
 mod purchase_gate_tests;
+
+#[cfg(test)]
+mod purchase_price_memo_tests;
 
 #[cfg(test)]
 mod unit_upgrade_price_tests;
