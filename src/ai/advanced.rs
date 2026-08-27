@@ -517,6 +517,11 @@ const SETTLER_FACTORY_SITE_SPACING: i32 = 4;
 /// run civvis-20260824T204654Z.
 const SETTLER_FACTORY_TURN_RATIO: f64 = 2.5;
 const SETTLER_FACTORY_TURN_MARGIN: f64 = 5.0;
+/// A Settler that finishes immediately before a city flips still lowers that
+/// city's population, makes its pressure worse, and leaves no production turn
+/// for a stabilizer.  Keep two full turns between completion and the observed
+/// Loyalty deadline before allowing that queue to continue.
+const SETTLER_QUEUE_LOYALTY_SAFETY_TURNS: f64 = 2.0;
 /// Straight-line distance is already priced by `settle_sites`; charge only
 /// the extra steps a lawful route actually takes around water and borders.
 const SETTLER_ROUTE_DETOUR_PENALTY: f64 = 2.5;
@@ -20245,6 +20250,126 @@ impl AdvancedAi {
         }
     }
 
+    /// The current Loyalty deadline for a city that is considering or already
+    /// building a Settler.  Live mirrors supply Firaxis's observed rate here;
+    /// native games use the engine calculation through the same public API.
+    ///
+    /// `Some` means the city will revolt before the Settler can be useful,
+    /// including the small recovery window after it completes.  A completed
+    /// Settler costs one Population, so simply finishing a turn before the
+    /// revolt does not rescue a city whose pressure is already collapsing.
+    fn settler_queue_loyalty_risk(g: &Game, cid: u32, completion_turns: f64) -> Option<(f64, f64)> {
+        let city = g.cities.get(&cid)?;
+        let loyalty_per_turn = g.city_loyalty_per_turn(city);
+        if loyalty_per_turn >= -f64::EPSILON {
+            return None;
+        }
+        let turns_to_flip = city.loyalty.max(0.0) / -loyalty_per_turn;
+        (turns_to_flip <= completion_turns + SETTLER_QUEUE_LOYALTY_SAFETY_TURNS)
+            .then_some((loyalty_per_turn, turns_to_flip))
+    }
+
+    /// Select the ordinary best productive use for a city after its unsafe
+    /// Settler is paused.  The census deliberately removes that one queued
+    /// civilian first: it no longer occupies an expansion slot once the
+    /// replacement order lands.
+    fn loyalty_safe_settler_replacement(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<Item> {
+        let mut counts = self.counts(g, pid);
+        counts.settlers = counts.settlers.saturating_sub(1);
+        let _memo = g.query_memo();
+        let items = g
+            .producible_items(pid, cid)
+            .into_iter()
+            .filter(|item| !matches!(item, Item::Unit { unit } if unit == "settler"))
+            .collect::<Vec<_>>();
+        let scores = self.production_values(g, pid, cid, &items, plan, counts);
+        let mut best: Option<(f64, String, Item)> = None;
+        for (item, score) in items.into_iter().zip(scores) {
+            if score <= PRODUCTION_VETO_FLOOR {
+                continue;
+            }
+            let key = format!("{item:?}");
+            let replace = best.as_ref().is_none_or(|(best_score, best_key, _)| {
+                score > *best_score + 1e-9
+                    || ((score - *best_score).abs() <= 1e-9 && key < *best_key)
+            });
+            if replace {
+                best = Some((score, key, item));
+            }
+        }
+        best.map(|(_, _, item)| item)
+    }
+
+    /// Pause every Settler that the city's observed Loyalty clock will beat.
+    /// The normal strategic scorer sees only empty queues at the default
+    /// preemption margin, while the delegated baseline governor can also put
+    /// a fresh Settler into an empty queue.  This final queue handoff covers
+    /// both paths before the turn produces anything, and banks the Settler's
+    /// invested Production behind a legal non-Settler replacement.
+    fn redirect_loyalty_endangered_settler_queues(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.settlement_safety {
+            return;
+        }
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let mut endangered = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|city| g.cities[city].queue.first() == Some(&settler))
+            .filter_map(|city| {
+                let completion_turns = self.settler_factory_turns(g, pid, city);
+                Self::settler_queue_loyalty_risk(g, city, completion_turns).map(
+                    |(loyalty_per_turn, turns_to_flip)| {
+                        (city, loyalty_per_turn, turns_to_flip, completion_turns)
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        endangered.sort_by(|left, right| {
+            left.2
+                .total_cmp(&right.2)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+
+        for (city, loyalty_per_turn, turns_to_flip, completion_turns) in endangered {
+            if g.cities[&city].queue.first() != Some(&settler) {
+                continue;
+            }
+            let Some(replacement) = self.loyalty_safe_settler_replacement(g, pid, city, plan)
+            else {
+                continue;
+            };
+            let city_name = g.cities[&city].name.clone();
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: replacement.clone(),
+                },
+            )
+            .is_ok()
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                think!(self.journal(), Economy, Decision,
+                    "{} pauses {} for {}", city_name, Self::plain_item(&settler), Self::plain_item(&replacement);
+                    "it loses {:.1} Loyalty/turn and would revolt in about {:.1} turns, before this Settler's {:.1}-turn completion plus the {:.0}-turn safety window",
+                    -loyalty_per_turn, turns_to_flip, completion_turns, SETTLER_QUEUE_LOYALTY_SAFETY_TURNS);
+            }
+        }
+    }
+
     /// Let a peaceful live city plan reclaim one queue from a repeatable
     /// economic project when the plan has another city to found. The
     /// delegated baseline governor correctly values the Settler, but it only
@@ -22546,6 +22671,8 @@ impl AdvancedAi {
                     && self.settler_expansion_window_open(g, pid, cid)
                     && (!self.settler_factory_coordination
                         || self.settler_factory_is_competitive(g, pid, cid, plan, counts))
+                    && (!self.settlement_safety
+                        || Self::settler_queue_loyalty_risk(g, cid, turns).is_none())
                 {
                     let site = if self.settler_factory_coordination {
                         self.coordinated_settler_site(g, pid, cid)
@@ -34664,6 +34791,11 @@ impl AdvancedAi {
         // plan; switching banks that progress and this bounded pass reclaims
         // only the still-missing defensive wave.
         self.mobilize_surprise_defense_production(g, pid);
+        // This is deliberately after every strategic and delegated production
+        // route: either governor may have just selected a Settler, but a city
+        // whose observed Loyalty clock expires before it can use that Settler
+        // must bank the queue for a stabilizing build instead.
+        self.redirect_loyalty_endangered_settler_queues(g, pid, &plan);
         if active_victory_target.is_some() && self.war_plan.is_none() && !surprise_defense_purchase
         {
             let counts = self.counts(g, pid);
