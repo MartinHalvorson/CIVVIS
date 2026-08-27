@@ -780,15 +780,15 @@ mod tests {
                 }
             }
             let mut census = CommitmentCensus::default();
-            for pid in 0..game.players.len() {
+            for (pid, ai) in ais.iter().enumerate() {
                 if !major(&game, pid) {
                     continue;
                 }
-                census.absorb(&ais[pid].commitment_census());
-                for (key, n) in &ais[pid].commitments().endings {
+                census.absorb(&ai.commitment_census());
+                for (key, n) in &ai.commitments().endings {
                     *endings.entry(*key).or_default() += n;
                 }
-                for c in ais[pid].commitments().open() {
+                for c in ai.commitments().open() {
                     *still_open.entry(c.kind).or_default() += 1;
                 }
             }
