@@ -3280,12 +3280,11 @@ itself — kept in lockstep with whichever of those two changes next. That
 duplication risk, in a file several other agents are editing concurrently
 this session, is not a decision-neutral change I could sign off on in this
 pass, so the clone stayed. Clone/`speculative_clone` counts are therefore
-unchanged by this entry. Separately, `forcing_reply_penalty` (the
-`#[allow(dead_code)]`, tests-only sibling of `forcing_reply_penalty_applied`)
-already carries its own justification comment from #2578 explaining why it
-is kept; its callers live in `src/ai/advanced/tests.rs`, a path this task did
-not claim (owned by a concurrent PR), so it was left untouched rather than
-edited out from under that PR.
+unchanged by this entry. Separately, `forcing_reply_penalty` (the tests-only
+sibling of `forcing_reply_penalty_applied`) is now compiled under
+`#[cfg(test)]`: its callers live in `src/ai/advanced/tests.rs`, so this keeps
+their direct regression contract without retaining a release-only
+`#[allow(dead_code)]` exception.
 
 Exactness: `tools/speed_ab.py` on 2 games/seed 7,320,000 (6p, 74x46, 9CS,
 150t, online) reported *"the two metrics agree, as they must when both arms

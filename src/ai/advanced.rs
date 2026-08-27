@@ -28505,6 +28505,9 @@ impl AdvancedAi {
             })
     }
 
+    /// Test-only valuation without a known route origin. Production callers
+    /// always know the origin and use [`Self::trade_route_destination_value_from`].
+    #[cfg(test)]
     fn trade_route_destination_value(
         &self,
         g: &Game,
@@ -30864,11 +30867,10 @@ impl AdvancedAi {
     /// for a caller holding nothing but `&Game`. `AppliedAttack::NotScored` is
     /// exactly that statement: nothing has been applied to this board yet.
     ///
-    /// Kept deliberately, and currently called by nothing: #2578 moved the one
-    /// caller onto the applied form and left this as the `&Game` door. CI holds
-    /// `src/` at zero rustc warnings, so the choice has to be stated rather
-    /// than left to whoever next reads the build log.
-    #[allow(dead_code)]
+    /// Production uses the applied form, while the focused regression tests
+    /// retain this `&Game` door to assert the same reply cost directly. Keep
+    /// that test contract out of release builds.
+    #[cfg(test)]
     fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
         let mut after = g.speculative_clone();
         Self::forcing_reply_penalty_applied(
