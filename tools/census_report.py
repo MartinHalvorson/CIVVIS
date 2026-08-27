@@ -294,6 +294,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.write:
+        # ⚠ `--only` narrows what was RUN, so it has to narrow what is
+        # REPLACED too: a filtered run written on its own dropped the other 28
+        # readings from both files (2026-08-27, #2653), and the overwrite guard
+        # was what caught it. Merge the readings taken into the ledger on disk.
+        if args.only and LEDGER.is_file():
+            merged = json.loads(LEDGER.read_text())
+            merged.update(readings)
+            readings = merged
         LEDGER.write_text(json.dumps(readings, indent=2, sort_keys=True) + "\n")
         MARKDOWN.write_text(render(readings))
         print(f"recorded {len(readings)} census reading(s) to {LEDGER.name} "
