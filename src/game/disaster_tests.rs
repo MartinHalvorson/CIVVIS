@@ -262,6 +262,166 @@ fn an_eruption_damages_the_ring_and_leaves_volcanic_soil() {
     );
 }
 
+/// ★★★★ A VOLCANIC NATURAL WONDER IS A VOLCANO, AND THIS ENGINE SAID IT WAS
+/// SCENERY.
+///
+/// Gathering Storm ships `Features_XP2.Volcano` on FOUR features: the generic
+/// `FEATURE_VOLCANO` and the three volcanic Natural Wonders — Vesuvius,
+/// Kilimanjaro and Eyjafjallajokull. Every volcano test in this engine matched
+/// the feature NAME `volcano` instead, so the three wonders were dormant for
+/// good: they never entered the activation lottery, `trigger_eruption` never
+/// drew one, and not one hex of Volcanic Soil ever came out of one.
+#[test]
+fn the_shipped_volcano_flag_names_the_three_volcanic_natural_wonders_too() {
+    let rules = crate::rules::Rules::embedded();
+    let volcanic: Vec<&str> = rules
+        .features
+        .iter()
+        .filter(|(_, spec)| spec.volcano)
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(
+        volcanic,
+        ["eyjafjallajokull", "kilimanjaro", "vesuvius", "volcano"],
+        "the shipped Features_XP2 Volcano roster is these four features"
+    );
+    for wonder in ["vesuvius", "kilimanjaro", "eyjafjallajokull"] {
+        assert!(
+            rules.features[wonder].natural_wonder,
+            "{wonder} is a Natural Wonder as well as a volcano"
+        );
+    }
+}
+
+#[test]
+fn a_volcanic_natural_wonder_erupts_and_leaves_its_own_volcanic_soil() {
+    for wonder in ["vesuvius", "kilimanjaro", "eyjafjallajokull"] {
+        let mut game = quiet_game();
+        let (volcano, ring) = volcano_and_ring(&game);
+        arm_certain_eruption(&mut game, volcano, &ring);
+        game.map.tiles.get_mut(&volcano).unwrap().feature = Some(Name::new(wonder));
+
+        game.resolve_eruption(volcano, 3);
+
+        assert!(
+            ring.iter().all(
+                |position| game.map.tiles[position].feature.as_deref() == Some("volcanic_soil")
+            ),
+            "{wonder} left no Volcanic Soil on the ring it reached"
+        );
+        assert_eq!(
+            game.map.tiles[&volcano].feature.as_deref(),
+            Some(wonder),
+            "the wonder itself is not buried by its own eruption"
+        );
+    }
+}
+
+/// A second hex of the same wonder — Eyjafjallajokull is a two-tile footprint —
+/// is part of the cone, not ground the cone can bury.
+#[test]
+fn an_eruption_does_not_bury_the_rest_of_its_own_natural_wonder() {
+    let mut game = quiet_game();
+    let (volcano, ring) = volcano_and_ring(&game);
+    arm_certain_eruption(&mut game, volcano, &ring);
+    game.map.tiles.get_mut(&volcano).unwrap().feature = Some(crate::name!("eyjafjallajokull"));
+    let twin = ring[0];
+    game.map.tiles.get_mut(&twin).unwrap().feature = Some(crate::name!("eyjafjallajokull"));
+
+    game.resolve_eruption(volcano, 3);
+
+    assert_eq!(
+        game.map.tiles[&twin].feature.as_deref(),
+        Some("eyjafjallajokull"),
+        "the wonder's other hex kept its own feature"
+    );
+}
+
+#[test]
+fn high_intensity_makes_most_volcanic_natural_wonders_active_cones() {
+    let mut game = quiet_game();
+    let sites: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| !game.rules.is_water(tile))
+        .map(|(position, _)| *position)
+        .take(300)
+        .collect();
+    for position in &sites {
+        game.map.tiles.get_mut(position).unwrap().feature = Some(crate::name!("vesuvius"));
+    }
+    game.disaster_intensity = 0;
+    assert_eq!(
+        sites
+            .iter()
+            .filter(|position| game.volcano_active(**position))
+            .count(),
+        0,
+        "disasters off leaves a volcanic wonder dormant like any other cone"
+    );
+    game.disaster_intensity = 4;
+    let active = sites
+        .iter()
+        .filter(|position| game.volcano_active(**position))
+        .count();
+    assert!(
+        (0.85..=1.0).contains(&(active as f64 / sites.len() as f64)),
+        "the shipped band tops out at 95% of the map's cones, got {active} of {}",
+        sites.len()
+    );
+}
+
+#[test]
+fn the_eruption_lottery_draws_a_volcanic_natural_wonder() {
+    let mut game = quiet_game();
+    game.disaster_intensity = 4;
+    // Clear the generator's own cones so the only volcano left on the map is a
+    // Natural Wonder. A dormant roster produces no eruption at all, which is
+    // exactly what used to happen.
+    let generated: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| tile.feature.as_deref() == Some("volcano"))
+        .map(|(position, _)| *position)
+        .collect();
+    for position in generated {
+        game.map.tiles.get_mut(&position).unwrap().feature = None;
+    }
+    let (volcano, ring) = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .collect::<Vec<Pos>>()
+        .into_iter()
+        .find_map(|position| {
+            let ring: Vec<Pos> = game.map.neighbors(position).into_iter().collect();
+            if ring.len() != 6 {
+                return None;
+            }
+            game.map.tiles.get_mut(&position).unwrap().feature = Some(crate::name!("vesuvius"));
+            if game.volcano_active(position) {
+                return Some((position, ring));
+            }
+            game.map.tiles.get_mut(&position).unwrap().feature = None;
+            None
+        })
+        .expect("some interior tile draws an active cone at Apocalyptic intensity");
+    arm_certain_eruption(&mut game, volcano, &ring);
+    game.map.tiles.get_mut(&volcano).unwrap().feature = Some(crate::name!("vesuvius"));
+
+    let mut rng = crate::rng::Rng::new(9);
+    game.trigger_eruption(3, &mut rng);
+
+    assert!(
+        ring.iter()
+            .any(|position| game.map.tiles[position].feature.as_deref() == Some("volcanic_soil")),
+        "the lottery erupted the wonder and Volcanic Soil came out of it"
+    );
+}
+
 /// ★★★★★ FERTILITY IS FOOD **AND PRODUCTION**, ROLLED APART.
 ///
 /// `RandomEvent_Yields` rates each yield type separately — a Catastrophic

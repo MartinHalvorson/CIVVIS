@@ -1813,3 +1813,45 @@ could have found it.** Gene screens, the Elo ladder, the Tactics bench and the
 doctrine arena all play both arms under the same rules, so a missing rule
 cancels out of the control and the treatment identically. It was found by a
 person playing the Tactics arena. See `docs/AI_GAPS.md` and `docs/FIDELITY.md`.
+
+## v26 (2026-08-27) — a volcanic Natural Wonder is a volcano
+
+Gathering Storm ships `Features_XP2.Volcano` on **four** features, not one:
+the generic `FEATURE_VOLCANO` and the three volcanic Natural Wonders —
+`FEATURE_VESUVIUS`, `FEATURE_KILIMANJARO` (both in
+`DLC/Expansion2/Data/Expansion2_Features.xml`) and `FEATURE_EYJAFJALLAJOKULL`
+(`DLC/VikingsLandmarks/Data/VikingsLandmarks_Expansion2.xml`). Every volcano
+test in this engine matched the feature *name* `volcano` instead:
+`Game::volcano_active` returned false for the three wonders,
+`Game::trigger_eruption` never collected one as a candidate, and
+`MOMENT_CITY_BUILT_NEAR_VOLCANO` never fired beside one. So the three were
+scenery. They never went active at any disaster intensity, they never erupted,
+and not one hex of Volcanic Soil ever came out of one — the feature Gathering
+Storm gives a volcanic wonder its whole character by.
+
+The audit could not have caught it either: `Features_XP2` was not in
+`TABLE_KEYS`, so `civ6_fidelity.py` had never read the column. It is tracked
+now, and `data/features.json` carries a `volcano` flag on exactly the four
+features the shipped table names — projected and compared against the install
+like every other feature field.
+
+This is a shared-engine rules correction and not a controller treatment: no
+gene can keep it away from `legacy()`, because what the *world* does changed.
+Every seat plays by it.
+
+**It moves the anchor by thirty-eight decisions.** An eruption that used to be
+impossible now damages a ring, pillages what is built on it, kills Citizens and
+leaves Volcanic Soil, so a seat living beside one of the three wonders plans a
+different game from there on. It goes from v25's 18,553 decisions and
+`0x14b8_c800_4f26_5e5b` to **18,515 and `0x04f5_da2a_c86b_099c`**. The shipped
+ruleset fingerprint moves with it —
+`fnv1a64:fbd69339f1ba4e2b` → `fnv1a64:63b1654facb5b19b` — because
+`data/features.json` gained the flag.
+
+The client had the same blind spot and showed it. Volcanic Soil is drawn as an
+ash fan anchored to the edge it shares with the volcano that threw it, and both
+renderers (flat Strategic and the globe) looked for a neighbour whose feature
+was literally `volcano`. Soil beside Vesuvius, Kilimanjaro or Eyjafjallajokull
+therefore fell through to the coordinate-seeded fallback and pointed in an
+arbitrary direction, away from the only volcano on screen. Both now ask
+`isVolcano`, which reads the served `volcano` flag over a four-name roster.
