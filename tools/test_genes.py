@@ -696,13 +696,23 @@ class TheOperatorHolds(unittest.TestCase):
             self.assertNotIn(tag, rules["operator_default_on"], tag)
         # ⭐ WHY A HOLD WAS NEEDED AT ALL. Under `operator-retained-selection`
         # a rotation carries the recorded genome forward, so the batch rule
-        # reading a gene `off` does not take it out — four of these five read
-        # off and shipped anyway. The fifth, `settler-target-hysteresis`, the
-        # rule reads `on`. Both routes need naming, and neither is the rule.
+        # reading a gene `off` does not take it out — most of these read off
+        # and shipped anyway. `settler-target-hysteresis` the rule reads `on`.
+        # Both routes need naming, and neither is the rule.
         self.assertEqual(rules["deployment_policy"],
                          gene_ledger.RETAINED_DEPLOYMENT_POLICY)
+        # ⭐ AND `remove` IS A THIRD ROUTE, added 2026-08-27. A hold may sit on
+        # a gene the rule wants cut from the pool, and `holy-lane-parity`
+        # (−21/−38/−11) is the first: a hold is strictly weaker than a removal
+        # — it stops the gene being played while its code stays screenable, so
+        # a later batch can still redeem it — and it is what the operator chose
+        # over cutting the code. Only a PIN may not sit on a `remove`, which
+        # `TheOperatorPins` asserts separately; that is the contradiction worth
+        # refusing, because a pin would keep playing a gene three straight
+        # batches call badly negative.
         for tag in expected_holds:
-            self.assertIn(rules["batch_decisions"].get(tag), {"on", "off"}, tag)
+            self.assertIn(
+                rules["batch_decisions"].get(tag), {"on", "off", "remove"}, tag)
 
 
 class RetainedReportingDefaults(unittest.TestCase):

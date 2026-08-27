@@ -1071,6 +1071,9 @@ struct EmpireCounts {
     military: usize,
     melee: usize,
     ranged: usize,
+    /// The shooters `early-archers` counts: a land, non-siege unit with a
+    /// ranged attack of range two or more. See `advanced/early_archers.rs`.
+    archers: usize,
     naval: usize,
     naval_melee: usize,
     naval_ranged: usize,
@@ -1237,6 +1240,9 @@ impl EmpireCounts {
                         }
                         if spec.has_ranged_attack() {
                             self.ranged += 1;
+                        }
+                        if AdvancedAi::early_archers_shooter(spec) {
+                            self.archers += 1;
                         }
                     }
                     if spec.siege && spec.domain.as_deref() != Some("air") {
@@ -4622,6 +4628,10 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// An Archer for every city, the frontier city first, while the world
+    /// is Ancient and Classical, and Archery chased until a city can train
+    /// one. Opt-in gene `early-archers`; see `advanced/early_archers.rs`.
+    early_archers: bool,
     /// The turn's fire is planned once from the engine's arithmetic: the
     /// kills that can be finished, their shooters first in the unit order,
     /// each biased toward its planned target. Opt-in gene `fire-plan`; see
@@ -5755,6 +5765,11 @@ pub use gene_ledger::{
 /// `advanced/camp_buyout.rs`.
 mod camp_buyout;
 
+/// `early-archers`: an Archer for every city, the frontier city first, while
+/// the world is Ancient and Classical, and Archery chased until a city can
+/// train one. One opt-in gene; see `advanced/early_archers.rs`.
+mod early_archers;
+
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained
@@ -6404,6 +6419,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            early_archers: false,
             fire_plan: false,
             fire_plan_orders: fire_plan::FirePlan::default(),
             escort_patience_runs_out: false,
@@ -13450,6 +13466,10 @@ impl AdvancedAi {
         if strategy == GrandStrategy::Religion && tech == "astrology" {
             value += 95.0;
         }
+        // See `advanced/early_archers.rs`: the node that unlocks the
+        // shooter, and every node on the way, while the empire lacks it.
+        // Zero with the gene off.
+        value += self.early_archers_research_value(g, pid, tech);
         if let Some(goal) = BasicAi::water_research_goal(g, pid) {
             if self.tech_leads_to(g, tech, goal) {
                 // Embarkation and ocean access change which parts of the map
@@ -22065,11 +22085,17 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // And a missing shooter is not one either: see
+                    // `advanced/early_archers.rs`. Zero with the gene off,
+                    // outside its window, or for anything but a land shooter.
+                    let early_archer =
+                        self.early_archers_value(g, pid, cid, spec, counts, city_count);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
                         && !threatened
                         && early_contact <= 0.0
+                        && early_archer <= 0.0
                     {
                         return -2_000.0;
                     }
@@ -22215,6 +22241,7 @@ impl AdvancedAi {
                         + efficiency
                         + unique_window
                         + early_contact
+                        + early_archer
                 } else if spec.class == "support" {
                     self.support_unit_value(g, pid, cid, unit, plan, counts)
                 } else {
