@@ -121,6 +121,41 @@ pub enum Brush {
 /// A brush and the cells it is applied to, in offset (column, row).
 pub type Stroke = (Brush, &'static [(i32, i32)]);
 
+/// A city on a position's board: whose it is, where it stands, and what
+/// shape its defences are in.
+///
+/// The arena has always been able to hold a city — the stock Tactics battle
+/// gives each side one — but a *position* could not place it, so the arena
+/// could pose every tactical problem except the one the live seat keeps
+/// losing: eleven declared wars, four sieges to 180-190 of 200, and no
+/// capture. An assault is a different problem from a field fight and needs
+/// its own board.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stronghold {
+    /// Which side holds it, in role order.
+    pub role: usize,
+    pub col: i32,
+    pub row: i32,
+    /// The city's own hit points. A city at 200 is untouched; the live
+    /// seat's four abandoned sieges each left one at 180-190.
+    pub hp: i32,
+    /// The outer-defence pool walls give it, which a melee unit cannot
+    /// capture through. Zero is an unwalled city and the only kind a
+    /// controller has ever taken here.
+    pub wall_hp: i32,
+}
+
+/// Shorthand so a board's cities read as a list of placements.
+const fn city(role: usize, col: i32, row: i32, hp: i32, wall_hp: i32) -> Stronghold {
+    Stronghold {
+        role,
+        col,
+        row,
+        hp,
+        wall_hp,
+    }
+}
+
 /// A hand-built tactical position: a board, two deployments, and the doctrine
 /// the engagement it comes from turned on.
 #[derive(Clone, Copy, Debug)]
@@ -139,6 +174,9 @@ pub struct Position {
     /// Turns of fighting before the ledger is read.
     pub turns: u32,
     pub terrain: &'static [Stroke],
+    /// Cities on the board. Empty for a field position, which is every one
+    /// of them written before 2026-08-27.
+    pub cities: &'static [Stronghold],
     /// Forces in role order. Deliberately allowed to be unequal — an even
     /// fight is one tactical problem out of many, and rarely the interesting
     /// one.
@@ -174,6 +212,35 @@ pub struct Placed {
 
 fn whole() -> i32 {
     100
+}
+
+/// A city on an owned board; the serialisable twin of [`Stronghold`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Held {
+    pub role: usize,
+    pub col: i32,
+    pub row: i32,
+    #[serde(default = "whole")]
+    pub hp: i32,
+    #[serde(default)]
+    pub wall_hp: i32,
+    /// The name it had in the game it came from, so a captured siege is
+    /// recognisable in a report.
+    #[serde(default)]
+    pub name: String,
+}
+
+impl From<&Stronghold> for Held {
+    fn from(spec: &Stronghold) -> Self {
+        Held {
+            role: spec.role,
+            col: spec.col,
+            row: spec.row,
+            hp: spec.hp,
+            wall_hp: spec.wall_hp,
+            name: String::new(),
+        }
+    }
 }
 
 /// A board the arena can play, owned and serialisable: every hand-built
@@ -214,6 +281,10 @@ pub struct Engagement {
     /// one of the terms the fighting turns on.
     #[serde(default)]
     pub rivers: Vec<((i32, i32), [bool; 6])>,
+    /// Cities on the board, with the hit points and walls they carried.
+    /// Empty for a field board.
+    #[serde(default)]
+    pub cities: Vec<Held>,
     /// Forces in role order.
     pub forces: [Vec<Placed>; 2],
     /// Whether units recover on this board. Off is the arena's own rule and
@@ -242,6 +313,7 @@ impl From<&Position> for Engagement {
                 .map(|(brush, cells)| (*brush, cells.to_vec()))
                 .collect(),
             rivers: Vec::new(),
+            cities: spec.cities.iter().map(Held::from).collect(),
             forces: [
                 spec.forces[0].iter().map(Placed::from).collect(),
                 spec.forces[1].iter().map(Placed::from).collect(),
@@ -292,6 +364,21 @@ impl Engagement {
         for board in &boards {
             if board.width < 4 || board.height < 4 || board.turns == 0 {
                 return Err(format!("{}: a board needs a size and a clock", board.id));
+            }
+            for held in &board.cities {
+                if held.role > 1 {
+                    return Err(format!("{}: a city belongs to role 0 or 1", board.id));
+                }
+                if held.col < 0
+                    || held.col >= board.width
+                    || held.row < 0
+                    || held.row >= board.height
+                {
+                    return Err(format!(
+                        "{}: a city stands off the board at {},{}",
+                        board.id, held.col, held.row
+                    ));
+                }
             }
             for (role, force) in board.forces.iter().enumerate() {
                 for unit in force {
@@ -352,6 +439,7 @@ pub const POSITIONS: &[Position] = &[
             ),
             (Brush::Forest, &[(13, 3), (16, 11), (13, 11), (16, 3)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("warrior", 15, 6),
@@ -391,6 +479,7 @@ pub const POSITIONS: &[Position] = &[
             (Brush::Marsh, &[(9, 15), (10, 16), (11, 15), (10, 14)]),
             (Brush::Forest, &[(6, 2), (7, 3), (14, 15), (15, 14)]),
         ],
+        cities: &[],
         forces: [
             &[
                 // Four on the northern wing, two refused to the south.
@@ -451,6 +540,7 @@ pub const POSITIONS: &[Position] = &[
             // and taking it costs.
             (Brush::Hills, &[(12, 5), (12, 6), (12, 7)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("spearman", 13, 5),
@@ -504,6 +594,7 @@ pub const POSITIONS: &[Position] = &[
             // that break up an approach made without thought.
             (Brush::Forest, &[(8, 4), (8, 5), (8, 10), (8, 11)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("archer", 13, 5),
@@ -543,6 +634,7 @@ pub const POSITIONS: &[Position] = &[
             (Brush::Water, &[(10, 0), (11, 0), (12, 0), (13, 0), (11, 1)]),
             (Brush::Forest, &[(6, 13), (17, 13)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("warrior", 7, 5),
@@ -582,6 +674,7 @@ pub const POSITIONS: &[Position] = &[
             (Brush::Forest, &[(11, 2), (12, 2), (11, 11), (12, 11)]),
             (Brush::Hills, &[(12, 6), (11, 7)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("warrior", 9, 5),
@@ -641,6 +734,7 @@ pub const POSITIONS: &[Position] = &[
             // The two fords, and high ground overlooking each.
             (Brush::Hills, &[(14, 5), (14, 10), (12, 5), (12, 10)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("warrior", 10, 5),
@@ -727,6 +821,7 @@ pub const POSITIONS: &[Position] = &[
             ),
             (Brush::Forest, &[(11, 3), (15, 3), (19, 3), (7, 3)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("warrior", 6, 8),
@@ -777,6 +872,7 @@ pub const POSITIONS: &[Position] = &[
             ),
             (Brush::Hills, &[(16, 6), (16, 12), (16, 1)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("swordsman", 8, 5),
@@ -819,6 +915,7 @@ pub const POSITIONS: &[Position] = &[
             ),
             (Brush::Hills, &[(13, 13), (14, 14), (12, 14)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("spearman", 8, 6),
@@ -879,6 +976,7 @@ pub const POSITIONS: &[Position] = &[
             ),
             (Brush::Hills, &[(3, 6), (3, 7)]),
         ],
+        cities: &[],
         forces: [
             &[
                 at("spearman", 3, 6),
@@ -894,6 +992,43 @@ pub const POSITIONS: &[Position] = &[
                 at("archer", 11, 6),
                 at("archer", 11, 7),
                 at("horseman", 12, 6),
+            ],
+        ],
+    },
+    Position {
+        id: "the_storming",
+        name: "The storming",
+        provenance: "Vauban's breach; every siege that ended in an assault rather than a blockade",
+        problem: "A walled city with a garrison, and a force with the siege \
+                  train to breach it. Walls are an outer pool a melee unit \
+                  cannot capture through, so the assault has an order: break \
+                  the wall, then take the city, and a body that storms an \
+                  unbreached wall is spent for nothing.",
+        roles: [
+            "the besieger: two catapults, three melee and an archer, on the open side",
+            "the garrison: three defenders behind a hundred points of wall",
+        ],
+        width: 24,
+        height: 14,
+        turns: 34,
+        terrain: &[
+            (Brush::Hills, &[(16, 6), (17, 5)]),
+            (Brush::Forest, &[(13, 4), (13, 8), (14, 3)]),
+        ],
+        cities: &[city(1, 17, 6, 200, 100)],
+        forces: [
+            &[
+                at("catapult", 9, 5),
+                at("catapult", 9, 7),
+                at("swordsman", 11, 5),
+                at("swordsman", 11, 7),
+                at("warrior", 11, 6),
+                at("archer", 10, 6),
+            ],
+            &[
+                at("spearman", 18, 6),
+                at("warrior", 17, 7),
+                at("archer", 18, 5),
             ],
         ],
     },
@@ -916,6 +1051,11 @@ pub struct DoctrineLedger {
     /// units that survived the engagement.
     pub damage_on_the_dead: f64,
     pub damage_taken: f64,
+    /// Cities taken from the other side, and lost to it. Zero on a field
+    /// board, which is every position written before 2026-08-27 — and the
+    /// number the live seat has never once put above zero in a real war.
+    pub cities_taken: usize,
+    pub cities_lost: usize,
     /// Board observations, accumulated turn by turn; see [`DoctrineProfile`].
     observations: Observations,
 }
@@ -988,6 +1128,8 @@ impl DoctrineLedger {
         self.damage_dealt += other.damage_dealt;
         self.damage_on_the_dead += other.damage_on_the_dead;
         self.damage_taken += other.damage_taken;
+        self.cities_taken += other.cities_taken;
+        self.cities_lost += other.cities_lost;
         let mine = &mut self.observations;
         let theirs = &other.observations;
         mine.turns += theirs.turns;
@@ -1235,6 +1377,7 @@ fn play_position(
 
     let mut ledgers = (DoctrineLedger::default(), DoctrineLedger::default());
     let mut previous = snapshot(&game);
+    let mut held = city_owners(&game);
     let start = game.turn;
     let deadline = start + spec.turns;
     // Damage is attributed as it is dealt, but whether it was spent well is
@@ -1269,6 +1412,9 @@ fn play_position(
         }
         let now = snapshot(&game);
         account(&previous, &now, &game, &mut ledgers, &mut pending);
+        let now_held = city_owners(&game);
+        account_cities(&held, &now_held, &mut ledgers);
+        held = now_held;
         previous = now;
         step += 1;
         observe(&previous, &game, &mut ledgers);
@@ -1384,6 +1530,40 @@ fn settle_arrivals(
             obs.foot_sum += value;
             obs.foot_sq += value * value;
         }
+    }
+}
+
+/// Which side holds each city on the board, so a change of hands can be
+/// scored. Keyed on the city, not the tile: a captured city keeps its id.
+fn city_owners(g: &Game) -> BTreeMap<u32, usize> {
+    g.cities
+        .values()
+        .filter(|city| city.owner < 2)
+        .map(|city| (city.id, city.owner))
+        .collect()
+}
+
+/// Credit every city that changed hands between two readings to the side
+/// that took it, and charge it to the side that lost it.
+fn account_cities(
+    before: &BTreeMap<u32, usize>,
+    after: &BTreeMap<u32, usize>,
+    ledgers: &mut (DoctrineLedger, DoctrineLedger),
+) {
+    for (cid, was) in before {
+        let Some(now) = after.get(cid) else {
+            continue;
+        };
+        if now == was {
+            continue;
+        }
+        let (taker, loser) = if *now == 0 {
+            (&mut ledgers.0, &mut ledgers.1)
+        } else {
+            (&mut ledgers.1, &mut ledgers.0)
+        };
+        taker.cities_taken += 1;
+        loser.cities_lost += 1;
     }
 }
 
@@ -1671,6 +1851,29 @@ pub fn build_engagement(spec: &Engagement, seed: u64) -> Option<Game> {
         }
     }
 
+    // The cities, before the army, so the deployment musters around them
+    // rather than onto them. `place_city` is the arena's own path — the
+    // `FoundCity` *action* is refused on a battlefield, and rightly, because
+    // a position states what is held rather than letting a settler decide.
+    for held in &spec.cities {
+        let pos = hex::offset_to_axial(held.col, held.row);
+        if g.map.get(pos).is_none() {
+            continue;
+        }
+        let name = (!held.name.is_empty()).then(|| held.name.clone());
+        let cid = g.place_city(held.role.min(1), pos, name);
+        if let Some(cityctl) = g.cities.get_mut(&cid) {
+            cityctl.hp = held.hp.clamp(1, 200);
+            cityctl.wall_hp = held.wall_hp.max(0);
+        }
+        // Walls are ordinarily derived from the buildings a city has built,
+        // and a board's city has built nothing. The same override the live
+        // mirror uses for the host's number states the pool directly, so a
+        // walled position is walled and an unwalled one cannot silently grow
+        // a wall from a ruleset default.
+        g.observed_city_max_wall_hp.insert(cid, held.wall_hp.max(0));
+    }
+
     // The muster: each unit takes the nearest usable tile to where the
     // position puts it, with a seeded nudge so repeated seeds are independent
     // samples of the same shape rather than one game played over and over.
@@ -1726,9 +1929,13 @@ fn muster(g: &Game, wanted: Pos, rng: &mut Rng) -> Option<Pos> {
 }
 
 fn usable(g: &Game, pos: Pos) -> bool {
-    g.map.get(pos).is_some_and(|tile| {
-        !g.rules.is_water(tile) && g.rules.is_passable(tile) && g.units_at(pos).is_empty()
-    })
+    // A city's own tile is not a muster tile: a position states which side
+    // holds it, and seating a unit there at setup would answer the
+    // assault before the first turn.
+    g.city_at(pos).is_none()
+        && g.map.get(pos).is_some_and(|tile| {
+            !g.rules.is_water(tile) && g.rules.is_passable(tile) && g.units_at(pos).is_empty()
+        })
 }
 
 /// The range at which a unit is part of an engagement rather than walking
@@ -1891,6 +2098,27 @@ pub fn capture_engagement(
     if forces.iter().any(|force| force.len() < 2) {
         return None;
     }
+    // ⭐ AND THE CITY, IF THE FIGHT IS OVER ONE. A siege captured as a field
+    // fight is not the fight: the whole question the live seat keeps failing
+    // — four sieges to 180-190 of 200 and no capture — is what to do about
+    // the walls and the garrison. A board that drops them cannot pose it.
+    let cities: Vec<Held> = g
+        .cities
+        .values()
+        .filter(|held| held.owner == a || held.owner == b)
+        .filter(|held| g.wdist(held.pos, centre) <= radius)
+        .filter_map(|held| {
+            let (col, row) = cell(held.pos)?;
+            Some(Held {
+                role: usize::from(held.owner == b),
+                col,
+                row,
+                hp: held.hp,
+                wall_hp: held.wall_hp.max(0),
+                name: held.name.clone(),
+            })
+        })
+        .collect();
     let rules = &g.rules;
     let describe = |pid: usize, force: &[Placed]| {
         let material: f64 = force
@@ -1926,6 +2154,7 @@ pub fn capture_engagement(
         turns,
         terrain,
         rivers,
+        cities,
         forces,
         heal: false,
     })
@@ -2644,15 +2873,115 @@ mod tests {
         }
     }
 
-    /// An arena is at war from the first turn and founds no city, which is
-    /// what makes the whole engagement the measurement. If this ever stops
-    /// being true the ledger silently starts including an empire.
+    /// An arena is at war from the first turn, and a field position founds
+    /// no city — which is what makes the whole engagement the measurement.
+    /// A position that *states* a city is the exception, and it is stated,
+    /// never founded: `FoundCity` stays refused on a battlefield.
     #[test]
-    fn a_position_is_an_arena_at_war_with_no_cities() {
+    fn a_position_is_an_arena_at_war_and_founds_no_city() {
         let game = build(&POSITIONS[0], 11).expect("buildable");
         assert!(game.is_arena());
         assert!(game.is_at_war(0, 1));
-        assert!(game.cities.is_empty(), "an arena founds no city");
+        assert!(game.cities.is_empty(), "a field position holds no city");
+        for spec in POSITIONS.iter().filter(|spec| spec.cities.is_empty()) {
+            let game = build(spec, 11).expect("buildable");
+            assert!(game.cities.is_empty(), "{} is a field position", spec.id);
+        }
+        // And the action itself is still refused, so nothing can found one.
+        let mut game = build(&POSITIONS[0], 11).expect("buildable");
+        let settler = game.spawn_unit("settler", 0, hex::offset_to_axial(6, 6));
+        assert!(game
+            .apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .is_err());
+    }
+
+    /// A position that states a city gets it, with the hit points and the
+    /// wall it asked for — and the muster does not seat a unit on top of it.
+    #[test]
+    fn a_stated_city_stands_where_the_position_puts_it() {
+        let spec = position("the_storming").expect("the assault position");
+        assert_eq!(spec.cities.len(), 1);
+        for seed in [1u64, 2, 3, 4] {
+            let game = build(spec, seed).expect("buildable");
+            assert_eq!(game.cities.len(), 1, "seed {seed}");
+            let held = game.cities.values().next().expect("a city");
+            assert_eq!(held.owner, 1, "the garrison holds it");
+            assert_eq!(held.pos, hex::offset_to_axial(17, 6));
+            assert_eq!(held.hp, 200);
+            assert_eq!(held.wall_hp, 100, "a wall a melee unit cannot capture through");
+            assert_eq!(game.city_max_wall_hp(held), 100, "and the pool is the stated one");
+            assert!(
+                game.units_at(held.pos).is_empty(),
+                "seed {seed}: the muster does not seat a unit on the city"
+            );
+            let seated: usize = (0..2).map(|role| game.player_unit_ids(role).len()).sum();
+            assert_eq!(seated, spec.forces[0].len() + spec.forces[1].len());
+        }
+    }
+
+    /// A city that changes hands is scored to the side that took it, and
+    /// charged to the side that lost it — the number the live seat has never
+    /// put above zero in a real war.
+    #[test]
+    fn a_city_that_changes_hands_is_counted_both_ways() {
+        let spec = position("the_storming").expect("known");
+        let mut game = build(spec, 5).expect("buildable");
+        let before = super::city_owners(&game);
+        let cid = *before.keys().next().expect("a city");
+        assert_eq!(before[&cid], 1);
+        game.cities.get_mut(&cid).expect("city").owner = 0;
+        let after = super::city_owners(&game);
+        let mut ledgers = (DoctrineLedger::default(), DoctrineLedger::default());
+        super::account_cities(&before, &after, &mut ledgers);
+        assert_eq!((ledgers.0.cities_taken, ledgers.0.cities_lost), (1, 0));
+        assert_eq!((ledgers.1.cities_taken, ledgers.1.cities_lost), (0, 1));
+        // And it survives the merge the report reads through.
+        let mut merged = DoctrineLedger::default();
+        merged.absorb(&ledgers.0);
+        merged.absorb(&ledgers.0);
+        assert_eq!(merged.cities_taken, 2);
+    }
+
+    /// A captured board keeps the city the fight was over, on the right
+    /// role, with the hit points and wall it had.
+    #[test]
+    fn a_captured_siege_keeps_its_city() {
+        let spec = Engagement::from(position("the_storming").expect("known"));
+        let mut g = build_engagement(&spec, 6).expect("buildable");
+        let cid = *g.cities.keys().next().expect("a city");
+        // The besieger starts six tiles out; walk it up first, because a
+        // board is taken at contact. A city heals between turns, so the
+        // damage is stamped after the march and before the capture.
+        let mut ais: Vec<Box<dyn Ai>> =
+            (0..2).map(|pid| builtin_ai("advanced", 6 + pid as u64)).collect();
+        let mut in_contact = false;
+        for _ in 0..30 {
+            if capture_engagement(&g, 0, 1, 12, 10, "probe").is_some() {
+                in_contact = true;
+                break;
+            }
+            let pid = g.current;
+            ais[pid].take_turn(&mut g, pid);
+            let _ = g.apply(pid, &crate::game::Action::EndTurn);
+        }
+        assert!(in_contact, "the storming comes into contact");
+        g.cities.get_mut(&cid).expect("city").hp = 186;
+        let board = capture_engagement(&g, 0, 1, 12, 10, "siege").expect("still in contact");
+        assert_eq!(board.cities.len(), 1, "the city crossed with the fight");
+        let held = &board.cities[0];
+        assert_eq!(held.role, 1, "still the defender's");
+        assert_eq!(held.hp, 186, "at the hit points the siege had left it");
+        assert_eq!(held.wall_hp, 100);
+        // And the board replays with it.
+        let replay = build_engagement(&board, 2).expect("a captured board builds");
+        assert_eq!(replay.cities.len(), 1);
+        let back = replay.cities.values().next().expect("a city");
+        assert_eq!((back.owner, back.hp, back.wall_hp), (1, 186, 100));
+        // A board that names a city off its own edge is refused by name.
+        let mut broken = board.clone();
+        broken.cities[0].col = 999;
+        let error = Engagement::from_json(&Engagement::to_json(&[broken])).unwrap_err();
+        assert!(error.contains("off the board"), "{error}");
     }
 
     /// The instrument has to move before it can measure. A position that ends
