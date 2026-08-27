@@ -83,7 +83,111 @@ separable, and only the second is this document's subject:
    on. The whole-game screen is the ship decision; the censuses are the
    evidence that a gene did what it claims.
 
-## 4. The ledger
+## 4. The ledger (`src/ai/advanced/commitments.rs`)
 
-*(filled in as it lands — see the sections below for the structure, the
-census columns, the genes and the screens.)*
+The ledger is an **observer at the turn boundary**. `AdvancedAi` already
+keeps the decisions as maps — `settler_targets` (unit → site),
+`builder_targets` (unit → tile), the war plan's `objective_city`, and the
+grand strategy's `target_city` under Conquest. At the end of every acting
+turn, after the unit pass and before `EndTurn` (so `Unit::acted` still says
+what each unit did), `reconcile_commitments` compares those maps with what
+it saw the turn before and classifies every decision:
+
+| ending | meaning |
+|---|---|
+| `completed` | our city stands on the site / the target tile's improvement changed / the target city is ours |
+| `retargeted` | the same owner now points at a different target — split into *before moving* and *en route* (it had already got closer) |
+| `dropped` | the owner is alive and the decision is gone (a target drop, a stand-down) |
+| `settled elsewhere` | the settler vanished and a city of ours that is new this turn stands within 3 of where it stood |
+| `lost` | the owner died or was captured with the decision open |
+| `stood down` | the empire no longer means to take that city |
+
+and, for every decision still open, three per-turn readings:
+
+| reading | definition |
+|---|---|
+| **forgotten** | the owner had movement to spend and did not act (`!acted && moves_left > 0`); for a declared war, no own military unit within 3 hexes of the objective |
+| **stalled** | acted, but no better progress reading (hexes to walk; phase-then-hit-points for a capture) for `STALL_TURNS` = 3 turns — the same limit as `SETTLER_STALL_LIMIT` |
+| **late** | past the ETA priced when the decision was made: a walk at two hexes a turn, the war plan's own research + production + march estimate, or `CONQUEST_ETA_TURNS` = 20 (`CAMPAIGN_PATIENCE`) for a bare Conquest target |
+
+Every forgotten turn is also filed under the first hold the observer can see
+(`forgotten_why`): waiting for escort, threat forecast on the site, hostile
+within two, stall counted, in a city, at the tile with the build refused,
+walk refused or not attempted, unexplained. That split is what names the
+gene a class wants.
+
+**Where it surfaces.** Three places, so nothing has to be re-plumbed:
+`players[pid].counters` under `commit:<kind>:<field>` and summed
+`commit:<field>`, which `gene_screen` lifts onto every seat row as
+`commit_*` (so every future screen carries the decisiveness of every
+genome); `audit` prints one `commitments <kind> …` line per kind per game
+and pooled; and the `#[ignore]` census `commitment_census` (`cargo test
+--profile ci commitment_census -- --ignored --nocapture`, eight 6-player
+60×38 Online maps at the deployment genome, `CIVVIS_CENSUS_OPT_INS=tag,tag`
+switches opt-in genes on) prints the pooled reading with the endings and
+the forgotten-why split.
+
+**It changes no decision.** Proof: the three-game `gene_screen` block at seeds
+98600000–98600002 played by the exact base commit and by this branch gives
+**19 of 19 seat rows identical** apart from the new `commit_*` columns, the
+build stamp and wall-clock seconds.
+
+## 5. The first reading (2026-08-27, 8 maps, deployment genome)
+
+```
+settle  made 687  done 201 (29%)  retargeted 309  dropped 151  lost 17
+        open turns 3206: forgotten 784 (24%)  stalled 592 (18%)  late 1525 (47%)
+        done in 4.1 turns v eta 1.9
+improve made 4258 done 2679 (64%) retargeted 650  dropped 568  lost 240
+        open turns 14908: forgotten 3975 (26%) stalled 1763 (11%) late 7260 (48%)
+        done in 3.7 turns v eta 1.9
+capture made 263  done 10 (4%)    retargeted 65   stood down 168
+        open turns 2044: forgotten 698 (34%)  stalled 290 (14%)  late 279 (13%)
+        done in 18.1 turns v eta 20.0
+```
+
+Retargets: settle 159 before moving / **150 en route**; improve 313 / 337.
+
+Forgotten, by hold:
+
+| kind | hold | turns |
+|---|---|---:|
+| settle | hostile within two | **577** |
+| settle | unexplained | 99 |
+| settle | stall counted (route refused) | 87 |
+| settle | threat forecast on the site | 19 |
+| settle | in a city | 2 |
+| improve | hostile within two | **2107** |
+| improve | walk refused or not attempted | **1713** |
+| improve | in a city | 125 |
+| improve | at the tile, build refused | 30 |
+| capture | nobody at the objective | **698** |
+
+## 6. What the reading says
+
+1. **The conquest decision is the least executed decision in the game.**
+   263 times an empire's grand strategy named a city to take; 10 of those
+   cities fell. 168 decisions were stood down and 65 re-aimed, and on a third
+   of the turns a target was held, no unit of ours was within three hexes of
+   it. This is the class `docs/EVAL.md` (2026-07-29) measured as ~4 strategy
+   switches per seat-game, now seen from the objective's side: the choice
+   changes because nothing was ever sent, not the other way round.
+2. **Civilians freeze near a hostile.** 577 settler-turns and 2,107
+   Builder-turns — about 45 unit-turns per seat-game — a unit with a target
+   and movement stood still because a hostile (barbarians included) was
+   within two hexes. Standing still next to a raider is the one option that
+   is never right: the settler-hold comment in `advanced_settler_step`
+   records two live settlers taken exactly that way.
+3. **Builders hold a pin they never walk to** — 1,713 turns. This is the
+   #2480 defect (`builder_targets` survives its own refused route) and its
+   gene, `builder-tries-the-next-tile`, ships off.
+4. **Half of settler retargets happen after the walk has started.** 150 of
+   309. A decision reversed mid-execution costs the walk already sunk, and
+   the settle ranking does not see that cost.
+5. **Everything runs at half its priced pace.** Settle and improve complete
+   in ~4 turns against a 1.9-turn flat-ground price; half of all open
+   commitment-turns are past their ETA.
+
+The settler holds (items 2 and 4 on the settler side) are the subject of
+PR #2655, which owns `advanced_settler_step`; this document records the
+numbers and leaves that lane alone.

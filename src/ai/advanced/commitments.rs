@@ -102,6 +102,8 @@ pub struct Commitment {
     /// What stood on the target tile when the decision was made (Improve).
     pub improvement_then: Option<Name>,
     pub retargets: u32,
+    /// Turns this commitment has been observed open.
+    pub turns_open: u32,
     pub forgotten_turns: u32,
     pub stalled_turns: u32,
 }
@@ -287,6 +289,7 @@ impl CommitmentLedger {
         };
         let census = self.census.slot(key.0);
         census.open_turns += 1;
+        c.turns_open += 1;
         if reading < c.best {
             c.best = reading;
             c.best_turn = turn;
@@ -409,6 +412,7 @@ impl CommitmentLedger {
                         last_pos: Some(unit.pos),
                         improvement_then: g.map.get(*site).and_then(|tile| tile.improvement),
                         retargets: retargets + 1,
+                        turns_open: 0,
                         forgotten_turns: 0,
                         stalled_turns: 0,
                     });
@@ -448,6 +452,7 @@ impl CommitmentLedger {
                     last_pos: Some(unit.pos),
                     improvement_then: g.map.get(site).and_then(|tile| tile.improvement),
                     retargets: 0,
+                    turns_open: 0,
                     forgotten_turns: 0,
                     stalled_turns: 0,
                 });
@@ -478,6 +483,19 @@ impl CommitmentLedger {
                 } else {
                     "stood down"
                 };
+                if how != "completed" {
+                    // Did anyone ever go? A capture that was forgotten on
+                    // every one of its open turns was a decision with no
+                    // army behind it.
+                    let split = if c.turns_open > 0 && c.forgotten_turns == c.turns_open {
+                        "ended, nobody ever went"
+                    } else if c.forgotten_turns == 0 && c.turns_open > 0 {
+                        "ended, always present"
+                    } else {
+                        "ended, went then left"
+                    };
+                    *self.endings.entry((Kind::Capture, split)).or_default() += 1;
+                }
                 self.end(c, how, turn);
             }
         }
@@ -501,6 +519,7 @@ impl CommitmentLedger {
                 last_pos: None,
                 improvement_then: None,
                 retargets: 0,
+                turns_open: 0,
                 forgotten_turns: 0,
                 stalled_turns: 0,
             });
@@ -741,6 +760,7 @@ mod tests {
             last_pos: None,
             improvement_then: None,
             retargets: 0,
+            turns_open: 0,
             forgotten_turns: 0,
             stalled_turns: 0,
         });
@@ -814,6 +834,7 @@ mod tests {
             last_pos: None,
             improvement_then: None,
             retargets: 0,
+            turns_open: 0,
             forgotten_turns: 0,
             stalled_turns: 0,
         });
