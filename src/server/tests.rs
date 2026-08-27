@@ -4686,11 +4686,6 @@ fn browser_district_lens_holds_still_above_the_world() {
 /// offers only real values, and a victory condition is the two states a
 /// checkbox knows. Nothing in the panel stands in for a decision that has
 /// not been made, and nothing rolls one on somebody's behalf.
-// `for input in ["mapseed"]` below is a list that shrank to one and reads as a
-// list on purpose — the next numeric setting joins it by being written down.
-// The lint is standing debt this file inherited by being moved, not by being
-// written; silencing it here keeps the move from rewriting a test body.
-#[allow(clippy::single_element_loop)]
 #[test]
 fn every_game_setting_is_answered_before_a_game_starts() {
     for setting in [
@@ -4721,12 +4716,11 @@ fn every_game_setting_is_answered_before_a_game_starts() {
             "the {setting} setting still offers a non-answer"
         );
     }
-    for input in ["mapseed"] {
-        assert!(
-            EMBEDDED_INDEX.contains(&format!("id=\"{input}\" type=\"number\"")),
-            "browser setup is missing the {input} numeric input"
-        );
-    }
+    let input = "mapseed";
+    assert!(
+        EMBEDDED_INDEX.contains(&format!("id=\"{input}\" type=\"number\"")),
+        "browser setup is missing the {input} numeric input"
+    );
     assert!(
         !EMBEDDED_INDEX.contains("id=\"citystates\""),
         "city-state count should come from the selected map size"
