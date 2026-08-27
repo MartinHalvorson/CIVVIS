@@ -73,6 +73,34 @@ jobs:
       RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
       - uses: actions/checkout@v4
+      # The full Rust suite is the merge path's longest step, but recent CIVVIS
+      # work includes documentation, Python tooling, and the Civ VI Lua bridge.
+      # None can change the Rust artifact, while the checks below and
+      # collaboration-policy.yml still validate their own contracts.  Keep the
+      # allowlist in a tested tool and send every unknown path through the full
+      # suite rather than growing a fragile list of paths to exclude.
+      #
+      # This is a *step* decision, not a job-level `if`: `ship` needs the
+      # required `cargo-test` status to conclude SUCCESS. A skipped job is not
+      # a verdict it can safely auto-merge on.
+      - name: Decide whether this pull request needs Rust validation
+        id: scope
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # actions/checkout is intentionally shallow. Fetch just the event's
+          # base commit so the comparison is exact even while main advances.
+          # HEAD is GitHub's synthetic pull-request merge result, so compare
+          # its tree directly with the base tree; `...` would need a merge-base
+          # traversal that a depth-one checkout intentionally does not have.
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          # Do not allow Git's optional rename detection to hide a Rust-file
+          # deletion behind an allowlisted destination path.
+          git diff --no-renames --name-only -z "$BASE_SHA..HEAD" \
+            | python3 tools/ci_scope.py --paths0 \
+            | tee -a "$GITHUB_OUTPUT"
       - name: Fetch clean source revisions for ledger checks
         # `tools/genes.py check` reads the exact commit a stamped screen ran.
         # Keep this large test job shallow, but make its provenance decision
@@ -105,7 +133,9 @@ jobs:
               )
           PY
       - uses: dtolnay/rust-toolchain@stable
+        if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
       - name: Install lld with a resilient Ubuntu mirror
+        if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
         run: bash .github/scripts/install-apt-packages.sh lld
       # Only the dependency registry is cached. `target` was cached here too,
       # but against this crate's shape it could not help: the workspace is a
@@ -121,6 +151,7 @@ jobs:
       # itself. `-deps` is a fresh lineage so the old keys' dead payloads
       # cannot be restored while they age out.
       - uses: actions/cache@v4
+        if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
         with:
           path: |
             ~/.cargo/registry/index
@@ -162,6 +193,7 @@ jobs:
       # to `src/` on purpose — a future dependency's warning is not this
       # repository's build to break.
       - name: The crate compiles without warnings
+        if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
         run: |
           set -o pipefail
           cargo check --profile ci --locked --all-targets --message-format short \
@@ -175,7 +207,10 @@ jobs:
           fi
           echo "no rustc warnings in src/"
       - uses: taiki-e/install-action@nextest
-      - run: cargo nextest run --cargo-profile ci --locked
+        if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
+      - name: Run Rust tests
+        if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
+        run: cargo nextest run --cargo-profile ci --locked
 
       # ⚠ The worktree audit is the only guard against a whole class of loss
       # that is invisible to every other gate here: finished work left unstaged
