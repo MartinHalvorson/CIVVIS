@@ -1091,7 +1091,6 @@
       "expansion-schedule",
       "founder-temple",
       "gold-for-the-young-city",
-      "holy-lane-parity",
       "holy-site-where-the-threat-is-2",
       "idle-faith-patronage",
       "lane-great-people",
@@ -1122,6 +1121,7 @@
     ],
     "operator_default_off": [
       "congress-counter-leader",
+      "holy-lane-parity",
       "one-war-at-a-time",
       "science-multiplier-payoff",
       "settler-factory-coordination",
@@ -1168,7 +1168,6 @@
       "frontier-massing-alarm",
       "gold-for-the-young-city",
       "great-person-housing",
-      "holy-lane-parity",
       "holy-site-where-the-threat-is-2",
       "idle-faith-patronage",
       "lane-great-people",
@@ -1746,7 +1745,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 84
+    "default_on": 83
   },
   "genes": [
     {
@@ -3012,7 +3011,7 @@
     {
       "tag": "holy-lane-parity",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 5,
       "wins_prior_10k": 19,
       "wins_third_10k": 99,
