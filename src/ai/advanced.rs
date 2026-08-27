@@ -26132,6 +26132,24 @@ impl AdvancedAi {
             self.guard_wait.remove(&uid);
             return None;
         }
+        // A completed Settler starts on one of our city tiles, which is the
+        // safest place it will be all trip.  Do not spend its first actionable
+        // turn fortifying there just because a newly assigned guard has not
+        // caught up: retain the assignment so the guard still follows, but
+        // hand the Settler to the ordinary safe-step route immediately.  That
+        // route can still reject a genuinely unsafe departure or take a safer
+        // sidestep; it is the open-ended city wait that costs the expansion
+        // window.
+        if g.city_at(current)
+            .is_some_and(|city| g.cities.get(&city).is_some_and(|city| city.owner == pid))
+        {
+            self.guard_wait.remove(&uid);
+            think!(self.journal(), Expansion, Detail,
+                   "Settler departs its city before its guard";
+                   "the guard remains assigned, while the Settler takes the first safe step \
+                    toward its target now");
+            return None;
+        }
         // Counted once per turn: `advance_unit_serial` re-enters a unit up to
         // eight times a turn, and each of those is the same wait.
         let (last_turn, waited) = self
