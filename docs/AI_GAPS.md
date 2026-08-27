@@ -1517,3 +1517,56 @@ as a side effect, which is a second change riding along with the first. A
 version that re-fits `attack_threshold` to the exact scale — or that applies
 the exact pricing only to `force_focus_target`, which is pure ranking with
 no threshold — would separate them.
+
+## A six-player 250-turn screen crawls after about turn 200, and it is not a livelock (2026-08-27)
+
+Recorded because the symptom reads as a hang and the first diagnosis — mine —
+was wrong.
+
+A 1,200-game continuous-shape batch (6p, 74×46 continents, online, 250 turns,
+9 city-states) completed 226 games and then completed **none** for over two
+hours while its twelve workers burned about eleven cores. Nothing was
+deadlocked: `sample` on two workers put the main thread here, in both arms,
+including the arm with no treatment genes on at all:
+
+```
+AdvancedAi::take_turn → take_turn_inner → advanced_units
+  → advance_unit_serial → advanced_military_step_with_decline
+    → BasicAi::healing_step → retreat_step        (and safe_healing_step)
+      → BasicAi::enemy_attack_envelopes
+        → compute_enemy_attack_envelopes
+          → Game::attack_reach_from_flood → Game::flow_past
+```
+
+That is exactly the pathology `BasicAi::enemy_attack_envelopes` documents on
+itself, arriving at late-game scale: the envelope table is keyed on a
+board-wide fingerprint, `retreat_step` asks for it **per own military unit
+per turn**, and each miss is one `attack_reach` flood **per visible enemy**.
+A serial unit loop moves an own unit between two asks, which moves the
+fingerprint, so the whole table is rebuilt for the next unit. The cost is
+roughly own-units × enemy-units × flood, and on turn 200 of a six-player
+continental game both factors are large. Early games finish in about a
+minute; the late ones do not finish at all on a contended machine.
+
+**The mitigation exists and was priced and rejected.**
+`BasicAi::envelope_cache_across_own_moves` drops this seat's own units from
+the fingerprint, so the table survives a serial loop. Its own doc records the
+verdict: `--matrix --pairs 40` **retained the exact key** — parity on the
+fieldless profiles, but 43.8 % on the contested one (11 of 80 games against
+21, twelve maps to two, sign p = 0.013). It is off in production on purpose.
+The instrument that priced it — the evaluator arms — was retired on
+2026-08-23, so the flag is now an unreachable toggle in
+`docs/genome_reach_debt.json` with no route to a re-measurement.
+
+**What to do about it, in order.** (1) Do not read this as a hang: no
+watchdog, no livelock hunt, and `audit`'s livelock reading will not find it.
+(2) Size a batch by *completed* games and expect the tail to be
+disproportionately expensive; a 3,000-game rotation is not three times a
+1,000-game one. (3) The real fix is neither the coarse key nor the rejected
+one: `retreat_step` needs the table for a membership question
+(`anything_can_reach`) far more often than for the damage arithmetic, and the
+per-enemy `EnemyEnvelope { reach, sensitive }` neighbourhood keys already in
+`compute_enemy_attack_envelopes` are the shape a correct fix would extend —
+reuse an unmoved enemy's flood across an own move, without changing what any
+seat decides. That would be a perf change with a byte-identical report, which
+is the only kind this subsystem has ever accepted.
