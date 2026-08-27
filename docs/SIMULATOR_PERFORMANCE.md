@@ -3734,7 +3734,7 @@ new assumption at the wrap seam and at the globe's pentagons, rather than
 assuming ordinary hex-coordinate arithmetic describes either shape.
 
 The focused 16-test movement suite, the frozen `advanced_v1` identity anchor,
-and the complete local `cargo test --profile ci --locked` suite passed (2,609
+and the complete local `cargo test --profile ci --locked` suite passed (2,611
 library tests, 44 ignored, plus every binary, integration, protocol, and doc
 target). A fresh 2-game 6-player, 74×46, 9-city-state, Online Continents soak
 reached turns 212 and 243 without a failure.
@@ -3752,6 +3752,13 @@ and neither window resolves a change this small:
 | 7,320,210–211 | 9.27 → 29.29 | +25.78% / ±18.71% | +23.76% |
 
 The equal report hashes are load-bearing; the opposite timing signs are not.
-The required five-pair CI cost gate is the performance regression guard for the
-merge, and its result belongs beside this note once the current-main branch is
-validated.
+
+### The first CI gate saw no measurable regression
+
+GitHub's required five-pair deployment gate, against base `49722445`, also
+reported **same game on every seed**: −0.24% median per completed turn, ±1.61%
+resolution, −0.39% pooled (600 turns per arm), at load 4.77 → 1.03. That is
+inside its 1% noise floor and comfortably inside the +8% regression budget:
+the honest conclusion is no measurable change in the runner, not a speed
+claim. The gate will run again after this branch's current-main integration;
+that final result is the merge guard.
