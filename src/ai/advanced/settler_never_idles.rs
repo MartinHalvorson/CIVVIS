@@ -405,8 +405,11 @@ mod tests {
             let mut ai = AdvancedAi::new();
             ai.enable_engine_repairs();
             ai.enable_loyalty_rate_alarm();
+            // The ledger pins the gene on; the off arm withholds it by name.
             if gene {
                 ai.enable_settler_never_idles();
+            } else {
+                ai.disable_settler_never_idles();
             }
             ai.attach_journal(Journal::recording());
             // Retire every plot for this Settler: the state the live seat

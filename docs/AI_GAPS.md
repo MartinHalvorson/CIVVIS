@@ -1264,6 +1264,23 @@ would fix it — `frontier-loyalty` out of the host-only half into an
 `ENGINE_REPAIR_*` one — and correctly calls it a deployment decision wearing an
 instrument's clothes, not a side effect of adding a row.
 
+**Update 2026-08-27 — the lane now has a native instrument and a repair, and
+the repair ships on.** `settler_idle_census`
+(`src/ai/advanced/settler_idle_census.rs`) plays the live seat's genome on a
+native board and reads, per settler-turn, moved / founded / idle, where the
+unit stood, and the reason the seat's own journal gave. Four maps, 6p 60×38
+Online: **87% of settler-turns idle, 33% of all settler-turns idle on an own
+city tile, 27.5% of settlers idle ten or more turns in a city**, the five worst
+standing in the city that built them for 149–185 turns. 62.5% of the idle
+turns were "no target": every preferred site refused (this veto, the Loyalty
+forecast, the thirty-turn retirements compounding) and the code held. The
+deployment genome natively read 20–25% idle, 4–6% on a city tile. The repair
+is `settler-never-idles` (`src/ai/advanced/settler_never_idles.rs`, pinned
+on): exhaustion asks two wider questions instead of holding, a stranded
+settler founds where it stands or says so, and a watchdog marches any settler
+held past `SETTLER_IDLE_PATIENCE` turns on the exact-reach rule alone. See
+`docs/eval/2026-08-27-settlers-never-idle.md`.
+
 ### What shipped, and what is deliberately not claimed
 
 Three things, none of them a strength claim:

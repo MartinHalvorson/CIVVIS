@@ -93,6 +93,21 @@ fn reason_of(thought: &Thought) -> Option<(u8, String)> {
             "holds inside a barbarian's reach: no reachable tile is better (flee step)".into(),
         ));
     }
+    if h.starts_with("Settler is stranded") {
+        return Some((
+            0,
+            "STRANDED (named): no legal site is reachable and it cannot found here".into(),
+        ));
+    }
+    if h.starts_with("Settler holds at") {
+        return Some((
+            0,
+            "watchdog holds: every step toward the target is in a hostile's reach".into(),
+        ));
+    }
+    if h.starts_with("Settler takes ") || h.starts_with("Settler skips a doomed site") {
+        return Some((3, "exhaustion search retargeted, no step".into()));
+    }
     if h.starts_with("Settler waits for its guard") {
         return Some((0, "waits for its guard (stacked escort, live seat)".into()));
     }
@@ -453,13 +468,18 @@ fn run_arm(arm: &str, maps: u64, opt_ins: &[String]) {
         .filter_map(|l| l.first_move.map(|t| t.saturating_sub(l.born)))
         .collect();
     to_first.sort_unstable();
-    let never = lives.iter().filter(|l| l.first_move.is_none()).count();
+    // A Settler that stepped and founded in one turn is gone before its
+    // move is seen; only one still alive at the end never moved.
+    let never = lives
+        .iter()
+        .filter(|l| l.first_move.is_none() && l.outcome == Outcome::AliveAtEnd)
+        .count();
     println!(
         "  idle on the tile it was built on, the turn it was built: {at_birth} of {n} ({:.1}%)",
         pct(at_birth as u32, n as u32)
     );
     println!(
-        "  turns from build to first move: mean {:.1}   p50 {}   p90 {}   max {}   never moved: {never}",
+        "  turns from build to first move: mean {:.1}   p50 {}   p90 {}   max {}   alive at the end without ever moving: {never}",
         mean(&to_first),
         percentile(&to_first, 0.5),
         percentile(&to_first, 0.9),

@@ -599,6 +599,7 @@ class TheOperatorPins(unittest.TestCase):
             "science-chain-alarm",
             "science-multiplier-payoff",
             "score-horizon",
+            "settler-never-idles",
             "settler-screen",
             "settler-target-hysteresis-2",
             "settler-threat-detour",
@@ -613,7 +614,7 @@ class TheOperatorPins(unittest.TestCase):
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 76)
+        self.assertEqual(len(pins), 77)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         # ⭐ The versioned family the operator moved on 2026-08-26: the ship

@@ -26392,8 +26392,13 @@ impl AdvancedAi {
         let Some(unit) = g.units.get(&uid) else {
             return acted;
         };
+        // A Settler the routine left without a target already ran the
+        // exhaustion search this turn (`settler_stranded`), or retired a
+        // doomed arrival for next turn's pick; asking again would only
+        // repeat the scan and the journal line.
         if unit.owner != pid
             || unit.moves_left <= 0.0
+            || !self.settler_targets.contains_key(&uid)
             || self.settler_idle_streak(uid) < settler_never_idles::SETTLER_IDLE_PATIENCE
         {
             return acted;

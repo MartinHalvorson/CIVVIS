@@ -12975,6 +12975,10 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
         "the deployment enables the separate rate forecast"
     );
     live.disable_loyalty_rate_alarm();
+    // `settler-never-idles` (pinned on) would take the retired colony rather
+    // than hold once nothing else is offered — that is its point, and its own
+    // tests cover it. This test is about the guard's verdict, so withhold it.
+    live.disable_settler_never_idles();
     assert_eq!(
         live.best_settler_target(&game, 0, settler, 8, None)
             .map(|(position, _)| position),
