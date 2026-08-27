@@ -150,13 +150,15 @@ VICTORY=${CIVVIS_VICTORY:-}
 # value are two expansions, `${VAR:+--flag} ${VAR:+"$VAR"}`, each one word or
 # none; `tools/test_ops_ladder_objective.py` runs these lines under zsh.
 # The ONE early stop the ladder keeps: at or after turn 150, a readable score
-# under 60 % of the leader's (best met rival) immediately abandons the game.
-# The harness carries the same 0.60 default itself, so a
+# under 40 % of the leader's (best met rival) immediately abandons the game.
+# This is the unambiguous "more than 60 % behind" floor: a viable game at
+# 52 % of the leader continues to its normal conclusion. The harness carries
+# the same 0.40 default itself, so a
 # GUI host that never inherited a login shell plays the same policy; a named
 # environment value overrides it for a deliberately configured batch (0 plays
 # every game out). The opening restarts and the measured win-rate floor that
 # used to sit beside this knob are gone (#2505, #2319, #2174).
-RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.60}
+RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.40}
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host
 # whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was

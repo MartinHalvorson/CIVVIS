@@ -1778,12 +1778,12 @@ class BatchRefreshSecondsTests(unittest.TestCase):
 
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """The one early stop is forwarded verbatim when the launcher names
-        it; absent, the harness's own 0.60 default holds."""
+        it; absent, the harness's own 0.40 default holds."""
         cmd = climb.play_command(
-            self._play_args(restart_below_leader_ratio=0.60), "t",
+            self._play_args(restart_below_leader_ratio=0.40), "t",
             Path("orders.sqlite"), Path("civvis_orders"))
         self.assertIn("--restart-below-leader-ratio", cmd)
-        self.assertEqual(cmd[cmd.index("--restart-below-leader-ratio") + 1], "0.6")
+        self.assertEqual(cmd[cmd.index("--restart-below-leader-ratio") + 1], "0.4")
         self.assertNotIn(
             "--restart-below-leader-ratio",
             climb.play_command(self._play_args(), "t",
