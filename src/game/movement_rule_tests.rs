@@ -79,6 +79,55 @@ fn straight_line(g: &Game, start: Pos) -> (Pos, Pos) {
     panic!("the controlled map has a two-step line from the interior tile");
 }
 
+/// Movement floods enumerate candidates through `nbrs`, so their fast entry
+/// gate may omit `wdist(from, to) == 1`. That precondition must hold on the
+/// wrapped cylinder and the globe, where coordinate arithmetic alone is not a
+/// proof of adjacency.
+#[test]
+fn neighbor_fast_path_matches_the_generic_entry_gate_on_both_world_shapes() {
+    let size = crate::setup::MapSize::for_players(2);
+    let (planet_width, planet_height) = size.dimensions(crate::setup::MapTopology::Planet);
+    let worlds = [
+        ("cylinder", Game::new_full(2, 20, 14, 6_105, 40, 0, false)),
+        (
+            "planet",
+            Game::new_with(GameOptions {
+                map_topology: crate::setup::MapTopology::Planet,
+                ..GameOptions::new(2, planet_width, planet_height, 6_106, 40, 0)
+            }),
+        ),
+    ];
+
+    for (shape, game) in worlds {
+        let uid = *game
+            .units
+            .keys()
+            .next()
+            .expect("a newly started game has a unit");
+        let _memo = game.query_memo();
+        for from in game.map.tiles.keys().copied() {
+            for to in game.nbrs(from) {
+                assert_eq!(game.wdist(from, to), 1, "{shape}: {from:?} -> {to:?}");
+                assert_eq!(
+                    game.entry_at(uid, from, to, false),
+                    game.entry_at_neighbor(uid, from, to, false),
+                    "{shape}: entry gate differs on {from:?} -> {to:?}"
+                );
+                assert_eq!(
+                    game.can_enter(uid, from, to),
+                    game.can_enter_neighbor(uid, from, to),
+                    "{shape}: stop gate differs on {from:?} -> {to:?}"
+                );
+                assert_eq!(
+                    game.can_pass(uid, from, to),
+                    game.can_pass_neighbor(uid, from, to),
+                    "{shape}: crossing gate differs on {from:?} -> {to:?}"
+                );
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- T1, T2, T3
 
 /// **The rule.** A unit walks through a tile held by its own unit of the same

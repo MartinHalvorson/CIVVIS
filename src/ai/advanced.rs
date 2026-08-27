@@ -1973,6 +1973,18 @@ pub struct AdvancedAi {
     /// `settle_sooner` can price how long it has already been out of a city
     /// when it picks (or re-picks) a site. See `best_reachable_settle_site_except_cached`.
     settler_walk_started: BTreeMap<u32, u32>,
+    /// Where each Settler stood and for how many turns, for the
+    /// `settler-never-idles` watchdog: (tile, turn last noted, streak). See
+    /// `advanced/settler_never_idles.rs`.
+    settler_idle_streak: BTreeMap<u32, (Pos, u32, u32)>,
+    /// Where and when each Settler was last found stranded, so the
+    /// exhaustion search is not repeated every turn from the same tile. See
+    /// `STRANDED_RECHECK_TURNS`.
+    settler_stranded_at: BTreeMap<u32, (Pos, u32)>,
+    /// The target each Settler took from the exhaustion search, so its
+    /// arrival is judged by the same relaxed verdict that chose it. See
+    /// `relaxed_arrival_verdict`.
+    settler_relaxed_targets: BTreeMap<u32, Pos>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -4405,6 +4417,9 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `commitment-patience`: a Builder's retired tile and the turn the
+    /// parking expires; the tile joins `reserved` in the job sweep until then.
+    builder_avoid: BTreeMap<u32, (Pos, u32)>,
     /// A boost already in hand is worth the turns of research it saves, not a
     /// flat credit. Opt-in gene `boost-first-research`; see
     /// `advanced/boost_research.rs`.
@@ -4469,6 +4484,12 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `commitment-patience`: a settle or improve target survives a passing
+    /// threat — the two threat drop reasons and the Builder's reach filter no
+    /// longer drop it — and the ledger retires it after
+    /// `commitments::COMMITMENT_PATIENCE` consecutive forgotten turns, parking
+    /// the site. Opt-in gene; see `advanced/commitments.rs`.
+    commitment_patience: bool,
     /// `capture-go-or-stand-down`: a declared war's objective that no unit of
     /// ours has been within `commitments::CAPTURE_PRESENCE_RADIUS` of for
     /// `commitments::CAPTURE_GO_TURNS` consecutive turns is stood down
@@ -5196,6 +5217,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A Settler always has somewhere to go: exhaustion asks wider questions
+    /// instead of holding, and a watchdog bounds every other hold. Opt-in
+    /// gene `settler-never-idles`; see `advanced/settler_never_idles.rs`.
+    settler_never_idles: bool,
     /// A wounded unit holding a front trades places with the fresh unit
     /// behind it, so the line does not open when it leaves. Opt-in gene
     /// `swap-rotation`; see `advanced/swap_rotation.rs`.
@@ -5891,6 +5916,10 @@ mod camp_buyout;
 /// the world is Ancient and Classical, and Archery chased until a city can
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
 mod early_archers;
+/// `settler-never-idles`: a Settler always has somewhere to go — exhaustion
+/// asks wider questions instead of holding, and a watchdog bounds every
+/// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
+mod settler_never_idles;
 
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
@@ -6201,8 +6230,12 @@ impl AdvancedAi {
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
+        self.settler_idle_streak.clear();
+        self.settler_stranded_at.clear();
+        self.settler_relaxed_targets.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
+        self.builder_avoid.clear();
         self.forget_missionary_explore();
         self.force_groups.clear();
         self.force_groups_dirty = true;
@@ -6220,6 +6253,11 @@ impl AdvancedAi {
         };
         self.settler_targets = remap(&self.settler_targets);
         self.builder_targets = remap(&self.builder_targets);
+        self.builder_avoid = self
+            .builder_avoid
+            .iter()
+            .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
+            .collect();
         self.remap_missionary_explore(map);
         self.settler_stalls = self
             .settler_stalls
@@ -6279,6 +6317,21 @@ impl AdvancedAi {
             .settler_walk_started
             .iter()
             .filter_map(|(uid, started)| map.get(uid).map(|new| (*new, *started)))
+            .collect();
+        self.settler_idle_streak = self
+            .settler_idle_streak
+            .iter()
+            .filter_map(|(uid, streak)| map.get(uid).map(|new| (*new, *streak)))
+            .collect();
+        self.settler_stranded_at = self
+            .settler_stranded_at
+            .iter()
+            .filter_map(|(uid, stranded)| map.get(uid).map(|new| (*new, *stranded)))
+            .collect();
+        self.settler_relaxed_targets = self
+            .settler_relaxed_targets
+            .iter()
+            .filter_map(|(uid, target)| map.get(uid).map(|new| (*new, *target)))
             .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
@@ -6381,6 +6434,9 @@ impl AdvancedAi {
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             settler_walk_started: BTreeMap::new(),
+            settler_idle_streak: BTreeMap::new(),
+            settler_stranded_at: BTreeMap::new(),
+            settler_relaxed_targets: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -6507,6 +6563,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_avoid: BTreeMap::new(),
             boost_first_research: false,
             boost_wait_research: false,
             boost_unlock_research: false,
@@ -6516,6 +6573,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            commitment_patience: false,
             capture_go_or_stand_down: false,
             capture_stood_down: BTreeMap::new(),
             close_as_a_body: false,
@@ -6604,6 +6662,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_never_idles: false,
             swap_rotation: false,
             screen_the_shooters: false,
             science_building_first: false,
@@ -26374,6 +26433,11 @@ impl AdvancedAi {
         think!(self.journal(), Expansion, Detail, "Settler waits for its guard";
                "{waited} turn(s) so far; marching alone is how the last two settlers \
                 were captured");
+        if self.settler_never_idles {
+            // See `settler_never_idles`: the wait is a hold, and a hold is
+            // the watchdog's to bound — report the turn as not spent.
+            return Some(false);
+        }
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
@@ -26514,8 +26578,37 @@ impl AdvancedAi {
             .is_some_and(|sites| sites.contains_key(&pos))
     }
 
+    /// The Settler's turn: the decision routine below and — under
+    /// `settler-never-idles` — a watchdog that marches a Settler the routine
+    /// has held for `SETTLER_IDLE_PATIENCE` turns. See
+    /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let acted = self.advanced_settler_step_inner(g, pid, uid);
+        if acted || !self.settler_never_idles {
+            return acted;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return acted;
+        };
+        // A Settler the routine left without a target already ran the
+        // exhaustion search this turn (`settler_stranded`), or retired a
+        // doomed arrival for next turn's pick; asking again would only
+        // repeat the scan and the journal line.
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || !self.settler_targets.contains_key(&uid)
+            || self.settler_idle_streak(uid) < settler_never_idles::SETTLER_IDLE_PATIENCE
+        {
+            return acted;
+        }
+        self.settler_watchdog_step(g, pid, uid)
+    }
+
+    fn advanced_settler_step_inner(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
+        if self.settler_never_idles {
+            self.note_settler_idle(g, uid);
+        }
         if self.settle_sooner {
             // The walk clock starts the first turn the Settler is stepped,
             // whichever branch below steps it. See `settle_sooner`.
@@ -26875,7 +26968,12 @@ impl AdvancedAi {
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
             }
-            if self.settler_threat_detour && self.settler_threat_deferrals.contains_key(&target) {
+            // `commitment_patience`: a threat is a hold, not a drop — the
+            // ledger retires the site if the hold outlasts its patience.
+            if self.settler_threat_detour
+                && !self.commitment_patience
+                && self.settler_threat_deferrals.contains_key(&target)
+            {
                 return Some("the approach is temporarily deferred for a visible threat");
             }
             // A momentarily unavailable route is not a bad site. Under
@@ -26886,6 +26984,7 @@ impl AdvancedAi {
                 return Some("no route this turn");
             }
             if self.settlement_safety
+                && !self.commitment_patience
                 && self.settlement_tile_risk(g, pid, Some(uid), target, &visible)
                     > SETTLER_STEP_RISK_LIMIT
             {
@@ -27027,7 +27126,23 @@ impl AdvancedAi {
                 rejected += 1;
             }
         });
+        // See `settler_never_idles`: exhaustion asks two wider questions
+        // before it holds, and a hold is never silent.
+        let target = target.or_else(|| {
+            if !self.settler_never_idles || self.settler_stranded_recently(g, uid) {
+                return None;
+            }
+            let site = self.settler_exhaustion_target(g, pid, uid)?;
+            self.settler_targets.insert(uid, site);
+            self.settler_relaxed_targets.insert(uid, site);
+            self.settler_stalls.remove(&uid);
+            self.settler_closest.remove(&uid);
+            Some(site)
+        });
         let Some(mut target) = target else {
+            if self.settler_never_idles {
+                return self.settler_stranded(g, pid, uid);
+            }
             // Do not let a safe exhaustion fall through to `BasicAi`, which
             // cannot see `settler_dead_sites` and may select the very plot the
             // live forecast just retired. A later board can reveal a safe site
@@ -27049,7 +27164,13 @@ impl AdvancedAi {
             // retains a valid cache rather than paying for a speculative city
             // each turn. Recheck once at arrival, when founding would otherwise
             // make the loss irreversible.
-            let arrival_verdict = if self.base.loyalty_rate_alarm {
+            let relaxed = self.settler_never_idles
+                && self.settler_relaxed_targets.get(&uid) == Some(&current);
+            let arrival_verdict = if relaxed {
+                // See `relaxed_arrival_verdict`: a site the exhaustion search
+                // chose is judged at arrival by the rule that chose it.
+                Self::relaxed_arrival_verdict(g, pid, current)
+            } else if self.base.loyalty_rate_alarm {
                 self.settle_site_loyalty_verdict(g, pid, current)
             } else {
                 self.settle_site_frontier_loyalty_verdict(g, pid, current)
@@ -28049,12 +28170,19 @@ impl AdvancedAi {
             }
             return false;
         }
-        let reserved: HashSet<Pos> = self
+        let mut reserved: HashSet<Pos> = self
             .builder_targets
             .iter()
             .filter(|(other, _)| **other != uid && g.units.contains_key(other))
             .map(|(_, pos)| *pos)
             .collect();
+        // `commitment_patience`: a tile this Builder gave up on stays out of
+        // its own sweep until the parking expires.
+        if let Some((tile, until)) = self.builder_avoid.get(&uid) {
+            if g.turn < *until {
+                reserved.insert(*tile);
+            }
+        }
         // Reading every tile the empire owns: one memo scope so the
         // empire-wide questions each tile asks are answered once for the whole
         // sweep rather than once per tile. The borrow checker rejects the
@@ -28082,7 +28210,7 @@ impl AdvancedAi {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
-                    && job_out_of_reach(*pos)
+                    && (self.commitment_patience || job_out_of_reach(*pos))
                     && (!self
                         .worthwhile_improvements(g, pid, *pos, strategy)
                         .is_empty()
@@ -33746,7 +33874,15 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_walk_started
             .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_idle_streak
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_stranded_at
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_relaxed_targets
+            .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
     }
 
@@ -34845,6 +34981,8 @@ mod science_scaling;
 
 #[cfg(test)]
 mod science_funnel_census;
+#[cfg(test)]
+mod settler_idle_census;
 
 #[cfg(test)]
 mod research_probe;

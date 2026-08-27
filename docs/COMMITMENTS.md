@@ -108,7 +108,7 @@ and, for every decision still open, three per-turn readings:
 |---|---|
 | **forgotten** | the owner had movement to spend and did not act (`!acted && moves_left > 0`); for a declared war, no own military unit within 3 hexes of the objective |
 | **stalled** | acted, but no better progress reading (hexes to walk; phase-then-hit-points for a capture) for `STALL_TURNS` = 3 turns — the same limit as `SETTLER_STALL_LIMIT` |
-| **late** | past the ETA priced when the decision was made: a walk at two hexes a turn, the war plan's own research + production + march estimate, or `CONQUEST_ETA_TURNS` = 20 (`CAMPAIGN_PATIENCE`) for a bare Conquest target |
+| **late** | past the ETA priced when the decision was made: the terrain walk in turns (`settle_sooner_walk_costs` over `step_cost`, at the unit's movement allowance; a hex a turn beyond `WALK_PRICE_RADIUS` = 16), the war plan's own research + production + march estimate, or `CONQUEST_ETA_TURNS` = 20 (`CAMPAIGN_PATIENCE`) for a bare Conquest target. Until 2026-08-27 the walk was priced at two hexes a turn; §5's `late` and ETA figures are on that price |
 
 Every forgotten turn is also filed under the first hold the observer can see
 (`forgotten_why`): waiting for escort, threat forecast on the site, hostile
@@ -229,23 +229,68 @@ win +14.8 pp and +7.4 pp, share +2.3 and −1.0 — probe-sized, not a
 measurement. The standard screen prices it, on wins and on the two columns
 below.
 
-### What the reading asks for next (numbers in §5)
+### `commitment-patience` (opt-in, ships off)
 
-1. **A civilian that would freeze near a hostile acts instead** — 2,107
-   Builder-turns and 577 settler-turns. The wait belongs to
-   `civilian_out_of_reach`, whose settler half PR #2655 is repairing; the
-   Builder half is the same mechanism (`civilian_safety.rs`), so the two
-   land together or the second one conflicts.
-2. **A pin the Builder does not walk to is resolved** — 1,713 turns. #2480's
-   gene drops the pin on a refused route at +4–12 % compute; a cheaper
-   shape is the ledger's own stall reading: three turns without progress on
-   a pin retires it for the hysteresis window, no A* retry.
-3. **A retarget en route pays for the walk it throws away** — 150 settler and
-   337 Builder retargets happened after the owner had already got closer.
-   A sunk-walk term in the re-rank, sized from the ledger's `best`.
-4. **ETA calibration** — everything completes at half its priced pace. The
-   `late` share is meaningless until the price matches the terrain; the
-   completion/ETA ratio the census prints is the calibration constant.
+The follow-up that closes §6's items 2–4 with one mechanism. The reading
+said the same thing three ways: a target survives no hold. A passing raider
+within two hexes freezes the unit (2,684 turns), and — through the settler's
+two threat drop reasons ("step risk above the limit", "deferred for a
+visible threat") and the Builder's reach filter — also *drops the target*,
+so the unit re-ranks, picks a site elsewhere, and walks again: 150 of 309
+settler retargets and 337 of 650 Builder retargets came after the owner had
+already got closer. And a pin the Builder cannot reach was held for ever
+(1,713 turns).
+
+With the gene on, **a target is a commitment with bounded patience**: the
+threat reasons no longer drop it (the unit holds or retreats exactly as
+before — nothing walks into a raider's reach), and the ledger retires any
+settle or improve commitment forgotten for `COMMITMENT_PATIENCE` = 3
+consecutive turns, parking the site for the hysteresis window
+(`settler_dead_sites` for a settler; a Builder's `builder_avoid` tile joins
+its `reserved` set) so the next pick is a different one. A raider that moves
+on inside three turns costs nothing; a camp guard that does not costs three
+turns and then a new decision. Journal line, `commit:<kind>:retired`
+counters, and a `retired` ending in the census.
+
+**Same eight maps, gene off → on** (same seeds; a gene that changes a
+decision changes the game, so these are magnitudes, not a paired test):
+
+| | forgotten turns | stalled | late | retargets (en route) | lost | done | turns to complete |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| settle, off | 1,077 (30%) | 611 | 41% | 339 (175) | 21 | 212 (29%) | 4.1 |
+| settle, on | **269 (11%)** | **160** | **15%** | 219 (126) | **6** | 216 (31%) | 3.7 |
+| improve, off | 4,175 (26%) | 1,784 | 36% | 644 (310) | 256 | 2,870 (64%) | 3.8 |
+| improve, on | **1,964 (16%)** | 1,296 | 27% | **102 (35)** | 188 | 2,579 (67%) | 3.4 |
+
+Forgotten by hold, settle: hostile within two 806 → 240, unexplained
+212 → 13, stall-counted 47 → 15. Improve: pin never walked to 1,914 →
+**433**, hostile within two 2,142 → 1,478. Retired: 42 settle, 397 improve.
+
+Probe (two disjoint 6-game blocks, seeds 99500000 and 99500100, the
+decisiveness columns of §9): forgotten-turn share **−7.7 ±3.0 pp and
+−6.4 ±0.8 pp**, decisions completed +10.1 ±3.7 / −0.4 ±2.1 pp, score share
++3.9 and +3.1 pp (merged +3.4 ±1.5, z +2.2), win Δ +20 / −21 pp — the
+probe-sized noise a 36-seat block always has. The standard screen prices it
+on wins; the columns say it does what it claims.
+
+### The ETA is now the terrain walk
+
+Item 4. A new decision is priced once, when it is made, at
+`settle_sooner_walk_costs` (movement points over `step_cost`) divided by the
+unit's allowance — a hex a turn beyond `WALK_PRICE_RADIUS` = 16 — instead of
+two hexes a turn. On the same maps the settle ETA moved 1.9 → 3.1 turns
+against 4.1 actual and the improve ETA 1.9 → 2.8 against 3.8, so `late`
+now reads indecision rather than hills: 41% / 36% of open turns before the
+gene, 15% / 27% with it.
+
+### Still open
+
+- **The capture side is unchanged by either gene**: 311 conquest decisions,
+  11 taken; 137 of the failures had bodies present throughout. That is the
+  siege problem (`docs/DOCTRINE_ARENA.md`, `the_storming`: arrival spread,
+  not walls), not a commitment one — the arena is its instrument.
+- The two genes ship off until the standard screen prices them; the
+  continuous batch re-prices their decisiveness every rotation (§9).
 
 ## 9. The standing measurement
 

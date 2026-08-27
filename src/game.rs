@@ -25674,6 +25674,12 @@ impl Game {
         self.entry_at(uid, from, pos, false) == Entry::Stop
     }
 
+    /// [`Self::can_enter`] for a destination returned directly by
+    /// [`Self::nbrs`] for `from`.
+    fn can_enter_neighbor(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+        self.entry_at_neighbor(uid, from, pos, false) == Entry::Stop
+    }
+
     /// Whether this unit may cross `pos` on its way somewhere else.
     ///
     /// Weaker than [`Game::can_enter`] by exactly one rule: a tile held by one
@@ -25681,6 +25687,12 @@ impl Game {
     /// through, and may not be finished on.
     pub(crate) fn can_pass(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         self.entry_at(uid, from, pos, false) != Entry::Blocked
+    }
+
+    /// [`Self::can_pass`] for a destination returned directly by
+    /// [`Self::nbrs`] for `from`.
+    fn can_pass_neighbor(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+        self.entry_at_neighbor(uid, from, pos, false) != Entry::Blocked
     }
 
     /// Whether two units belonging to one player contend for a single
@@ -25774,10 +25786,22 @@ impl Game {
     /// that is not theirs: how far can that thing reach, given that whatever
     /// is parked in front of it can walk away or die before it matters.
     fn entry_at(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> Entry {
-        let u = &self.units[&uid];
         if self.wdist(from, pos) != 1 {
             return Entry::Blocked;
         }
+        self.entry_at_neighbor(uid, from, pos, through_units)
+    }
+
+    /// [`Self::entry_at`] after the caller has obtained `pos` directly from
+    /// [`Self::nbrs`] for `from`.
+    ///
+    /// The one-step check in the general entry gate is vital for ordinary
+    /// callers, but repeating it inside a movement flood is redundant: each
+    /// candidate is already an in-map neighbor, including across a wrap seam
+    /// or around the globe. Keep this helper private so that precondition
+    /// remains local to the few loops that establish it.
+    fn entry_at_neighbor(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> Entry {
+        let u = &self.units[&uid];
         if !self.unit_can_traverse(uid, pos) {
             return Entry::Blocked;
         }
@@ -26116,7 +26140,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.can_pass(uid, cur, n),
+            |cur, n| self.can_pass_neighbor(uid, cur, n),
             |n, cur| {
                 parent.insert(n, cur);
             },
@@ -26173,7 +26197,7 @@ impl Game {
         if !self
             .nbrs(cur)
             .into_iter()
-            .any(|n| self.can_pass(uid, cur, n) && !self.can_stop(uid, n))
+            .any(|n| self.can_pass_neighbor(uid, cur, n) && !self.can_stop(uid, n))
         {
             return None;
         }
@@ -26420,7 +26444,7 @@ impl Game {
                 continue;
             }
             for to in self.nbrs(from) {
-                if !self.map.tiles.contains_key(&to) || !self.can_enter(uid, from, to) {
+                if !self.map.tiles.contains_key(&to) || !self.can_enter_neighbor(uid, from, to) {
                     continue;
                 }
                 let cost = self.unit_step_cost(uid, from, to);
@@ -26535,7 +26559,7 @@ impl Game {
             }
             for n in self.nbrs(cur) {
                 // As in `first_route_step`: the distance test is a array read
-                // and `can_path_through` is a ruleset sweep, so test the
+                // and `can_path_through_known_traversable` is a ruleset sweep, so test the
                 // cheap one first. Every edge cost here is 1, so a neighbour
                 // that cannot improve on the distance already recorded is the
                 // common case, and both orders leave state untouched when
@@ -26548,7 +26572,7 @@ impl Game {
                     continue;
                 }
                 let enterable = if cur == start {
-                    self.can_enter(uid, cur, n)
+                    self.can_enter_neighbor(uid, cur, n)
                 } else {
                     if traversal_zones[index] == 0 {
                         continue;
@@ -26700,28 +26724,20 @@ impl Game {
         routing.city_owner_key = None;
     }
 
-    /// Terrain/domain legality for future route segments. Dynamic unit
-    /// occupancy is enforced on the returned first step; ignoring it deeper
-    /// in the plan avoids expensive scans and lets moving units clear before
-    /// the traveler arrives. Routes are recalculated whenever the immediate
-    /// step remains blocked.
-    fn can_path_through(
-        &self,
-        uid: u32,
-        from: Pos,
-        pos: Pos,
-        territory_access: &[bool],
-    ) -> bool {
-        if self.wdist(from, pos) != 1 {
-            return false;
-        }
+    /// Terrain/domain legality for a future route segment whose destination
+    /// came directly from [`Self::nbrs`] for the current route tile. Dynamic
+    /// unit occupancy is enforced on the returned first step; ignoring it
+    /// deeper in the plan avoids expensive scans and lets moving units clear
+    /// before the traveler arrives. Routes are recalculated whenever the
+    /// immediate step remains blocked.
+    fn can_path_through_neighbor(&self, uid: u32, pos: Pos, territory_access: &[bool]) -> bool {
         if !self.unit_can_traverse(uid, pos) {
             return false;
         }
         self.can_path_through_known_traversable(uid, pos, territory_access)
     }
 
-    /// The dynamic half of [`Self::can_path_through`]. The route A* already
+    /// The dynamic half of [`Self::can_path_through_neighbor`]. The route A* already
     /// has a routing-zone label for every neighbor, so it can skip the static
     /// terrain/domain predicate on future segments and retain only these
     /// diplomacy and city gates.
@@ -26973,7 +26989,7 @@ impl Game {
             let Some(index) = self.map.tiles.index_of(next) else {
                 continue;
             };
-            if !self.can_enter(uid, start, next) {
+            if !self.can_enter_neighbor(uid, start, next) {
                 continue;
             }
             let steps = distance[index];
@@ -27059,7 +27075,7 @@ impl Game {
         // already numbers its tiles, so the frontier's bookkeeping is two
         // dense vectors indexed by that number rather than hash maps keyed by
         // a hex coordinate. Every tile a unit may enter is on the map —
-        // `can_enter` and `can_path_through` both go through
+        // `can_enter_neighbor` and `can_path_through_neighbor` both go through
         // `unit_can_traverse`, which rejects a position the grid does not
         // hold — so an index always exists for a reachable neighbour.
         const NO_PARENT: u32 = u32::MAX;
@@ -27092,7 +27108,7 @@ impl Game {
                 // unit may enter. Every interior tile is reached as a
                 // neighbour of all six of its own neighbours, so five of
                 // those six arrivals find it already seen — and asking
-                // `can_path_through` first meant paying for a traversal
+                // `can_path_through_neighbor` first meant paying for a traversal
                 // class, a passability sweep over the ruleset, a territory
                 // owner and a city lookup, only to discard the answer.
                 // Skipping earlier cannot change the walk: both orders
@@ -27104,9 +27120,9 @@ impl Game {
                     continue;
                 }
                 let enterable = if cur == start {
-                    self.can_enter(uid, cur, n)
+                    self.can_enter_neighbor(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, territory_access.as_slice())
+                    self.can_path_through_neighbor(uid, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
@@ -27245,7 +27261,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.entry_at(uid, cur, n, through_units) != Entry::Blocked,
+            |cur, n| self.entry_at_neighbor(uid, cur, n, through_units) != Entry::Blocked,
             |_, _| {}, // nobody asks this flood for the walk
         )
     }
@@ -27286,7 +27302,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.can_pass(uid, cur, n),
+            |cur, n| self.can_pass_neighbor(uid, cur, n),
             |n, cur| {
                 parent.insert(n, cur);
             },

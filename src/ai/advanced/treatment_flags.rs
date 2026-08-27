@@ -2883,6 +2883,21 @@ impl AdvancedAi {
         self.capture_stood_down.clear();
     }
 
+    /// A settle or improve target survives a passing threat, and the
+    /// commitment ledger retires it after `COMMITMENT_PATIENCE` consecutive
+    /// forgotten turns, parking the site. Filed here rather than under a
+    /// marker: a whole function under one reads as an entry. See
+    /// `commitment_patience` and `advanced/commitments.rs`.
+    pub fn enable_commitment_patience(&mut self) {
+        self.commitment_patience = true;
+    }
+
+    /// The twin of `enable_commitment_patience`.
+    pub fn disable_commitment_patience(&mut self) {
+        self.commitment_patience = false;
+        self.builder_avoid.clear();
+    }
+
     /// `culture-floor`: a culture-yielding building is exempt from the Great
     /// Work veto and the Theatre Square is priced while the empire's culture
     /// a turn trails the strongest major's by the floor ratio. See
@@ -3009,6 +3024,20 @@ impl AdvancedAi {
     /// The twin of `enable_threatened_city_reserve`.
     pub fn disable_threatened_city_reserve(&mut self) {
         self.threatened_city_reserve = false;
+    }
+
+    /// A Settler always has somewhere to go: exhaustion asks wider questions
+    /// instead of holding, and a watchdog bounds every other hold. Filed
+    /// above the marker run like `enable_early_archers`: a whole function
+    /// under a marker reads as an entry. See `settler_never_idles` and
+    /// `advanced/settler_never_idles.rs`.
+    pub fn enable_settler_never_idles(&mut self) {
+        self.settler_never_idles = true;
+    }
+
+    /// The twin of `enable_settler_never_idles`.
+    pub fn disable_settler_never_idles(&mut self) {
+        self.settler_never_idles = false;
     }
 
     /// Enter the Great Prophet race from an explicit victory lane: Astrology

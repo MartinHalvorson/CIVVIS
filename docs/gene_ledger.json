@@ -1207,6 +1207,7 @@
       "science-chain-alarm",
       "science-multiplier-payoff",
       "score-horizon",
+      "settler-never-idles",
       "settler-screen",
       "settler-target-hysteresis-2",
       "settler-threat-detour",
@@ -1333,6 +1334,7 @@
       "settle-sooner",
       "settlement-gap-target",
       "settler-guard-holds",
+      "settler-never-idles",
       "settler-screen",
       "settler-target-hysteresis-2",
       "settler-threat-detour",
@@ -1884,7 +1886,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 105
+    "default_on": 106
   },
   "genes": [
     {
