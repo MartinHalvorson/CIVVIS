@@ -3015,20 +3015,25 @@ Each line names where to start.
    the `can_declare` permission fake can retire, and a casus-belli-typed
    declaration so the host fights the Formal War the board chose instead of
    a Surprise War.
-2. **The buildable and purchasable menus with costs.** `BuildQueue:CanProduce`
-   and `CityGold:GetPurchaseCost` are called only inside the mod's own
-   chooser and purchase actuator, never exported; the board decides
-   production, the highest-frequency decision there is, from its own
-   catalogue and learns legality from refusals.
+2. ~~**The buildable and purchasable menus with costs.**~~ SHIPPED (#2595) —
+   see "the host's production and purchase menus cross" above: `buildable`,
+   `purchasable` and the queue tail cross per city, and the production and
+   purchase choosers pick only from them when the export carries them.
 3. ~~Free Cities units cross with no hp and no strength, and land on the
    barbarian seat.~~ Shipped in #2591 (above).
 4. ~~Amani's envoys are counted twice.~~ Shipped in #2591 (above).
-5. **Model tile yields on flood- and eruption-fertilised plots read 1–2 Food
-   and 1–2 Production low** from t55 on — 970 worked-tile disagreements on 27
-   plots, 24 of them floodplains. The board is corrected (#2566); the model's
-   own valuation of those plots is not.
-6. **City ranged strikes are refused 47 % of the time** (31 of 66 issued).
-   The board's strike legality is wrong twice as often as it is right.
+5. **Model tile yields on fertilised plots — explained, not a defect.** The
+   970 worked-tile disagreements (27 plots, 24 floodplains) are the model's
+   *uncorrected* `modeled_tile_yields` against the host; the board the
+   planner reads is `workable_tile_yields`, which carries the host's own
+   `Plot:GetYield` per plot since #2566 and agrees (mirror_check TILES: 1008
+   paired, 0 disagreements). Flood and eruption fertility is state only the
+   host rolls, so the residual is the instrument's definition, not a
+   decision the seat gets wrong.
+6. ~~**City ranged strikes are refused 47 % of the time** (31 of 66 issued).~~
+   SHIPPED (#2594) — one cause, measured below: the decider re-issued a city's
+   strike on every replan frame of a turn it had already fired in.
+   `civvis_orders` now keeps the strikes ordered this turn per host city.
 7. **Climate, CO2, sea level and disaster forecasts** — zero `GameClimate`
    calls in the mod; `cl` (coastal lowland) is exported with no phase to read
    it against.
@@ -3039,11 +3044,9 @@ Each line names where to start.
    and floods the bands `cl` was exported for. What it leaves: storm
    positions (no accessor), and a site-scorer term that reads
    `coastal_lowland` against the phase — nothing in `src/ai` does.
-8. **Religious-victory progress per rival**
-   (`GetStats():GetNumCitiesFollowingReligion`), **rival techs and civics as
-   names** (counts cross today), rival trade routes, rival religion, tourists
-   we send each rival.~~ **Shipped** (PR #2592, see "what the board knows
-   about each rival" above).
+8. ~~**Religious-victory progress per rival**, rival techs and civics as
+   names, rival trade routes, rival religion, tourists we send each rival.~~
+   SHIPPED (#2592) — see "what the board knows about each rival" above.
 9. **Unit upgrade availability and cost** (`GetUpgradeCost`,
    `CanStartCommand(UPGRADE)`), **per-unit maintenance**, religious strength,
    spy mission state and available missions.
@@ -3140,6 +3143,31 @@ time — and no frame-0 strike was refused. Over the last five control runs the
 refusal is 75 of 161 (`docs/fidelity/QUEUE.md`). The fix is PR #2594:
 `civvis_orders` keeps the strikes it ordered this turn per host city, like the
 repair cooldown, and spends them on every board built for the turn.
+
+### The map after the passes (2026-08-27)
+
+Nine pull requests closed the ranked queue in one evening: #2582 (borders,
+the human seat, the delta key), #2590 (diplomacy), #2591 (Free Cities,
+Amani, `ri`/`embarked`), #2593 (the instruments), #2594 (city strikes),
+#2595 (the production and purchase menus), #2598 (unit affordances), #2597
+(climate, quests and envoys, appeal and sight, route options) and #2592
+(rival intelligence). Every one exports state the host alone held, writes it
+onto the board on both import paths, names the decision that reads it, and
+pins the rule with tests; each was replayed against the recording to show the
+absent-key path unchanged. The first live game whose mod carries all of it is
+the one launched after `0a5368e7`; read its `--dump-mirror` and the
+`unmapped` list for `schema:` and `quest_target:` entries before trusting the
+presence paths, which tests alone pin today.
+
+What is still open, in order: the `Denounce` order has no bridge verb
+(#2590's note); the foreign side of a `combat` event never resolves to a
+board unit, so `combat_damage` has no pairs (record the host ids of
+`hostiles[]`/`rivals[].units[]` when the mirror plants them); the seat's own
+per-turn tourism is not exported (`tourism` rows); storm positions and route
+`turns` have no host accessor; `w`/`i`/`fw` cross unread; and the event
+kinds nothing in `src/` opens (`gp`, `unit_lost`, `wc_*`, `envoy`,
+`deal_response`) still carry facts the board could use — Great Person city
+effects first.
 
 ### How to re-measure
 
