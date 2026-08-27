@@ -26359,9 +26359,7 @@ impl AdvancedAi {
             let home_landmass = BasicAi::capital_landmass(g, pid);
             valid_target
                 .filter(|target| !home_landmass.contains(target))
-                .or_else(|| {
-                    self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass)
-                })
+                .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
         } else {
             None
         };
