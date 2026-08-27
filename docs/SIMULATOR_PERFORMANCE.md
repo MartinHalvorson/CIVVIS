@@ -2853,3 +2853,165 @@ Two things worth keeping from the pair of readings:
   runs, fourteen paired 250-turn games in total, at load 62 and at load 2.84.
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
+
+## 2026-08-27 — the policy review valued the whole empire to price a Great-Scientist card
+
+`AdvancedAi::production_weights` sets `PolicyDeck::Live`, so every deployment
+game runs the counterfactual policy deck. `revise_policy_deck` reviews the deck
+every turn while a slot stands empty and every `POLICY_REVIEW_EVERY = 8` turns
+once it is full, and `policy_card_score` prices each candidate — every card
+`available_policies` offers, plus every card already slotted — by running one
+**whole-empire `empire_reading` sweep** with that card added or removed.
+
+Today's profile of a culture-win seed puts the chain at **7% of the main
+thread**, with `city_yields_inner` at 11% inclusive:
+
+    research_with_government → revise_policy_deck → policy_card_score
+        → empire_reading → city_yields → city_yields_inner
+                         → item_prod_mult
+
+### What that sweep actually reads
+
+`empire_reading` is five terms, and this is the whole list:
+
+1. `city_yields(cid)` for every city the seat owns;
+2. `item_prod_mult(pid, cid, queued)`, the production multiplier toward the item
+   that city is building;
+3. `observed_yield_adjustments`, a live-bridge correction no card can move;
+4. `unit_strength(unit, false)` and `unit_strength(unit, true)` for every unit;
+5. `policy_effect(pid, "influence_per_turn")`, plus `unit_gold_maintenance(pid)`
+   behind `maintenance_aware_deck`.
+
+Most of the catalogue reaches none of them. `data/policies.json` ships 129 cards
+carrying 157 distinct effect keys between them — Great-Person points, envoys,
+espionage, tourism, war weariness, loyalty, upgrade and purchase discounts,
+grievances — and one sweep asks for a few dozen. For every other card the sweep
+recomputes a number the review already had in hand: it had valued the unchanged
+empire one line earlier, as `current_reading`.
+
+### The classifier is a trace, not an allow-list
+
+The obvious implementation is a hand-written allow-list of inert effect keys.
+It was rejected. Being right about 157 keys means being right about every branch
+of `city_yields_inner`, `player_tile_yields`, `item_prod_mult`, `unit_strength`
+and the maintenance bill, in a call graph nobody holds in their head — and an
+allow-list that is wrong is wrong *silently*, in the direction that changes
+decisions. It also goes stale the first time a card or a yield path is added,
+with nothing to say so.
+
+`Game::trace_policy_reads` records instead. While its guard is alive, the three
+functions that are the only routes from a slotted card to an answer —
+`policy_effect`, `policy_effect_for_unit`, `has_policy` — note the effect key or
+card name they were asked for. The review opens the trace over the one sweep it
+runs anyway, and gets back the exact set of questions that sweep asked this
+seat's deck on this board.
+
+The argument the skip rests on is three sentences. A card whose effect keys all
+sit outside the recorded set changes no answer the sweep read. The two runs
+therefore return the same value at every lookup, take the same branch at every
+branch, and ask the same next question. So the second sweep lands on the same
+`f64` bits as the first, and running it is a way of finding out something
+already known.
+
+Three holes, each closed rather than argued away:
+
+- **A card read by name.** `has_policy(pid, "x")` names a card rather than a
+  key, so the trace records card names too and a named card is never inert.
+- **Runtime modifier attachments.** `Game::modifier_context` hands the whole
+  deck to `ModifierRequirements::matches`, which can gate a modifier on holding
+  one named card — by name, not by key. A trace taken on a seat carrying any
+  attachment is therefore marked *opaque* and rules nothing inert. It is the
+  same seat class `policy_effect`'s own index short-circuit already excludes.
+- **Anything reading `players[pid].policies` directly.** `grep` over `src/`
+  finds five non-test sites: `has_policy`, `modifier_context`, `policy_effect`,
+  `policy_effect_for_unit`, and the mutators (`trim_policies_to_slots`,
+  `prune_policies_to_government`, `policies_fit`, `available_policies`,
+  `Game::apply`) — none of which the reading calls. That grep is the
+  completeness claim, and it is cheap to re-run.
+
+**It can only be wrong slowly.** An unknown card, a key the sweep did ask for,
+an attachment, a seat in anarchy: every unclassifiable case answers "not inert"
+and pays exactly the sweep it would have paid anyway. No arm of this is fast
+and wrong.
+
+### Counted, not clocked
+
+Three `AtomicU64`s on a scratch build — one on `empire_reading`, one on the
+skip, one on `city_yields_inner` — plus an env switch that restores the old
+behaviour, so **one binary measures both arms of the same game**. Seed 7320000,
+6 players, 74×46, 9 city-states, 150 turns, Continents, `--jobs 1`:
+
+| per 150-turn game | before | after | |
+| --- | ---: | ---: | ---: |
+| policy reviews | 155 | 155 | — |
+| `empire_reading` sweeps | 4,665 | **1,317** | **−71.8%** |
+| ↳ candidate sweeps (excl. the 155 baseline readings) | 4,510 | 1,162 | −74.2% |
+| `city_yields_inner` calls, **all callers, whole game** | 29,927 | **19,623** | **−34.4%** |
+
+**A third of every city-yield derivation in the simulator was the policy review
+rediscovering that a Great-Person card is worth nothing.** 10,304 of the 29,927
+went to candidate cards that could not move the answer, and the review as a
+whole runs 3,348 fewer whole-empire sweeps per game.
+
+The clock is not quoted, and could not be. The paired run below was taken at
+load average 84 with another CIVVIS process on the host; it read +11.17% per
+completed turn with its own resolution at ±30.06%, which resolves nothing in
+either direction. The 2026-08-26 addendum in this file is the precedent: the
+same shape of reading was +7.12% at load 62 and −0.50% once the fleet went
+quiet. The counter does not care what else the machine is doing, and neither
+does the digest.
+
+### The identity, three ways
+
+1. `tools/speed_ab.py`, baseline `origin/main` against the change, seeds
+   7320000–7320001, 6p 74×46 9CS 150t online continents: **`same game on every
+   seed`** — the report digests match on both paired seeds.
+2. The counter run above: the same scratch binary with the skip on and off
+   produced **the same report digest** (`f7b56b14…`) while running 3,348 fewer
+   sweeps. Same code, same seed, one switch — the cleanest form of the claim.
+3. `advanced_v1_plays_the_same_game_it_always_did`, the frozen-identity anchor.
+
+
+### The test is the implication, card by card
+
+`a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero` plays
+four majors and six city-states forward 110 turns under the production
+controller, then walks **every card in the ruleset on every major seat**: it
+asks the classifier, runs the sweep the classifier called unnecessary, and
+asserts `to_bits()` equality — not an epsilon, because the skip reuses a number
+and anything short of bit equality is a defect. Both sides of the counterfactual
+(removal for a card the seat holds, slotting for one it does not) and both
+`net_maintenance` arms, **1,032 verdicts** on one board:
+
+| seat | cities / districts / units | inert, no maintenance | inert, with |
+| ---: | --- | ---: | ---: |
+| 0 | 3 / 1 / 15 | 104 of 129 | 101 |
+| 1 | 3 / 1 / 10 | **109** of 129 | 106 |
+| 2 | 2 / 3 / 24 | 105 of 129 | 102 |
+| 3 | 1 / 2 / 20 | 105 of 129 | 102 |
+
+**113 cards were inert on some seat and 38 were live on some seat**, and the two
+sets overlap: the verdict is a property of the *board*, not of the card. A seat
+whose capital is queueing a Settler asks `item_prod_mult` for
+`settler_production_pct` and a seat queueing a Granary does not, so Colonization
+is live on the first and inert on the second. That overlap is asserted, because
+a classifier that answered the same on every board would not have needed the
+trace.
+
+`conscription` is the boundary case worth remembering, and the existing
+maintenance test now pins it from both sides: its whole effect is
+`unit_maintenance_discount`, so with the bill unread it is inert and the review
+skips it, and under `maintenance_aware_deck` the same sweep asks for that key
+and the same card is live. **The classifier describes the sweep, not the card.**
+
+### What was not done: memoizing city yields across candidates
+
+The other half of the idea was to memoize per-city yields across candidate
+cards. `empire_reading` already opens a `query_memo` scope per call, so the
+yields are shared *within* one sweep; sharing them *between* sweeps needs a key
+on the yield-relevant policy subset, which is the classification above — and
+once a card is classified inert there is no second sweep left to memoize. What
+remains is a *per-city* trace: a card that can only reach cities with a Campus
+leaves every other city's yields untouched, so a sweep that still has to run
+could skip most of its cities. That is the next step here, and it needs the same
+lockstep argument at city granularity.
