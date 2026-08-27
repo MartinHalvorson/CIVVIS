@@ -1771,6 +1771,11 @@ pub struct Rules {
     /// that hot code should carry a `Name` it was given. This is that edge —
     /// the keys are fixed when the ruleset loads and never change afterwards.
     pub district_adjacency_families: SpecMap<Vec<Option<Name>>>,
+    /// A conservative lower bound for one non-air movement step under these
+    /// rules. Zero means a custom terrain or feature can make a step free, so
+    /// callers must not turn a movement allowance into a geometric distance
+    /// bound.
+    step_cost_lower_bound: f64,
 }
 
 /// The effect keys each family of specs actually grants something towards.
@@ -2672,6 +2677,17 @@ impl Rules {
         &self.source_fingerprint
     }
 
+    /// A conservative lower bound for one non-air movement step.
+    ///
+    /// The engine's route ladder bottoms out at 0.25 MP. A terrain cost below
+    /// that can only tighten the bound, while a zero/negative or non-finite
+    /// terrain/feature cost means an arbitrary number of map edges might fit
+    /// into one turn. In that case this returns zero so a caller can retain
+    /// its exact, more expensive fallback instead of guessing.
+    pub fn step_cost_lower_bound(&self) -> f64 {
+        self.step_cost_lower_bound
+    }
+
     /// The active ruleset — shipped data unless mods were installed.
     pub fn embedded() -> Rules {
         ACTIVE.get_or_init(Rules::shipped).clone()
@@ -2910,6 +2926,7 @@ impl Rules {
             civic_ancestors: SpecMap::default(),
             effect_index: EffectIndex::default(),
             district_adjacency_families: SpecMap::default(),
+            step_cost_lower_bound: 0.0,
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -2967,7 +2984,30 @@ impl Rules {
         rules.civic_ancestors = ancestry(&rules.civics);
         rules.effect_index = rules.build_effect_index();
         rules.district_adjacency_families = rules.build_district_adjacency_families();
+        rules.step_cost_lower_bound = rules.build_step_cost_lower_bound();
         Ok(rules)
+    }
+
+    /// See [`Rules::step_cost_lower_bound`]. This is a ruleset property rather
+    /// than a map property: roads only lower a legal step to the fixed 0.25
+    /// MP route floor, and every unit-specific override in
+    /// `Game::unit_step_cost` replaces a cost with 1 MP or adds to it.
+    fn build_step_cost_lower_bound(&self) -> f64 {
+        let mut floor = 0.25_f64;
+        for terrain in self.terrains.values() {
+            if !terrain.move_cost.is_finite() || terrain.move_cost <= 0.0 {
+                return 0.0;
+            }
+            floor = floor.min(terrain.move_cost);
+        }
+        if self
+            .features
+            .values()
+            .any(|feature| !feature.move_cost.is_finite() || feature.move_cost < 0.0)
+        {
+            return 0.0;
+        }
+        floor
     }
 
     /// Resolve every district-naming adjacency key to the family it counts,
@@ -3677,6 +3717,31 @@ mod tests {
         changed.get_mut("speeds").unwrap()["standard"]["turns"] = json!(499);
         let changed = Rules::from_values(changed).unwrap();
         assert_ne!(stock.source_fingerprint(), changed.source_fingerprint());
+    }
+
+    #[test]
+    fn step_cost_lower_bound_falls_back_when_custom_rules_allow_free_movement() {
+        assert_eq!(Rules::shipped().step_cost_lower_bound(), 0.25);
+
+        let mut free_terrain = Rules::shipped_values();
+        free_terrain.get_mut("terrains").unwrap()["grassland"]["move_cost"] = json!(0.0);
+        assert_eq!(
+            Rules::from_values(free_terrain)
+                .unwrap()
+                .step_cost_lower_bound(),
+            0.0,
+            "a zero-cost terrain cannot support a finite geometric bound"
+        );
+
+        let mut discounted_feature = Rules::shipped_values();
+        discounted_feature.get_mut("features").unwrap()["forest"]["move_cost"] = json!(-1.0);
+        assert_eq!(
+            Rules::from_values(discounted_feature)
+                .unwrap()
+                .step_cost_lower_bound(),
+            0.0,
+            "a feature discount might make a custom terrain free"
+        );
     }
 
     const TECHS: &str = "

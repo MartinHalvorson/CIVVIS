@@ -5633,6 +5633,19 @@ impl BasicAi {
         hash
     }
 
+    /// Whether `unit` is one of the hostile next-turn attackers this
+    /// controller observes. Kept in one predicate because both the exact
+    /// envelope table and its conservative prefilter must select the same
+    /// source roster.
+    fn visible_hostile_attack_unit(g: &Game, pid: usize, unit: &crate::game::Unit) -> bool {
+        let spec = &g.rules.units[unit.kind];
+        unit.owner != pid
+            && g.is_at_war(pid, unit.owner)
+            && g.unit_visible_to(unit.id, pid)
+            && spec.class == "military"
+            && (spec.is_melee_capable() || spec.has_ranged_attack())
+    }
+
     fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
         // `attack_envelope_cache` may intentionally omit this seat while the
         // evaluator prices the stale-own-moves treatment. The raw reach is
@@ -5651,14 +5664,7 @@ impl BasicAi {
         let out: AttackEnvelopes = g
             .units
             .values()
-            .filter(|unit| {
-                let spec = &g.rules.units[unit.kind];
-                unit.owner != pid
-                    && g.is_at_war(pid, unit.owner)
-                    && g.unit_visible_to(unit.id, pid)
-                    && spec.class == "military"
-                    && (spec.is_melee_capable() || spec.has_ranged_attack())
-            })
+            .filter(|unit| Self::visible_hostile_attack_unit(g, pid, unit))
             .filter_map(|unit| {
                 // ⚠ Air units are never reused: `attack_reach` centres their
                 // disk on `air_operation_origin`, not the unit's tile, so a
@@ -5775,7 +5781,49 @@ impl BasicAi {
             && g.city_district_family_position(city, crate::name!("encampment"))
                 .is_some_and(|source| {
                     g.wdist(source, position) <= 2 && g.line_of_sight_from(source, position)
-                })
+            })
+    }
+
+    /// Whether an observed hostile attack *could* reach `position` next turn,
+    /// without opening any movement floods.
+    ///
+    /// `false` is a proof and lets `retreat_step` avoid constructing an exact
+    /// envelope table only to discover that its current tile is quiet. `true`
+    /// is deliberately broad: the caller still asks the existing exact table.
+    /// A non-air attacker cannot cross more map edges than its fresh movement
+    /// allowance divided by the ruleset's positive step-cost lower bound, plus
+    /// one Civ-style first edge that may cost more than the remaining budget;
+    /// the attack range is then the final disk. Air attacks keep the fallback,
+    /// because their disk is centred on an operation origin rather than on the
+    /// unit's tile. A ruleset with free movement returns a zero bound and also
+    /// keeps the fallback — it is not safe to turn an allowance into a radius.
+    fn hostile_attack_may_reach(g: &Game, pid: usize, position: Pos) -> bool {
+        if g.cities.values().any(|city| {
+            Self::city_centre_strikes(g, pid, city, position)
+                || Self::city_encampment_strikes(g, pid, city, position)
+        }) {
+            return true;
+        }
+        let step_cost = g.rules.step_cost_lower_bound();
+        if !step_cost.is_finite() || step_cost <= 0.0 {
+            return true;
+        }
+        g.units
+            .values()
+            .filter(|unit| Self::visible_hostile_attack_unit(g, pid, unit))
+            .any(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                if spec.domain.as_deref() == Some("air") {
+                    return true;
+                }
+                let movement = g.unit_max_moves(unit.id);
+                if !movement.is_finite() || movement < 0.0 {
+                    return true;
+                }
+                let steps = (movement / step_cost).ceil() + 1.0;
+                let radius = steps + f64::from(g.unit_attack_range(unit.id).max(1));
+                !radius.is_finite() || f64::from(g.wdist(unit.pos, position)) <= radius
+            })
     }
 
     /// Whether any observed hostile unit, City Center or Encampment could
@@ -6176,16 +6224,15 @@ impl BasicAi {
                 .filter(|until| g.turn < *until)
                 .and(memory.danger)
         });
-        let envelopes = self.enemy_attack_envelopes(g, pid);
         // ★★★★ MOST UNITS ARE OUT OF EVERY ENVELOPE AND WERE PAYING A FULL
         // EVACUATION PRICE TO FIND OUT. `retreat_step` runs for every military
         // unit of every seat every turn — 87% of that bill is on city-states
-        // and barbarians (`docs/SIMULATOR_PERFORMANCE.md`, 2026-08-22) — and
-        // on a quiet tile it priced a heal rate, a City Center's ownership and
-        // a suzerain, only to read an incoming pool of `0.0`, conclude "not
-        // lethal" and return. `anything_can_reach` is the same source test
-        // `incoming_damage` performs anyway, asked before the rest is paid
-        // for.
+        // and barbarians (`docs/SIMULATOR_PERFORMANCE.md`, 2026-08-22). The
+        // geometric prefilter below proves a distant enemy cannot reach this
+        // tile, so it skips the whole table. The exact table remains for every
+        // in-range possibility; it rejects the false positives from terrain,
+        // borders, zones of control, and line of sight before the rest of the
+        // evacuation price is paid.
         //
         // ⚠ NOT THE ENVELOPE UNION, AND THAT WAS MEASURED. A first version
         // answered this from `covered_tiles`, one binary search instead of one
@@ -6198,6 +6245,13 @@ impl BasicAi {
         // incoming `0.0` is below any live unit's hit points, so `lethal` was
         // false and with no remembered danger the tile below returns `None` —
         // which is exactly what an unmapped tile's `?` returns too.
+        if remembered.is_none()
+            && hp > 0
+            && !Self::hostile_attack_may_reach(g, pid, here)
+        {
+            return None;
+        }
+        let envelopes = self.enemy_attack_envelopes(g, pid);
         if remembered.is_none() && hp > 0 && !Self::anything_can_reach(g, pid, here, &envelopes) {
             return None;
         }
@@ -25270,6 +25324,132 @@ mod attack_envelope_key_tests {
         assert!(
             loud > 0,
             "every tile is quiet, so the assertion above is vacuous"
+        );
+    }
+
+    /// The geometric gate is only allowed to say no when the exact envelope
+    /// and district-source calculation would also say no. It intentionally
+    /// over-admits close enemies — terrain and zones of control need the full
+    /// flood — but a false rejection would skip a retreat that the old path
+    /// correctly took.
+    #[test]
+    fn the_retreat_distance_prefilter_never_rejects_an_exact_threat() {
+        let mut game = Game::new_full(2, 48, 32, 8_182, 300, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        // A whole-map railroad makes the 0.25-MP floor real rather than only
+        // a ruleset argument: this warrior reaches much farther than its
+        // ordinary two-edge walk before the final melee disk.
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.road = 5;
+        }
+        let dry = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        };
+        let origin = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| dry(&game, *pos) && game.nbrs(*pos).into_iter().any(|next| dry(&game, next)))
+            .expect("the fixture needs dry ground with a dry neighbour");
+        let enemy = game.spawn_test_unit("warrior", 1, origin);
+        assert!(
+            game.unit_visible_to(enemy, 0),
+            "the fixture's normal warrior must be observed by player zero"
+        );
+
+        let ai = BasicAi::new();
+        let envelopes = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            envelopes.iter().any(|(uid, _)| *uid == enemy),
+            "the fixture must build the hostile warrior's exact envelope"
+        );
+        let furthest_exact = envelopes
+            .iter()
+            .find(|(uid, _)| *uid == enemy)
+            .and_then(|(_, reach)| reach.iter().max_by_key(|pos| game.wdist(origin, **pos)))
+            .copied()
+            .expect("a fresh warrior must attack somewhere");
+        assert!(
+            game.wdist(origin, furthest_exact) >= 8,
+            "the railroad fixture must exercise the route-cost lower bound"
+        );
+        assert!(
+            BasicAi::hostile_attack_may_reach(&game, 0, furthest_exact),
+            "the prefilter must retain the farthest exact railroad attack"
+        );
+        let (mut quiet, mut exact_threats) = (0usize, 0usize);
+        for position in game.map.tiles.keys().copied() {
+            let exact = BasicAi::anything_can_reach(&game, 0, position, &envelopes);
+            if !BasicAi::hostile_attack_may_reach(&game, 0, position) {
+                quiet += 1;
+                assert!(
+                    !exact,
+                    "{position:?} was geometrically rejected but an exact source reaches it"
+                );
+            } else if exact {
+                exact_threats += 1;
+            }
+        }
+        assert!(quiet > 0, "the prefilter did not prove any tile quiet");
+        assert!(
+            exact_threats > 0,
+            "the exact-envelope comparison has no hostile attack to protect"
+        );
+    }
+
+    /// A quiet unit must return before even the shared raw-reach cache gains
+    /// an entry. This pins the performance claim to the real call site rather
+    /// than merely testing the helper in isolation.
+    #[test]
+    fn a_proven_quiet_retreat_does_not_build_an_enemy_envelope() {
+        let mut game = Game::new_full(2, 48, 32, 8_183, 300, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let dry: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        let enemy_position = dry[0];
+        let enemy = game.spawn_test_unit("warrior", 1, enemy_position);
+        let mine_position = dry
+            .iter()
+            .copied()
+            .max_by_key(|pos| game.wdist(enemy_position, *pos))
+            .expect("the fixture needs a second dry tile");
+        let mine = game.spawn_test_unit("warrior", 0, mine_position);
+        assert!(
+            !BasicAi::hostile_attack_may_reach(&game, 0, mine_position),
+            "the fixture needs an enemy beyond the conservative movement bound"
+        );
+        assert_eq!(game.attack_reach_cache_computations(), 0);
+
+        let ai = BasicAi::new();
+        assert_eq!(ai.retreat_step(&mut game, 0, mine), None);
+        assert_eq!(
+            game.attack_reach_cache_computations(),
+            0,
+            "a proven quiet tile must not construct a raw attack-reach flood"
+        );
+        assert!(
+            game.units.contains_key(&enemy),
+            "the check only proves a skip while its distant hostile still exists"
         );
     }
 
