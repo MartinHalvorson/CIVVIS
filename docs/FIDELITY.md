@@ -2528,6 +2528,49 @@ a test pins that the human takes no yield handicap and the rivals keep theirs.
   the `STATE` schema allowlist, so every live record filed a
   `schema:state.strategic_resources` gap that was not one.
 
+### Shipped: the host's production and purchase menus cross, and the board picks from them (item 2)
+
+The mod now exports, for every one of our cities on every state export,
+what the host itself would put on the Production panel (`CivvisMenus` in
+`CivvisControlAgent.lua`; the loops are
+`Base/Assets/UI/Panels/ProductionPanel.lua` 1898–2237 and 1632–1820, the
+queue `ProductionHelper.lua:185`): `buildable` — every unit, building,
+wonder, district and project `BuildQueue:CanProduce(hash, false, true)` says
+can be STARTED now, with `GetXCost(row.Index)` and `GetTurnsLeft(hash)`, a
+Corps/Army row where the results table allows one, and for a district the
+plots `CityManager.GetOperationTargets(BUILD)` offers; `purchasable` — what
+`CityManager.CanStartCommand(city, PURCHASE, …)` says can be BOUGHT now and
+what `CityGold:GetPurchaseCost` charges, in Gold and in Faith; and `queue` —
+the entries behind the head (`BuildQueue:GetAt(i)`), which never crossed.
+Only what can start crosses; a listed-but-disabled item is not a choice.
+
+On the board (`src/mirror.rs` `host_menus_from`, on both import paths):
+`Game::host_buildable`, `Game::host_purchasable` and
+`Game::host_district_plots`, keyed like the refusal sets.
+`Game::can_produce` — the chokepoint `producible_items` and every BasicAi and
+AdvancedAi production chooser read — refuses any unit, formation, building,
+wonder, district or project the host's menu does not list: the positive gate
+beside the `blocked_production` cooldown, which stays as the fallback for an
+older mod. The purchase pricers (`building_purchase_cost`,
+`building_gold_purchase_cost`, `building_faith_purchase_cost`,
+`unit_purchase_cost_for_formation`) and both district-purchase enumerations
+answer from the host's price, and an item off the menu is not for sale;
+`item_cost_for_city` prices from the host's cost; `district_sites` keeps only
+a complete host offer; the queue tail sits behind the head on `City::queue`.
+An export without the keys — the recording this audit was made on — gates
+nothing and prices exactly as before (replayed at t33 and t100 against the
+deployed binary).
+
+Found on the way: sixteen unique units (`UNIT_ROMAN_LEGION`, …), the two
+water districts and three space-race projects had an OUTBOUND spelling in
+`civvis_orders` and no inbound one, so a city building a Legion read as idle
+and a refused Legion never reached `blocked_production`; the aliases are
+symmetric now and `civvis_orders` pins the round trip for every orderable
+name. Not reached: Corps/Army purchase prices (not exported), repairs and
+Corporation products (the gate skips both families), and the engine's own
+turn forecast for a candidate item, which crosses
+(`Game::host_production_turns`) but no planner reads yet.
+
 ### Shipped in #2591: Free Cities on their seat, Amani once, `ri` and `embarked` read
 
 Items 3, 4 and the read half of 11 below.
@@ -2772,6 +2815,149 @@ terms on the ruleset base; substituting it in would double-count the
 promotions the host already folded. `activity` names the host's idle state
 the board has no slot for.
 
+### Shipped: the climate, the city-state's request and every delegation, plot appeal and sight, and the host's route prices (ranked items 7 and 10)
+
+Four more channels the host knew and the board never saw. Each is exported
+under `try(…, nil)` from the accessor the shipped screen calls on the same
+objects in the same InGame context, consumed on BOTH import paths
+(`rebuild_from_state` and `LiveMirror::sync`), and defaults to what the board
+did before when the key is absent — run `civvis-20260826T184456Z` predates the
+mod change and replays byte-identical (below).
+
+**The climate (item 7).** `state.climate = {level, temperature, co2_total,
+co2_ours, sea_level_turns, tiles_flooded, storm_pct, flood_pct, drought_pct}`
+from `GameClimate.GetClimateChangeLevel` (`DLC/Expansion2/UI/Additions/
+ClimateScreen.lua:1046`), `GetTemperatureChange` (:410),
+`GetTotalCO2Footprint` (:128), `GetPlayerCO2Footprint(pid, false)` (:399),
+`GetNextSeaLevelRiseTurns` (:447), `GetTilesFlooded` (:445),
+`GetStormPercentChance` (:425), `GetFloodPercentChance` (:428),
+`GetDroughtPercentChance` (:440). No accessor was dropped: each is guarded on
+its own, so a ruleset missing one still sends the rest, and the object is
+`nil` (never `{}`, which the mod's encoder writes as `[]`) where `GameClimate`
+answers nothing. Where it lands: `Game::climate_phase` is the level, through
+`Game::mirror_set_climate_phase`, which also marks `tile.flooded` on the
+lowland bands the shipped `CoastalLowlands` table names for that level
+(`COASTAL_LOWLAND_1M` floods at `RANDOM_EVENT_SEA_LEVEL_RISE2`, 2M at RISE3,
+3M at RISE5 — the rows `apply_climate_phase` runs natively), a standing Flood
+Barrier excepted, without the damage, the population loss and the moments a
+native rise books, because the host booked those and the plot export shows
+their result; `players[0].co2_emissions` is `co2_ours`; the rest sits on
+`Game::observed_climate`, whose `co2_total` `Game::global_co2_emissions` now
+prefers — the board only ever summed our own seat's emissions, since no
+rival's cross. Who reads it: the Flood Barrier's price
+(`cost_per_coastal_lowland × (1 + phase/2)`) and maintenance in `game.rs`,
+the power-plant and Carbon Recapture valuations in `AdvancedAi`
+(`climate_phase × clean_value`, `450 + 260 × phase + co2/500`), and
+`tile.flooded` in the workable-tile and improvement-legality checks. Not
+reached: `Game::storms` — the host exposes a storm's percent chance, not the
+active systems' positions (no shipped screen enumerates them), so the board's
+storm list stays its own. Nothing in `src/ai` reads `coastal_lowland` for
+siting; that is a gene to write, not a channel to open.
+
+**The city-state's request and every delegation (item 10).** Per minor,
+`quests = [{type, target, name}]` from
+`Game.GetQuestsManager():HasActiveQuestFromPlayer(pid, minor, questInfo.Index)`
+over `GameInfo.Quests()` with `GetActiveQuestName` and
+`GetActiveQuestDescription` (`Base/Assets/UI/PartialScreens/CityStates.lua:257-266`,
+both already localized text — the panel prints them as they are). The host
+has no target accessor: the target type is the row of the quest's own family
+(Units, Districts, Technologies, Civics, GreatPersonClasses) whose localized
+name occurs in the description (`LOC_QUEST_TRAIN_UNIT_TYPE_INSTANCE_DESCRIPTION`
+is "Train {1_UnitName} military unit"), longest match first so Warrior Monk
+beats Warrior. `envoys_by_player = [{player, envoys}]` from
+`GetTokensReceived(iInfluencePlayer)` over `PlayerManager.GetAliveMajorIDs()`
+(`CityStates.lua:1458`), zeros included so a lapsed delegation clears — a
+list, not a map, for the encoder's `[]` reason. Where: `Player::quests[minor]`
+on seat 0 via `apply_host_quest` — the kind by name (the eight `QUEST_*`
+rows lower-cased ARE the eight `QUEST_KINDS`), the target through the same
+translators every host name goes through (`resolved_civvis_unit_name`,
+`civvis_node_name` for districts → family, techs, civics, the
+`GREAT_PERSON_CLASS_` stem), an untranslatable one filed under `unmapped` as
+`quest_target:<kind>:<name>` and kept verbatim so the kind still reads;
+`Some([])` clears the pair, `None` (an older export) leaves the board's own
+roll. Rival delegations via `apply_host_rival_envoys`, beside the seat-0 seed
+line (`set_mirrored_envoys(players[0], …, minor.envoys)`), which is #2591's
+to change and is not touched here; `seed_mirrored_suzerainty` keeps the
+listed counts instead of clearing them and seeds the host's no-Suzerain
+verdict as a tie on the rival it counts highest rather than on the first
+alive major. Who reads it: `Game::city_state_quest` →
+`quest_trade_route_premium` (the trader destination), `quest_boost_premium`
+(production and Builder items), every `quest-*` gene in
+`advanced/city_state_quests.rs`; `Game::envoys_at` / `suzerain_of` → the
+envoy chooser's `need` (one short of a suzerainty is now one, not "three"),
+`envoy_type_yields_for_count`, the city-state border gate, the levy gate.
+`levy_cost` / `can_levy` were not added: the mod's own levy actuator already
+asks `CanLevyMilitary` / `GetLevyMilitaryCost` on the Lua side, and the
+board's `LevyMilitary` needs a suzerainty it now counts correctly.
+
+**Plot appeal, National Parks and sight (item 10).** Per plot, after `cl`:
+`ap = plot:GetAppeal()` (`Base/Assets/UI/ToolTips/PlotToolTip.lua:641`),
+`np = plot:IsNationalPark()` (:743), `vis = PlayersVisibility[pid]:IsVisible(x, y)`
+(`Base/Assets/UI/Civ6Common.lua:115`). `ap` and `vis` join the tile delta's
+signature, so a plot is re-sent between sweeps when its appeal or its sight
+changes — appeal moves when a NEIGHBOUR changes, sight every turn. Where:
+`Game::observed_appeal`, rebuilt from the plots in `apply_landmass` and read
+FIRST by `Game::tile_appeal` (its memo lives only inside a
+`query_memo` scope, and the mirror writes outside one, so there is no stale
+cache to invalidate); `np` becomes `tile.improvement = national_park`, which
+is what this board calls a park (`established_national_parks` reads the
+improvement); `vis` joins `Game::host_observed`, which the mirrored seat's
+vision frame already unioned in for the tiles of exported foreign units and
+now holds every plot the host shows, empty ground included — `player_can_see`,
+`sees`, the battlefront frame behind the `Engage` posture and
+`blind_ranged_tiles` all read that frame. Who reads appeal: Neighborhood
+housing, Seaside and Ski Resort and National Park siting, the settle scorer's
+appeal term.
+
+**Trade-route options (item 10).** Top-level `route_options = [{origin,
+origin_x, origin_y, dest, dest_player, dest_x, dest_y, yields}]` from
+`Game.GetTradeManager():CanStartRoute(pid, originId, destOwner, destId)`
+(`Base/Assets/UI/Choosers/TradeRouteChooser.lua:227`) and
+`CalculateOriginYieldsFromPotentialRoute` + `…FromPath` + `…FromModifiers`
+under the international multiplier — the sum the active-route export already
+uses, the chooser's per-yield `CalculateOriginYieldFromPotentialRoute` (:864)
+summed — over every city of every player from each of our cities, only while
+`GetOutgoingRouteCapacity()` exceeds the active count (the gate under which a
+Trader can start one at all), the 12 richest per origin. `turns` is not
+exported: no shipped screen reads a route's duration from an accessor
+(`TradeSupport.lua` derives it client-side from the path length). Where:
+`Game::observed_route_options[(origin, destination)]`, endpoints by
+coordinates because Firaxis city ids are per player, cleared on every apply
+since the list is sent only while a slot is open. Read by
+`AdvancedAi::trade_route_destination_value_from`, which
+`best_trade_route_destination` — the chooser behind `best_trade_route_origin`
+AND the live seat's `start_zero_movement_trader_route` — now calls with the
+origin, so a pair the host priced is valued from its projection and every
+other from `trade_route_yields`; the premiums on top (quest, alliance,
+tourism) stay the board's. `observed_route_yields` (ACTIVE routes, inside
+`city_yields`) is untouched.
+
+**District adjacency previews** are not exported, deliberately: the board
+computes adjacency natively from the tiles it holds (`src/game/adjacency.rs`),
+and a plot's district, its completion bit and its wonder already cross
+(`d`, `dc`, `wo`), so a candidate plot's preview differs from the host's only
+where a neighbour is in fog — and `ap` above is the reading that closes the
+same fog for appeal.
+
+**Verified against the recording.** `civvis-20260826T184456Z` predates the
+mod change, so every new key is absent and the mirror takes the fallback path
+on each: `civvis_orders --explain` built from the merge base (`b60814571`)
+and from this change give byte-identical stdout and stderr at t33 (10 orders,
+12 `[why]` lines, 1,551 bytes) and at t100 (11 orders, 18 `[why]` lines,
+2,122 bytes); `--dump-mirror --turn 100` reads the new fields back as
+`climate_phase 0`, `climate null`, no quests, no route options, 0 appeal
+readings and `host_observed` 19 — the foreign-unit tiles it held before. The
+presence path is pinned by seven tests:
+`the_hosts_climate_level_is_the_boards_phase_and_floods_the_bands_it_names`,
+`a_host_quest_seats_the_city_states_request_on_the_pair`,
+`rival_envoy_counts_cross_and_a_missing_list_keeps_the_minimum_winning_seed`,
+`a_plots_host_appeal_and_national_park_stand_on_the_board`,
+`a_plot_the_host_shows_is_in_the_mirrored_seats_sight`,
+`a_route_options_host_yields_reach_the_board_keyed_by_the_pair_and_lapse_with_the_slot`
+(all `src/mirror.rs`) and
+`a_host_priced_route_option_is_what_the_trader_chooser_prices`
+(`src/ai/advanced/tests.rs`).
+
 ### The map, ranked — the queue for the next passes
 
 What the audit found and this change does not touch, most valuable first.
@@ -2799,9 +2985,11 @@ Each line names where to start.
    own valuation of those plots is not.
 6. **City ranged strikes are refused 47 % of the time** (31 of 66 issued).
    The board's strike legality is wrong twice as often as it is right.
-7. **Climate, CO2, sea level and disaster forecasts** — zero `GameClimate`
-   calls in the mod; `cl` (coastal lowland) is exported with no phase to read
-   it against.
+7. **Climate, CO2, sea level and disaster forecasts.** SHIPPED — see "the
+   climate, the city-state's request…" above: the level is the board's phase
+   and floods the bands `cl` was exported for. What it leaves: storm
+   positions (no accessor), and a site-scorer term that reads
+   `coastal_lowland` against the phase — nothing in `src/ai` does.
 8. **Religious-victory progress per rival**
    (`GetStats():GetNumCitiesFollowingReligion`), **rival techs and civics as
    names** (counts cross today), rival trade routes, rival religion, tourists
@@ -2811,11 +2999,14 @@ Each line names where to start.
    see "the unit's own affordances cross" above. What it leaves: the
    strategic material an upgrade consumes is still the board's quote, and
    `religious_strength` is carried but not read.
-10. **Gold per turn by source** (the unit, building and district maintenance
-    totals SHIPPED with #2598; the rest open), trade-route destination options with
-    projected yields (`TradeRouteChooser.lua`), city-state quests
-    (`QuestsManager`), district adjacency previews at candidate plots
-    (`plot:GetAdjacencyYield`), plot appeal.
+10. **Gold per turn by source** — the unit, building and district maintenance
+    totals SHIPPED with #2598; the rest of that breakdown
+    (`ToolTipHelper_PlayerYields.lua`) is still open. Everything else on this
+    line SHIPPED with item 7 above: trade-route destination options with
+    projected yields (`route_options`), city-state quests and every major's
+    delegation (`quests`, `envoys_by_player`), plot appeal and sight (`ap`,
+    `np`, `vis`); district adjacency previews are computed natively from
+    the plots the board holds and are not exported.
 11. **Exported and never read**: per-plot `w`, `i`, `fw` (left so on
     purpose — the terrain and feature names carry them); unit `queued_dest`;
     26 city housing/amenity/growth breakdown fields; the emergencies'
