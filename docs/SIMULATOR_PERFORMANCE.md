@@ -3021,3 +3021,94 @@ on every seed"** — the two binaries produce byte-identical reports.
 run is not quoted: the host was at load 61 with a sibling simulation on it, and
 `docs/speed_ledger.json`'s conditions block is right that a number measured
 there is a measurement of the machine.
+
+## 2026-08-27 — 44 of the board's fields belong to the host, and no search branch has ever written one
+
+The 2026-08-26 entry above found `Vec::clone ← Game::clone` and
+`Vec::clone ← speculative_clone` inside the unnamed third of the profile,
+**2.19% of the busiest thread between them** — and that is only the `Vec` half
+of what a whole-board copy costs. `Game` has 142 fields. **82 of them are a
+`BTreeMap`, `BTreeSet` or `Vec`**, and each one was deep-copied, tree node by
+tree node, on every clone; there are 40 `speculative_clone` call sites and the
+board is cloned outright in hundreds more places.
+
+**45 of those 82 fields are not the simulator's state at all.** They are the
+live bridge's import of what Civilization VI told this seat: `observed_*` (25),
+`host_*` (10), `blocked_*` (10). Every write of all 45 was enumerated — `x =`,
+`.x.insert(`, `.x.clear(`, `.x.entry(`, `.x.extend(`, `&mut g.x`,
+`mem::take(&mut g.x)` — and every one lands in one of three places:
+`src/mirror.rs`'s host-state steps, `Game`'s own mirror setters
+(`replace_host_menus`, `replace_blocked_production`,
+`replace_blocked_purchases`, `replace_host_competitions`,
+`clear_mirror_cities`, `mirror_remove_city`), or a test fixture building the
+board a live import would have produced. **Not one is written by `Game::apply`,
+`begin_turn`, `do_end_turn`, or by anything reachable from `BasicAi` or
+`AdvancedAi`.** A search branch reads them and never touches them.
+
+44 of the 45 now hold an `Arc`, so cloning one is a refcount increment. Where a
+write does happen it goes through `Arc::make_mut` — copy-on-write, so the
+semantics are the same even if some future caller writes to a board it shares —
+or rebuilds and `Arc::new`s in the mirror setters. Reads deref and did not
+change. `GameSer`, the struct `Game` serializes through, was left holding the
+plain collections, so no `Arc` reaches the wire and the JSON a save or `/state`
+carries is byte-for-byte what it was;
+`arc_shared_host_imports_keep_the_save_format_they_had` asserts that from
+outside, including that the refusal sets the save format has always omitted are
+still omitted.
+
+### The counter, and the thing it says that a clock would have hidden
+
+A scratch zero-sized field whose `Clone` impl bumps an `AtomicU64` counts every
+derived `Game::clone`, `speculative_clone` included. One 150-turn game, seed
+7320000, at the screen's shape (6 players, 74x46, 9 city-states, `online`,
+`continents`), `ci` profile:
+
+| | |
+| --- | ---: |
+| whole-`Game` clones in the game | **111,458** |
+| collections each clone no longer walks | 44 |
+| `size_of::<Game>()` after | 3,456 B |
+| the 44 fields' own bytes, before → after | 1,064 B → 352 B |
+| struct memcpy removed, per clone | **712 B** |
+| struct memcpy removed, over the game | ~79 MB |
+| **entries those 44 fields held at turn 150** | **0** |
+
+That last row is the finding, and it is the one no A/B could have told us.
+**In a game the simulator plays by itself, all 44 fields are empty on every
+turn** — nothing but the live bridge ever fills them — so the deep copy this
+removes is, in the benchmark, 44 branches on an empty root and 712 bytes of
+`memcpy`, repeated 111,458 times. The tree-walking half of the saving is
+entirely a *live-bridge* saving, and that is where it is large: `host_observed`
+alone is every plot the seat has revealed, `host_buildable` and
+`host_purchasable` are a menu row per item per city, and
+`host_district_sites` / `host_wonder_sites` / `host_district_plots` are
+`BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>`. A mirrored board carries
+thousands of entries there and cloned all of them per search branch. There is
+no recorded host state in the tree to put a number on that, so this entry does
+not invent one.
+
+### What was left, and why
+
+- **`observed_climate`**, the 45th, stays a plain `Option<ObservedClimate>`:
+  seven `Option<f64>`/`Option<i64>` and not one heap allocation, so an `Arc`
+  would add a pointer chase to a 112-byte memcpy rather than remove one.
+- **`occ: BTreeMap<Pos, Vec<u32>>` and `city_by_pos: BTreeMap<Pos, u32>`** were
+  considered and rejected. They are derived indexes that the simulation itself
+  rewrites — every unit step, every founding, every capture — so they are
+  written on the search path by definition. `Arc::make_mut` would deep-copy the
+  whole index on a branch's first move and charge the `Arc` on top of that:
+  strictly worse than the copy it replaces.
+
+### Exactness
+
+`tools/speed_ab.py`, two paired 150-turn games at the shape above: **"same game
+on every seed"** — the two binaries produce byte-identical reports.
+`advanced_v1_plays_the_same_game_it_always_did` passes; `mirror` is 224 tests
+green. The timing half of that run is not quoted: the host was at load 27 with
+a dozen sibling agents building on it.
+
+⚠ **`rustfmt --edition 2021 src/game.rs` reformats every `src/game/*.rs`
+submodule too** — 41 files, 1,677 lines here, none of them yours. `game.rs`
+declares those modules and rustfmt follows `mod`. The narrower trap beside the
+known `cargo fmt -- <file>` one; check `git status`, not just the file you
+named.
