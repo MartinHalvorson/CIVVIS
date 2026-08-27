@@ -6228,11 +6228,12 @@ impl BasicAi {
         // EVACUATION PRICE TO FIND OUT. `retreat_step` runs for every military
         // unit of every seat every turn — 87% of that bill is on city-states
         // and barbarians (`docs/SIMULATOR_PERFORMANCE.md`, 2026-08-22). The
-        // geometric prefilter below proves a distant enemy cannot reach this
-        // tile, so it skips the whole table. The exact table remains for every
-        // in-range possibility; it rejects the false positives from terrain,
-        // borders, zones of control, and line of sight before the rest of the
-        // evacuation price is paid.
+        // geometric prefilter pays one source-roster scan, so it belongs only
+        // on those seats the profile attributes the cost to. There it proves a
+        // distant enemy cannot reach this tile and skips the whole table. The
+        // exact table remains for every in-range possibility; it rejects the
+        // false positives from terrain, borders, zones of control, and line of
+        // sight before the rest of the evacuation price is paid.
         //
         // ⚠ NOT THE ENVELOPE UNION, AND THAT WAS MEASURED. A first version
         // answered this from `covered_tiles`, one binary search instead of one
@@ -6245,7 +6246,11 @@ impl BasicAi {
         // incoming `0.0` is below any live unit's hit points, so `lethal` was
         // false and with no remembered danger the tile below returns `None` —
         // which is exactly what an unmapped tile's `?` returns too.
-        if remembered.is_none() && hp > 0 && !Self::hostile_attack_may_reach(g, pid, here) {
+        if (self.minor || self.barb)
+            && remembered.is_none()
+            && hp > 0
+            && !Self::hostile_attack_may_reach(g, pid, here)
+        {
             return None;
         }
         let envelopes = self.enemy_attack_envelopes(g, pid);
@@ -25439,7 +25444,8 @@ mod attack_envelope_key_tests {
         );
         assert_eq!(game.attack_reach_cache_computations(), 0);
 
-        let ai = BasicAi::new();
+        let mut ai = BasicAi::new();
+        ai.minor = true;
         assert_eq!(ai.retreat_step(&mut game, 0, mine), None);
         assert_eq!(
             game.attack_reach_cache_computations(),
