@@ -33940,7 +33940,12 @@ mod forcing_reply_lazy_key_tests {
                 (*score, AdvancedAi::forcing_reply_label(reply, followup))
             })
             .collect();
-        eager.sort_by(|left, right| right.0.total_cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+        eager.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
         eager.into_iter().map(|(_, label)| label).collect()
     }
 
@@ -33963,15 +33968,49 @@ mod forcing_reply_lazy_key_tests {
     #[test]
     fn lazy_tie_break_matches_eager_key_ordering() {
         let candidates: Vec<(f64, Action, Option<Action>)> = vec![
-            (8.0, Action::Ranged { unit: 9, target: (1, 1) }, None),
-            (5.0, Action::Attack { unit: 5, target: (2, 3) }, None),
-            (5.0, Action::Attack { unit: 1, target: (0, 0) }, None),
+            (
+                8.0,
+                Action::Ranged {
+                    unit: 9,
+                    target: (1, 1),
+                },
+                None,
+            ),
             (
                 5.0,
-                Action::Move { unit: 2, to: (4, 4) },
-                Some(Action::Attack { unit: 2, target: (5, 5) }),
+                Action::Attack {
+                    unit: 5,
+                    target: (2, 3),
+                },
+                None,
             ),
-            (1.0, Action::Attack { unit: 3, target: (9, 9) }, None),
+            (
+                5.0,
+                Action::Attack {
+                    unit: 1,
+                    target: (0, 0),
+                },
+                None,
+            ),
+            (
+                5.0,
+                Action::Move {
+                    unit: 2,
+                    to: (4, 4),
+                },
+                Some(Action::Attack {
+                    unit: 2,
+                    target: (5, 5),
+                }),
+            ),
+            (
+                1.0,
+                Action::Attack {
+                    unit: 3,
+                    target: (9, 9),
+                },
+                None,
+            ),
         ];
 
         let lazy = lazy_order(&candidates);
