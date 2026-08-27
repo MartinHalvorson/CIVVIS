@@ -496,6 +496,94 @@ TOTALS n=8 science 893.2 vs 1036.7 | techs 377 vs 373 | campuses 28 vs 33 | scor
   founding the city destroys 109.2% of its own site's measured value
 ```
 
+## settler_idle_census
+
+`src/ai/advanced/settler_idle_census.rs:580` — census, not an assertion; run explicitly with --nocapture
+
+```
+=== settler idle census [deployment]: 250 settlers over 8 maps (6p 60x38 online) ===
+  outcomes: founded 238   lost 1   alive at the end 11
+  settler-turns 2526: moved 1988 (78.7%)   founded 238   IDLE 299 (11.8%)
+  idle turns standing on an own city tile: 22 (7.4% of idle, 0.9% of all settler-turns)
+    settlers with >=  1 idle turns in a city:   10 (4.0%)
+    settlers with >=  3 idle turns in a city:    4 (1.6%)
+    settlers with >=  6 idle turns in a city:    1 (0.4%)
+    settlers with >= 10 idle turns in a city:    0 (0.0%)
+  longest idle-in-city streak per settler: mean 0.1   p50 0   p90 0   max 6
+  idle on the tile it was built on, the turn it was built: 9 of 250 (3.6%)
+  turns from build to first move: mean 0.1   p50 0   p90 0   max 6   alive at the end without ever moving: 0
+  idle turns by game turn (all / in a city): t<50 93/21   t50-149 111/1   t150+ 95/0
+  why the settler stood still            idle turns   of which in a city
+       159 ( 53.2%)       11   HELD short of its target: the safe-step guard rejected every neighbour
+        37 ( 12.4%)       11   waits outside a barbarian's reach (civilian-out-of-reach)
+        25 (  8.4%)        0   STRANDED (named): no legal site is reachable and it cannot found here
+        21 (  7.0%)        0   abandons a loyalty-doomed arrival
+        18 (  6.0%)        0   refuses a site before walking (loyalty forecast)
+        13 (  4.3%)        0   NO TARGET although the picker offers a site: the loyalty verdict / hold branch refused it
+        13 (  4.3%)        0   SILENT: holds a target and never stepped
+         7 (  2.3%)        0   sets its target aside (hysteresis): step risk above the limit
+         3 (  1.0%)        0   watchdog holds: every step toward the target is in a hostile's reach
+         1 (  0.3%)        0   'marching' line, no HELD line, no move
+         1 (  0.3%)        0   HELD short of its target: no route to it on our own board
+         1 (  0.3%)        0   HELD short of its target: the next tile refuses it and nothing is standing there
+  the five settlers that idled longest in a city:
+    seat 1 born t27 at (5, 18): 6 idle-in-city of 11 turns, first move Some(6), "founded"; 5x HELD short of its target: the safe-step guard rejected every neighbour; 1x waits outside a barbarian's reach (civilian-out-of-reach)
+    seat 3 born t24 at (21, 11): 3 idle-in-city of 14 turns, first move Some(0), "founded"; 2x waits outside a barbarian's reach (civilian-out-of-reach); 1x HELD short of its target: the safe-step guard rejected every neighbour
+    seat 5 born t47 at (30, 8): 3 idle-in-city of 9 turns, first move Some(3), "founded"; 3x waits outside a barbarian's reach (civilian-out-of-reach)
+    seat 3 born t33 at (21, 11): 3 idle-in-city of 9 turns, first move Some(3), "founded"; 2x waits outside a barbarian's reach (civilian-out-of-reach); 1x HELD short of its target: the safe-step guard rejected every neighbour
+    seat 5 born t33 at (26, 24): 2 idle-in-city of 11 turns, first move Some(2), "founded"; 2x waits outside a barbarian's reach (civilian-out-of-reach)
+  journal turns truncated by the per-turn budget: 0
+=== settler idle census [live]: 679 settlers over 8 maps (6p 60x38 online) ===
+  outcomes: founded 449   lost 0   alive at the end 230
+  settler-turns 30143: moved 16967 (56.3%)   founded 449   IDLE 12727 (42.2%)
+  idle turns standing on an own city tile: 1431 (11.2% of idle, 4.7% of all settler-turns)
+    settlers with >=  1 idle turns in a city:  300 (44.2%)
+    settlers with >=  3 idle turns in a city:   98 (14.4%)
+    settlers with >=  6 idle turns in a city:   42 (6.2%)
+    settlers with >= 10 idle turns in a city:   26 (3.8%)
+  longest idle-in-city streak per settler: mean 1.9   p50 0   p90 3   max 66
+  idle on the tile it was built on, the turn it was built: 192 of 679 (28.3%)
+  turns from build to first move: mean 0.5   p50 0   p90 2   max 9   alive at the end without ever moving: 2
+  idle turns by game turn (all / in a city): t<50 371/204   t50-149 3199/401   t150+ 9157/826
+  why the settler stood still            idle turns   of which in a city
+      7590 ( 59.6%)      677   STRANDED (named): no legal site is reachable and it cannot found here
+      1578 ( 12.4%)      180   HELD short of its target: the safe-step guard rejected every neighbour
+       877 (  6.9%)        7   abandons a loyalty-doomed arrival
+       425 (  3.3%)       72   SILENT: waiting for a guard
+       424 (  3.3%)       68   exhaustion search retargeted, no step
+       353 (  2.8%)       32   HELD short of its target: the next tile refuses it and nothing is standing there
+       341 (  2.7%)       40   sets its target aside (hysteresis): marked dead for this settler
+       281 (  2.2%)      139   waits for its guard (stacked escort, live seat)
+       187 (  1.5%)       28   'marching' line, no HELD line, no move
+       132 (  1.0%)       27   sets its target aside (hysteresis): step risk above the limit
+       109 (  0.9%)       64   watchdog holds: every step toward the target is in a hostile's reach
+        61 (  0.5%)        5   HELD short of its target: our own unit is standing on the next tile
+        57 (  0.4%)        7   sets its target aside (hysteresis): a city within three tiles
+        49 (  0.4%)       16   gives up on a target it kept retreating from
+        48 (  0.4%)        4   HELD short of its target: no route to it on our own board
+        44 (  0.3%)        0   NO TARGET: no legal site anywhere in reach (the map is full for this seat)
+        44 (  0.3%)       15   waits outside a barbarian's reach (civilian-out-of-reach)
+        39 (  0.3%)       27   retreat line but no move
+        30 (  0.2%)        5   refuses a site before walking (loyalty forecast)
+        19 (  0.1%)       10   detours around a visible threat (retargeted, no step)
+        10 (  0.1%)        0   SILENT: holds a target and never stepped
+         9 (  0.1%)        1   sets its target aside (hysteresis): the approach is temporarily deferred for a visible threat
+         5 (  0.0%)        4   falls back to a nearby safe site (retargeted, no step)
+         5 (  0.0%)        1   falls back toward its guard but no move
+         2 (  0.0%)        0   HELD short of its target: a foreign unit holds the next tile
+         2 (  0.0%)        0   NO TARGET although the picker offers a site: the loyalty verdict / hold branch refused it
+         2 (  0.0%)        0   NO TARGET: a legal site exists near a city but none is reachable/ranked for this settler
+         2 (  0.0%)        0   sets its target aside (hysteresis): another empire's ground
+         2 (  0.0%)        2   sidestep line but no move
+  the five settlers that idled longest in a city:
+    seat 0 born t61 at (13, 19): 66 idle-in-city of 190 turns, first move Some(0), "alive at the end"; 66x STRANDED (named): no legal site is reachable and it cannot found here
+    seat 2 born t92 at (7, 19): 54 idle-in-city of 151 turns, first move Some(0), "alive at the end"; 54x STRANDED (named): no legal site is reachable and it cannot found here
+    seat 5 born t111 at (14, 15): 53 idle-in-city of 119 turns, first move Some(0), "alive at the end"; 52x STRANDED (named): no legal site is reachable and it cannot found here; 1x HELD short of its target: our own unit is standing on the next tile
+    seat 3 born t63 at (31, 14): 51 idle-in-city of 168 turns, first move Some(2), "alive at the end"; 49x STRANDED (named): no legal site is reachable and it cannot found here; 2x SILENT: waiting for a guard
+    seat 2 born t150 at (3, 27): 51 idle-in-city of 101 turns, first move Some(0), "alive at the end"; 51x STRANDED (named): no legal site is reachable and it cannot found here
+  journal turns truncated by the per-turn budget: 0
+```
+
 ## settler_walk_census
 
 `src/ai/advanced/tests.rs:29220` — census, not an assertion; run explicitly with --nocapture

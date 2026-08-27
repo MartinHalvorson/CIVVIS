@@ -3152,6 +3152,20 @@ impl AdvancedAi {
         self.threatened_city_reserve = false;
     }
 
+    /// A Settler always has somewhere to go: exhaustion asks wider questions
+    /// instead of holding, and a watchdog bounds every other hold. Filed
+    /// above the marker run like `enable_early_archers`: a whole function
+    /// under a marker reads as an entry. See `settler_never_idles` and
+    /// `advanced/settler_never_idles.rs`.
+    pub fn enable_settler_never_idles(&mut self) {
+        self.settler_never_idles = true;
+    }
+
+    /// The twin of `enable_settler_never_idles`.
+    pub fn disable_settler_never_idles(&mut self) {
+        self.settler_never_idles = false;
+    }
+
     /// Enter the Great Prophet race from an explicit victory lane: Astrology
     /// after the opening techs, the empire's first Holy Site at the front of
     /// the district order, the Prophet priced as a lane great person, and
