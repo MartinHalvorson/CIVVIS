@@ -877,6 +877,90 @@ fn threatened_recovery_does_not_start_a_live_settler() {
 }
 
 #[test]
+fn loyalty_endangered_cities_pause_settlers_before_they_revolt() {
+    // Antium founded at t23 of civvis-20260827T203744Z and began a Settler at
+    // t29.  Its host-reported Loyalty collapsed from -0.4 to -10.4/turn, yet
+    // the default production margin kept the queue through its Free City flip
+    // at t44.  The live rate is the fact this handoff must act on; it should
+    // pause the build before the city spends its remaining usable turns on a
+    // civilian it cannot finish safely.
+    let (mut game, city, _) = empire_with_a_capital(71_144);
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    let city_state = game.cities.get_mut(&city).expect("capital exists");
+    city_state.pop = 3;
+    city_state.loyalty = 48.0;
+    assert!(game.can_produce(0, city, &settler));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: settler.clone(),
+        },
+    )
+    .expect("queue the unsafe Settler");
+    game.cities.get_mut(&city).unwrap().production = 17.0;
+    std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(city, -8.0);
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ai = AdvancedAi::new();
+    let completion_turns = ai.settler_factory_turns(&game, 0, city);
+    let (_, turns_to_flip) = AdvancedAi::settler_queue_loyalty_risk(&game, city, completion_turns)
+        .expect("the observed collapse beats the Settler deadline");
+    assert!(turns_to_flip < completion_turns);
+
+    // The strategic scorer must refuse a fresh queue too, not merely repair
+    // a Settler that was already committed through the delegated governor.
+    let mut empty = game.clone();
+    empty.cities.get_mut(&city).unwrap().queue.clear();
+    assert!(
+        ai.production_value(&empty, 0, city, &settler, &plan, &ai.counts(&empty, 0))
+            < PRODUCTION_VETO_FLOOR,
+        "a city that will flip before completion cannot start another Settler"
+    );
+
+    let live = AdvancedAi::new();
+    live.redirect_loyalty_endangered_settler_queues(&mut game, 0, &plan);
+    let replacement = game.cities[&city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the city receives a productive non-Settler replacement");
+    assert_ne!(replacement, settler, "the doomed Settler must be paused");
+    assert_eq!(
+        game.cities[&city].production_progress.get("unit:settler"),
+        Some(&17.0),
+        "switching keeps the Settler's invested Production banked"
+    );
+
+    // A slow, recoverable drift remains an expansion city.  This safety floor
+    // is about a real imminent flip, not a generic anti-growth penalty.
+    let mut recoverable = empty;
+    recoverable.cities.get_mut(&city).unwrap().queue = vec![settler.clone()];
+    std::sync::Arc::make_mut(&mut recoverable.observed_city_loyalty_per_turn).insert(city, -0.5);
+    assert!(
+        AdvancedAi::settler_queue_loyalty_risk(
+            &recoverable,
+            city,
+            ai.settler_factory_turns(&recoverable, 0, city),
+        )
+        .is_none(),
+        "a city with ample time to stabilize keeps its Settler"
+    );
+    live.redirect_loyalty_endangered_settler_queues(&mut recoverable, 0, &plan);
+    assert_eq!(recoverable.cities[&city].queue.first(), Some(&settler));
+}
+
+#[test]
 fn wide_map_capacity_prices_uncontested_land_and_stock_stays_capped() {
     // The league profile's own board: 74x46, where passable land clears
     // both ceilings — which is exactly the quantity under test.
