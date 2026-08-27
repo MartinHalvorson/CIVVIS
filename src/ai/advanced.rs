@@ -32084,14 +32084,12 @@ impl AdvancedAi {
             let focus = group.as_ref().and_then(|orders| orders.focus_target);
             let mut volley_indices: Vec<usize> = (0..scored.len())
                 .filter(|index| {
-                    g.unit_ids_at(scored[*index].target)
-                        .iter()
-                        .any(|other| {
-                            let defender = &g.units[other];
-                            defender.owner != pid
-                                && g.is_at_war(pid, defender.owner)
-                                && g.rules.units[defender.kind].class == "military"
-                        })
+                    g.unit_ids_at(scored[*index].target).iter().any(|other| {
+                        let defender = &g.units[other];
+                        defender.owner != pid
+                            && g.is_at_war(pid, defender.owner)
+                            && g.rules.units[defender.kind].class == "military"
+                    })
                 })
                 .collect();
             volley_indices.sort_by(|left, right| {
