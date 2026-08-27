@@ -91,6 +91,8 @@ pub struct Commitment {
     pub made: u32,
     /// Turn it was expected to complete, priced when it was made.
     pub eta: u32,
+    /// The progress reading when the decision was made.
+    pub initial: i32,
     /// Best (lowest) progress reading so far: hexes to walk for a unit,
     /// phase-and-hit-points for a capture.
     pub best: i32,
@@ -238,6 +240,10 @@ pub struct CommitmentLedger {
     /// from outside: `completed`, `retargeted`, `dropped`, `lost`,
     /// `settled elsewhere`, `stood down`.
     pub endings: BTreeMap<(Kind, &'static str), u32>,
+    /// Why a committed unit with movement did not act, by kind and the hold
+    /// the observer can see from outside — the split that says which gene
+    /// a forgotten turn wants.
+    pub forgotten_why: BTreeMap<(Kind, &'static str), u32>,
     /// Our city ids at the last reading, so a city that is new this turn can
     /// be told from one that was already there.
     cities_seen: BTreeSet<u32>,
@@ -274,6 +280,7 @@ impl CommitmentLedger {
         reading: i32,
         acted: Option<bool>,
         pos: Option<Pos>,
+        why: &'static str,
     ) {
         let Some(c) = self.open.get_mut(&key) else {
             return;
@@ -288,6 +295,7 @@ impl CommitmentLedger {
             Some(false) => {
                 c.forgotten_turns += 1;
                 census.forgotten_turns += 1;
+                *self.forgotten_why.entry((key.0, why)).or_default() += 1;
             }
             Some(true) if turn.saturating_sub(c.best_turn) >= STALL_TURNS => {
                 c.stalled_turns += 1;
@@ -325,6 +333,7 @@ impl CommitmentLedger {
         kind: Kind,
         now: &BTreeMap<u32, Pos>,
         new_cities: &[Pos],
+        holds: &BTreeMap<u32, &'static str>,
     ) {
         let turn = g.turn;
         let gone: Vec<Commitment> = self
@@ -376,6 +385,14 @@ impl CommitmentLedger {
                 "lost"
             };
             let retargets = c.retargets;
+            if how == "retargeted" {
+                let split = if c.best < c.initial {
+                    "retargeted en route"
+                } else {
+                    "retargeted before moving"
+                };
+                *self.endings.entry((kind, split)).or_default() += 1;
+            }
             self.end(c, how, turn);
             if how == "retargeted" {
                 if let (Some(site), Some(unit)) = (now.get(&uid), g.units.get(&uid)) {
@@ -386,6 +403,7 @@ impl CommitmentLedger {
                         target: Target::Tile(*site),
                         made: turn,
                         eta: Self::walk_eta(turn, hexes),
+                        initial: hexes,
                         best: hexes,
                         best_turn: turn,
                         last_pos: Some(unit.pos),
@@ -415,7 +433,8 @@ impl CommitmentLedger {
                     continue;
                 }
                 let acted = unit.acted || unit.moves_left <= 0.0;
-                self.observe_open(key, turn, hexes, Some(acted), Some(unit.pos));
+                let why = holds.get(&uid).copied().unwrap_or("unexplained");
+                self.observe_open(key, turn, hexes, Some(acted), Some(unit.pos), why);
             } else {
                 self.open_new(Commitment {
                     kind,
@@ -423,6 +442,7 @@ impl CommitmentLedger {
                     target: Target::Tile(site),
                     made: turn,
                     eta: Self::walk_eta(turn, hexes),
+                    initial: hexes,
                     best: hexes,
                     best_turn: turn,
                     last_pos: Some(unit.pos),
@@ -467,7 +487,7 @@ impl CommitmentLedger {
             // whether the phase advances is the only reading; from the
             // declaration on, presence at the objective and its hit points are.
             let acted = w.declared.then_some(w.present);
-            self.observe_open(key, turn, w.reading, acted, None);
+            self.observe_open(key, turn, w.reading, acted, None, "nobody at the objective");
         } else {
             self.open_new(Commitment {
                 kind: Kind::Capture,
@@ -475,6 +495,7 @@ impl CommitmentLedger {
                 target: Target::City(w.city),
                 made: turn,
                 eta: w.eta,
+                initial: w.reading,
                 best: w.reading,
                 best_turn: turn,
                 last_pos: None,
@@ -602,9 +623,85 @@ impl AdvancedAi {
             })
         });
         let war = appointed.or(conquest);
+        // Why a committed unit with movement to spend did not act, from what
+        // the controller's own maps and the board say. Only the first hold
+        // that applies is named, in this order.
+        let hostile_near = |g: &Game, at: Pos| {
+            g.units.values().any(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.wdist(unit.pos, at) <= 2
+            })
+        };
+        let in_own_city = |g: &Game, at: Pos| {
+            g.city_at(at)
+                .and_then(|cid| g.cities.get(&cid))
+                .is_some_and(|city| city.owner == pid)
+        };
+        let idle = |g: &Game, uid: u32| {
+            g.units
+                .get(&uid)
+                .is_some_and(|unit| !unit.acted && unit.moves_left > 0.0)
+        };
+        let mut holds: BTreeMap<u32, &'static str> = BTreeMap::new();
+        for (&uid, &site) in &self.settler_targets {
+            if !idle(g, uid) {
+                continue;
+            }
+            let at = g.units[&uid].pos;
+            let why = if self.guard_wait.contains_key(&uid) {
+                "waiting for escort"
+            } else if self.settler_threat_deferrals.contains_key(&site) {
+                "threat forecast on the site"
+            } else if hostile_near(g, at) {
+                "hostile within two"
+            } else if self
+                .settler_stalls
+                .get(&uid)
+                .is_some_and(|stalls| *stalls > 0)
+            {
+                "stall counted (route refused)"
+            } else if in_own_city(g, at) {
+                "in a city"
+            } else {
+                "unexplained"
+            };
+            holds.insert(uid, why);
+        }
+        for (&uid, &site) in &self.builder_targets {
+            if !idle(g, uid) {
+                continue;
+            }
+            let at = g.units[&uid].pos;
+            let why = if hostile_near(g, at) {
+                "hostile within two"
+            } else if at == site {
+                "at the tile, build refused"
+            } else if in_own_city(g, at) {
+                "in a city"
+            } else {
+                "walk refused or not attempted"
+            };
+            holds.insert(uid, why);
+        }
         let ledger = &mut self.commitments;
-        ledger.reconcile_units(g, pid, Kind::Settle, &self.settler_targets, &new_cities);
-        ledger.reconcile_units(g, pid, Kind::Improve, &self.builder_targets, &new_cities);
+        ledger.reconcile_units(
+            g,
+            pid,
+            Kind::Settle,
+            &self.settler_targets,
+            &new_cities,
+            &holds,
+        );
+        ledger.reconcile_units(
+            g,
+            pid,
+            Kind::Improve,
+            &self.builder_targets,
+            &new_cities,
+            &holds,
+        );
         ledger.reconcile_capture(g, pid, war);
         ledger.cities_seen = g
             .cities
@@ -638,6 +735,7 @@ mod tests {
             target: Target::Tile(site),
             made: turn,
             eta: CommitmentLedger::walk_eta(turn, hexes),
+            initial: hexes,
             best: hexes,
             best_turn: turn,
             last_pos: None,
@@ -661,19 +759,19 @@ mod tests {
     fn an_unacted_turn_is_forgotten_and_a_fruitless_one_is_stalled_only_after_the_limit() {
         let mut ledger = ledger_with(Kind::Settle, 7, (5, 5), 10, 6);
         let key = (Kind::Settle, Owner::Unit(7));
-        ledger.observe_open(key, 11, 6, Some(false), Some((1, 1)));
+        ledger.observe_open(key, 11, 6, Some(false), Some((1, 1)), "test");
         assert_eq!(ledger.census.settle.forgotten_turns, 1);
         assert_eq!(ledger.census.settle.stalled_turns, 0);
         // Acting without getting closer: stalled once STALL_TURNS have passed
         // since the best reading, not before.
-        ledger.observe_open(key, 12, 6, Some(true), Some((1, 1)));
+        ledger.observe_open(key, 12, 6, Some(true), Some((1, 1)), "test");
         assert_eq!(ledger.census.settle.stalled_turns, 0);
-        ledger.observe_open(key, 13, 6, Some(true), Some((1, 1)));
+        ledger.observe_open(key, 13, 6, Some(true), Some((1, 1)), "test");
         assert_eq!(ledger.census.settle.stalled_turns, 1);
         // Getting closer resets the clock.
-        ledger.observe_open(key, 14, 4, Some(true), Some((2, 2)));
+        ledger.observe_open(key, 14, 4, Some(true), Some((2, 2)), "test");
         assert_eq!(ledger.census.settle.stalled_turns, 1);
-        ledger.observe_open(key, 15, 4, Some(true), Some((2, 2)));
+        ledger.observe_open(key, 15, 4, Some(true), Some((2, 2)), "test");
         assert_eq!(ledger.census.settle.stalled_turns, 1);
         // ETA was turn 13; turns 14 and 15 are late.
         assert_eq!(ledger.census.settle.late_turns, 2);
@@ -710,6 +808,7 @@ mod tests {
             target: Target::City(9),
             made: 50,
             eta: 80,
+            initial: 4200,
             best: 4200,
             best_turn: 50,
             last_pos: None,
@@ -720,11 +819,11 @@ mod tests {
         });
         let key = (Kind::Capture, Owner::Empire);
         for turn in 51..60 {
-            ledger.observe_open(key, turn, 4200, None, None);
+            ledger.observe_open(key, turn, 4200, None, None, "test");
         }
         assert_eq!(ledger.census.capture.forgotten_turns, 0);
         assert_eq!(ledger.census.capture.stalled_turns, 0);
-        ledger.observe_open(key, 60, 1200, Some(false), None);
+        ledger.observe_open(key, 60, 1200, Some(false), None, "test");
         assert_eq!(ledger.census.capture.forgotten_turns, 1);
     }
 
@@ -770,6 +869,7 @@ mod tests {
         let mut totals = CommitmentCensus::default();
         let mut endings: BTreeMap<(Kind, &'static str), u32> = BTreeMap::new();
         let mut still_open: BTreeMap<Kind, u32> = BTreeMap::new();
+        let mut forgotten_why: BTreeMap<(Kind, &'static str), u32> = BTreeMap::new();
         for map in 0..maps {
             let seed = 98_500_000 + map;
             let mut game = Game::new_with(GameOptions {
@@ -818,6 +918,9 @@ mod tests {
                 for c in ai.commitments().open() {
                     *still_open.entry(c.kind).or_default() += 1;
                 }
+                for (key, n) in &ai.commitments().forgotten_why {
+                    *forgotten_why.entry(*key).or_default() += n;
+                }
             }
             println!("map {seed} t{}:", game.turn);
             for line in census.lines() {
@@ -843,6 +946,10 @@ mod tests {
         println!("open at game end:");
         for (kind, n) in &still_open {
             println!("  {:<8}{n}", kind.as_str());
+        }
+        println!("forgotten, by hold:");
+        for ((kind, why), n) in &forgotten_why {
+            println!("  {:<8}{why:<32}{n}", kind.as_str());
         }
     }
 }
