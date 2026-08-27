@@ -5415,6 +5415,48 @@ fn strategic_settler_routes_to_an_island_beyond_the_local_search_radius() {
         .is_some_and(|tile| g.rules.is_water(tile)));
 }
 
+#[test]
+fn overseas_settlement_claims_a_discovered_foreign_landfall_when_home_is_full() {
+    let (mut g, source, target) = island_colony_game();
+    g.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+    g.players[0].explored.extend(explored);
+    let settler = g.spawn_test_unit("settler", 0, source);
+    let home_landmass = BasicAi::capital_landmass(&g, 0);
+    let mut ai = AdvancedAi::new();
+    ai.enable_overseas_settlement();
+
+    assert!(ai.advanced_settler_step(&mut g, 0, settler));
+    let chosen = ai.settler_targets[&settler];
+    assert!(
+        !home_landmass.contains(&chosen),
+        "the gene sends the settler beyond the capital's landmass"
+    );
+    assert!(
+        g.wdist(chosen, target) <= 1,
+        "the nearest discovered overseas landfall is chosen"
+    );
+}
+
+#[test]
+fn island_expansion_genes_are_reversible_opt_ins() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
+
+    ai.enable_island_exploration();
+    ai.enable_overseas_settlement();
+    assert!(ai.base.island_exploration);
+    assert!(ai.overseas_settlement);
+
+    ai.disable_island_exploration();
+    ai.disable_overseas_settlement();
+    assert!(!ai.base.island_exploration);
+    assert!(!ai.overseas_settlement);
+}
+
 /// A dodge is a legal move that is not progress. The commitment bound has
 /// to expire on one, or a settler beside a roaming hostile holds a site it
 /// is walking away from for the rest of the game — measured on run

@@ -179,6 +179,15 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version \| Total versions |
+|---|---|---|---:|
+| `island-exploration` | off (unmeasured) | Once the Palace landmass has at most two independent city sites left, rebuild a naval eye and favor water that can reveal a known foreign landfall. | 1 \| 1 |
+| `overseas-settlement` | off (unmeasured) | When the main landmass has little room left, route a Settler to the nearest viable foreign site the player has discovered. | 1 \| 1 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:
