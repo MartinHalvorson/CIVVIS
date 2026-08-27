@@ -3478,6 +3478,101 @@ fn install_test_holy_site(game: &mut Game, city: u32) {
         vec![crate::name!("shrine"), crate::name!("temple")];
 }
 
+/// A ready-to-fire late-game board with a hard conventional target and a
+/// separate rival Spaceport.  The second city sits inside the ordinary ICBM
+/// range but outside either city's blast disk, so the doctrine has to choose
+/// rather than receiving an accidental two-city strike.
+fn nuclear_war_fixture() -> (Game, u32, u32, u32, Pos) {
+    let mut game = Game::new_full(2, 36, 22, 91_803, 300, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("every major starts with a Settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    // Leave nothing in either future blast ring except the infrastructure
+    // deliberately installed below.
+    for pid in 0..2 {
+        for unit in game.player_unit_ids(pid) {
+            game.remove_unit(unit);
+        }
+    }
+    let launch_city = game.player_city_ids(0)[0];
+    let fortress_city = game.player_city_ids(1)[0];
+    let launch = game.cities[&launch_city].pos;
+    let fortress = game.cities[&fortress_city].pos;
+    // A late-game counter-program needs a city that can actually finish the
+    // Manhattan/Ivy chain before the clock.  This permanent production bonus
+    // keeps the fixture focused on target selection rather than the horizon
+    // refusal that is correct for a one-production outpost.
+    game.map.tiles.get_mut(&launch).unwrap().disaster_production = 100.0;
+    let radius = game.rules.wmds["thermonuclear_device"].blast_radius;
+    let spaceport_site = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && tile.owner_city.is_none()
+                && tile.district.is_none()
+                && tile.wonder.is_none()
+                && game.city_at(tile.pos).is_none()
+                && game.wdist(launch, tile.pos) > radius
+                && game.wdist(launch, tile.pos)
+                    <= game.rules.wmds["nuclear_device"].icbm_strike_range
+                && game.wdist(fortress, tile.pos) > 2 * radius + 1
+                && game
+                    .cities
+                    .values()
+                    .all(|city| game.wdist(city.pos, tile.pos) >= 4)
+        })
+        .map(|tile| tile.pos)
+        .next()
+        .expect("map has a separate ICBM-range city site");
+    let spaceport_city = game.found_city_for(
+        1,
+        spaceport_site,
+        Some("Launch Complex".to_string()),
+    );
+    let spaceport = game
+        .map
+        .tiles
+        .values()
+        .find(|position| {
+            game.wdist(position.pos, spaceport_site)
+                == game.rules.wmds["thermonuclear_device"].blast_radius
+                && position.owner_city.is_none()
+                && position.district.is_none()
+                && position.wonder.is_none()
+                && position.improvement.is_none()
+        })
+        .map(|tile| tile.pos)
+        .expect("new city has a Spaceport tile inside thermonuclear but outside nuclear range");
+    let tile = game.map.tiles.get_mut(&spaceport).unwrap();
+    tile.owner_city = Some(spaceport_city);
+    tile.district = Some(crate::name!("spaceport"));
+    tile.pillaged = false;
+    let city = game.cities.get_mut(&spaceport_city).unwrap();
+    city.owned_tiles.push(spaceport);
+    city.districts
+        .insert(crate::name!("spaceport"), spaceport);
+    install_ai_test_district(&mut game, launch_city, "industrial_zone");
+    game.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
+    game.cities.get_mut(&spaceport_city).unwrap().queue = vec![Item::Project {
+        project: crate::name!("lagrange_laser_station"),
+    }];
+    game.players[0].explored.insert(fortress);
+    game.players[0].explored.insert(spaceport_site);
+    game.world_era = 4;
+    (game, launch_city, fortress_city, spaceport_city, spaceport)
+}
+
 /// The research floor is a ramp on the remaining game and is absent from
 /// the frozen controls, so an ablation measures a real difference.
 #[test]
@@ -5330,27 +5425,153 @@ fn the_doctrine_spares_a_power_it_is_not_fighting() {
 }
 
 #[test]
-fn conquest_prices_the_nuclear_lane_from_the_industrial_era() {
-    let mut game = Game::new_full(2, 24, 16, 91_802, 200, 0, false);
+fn nuclear_doctrine_hits_a_rival_spaceport_before_a_harder_city() {
+    let (mut game, _, fortress_city, spaceport_city, spaceport) = nuclear_war_fixture();
+    let fortress = game.cities[&fortress_city].pos;
+    let launch = game.cities[&game.player_city_ids(0)[0]].pos;
+    game.at_war.insert((0, 1));
+    game.cities.get_mut(&fortress_city).unwrap().wall_hp = 800;
+    game.players[0]
+        .counters
+        .insert("project_effect:thermonuclear_devices".to_string(), 1);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(spaceport_city),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
     let ai = AdvancedAi::targeting(VictoryTarget::Domination);
-    let ancient = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
-    game.world_era = 4;
-    let industrial = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+
     assert!(
-        industrial > ancient + 15.0,
-        "the industrial era prices the lane like a victory beeline: \
-             {industrial:.1} vs {ancient:.1}"
+        game.wdist(launch, game.cities[&spaceport_city].pos)
+            <= game.rules.wmds["thermonuclear_device"].icbm_strike_range,
+        "fixture must offer the Spaceport to the WMD action generator"
+    );
+    ai.advanced_wmd_strikes(&mut game, 0, &plan);
+
+    assert_eq!(
+        game.players[0].counters["project_effect:thermonuclear_devices"], 0,
+        "the arsenal spends a device on the opponent's victory infrastructure"
+    );
+    assert!(
+        game.map.tiles[&spaceport].pillaged,
+        "the blast disables the rival Spaceport and its active launch program"
+    );
+    assert!(
+        game.map.tiles[&game.cities[&spaceport_city].pos].fallout_until > game.turn,
+        "the Spaceport city is the strike target"
+    );
+    assert!(
+        game.map.tiles[&fortress].fallout_until <= game.turn,
+        "a harder conventional city loses to the victory-critical target"
+    );
+}
+
+#[test]
+fn nuclear_program_beelines_only_for_a_reachable_goal_and_stops_at_its_arsenal() {
+    let (mut game, launch_city, fortress_city, spaceport_city, spaceport) = nuclear_war_fixture();
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(spaceport_city),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let goal = ai
+        .nuclear_war_goal(&game, 0, GrandStrategy::Conquest, Some(1))
+        .expect("the revealed launch site must be a nuclear goal");
+    assert!(
+        ai.nuclear_war_goal(&game, 0, GrandStrategy::Conquest, None)
+            .is_some(),
+        "a Domination-targeted research pass must retain the valid nuclear goal without a preselected rival"
+    );
+
+    let mut quiet = game.clone();
+    quiet.players[1].science_projects.clear();
+    quiet
+        .cities
+        .get_mut(&spaceport_city)
+        .unwrap()
+        .districts
+        .remove(Name::new("spaceport"));
+    quiet.map.tiles.get_mut(&spaceport).unwrap().district = None;
+    quiet.cities.get_mut(&fortress_city).unwrap().wall_hp = 0;
+    let quiet_value = ai.tech_value(&quiet, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let urgent_value = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+    assert!(
+        urgent_value > quiet_value + 20.0,
+        "a revealed opponent Spaceport on an Expedition must turn Fission into a fast counter-beeline: \
+             urgent={urgent_value:.1}, quiet={quiet_value:.1}"
+    );
+    let mut unforced = AdvancedAi::new();
+    unforced.plan = Some(plan.clone());
+    let planned_quiet =
+        unforced.tech_value(&quiet, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let planned_urgent =
+        unforced.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+    assert!(
+        planned_urgent > planned_quiet + 20.0,
+        "an ordinary AI's named Conquest target must also start the counter-program: \
+             urgent={planned_urgent:.1}, quiet={planned_quiet:.1}"
+    );
+
+    let ancestors = game.rules.tech_ancestors["nuclear_fission"].clone();
+    game.players[0]
+        .techs
+        .extend(ancestors.into_iter().map(|tech| Name::new(&tech)));
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("nuclear_fission"),
+        "the live research chooser actually starts the nuclear counter-program"
+    );
+
+    assert!(
+        goal.desired_stockpile >= 2,
+        "a rival on the Science clock needs an arsenal, not a lone speculative device"
+    );
+    assert!(
+        goal.needs_thermonuclear,
+        "the Spaceport outside a standard blast disk needs the larger weapon, not a cap full of ordinary devices"
     );
     game.players[0]
         .science_projects
         .insert("manhattan_project".to_string());
-    game.players[0]
-        .science_projects
-        .insert("operation_ivy".to_string());
-    let armed = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let device = Item::Project {
+        project: crate::name!("build_nuclear_device"),
+    };
+    let counts = ai.counts(&game, 0);
+    let arming_value = ai.production_value(&game, 0, launch_city, &device, &plan, &counts);
     assert!(
-        (armed - ancient).abs() < 1e-9,
-        "an open arsenal stops pricing the lane: {armed:.1} vs {ancient:.1}"
+        arming_value > 0.0,
+        "the goal must open actual device production instead of refusing it: {arming_value:.1}"
+    );
+    let ivy = Item::Project {
+        project: crate::name!("operation_ivy"),
+    };
+    let ivy_value = ai.production_value(&game, 0, launch_city, &ivy, &plan, &counts);
+    assert!(
+        ivy_value > arming_value,
+        "the program prioritizes the prerequisite for the device that can actually reach the Spaceport: Ivy={ivy_value:.1}, standard device={arming_value:.1}"
+    );
+    game.players[0].counters.insert(
+        "project_effect:nuclear_devices".to_string(),
+        goal.desired_stockpile.saturating_sub(1),
+    );
+    game.players[0].counters.insert(
+        "project_effect:thermonuclear_devices".to_string(),
+        1,
+    );
+    let capped_value = ai.production_value(&game, 0, launch_city, &device, &plan, &counts);
+    assert!(
+        capped_value < -9_000.0,
+        "once enough reachable targets are covered the AI stops hoarding devices: {capped_value:.1}"
     );
 }
 
