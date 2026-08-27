@@ -15964,7 +15964,8 @@ mod tests {
         // reading-inert and the skip returns the same exact 0.0.
         let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
         assert!(reads.card_is_inert(&game.rules, card));
-        let (blind, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
+        let (blind, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
         assert_eq!(blind, 0.0, "the defect under test: the card is invisible");
 
         // Aware: the with-side bill is lower by one Gold per unit, so the
@@ -15973,7 +15974,8 @@ mod tests {
         // asks the deck for the discount.
         let (current, reads) = reading_with_policy_trace(&game, 0, &weights, true);
         assert!(!reads.card_is_inert(&game.rules, card));
-        let (aware, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, true);
+        let (aware, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, true);
         assert!(
             aware > 0.0,
             "the maintenance discount must score its own relief, got {aware}"
