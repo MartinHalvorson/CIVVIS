@@ -5636,6 +5636,10 @@ mod field_craft;
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
 
+/// Price it like the engine: the exact exchange, and the defender priced
+/// where it would stand. Two opt-in genes; see `advanced/engine_pricing.rs`.
+mod engine_pricing;
+
 /// Swap rotation: the wounded front-liner trades places with the fresh unit
 /// behind it. One opt-in gene; see `advanced/swap_rotation.rs`.
 mod swap_rotation;
@@ -28891,6 +28895,11 @@ impl AdvancedAi {
                     value += self.base.w.mv_support;
                 }
             }
+            // `defend-where-you-stand`: priced once for this tile, and only
+            // if something actually reaches it. `None` with the gene off,
+            // and then the defence below is the snapshot's, as before. See
+            // `advanced/engine_pricing.rs`.
+            let mut standing_defense: Option<f64> = None;
             for enemy in g.units.values().filter(|other| {
                 enemies.contains(&other.owner)
                     && visible.as_ref().is_none_or(|visible| {
@@ -28912,8 +28921,13 @@ impl AdvancedAi {
                 if g.wdist(tile, enemy.pos) <= radius {
                     let attack =
                         crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
-                    let defense =
-                        crate::game::effective_strength(g.unit_strength(&unit, true), unit.hp);
+                    let defense = *standing_defense.get_or_insert_with(|| {
+                        let base = self
+                            .base
+                            .defence_base_where_it_would_stand(g, uid, tile)
+                            .unwrap_or_else(|| g.unit_strength(&unit, true));
+                        crate::game::effective_strength(base, unit.hp)
+                    });
                     value -= self.base.w.mv_threat
                         * threat_caution
                         * 30.0

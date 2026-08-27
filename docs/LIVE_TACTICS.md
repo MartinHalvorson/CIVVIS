@@ -610,6 +610,26 @@ machine has held its live games since 2026-08-02); the swap verb is still
 untranslated on the bridge, and `Action::Swap` — implemented, tested and
 refused correctly in the engine since `do_swap` — is still chosen by no
 controller (`docs/MOVEMENT.md` names the `swap-rotation` gene that would).
+## 17. Price it like the engine — and the null it measured (2026-08-26)
+
+Two opt-in genes (`src/ai/advanced/engine_pricing.rs`) replace the
+controller's two hand-written estimates of a fight with the engine's own
+arithmetic: `exchange-is-the-engines` routes `exchange_score`'s defended
+branch through `melee_exchange_strengths` / `ranged_strike_strengths` +
+`expected_damage`, and `defend-where-you-stand` prices the defender on the
+candidate tile with that tile's own defence, in `projected_counter_damage`
+and in `coordinated_tactical_step`'s inline threat term. Both are strictly
+more accurate than what they replace. Both measure **null**: `battle_bench`
++10.9 ± 11.9 and +5.4 ± 16.2, the doctrine curriculum +8.1 ± 10.3 and
++2.1 ± 6.4, the 68-war captured file −10.0 ± 6.7 and −13.9 ± 8.8 with
+healing on — and 79 and 140 of 160 skirmish seeds diverged, so the arms
+fired.
+
+Recorded here because it belongs beside §7's null and §15's positive: the
+tactical layer's accuracy is not obviously its constraint. `docs/AI_GAPS.md`
+carries the hypothesis (`attack_threshold` was calibrated against the biased
+estimate, so exactness without re-fitting the toll is two changes at once)
+and the finding that the engine has no Great General to model.
 ## 18. Swap rotation, and what it says about why (2026-08-26)
 
 `Action::Swap` has been legal, tested and correctly refused in the engine

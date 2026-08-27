@@ -33,6 +33,15 @@ Usage::
 
 The second form checks the newest scoreboard row of every subsystem against
 its threshold and exits 1 on a breach.
+
+The binary is found through ``--bin``, then ``$CIVVIS_LIVE_DIVERGENCE_BIN`` (a
+file or a directory holding ``live_divergence``, e.g. a published runtime dir
+``~/.cache/civvis/live-game-runtime/published/<sha>/``), then
+``$CARGO_TARGET_DIR/release``, ``target/release``, and the newest published
+runtime dir that carries one; only when none names a file is
+``cargo build --release --bin live_divergence`` run (about six minutes).
+Build it by hand in a task worktree, never in the live checkout:
+``nice -n 15 cargo build --release --locked --bin live_divergence -j 4``.
 """
 
 from __future__ import annotations
@@ -342,15 +351,51 @@ def update_fidelity_doc(text: str, section: str) -> str:
 
 # -------------------------------------------------------------------- driver
 
+BIN_ENV = "CIVVIS_LIVE_DIVERGENCE_BIN"
+PUBLISHED = Path.home() / ".cache" / "civvis" / "live-game-runtime" / "published"
+
+
+def binary_candidates(explicit: str | None = None, env: dict | None = None,
+                      home_published: Path = PUBLISHED) -> list[Path]:
+    """Where a `live_divergence` binary is looked for, in order.
+
+    `--bin` first, then `$CIVVIS_LIVE_DIVERGENCE_BIN` (a file, or a directory
+    holding the bin — the published runtime layout
+    `~/.cache/civvis/live-game-runtime/published/<sha>/`), then
+    `$CARGO_TARGET_DIR/release`, this checkout's `target/release`, and the
+    newest published runtime directory that carries the bin. Until 2026-08-26
+    only `target/release/live_divergence` was consulted and no host had ever
+    built it, so every scoreboard row said "no pairs" for the ledger subsystems.
+    """
+    env = os.environ if env is None else env
+    out: list[Path] = []
+    for raw in (explicit, env.get(BIN_ENV)):
+        if not raw:
+            continue
+        path = Path(raw).expanduser()
+        out.append(path / "live_divergence" if path.is_dir() else path)
+    if env.get("CARGO_TARGET_DIR"):
+        out.append(Path(env["CARGO_TARGET_DIR"]) / "release" / "live_divergence")
+    out.append(REPO / "target" / "release" / "live_divergence")
+    if home_published.is_dir():
+        published = sorted(
+            (p for p in home_published.glob("*/live_divergence") if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+        )
+        out.extend(reversed(published))
+    return out
+
+
 def find_binary(explicit: str | None) -> Path:
-    if explicit:
-        return Path(explicit)
-    candidates = []
-    if os.environ.get("CARGO_TARGET_DIR"):
-        candidates.append(Path(os.environ["CARGO_TARGET_DIR"]) / "release" / "live_divergence")
-    candidates.append(REPO / "target" / "release" / "live_divergence")
+    candidates = binary_candidates(explicit)
+    if explicit or os.environ.get(BIN_ENV):
+        # Named explicitly: never fall through to a build the caller did not ask for.
+        named = candidates[0]
+        if not named.is_file():
+            raise SystemExit(f"live_divergence: {named} is not a file (--bin / ${BIN_ENV})")
+        return named
     for path in candidates:
-        if path.exists():
+        if path.is_file():
             return path
     print("live_divergence: building target/release/live_divergence", file=sys.stderr)
     subprocess.run(
@@ -358,7 +403,7 @@ def find_binary(explicit: str | None) -> Path:
         cwd=REPO, check=True,
     )
     for path in candidates:
-        if path.exists():
+        if path.is_file():
             return path
     raise SystemExit("live_divergence: binary not found after build")
 
@@ -388,7 +433,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--turns", help="only compare frames in this inclusive range, e.g. 20-80")
     ap.add_argument("--out", help="report path (default docs/fidelity/<run>.md)")
     ap.add_argument("--json", action="store_true", help="print the run summary as JSON")
-    ap.add_argument("--bin", help="live_divergence binary (default target/release/live_divergence)")
+    ap.add_argument("--bin", help=f"live_divergence binary (else ${BIN_ENV}, $CARGO_TARGET_DIR/release, "
+                    "target/release, the newest published runtime dir; see the header)")
     ap.add_argument("--fidelity-dir", default=str(FIDELITY_DIR))
     ap.add_argument("--no-scoreboard", action="store_true", help="write only the report")
     ap.add_argument("--fidelity-doc", default=str(FIDELITY_DOC), help="FIDELITY.md carrying the generated section")
