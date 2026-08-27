@@ -108,7 +108,7 @@ time it walks out.
    fourteen-tile radius (the whole map after Shipbuilding) with this
    Settler's retirements, the empire's threat deferrals and the fog guesses
    set aside, refusing only a site the engine's own Loyalty calculation says
-   revolts inside twelve turns (`settler_exhaustion_target`, tier 2); then
+   revolts inside twenty turns (`settler_exhaustion_target`, tier 2); then
    any legal reachable site, nearest first (tier 3). Failing both it founds
    where it stands if the engine allows and the city would hold, and
    otherwise writes "Settler is stranded" to the journal — a hold is never
@@ -185,7 +185,7 @@ reporting batches will price it beside every other gene from here.
   "no target although a legal site exists" is the *Settler's* search
   disagreeing with the *city's* site check; the gene makes the Settler agree.
 - The loyalty forecast is not removed: it still ranks and still vetoes a
-  site that revolts inside twelve turns. What it may no longer do is hold a
+  site that revolts inside twenty turns. What it may no longer do is hold a
   Settler for the rest of the game on a guess about fogged ground.
 - `civilian-out-of-reach`'s waits and the safe-step guard are untouched
   inside the patience window; the watchdog's own rule is the same exact-reach

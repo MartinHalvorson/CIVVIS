@@ -41,7 +41,7 @@
 //!    the Loyalty verdict included) returns nothing, the Settler asks two
 //!    wider questions before it stands still: the advanced ranking with the
 //!    fog guesses and the thirty-turn retirements set aside and only a
-//!    *concrete* revolt inside [`STRANDED_SITE_MIN_HOLD_TURNS`] refused
+//!    *concrete* revolt inside [`STRANDED_SITE_MIN_HOLD_TURNS`] (twenty) refused
 //!    (`settler_exhaustion_target`, tier 2); then any legal reachable site
 //!    at all, nearest first (tier 3). Failing both it founds where it stands
 //!    if the engine allows, and otherwise says so in the journal — a Settler
@@ -75,8 +75,12 @@ use crate::Pos;
 pub(super) const SETTLER_IDLE_PATIENCE: u32 = 2;
 /// A site the engine's own Loyalty calculation says would revolt inside
 /// this many turns is doomed however stranded the Settler is; anything
-/// slower is a city for a while, which beats a Settler for ever.
-pub(super) const STRANDED_SITE_MIN_HOLD_TURNS: f64 = 12.0;
+/// slower is a city for a while, which beats a Settler for ever. Half the
+/// forty-turn growth horizon the preferred verdict uses
+/// (`SETTLE_TARGET_LOYALTY_RISK_TURNS`): a city that holds twenty turns has
+/// grown and built before it is lost, and it is only ever chosen when no
+/// site passes the preferred verdict at all.
+pub(super) const STRANDED_SITE_MIN_HOLD_TURNS: f64 = 20.0;
 /// How far a stranded Settler looks for any legal site before Shipbuilding.
 const STRANDED_SITE_RADIUS: i32 = 14;
 /// How many forecast refusals the exhaustion search pays before it stops

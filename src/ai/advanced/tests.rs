@@ -13097,6 +13097,11 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     // safety floor for a city this close to an already visible rival capital.
     let mut default_live = AdvancedAi::new();
     default_live.enable_live_bridge();
+    // `settler-never-idles` (pinned on) takes this colony when it is the only
+    // site on the board and the engine's forecast gives it twenty turns —
+    // its own tests cover that. This test is about the verdicts, so withhold
+    // it by name in both live arms.
+    default_live.disable_settler_never_idles();
     assert!(default_live.frontier_loyalty);
     assert!(default_live.base.loyalty_rate_alarm);
     default_live.disable_loyalty_rate_alarm();
@@ -13115,6 +13120,7 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    live.disable_settler_never_idles();
     // The deployed rate forecast remains independently covered after the
     // withheld frontier-floor control above.
     live.frontier_loyalty = false;
