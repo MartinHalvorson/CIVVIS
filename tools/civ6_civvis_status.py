@@ -21,8 +21,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _common  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
@@ -89,10 +93,7 @@ def print_residual(residual: Counter) -> None:
 
 
 def newest_run() -> Path | None:
-    runs = [p for p in RUN_ROOT.iterdir() if (p / "events.jsonl").exists()]
-    if not runs:
-        return None
-    return max(runs, key=lambda p: (p / "events.jsonl").stat().st_mtime)
+    return _common.newest_run(RUN_ROOT, "events.jsonl")
 
 
 def main() -> int:
