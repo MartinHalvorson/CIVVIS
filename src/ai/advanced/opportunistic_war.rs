@@ -333,6 +333,29 @@ impl AdvancedAi {
         g.military_power(target) <= my_power * RAID_POWER_RATIO + RAID_POWER_MARGIN
     }
 
+    /// A pillage or Builder bundle does not pay for opening a war on an empire
+    /// that is already ahead of us.  Public military can make that opponent
+    /// look narrowly raidable while its score exposes the larger technology,
+    /// culture, and city advantage that can answer at home.  Keep the one
+    /// prize that changes our own empire's shape -- an unescorted Settler --
+    /// available against a score leader; it can become a city immediately.
+    ///
+    /// This is deliberately a declaration gate, not a movement gate.  Once a
+    /// war is open, declining a few pillage tiles cannot undo the hostile
+    /// response.  In live run `civvis-20260827T145140Z`, a 272-score Rome
+    /// declared on 479-score Russia for three pillage tiles at turn 90 and
+    /// lost Aquileia before its emergency Walls could finish.
+    fn raid_prizes_can_challenge_score_leader(
+        our_score: i64,
+        target_score: i64,
+        prizes: &[RaidPrize],
+    ) -> bool {
+        target_score <= our_score
+            || prizes
+                .iter()
+                .any(|prize| matches!(prize, RaidPrize::Settler { .. }))
+    }
+
     /// The best raid on the table this turn, if any clears the bar.
     pub(crate) fn raid_opportunity(&self, g: &Game, pid: usize) -> Option<RaidOpportunity> {
         if !self.opportunistic_war
@@ -367,6 +390,10 @@ impl AdvancedAi {
                 continue;
             }
             let prizes = self.raid_prizes_against(g, pid, target, &strikers);
+            if !Self::raid_prizes_can_challenge_score_leader(g.score(pid), g.score(target), &prizes)
+            {
+                continue;
+            }
             let value: f64 = prizes.iter().map(|prize| prize.value()).sum();
             if value + 1e-9 < RAID_WAR_MIN_VALUE {
                 continue;
@@ -673,5 +700,35 @@ impl AdvancedAi {
             )
             .is_ok(),
         )
+    }
+}
+
+#[cfg(test)]
+mod raid_score_safety_tests {
+    use super::{AdvancedAi, RaidPrize, SETTLER_PRIZE};
+
+    #[test]
+    fn pillage_only_raids_do_not_challenge_a_score_leader() {
+        let pillage = [RaidPrize::Pillage {
+            pos: (0, 0),
+            value: 125.0,
+        }];
+        assert!(
+            !AdvancedAi::raid_prizes_can_challenge_score_leader(272, 479, &pillage),
+            "three pillage tiles must not reopen the 272-to-479 live-run loss"
+        );
+        assert!(
+            AdvancedAi::raid_prizes_can_challenge_score_leader(479, 272, &pillage),
+            "a score lead still permits a bounded pillage raid"
+        );
+
+        let decisive_settler = [RaidPrize::Settler {
+            pos: (0, 0),
+            value: SETTLER_PRIZE,
+        }];
+        assert!(
+            AdvancedAi::raid_prizes_can_challenge_score_leader(272, 479, &decisive_settler),
+            "a capturable Settler remains worth a bounded opportunity against a leader"
+        );
     }
 }
