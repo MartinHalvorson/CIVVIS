@@ -5488,7 +5488,11 @@ impl BasicAi {
                 }
             }
             _ => {
-                units.extend(g.units.iter().map(|(id, unit)| (*id, EnvelopeUnit::of(unit))));
+                units.extend(
+                    g.units
+                        .iter()
+                        .map(|(id, unit)| (*id, EnvelopeUnit::of(unit))),
+                );
                 // Nothing is known about what left the board, so the store's
                 // cleanup must run.
                 EnvelopeChange {
@@ -5560,7 +5564,10 @@ impl BasicAi {
             .enemy_envelope_cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let EnvelopeChange { touched: delta, removed } = self.envelope_board_change(g);
+        let EnvelopeChange {
+            touched: delta,
+            removed,
+        } = self.envelope_board_change(g);
         let out: AttackEnvelopes = g
             .units
             .values()
@@ -24493,10 +24500,7 @@ mod attack_envelope_key_tests {
         let ai = BasicAi::new();
         let _ = ai.enemy_attack_envelopes(&game, 0);
         assert!(
-            ai.enemy_envelope_cache
-                .lock()
-                .unwrap()
-                .contains_key(&enemy),
+            ai.enemy_envelope_cache.lock().unwrap().contains_key(&enemy),
             "the fixture must put the enemy in the store, or the removal below \
              is asserted against an empty cache"
         );
@@ -24504,10 +24508,7 @@ mod attack_envelope_key_tests {
         game.units.remove(&enemy);
         let _ = ai.enemy_attack_envelopes(&game, 0);
         assert!(
-            !ai.enemy_envelope_cache
-                .lock()
-                .unwrap()
-                .contains_key(&enemy),
+            !ai.enemy_envelope_cache.lock().unwrap().contains_key(&enemy),
             "a unit left the board and its envelope stayed in the store"
         );
     }
