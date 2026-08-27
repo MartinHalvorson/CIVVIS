@@ -713,7 +713,7 @@ mod tests {
                             game.rules.is_passable(tile) && !game.rules.is_water(tile)
                         })
                         && game.city_at(*pos).is_none()
-                        && game.units_at(*pos).is_empty()
+                        && game.unit_ids_at(*pos).is_empty()
                 })
                 .collect();
             ring.sort_unstable();
