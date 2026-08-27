@@ -131,8 +131,8 @@ class TheTradeLedgerSeparatesOneRefusalFromTwo(unittest.TestCase):
 
 
 class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
-    """⚠ Not a transcription. `below_leader_score_reading` — the one early stop
-    left after 2026-08-26 — is imported from `tools/civ6_play.py` and fed the
+    """⚠ Not a transcription. `below_leader_score_reading` — the one remaining
+    early stop — is imported from `tools/civ6_play.py` and fed the
     recorded stream in file order, which is what `_play`'s `finished()` does
     with the live one."""
 
@@ -146,9 +146,12 @@ class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
 
     def test_it_fires_on_the_first_qualifying_reading(self):
         floor = census.civ6_play.LEADER_SCORE_MIN_TURN
+        self.assertEqual(census.RESTART_RATIO,
+                         census.civ6_play.DEFAULT_LEADER_SCORE_RATIO)
         self.assertFalse(census.restart_reading(
-            self._behind(floor - 1), 0.70, {})["fired"])
-        verdict = census.restart_reading(self._behind(floor), 0.70, {})
+            self._behind(floor - 1), census.RESTART_RATIO, {})["fired"])
+        verdict = census.restart_reading(self._behind(floor),
+                                         census.RESTART_RATIO, {})
         self.assertTrue(verdict["fired"])
         self.assertEqual(verdict["fire_turn"], floor)
 
@@ -160,11 +163,12 @@ class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
         records = [r for t in range(100, 110) for r in self._behind(t)]
         rival_won = {"outcome": {"kind": "victory", "won": False},
                      "last_score": 400, "rival_best": 1000}
-        reading = census.restart_reading(records, 0.70, rival_won)
+        reading = census.restart_reading(records, census.RESTART_RATIO, rival_won)
         self.assertFalse(reading["won"], "a rival's victory record is not our win")
         self.assertEqual(reading["final_score_ratio"], 0.4)
         ours = {"outcome": {"kind": "victory", "won": True}}
-        self.assertTrue(census.restart_reading(records, 0.70, ours)["won"])
+        self.assertTrue(census.restart_reading(
+            records, census.RESTART_RATIO, ours)["won"])
 
 
 class TheSettlerSectionSeparatesFoundedFromIdle(unittest.TestCase):

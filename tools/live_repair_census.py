@@ -48,7 +48,7 @@ against a game that is still being played.
 ## ⚠ Where the numbers come from
 
 The harness's early stop is not re-implemented here: `below_leader_score_reading`
-(the one rule left after 2026-08-26 — under 70 % of the leader's score after
+(the one remaining rule — under 60 % of the leader's score after
 turn 150; it replaced #2319's three-axis reading) is imported from
 `tools/civ6_play.py` and fed the recorded events in file order, which is
 exactly what the live loop does. That section is a **check**.
@@ -82,10 +82,10 @@ from civ6_play import below_leader_score_reading  # noqa: E402
 
 DEFAULT_CORPUS = Path.home() / "civvis-civ6-runs" / "control"
 
-#: The line for `--restart-below-leader-ratio`: the harness's own default since
-#: 2026-08-26 (`civ6_play.DEFAULT_LEADER_SCORE_RATIO`), so a census at this
-#: value replays exactly what a live game would have done.
-RESTART_RATIO = 0.70
+#: The line for `--restart-below-leader-ratio`: the harness's current default
+#: (`civ6_play.DEFAULT_LEADER_SCORE_RATIO`), so a census at this value replays
+#: exactly what a live game would have done.
+RESTART_RATIO = civ6_play.DEFAULT_LEADER_SCORE_RATIO
 
 #: Firaxis's three city-defence buildings, in escalation order. The live report
 #: names the second and third by their in-game labels, Castle and Star Fort.
