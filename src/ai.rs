@@ -2,7 +2,8 @@
 //! sparring partner, not a fair-play agent.
 use crate::name::{AsName, Name};
 use crate::game::{
-    effective_strength, expected_damage, Action, ActionFamilies, Game, Item, TraversalClass,
+    effective_strength, expected_damage, Action, ActionFamilies, Game, Item, PolicyReadSet,
+    TraversalClass,
 };
 use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
@@ -247,6 +248,9 @@ const NAVAL_RECON_WARTIME_ARM_MAX: usize = 2;
 /// dead-end nibble of fog from the edge of a broad unexplored region, without
 /// making every scout sweep the whole world every turn.
 const EXPLORATION_FRONTIER_LOOKAHEAD: i32 = 4;
+/// Once the capital's connected land has at most this many independently
+/// settleable sites left, the island-exploration gene starts looking offshore.
+const ISLAND_EXPLORATION_HOME_SITE_LIMIT: usize = 2;
 
 /// How far a reconnaissance unit will detour for a tribal village it has
 /// already charted but cannot reach this turn. See `BasicAi::village_seeking`.
@@ -810,6 +814,7 @@ fn policy_card_score(
     w: &Weights,
     candidate: &(usize, String, Name),
     current_reading: f64,
+    reads: &PolicyReadSet,
     net_maintenance: bool,
 ) -> (f64, usize, String, Name) {
     let (priority, slot, card) = candidate;
@@ -822,7 +827,18 @@ fn policy_card_score(
     // into the batch makes the score incremental: one whole-empire sweep for a
     // challenger, and one removal sweep for an incumbent.  The authoritative
     // candidate order and the exact `empire_reading` arithmetic are unchanged.
-    let (without, with) = if incumbent {
+    // The other side of the counterfactual is also already known whenever the
+    // card cannot reach anything `empire_reading` reads. `reads` is the record
+    // of every question the unchanged sweep asked the deck; a card naming none
+    // of those keys and none of those card names leaves every lookup returning
+    // the value it already returned, so the two runs stay in lockstep and the
+    // sweep lands on the same bits. Ten Great-Person, envoy and espionage
+    // cards move only quantities this reading never looks at, and the review
+    // used to pay a whole-empire sweep to rediscover that once per card, every
+    // eight turns, for the rest of the game.
+    let (without, with) = if reads.card_is_inert(&g.rules, *card) {
+        (current_reading, current_reading)
+    } else if incumbent {
         g.players[pid].policies.remove(card);
         let without = empire_reading(g, pid, w, net_maintenance);
         g.players[pid].policies.insert(*card);
@@ -842,6 +858,24 @@ fn policy_card_score(
         0.0
     };
     (gain + hysteresis, *priority, slot.clone(), *card)
+}
+
+/// The unchanged reading every candidate is compared against, together with
+/// the record of what it asked `pid`'s policy deck.
+///
+/// The trace costs one interned-name or one string comparison per policy
+/// question of one sweep the review runs anyway, and it is what lets
+/// [`policy_card_score`] answer a card without running a second one.
+fn reading_with_policy_trace(
+    g: &Game,
+    pid: usize,
+    w: &Weights,
+    net_maintenance: bool,
+) -> (f64, PolicyReadSet) {
+    let trace = g.trace_policy_reads(pid);
+    let reading = empire_reading(g, pid, w, net_maintenance);
+    let reads = trace.finish();
+    (reading, reads)
 }
 
 fn revise_policy_deck(
@@ -919,7 +953,10 @@ fn revise_policy_deck(
                     // The branch is reused for all indices claimed by this
                     // worker.  Compute the unchanged slate once, before the
                     // candidate mutations begin, rather than once per card.
-                    let current_reading = empire_reading(&branch, pid, &weights, net_maintenance);
+                    // The trace is taken on the branch, so each worker records
+                    // its own and nothing crosses a thread.
+                    let (current_reading, reads) =
+                        reading_with_policy_trace(&branch, pid, &weights, net_maintenance);
                     indices
                         .map(|index| {
                             (
@@ -930,6 +967,7 @@ fn revise_policy_deck(
                                     &weights,
                                     &candidates[index],
                                     current_reading,
+                                    &reads,
                                     net_maintenance,
                                 ),
                             )
@@ -939,11 +977,19 @@ fn revise_policy_deck(
             )
         }
         None => {
-            let current_reading = empire_reading(g, pid, w, net_maintenance);
+            let (current_reading, reads) = reading_with_policy_trace(g, pid, w, net_maintenance);
             candidates
                 .iter()
                 .map(|candidate| {
-                    policy_card_score(g, pid, w, candidate, current_reading, net_maintenance)
+                    policy_card_score(
+                        g,
+                        pid,
+                        w,
+                        candidate,
+                        current_reading,
+                        &reads,
+                        net_maintenance,
+                    )
                 })
                 .collect()
         }
@@ -2304,6 +2350,10 @@ pub struct BasicAi {
     /// exactly as before. Implies version 1; its enable turns version 1 off.
     /// Opt-in gene `naval-recon-2`.
     pub(crate) naval_recon_2: bool,
+    /// When the capital's landmass is nearly full, chart water toward known
+    /// foreign landfalls rather than treating every coast as interchangeable.
+    /// Opt-in gene `island-exploration`.
+    pub(crate) island_exploration: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -4481,6 +4531,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            island_exploration: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -4898,6 +4949,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            island_exploration: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -5569,6 +5621,12 @@ impl BasicAi {
     }
 
     fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
+        // `attack_envelope_cache` may intentionally omit this seat while the
+        // evaluator prices the stale-own-moves treatment. The raw reach is
+        // not allowed to do that: another unit's position can stop an enemy
+        // in zone of control, so every controller must share only a key over
+        // the complete board.
+        let reach_key = (g.turn, Self::attack_envelope_fingerprint(g, None));
         let mut store = self
             .enemy_envelope_cache
             .lock()
@@ -5618,16 +5676,18 @@ impl BasicAi {
                 // ⚠ `attack_reach_from_flood` already returns these ascending
                 // and distinct; re-collecting them into a second set was
                 // building the same answer twice.
-                let (targets, flood) = g.attack_reach_from_flood(unit.id);
+                let cached = g.cached_attack_reach_from_flood(reach_key, unit.id);
                 let reach: std::sync::Arc<EnvelopeReach> =
-                    std::sync::Arc::new(EnvelopeReach::from_tiles(targets));
+                    std::sync::Arc::new(EnvelopeReach::from_tiles(cached.targets().to_vec()));
                 if reusable {
                     store.insert(
                         unit.id,
                         EnemyEnvelope {
                             reach: std::sync::Arc::clone(&reach),
                             sensitive: std::sync::Arc::new(Self::envelope_sensitive_tiles(
-                                g, unit, &flood,
+                                g,
+                                unit,
+                                cached.flood(),
                             )),
                         },
                     );
@@ -9253,7 +9313,10 @@ impl BasicAi {
     }
 
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
-        if !self.naval_recon_on() || self.minor || self.barb {
+        if !(self.naval_recon_on() || self.island_exploration_active(g, pid))
+            || self.minor
+            || self.barb
+        {
             return false;
         }
         if !Self::unseen_water_remains(g, pid) {
@@ -12079,6 +12142,82 @@ impl BasicAi {
                 .is_none_or(|cid| g.cities[&cid].owner == pid)
     }
 
+    /// The connected dry ground underneath the Palace city. `Tile::continent`
+    /// is a map-script annotation and can be absent or split a single island,
+    /// so these genes use the map's actual dry-land connectivity instead.
+    pub(crate) fn capital_landmass(g: &Game, pid: usize) -> BTreeSet<Pos> {
+        let Some(home) = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| g.cities.get(&cid))
+            .min_by_key(|city| (std::cmp::Reverse(g.city_has_palace(city)), city.id))
+            .map(|city| city.pos)
+        else {
+            return BTreeSet::new();
+        };
+        let mut landmass = BTreeSet::new();
+        let mut frontier = VecDeque::from([home]);
+        while let Some(pos) = frontier.pop_front() {
+            if !landmass.insert(pos) {
+                continue;
+            }
+            for next in g.nbrs(pos) {
+                if landmass.contains(&next) {
+                    continue;
+                }
+                if g.map
+                    .get(next)
+                    .is_some_and(|tile| !g.rules.is_unknown(tile) && !g.rules.is_water(tile))
+                {
+                    frontier.push_back(next);
+                }
+            }
+        }
+        landmass
+    }
+
+    /// Count only mutually usable city sites on the capital's connected dry
+    /// ground. A cluster of plots inside one city radius is one future city,
+    /// not several reasons to postpone an overseas search.
+    fn main_landmass_settlement_room(
+        &self,
+        g: &Game,
+        pid: usize,
+        landmass: &BTreeSet<Pos>,
+        wanted: usize,
+    ) -> usize {
+        let mut sites = Vec::new();
+        for pos in landmass {
+            if self.valid_settle_site(g, pid, *pos)
+                && sites
+                    .iter()
+                    .all(|taken| g.wdist(*taken, *pos) as f64 >= self.w.min_city_dist)
+            {
+                sites.push(*pos);
+                if sites.len() >= wanted {
+                    break;
+                }
+            }
+        }
+        sites.len()
+    }
+
+    /// Whether `island-exploration` should spend a naval turn finding a new
+    /// landmass now, rather than while the capital still has ordinary room.
+    pub(crate) fn island_exploration_active(&self, g: &Game, pid: usize) -> bool {
+        if !self.island_exploration {
+            return false;
+        }
+        let landmass = Self::capital_landmass(g, pid);
+        !landmass.is_empty()
+            && self.main_landmass_settlement_room(
+                g,
+                pid,
+                &landmass,
+                ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+            ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT
+    }
+
     pub fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
         let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
         let cartography = g.players[pid].techs.contains(&crate::name!("cartography"));
@@ -13239,7 +13378,7 @@ impl BasicAi {
         if !g.rules.units[shooter.kind].has_ranged_attack() {
             return false;
         }
-        let frames = (g.player_vision_now(pid), g.visibility_viewers(pid));
+        let frames = (g.player_vision_frame(pid), g.visibility_viewers(pid));
         let range = g.unit_attack_range(uid);
         g.units.values().any(|target| {
             Some(target.owner) == g.barb_pid
@@ -13764,6 +13903,27 @@ impl BasicAi {
             .count()
     }
 
+    /// Known, usable foreign land a ship would be able to see after reaching
+    /// `target`. This is limited to the player's explored set: an explorer may
+    /// choose a visible landfall, but never a hidden island from full-map data.
+    fn island_landfall_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+        home_landmass: &BTreeSet<Pos>,
+    ) -> usize {
+        g.wdisk(target, g.unit_sight(uid))
+            .into_iter()
+            .filter(|pos| {
+                !home_landmass.contains(pos)
+                    && g.players[pid].explored.contains(pos)
+                    && self.valid_settle_site(g, pid, *pos)
+            })
+            .count()
+    }
+
     /// Ground another own explorer is already committed to; empty unless
     /// `explore_commit` holds goals. See `explore_commit`.
     fn reserved_explore_goals(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
@@ -13808,10 +13968,26 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
+        let island_home = if self.island_exploration
+            && !dry_only
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
+        {
+            let landmass = Self::capital_landmass(g, pid);
+            (!landmass.is_empty()
+                && self.main_landmass_settlement_room(
+                    g,
+                    pid,
+                    &landmass,
+                    ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+                ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
+                .then_some(landmass)
+        } else {
+            None
+        };
         // Visible hostiles at war with us: ground around them is not a goal.
         // Live vision only — a threat the seat cannot see does not steer it.
         let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
-            let visible = g.player_vision_now(pid);
+            let visible = g.player_vision_frame(pid);
             g.units
                 .values()
                 .filter(|unit| {
@@ -13865,7 +14041,7 @@ impl BasicAi {
             }
         }
         let reserved = self.reserved_explore_goals(g, pid, uid);
-        let lookahead = if self.explore_commit {
+        let lookahead = if self.explore_commit || island_home.is_some() {
             EXPLORE_COMMIT_LOOKAHEAD
         } else {
             EXPLORATION_FRONTIER_LOOKAHEAD
@@ -13919,12 +14095,25 @@ impl BasicAi {
                 radius += 1;
                 continue;
             };
-            if !self.explore_commit || radius >= first + lookahead {
+            if !(self.explore_commit || island_home.is_some()) || radius >= first + lookahead {
                 break;
             }
             radius += 1;
         }
-        let chosen = if self.explore_commit {
+        let chosen = if let Some(home_landmass) = island_home.as_ref() {
+            // Once home is nearly full, a visible foreign landfall outranks an
+            // equally revealing patch of empty water. If none is visible, the
+            // normal frontier term still sends the ship into fresh water.
+            candidates.into_iter().max_by_key(|target| {
+                (
+                    self.island_landfall_value(g, pid, uid, *target, home_landmass),
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    home.map_or(0, |home| g.wdist(home, *target)),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                )
+            })
+        } else if self.explore_commit {
             // The most revealing goal, and among those the one farthest from
             // home: the walk sweeps outward and along the frontier instead of
             // hugging the fringe nearest the unit. See `explore_commit`.
@@ -14045,7 +14234,7 @@ impl BasicAi {
                 return Some(village);
             }
         } else if self.hut_collection {
-            let visible = g.player_vision_now(pid);
+            let visible = g.player_vision_frame(pid);
             if let Some(village) = g
                 .reachable(uid)
                 .into_iter()
@@ -14772,11 +14961,14 @@ impl BasicAi {
             };
             let mut best: Option<(f64, Pos, Action)> = None;
             // Hoisted out of the candidate loop below (see
-            // `Game::ranged_order_is_legal`): `player_vision_now` clones a
-            // whole `TileBits`, and neither frame can move while this loop
-            // applies nothing. Built lazily — most units reach no enemy tile.
+            // `Game::ranged_order_is_legal`): neither frame can move while
+            // this loop applies nothing, so it is built at most once here
+            // rather than once per candidate tile. Built lazily — most units
+            // reach no enemy tile. `player_vision_frame` hands back the
+            // engine's own `Arc`, so even that one build is a refcount bump
+            // rather than a `TileBits` clone.
             let mut vision_frames: Option<(
-                crate::world::TileBits,
+                std::sync::Arc<crate::world::TileBits>,
                 std::collections::BTreeSet<usize>,
             )> = None;
             for pos in g.wdisk(upos, radius) {
@@ -14804,7 +14996,7 @@ impl BasicAi {
                     && distance <= g.unit_attack_range(uid)
                     && (!(self.legal_tactical_candidates || self.naval_threat_triage) || {
                         let frames = vision_frames.get_or_insert_with(|| {
-                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                            (g.player_vision_frame(pid), g.visibility_viewers(pid))
                         });
                         g.ranged_order_is_legal(pid, uid, pos, &frames.0, &frames.1)
                     })
@@ -14822,7 +15014,7 @@ impl BasicAi {
                     && g.priority_support_target_at(pid, pos).is_some()
                     && (!self.legal_tactical_candidates || {
                         let frames = vision_frames.get_or_insert_with(|| {
-                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                            (g.player_vision_frame(pid), g.visibility_viewers(pid))
                         });
                         g.units[&uid].attacks_left > 0
                             && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
@@ -15804,6 +15996,152 @@ mod tests {
         }
     }
 
+    /// The whole claim the sweep skip rests on, checked card by card against
+    /// the sweep itself on a played-forward board.
+    ///
+    /// `PolicyReadSet::card_is_inert` says a card cannot move
+    /// [`empire_reading`]. This asserts the implication over **every card in
+    /// the ruleset**, on both sides of the counterfactual the review runs
+    /// (removal for a card the seat holds, slotting for one it does not) and
+    /// under both `net_maintenance` arms, and it compares raw bits rather than
+    /// an epsilon: the skip reuses a number, so anything short of bit equality
+    /// is a defect.
+    ///
+    /// The board is a real one — four majors and six city-states playing
+    /// seventy turns of the Basic agent — because a hand-built fixture only
+    /// exercises the yield paths its author thought of, and the read set is
+    /// exactly the set of paths the board happens to open.
+    #[test]
+    fn a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero() {
+        let mut game = Game::new_full(4, 44, 30, 7_320_017, 300, 6, true);
+        game.set_fog_memory(false);
+        let mut ais: Vec<AdvancedAi> = game.players.iter().map(|_| AdvancedAi::new()).collect();
+        while game.winner.is_none() && game.turn <= 110 {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        let cards: Vec<Name> = game.rules.policies.keys().copied().collect();
+        let weights = Weights::default();
+        let mut ever_live: std::collections::BTreeSet<&str> = Default::default();
+        let mut ever_inert: std::collections::BTreeSet<&str> = Default::default();
+        let mut checked = 0usize;
+        // Every major, because the read set is a property of the board: a seat
+        // whose capital is queueing a Settler asks `item_prod_mult` for
+        // `settler_production_pct` and a seat queueing a Granary does not, so
+        // one seat exercises only the paths its own position opens.
+        for pid in 0..4 {
+            let cities = game.player_city_ids(pid);
+            let districts: usize = cities
+                .iter()
+                .map(|cid| game.cities[cid].districts.len())
+                .sum();
+            let buildings: usize = cities
+                .iter()
+                .map(|cid| game.cities[cid].buildings.len())
+                .sum();
+            let routes = game
+                .routes
+                .iter()
+                .filter(|route| route.owner == pid)
+                .count();
+            println!(
+                "fixture seat {pid}: {} cities, {districts} districts, {buildings} buildings, \
+                 {routes} trade routes, {} units, religion {:?}, pantheon {:?}, {} cards slotted",
+                cities.len(),
+                game.player_unit_ids(pid).len(),
+                game.players[pid].religion,
+                game.players[pid].pantheon,
+                game.players[pid].policies.len(),
+            );
+            assert!(!cities.is_empty(), "a seat with no cities reads nothing");
+            for net_maintenance in [false, true] {
+                let (base, reads) =
+                    reading_with_policy_trace(&game, pid, &weights, net_maintenance);
+                assert!(
+                    !reads.is_opaque(),
+                    "an ordinary seat carries no runtime attachment"
+                );
+                let mut inert: Vec<&str> = Vec::new();
+                let mut live: Vec<&str> = Vec::new();
+                for card in cards.iter().copied() {
+                    let verdict = reads.card_is_inert(&game.rules, card);
+                    let held = game.players[pid].policies.contains(&card);
+                    if held {
+                        game.players[pid].policies.remove(&card);
+                    } else {
+                        game.players[pid].policies.insert(card);
+                    }
+                    let other = empire_reading(&game, pid, &weights, net_maintenance);
+                    if held {
+                        game.players[pid].policies.insert(card);
+                    } else {
+                        game.players[pid].policies.remove(&card);
+                    }
+                    checked += 1;
+                    if verdict {
+                        assert_eq!(
+                            other.to_bits(),
+                            base.to_bits(),
+                            "{} is classified reading-inert but the sweep moved: {other} against \
+                             {base} (seat={pid}, held={held}, net_maintenance={net_maintenance})",
+                            card.as_str()
+                        );
+                        inert.push(card.as_str());
+                        ever_inert.insert(card.as_str());
+                    } else {
+                        live.push(card.as_str());
+                        ever_live.insert(card.as_str());
+                    }
+                }
+                println!(
+                    "  seat {pid} net_maintenance={net_maintenance}: {} of {} cards \
+                     reading-inert, so the review skips that many whole-empire sweeps",
+                    inert.len(),
+                    cards.len()
+                );
+                if pid == 0 && !net_maintenance {
+                    println!("  inert on seat 0: {}", inert.join(" "));
+                }
+                // Non-vacuous in both directions on every seat: the classifier
+                // has to rule cards out as well as in, or it measures nothing.
+                assert!(
+                    inert.len() >= 20,
+                    "expected the Great-Person, envoy and espionage families to be inert on \
+                     seat {pid}, got {}",
+                    inert.len()
+                );
+                assert!(!live.is_empty(), "the yield cards must not be skipped");
+                // Two named controls, one each way. A Great-Person card moves
+                // points `empire_reading` has no term for; an influence card
+                // moves the one non-yield rate it does read.
+                assert!(
+                    inert.contains(&"inspiration"),
+                    "a card whose whole effect is Great Scientist points is inert"
+                );
+                assert!(
+                    live.contains(&"charismatic_leader"),
+                    "influence_per_turn is a term of the reading, so its cards are not inert"
+                );
+            }
+        }
+        println!(
+            "{checked} (seat, card, maintenance-arm) verdicts checked against the sweep; \
+             {} cards were live somewhere and {} inert somewhere",
+            ever_live.len(),
+            ever_inert.len()
+        );
+        // The verdict is a property of the board, not of the card: some cards
+        // are inert on one seat and live on another, which is the whole reason
+        // this is traced per review rather than tabulated once.
+        assert!(
+            ever_live.intersection(&ever_inert).next().is_some(),
+            "a classifier that answered the same on every board would not need the trace"
+        );
+    }
+
     #[test]
     fn the_barbarian_responder_matches_a_galley_to_an_offshore_raider() {
         let mut g = Game::new_full(2, 24, 16, 91_484, 60, 0, true);
@@ -15899,14 +16237,23 @@ mod tests {
 
         // Blind (production today): the discount is an empire-level payment
         // no city yield carries, so the counterfactual reads 0.0 exactly.
-        let current = empire_reading(&game, 0, &weights, false);
-        let (blind, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
+        // It is also the classifier's own boundary: with the bill unread the
+        // sweep never asks for `unit_maintenance_discount`, so the card is
+        // reading-inert and the skip returns the same exact 0.0.
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
+        assert!(reads.card_is_inert(&game.rules, card));
+        let (blind, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
         assert_eq!(blind, 0.0, "the defect under test: the card is invisible");
 
         // Aware: the with-side bill is lower by one Gold per unit, so the
-        // gain is the discount at the gold weight — strictly positive.
-        let current = empire_reading(&game, 0, &weights, true);
-        let (aware, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, true);
+        // gain is the discount at the gold weight — strictly positive. The
+        // same card is now live to the classifier, because the same sweep now
+        // asks the deck for the discount.
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, true);
+        assert!(!reads.card_is_inert(&game.rules, card));
+        let (aware, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, true);
         assert!(
             aware > 0.0,
             "the maintenance discount must score its own relief, got {aware}"
@@ -15944,20 +16291,20 @@ mod tests {
 
         // Challenger: the current slate is the exact `without` side, so the
         // incremental scorer must agree with the old two-sweep reading.
-        let current = empire_reading(&game, 0, &weights, false);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
         let mut full = game.clone();
         let without = empire_reading(&full, 0, &weights, false);
         full.players[0].policies.insert(card);
         let with = empire_reading(&full, 0, &weights, false);
         let expected_gain = with - without;
         let expected = (expected_gain, candidate.0, candidate.1.clone(), candidate.2);
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
         assert_eq!(actual, expected);
 
         // Incumbent: after putting the card on the slate, the current reading
         // is the exact `with` side and only removal needs a fresh sweep.
         game.players[0].policies.insert(card);
-        let current = empire_reading(&game, 0, &weights, false);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
         let mut full = game.clone();
         full.players[0].policies.remove(&card);
         let without = empire_reading(&full, 0, &weights, false);
@@ -15968,7 +16315,7 @@ mod tests {
             candidate.1.clone(),
             candidate.2,
         );
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
         assert_eq!(actual, expected);
         assert!(game.players[0].policies.contains(&card));
     }
@@ -18955,6 +19302,45 @@ mod tests {
     }
 
     #[test]
+    fn island_exploration_prefers_the_known_foreign_landfall() {
+        let (mut g, source, target) = island_colony_game(1);
+        g.players[0].techs.insert(crate::name!("sailing"));
+        let landfall = g
+            .nbrs(target)
+            .into_iter()
+            .find(|pos| g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile)))
+            .expect("the island has a coastal approach");
+        let start = g
+            .nbrs(landfall)
+            .into_iter()
+            .find(|pos| {
+                g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile))
+                    && g.wdist(*pos, target) == 2
+            })
+            .expect("the approach has an outer water tile");
+        let galley = g.spawn_test_unit("galley", 0, start);
+        let empty_water = g
+            .nbrs(start)
+            .into_iter()
+            .find(|pos| {
+                *pos != landfall
+                    && g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile))
+                    && g.wdist(*pos, target) > g.unit_sight(galley)
+            })
+            .expect("the approach has an equally close empty-water choice");
+        let all_tiles: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        g.players[0].explored.extend(all_tiles);
+        g.players[0].explored.remove(&landfall);
+        g.players[0].explored.remove(&empty_water);
+        let mut ai = BasicAi::new();
+        ai.island_exploration = true;
+
+        assert!(ai.island_exploration_active(&g, 0));
+        assert_eq!(ai.exploration_goal(&g, 0, galley, false), Some(landfall));
+        assert_ne!(source, target, "the fixture has distinct landmasses");
+    }
+
+    #[test]
     fn settler_routes_to_distant_land_before_embarkation() {
         let mut game = Game::new_full(1, 18, 10, 91_002, 120, 0, false);
         let founding_settler = game
@@ -21101,7 +21487,7 @@ mod tests {
 
         // Engine preconditions: the wall makes one shot illegal, not both.
         let (g, archer, _, _, blocked_pos, clear_pos) = build();
-        let frames = (g.player_vision_now(0), g.visibility_viewers(0));
+        let frames = (g.player_vision_frame(0), g.visibility_viewers(0));
         assert!(
             !g.ranged_order_is_legal(0, archer, blocked_pos, &frames.0, &frames.1),
             "the walled corridor must refuse the shot"
@@ -24625,6 +25011,71 @@ mod attack_envelope_key_tests {
             seen[2], seen[3],
             "the enemy moved and its envelope did not, so the comparison above \
              cannot detect a stale one"
+        );
+    }
+
+    /// The expensive raw flood belongs to the board, not to one controller.
+    ///
+    /// A fresh `BasicAi` must reuse it, and a speculative `Game` clone must
+    /// reuse it too. The clone check is important: tactical search makes many
+    /// clones, which was the source of the repeated flood work this cache is
+    /// meant to remove.
+    #[test]
+    fn raw_enemy_reach_is_shared_by_controllers_and_game_clones() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let dry = |g: &Game, pos: Pos| {
+            g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile)) && g.units_at(pos).is_empty()
+        };
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, home) > 12 && dry(&game, *pos))
+            .min_by_key(|pos| (game.wdist(*pos, home), *pos))
+            .expect("the fixture offers distant open land");
+        let enemy = game.spawn_test_unit("warrior", 1, far);
+
+        let expected = BasicAi::new().enemy_attack_envelopes(&game, 0).to_vec();
+        assert!(
+            !expected.is_empty(),
+            "the fixture must cause at least one raw enemy reach to be cached"
+        );
+        let after_first_controller = game.attack_reach_cache_computations();
+        assert!(after_first_controller > 0);
+
+        let from_second_controller = BasicAi::new().enemy_attack_envelopes(&game, 0).to_vec();
+        assert_eq!(from_second_controller, expected);
+        assert_eq!(
+            game.attack_reach_cache_computations(),
+            after_first_controller,
+            "a new controller on the same board must reuse the raw flood"
+        );
+
+        let clone = game.clone();
+        let from_clone = BasicAi::new().enemy_attack_envelopes(&clone, 0).to_vec();
+        assert_eq!(from_clone, expected);
+        assert_eq!(
+            clone.attack_reach_cache_computations(),
+            after_first_controller,
+            "a speculative clone must share the parent's raw flood"
+        );
+
+        let mut changed_clone = clone;
+        let to = changed_clone
+            .nbrs(changed_clone.units[&enemy].pos)
+            .into_iter()
+            .next_back()
+            .unwrap();
+        changed_clone.units.get_mut(&enemy).unwrap().pos = to;
+        let _ = BasicAi::new().enemy_attack_envelopes(&changed_clone, 0);
+        assert!(
+            changed_clone.attack_reach_cache_computations() > after_first_controller,
+            "a changed speculative board must discard the parent snapshot"
         );
     }
 
