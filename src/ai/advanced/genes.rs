@@ -1648,6 +1648,14 @@ pub const GENES: &[Gene] = &[
     // Archery until a city can train one. Closes with the first Medieval
     // technology. See `advanced/early_archers.rs`.
     Gene { tag: "early-archers", field: "early_archers", kind: Kind::OptIn, enable: AdvancedAi::enable_early_archers, disable: AdvancedAi::disable_early_archers },
+    // `capture-go-or-stand-down` (operator, 2026-08-27, "decisions are slow to
+    // be carried out or forgotten"): the commitment ledger read 263 conquest
+    // decisions → 10 captures over 8 deployment maps, with nobody of ours
+    // within three hexes of the objective on a third of the turns it was
+    // held. A declared objective nobody has gone to for six consecutive
+    // turns is stood down explicitly — excluded from the ranking for twenty
+    // turns, strategy re-assessed now. See `docs/COMMITMENTS.md`.
+    Gene { tag: "capture-go-or-stand-down", field: "capture_go_or_stand_down", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_go_or_stand_down, disable: AdvancedAi::disable_capture_go_or_stand_down },
     // `relief-column-marches` / `threatened-city-reserve` (operator,
     // 2026-08-27): the live King seat `civvis-20260827T113726Z` lost
     // Aquileia (pop 15, walled) on t164 to a Chinese stack of seven while

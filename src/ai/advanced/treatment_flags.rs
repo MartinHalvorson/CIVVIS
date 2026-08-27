@@ -2994,6 +2994,21 @@ impl AdvancedAi {
         self.early_archers = false;
     }
 
+    /// A declared war's objective nobody of ours has been near for
+    /// `CAPTURE_GO_TURNS` consecutive turns is stood down explicitly and the
+    /// strategy re-assessed, instead of being held unprosecuted. Filed here
+    /// rather than under a marker: a whole function under one reads as an
+    /// entry. See `capture_go_or_stand_down` and `advanced/commitments.rs`.
+    pub fn enable_capture_go_or_stand_down(&mut self) {
+        self.capture_go_or_stand_down = true;
+    }
+
+    /// The twin of `enable_capture_go_or_stand_down`.
+    pub fn disable_capture_go_or_stand_down(&mut self) {
+        self.capture_go_or_stand_down = false;
+        self.capture_stood_down.clear();
+    }
+
     /// `culture-floor`: a culture-yielding building is exempt from the Great
     /// Work veto and the Theatre Square is priced while the empire's culture
     /// a turn trails the strongest major's by the floor ratio. See
