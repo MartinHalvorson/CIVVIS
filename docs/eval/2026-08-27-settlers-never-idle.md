@@ -163,7 +163,20 @@ found stranded on a tile is not asked again from it for five turns) and the
 screen was restarted on the shipped code as `--games 200`; its reading is
 below.
 
-{{SCREEN_FINAL}}
+**The 200-game screen** (`gene_screen --games 200 --jobs 10 --genes
+settler-never-idles --p-default-on 0.5 --start-seed 99500000`, the standard
+shape, binary `7eeb4c1a` — the cost fix in, the arrival-verdict fix below it
+not yet): 1,200 seats, 601 on / 599 off, win 16.1% on v 17.2% off →
+**−1.1 pp ± 2.2 (z −0.48)**; score share −0.04 pp ± 0.36 (z −0.12);
+compute cost **−0.5% ± 1.0** per treated seat, whole-game time −1.2% ± 1.8.
+Unresolved (`~`): the design resolves ±6.1 pp on wins at 80% power, and the
+gene sits well inside that. Read with `docs/EVAL.md`'s 2026-08-10 entry on
+the same lane — "a defect's drama and its Elo are unrelated quantities" —
+this is the expected shape: a Settler that stops standing in the capital is
+worth cities and score in the census and nothing a 200-game screen can see
+on wins. The cost is the finding that matters for the fleet: the first
+version's +4.9% is gone. The gene ships on by the operator's directive; the
+reporting batches will price it beside every other gene from here.
 
 ## What is deliberately not done
 
