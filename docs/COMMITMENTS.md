@@ -191,3 +191,70 @@ Forgotten, by hold:
 The settler holds (items 2 and 4 on the settler side) are the subject of
 PR #2655, which owns `advanced_settler_step`; this document records the
 numbers and leaves that lane alone.
+
+## 7. Existing genes, priced on this axis
+
+Each opt-in gene was switched on for every major (`CIVVIS_CENSUS_OPT_INS`)
+on the same eight maps. These are **not paired** — a gene that changes any
+decision changes the game's whole trajectory — so only large moves read.
+
+| gene | what moved | what did not |
+|---|---|---|
+| `civilian-out-of-reach` | nothing: **byte-identical** to the baseline — it is already ON in the deployment genome | the 2,684 freeze turns happen *with* it on; "waits outside the raider's reach" **is** the freeze |
+| `settler-target-hysteresis-2` | nothing: byte-identical — also already ON | the 309 settler retargets happen with it on |
+| `builder-tries-the-next-tile` (#2480, off) | improve made 5,790 (+36%), dropped 1,955 (3.4×, by design), done in 3.1 turns (v 3.7); walk-not-attempted 1,469 (v 1,713) | completions 2,830 (v 2,679); forgotten share 27% |
+| `city-campaign` (off) | capture made 394 (+50%); nobody-at-the-objective 20% of turns (v 34%) | captures **10** either way |
+| `unit-objective-memory` (off) | — | nothing on any class |
+
+**No existing gene closes any of the classes in §6.** That is the finding
+that justifies new genes rather than a default flip.
+
+## 8. Genes that act on the ledger
+
+### `capture-go-or-stand-down` (opt-in, ships off)
+
+The first. A declared war's objective that no unit of ours has been within
+`CAPTURE_PRESENCE_RADIUS` = 3 hexes of for `CAPTURE_GO_TURNS` = 6
+consecutive turns is **stood down explicitly**: the city leaves the target
+ranking for `CAPTURE_STAND_DOWN_TURNS` = 20 turns (never a home emergency),
+`plan_stale` re-assesses the strategy next turn instead of on the five-turn
+cadence, a journal line names the city and the streak, and
+`commit:capture:gene_stand_downs` counts it. Six turns is longer than any
+march the war plan prices for a target it appointed, so a streak that long
+is a target no army is going to. Untreated, the same target is held until
+the cadence happens to drop it — 168 of 263 decisions ended that way.
+
+Fires on two disjoint 6-game probe blocks (seeds 99400000 and 99400100):
+win +14.8 pp and +7.4 pp, share +2.3 and −1.0 — probe-sized, not a
+measurement. The standard screen prices it, on wins and on the two columns
+below.
+
+### What the reading asks for next (numbers in §5)
+
+1. **A civilian that would freeze near a hostile acts instead** — 2,107
+   Builder-turns and 577 settler-turns. The wait belongs to
+   `civilian_out_of_reach`, whose settler half PR #2655 is repairing; the
+   Builder half is the same mechanism (`civilian_safety.rs`), so the two
+   land together or the second one conflicts.
+2. **A pin the Builder does not walk to is resolved** — 1,713 turns. #2480's
+   gene drops the pin on a refused route at +4–12 % compute; a cheaper
+   shape is the ledger's own stall reading: three turns without progress on
+   a pin retires it for the hysteresis window, no A* retry.
+3. **A retarget en route pays for the walk it throws away** — 150 settler and
+   337 Builder retargets happened after the owner had already got closer.
+   A sunk-walk term in the re-rank, sized from the ledger's `best`.
+4. **ETA calibration** — everything completes at half its priced pace. The
+   `late` share is meaningless until the price matches the terrain; the
+   completion/ETA ratio the census prints is the calibration constant.
+
+## 9. The standing measurement
+
+Every seat row a screen writes now carries `commit_*`, and
+`gene_screen --analyze` prices every gene's on−off Δ on **decisions
+completed** (`done_delta_pp`) and **commitment-turns forgotten**
+(`forgotten_delta_pp`) beside its win and share Δ, in the JSON and as a
+`decisiveness` block after the table. The continuous batch
+(`docs/GENE_SCREEN.md`) therefore re-prices the decisiveness of the whole
+genome every rotation without anyone asking. `commitment_census` is
+registered in `docs/CENSUS.md`, so the scheduled census run holds the
+reading against drift.
