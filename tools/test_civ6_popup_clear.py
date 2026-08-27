@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 try:
@@ -49,6 +50,40 @@ class PopupTimingTest(unittest.TestCase):
         self.assertLessEqual(popup_clear.DIALOGUE_POLL_SECONDS, 0.25)
         self.assertLessEqual(popup_clear.POINTER_SETTLE_SECONDS, 0.1)
         self.assertLessEqual(popup_clear.POST_CLICK_SETTLE_SECONDS, 0.25)
+
+
+class NativeRecordingProtectionTest(unittest.TestCase):
+    def test_native_recording_commands_are_distinguished_from_png_fallbacks(self) -> None:
+        self.assertTrue(popup_clear.native_recording_command(
+            "/usr/sbin/screencapture -pdiU -z keyboard.interactive"))
+        self.assertTrue(popup_clear.native_recording_command(
+            "/usr/sbin/screencapture -v -V 5 /tmp/recording.mov"))
+        self.assertFalse(popup_clear.native_recording_command(
+            "screencapture -x -t png -R0,0,100,100 /tmp/frame.png"))
+        self.assertFalse(popup_clear.native_recording_command(
+            "/usr/bin/python3 tools/civ6_control/popup_clear.py"))
+
+    def test_native_recording_pause_does_not_query_the_status_daemon(self) -> None:
+        with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=True), \
+                mock.patch.object(popup_clear, "systemstatusd_cpu") as daemon_cpu:
+            self.assertEqual(
+                popup_clear.capture_pause_reason(),
+                "native screen recording UI is active",
+            )
+        daemon_cpu.assert_not_called()
+
+    def test_status_daemon_spin_pauses_pixel_capture(self) -> None:
+        with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=False), \
+                mock.patch.object(popup_clear, "systemstatusd_cpu", return_value=85.4):
+            self.assertEqual(
+                popup_clear.capture_pause_reason(),
+                "systemstatusd is spinning at 85% CPU",
+            )
+
+    def test_ordinary_capture_activity_does_not_pause(self) -> None:
+        with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=False), \
+                mock.patch.object(popup_clear, "systemstatusd_cpu", return_value=12.0):
+            self.assertIsNone(popup_clear.capture_pause_reason())
 
 
 # Unlike the module under test, these checks really do need Pillow: every one
