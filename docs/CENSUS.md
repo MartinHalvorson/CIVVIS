@@ -114,80 +114,79 @@ come_ashore=true  unit_turns=40451  embarked=  7.2%  transitions/1000 unit-turns
 
 ## commitment_census
 
-`src/ai/advanced/commitments.rs:1074` — census, not an assertion; run explicitly with --nocapture
+`src/ai/advanced/commitments.rs:1307` — census, not an assertion; run explicitly with --nocapture
 
 ```
-map 98500000 t220:
-  settle  made 72 done 29 (40%) retargeted 34 dropped 8 lost 0 · open turns 282: forgotten 25 (8%) stalled 58 (20%) late 125 (44%) · done in 3.9 turns v eta 2.1
-  improve made 659 done 393 (62%) retargeted 124 dropped 76 lost 39 · open turns 2528: forgotten 618 (24%) stalled 318 (12%) late 1192 (47%) · done in 3.7 turns v eta 2.0
-  capture made 36 done 1 (3%) retargeted 10 dropped 20 lost 0 · open turns 351: forgotten 140 (39%) stalled 105 (29%) late 78 (22%) · done in 83.0 turns v eta 20.0
-map 98500001 t123:
-  settle  made 61 done 18 (30%) retargeted 31 dropped 10 lost 1 · open turns 273: forgotten 77 (28%) stalled 16 (5%) late 128 (46%) · done in 3.4 turns v eta 1.5
-  improve made 241 done 140 (60%) retargeted 54 dropped 26 lost 11 · open turns 914: forgotten 231 (25%) stalled 102 (11%) late 450 (49%) · done in 3.8 turns v eta 1.7
-  capture made 19 done 0 (0%) retargeted 5 dropped 12 lost 0 · open turns 126: forgotten 33 (26%) stalled 9 (7%) late 4 (3%) · done in 0.0 turns v eta 0.0
-map 98500002 t174:
-  settle  made 99 done 24 (24%) retargeted 50 dropped 22 lost 2 · open turns 338: forgotten 76 (22%) stalled 57 (16%) late 130 (38%) · done in 3.3 turns v eta 1.5
-  improve made 396 done 238 (62%) retargeted 85 dropped 41 lost 17 · open turns 1766: forgotten 726 (41%) stalled 173 (9%) late 1008 (57%) · done in 3.9 turns v eta 1.9
-  capture made 19 done 0 (0%) retargeted 5 dropped 14 lost 0 · open turns 115: forgotten 30 (26%) stalled 26 (22%) late 0 (0%) · done in 0.0 turns v eta 0.0
-map 98500003 t251:
-  settle  made 139 done 29 (21%) retargeted 71 dropped 34 lost 4 · open turns 654: forgotten 159 (24%) stalled 115 (17%) late 246 (37%) · done in 4.0 turns v eta 2.2
-  improve made 663 done 420 (64%) retargeted 99 dropped 97 lost 33 · open turns 2079: forgotten 447 (21%) stalled 212 (10%) late 897 (43%) · done in 3.6 turns v eta 2.0
-  capture made 42 done 0 (0%) retargeted 12 dropped 26 lost 0 · open turns 399: forgotten 60 (15%) stalled 50 (12%) late 78 (19%) · done in 0.0 turns v eta 0.0
-map 98500004 t249:
-  settle  made 91 done 29 (32%) retargeted 31 dropped 24 lost 6 · open turns 657: forgotten 175 (26%) stalled 163 (24%) late 379 (57%) · done in 6.6 turns v eta 2.3
-  improve made 681 done 443 (66%) retargeted 71 dropped 108 lost 43 · open turns 2352: forgotten 624 (26%) stalled 274 (11%) late 1145 (48%) · done in 3.8 turns v eta 2.0
-  capture made 36 done 5 (14%) retargeted 10 dropped 19 lost 0 · open turns 350: forgotten 95 (27%) stalled 30 (8%) late 53 (15%) · done in 9.8 turns v eta 20.0
+map 98500000 t134:
+  settle  made 88 done 26 (31%) retargeted 43 dropped 12 lost 1 · open turns 331: forgotten 85 (25%) stalled 50 (15%) late 97 (29%) · done in 3.4 turns v eta 2.7
+  improve made 332 done 201 (62%) retargeted 58 dropped 47 lost 14 · open turns 1100: forgotten 299 (27%) stalled 77 (7%) late 362 (32%) · done in 3.6 turns v eta 2.5
+  capture made 22 done 0 (0%) retargeted 2 dropped 18 lost 0 · open turns 83: forgotten 44 (53%) stalled 11 (13%) late 0 (0%) · done in 0.0 turns v eta 0.0
+map 98500001 t244:
+  settle  made 85 done 26 (30%) retargeted 43 dropped 15 lost 1 · open turns 324: forgotten 86 (26%) stalled 19 (5%) late 78 (24%) · done in 3.2 turns v eta 2.5
+  improve made 743 done 453 (62%) retargeted 112 dropped 111 lost 49 · open turns 2852: forgotten 731 (25%) stalled 339 (11%) late 1008 (35%) · done in 4.1 turns v eta 3.1
+  capture made 58 done 0 (0%) retargeted 21 dropped 33 lost 0 · open turns 287: forgotten 58 (20%) stalled 7 (2%) late 9 (3%) · done in 0.0 turns v eta 0.0
+map 98500002 t231:
+  settle  made 147 done 30 (20%) retargeted 79 dropped 31 lost 6 · open turns 733: forgotten 253 (34%) stalled 119 (16%) late 305 (41%) · done in 3.5 turns v eta 3.1
+  improve made 517 done 298 (59%) retargeted 89 dropped 81 lost 30 · open turns 2586: forgotten 951 (36%) stalled 323 (12%) late 1212 (46%) · done in 4.7 turns v eta 2.9
+  capture made 38 done 0 (0%) retargeted 16 dropped 18 lost 0 · open turns 255: forgotten 40 (15%) stalled 15 (5%) late 5 (1%) · done in 0.0 turns v eta 0.0
+map 98500003 t206:
+  settle  made 73 done 30 (41%) retargeted 29 dropped 10 lost 3 · open turns 339: forgotten 128 (37%) stalled 18 (5%) late 131 (38%) · done in 3.9 turns v eta 3.1
+  improve made 542 done 334 (63%) retargeted 73 dropped 81 lost 39 · open turns 1926: forgotten 480 (24%) stalled 291 (15%) late 735 (38%) · done in 3.8 turns v eta 2.7
+  capture made 35 done 1 (3%) retargeted 10 dropped 20 lost 0 · open turns 180: forgotten 58 (32%) stalled 39 (21%) late 0 (0%) · done in 1.0 turns v eta 20.0
+map 98500004 t251:
+  settle  made 87 done 28 (32%) retargeted 41 dropped 14 lost 2 · open turns 667: forgotten 180 (26%) stalled 253 (37%) late 411 (61%) · done in 5.0 turns v eta 3.2
+  improve made 668 done 455 (69%) retargeted 64 dropped 101 lost 33 · open turns 2095: forgotten 327 (15%) stalled 242 (11%) late 601 (28%) · done in 3.8 turns v eta 2.9
+  capture made 48 done 6 (12%) retargeted 10 dropped 31 lost 0 · open turns 353: forgotten 62 (17%) stalled 55 (15%) late 69 (19%) · done in 4.7 turns v eta 20.0
 map 98500005 t120:
-  settle  made 32 done 18 (58%) retargeted 6 dropped 7 lost 0 · open turns 153: forgotten 18 (11%) stalled 47 (30%) late 82 (53%) · done in 3.9 turns v eta 1.9
-  improve made 232 done 155 (68%) retargeted 32 dropped 32 lost 7 · open turns 716: forgotten 117 (16%) stalled 51 (7%) late 303 (42%) · done in 3.9 turns v eta 2.0
-  capture made 20 done 0 (0%) retargeted 6 dropped 12 lost 0 · open turns 85: forgotten 42 (49%) stalled 17 (20%) late 0 (0%) · done in 0.0 turns v eta 0.0
+  settle  made 53 done 20 (37%) retargeted 21 dropped 11 lost 1 · open turns 171: forgotten 44 (25%) stalled 10 (5%) late 36 (21%) · done in 4.5 turns v eta 3.0
+  improve made 227 done 157 (71%) retargeted 23 dropped 28 lost 11 · open turns 661: forgotten 152 (22%) stalled 52 (7%) late 232 (35%) · done in 3.3 turns v eta 2.3
+  capture made 13 done 0 (0%) retargeted 0 dropped 10 lost 0 · open turns 152: forgotten 60 (39%) stalled 8 (5%) late 37 (24%) · done in 0.0 turns v eta 0.0
 map 98500006 t251:
-  settle  made 76 done 26 (34%) retargeted 22 dropped 26 lost 2 · open turns 278: forgotten 78 (28%) stalled 16 (5%) late 118 (42%) · done in 2.9 turns v eta 1.5
-  improve made 638 done 421 (67%) retargeted 76 dropped 95 lost 34 · open turns 2077: forgotten 463 (22%) stalled 308 (14%) late 979 (47%) · done in 3.6 turns v eta 1.9
-  capture made 52 done 3 (6%) retargeted 10 dropped 37 lost 0 · open turns 327: forgotten 125 (38%) stalled 28 (8%) late 5 (1%) · done in 8.0 turns v eta 20.0
-map 98500007 t224:
-  settle  made 117 done 28 (24%) retargeted 64 dropped 20 lost 2 · open turns 571: forgotten 176 (30%) stalled 120 (21%) late 317 (55%) · done in 3.9 turns v eta 1.8
-  improve made 748 done 469 (64%) retargeted 109 dropped 93 lost 56 · open turns 2476: forgotten 749 (30%) stalled 325 (13%) late 1286 (51%) · done in 3.5 turns v eta 1.7
-  capture made 39 done 1 (2%) retargeted 7 dropped 28 lost 0 · open turns 291: forgotten 173 (59%) stalled 25 (8%) late 61 (20%) · done in 25.0 turns v eta 20.0
+  settle  made 97 done 28 (28%) retargeted 32 dropped 32 lost 5 · open turns 467: forgotten 157 (33%) stalled 70 (14%) late 178 (38%) · done in 3.8 turns v eta 4.5
+  improve made 714 done 460 (65%) retargeted 106 dropped 102 lost 36 · open turns 2222: forgotten 601 (27%) stalled 219 (9%) late 789 (35%) · done in 3.4 turns v eta 2.6
+  capture made 51 done 2 (4%) retargeted 20 dropped 26 lost 0 · open turns 374: forgotten 98 (26%) stalled 25 (6%) late 19 (5%) · done in 6.0 turns v eta 20.0
+map 98500007 t237:
+  settle  made 95 done 24 (25%) retargeted 51 dropped 17 lost 2 · open turns 446: forgotten 144 (32%) stalled 72 (16%) late 208 (46%) · done in 5.9 turns v eta 2.6
+  improve made 799 done 512 (65%) retargeted 119 dropped 108 lost 44 · open turns 2523: forgotten 634 (25%) stalled 241 (9%) late 821 (32%) · done in 3.7 turns v eta 2.8
+  capture made 46 done 2 (4%) retargeted 14 dropped 26 lost 0 · open turns 281: forgotten 63 (22%) stalled 32 (11%) late 24 (8%) · done in 3.0 turns v eta 20.0
 === 8 maps, deployment genome ===
-settle  made 687 done 201 (29%) retargeted 309 dropped 151 lost 17 · open turns 3206: forgotten 784 (24%) stalled 592 (18%) late 1525 (47%) · done in 4.1 turns v eta 1.9
-improve made 4258 done 2679 (64%) retargeted 650 dropped 568 lost 240 · open turns 14908: forgotten 3975 (26%) stalled 1763 (11%) late 7260 (48%) · done in 3.7 turns v eta 1.9
-capture made 263 done 10 (4%) retargeted 65 dropped 168 lost 0 · open turns 2044: forgotten 698 (34%) stalled 290 (14%) late 279 (13%) · done in 18.1 turns v eta 20.0
+settle  made 725 done 212 (29%) retargeted 339 dropped 142 lost 21 · open turns 3478: forgotten 1077 (30%) stalled 611 (17%) late 1444 (41%) · done in 4.1 turns v eta 3.1
+improve made 4542 done 2870 (64%) retargeted 644 dropped 659 lost 256 · open turns 15965: forgotten 4175 (26%) stalled 1784 (11%) late 5760 (36%) · done in 3.8 turns v eta 2.8
+capture made 311 done 11 (3%) retargeted 93 dropped 182 lost 0 · open turns 1965: forgotten 483 (24%) stalled 192 (9%) late 163 (8%) · done in 4.3 turns v eta 20.0
 endings:
-  settle  completed         201
-  settle  dropped           127
-  settle  lost              17
-  settle  retargeted        309
-  settle  retargeted before moving159
-  settle  retargeted en route150
-  settle  settled elsewhere 24
-  improve completed         2679
-  improve dropped           568
-  improve lost              240
-  improve retargeted        650
-  improve retargeted before moving313
-  improve retargeted en route337
-  capture completed         10
-  capture ended, always present100
+  settle  completed         212
+  settle  dropped           117
+  settle  lost              21
+  settle  retargeted        339
+  settle  retargeted before moving164
+  settle  retargeted en route175
+  settle  settled elsewhere 25
+  improve completed         2870
+  improve dropped           659
+  improve lost              256
+  improve retargeted        644
+  improve retargeted before moving334
+  improve retargeted en route310
+  capture completed         11
+  capture ended, always present137
   capture ended, nobody ever went50
-  capture ended, went then left83
-  capture retargeted        65
-  capture stood down        168
+  capture ended, went then left88
+  capture retargeted        93
+  capture stood down        182
 open at game end:
-  settle  9
-  improve 121
-  capture 20
+  settle  11
+  improve 113
+  capture 25
 forgotten, by hold:
-  settle  hostile within two              577
-  settle  in a city                       2
-  settle  stall counted (route refused)   87
-  settle  threat forecast on the site     19
-  settle  unexplained                     99
-  improve at the tile, build refused      30
-  improve hostile within two              2107
-  improve in a city                       125
-  improve walk refused or not attempted   1713
-  capture nobody at the objective         698
+  settle  hostile within two              806
+  settle  stall counted (route refused)   47
+  settle  threat forecast on the site     12
+  settle  unexplained                     212
+  improve at the tile, build refused      17
+  improve hostile within two              2142
+  improve in a city                       102
+  improve walk refused or not attempted   1914
+  capture nobody at the objective         483
 ```
 
 ## envoy_allocation_census
