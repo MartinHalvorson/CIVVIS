@@ -220,11 +220,13 @@ class FilteringNarrowsBothSides(unittest.TestCase):
         """A filtered `--write` once dropped the other 28 readings (#2653)."""
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
+            row = lambda output: {"file": "src/x.rs", "line": 1, "note": "census",
+                                  "test": "t", "ok": True, "output": output}
             (tmp / "census.json").write_text(json.dumps({
-                "wanted": {"ok": True, "output": ["n = 6"]},
-                "other": {"ok": True, "output": ["m = 1"]},
+                "wanted": row(["n = 6"]),
+                "other": row(["m = 1"]),
             }))
-            fresh = {"wanted": {"ok": True, "output": ["n = 7"], "note": "census"}}
+            fresh = {"wanted": row(["n = 7"])}
             with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
                  mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
                  mock.patch.object(census, "take", lambda timeout, only, jobs=1: fresh):
