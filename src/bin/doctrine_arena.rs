@@ -90,11 +90,11 @@ fn share(value: Option<f64>) -> String {
 }
 
 const PROFILE_HEADER: &str = "  concentr.  disper.  arrival     foot  absent  vanguard  \
-envelop.  focus  ground  screen  contact";
+envelop.  focus  ground  screen  contact  salvag.";
 
 fn profile_row(label: &str, profile: DoctrineProfile) -> String {
     format!(
-        "{label:<22}{:>9}{:>9}{:>9}{:>9}{:>8}{:>10}{:>10}{:>7}{:>8}{:>8}{:>9}",
+        "{label:<22}{:>9}{:>9}{:>9}{:>9}{:>8}{:>10}{:>10}{:>7}{:>8}{:>8}{:>9}{:>9}",
         cell(profile.concentration),
         cell(profile.dispersion),
         cell(profile.arrival),
@@ -106,6 +106,7 @@ fn profile_row(label: &str, profile: DoctrineProfile) -> String {
         share(profile.ground),
         share(profile.screen),
         share(profile.contact),
+        share(profile.salvageable),
     )
 }
 
@@ -117,6 +118,17 @@ fn merged(ledgers: impl Iterator<Item = DoctrineLedger>) -> DoctrineLedger {
         out.absorb(&ledger);
     }
     out
+}
+
+/// Cities taken and lost, or a dash on a board with no city to take. The
+/// live seat's own count is zero across eleven declared wars, so this is the
+/// column an assault board exists to move.
+fn captures(ledger: &DoctrineLedger) -> String {
+    if ledger.cities_taken == 0 && ledger.cities_lost == 0 {
+        "--".to_string()
+    } else {
+        format!("+{}/-{}", ledger.cities_taken, ledger.cities_lost)
+    }
 }
 
 /// Kills per loss, or a dash when nothing was lost — the exchange ratio the
@@ -139,11 +151,25 @@ fn describe(boards: &[Engagement]) {
         println!("  {}", spec.provenance);
         println!("  {}", spec.problem);
         println!(
-            "  board {}x{}, {} turns{}",
+            "  board {}x{}, {} turns{}{}",
             spec.width,
             spec.height,
             spec.turns,
-            if spec.heal { ", healing on" } else { "" }
+            if spec.heal { ", healing on" } else { "" },
+            match spec.cities.len() {
+                0 => String::new(),
+                n => format!(
+                    ", {n} city ({})",
+                    spec.cities
+                        .iter()
+                        .map(|held| format!(
+                            "role {} at {},{} hp {} wall {}",
+                            held.role, held.col, held.row, held.hp, held.wall_hp
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
+            }
         );
         for role in 0..2 {
             let force: Vec<&str> = spec.forces[role]
@@ -207,6 +233,10 @@ fn profile_run(boards: &[Engagement], name: &str, seeds: usize, start_seed: u64,
         "screen     share of own ranged unit-turns with a friendly between them and the enemy"
     );
     println!("contact    share of turns on which the two forces were within two tiles");
+    println!("salvag.    share of own losses already at or below 30 hp the turn before -- the");
+    println!("           losses the controller had a turn's warning of, and could have rotated,");
+    println!("           withdrawn or healed out of. A high figure is losses worth preventing;");
+    println!("           a low one means the army is being killed from health it could not read.");
     println!();
     println!("The figure beside each role is that role's mean material swing per seed.");
     println!("None of these is a score. An army holding a defile should be dense and static;");
@@ -590,6 +620,14 @@ fn main() {
             b.losses,
             exchange(&b)
         );
+        if a.cities_taken + a.cities_lost > 0 {
+            println!(
+                "{:<20}cities taken/lost: {name_a} {}, {name_b} {}",
+                "",
+                captures(&a),
+                captures(&b)
+            );
+        }
         println!();
         println!(
             "The pooled row treats every board as one experiment, which the curriculum is not: \
@@ -639,6 +677,13 @@ fn main() {
             outcome.b.losses,
             exchange(&outcome.b)
         );
+        if outcome.a.cities_taken + outcome.a.cities_lost > 0 {
+            println!(
+                "  cities: {name_a} {}, {name_b} {}",
+                captures(&outcome.a),
+                captures(&outcome.b)
+            );
+        }
     }
 
     if !silent.is_empty() {

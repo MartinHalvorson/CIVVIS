@@ -54,6 +54,16 @@ pub struct Tile {
     /// River segments on this hex's six edges, in `hex::DIRS` order.
     /// Shared edges are mirrored on both neighboring tiles.
     pub river_edges: [bool; 6],
+    /// The host's own answer to "is this plot riverside" (`Plot:IsRiver`), kept
+    /// apart from the edges: a segment whose Firaxis holder is an unrevealed
+    /// neighbour is on none of this tile's `river_edges`, yet the plot IS
+    /// riverside for housing, fresh water and district adjacency. Read by
+    /// [`Tile::has_river`]; a crossing still needs the edge. Not serialised
+    /// while false, so a generated world's save bytes — and the platform
+    /// digests `mapgen` pins over them — are untouched by a flag only a
+    /// mirrored board ever sets.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub riverside: bool,
     /// Coastal cliff segments on this hex's six shared edges. Like rivers,
     /// cliff edges are mirrored onto the neighboring tile so saves and
     /// observations remain self-contained.
@@ -228,6 +238,7 @@ impl Tile {
             wonder: None,
             owner_city: None,
             river_edges: [false; 6],
+            riverside: false,
             cliff_edges: [false; 6],
             road: 0,
             continent: None,
@@ -877,13 +888,14 @@ impl WorldMap {
     pub fn clear_rivers(&mut self) {
         for tile in self.tiles.values_mut() {
             tile.river_edges = [false; 6];
+            tile.riverside = false;
         }
     }
 }
 
 impl Tile {
     pub fn has_river(&self) -> bool {
-        self.river_edges.iter().any(|edge| *edge)
+        self.riverside || self.river_edges.iter().any(|edge| *edge)
     }
 }
 

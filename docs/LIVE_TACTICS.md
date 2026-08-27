@@ -557,3 +557,120 @@ none alone; the 68-war captured file at 6 seeds +5.2 ± 5.9 with healing off
 and **+14.0 ± 5.8** (t 2.42, 56/38) with healing on. The plan pays where
 there are several shooters and a target worth finishing, and is inert in a
 six-unit open-field trade. Whole-game screen pending, as a no-harm check.
+
+## 16. The live seat can be told to play a gene, and the row says how the army fought (2026-08-26)
+
+Three leaks in §2 and §3, closed together.
+
+**A gene priced on the arena had no route to the live board.** `--with`
+accepted only a *ledger-held live treatment* — a `Kind::Repair` or
+`Kind::HostOnly` gene the batch rule had turned off — because that is a
+restoration: the live universe set the flag and the ledger took it away, so
+skipping the withholding restores it exactly. A `Kind::OptIn` gene was never
+in that universe, so it could reach the live seat only by entering
+`DEPLOYMENT_GENOME`, which is the whole-game screen's decision. Under §13's
+policy that inverts the gate: the arena decides a tactical gene and the
+screen is the no-harm check, and until the screen answers the gene cannot be
+tried where it matters. `ledger_held_opt_in` / `forceable_treatments`
+(`gene_ledger.rs`) name the other half, and `--with <opt-in>` now seats one —
+an *addition*, recorded as such: `apply_gene_ledger_with_forced_live` puts it
+in `applied.forced`, `deployment_treatments_with_forced_live` names it in the
+arm's genome, and the deployment genome itself does not move.
+
+**The ladder row said nothing about the fighting.** It has carried
+`applied_pct` since the bridge existed and nothing about the army, so every
+claim about the live seat's exchange ratio (0.18 kills per loss, and the
+Firaxis seats' 1.71) came from opening `HallofFame.sqlite` by hand or from a
+code comment. `civ6_ladder.combat_totals` lifts the cheap half of the
+tactical ledger — the half that needs only `events.jsonl` — onto the row:
+`kills, losses, kills_per_loss, damage_dealt, damage_taken, cities_taken,
+cities_lost, military_units_gone`, plus `forced` beside the `withheld` that
+was already there. `None` on a run whose mod predates the tactical ledger,
+which is a different statement from a seat that never fought.
+
+**`city_occupation` was emitted and read by nothing.** The mod has written it
+since the tactical ledger landed, so no report could say whether a war ended
+in a capture — the question eleven declared wars and four sieges to 180-190
+of 200 were waiting on. `city_occupations` counts a city taken from a rival
+and one of ours lost (a city of ours retaken is neither), and it is now a
+column on both the ledger report and the ladder row.
+
+**`move_refused` was emitted and read by nothing**, and its own comment in
+the mod said the point was that "the Rust side can feed a NAMED refusal back
+so CIVVIS stops re-deriving the same impossible step". A failed `MOVE_TO` was
+diagnosed by comparing two frames' positions — which reads the same for a
+refusal, an exhausted allowance and an order the mod never issued. It is now
+an `EVIDENCE_KIND`, and a `MOVE_TO` that did not move is failed as
+`host_refused_impassable` / `host_refused_water` / `host_refused_move` when
+the host said so, and `did_not_move` when it did not.
+
+**What is still open from §3 after this:** the combat frame has still never
+played (`CombatFrames` is 0 in all 261 ladder rows since 2026-08-19, and this
+machine has held its live games since 2026-08-02); the swap verb is still
+untranslated on the bridge, and `Action::Swap` — implemented, tested and
+refused correctly in the engine since `do_swap` — is still chosen by no
+controller (`docs/MOVEMENT.md` names the `swap-rotation` gene that would).
+## 17. Price it like the engine — and the null it measured (2026-08-26)
+
+Two opt-in genes (`src/ai/advanced/engine_pricing.rs`) replace the
+controller's two hand-written estimates of a fight with the engine's own
+arithmetic: `exchange-is-the-engines` routes `exchange_score`'s defended
+branch through `melee_exchange_strengths` / `ranged_strike_strengths` +
+`expected_damage`, and `defend-where-you-stand` prices the defender on the
+candidate tile with that tile's own defence, in `projected_counter_damage`
+and in `coordinated_tactical_step`'s inline threat term. Both are strictly
+more accurate than what they replace. Both measure **null**: `battle_bench`
++10.9 ± 11.9 and +5.4 ± 16.2, the doctrine curriculum +8.1 ± 10.3 and
++2.1 ± 6.4, the 68-war captured file −10.0 ± 6.7 and −13.9 ± 8.8 with
+healing on — and 79 and 140 of 160 skirmish seeds diverged, so the arms
+fired.
+
+Recorded here because it belongs beside §7's null and §15's positive: the
+tactical layer's accuracy is not obviously its constraint. `docs/AI_GAPS.md`
+carries the hypothesis (`attack_threshold` was calibrated against the biased
+estimate, so exactness without re-fitting the toll is two changes at once)
+and the finding that the engine has no Great General to model.
+## 18. Swap rotation, and what it says about why (2026-08-26)
+
+`Action::Swap` has been legal, tested and correctly refused in the engine
+since `do_swap`, and no controller had ever chosen one. `swap-rotation`
+(`src/ai/advanced/swap_rotation.rs`, opt-in, off) is its first use: a unit
+in contact and at or below `withdraw_hp` trades places with an adjacent
+melee friend that is 25 hp healthier and further from the enemy, ahead of
+the recovery step that would otherwise walk it away and take the tile with
+it.
+
+Positive on every instrument and significant on none: curriculum
++15.6 ± 11.3 with healing on and +14.4 ± 9.6 with it off, the 68-war file
++7.5 ± 6.0, `battle_bench` +20.2 ± 14.9 with the exchange ratio at 1.044
+against 0.958. `the_reserve` — the position built to charge for a line
+handled piecemeal — carries the curriculum at +115.
+
+**The heal-off reading is the finding.** The gene was written expecting to
+need healing, and it does not: the wounded unit never has to come back. What
+pays is that the line does not open when it leaves. That is a different
+claim from "rotate to heal", and it is the one the numbers support.
+
+## 19. The arena can pose a siege, and the siege is an arrival problem (2026-08-27)
+
+`docs/DOCTRINE_ARENA.md` ("The arena can pose a siege") records the
+instrument: a position may state a city with hit points and a wall pool, a
+captured `Engagement` carries the city the fight was over, and the ledger
+counts what changed hands.
+
+The first assault position, `the_storming` — a 200-hit-point city behind 100
+points of wall against a siege train worth three times the garrison —
+reproduces §1's live record in thirty-four turns: over forty assaults the
+deployed controller took the city **three times**, and it **loses the
+position** to `basic` at −200.8 ± 102.5 a seed (sign p 0.024).
+
+**The cause is not the walls.** The besieger's arrival spread on that board
+is **10.91 turns**, the worst in the arena against 1.2–8.1 everywhere else,
+with contact at 70 %, the lowest anywhere. The siege train is fed to the
+garrison a unit at a time — §10's finding, on the position that punishes it
+hardest. `close-as-a-body` is the gene shaped for it and reads the right sign
+(+37.5 ± 30.3) while firing on only 6 of 40 seeds, because it acts on an
+`Advance` posture out of contact and this board reaches contact quickly. A
+gene that paced a *siege train* specifically — hold the melee until the
+catapults are in range and the wall is going down — is the next thing this
+board can price, and it could not be priced at all before it existed.

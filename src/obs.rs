@@ -949,6 +949,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     .get(&o.id)
                     .copied()
                     .map(|value| value.round() as i64),
+                // The domination lane's own number on the shipped overview:
+                // the army without the treasury, where `military` folds Gold in.
+                "military_no_treasury": public_stats
+                    .and_then(|stats| stats.military_no_treasury)
+                    .map(|value| value.round() as i64),
                 "team": o.team,
                 "teammate": g.same_team(pid, o.id),
                 "at_war_with_me": g.is_at_war(pid, o.id),
@@ -1453,6 +1458,7 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
             "progress": round1(r.religious),
             "converted": r.converted_civs,
             "target": r.religious_target,
+            "cities_following": r.cities_following_religion,
         },
         "diplomatic": {
             "progress": round1(r.diplomatic),

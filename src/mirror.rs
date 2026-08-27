@@ -156,7 +156,7 @@ pub struct Plot {
     #[serde(default)]
     pub i: bool,
     #[serde(default)]
-    pub fw: bool,
+    pub fw: Option<bool>,
     /// Improvement type name already built here, e.g. `IMPROVEMENT_FARM`.
     #[serde(default)]
     pub im: Option<String>,
@@ -209,6 +209,27 @@ pub struct Plot {
     /// sea-level rise cannot reach.
     #[serde(default = "minus_one")]
     pub cl: i32,
+    /// Appeal as the host counts it (`Plot:GetAppeal`, the shipped
+    /// PlotToolTip's read). The board derives appeal from its own six
+    /// neighbours and cannot see a wonder's +2 in fog, a Governor's promotion
+    /// or a rival's district; Neighborhood housing, Seaside and Ski Resorts
+    /// and National Parks are all priced on it. `None` on an older export or
+    /// a failed read, where [`crate::game::Game::tile_appeal`] keeps its own
+    /// derivation. Carried onto the board by [`apply_landmass`].
+    #[serde(default)]
+    pub ap: Option<i32>,
+    /// Whether this plot is inside a National Park (`Plot:IsNationalPark`).
+    /// A park is not an improvement in Civilization VI and IS one on this
+    /// board, so the flag lands as the `national_park` improvement.
+    #[serde(default)]
+    pub np: bool,
+    /// Whether this plot is in the seat's sight NOW
+    /// (`PlayersVisibility[pid]:IsVisible`), not merely revealed once. Joins
+    /// [`crate::game::Game::host_observed`], which the mirrored seat's vision
+    /// frame unions in; absent reads as fog, which is what every earlier
+    /// export meant.
+    #[serde(default)]
+    pub vis: bool,
     /// Route standing here (`Plot:GetRouteType`), e.g. `ROUTE_ANCIENT_ROAD`.
     /// Roads were never exported and the mirror wrote `tile.road = 0`
     /// everywhere, so every march was priced across roadless ground. Absent
@@ -508,7 +529,7 @@ mod tests {
             o: -1,
             w: false,
             i: false,
-            fw: false,
+            fw: None,
             rv: 0,
             ri: false,
             ct: None,
@@ -520,6 +541,9 @@ mod tests {
             rt: None,
             rp: false,
             yl: None,
+            ap: None,
+            np: false,
+            vis: false,
         }
     }
 
@@ -2053,7 +2077,7 @@ mod tests {
                 o: 0,
                 w: false,
                 i: false,
-                fw: true,
+                fw: Some(true),
                 rv: 0,
                 ri: false,
                 ct: None,
@@ -2065,6 +2089,9 @@ mod tests {
                 rt: None,
                 rp: false,
                 yl: None,
+                ap: None,
+                np: false,
+                vis: false,
             }],
         }];
         let snapshot = Snapshot::from_chunks(&chunks);
@@ -2111,7 +2138,7 @@ mod tests {
         assert_eq!(chunk.plots.len(), 2);
         let hill = &chunk.plots[0];
         assert_eq!(hill.o, 0);
-        assert!(hill.fw, "fresh water carries through");
+        assert_eq!(hill.fw, Some(true), "fresh water carries through");
         let vocab = Vocabulary::embedded();
         assert_eq!(
             vocab.terrain(hill.t.as_deref().unwrap()),
@@ -2380,6 +2407,322 @@ mod tests {
             mirror.game.unit_max_moves(spent)
         );
         assert_eq!(mirror.game.units[&fresh].moves_left, 1.0);
+    }
+
+    /// ★★★ The host's own upgrade verdict crosses per unit (docs/FIDELITY.md,
+    /// "The one-to-one map", item 9): a named successor and bill price the
+    /// lane, a named block silences it whatever the board's rules would say,
+    /// and an export without the keys leaves the board's own rule in charge.
+    /// On both paths.
+    #[test]
+    fn the_hosts_upgrade_verdict_prices_the_lane_and_a_named_block_silences_it() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let warrior = |to: Option<&str>, cost: Option<f64>, blocked: Option<&str>| StateUnit {
+            id: 31,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 3,
+            y: 3,
+            moves: 2.0,
+            upgrade_to: to.map(str::to_string),
+            upgrade_cost: cost,
+            upgrade_blocked_reason: blocked.map(str::to_string),
+            ..StateUnit::default()
+        };
+        let state = |turn: u32, unit: StateUnit| StateSnapshot {
+            turn,
+            gold: 300,
+            units: vec![unit],
+            ..StateSnapshot::default()
+        };
+        let upgrade = |mirror: &LiveMirror| {
+            let uid = mirror.uid_of[&31];
+            let offer = mirror
+                .game
+                .unit_gold_upgrade_detail(0, uid)
+                .map(|(to, gold, _)| (to.to_string(), gold));
+            let lane = mirror
+                .game
+                .legal_unit_upgrade_actions(0)
+                .iter()
+                .any(|action| {
+                    matches!(action, crate::game::Action::UpgradeUnit { unit } if *unit == uid)
+                });
+            (offer, lane)
+        };
+
+        // No key: the board's own rule, which refuses a unit on unowned ground.
+        let mut bare = LiveMirror::new(
+            &snapshot,
+            &state(40, warrior(None, None, None)),
+            4,
+            1,
+            250,
+            0,
+        );
+        assert_eq!(upgrade(&bare), (Err("neutral territory"), false));
+
+        // The host names the successor and the bill: the lane carries both.
+        let priced = |turn| state(turn, warrior(Some("UNIT_SWORDSMAN"), Some(120.0), None));
+        let fresh = LiveMirror::new(&snapshot, &priced(40), 4, 1, 250, 0);
+        assert_eq!(
+            upgrade(&fresh),
+            (Ok(("swordsman".to_string(), 120.0)), true)
+        );
+
+        // A named block is final, on the board's own refusal vocabulary.
+        let blocked = |turn| {
+            state(
+                turn,
+                warrior(
+                    Some("UNIT_SWORDSMAN"),
+                    Some(120.0),
+                    Some("LOC_UNITCOMMAND_UPGRADE_NOT_ENOUGH_GOLD"),
+                ),
+            )
+        };
+        let held = LiveMirror::new(&snapshot, &blocked(40), 4, 1, 250, 0);
+        assert_eq!(upgrade(&held), (Err("not enough gold"), false));
+
+        // The persistent path reads the same keys off each later export, and
+        // an export that drops them hands the decision back to the board.
+        bare.sync(&snapshot, &priced(41), 0);
+        assert_eq!(upgrade(&bare), (Ok(("swordsman".to_string(), 120.0)), true));
+        bare.sync(&snapshot, &blocked(42), 0);
+        assert_eq!(upgrade(&bare), (Err("not enough gold"), false));
+        bare.sync(&snapshot, &state(43, warrior(None, None, None)), 0);
+        assert_eq!(upgrade(&bare), (Err("neutral territory"), false));
+    }
+
+    /// ★★★ A Spy on a host operation is busy on the board too, and the host's
+    /// own menu bounds what the board may hand an idle one (item 9). Until
+    /// this crossed every seat 0 Spy was re-seated idle on every sync and
+    /// `SPY_GAIN_SOURCES` was refused 195 of 862 times on one run.
+    #[test]
+    fn a_spy_on_a_host_operation_is_not_retasked_and_the_hosts_menu_bounds_the_boards() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![
+                plot(3, 3, "TERRAIN_GRASS"),
+                plot(4, 4, "TERRAIN_GRASS"),
+                plot(5, 5, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let spy = |id: i64, x: i32, y: i32| StateUnit {
+            id,
+            kind: "UNIT_SPY".to_string(),
+            x,
+            y,
+            level: Some(1),
+            // A current mod exports the upkeep for every unit, so the entry
+            // exists and an absent operation is a real "idle".
+            maintenance: Some(4.0),
+            ..StateUnit::default()
+        };
+        let state = |turn: u32, units: Vec<StateUnit>| {
+            let mut state = StateSnapshot {
+                turn,
+                spy_capacity: Some(3),
+                units,
+                ..StateSnapshot::default()
+            };
+            state.cities.push(StateCity {
+                id: 1,
+                name: "Roma".to_string(),
+                x: 4,
+                y: 4,
+                pop: 4,
+                ..StateCity::default()
+            });
+            state.rivals.push(StateRival {
+                player: 1,
+                cities: vec![StateCity {
+                    id: 9,
+                    name: "Aduatuca".to_string(),
+                    x: 5,
+                    y: 5,
+                    pop: 6,
+                    ..StateCity::default()
+                }],
+                ..StateRival::default()
+            });
+            state
+        };
+        let missions = |game: &crate::game::Game, spy: u32| -> Vec<String> {
+            game.legal_spy_actions(0, spy)
+                .into_iter()
+                .filter_map(|action| match action {
+                    crate::game::Action::SpyMission { mission, .. } => Some(mission),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        // Idle abroad with no menu: the board's own offers for a rival city.
+        let mut mirror = LiveMirror::new(&snapshot, &state(120, vec![spy(78, 5, 5)]), 2, 1, 250, 0);
+        let uid = mirror.uid_of[&78];
+        assert!(mirror.game.spies[&uid].mission.is_none());
+        let offered = missions(&mirror.game, uid);
+        assert!(
+            offered.iter().any(|m| m == "gain_sources")
+                && offered.iter().any(|m| m == "listening_post"),
+            "the board's own menu: {offered:?}"
+        );
+
+        // The host's menu names one operation: only that one is offered.
+        let mut bounded = spy(78, 5, 5);
+        bounded.spy_missions_available = Some(vec!["UNITOPERATION_SPY_LISTENING_POST".to_string()]);
+        mirror.sync(&snapshot, &state(121, vec![bounded]), 0);
+        let uid = mirror.uid_of[&78];
+        assert_eq!(
+            missions(&mirror.game, uid),
+            vec!["listening_post".to_string()]
+        );
+
+        // On an operation: the mission is seated and nothing is offered, on
+        // both paths.
+        let mut busy = spy(78, 5, 5);
+        busy.spy_operation = Some("UNITOPERATION_SPY_GAIN_SOURCES".to_string());
+        busy.spy_operation_end_turn = Some(128);
+        mirror.sync(&snapshot, &state(122, vec![busy.clone()]), 0);
+        let uid = mirror.uid_of[&78];
+        let mission = mirror.game.spies[&uid]
+            .mission
+            .clone()
+            .expect("the host's operation seats as the mission");
+        assert_eq!((mission.kind.as_str(), mission.ends), ("gain_sources", 128));
+        assert_eq!(
+            mirror.game.cities[&mission.city].owner, 1,
+            "aimed at the rival city it stands in"
+        );
+        assert!(
+            mirror.game.legal_spy_actions(0, uid).is_empty(),
+            "a busy Spy is offered nothing"
+        );
+        let rebuilt = rebuild_from_state(&snapshot, &state(122, vec![busy]), 2, 1, 250, 0);
+        let uid = rebuilt
+            .unit_ids
+            .iter()
+            .find(|(_, host)| **host == 78)
+            .map(|(uid, _)| *uid)
+            .expect("the spy is mirrored");
+        assert_eq!(
+            rebuilt.game.spies[&uid]
+                .mission
+                .as_ref()
+                .map(|m| m.kind.as_str()),
+            Some("gain_sources")
+        );
+        assert!(rebuilt.game.legal_spy_actions(0, uid).is_empty());
+
+        // And the operation ending hands the Spy back to the board's menu.
+        mirror.sync(&snapshot, &state(129, vec![spy(78, 5, 5)]), 0);
+        let uid = mirror.uid_of[&78];
+        assert!(mirror.game.spies[&uid].mission.is_none());
+        assert!(!missions(&mirror.game, uid).is_empty());
+    }
+
+    /// ★★★ The treasury's bill by source and the unit's own upkeep replace the
+    /// board's sums when they cross, and the host's `GetMaxMoves` is the
+    /// allowance the board plans with (item 9). Absent, the board bills and
+    /// moves itself exactly as before.
+    #[test]
+    fn the_hosts_bill_by_source_and_the_units_own_upkeep_replace_the_boards_sums() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let archer = |maintenance: Option<f64>, max_moves: Option<f64>| StateUnit {
+            id: 41,
+            kind: "UNIT_ARCHER".to_string(),
+            x: 3,
+            y: 3,
+            moves: 2.0,
+            maintenance,
+            max_moves,
+            ..StateUnit::default()
+        };
+        let state = |turn: u32, unit: StateUnit, totals: Option<(f64, f64, f64)>| StateSnapshot {
+            turn,
+            units: vec![unit],
+            unit_maintenance_total: totals.map(|bill| bill.0),
+            building_maintenance_total: totals.map(|bill| bill.1),
+            district_maintenance_total: totals.map(|bill| bill.2),
+            ..StateSnapshot::default()
+        };
+
+        let bare = LiveMirror::new(
+            &snapshot,
+            &state(12, archer(None, None), None),
+            4,
+            1,
+            250,
+            0,
+        );
+        let uid = bare.uid_of[&41];
+        let ruleset = bare.game.rules.units["archer"].maintenance;
+        assert!(ruleset > 0.0, "an Archer costs upkeep in the ruleset");
+        assert_eq!(bare.game.unit_gold_maintenance(0), ruleset);
+        assert_eq!(bare.game.infrastructure_gold_maintenance(0), 0.0);
+        assert_eq!(bare.game.unit_max_moves(uid), 2.0);
+        assert_eq!(bare.game.units[&uid].moves_left, 2.0);
+
+        // The unit's own upkeep and allowance, in place of the ruleset's.
+        let own = LiveMirror::new(
+            &snapshot,
+            &state(12, archer(Some(3.0), Some(3.0)), None),
+            4,
+            1,
+            250,
+            0,
+        );
+        let uid = own.uid_of[&41];
+        assert_eq!(own.game.unit_gold_maintenance(0), 3.0);
+        assert_eq!(own.game.unit_max_moves(uid), 3.0);
+        assert_eq!(
+            own.game.units[&uid].moves_left, 3.0,
+            "the allowance the board plans with"
+        );
+
+        // The treasury's totals outrank the per-unit sum, on both paths.
+        let mut carried = bare;
+        carried.sync(
+            &snapshot,
+            &state(13, archer(Some(3.0), None), Some((12.0, 5.0, 2.0))),
+            0,
+        );
+        assert_eq!(carried.game.unit_gold_maintenance(0), 12.0);
+        assert_eq!(carried.game.infrastructure_gold_maintenance(0), 7.0);
+        let rebuilt = rebuild_from_state(
+            &snapshot,
+            &state(13, archer(None, None), Some((12.0, 5.0, 2.0))),
+            4,
+            1,
+            250,
+            0,
+        );
+        assert_eq!(rebuilt.game.unit_gold_maintenance(0), 12.0);
+        assert_eq!(rebuilt.game.infrastructure_gold_maintenance(0), 7.0);
+        // And a later export without them hands the bill back to the board.
+        carried.sync(&snapshot, &state(14, archer(None, None), None), 0);
+        assert_eq!(carried.game.unit_gold_maintenance(0), ruleset);
+        let uid = carried.uid_of[&41];
+        assert_eq!(carried.game.unit_max_moves(uid), 2.0);
     }
 
     /// On a mid-turn combat frame the host says how many strikes a unit has
@@ -4549,7 +4892,7 @@ mod tests {
                     },
                     w: false,
                     i: false,
-                    fw: false,
+                    fw: None,
                     rv: 0,
                     ri: false,
                     ct: None,
@@ -4561,6 +4904,9 @@ mod tests {
                     rt: None,
                     rp: false,
                     yl: None,
+                    ap: None,
+                    np: false,
+                    vis: false,
                 })
             })
             .collect();
@@ -4646,7 +4992,7 @@ mod tests {
                     },
                     w: false,
                     i: false,
-                    fw: false,
+                    fw: None,
                     rv: 0,
                     ri: false,
                     ct: None,
@@ -4658,6 +5004,9 @@ mod tests {
                     rt: None,
                     rp: false,
                     yl: None,
+                    ap: None,
+                    np: false,
+                    vis: false,
                 })
             })
             .collect();
@@ -4946,6 +5295,551 @@ mod tests {
             city.owner == minor.id && city.name == "Kabul"
         }));
         assert!(recon.game.units.values().any(|unit| unit.owner == minor.id));
+    }
+
+    /// The host's climate crossed for the first time on 2026-08-26: `cl` had
+    /// been exported per plot with no phase to read it against, so the Flood
+    /// Barrier price, the clean-power premium and the flooding of the bands
+    /// were all priced at phase 0 on every live turn. The flooded bands are
+    /// the shipped `CoastalLowlands` rows (1 m at rise 2, 2 m at 3, 3 m at 5).
+    #[test]
+    fn the_hosts_climate_level_is_the_boards_phase_and_floods_the_bands_it_names() {
+        let mut one = plot(6, 7, "TERRAIN_PLAINS");
+        one.cl = 1;
+        let mut two = plot(7, 7, "TERRAIN_PLAINS");
+        two.cl = 2;
+        let mut three = plot(8, 7, "TERRAIN_PLAINS");
+        three.cl = 3;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS"), one, two, three],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            climate: Some(StateClimate {
+                level: 3,
+                co2_ours: Some(1_200.0),
+                co2_total: Some(9_000.0),
+                storm_pct: Some(12.5),
+                sea_level_turns: Some(17),
+                ..StateClimate::default()
+            }),
+            ..StateSnapshot::default()
+        };
+        let flooded = |game: &crate::game::Game, x: i32, y: i32| {
+            game.map
+                .get(crate::hex::offset_to_axial(x, y))
+                .expect("the plot is on the board")
+                .flooded
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(recon.game.climate_phase, 3);
+        assert_eq!(recon.game.players[0].co2_emissions, 1_200.0);
+        assert_eq!(
+            recon.game.global_co2_emissions(),
+            9_000.0,
+            "the world's CO2 is the host's total, not ours alone"
+        );
+        assert_eq!(
+            recon
+                .game
+                .observed_climate
+                .as_ref()
+                .and_then(|climate| climate.sea_level_turns),
+            Some(17)
+        );
+        assert!(flooded(&recon.game, 6, 7), "the 1 m band floods at level 2");
+        assert!(flooded(&recon.game, 7, 7), "the 2 m band floods at level 3");
+        assert!(
+            !flooded(&recon.game, 8, 7),
+            "the 3 m band waits for level 5"
+        );
+
+        // The same on the live path; a later export without the key leaves it.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(mirror.game.climate_phase, 3);
+        state.climate = None;
+        state.turn = 31;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.climate_phase, 3);
+        assert!(flooded(&mirror.game, 7, 7));
+
+        // And an export that never carried it is the pre-industrial board it was.
+        let bare = rebuild_from_state(
+            &snapshot,
+            &StateSnapshot {
+                turn: 30,
+                ..StateSnapshot::default()
+            },
+            4,
+            1,
+            250,
+            0,
+        );
+        assert_eq!(bare.game.climate_phase, 0);
+        assert!(!flooded(&bare.game, 6, 7));
+        assert!(bare.game.observed_climate.is_none());
+    }
+
+    /// The board rolled its own quest for every pair from a hash; the host's
+    /// actual request never crossed. Now it seats on the pair where
+    /// `city_state_quest` and the `quest-*` genes read it.
+    #[test]
+    fn a_host_quest_seats_the_city_states_request_on_the_pair() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS"), plot(12, 6, "TERRAIN_PLAINS")],
+        }]);
+        let minor = |player: usize, civ: &str, x: i32, y: i32, quests: Option<Vec<StateQuest>>| {
+            StateMinor {
+                player,
+                civ: civ.to_string(),
+                cities: vec![StateCity {
+                    id: 70,
+                    name: civ.to_string(),
+                    x,
+                    y,
+                    pop: 3,
+                    ..StateCity::default()
+                }],
+                quests,
+                ..StateMinor::default()
+            }
+        };
+        let mut state = StateSnapshot {
+            turn: 30,
+            minors: vec![
+                minor(
+                    6,
+                    "CIVILIZATION_KABUL",
+                    6,
+                    6,
+                    Some(vec![StateQuest {
+                        kind: "QUEST_TRAIN_UNIT_TYPE".to_string(),
+                        target: Some("UNIT_SWORDSMAN".to_string()),
+                        name: None,
+                    }]),
+                ),
+                minor(
+                    7,
+                    "CIVILIZATION_ZANZIBAR",
+                    12,
+                    6,
+                    Some(vec![StateQuest {
+                        kind: "QUEST_SEND_TRADE_ROUTE".to_string(),
+                        target: None,
+                        name: None,
+                    }]),
+                ),
+            ],
+            ..StateSnapshot::default()
+        };
+        let seat = |game: &crate::game::Game, civ: &str| {
+            game.players
+                .iter()
+                .find(|player| player.is_minor && player.civ == civ)
+                .map(|player| player.id)
+                .unwrap_or_else(|| panic!("{civ} has a seat"))
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let kabul = seat(&recon.game, "Kabul");
+        let zanzibar = seat(&recon.game, "Zanzibar");
+        let quest = recon.game.city_state_quest(0, kabul).expect("Kabul asks");
+        assert_eq!(quest.kind, "train_unit_type");
+        assert_eq!(
+            quest.target, "swordsman",
+            "the host's UNIT_ name is the board's"
+        );
+        assert_eq!(quest.era, recon.game.world_era);
+        assert_eq!(
+            recon
+                .game
+                .city_state_quest(0, zanzibar)
+                .map(|quest| quest.kind.as_str()),
+            Some("send_trade_route")
+        );
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let kabul = seat(&mirror.game, "Kabul");
+        let zanzibar = seat(&mirror.game, "Zanzibar");
+        assert_eq!(
+            mirror
+                .game
+                .city_state_quest(0, kabul)
+                .map(|quest| quest.target.as_str()),
+            Some("swordsman")
+        );
+        state.minors[0].quests = Some(Vec::new());
+        state.minors[1].quests = None;
+        state.turn = 31;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.city_state_quest(0, kabul).is_none(),
+            "an empty list is a city-state asking nothing"
+        );
+        assert_eq!(
+            mirror
+                .game
+                .city_state_quest(0, zanzibar)
+                .map(|quest| quest.kind.as_str()),
+            Some("send_trade_route"),
+            "a missing key leaves the request that stood"
+        );
+    }
+
+    /// `envoys` and `most_envoys` said ours and the leader's; a rival's
+    /// delegation was seeded as the minimum that elects the Suzerain the host
+    /// names, so the board could never tell one envoy from five, nor see that
+    /// it stood one short of a suzerainty.
+    #[test]
+    fn rival_envoy_counts_cross_and_a_missing_list_keeps_the_minimum_winning_seed() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS")],
+        }]);
+        let state = |envoys: i64, suzerain: i32, most: i64, counts: Option<Vec<(i64, i64)>>| {
+            StateSnapshot {
+                turn: 30,
+                rivals: vec![StateRival {
+                    player: 3,
+                    civ: "CIVILIZATION_SCYTHIA".to_string(),
+                    leader: "LEADER_TOMYRIS".to_string(),
+                    ..StateRival::default()
+                }],
+                minors: vec![StateMinor {
+                    player: 6,
+                    civ: "CIVILIZATION_KABUL".to_string(),
+                    suzerain,
+                    envoys,
+                    most_envoys: most,
+                    envoys_by_player: counts.map(|counts| {
+                        counts
+                            .into_iter()
+                            .map(|(player, envoys)| StateEnvoyCount { player, envoys })
+                            .collect()
+                    }),
+                    cities: vec![StateCity {
+                        id: 70,
+                        name: "Kabul".to_string(),
+                        x: 6,
+                        y: 6,
+                        pop: 4,
+                        ..StateCity::default()
+                    }],
+                    ..StateMinor::default()
+                }],
+                ..StateSnapshot::default()
+            }
+        };
+        let seat = |game: &crate::game::Game| {
+            game.players
+                .iter()
+                .find(|player| player.is_minor && player.civ == "Kabul")
+                .map(|player| player.id)
+                .expect("Kabul has a seat")
+        };
+        // Scythia holds five and we hold two: the board reads five, not the
+        // minimum that elects her.
+        let recon = rebuild_from_state(
+            &snapshot,
+            &state(2, 3, 5, Some(vec![(0, 2), (3, 5)])),
+            6,
+            1,
+            250,
+            0,
+        );
+        let kabul = seat(&recon.game);
+        assert_eq!(
+            recon.game.envoys_at(0, kabul),
+            2,
+            "our count is the seed beside this one"
+        );
+        assert_eq!(recon.game.envoys_at(1, kabul), 5);
+        assert_eq!(recon.game.suzerain_of(kabul), Some(1));
+        // Without the list the seed is what it was: the minimum winning delegation.
+        let recon = rebuild_from_state(&snapshot, &state(2, 3, 0, None), 6, 1, 250, 0);
+        assert_eq!(recon.game.envoys_at(1, seat(&recon.game)), 3);
+        // No Suzerain while we hold four and Scythia one: the host's verdict
+        // stands, seeded as a tie on the rival it counts highest, and a listed
+        // one-envoy rival is not cleared to zero first.
+        let recon = rebuild_from_state(
+            &snapshot,
+            &state(4, -1, 4, Some(vec![(0, 4), (3, 1)])),
+            6,
+            1,
+            250,
+            0,
+        );
+        let kabul = seat(&recon.game);
+        assert_eq!(recon.game.suzerain_of(kabul), None);
+        assert_eq!(recon.game.envoys_at(1, kabul), 4);
+        // A tie the host reports crosses as the tie it is.
+        let recon = rebuild_from_state(
+            &snapshot,
+            &state(3, -1, 3, Some(vec![(0, 3), (3, 3)])),
+            6,
+            1,
+            250,
+            0,
+        );
+        let kabul = seat(&recon.game);
+        assert_eq!(recon.game.envoys_at(1, kabul), 3);
+        assert_eq!(recon.game.suzerain_of(kabul), None);
+        // The live path re-reads it: a lapsed delegation clears.
+        let mut mirror = LiveMirror::new(
+            &snapshot,
+            &state(2, 3, 5, Some(vec![(0, 2), (3, 5)])),
+            6,
+            1,
+            250,
+            0,
+        );
+        let kabul = seat(&mirror.game);
+        assert_eq!(mirror.game.envoys_at(1, kabul), 5);
+        let mut later = state(2, -1, 2, Some(vec![(0, 2), (3, 0)]));
+        later.turn = 31;
+        mirror.sync(&snapshot, &later, 0);
+        assert_eq!(mirror.game.envoys_at(1, kabul), 0);
+        assert_eq!(mirror.game.suzerain_of(kabul), None);
+    }
+
+    /// The board derived appeal from the six neighbours it could see; the host
+    /// counts every modifier it has. A National Park is a plot flag on the
+    /// host and an improvement here.
+    #[test]
+    fn a_plots_host_appeal_and_national_park_stand_on_the_board() {
+        let mut counted = plot(6, 6, "TERRAIN_PLAINS");
+        counted.ap = Some(4);
+        let mut park = plot(7, 6, "TERRAIN_PLAINS");
+        park.np = true;
+        park.ap = Some(-2);
+        let uncounted = plot(12, 12, "TERRAIN_PLAINS");
+        let chunk = |turn: u32, plots: Vec<Plot>| TilesChunk {
+            turn,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots,
+        };
+        let snapshot = Snapshot::from_chunks(&[chunk(30, vec![counted, park, uncounted.clone()])]);
+        let state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        let at = |x: i32, y: i32| crate::hex::offset_to_axial(x, y);
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            recon.game.tile_appeal(at(6, 6)),
+            4,
+            "the host's count stands in for the derivation"
+        );
+        assert_eq!(recon.game.tile_appeal(at(7, 6)), -2);
+        assert_eq!(
+            recon
+                .game
+                .map
+                .get(at(7, 6))
+                .and_then(|tile| tile.improvement.as_deref()),
+            Some("national_park")
+        );
+        let bare = rebuild_from_state(
+            &Snapshot::from_chunks(&[chunk(
+                30,
+                vec![
+                    plot(6, 6, "TERRAIN_PLAINS"),
+                    plot(7, 6, "TERRAIN_PLAINS"),
+                    uncounted.clone(),
+                ],
+            )]),
+            &state,
+            4,
+            1,
+            250,
+            0,
+        );
+        assert_eq!(
+            recon.game.tile_appeal(at(12, 12)),
+            bare.game.tile_appeal(at(12, 12)),
+            "a plot without a reading keeps the board's own derivation"
+        );
+        assert!(bare.game.observed_appeal.is_empty());
+
+        // The live path re-reads a later sweep, and a reading that lapsed is gone.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(mirror.game.tile_appeal(at(6, 6)), 4);
+        let mut recount = plot(6, 6, "TERRAIN_PLAINS");
+        recount.ap = Some(1);
+        let later = Snapshot::from_chunks(&[chunk(
+            31,
+            vec![recount, plot(7, 6, "TERRAIN_PLAINS"), uncounted],
+        )]);
+        mirror.sync(
+            &later,
+            &StateSnapshot {
+                turn: 31,
+                ..StateSnapshot::default()
+            },
+            0,
+        );
+        assert_eq!(mirror.game.tile_appeal(at(6, 6)), 1);
+        assert!(!mirror.game.observed_appeal.contains_key(&at(7, 6)));
+        let saved: crate::game::Game =
+            serde_json::from_str(&serde_json::to_string(&mirror.game).unwrap()).unwrap();
+        assert_eq!(saved.observed_appeal.get(&at(6, 6)), Some(&1));
+    }
+
+    /// `IsRevealed` gated the record, so fog and sight were one state to the
+    /// board and the tactical layer re-derived sight on a reconstructed map.
+    #[test]
+    fn a_plot_the_host_shows_is_in_the_mirrored_seats_sight() {
+        let mut shown = plot(15, 15, "TERRAIN_PLAINS");
+        shown.vis = true;
+        let fogged = plot(16, 15, "TERRAIN_PLAINS");
+        let chunk = |turn: u32, plots: Vec<Plot>| TilesChunk {
+            turn,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots,
+        };
+        let snapshot = Snapshot::from_chunks(&[chunk(
+            30,
+            vec![plot(3, 3, "TERRAIN_PLAINS"), shown, fogged.clone()],
+        )]);
+        let state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        let at = |x: i32, y: i32| crate::hex::offset_to_axial(x, y);
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert!(recon.game.host_observed.contains(&at(15, 15)));
+        assert!(
+            recon.game.player_can_see(0, at(15, 15)),
+            "the host's sight reaches the seat's vision frame"
+        );
+        assert!(
+            !recon.game.player_can_see(0, at(16, 15)),
+            "revealed once is not in sight"
+        );
+
+        // The live path: a delta that drops the flag drops the sight.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert!(mirror.game.player_can_see(0, at(15, 15)));
+        let later = Snapshot::from_chunks(&[chunk(
+            31,
+            vec![
+                plot(3, 3, "TERRAIN_PLAINS"),
+                plot(15, 15, "TERRAIN_PLAINS"),
+                fogged,
+            ],
+        )]);
+        mirror.sync(
+            &later,
+            &StateSnapshot {
+                turn: 31,
+                ..StateSnapshot::default()
+            },
+            0,
+        );
+        assert!(!mirror.game.player_can_see(0, at(15, 15)));
+        assert!(!mirror.game.host_observed.contains(&at(15, 15)));
+    }
+
+    /// The host prices every route a Trader could start while a slot is open;
+    /// the pair lands where the trader-destination chooser reads it and
+    /// lapses with the slot.
+    #[test]
+    fn a_route_options_host_yields_reach_the_board_keyed_by_the_pair_and_lapse_with_the_slot() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_PLAINS"), plot(9, 9, "TERRAIN_PLAINS")],
+        }]);
+        let host = crate::rules::Yields {
+            food: 1.0,
+            production: 0.0,
+            gold: 7.0,
+            science: 2.0,
+            culture: 0.0,
+            faith: 0.0,
+        };
+        let mut state = StateSnapshot {
+            turn: 20,
+            cities: vec![StateCity {
+                id: 8,
+                name: "Antium".to_string(),
+                x: 5,
+                y: 5,
+                pop: 3,
+                ..StateCity::default()
+            }],
+            // Firaxis allocates city ids per player: the same id as Antium.
+            minors: vec![StateMinor {
+                player: 6,
+                civ: "CIVILIZATION_ZANZIBAR".to_string(),
+                cities: vec![StateCity {
+                    id: 8,
+                    name: "Zanzibar".to_string(),
+                    x: 9,
+                    y: 9,
+                    pop: 3,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            route_options: Some(vec![StateRouteOption {
+                origin: 8,
+                origin_x: 5,
+                origin_y: 5,
+                dest: 8,
+                dest_player: 6,
+                dest_x: 9,
+                dest_y: 9,
+                yields: Some(host),
+            }]),
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let origin = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(5, 5))
+            .expect("Antium");
+        let destination = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(9, 9))
+            .expect("Zanzibar");
+        assert_eq!(
+            mirror
+                .game
+                .observed_route_options
+                .get(&(origin, destination)),
+            Some(&host),
+            "coordinates resolve the pair despite the colliding city ids"
+        );
+        let saved: crate::game::Game =
+            serde_json::from_str(&serde_json::to_string(&mirror.game).unwrap()).unwrap();
+        assert_eq!(
+            saved.observed_route_options.get(&(origin, destination)),
+            Some(&host)
+        );
+        state.route_options = None;
+        state.turn = 21;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.observed_route_options.is_empty(),
+            "no open slot, no projection"
+        );
     }
 
     /// ⚠ `suzerain: -1` is the export's NO-suzerain sentinel, and skipping the
@@ -7979,6 +8873,652 @@ mod tests {
         );
     }
 
+    /// ★★★★★ THE HOST'S MENU IS THE CATALOGUE. A city whose exported
+    /// `buildable` lacks a Spearman never offers one, however legal the board's
+    /// own rules say it is; its `purchasable` price is the price the buy lane
+    /// pays; a queue two deep reads as two deep; a complete district offer is
+    /// the whole site list; and an export without the keys leaves the board
+    /// exactly as before.
+    #[test]
+    fn a_city_offers_and_prices_only_what_the_hosts_menus_list() {
+        let owned = |x: i32, y: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = 0;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                owned(5, 5),
+                owned(5, 6),
+                owned(6, 5),
+                owned(4, 5),
+                owned(5, 4),
+            ],
+        }]);
+        let row = |t: &str, c: f64, p: f64| StateMenuItem {
+            t: t.to_string(),
+            c,
+            p,
+            ..StateMenuItem::default()
+        };
+        let mut state = StateSnapshot {
+            turn: 12,
+            techs: vec![
+                "TECH_BRONZE_WORKING".to_string(),
+                "TECH_WRITING".to_string(),
+                "TECH_POTTERY".to_string(),
+            ],
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            producing: Some("UNIT_WARRIOR".to_string()),
+            buildable: Some(vec![
+                row("UNIT_WARRIOR", 40.0, 5.0),
+                row("BUILDING_MONUMENT", 61.0, 7.0),
+                row("BUILDING_GRANARY", 65.0, 8.0),
+                StateMenuItem {
+                    t: "DISTRICT_CAMPUS".to_string(),
+                    c: 54.0,
+                    p: 9.0,
+                    n: Some(1),
+                    s: Some(vec![StateMenuPlot { x: 5, y: 6 }]),
+                    ..StateMenuItem::default()
+                },
+            ]),
+            purchasable: Some(vec![
+                StatePurchaseItem {
+                    t: "BUILDING_GRANARY".to_string(),
+                    g: Some(340.0),
+                    f: None,
+                },
+                StatePurchaseItem {
+                    t: "UNIT_BUILDER".to_string(),
+                    g: Some(210.0),
+                    f: Some(105.0),
+                },
+            ]),
+            queue: Some(vec![StateQueueItem {
+                t: "UNIT_SETTLER".to_string(),
+                f: None,
+                pr: Some(3.0),
+            }]),
+            ..StateCity::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let cid = mirror.game.player_city_ids(0)[0];
+        let unit = |name: &str| crate::game::Item::Unit {
+            unit: crate::name::Name::new(name),
+        };
+        let spearman = unit("spearman");
+        let warrior = unit("warrior");
+        let monument = crate::game::Item::Building {
+            building: crate::name!("monument"),
+        };
+        assert!(
+            mirror.game.can_produce(0, cid, &warrior),
+            "a listed item stays producible"
+        );
+        assert!(
+            !mirror.game.can_produce(0, cid, &spearman),
+            "the host did not list a Spearman: not producible, however legal \
+             the board's own rules say it is"
+        );
+        let menu = mirror.game.producible_items(0, cid);
+        assert!(
+            menu.contains(&warrior) && !menu.contains(&spearman),
+            "the menu every chooser reads agrees: {menu:?}"
+        );
+        assert_eq!(
+            mirror.game.item_cost_for_city(0, cid, &monument),
+            61.0,
+            "the planner prices from the host's cost"
+        );
+        assert_eq!(mirror.game.host_production_turns(cid, &monument), Some(7.0));
+
+        // A complete district offer is the whole site list, and a site off it
+        // is not producible.
+        let campus = crate::name!("campus");
+        let offered = crate::hex::offset_to_axial(5, 6);
+        let sites = mirror.game.district_sites(cid, campus);
+        assert_eq!(sites, vec![offered], "sites: {sites:?}");
+        let elsewhere = crate::game::Item::District {
+            district: campus,
+            pos: crate::hex::offset_to_axial(6, 5),
+        };
+        assert!(!mirror.game.can_produce(0, cid, &elsewhere));
+
+        // The queue behind the head.
+        assert_eq!(
+            mirror.game.cities[&cid].queue,
+            vec![warrior.clone(), unit("settler")],
+            "the head and the queue behind it"
+        );
+
+        // The host's price is the price, and off the purchase menu is not for
+        // sale — through the pricers the lanes call and the enumeration.
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold"),
+            Some(340.0)
+        );
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "faith"),
+            None
+        );
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "monument", "gold"),
+            None
+        );
+        assert_eq!(
+            mirror.game.unit_purchase_cost(0, cid, "builder", "gold"),
+            Some(210.0)
+        );
+        assert_eq!(
+            mirror.game.unit_purchase_cost(0, cid, "builder", "faith"),
+            Some(105.0)
+        );
+        assert_eq!(
+            mirror.game.unit_purchase_cost(0, cid, "warrior", "gold"),
+            None
+        );
+        let buys_granary = |game: &crate::game::Game| {
+            game.legal_actions_within(0, crate::game::ActionFamilies::PURCHASES)
+                .iter()
+                .any(|action| {
+                    matches!(
+                        action,
+                        crate::game::Action::BuyBuilding { city, building, currency }
+                            if *city == cid && building == "granary" && currency == "gold"
+                    )
+                })
+        };
+        mirror.game.players[0].gold = 339.0;
+        assert!(
+            !buys_granary(&mirror.game),
+            "339 Gold does not buy a 340 Granary"
+        );
+        mirror.game.players[0].gold = 340.0;
+        assert!(
+            buys_granary(&mirror.game),
+            "the buy lane enumerates from the host's price"
+        );
+
+        // The rebuild path reads the same menus.
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let fresh = rebuilt.game.player_city_ids(0)[0];
+        assert!(!rebuilt.game.can_produce(0, fresh, &spearman));
+        assert_eq!(
+            rebuilt
+                .game
+                .building_purchase_cost(0, fresh, "granary", "gold"),
+            Some(340.0)
+        );
+        assert_eq!(rebuilt.game.cities[&fresh].queue.len(), 2);
+
+        // An EMPTY buildable list is a failed read, not a city that can build
+        // nothing; an empty PURCHASE list is the host saying nothing is for sale.
+        state.cities[0].buildable = Some(Vec::new());
+        state.cities[0].purchasable = Some(Vec::new());
+        state.turn = 13;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.can_produce(0, cid, &spearman),
+            "an empty menu gates nothing"
+        );
+        assert_eq!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold"),
+            None
+        );
+
+        // Without the keys — an older mod — the board is exactly as before.
+        state.cities[0].buildable = None;
+        state.cities[0].purchasable = None;
+        state.cities[0].queue = None;
+        state.turn = 14;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.host_buildable.is_empty());
+        assert!(mirror.game.host_purchasable.is_empty());
+        assert!(mirror.game.host_district_plots.is_empty());
+        assert!(mirror.game.can_produce(0, cid, &spearman));
+        assert_eq!(mirror.game.cities[&cid].queue, vec![warrior]);
+        assert!(
+            mirror
+                .game
+                .building_purchase_cost(0, cid, "granary", "gold")
+                .is_some(),
+            "the model's own price is back"
+        );
+    }
+
+    /// The host's spelling of every production family comes back to the key
+    /// the gate reads, tier included; a name the board does not model is
+    /// dropped rather than guessed.
+    #[test]
+    fn host_menu_rows_translate_to_the_gates_keys() {
+        let rules = crate::rules::Rules::embedded();
+        let key = |civ6: &str, tier: Option<u8>| host_production_key(&rules, civ6, tier);
+        assert_eq!(key("UNIT_WARRIOR", None).as_deref(), Some("unit:warrior"));
+        assert_eq!(
+            key("UNIT_WARRIOR", Some(1)).as_deref(),
+            Some("formation:warrior:1")
+        );
+        assert_eq!(
+            key("UNIT_WARRIOR", Some(2)).as_deref(),
+            Some("formation:warrior:2")
+        );
+        assert_eq!(
+            key("BUILDING_LIBRARY", None).as_deref(),
+            Some("building:library")
+        );
+        assert_eq!(
+            key("BUILDING_PYRAMIDS", None).as_deref(),
+            Some("wonder:pyramids")
+        );
+        assert_eq!(
+            key("DISTRICT_GOVERNMENT", None).as_deref(),
+            Some("district:government_plaza")
+        );
+        assert_eq!(
+            key("PROJECT_ENHANCE_DISTRICT_CAMPUS", None).as_deref(),
+            Some("project:campus_research_grants")
+        );
+        assert_eq!(key("UNIT_NOT_A_UNIT", None), None);
+    }
+
+    /// A board with one met rival on seat 1, for the host-diplomacy tests.
+    fn diplomacy_board(turn: u32, rival: StateRival) -> (Snapshot, StateSnapshot) {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(9, 9, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        state.rivals.push(rival);
+        (snapshot, state)
+    }
+
+    fn diplomacy_actions(game: &crate::game::Game) -> Vec<crate::game::Action> {
+        game.legal_actions_within(0, crate::game::ActionFamilies::DIPLOMACY)
+    }
+
+    fn formal_war_legal(game: &crate::game::Game) -> bool {
+        diplomacy_actions(game).iter().any(|action| {
+            matches!(
+                action,
+                crate::game::Action::DeclareWarWithCasusBelli { player: 1, casus_belli }
+                    if casus_belli == "formal_war"
+            )
+        })
+    }
+
+    /// ★★★★★ The host's DENOUNCED state and its grievance ledger land on the
+    /// board, on the right sides, with the host's own clock — and a later
+    /// NEUTRAL export clears them. FIDELITY.md "The one-to-one map", item 1:
+    /// every war, peace and denounce decision was made blind to this.
+    #[test]
+    fn a_host_denouncement_and_its_grievances_land_on_the_board_and_a_neutral_export_clears_them() {
+        let rival = StateRival {
+            player: 3,
+            can_declare: true,
+            diplomatic_state: Some("DIPLO_STATE_DENOUNCED".to_string()),
+            our_denounce_turn: Some(38),
+            their_denounce_turn: Some(0),
+            denounce_time_limit: Some(30),
+            our_grievances_against_them: Some(0.0),
+            grievances_against_us: Some(50.0),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(40, rival);
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        assert_eq!(
+            game.relationship_state(0, 1),
+            "denounced",
+            "the host's DENOUNCED must be the board's"
+        );
+        assert_eq!(
+            game.players[0].denounced_since.get(&1).copied(),
+            Some(38),
+            "the denouncement started when the host says it did"
+        );
+        assert_eq!(
+            game.players[0].denounced_until.get(&1).copied(),
+            Some(38 + 30 + 1),
+            "and runs the host's DenounceTimeLimit (+1, DiplomacyActionView.lua:1500)"
+        );
+        assert!(
+            !game.players[1].denounced_until.contains_key(&0),
+            "a denounce turn of 0 on their side means they did not denounce us"
+        );
+        assert_eq!(
+            game.players[1].grievances.get(&0).copied(),
+            Some(50.0),
+            "50 grievances against us sit on THEIR ledger under our seat"
+        );
+        assert!(
+            !game.players[0].grievances.contains_key(&1),
+            "and none on ours: one signed balance per pair"
+        );
+        assert!(
+            !formal_war_legal(game),
+            "two turns into our own denouncement the Formal War wait has not \
+             matured — the board waits the host's five turns, not a faked one"
+        );
+        assert!(
+            !diplomacy_actions(game)
+                .iter()
+                .any(|action| matches!(action, crate::game::Action::Denounce { player: 1 })),
+            "an active denouncement cannot be repeated"
+        );
+
+        // Five host turns on: the Formal War the engine's own rule allows.
+        state.turn = 43;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            formal_war_legal(&mirror.game),
+            "at since + 5 the host's clock opens the Formal War"
+        );
+
+        // The host now says NEUTRAL with a clean ledger and no permission.
+        state.turn = 44;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        state.rivals[0].our_denounce_turn = Some(38);
+        state.rivals[0].grievances_against_us = Some(0.0);
+        state.rivals[0].can_declare = false;
+        mirror.sync(&snapshot, &state, 0);
+        let game = &mirror.game;
+        assert_eq!(game.relationship_state(0, 1), "neutral");
+        assert!(!game.players[0].denounced_until.contains_key(&1));
+        assert!(!game.players[0].denounced_since.contains_key(&1));
+        assert!(!game.players[1].grievances.contains_key(&0));
+        assert!(game.alliance_with(0, 1).is_none() && !game.are_friends(0, 1));
+    }
+
+    /// ALLIED level 2 → an `alliances` entry on both seats with the host's
+    /// kind, level and expiry past this turn; NEUTRAL afterwards clears it.
+    #[test]
+    fn a_host_alliance_lands_with_its_kind_level_and_expiry_and_clears_on_neutral() {
+        let rival = StateRival {
+            player: 3,
+            diplomatic_state: Some("DIPLO_STATE_ALLIED".to_string()),
+            alliance_type: Some("ALLIANCE_MILITARY".to_string()),
+            alliance_level: Some(2),
+            alliance_turns_left: Some(12),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(60, rival);
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        let alliance = game
+            .alliance_with(0, 1)
+            .expect("the host's alliance is on our seat");
+        assert_eq!(alliance.kind, "military");
+        assert_eq!(alliance.level, 2);
+        assert_eq!(
+            alliance.ends,
+            60 + 12 + 1,
+            "ends past this turn, at the host's expiry"
+        );
+        assert!(game.are_allied(1, 0), "and on theirs");
+        assert!(game.are_friends(0, 1), "an alliance implies the friendship");
+        assert_eq!(game.relationship_state(0, 1), "allied");
+        assert!(
+            !diplomacy_actions(game).iter().any(|action| matches!(
+                action,
+                crate::game::Action::DeclareWar { player: 1 }
+                    | crate::game::Action::Denounce { player: 1 }
+            )),
+            "no war and no denouncement against an ally"
+        );
+
+        state.turn = 61;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        state.rivals[0].alliance_type = None;
+        state.rivals[0].alliance_level = None;
+        state.rivals[0].alliance_turns_left = None;
+        mirror.sync(&snapshot, &state, 0);
+        let game = &mirror.game;
+        assert!(game.alliance_with(0, 1).is_none() && game.alliance_with(1, 0).is_none());
+        assert!(!game.are_friends(0, 1));
+        assert_eq!(game.relationship_state(0, 1), "neutral");
+    }
+
+    /// DECLARED_FRIEND → `friends_until` both sides from the host's
+    /// friendship turn, and the board withholds war and denouncement the way
+    /// the host does; NEUTRAL clears it.
+    #[test]
+    fn a_host_declared_friendship_lands_and_bars_war_until_a_neutral_export() {
+        let rival = StateRival {
+            player: 3,
+            can_declare: false,
+            diplomatic_state: Some("DIPLO_STATE_DECLARED_FRIEND".to_string()),
+            friendship_turn: Some(30),
+            denounce_time_limit: Some(30),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(40, rival);
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        assert!(game.are_friends(0, 1) && game.are_friends(1, 0));
+        assert_eq!(
+            game.players[0].friends_until.get(&1).copied(),
+            Some(60),
+            "friendship runs from the host's turn for DenounceTimeLimit turns (:1511)"
+        );
+        assert_eq!(game.relationship_state(0, 1), "declared_friend");
+        assert!(
+            !diplomacy_actions(game).iter().any(|action| matches!(
+                action,
+                crate::game::Action::DeclareWar { player: 1 }
+                    | crate::game::Action::DeclareWarWithCasusBelli { player: 1, .. }
+                    | crate::game::Action::Denounce { player: 1 }
+            )),
+            "the host refuses war and denouncement against a declared friend; so must the board"
+        );
+
+        state.turn = 41;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        state.rivals[0].friendship_turn = Some(0);
+        mirror.sync(&snapshot, &state, 0);
+        assert!(!mirror.game.are_friends(0, 1) && !mirror.game.are_friends(1, 0));
+        assert_eq!(mirror.game.relationship_state(0, 1), "neutral");
+    }
+
+    /// Missions, promises, visibility and the grant WE make cross both ways
+    /// and clear when the next export withdraws them; the same rules on the
+    /// rebuild path.
+    #[test]
+    fn host_missions_promises_visibility_and_our_grant_cross_both_ways() {
+        let rival = StateRival {
+            player: 3,
+            diplomatic_state: Some("DIPLO_STATE_FRIENDLY".to_string()),
+            embassy_at: Some(true),
+            delegation_at: Some(false),
+            their_embassy: Some(false),
+            their_delegation: Some(true),
+            promises_made: Some(vec!["DONT_SETTLE_NEAR_ME".to_string()]),
+            promises_received: Some(vec![
+                "DONT_SPY_ON_ME".to_string(),
+                "DONT_CONVERT_MY_CITIES".to_string(),
+            ]),
+            visibility: Some(2),
+            their_visibility_on_us: Some(1),
+            open_borders_granted: Some(true),
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(50, rival);
+        // Rebuild path first: the same helper, a fresh board.
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            rebuilt
+                .game
+                .diplomatic_mission_to(0, 1)
+                .map(|m| m.kind.as_str()),
+            Some("embassy")
+        );
+        assert_eq!(rebuilt.game.diplomatic_visibility(0, 1), 2.0);
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        assert_eq!(
+            game.diplomatic_mission_to(0, 1).map(|m| m.kind.as_str()),
+            Some("embassy"),
+            "our Resident Embassy at their court"
+        );
+        assert_eq!(
+            game.diplomatic_mission_to(1, 0).map(|m| m.kind.as_str()),
+            Some("delegation"),
+            "their Delegation at ours"
+        );
+        assert!(
+            game.players[0]
+                .promises
+                .get(&1)
+                .is_some_and(|book| book.contains_key("no_settling")),
+            "a promise WE made sits on our ledger under their seat, as the engine kind"
+        );
+        let theirs = game.players[1]
+            .promises
+            .get(&0)
+            .expect("their promises to us");
+        assert!(theirs.contains_key("no_spying") && theirs.contains_key("no_conversion"));
+        assert_eq!(
+            game.diplomatic_visibility(0, 1),
+            2.0,
+            "the host's visibility level outranks the board's derivation"
+        );
+        assert_eq!(game.diplomatic_visibility(1, 0), 1.0);
+        assert!(
+            game.players[0]
+                .open_borders_until
+                .get(&1)
+                .is_some_and(|until| *until > 50),
+            "the Open Borders we grant is on our seat under theirs"
+        );
+        assert_eq!(
+            game.relationship_state(0, 1),
+            "neutral",
+            "FRIENDLY is no treaty"
+        );
+
+        state.turn = 51;
+        state.rivals[0].embassy_at = Some(false);
+        state.rivals[0].their_delegation = Some(false);
+        state.rivals[0].promises_made = Some(Vec::new());
+        state.rivals[0].promises_received = Some(Vec::new());
+        state.rivals[0].visibility = None;
+        state.rivals[0].their_visibility_on_us = Some(0);
+        state.rivals[0].open_borders_granted = Some(false);
+        mirror.sync(&snapshot, &state, 0);
+        let game = &mirror.game;
+        assert!(game.diplomatic_mission_to(0, 1).is_none());
+        assert!(game.diplomatic_mission_to(1, 0).is_none());
+        assert!(!game.players[0].promises.contains_key(&1));
+        assert!(!game.players[1].promises.contains_key(&0));
+        assert!(
+            !game.players[0].observed_visibility.contains_key(&1),
+            "a reading the host would not give falls back to the derivation"
+        );
+        assert_eq!(game.diplomatic_visibility(1, 0), 0.0);
+        assert!(!game.players[0].open_borders_until.contains_key(&1));
+    }
+
+    /// ⚠ The old mod exports no `diplomatic_state`: the `can_declare`
+    /// permission fake is written exactly as before on both paths, and a new
+    /// export that says NEUTRAL while the host permits a declaration still
+    /// carries it — the bridge has no `Denounce` order, so this is the only
+    /// path by which a permitted war is ever declared.
+    #[test]
+    fn an_export_without_diplomatic_state_keeps_the_can_declare_fallback() {
+        let rival = StateRival {
+            player: 3,
+            can_declare: true,
+            ..StateRival::default()
+        };
+        let (snapshot, mut state) = diplomacy_board(40, rival);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            rebuilt.game.players[0].denounced_until.get(&1).copied(),
+            Some(41),
+            "rebuild path: the permission fake, unchanged"
+        );
+        assert!(formal_war_legal(&rebuilt.game));
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.players[0].denounced_until.get(&1).copied(),
+            Some(41)
+        );
+        assert!(
+            mirror.game.players[0].grievances.is_empty()
+                && mirror.game.players[1].grievances.is_empty()
+                && mirror.game.players[0].observed_visibility.is_empty(),
+            "nothing else is invented for an export that does not carry it"
+        );
+
+        // Withdrawn permission clears the fake (sync path).
+        state.turn = 41;
+        state.rivals[0].can_declare = false;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(!mirror.game.players[0].denounced_until.contains_key(&1));
+
+        // A NEUTRAL export with the permission keeps the fake alive.
+        state.turn = 42;
+        state.rivals[0].can_declare = true;
+        state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.players[0].denounced_until.get(&1).copied(),
+            Some(43)
+        );
+        assert!(
+            formal_war_legal(&mirror.game),
+            "the host permits a declaration; the board must still have a maturing path to one"
+        );
+    }
+
     #[test]
     fn a_bought_open_borders_grant_unseals_the_rival_ground() {
         let owned = |x: i32, y: i32, owner: i32| {
@@ -8075,6 +9615,322 @@ mod tests {
             Some(2),
             "a lapsed grant puts the rival back on the shopping list"
         );
+    }
+
+    /// docs/FIDELITY.md "The one-to-one map", item 8: a rival's techs and
+    /// civics crossed as COUNTS, so its era, roster and border were guesses,
+    /// and Early Empire had to be exported as one bit. With the names on the
+    /// seat the border is derived the way a native game derives it, and the
+    /// bit is only the override.
+    #[test]
+    fn a_rivals_tree_by_name_seats_its_civics_and_derives_its_border() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(5, 7, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            tech_names: Some(vec![
+                "TECH_POTTERY".to_string(),
+                "TECH_BRONZE_WORKING".to_string(),
+            ]),
+            civic_names: Some(vec![
+                "CIVIC_CODE_OF_LAWS".to_string(),
+                "CIVIC_EARLY_EMPIRE".to_string(),
+            ]),
+            enforces_borders: None,
+            ..StateRival::default()
+        });
+
+        // Rebuild path.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let early_empire = crate::name::Name::new("early_empire");
+        let bronze = crate::name::Name::new("bronze_working");
+        assert!(
+            mirror.game.players[1].civics.contains(&early_empire),
+            "the rival's civic names must land on its seat: {:?}",
+            mirror.game.players[1].civics
+        );
+        assert!(
+            mirror.game.players[1].techs.contains(&bronze),
+            "the rival's tech names must land on its seat: {:?}",
+            mirror.game.players[1].techs
+        );
+        assert_eq!(
+            mirror.game.players[1].borders_enforced, None,
+            "with the tree on the seat and no bit, the civic decides — the native rule"
+        );
+        assert!(
+            mirror.game.enforces_borders(1),
+            "Early Empire on the seat enforces the border without the override"
+        );
+
+        // Sync path: the tree is ASSIGNED from every export, so a tree without
+        // Early Empire opens the border again.
+        state.rivals[0].civic_names = Some(vec!["CIVIC_CODE_OF_LAWS".to_string()]);
+        state.turn = 31;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            !mirror.game.players[1].civics.contains(&early_empire),
+            "assigned, not merged: a civic the host no longer lists must leave the seat"
+        );
+        assert!(
+            !mirror.game.enforces_borders(1),
+            "a rival without Early Empire has no border to enforce"
+        );
+
+        // The host's own bit stays the override over the derived answer.
+        state.rivals[0].enforces_borders = Some(true);
+        state.turn = 32;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[1].borders_enforced, Some(true));
+        assert!(
+            mirror.game.enforces_borders(1),
+            "the exported bit wins over the tree"
+        );
+
+        // Neither key (an older export): enforced, the conservative answer —
+        // unchanged behaviour.
+        state.rivals[0] = StateRival {
+            player: 3,
+            ..StateRival::default()
+        };
+        state.turn = 33;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[1].borders_enforced, Some(true));
+        assert!(mirror.game.enforces_borders(1));
+    }
+
+    /// The religion lane of the victory tracker counted a rival converted only
+    /// from the rival cities the board happened to hold. The shipped screen
+    /// asks the host (`GetReligionInMajorityOfCities`,
+    /// `GetNumCitiesFollowingReligion`), which counts cities the seat has
+    /// never seen; so does the board now, on both import paths.
+    #[test]
+    fn a_rivals_religion_lane_reads_the_hosts_majority_and_city_count() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 90,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 90,
+            founded_religion: Some("RELIGION_CATHOLICISM".to_string()),
+            cities_following_religion: Some(3),
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            ..StateCity::default()
+        });
+        // No rival city on the board at all: everything the lane knows about
+        // this rival comes from the host's two numbers.
+        state.rivals.push(StateRival {
+            player: 3,
+            religion: Some("RELIGION_CATHOLICISM".to_string()),
+            cities_following_religion: Some(12),
+            techs_researched: Some(31),
+            techs: -1.0,
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.players[0].religion.as_deref(),
+            Some("Catholicism"),
+            "the founded religion seats on our player, the premise of the lane"
+        );
+        assert_eq!(
+            mirror.game.majority_religion_of(1),
+            Some("Catholicism"),
+            "the host's majority religion is the board's answer for a rival"
+        );
+        assert!(mirror.game.civ_follows_religion(1, "Catholicism"));
+        assert_eq!(
+            mirror.game.cities_following_religion(1),
+            12,
+            "the host's cities-following count reaches the religion-progress reader"
+        );
+        assert_eq!(mirror.game.cities_following_religion(0), 3, "and ours");
+        let races = mirror.game.victory_races(1, 0);
+        assert_eq!(races.cities_following_religion, 12);
+        assert_eq!(
+            races.techs, 31,
+            "the science lane's own count wins over the loop count when it crossed"
+        );
+        assert_eq!(
+            mirror.game.victory_races(0, 0).converted_civs,
+            1,
+            "a rival the host calls converted counts toward our Religious Victory \
+             even with none of its cities on the board"
+        );
+
+        // Missing keys (an older export) on the sync path: the observed map
+        // is rebuilt from each snapshot, so nothing is carried forward and
+        // the board's own count — no rival cities — answers.
+        state.rivals[0] = StateRival {
+            player: 3,
+            ..StateRival::default()
+        };
+        state.cities_following_religion = None;
+        state.turn = 91;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.majority_religion_of(1), None);
+        assert_eq!(mirror.game.cities_following_religion(1), 0);
+        assert_eq!(mirror.game.victory_races(0, 0).converted_civs, 0);
+        assert_eq!(
+            mirror.game.cities_following_religion(0),
+            0,
+            "no host count and no converted city on the board"
+        );
+    }
+
+    /// The per-rival tourist term, the rival's Era Score and its outgoing
+    /// routes: each lands where an existing reader already looks
+    /// (`visiting_tourists_from`, `Player::era_score`, `game.routes`).
+    #[test]
+    fn a_rivals_tourists_era_score_and_routes_reach_the_board() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(8, 8, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 60,
+            // No aggregate from the host, so `foreign_tourists` sums the
+            // per-rival terms — the only place the pair is read.
+            foreign_tourists: f64::NAN,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            ..StateCity::default()
+        });
+        let rival_city = |id: i64, name: &str, x: i32, y: i32| StateCity {
+            id,
+            name: name.to_string(),
+            x,
+            y,
+            pop: 3,
+            ..StateCity::default()
+        };
+        let route = |ox: i32, oy: i32, dx: i32, dy: i32, player: i32| StateRivalRoute {
+            origin_x: ox,
+            origin_y: oy,
+            destination_x: dx,
+            destination_y: dy,
+            destination_player: player,
+        };
+        state.rivals.push(StateRival {
+            player: 3,
+            tourists_visiting_us: Some(7),
+            era_score: Some(9),
+            cities: vec![rival_city(20, "Nubt", 5, 6), rival_city(21, "Meroe", 8, 8)],
+            trade_routes: Some(vec![
+                // Domestic, both ends on the board.
+                route(5, 6, 8, 8, 3),
+                // Into our capital — the same route `incoming_routes` would
+                // seat, so it must not be doubled.
+                route(5, 6, 5, 5, 0),
+                // To a city that is not on the board: skipped, not guessed.
+                route(5, 6, 9, 9, 3),
+            ]),
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.foreign_tourists(0),
+            7,
+            "the host's per-rival draw is what the culture lane sums"
+        );
+        assert_eq!(mirror.game.players[1].era_score, 9);
+        let nubt = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(5, 6))
+            .expect("the rival city is planted");
+        let meroe = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(8, 8))
+            .expect("the rival city is planted");
+        let roma = mirror
+            .game
+            .city_at(crate::hex::offset_to_axial(5, 5))
+            .expect("our city is planted");
+        let rival_routes: Vec<(u32, u32)> = mirror
+            .game
+            .routes
+            .iter()
+            .filter(|route| route.owner == 1)
+            .map(|route| (route.origin, route.dest))
+            .collect();
+        assert_eq!(
+            rival_routes,
+            vec![(nubt, meroe), (nubt, roma)],
+            "both routes with known ends are seated on the rival's seat, the \
+             third is skipped"
+        );
+
+        // Sync path, same export: rebuilt from scratch, never doubled.
+        state.turn = 61;
+        mirror.sync(&snapshot, &state, 0);
+        let rival_route_count =
+            |game: &crate::game::Game| game.routes.iter().filter(|route| route.owner == 1).count();
+        assert_eq!(rival_route_count(&mirror.game), 2);
+        assert_eq!(mirror.game.foreign_tourists(0), 7);
+
+        // Missing keys: no rival routes, no per-rival term, era score kept
+        // from the last export that carried it (the seat's own slot).
+        state.rivals[0].trade_routes = None;
+        state.rivals[0].tourists_visiting_us = None;
+        state.rivals[0].era_score = None;
+        state.turn = 62;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(rival_route_count(&mirror.game), 0);
+        assert_eq!(mirror.game.foreign_tourists(0), 0);
+        assert_eq!(mirror.game.players[1].era_score, 9);
     }
 
     /// Run civvis-20260826T184456Z: 122 military `MOVE_TO`s into a
@@ -8348,6 +10204,200 @@ mod tests {
         );
     }
 
+    /// `live_divergence::combat_pairs` resolves BOTH sides of a `combat` event
+    /// through the mirror's id maps; foreign units never had one, so every
+    /// unit-vs-unit fight read "no pairs".
+    #[test]
+    fn foreign_units_keep_their_host_ids_on_both_paths() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                plot(5, 5, "TERRAIN_GRASS"),
+                plot(5, 6, "TERRAIN_GRASS"),
+                plot(7, 7, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        state.hostiles.push(StateUnit {
+            id: 77,
+            kind: "UNIT_WARRIOR".to_string(),
+            player: 63,
+            x: 5,
+            y: 6,
+            hp: 80.0,
+            ..StateUnit::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let barbarian = *mirror
+            .foreign_uid_of
+            .get(&77)
+            .expect("the barbarian's host id is remembered on the rebuild path");
+        assert_ne!(mirror.game.units[&barbarian].owner, 0, "and it is not ours");
+        assert!(
+            !mirror.uid_of.contains_key(&77),
+            "foreign ids stay out of `uid_of`, which the sync path prunes against our units"
+        );
+
+        // The next export: that barbarian is gone, a different one stands
+        // elsewhere. The map follows the board, which is rebuilt wholesale.
+        state.turn = 21;
+        state.hostiles = vec![StateUnit {
+            id: 78,
+            kind: "UNIT_SLINGER".to_string(),
+            player: 63,
+            x: 7,
+            y: 7,
+            hp: 100.0,
+            ..StateUnit::default()
+        }];
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            !mirror.foreign_uid_of.contains_key(&77),
+            "a foreign unit the host no longer reports leaves the map"
+        );
+        let slinger = *mirror
+            .foreign_uid_of
+            .get(&78)
+            .expect("the new barbarian's host id is remembered on the sync path");
+        assert_eq!(
+            mirror.game.units[&slinger].pos,
+            crate::hex::offset_to_axial(7, 7)
+        );
+        assert!(
+            mirror.uid_of.contains_key(&10),
+            "our own unit keeps its map"
+        );
+    }
+
+    /// `Plot:IsFreshWater()` crossed as `fw` since the tiles export began and
+    /// nothing read it; a city centre on a lake the export names
+    /// `TERRAIN_COAST` derived no fresh water and housed 2, not 5.
+    #[test]
+    fn the_hosts_fresh_water_answer_sets_the_city_housing_floor() {
+        let mut wet = plot(5, 5, "TERRAIN_GRASS");
+        wet.fw = Some(true);
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![wet, plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            loyalty: 100.0,
+            ..StateCity::default()
+        });
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let pos = crate::hex::offset_to_axial(5, 5);
+        assert_eq!(mirror.game.observed_fresh_water.get(&pos), Some(&true));
+        let city = mirror
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner == 0)
+            .expect("Roma is on the board");
+        assert!(
+            mirror.game.city_housing_sources(city).water >= 5.0,
+            "the host says fresh water, so the centre houses 5 (no river or lake on the board)"
+        );
+
+        // A plot that carries no `fw` (an older export, a test fixture) overrides nothing.
+        let dry = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let plain = LiveMirror::new(&dry, &state, 4, 1, 500, 0);
+        assert!(plain.game.observed_fresh_water.is_empty());
+        let city = plain
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner == 0)
+            .expect("Roma is on the board");
+        assert!(plain.game.city_housing_sources(city).water < 5.0);
+    }
+
+    /// The seat's own tourism per turn was the one culture-victory figure the
+    /// export never carried; the board now reads the host's and the model's
+    /// figure stays behind `tourism_per_turn_model` for the instrument.
+    #[test]
+    fn the_seats_own_tourism_per_turn_crosses_and_lapses() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 90,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 90,
+            tourism_per_turn: Some(12.5),
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            ..StateCity::default()
+        });
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            mirror.game.tourism_per_turn(0),
+            12.5,
+            "the host's figure is the board's"
+        );
+        assert!(
+            mirror.game.tourism_per_turn_model(0) < 12.5,
+            "the model has no great works to earn 12.5 from"
+        );
+
+        state.turn = 91;
+        state.tourism_per_turn = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.tourism_per_turn(0),
+            mirror.game.tourism_per_turn_model(0),
+            "an export without the key leaves the model's figure"
+        );
+    }
+
     #[test]
     fn sync_discards_units_that_only_civvis_simulated_from_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -8514,7 +10564,7 @@ mod tests {
                         o: -1,
                         w: false,
                         i: false,
-                        fw: false,
+                        fw: None,
                         rv: 0,
                         ri: false,
                         ct: None,
@@ -8526,6 +10576,9 @@ mod tests {
                         rt: None,
                         rp: false,
                         yl: None,
+                        ap: None,
+                        np: false,
+                        vis: false,
                     })
                 })
                 .collect(),
@@ -8567,6 +10620,461 @@ mod tests {
         );
     }
 
+    /// ★★★★ A Free Cities unit is a Free Cities unit, with its wounds. `hostiles[]`
+    /// carries both players' units and every entry used to land on `barb_pid` at
+    /// full health (docs/FIDELITY.md, "The one-to-one map", item 3): the army that
+    /// took four cities on run civvis-20260802T064240Z was mirrored as barbarians.
+    #[test]
+    fn a_free_cities_hostile_lands_on_the_free_cities_seat_with_its_hp() {
+        let snapshot = open_grass_board(8);
+        let mut state = StateSnapshot {
+            turn: 40,
+            ..StateSnapshot::default()
+        };
+        // An older mod: the Free Cities actor is exported under `minors[]` (met,
+        // nothing of it in view) and its units carry only its `player`.
+        state.minors.push(StateMinor {
+            player: 62,
+            civ: "CIVILIZATION_FREE_CITIES".to_string(),
+            at_war: true,
+            ..StateMinor::default()
+        });
+        state.hostiles.push(StateUnit {
+            id: 501,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 3,
+            y: 3,
+            player: 62,
+            hp: 40.0,
+            ..StateUnit::default()
+        });
+        state.hostiles.push(StateUnit {
+            id: 502,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            player: 63,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(recon.placed_rival_units, 2, "both hostiles reach the board");
+        let barb = recon
+            .game
+            .barb_pid
+            .expect("a mirrored roster has a barbarian seat");
+        let free = recon
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_free_city)
+            .expect("a mirrored roster has a Free Cities seat");
+        let at = |game: &crate::game::Game, x: i32, y: i32| -> crate::game::Unit {
+            let pos = crate::hex::offset_to_axial(x, y);
+            game.units
+                .values()
+                .find(|unit| unit.pos == pos)
+                .cloned()
+                .unwrap_or_else(|| panic!("a unit stands at {x},{y}"))
+        };
+        let taker = at(&recon.game, 3, 3);
+        assert_eq!(taker.owner, free.id, "player 62 is the Free Cities seat");
+        assert_eq!(taker.hp, 40, "and it crosses with its damage");
+        assert!(free.alive, "a seat holding units is alive");
+        assert!(recon.game.is_at_war(0, free.id));
+        assert_eq!(
+            at(&recon.game, 5, 5).owner,
+            barb,
+            "player 63 is still the barbarian seat"
+        );
+        assert_ne!(barb, free.id);
+
+        // The persistent mirror routes the same way, and on a current mod the
+        // unit's own `free` flag is enough — no `minors[]` entry needed.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        state.minors.clear();
+        state.hostiles[0].free = true;
+        state.hostiles[0].hp = 25.0;
+        state.hostiles[1].hp = 60.0;
+        mirror.sync(&snapshot, &state, 0);
+        let free_id = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_free_city)
+            .map(|player| player.id)
+            .expect("the Free Cities seat survives a sync");
+        let taker = at(&mirror.game, 3, 3);
+        assert_eq!(taker.owner, free_id, "sync: `free` alone seats the unit");
+        assert_eq!(taker.hp, 25, "sync: the fresh reading of its damage");
+        assert!(
+            mirror.game.players[free_id].alive,
+            "sync: the seat stays alive"
+        );
+        let barbarian = at(&mirror.game, 5, 5);
+        assert_eq!(
+            barbarian.owner,
+            mirror.game.barb_pid.expect("barb_pid"),
+            "sync: the barbarian still lands on barb_pid"
+        );
+        assert_eq!(
+            barbarian.hp, 60,
+            "sync: a hostile the REBUILD planted is replaced by the fresh reading — \
+             the tracked lists used to start empty and its construction hp stood"
+        );
+
+        // A unit the Free Cities actor's own `units[]` already carries is planted
+        // once, from the actor's record, not a second time from `hostiles[]`.
+        state.minors.push(StateMinor {
+            player: 62,
+            civ: "CIVILIZATION_FREE_CITIES".to_string(),
+            units: vec![StateUnit {
+                id: 501,
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 3,
+                y: 3,
+                hp: 25.0,
+                ..StateUnit::default()
+            }],
+            ..StateMinor::default()
+        });
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            recon.placed_rival_units, 2,
+            "the actor's copy and the barbarian"
+        );
+        assert!(
+            recon
+                .dropped_units
+                .iter()
+                .all(|note| !note.contains(":tile_taken")),
+            "no duplicate is planted and dropped: {:?}",
+            recon.dropped_units
+        );
+        assert_eq!(at(&recon.game, 3, 3).owner, free.id);
+    }
+
+    /// ★★★★ Amani's Envoys were counted twice. The host's `minors[].envoys` is
+    /// `GetTokensReceived`, which already carries an established Ambassador's +2
+    /// (run civvis-20260826T184456Z: La Venta 5 → 7 at t145 frame 1, the export
+    /// in which she first read `established: true` there, no envoy order to that
+    /// player), and `Game::envoys_at` added `city_state_envoys` again — board 9,
+    /// host 7, board Suzerain where the host reported a tie (`suzerain -1`,
+    /// `most_envoys 7`), `civ6_mirror_check.py`: `la venta envoys Civ6=7
+    /// CIVVIS=9; suzerain Civ6=-1 CIVVIS=0`.
+    #[test]
+    fn an_established_amani_is_not_added_to_the_hosts_envoy_count_again() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 150,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS")],
+        }]);
+        let la_venta = |envoys: i64, suzerain: i32, most_envoys: i64| StateMinor {
+            player: 9,
+            civ: "CIVILIZATION_LA_VENTA".to_string(),
+            envoys,
+            suzerain,
+            most_envoys,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "La Venta".to_string(),
+                x: 6,
+                y: 6,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateMinor::default()
+        };
+        let amani = |established: bool| StateGovernor {
+            kind: "GOVERNOR_THE_AMBASSADOR".to_string(),
+            city: 65_536,
+            city_player: 9,
+            x: 6,
+            y: 6,
+            established,
+            turns_on_site: if established { 5 } else { 2 },
+            turns_to_establish: 5,
+            promotions: vec!["GOVERNOR_PROMOTION_AMBASSADOR_MESSENGER".to_string()],
+            ..StateGovernor::default()
+        };
+        let seat_of = |game: &crate::game::Game| -> usize {
+            game.players
+                .iter()
+                .find(|player| player.is_minor && player.civ == "La Venta")
+                .map(|player| player.id)
+                .expect("La Venta minor seat")
+        };
+
+        // t150 of the run: host 7, no Suzerain, Amani established there.
+        let state = StateSnapshot {
+            turn: 150,
+            minors: vec![la_venta(7, -1, 7)],
+            governors: Some(vec![amani(true)]),
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let minor = seat_of(&recon.game);
+        assert_eq!(
+            recon.game.amani_envoy_terms(0, minor),
+            (2.0, 1.0),
+            "the fixture establishes Amani in La Venta on the board"
+        );
+        assert_eq!(
+            recon.game.envoys_at(0, minor),
+            7,
+            "the board answers the host's 7"
+        );
+        assert_eq!(
+            recon.game.suzerain_of(minor),
+            None,
+            "the host's tie at 7 is a tie on the board too"
+        );
+        let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        mirror.sync(&snapshot, &state, 0);
+        let minor = seat_of(&mirror.game);
+        assert_eq!(mirror.game.envoys_at(0, minor), 7, "sync: 7");
+        assert_eq!(mirror.game.suzerain_of(minor), None, "sync: no Suzerain");
+
+        // The host names us Suzerain at 7: still 7, and ours.
+        let state = StateSnapshot {
+            turn: 150,
+            minors: vec![la_venta(7, 0, 7)],
+            governors: Some(vec![amani(true)]),
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let minor = seat_of(&recon.game);
+        assert_eq!(recon.game.envoys_at(0, minor), 7);
+        assert_eq!(recon.game.suzerain_of(minor), Some(0));
+
+        // Amani on site but not yet established (t144: host 5): 5, nothing subtracted.
+        let state = StateSnapshot {
+            turn: 150,
+            minors: vec![la_venta(5, -1, 8)],
+            governors: Some(vec![amani(false)]),
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let minor = seat_of(&recon.game);
+        assert_eq!(recon.game.amani_envoy_terms(0, minor), (0.0, 1.0));
+        assert_eq!(recon.game.envoys_at(0, minor), 5);
+        assert_eq!(recon.game.suzerain_of(minor), None);
+
+        // No governor record at all: the host's number is stored as it is.
+        let state = StateSnapshot {
+            turn: 150,
+            minors: vec![la_venta(7, 0, 7)],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let minor = seat_of(&recon.game);
+        assert_eq!(recon.game.envoys_at(0, minor), 7);
+        assert_eq!(recon.game.suzerain_of(minor), Some(0));
+    }
+
+    /// `ri` (`Plot:IsRiver`) is the one river bit the Lua says is not derivable
+    /// from `rv`: a segment whose Firaxis holder is an unrevealed neighbour reads
+    /// `rv = 0` while the plot is riverside. Exported since the river work of
+    /// 2026-08-01 and read by nothing until now.
+    #[test]
+    fn the_hosts_riverside_bit_marks_a_plot_whose_river_edge_is_unrevealed() {
+        let mut wet = plot(4, 4, "TERRAIN_GRASS");
+        wet.ri = true;
+        let dry = plot(5, 4, "TERRAIN_GRASS");
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 3,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![wet, dry],
+        }]);
+        let recon = rebuild_from_state(&snapshot, &StateSnapshot::default(), 4, 1, 500, 0);
+        let wet = &recon.game.map.tiles[&crate::hex::offset_to_axial(4, 4)];
+        assert!(wet.has_river(), "`ri` alone makes the plot riverside");
+        assert!(
+            wet.river_edges.iter().all(|edge| !*edge),
+            "and invents no crossing on any edge"
+        );
+        let dry = &recon.game.map.tiles[&crate::hex::offset_to_axial(5, 4)];
+        assert!(!dry.has_river(), "a plot without the bit stays dry");
+
+        // The persistent mirror re-reads it every sync, and clears it when the
+        // export stops saying so.
+        let mut mirror = LiveMirror::new(&snapshot, &StateSnapshot::default(), 4, 1, 500, 0);
+        assert!(mirror.game.map.tiles[&crate::hex::offset_to_axial(4, 4)].has_river());
+        let mut plots = vec![plot(4, 4, "TERRAIN_GRASS"), plot(5, 4, "TERRAIN_GRASS")];
+        plots[1].ri = true;
+        let again = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots,
+        }]);
+        mirror.sync(&again, &StateSnapshot::default(), 0);
+        assert!(!mirror.game.map.tiles[&crate::hex::offset_to_axial(4, 4)].has_river());
+        assert!(mirror.game.map.tiles[&crate::hex::offset_to_axial(5, 4)].has_river());
+    }
+
+    /// `embarked` (`Unit:IsEmbarked`) crossed on every unit and the mirror kept
+    /// deriving embarkation from "its tile is water". The host's flag wins while
+    /// the unit stands where it was read; a unit the board moves, and an older
+    /// export with no flag, derive from the tile as before.
+    #[test]
+    fn the_hosts_embarked_flag_wins_over_the_tile_while_the_unit_stands_there() {
+        let mut plots = (3..=9)
+            .flat_map(|x| (3..=9).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect::<Vec<_>>();
+        plots
+            .iter_mut()
+            .find(|site| site.x == 6 && site.y == 5)
+            .expect("the unit's plot is in the fixture")
+            .t = Some("TERRAIN_COAST".to_string());
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots,
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 42,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 6,
+            y: 5,
+            moves: 0.0,
+            embarked: Some(false),
+            ..StateUnit::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let uid = *mirror.uid_of.get(&42).expect("the Warrior is mirrored");
+        let unit = mirror.game.units[&uid].clone();
+        assert!(
+            mirror
+                .game
+                .rules
+                .is_water(&mirror.game.map.tiles[&unit.pos]),
+            "the fixture stands the unit on water"
+        );
+        assert!(
+            !mirror.game.is_embarked(&unit),
+            "the host said not embarked, and the host wins over the tile"
+        );
+        let moved = crate::game::Unit {
+            pos: crate::hex::offset_to_axial(6, 6),
+            ..unit.clone()
+        };
+        assert!(
+            !mirror.game.is_embarked(&moved),
+            "moved onto grass, the tile derives: not embarked"
+        );
+        let mut coast_again = unit.clone();
+        coast_again.host_embarked = None;
+        assert!(
+            mirror.game.is_embarked(&coast_again),
+            "with no host reading the tile derives: embarked on coast"
+        );
+
+        // The flag is re-read on every sync, and an older export (no flag) derives.
+        let mut mirror = mirror;
+        state.units[0].embarked = None;
+        mirror.sync(&snapshot, &state, 0);
+        let uid = *mirror
+            .uid_of
+            .get(&42)
+            .expect("the Warrior survives the sync");
+        assert!(
+            mirror.game.is_embarked(&mirror.game.units[&uid]),
+            "derived: embarked"
+        );
+        state.units[0].embarked = Some(true);
+        mirror.sync(&snapshot, &state, 0);
+        let uid = *mirror
+            .uid_of
+            .get(&42)
+            .expect("the Warrior survives the sync");
+        assert!(
+            mirror.game.is_embarked(&mirror.game.units[&uid]),
+            "the host agrees"
+        );
+    }
+
+    /// Replays a recorded live run at one turn and prints seat 0's delegation at
+    /// every met city-state beside the host's, so the Amani correction can be read
+    /// off a real export rather than a fixture. Ignored by default; run it as
+    ///
+    ///     CIVVIS_REPLAY_EVENTS=<run>/events.jsonl CIVVIS_REPLAY_TURN=150 \
+    ///         cargo test --lib -- --ignored --nocapture \
+    ///         replay_city_state_envoys_against_the_host
+    ///
+    /// Run civvis-20260826T184456Z at t150 before this change, per
+    /// `civ6_mirror_check.py`: `la venta envoys Civ6=7 CIVVIS=9; suzerain Civ6=-1
+    /// CIVVIS=0`. After: host 7, board 7, no Suzerain on either side.
+    #[test]
+    #[ignore]
+    fn replay_city_state_envoys_against_the_host() {
+        let Ok(path) = std::env::var("CIVVIS_REPLAY_EVENTS") else {
+            return;
+        };
+        let turn = std::env::var("CIVVIS_REPLAY_TURN")
+            .ok()
+            .and_then(|turn| turn.parse().ok());
+        let events = std::path::Path::new(&path);
+        let snapshot = snapshot_from_events_at(events, turn).expect("a snapshot at that turn");
+        let state = state_from_events(events, turn).expect("a state at that turn");
+        let players = if state.seat.players > 0 {
+            state.seat.players
+        } else {
+            8
+        };
+        let max_turns = if state.seat.max_turns > 0 {
+            state.seat.max_turns as u32
+        } else {
+            500
+        };
+        let mirror = LiveMirror::new(&snapshot, &state, players, 1, max_turns, 0);
+        let mut mismatches = Vec::new();
+        for (minor, seat) in minor_actor_assignments(&mirror.game, &state) {
+            if !minor.is_city_state() {
+                continue;
+            }
+            let host = minor.envoys.max(0);
+            let board = mirror.game.envoys_at(0, seat);
+            let board_suzerain = mirror.game.suzerain_of(seat);
+            let amani = mirror.game.amani_envoy_terms(0, seat);
+            println!(
+                "t{} {:<30} envoys host={host} board={board} amani={amani:?} \
+                 suzerain host={} board={board_suzerain:?}",
+                state.turn, minor.civ, minor.suzerain
+            );
+            if board != host || (board_suzerain == Some(0)) != (minor.suzerain == 0) {
+                mismatches.push(minor.civ.clone());
+            }
+        }
+        assert!(
+            mismatches.is_empty(),
+            "the board disagrees with the host at {mismatches:?}"
+        );
+    }
+
     fn open_grass_board(side: i32) -> Snapshot {
         let chunks = vec![TilesChunk {
             turn: 4,
@@ -8585,7 +11093,7 @@ mod tests {
                         o: -1,
                         w: false,
                         i: false,
-                        fw: false,
+                        fw: None,
                         rv: 0,
                         ri: false,
                         ct: None,
@@ -8597,6 +11105,9 @@ mod tests {
                         rt: None,
                         rp: false,
                         yl: None,
+                        ap: None,
+                        np: false,
+                        vis: false,
                     })
                 })
                 .collect(),
@@ -8771,7 +11282,7 @@ mod tests {
                     o: -1,
                     w: false,
                     i: false,
-                    fw: false,
+                    fw: None,
                     rv: 0,
                     ri: false,
                     ct: None,
@@ -8783,6 +11294,9 @@ mod tests {
                     rt: None,
                     rp: false,
                     yl: None,
+                    ap: None,
+                    np: false,
+                    vis: false,
                 })
             })
             .collect();
@@ -8995,10 +11509,14 @@ mod tests {
                         t: Some("TERRAIN_GRASS".to_string()),
                         f: None,
                         r: None,
-                        o: if (5..=6).contains(&x) && (5..=6).contains(&y) { 7 } else { -1 },
+                        o: if (5..=6).contains(&x) && (5..=6).contains(&y) {
+                            7
+                        } else {
+                            -1
+                        },
                         w: false,
                         i: false,
-                        fw: false,
+                        fw: None,
                         rv: 0,
                         ri: false,
                         ct: None,
@@ -9010,6 +11528,9 @@ mod tests {
                         rt: None,
                         rp: false,
                         yl: None,
+                        ap: None,
+                        np: false,
+                        vis: false,
                     })
                 })
                 .collect(),
@@ -9343,6 +11864,16 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             if tile.improvement.is_some() {
                 tile.pillaged = plot.p;
             }
+            // A National Park is not an improvement in Civilization VI — the
+            // plot answers `IsNationalPark` and `GetImprovementType` -1 — and
+            // it IS one on this board (`national_park` in the improvement
+            // rules, read by `established_national_parks`), so the flag lands
+            // as the improvement and the Amenities, the Tourism and the
+            // unworkable ground follow.
+            if plot.np {
+                tile.improvement = Some(Name::new("national_park"));
+                tile.pillaged = false;
+            }
             // The host's road, on the engine's own ladder. An older export
             // carries no `rt` and reads 0, exactly what the mirror wrote before.
             tile.road = route_level(plot.rt.as_deref(), plot.rp);
@@ -9591,10 +12122,21 @@ pub(crate) fn apply_rivers(game: &mut crate::game::Game, snapshot: &Snapshot) {
         let Some(plot) = snapshot.plot((x, y)) else {
             continue;
         };
+        let pos = crate::hex::offset_to_axial(x, y);
+        // `ri` is `Plot:IsRiver()`, the host's own answer to "is this plot riverside".
+        // `rv` carries the six edges, but a segment whose Firaxis holder is an
+        // unrevealed neighbour reads back as 0 here while the plot is riverside — the
+        // Lua says so where it writes `ri` — and until 2026-08-26 nothing read the
+        // bit, so housing, fresh water and river adjacency on such a plot were all
+        // dry. The flag marks the tile riverside without inventing a crossing.
+        if plot.ri {
+            if let Some(tile) = game.map.tiles.get_mut(&pos) {
+                tile.riverside = true;
+            }
+        }
         if plot.rv == 0 {
             continue;
         }
-        let pos = crate::hex::offset_to_axial(x, y);
         // Bits 8/16/32 carry W/NW/NE edges read from the neighbouring Firaxis
         // holders. The exporter includes them even when that neighbour is hidden:
         // the segment on this revealed plot is itself known. North-up staging can
@@ -9678,6 +12220,10 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
         .map(|(index, name)| (*name, index))
         .collect();
 
+    // Rebuilt from the plots on every apply, like the landmass: a plot whose
+    // reading lapsed keeps none.
+    game.observed_appeal.clear();
+    game.observed_fresh_water.clear();
     for (x, y) in snapshot.revealed_positions() {
         let Some(plot) = snapshot.plot((x, y)) else {
             continue;
@@ -9694,6 +12240,15 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
             .as_deref()
             .and_then(|name| index_of.get(name).copied());
         tile.coastal_lowland = plot.cl.clamp(0, 3) as u8;
+        // The host's own appeal, which `Game::tile_appeal` prefers to its
+        // derivation from the six neighbours it can see.
+        if let Some(appeal) = plot.ap {
+            game.observed_appeal.insert(pos, appeal);
+        }
+        // The host's fresh-water answer, which `Game::city_water` prefers.
+        if let Some(fresh) = plot.fw {
+            game.observed_fresh_water.insert(pos, fresh);
+        }
     }
 
     // Nothing can mirror these, so nothing may keep them. See above.
@@ -10062,6 +12617,81 @@ pub struct StateResolution {
     pub target: String,
 }
 
+/// One city-state request, as the host's QuestsManager reports it. `type` is
+/// the `Quests.QuestType` row (`QUEST_TRAIN_UNIT_TYPE`, …); `target` is the
+/// type the quest names, recovered by the mod from the localized description
+/// (the host exposes no target accessor), `None` for the three quests that
+/// name nothing and where no name matched.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateQuest {
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// One major's Envoy count at a city-state, by host player id.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateEnvoyCount {
+    #[serde(default = "minus_one_i64")]
+    pub player: i64,
+    #[serde(default)]
+    pub envoys: i64,
+}
+
+/// The host's climate, as `GameClimate` answers the shipped ClimateScreen.
+/// `level` is `GetClimateChangeLevel` (0–7), -1 when it could not be read;
+/// every other field is `None` where its accessor was missing.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateClimate {
+    #[serde(default = "minus_one_i64")]
+    pub level: i64,
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub co2_total: Option<f64>,
+    #[serde(default)]
+    pub co2_ours: Option<f64>,
+    #[serde(default)]
+    pub sea_level_turns: Option<i64>,
+    #[serde(default)]
+    pub tiles_flooded: Option<i64>,
+    #[serde(default)]
+    pub storm_pct: Option<f64>,
+    #[serde(default)]
+    pub flood_pct: Option<f64>,
+    #[serde(default)]
+    pub drought_pct: Option<f64>,
+}
+
+/// One legal route from one of our cities, priced by the host's own
+/// `CanStartRoute` and `CalculateOriginYield…` (TradeRouteChooser.lua:227,
+/// :864). Endpoints carry coordinates because Firaxis city ids are only
+/// unique per player.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateRouteOption {
+    #[serde(default = "minus_one_i64")]
+    pub origin: i64,
+    #[serde(default = "minus_one")]
+    pub origin_x: i32,
+    #[serde(default = "minus_one")]
+    pub origin_y: i32,
+    #[serde(default = "minus_one_i64")]
+    pub dest: i64,
+    #[serde(default = "minus_one")]
+    pub dest_player: i32,
+    #[serde(default = "minus_one")]
+    pub dest_x: i32,
+    #[serde(default = "minus_one")]
+    pub dest_y: i32,
+    /// What the route would pay its origin per turn, summed as the
+    /// active-route export sums it.
+    #[serde(default)]
+    pub yields: Option<crate::rules::Yields>,
+}
+
 /// One score row in Firaxis's World Congress emergency tracker.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateEmergencyScore {
@@ -10166,6 +12796,61 @@ pub struct StateGovernor {
     pub neutralized_turns: i32,
     #[serde(default)]
     pub promotions: Vec<String>,
+}
+
+/// One row of the host's production menu for a city (`StateCity::buildable`):
+/// the Civilization VI type name, the engine's production cost and turns for
+/// it in that city, the formation tier of a Corps/Army row, and for a district
+/// the number of plots the engine offers with up to sixteen of them.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateMenuItem {
+    #[serde(default)]
+    pub t: String,
+    #[serde(default = "unknown_metric")]
+    pub c: f64,
+    #[serde(default = "unknown_metric")]
+    pub p: f64,
+    #[serde(default)]
+    pub f: Option<u8>,
+    #[serde(default)]
+    pub n: Option<i64>,
+    #[serde(default)]
+    pub s: Option<Vec<StateMenuPlot>>,
+}
+
+/// An offset-coordinate plot in a host menu row.
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+pub struct StateMenuPlot {
+    #[serde(default)]
+    pub x: i32,
+    #[serde(default)]
+    pub y: i32,
+}
+
+/// One row of the host's purchase menu (`StateCity::purchasable`): the type
+/// name and the engine's price in Gold and in Faith, each absent where the
+/// host will not sell for that currency.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StatePurchaseItem {
+    #[serde(default)]
+    pub t: String,
+    #[serde(default)]
+    pub g: Option<f64>,
+    #[serde(default)]
+    pub f: Option<f64>,
+}
+
+/// One entry of the build queue BEHIND the head (`StateCity::queue`): the type
+/// name, the formation tier of a Corps/Army, and the production already
+/// invested in it.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateQueueItem {
+    #[serde(default)]
+    pub t: String,
+    #[serde(default)]
+    pub f: Option<u8>,
+    #[serde(default)]
+    pub pr: Option<f64>,
 }
 
 /// One city as Civilization VI reported it, in OFFSET coordinates.
@@ -10284,6 +12969,26 @@ pub struct StateCity {
     /// Civilization VI's own estimate of turns remaining on `producing`.
     #[serde(default = "unknown_metric")]
     pub production_turns: f64,
+    /// ★★★★★ THE HOST'S OWN PRODUCTION MENU FOR THIS CITY — every unit,
+    /// building, wonder, district and project `BuildQueue:CanProduce(hash,
+    /// false, true)` says can be STARTED here now, with the engine's cost and
+    /// turns for each: the `ProductionPanel.lua` loops, exported by
+    /// `CivvisMenus.buildable`. Until this crossed the board chose production
+    /// from its own catalogue and learned legality one refusal at a time
+    /// (`refused_production`). `None` on an older mod or a failed read is
+    /// unknown, not empty — the mirror gates nothing then.
+    #[serde(default)]
+    pub buildable: Option<Vec<StateMenuItem>>,
+    /// The host's purchase menu — what `CityManager.CanStartCommand(city,
+    /// PURCHASE, ...)` says can be BOUGHT here now and what
+    /// `CityGold:GetPurchaseCost` charges, in Gold and in Faith. `None` is
+    /// unknown; an empty list is the host saying nothing is for sale.
+    #[serde(default)]
+    pub purchasable: Option<Vec<StatePurchaseItem>>,
+    /// The build queue BEHIND `producing` (`BuildQueue:GetAt(i)`, i >= 1).
+    /// Only the head ever crossed before.
+    #[serde(default)]
+    pub queue: Option<Vec<StateQueueItem>>,
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
     pub food: f64,
@@ -10509,6 +13214,12 @@ pub struct StateUnit {
     /// Present on the aggregate hostile export; ownership is implicit elsewhere.
     #[serde(default = "minus_one_i64")]
     pub player: i64,
+    /// Whether this hostile belongs to the Free Cities player (`IsFreeCities`),
+    /// set by the mod on `hostiles[]` so the mirror can seat it without knowing
+    /// Firaxis's index for that aggregate. Absent on an older export and on a
+    /// barbarian; the exported Free Cities minor's `player` is the other key.
+    #[serde(default)]
+    pub free: bool,
     /// ⚠⚠⚠ NOT "movement available this turn", whatever it looks like. This is
     /// `GetMovesRemaining` sampled at the instant the export is written, and that
     /// instant is not the start of the seat's turn.
@@ -10550,6 +13261,47 @@ pub struct StateUnit {
     /// allowance.
     #[serde(default)]
     pub attacks_remaining: Option<i32>,
+    /// ★★★ THE HOST'S OWN UPGRADE VERDICT (docs/FIDELITY.md, "The one-to-one
+    /// map", item 9). `upgrade_to` is the successor `UnitCommandResults.
+    /// UNIT_TYPE` names, `upgrade_cost` is `Unit:GetUpgradeCost()`, and
+    /// `upgrade_blocked_reason` is present exactly when a successor exists and
+    /// the strict `CanStartCommand(unit, UPGRADE, false, true)` cannot start
+    /// it this turn (`Panels/UnitPanel.lua:468-483`). A unit with no successor
+    /// exports none of the three; an older mod exports none of them for any
+    /// unit, and the board's own rules then decide, unchanged.
+    #[serde(default)]
+    pub upgrade_to: Option<String>,
+    #[serde(default)]
+    pub upgrade_cost: Option<f64>,
+    #[serde(default)]
+    pub upgrade_blocked_reason: Option<String>,
+    /// The per-type upkeep the shipped Report screen sums, by formation
+    /// (`UnitManager.GetUnitMaintenance` / `GetUnitCorpsMaintenance` /
+    /// `GetUnitArmyMaintenance`, `Screens/ReportScreen.lua:314-334`), before
+    /// the player's per-unit discount.
+    #[serde(default)]
+    pub maintenance: Option<f64>,
+    /// `Unit:GetReligiousStrength()` and `Unit:GetMaxMoves()`, the unit
+    /// panel's own stats (`UnitPanel.lua:2257`, `:2242`).
+    #[serde(default)]
+    pub religious_strength: Option<f64>,
+    #[serde(default)]
+    pub max_moves: Option<f64>,
+    /// `UnitManager.GetActivityType` named as `WorldTracker.lua:544` does:
+    /// `sleep`, `hold`, `operation`, `awake`.
+    #[serde(default)]
+    pub activity: Option<String>,
+    /// A Spy's running operation (`Unit:GetSpyOperation()`, -1 → absent;
+    /// `EspionageOverview.lua:659`), the turn it ends, and — for an IDLE Spy
+    /// standing in a city — the operations `UnitManager.CanStartOperation`
+    /// would let it start there (`Choosers/EspionageChooser.lua:196-213`),
+    /// as host operation types. The menu is absent, never empty.
+    #[serde(default)]
+    pub spy_operation: Option<String>,
+    #[serde(default)]
+    pub spy_operation_end_turn: Option<i64>,
+    #[serde(default)]
+    pub spy_missions_available: Option<Vec<String>>,
     /// Exact host experience and promotion state. Option distinguishes an older
     /// archive that never exported the facts from a level-one unit with none.
     #[serde(default)]
@@ -10907,6 +13659,77 @@ pub struct StateRival {
     /// border and none arrived.
     #[serde(default)]
     pub enforces_borders: Option<bool>,
+    /// The host's own relationship state for this rival toward us —
+    /// `GameInfo.DiplomaticStates[GetDiplomaticAI():GetDiplomaticStateIndex(us)]
+    /// .StateType`: `DIPLO_STATE_WAR`, `_DENOUNCED`, `_UNFRIENDLY`, `_NEUTRAL`,
+    /// `_FRIENDLY`, `_DECLARED_FRIEND`, `_ALLIED` (`DiplomacyActionView.lua:870`).
+    /// `None` on an older export, which keeps the `can_declare` fallback below.
+    /// See [`apply_host_diplomacy`] for what each state writes on the board.
+    #[serde(default)]
+    pub diplomatic_state: Option<String>,
+    /// Grievances we hold against them and they against us, both `>= 0`. The
+    /// host keeps ONE signed balance per pair (`GetGrievancesAgainst`,
+    /// `DiplomacyActionView_WorldCongressTab.lua:42`); the mod splits it.
+    #[serde(default)]
+    pub our_grievances_against_them: Option<f64>,
+    #[serde(default)]
+    pub grievances_against_us: Option<f64>,
+    /// `Game.GetGameDiplomacy():GetGrievanceChangePerTurn(them, us)` — the
+    /// host's per-turn drift of that balance. Crosses for the record and
+    /// `--dump-mirror`; no decision reads it yet (the board's own decay rule
+    /// runs in `Game::process_diplomacy`).
+    #[serde(default)]
+    pub grievance_change_per_turn: Option<f64>,
+    /// `GetAllianceType` as `GameInfo.Alliances[i].AllianceType`
+    /// (`ALLIANCE_MILITARY`, …), absent when the host answers `-1`; the level
+    /// and the turns until expiry from the shipped Alliance tab.
+    #[serde(default)]
+    pub alliance_type: Option<String>,
+    #[serde(default)]
+    pub alliance_level: Option<i32>,
+    #[serde(default)]
+    pub alliance_turns_left: Option<i64>,
+    /// `GetDenounceTurn` from each side and `GetDeclaredFriendshipTurn`
+    /// (`DiplomacyActionView.lua:1486-1511`), with the game's
+    /// `GetDenounceTimeLimit`, so the Formal War wait on the board is the
+    /// host's own clock. A value `<= 0` means no such turn.
+    #[serde(default)]
+    pub our_denounce_turn: Option<i64>,
+    #[serde(default)]
+    pub their_denounce_turn: Option<i64>,
+    #[serde(default)]
+    pub friendship_turn: Option<i64>,
+    #[serde(default)]
+    pub denounce_time_limit: Option<i64>,
+    /// `GetVisibilityOn` both ways — the `GameInfo.Visibilities` index
+    /// (0 none … 4 top secret). Written to `Player::observed_visibility`,
+    /// which [`crate::game::Game::diplomatic_visibility`] prefers.
+    #[serde(default)]
+    pub visibility: Option<i64>,
+    #[serde(default)]
+    pub their_visibility_on_us: Option<i64>,
+    /// Open Borders WE grant them (`theirs:HasOpenBordersFrom(us)`).
+    #[serde(default)]
+    pub open_borders_granted: Option<bool>,
+    /// Our Delegation / Resident Embassy at their court and theirs at ours
+    /// (`HasDelegationAt` / `HasEmbassyAt`, the accessors the delegation
+    /// actuator already calls).
+    #[serde(default)]
+    pub delegation_at: Option<bool>,
+    #[serde(default)]
+    pub embassy_at: Option<bool>,
+    #[serde(default)]
+    pub their_delegation: Option<bool>,
+    #[serde(default)]
+    pub their_embassy: Option<bool>,
+    /// `PromiseTypes` member names (`DONT_SETTLE_NEAR_ME`, …) for promises we
+    /// made to them and they made to us (`IsPromiseMade`,
+    /// `DiplomacyActionView_AllianceRow.lua:61-70`). `Some(vec![])` is the
+    /// host's "none"; `None` an older export.
+    #[serde(default)]
+    pub promises_made: Option<Vec<String>>,
+    #[serde(default)]
+    pub promises_received: Option<Vec<String>>,
     /// How many technologies this rival has finished, or `-1` if the host
     /// could not be asked.
     ///
@@ -10927,6 +13750,49 @@ pub struct StateRival {
     /// Civics finished, or `-1` if unavailable. See `techs`.
     #[serde(default = "unknown_metric")]
     pub civics: f64,
+    /// The rival's tree by NAME — every `TechnologyType`/`CivicType` it
+    /// holds, from the same `HasTech`/`HasCivic` loops the counts above run.
+    /// The names go onto the rival's seat (`Player::techs`/`civics`) exactly
+    /// as the local seat's do (`apply_rival_tree`), so its era
+    /// (`Game::player_era`), the units it can field and its border
+    /// (`Game::enforces_borders` reads Early Empire off the civic tree) are
+    /// derived natively; `enforces_borders` above stays the override. `None`
+    /// on an older export; an empty list is a real "nothing yet".
+    #[serde(default)]
+    pub tech_names: Option<Vec<String>>,
+    #[serde(default)]
+    pub civic_names: Option<Vec<String>>,
+    /// The shipped World Rankings overview's own lane numbers for this rival
+    /// (`g_victoryData`, WorldRankings.lua:27,44,55): `GetNumTechsResearched`,
+    /// `GetMilitaryStrengthWithoutTreasury` and `GetNumCitiesFollowingReligion`.
+    /// `None` on an older export or a refused read.
+    #[serde(default)]
+    pub techs_researched: Option<i64>,
+    #[serde(default)]
+    pub military_no_treasury: Option<f64>,
+    #[serde(default)]
+    pub cities_following_religion: Option<i64>,
+    /// The religion a majority of this rival's cities follow
+    /// (`GetReligionInMajorityOfCities`, WorldRankings.lua:2049) — the test
+    /// the shipped religion tab runs to call a civilization converted. `None`
+    /// when no religion holds a majority or the host could not be asked.
+    #[serde(default)]
+    pub religion: Option<String>,
+    /// Tourists visiting US from this rival — the culture tab's "Visiting us"
+    /// column (`GetTouristsFrom` on the local player's culture,
+    /// WorldRankings.lua:1766): the per-rival term of the top-level
+    /// `foreign_tourists`.
+    #[serde(default)]
+    pub tourists_visiting_us: Option<i64>,
+    /// The rival's Era Score (`GetPlayerCurrentScore`, the accessor the
+    /// top-level `era_score` reads for us).
+    #[serde(default)]
+    pub era_score: Option<i64>,
+    /// The rival's outgoing trade routes whose both ends stand on revealed
+    /// ground, by endpoint. Seated on the board as routes the rival's seat
+    /// owns when both cities are on it (`restore_rival_outgoing_routes`).
+    #[serde(default)]
+    pub trade_routes: Option<Vec<StateRivalRoute>>,
     /// The rival's economy as the host reports it — per-turn Science and
     /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
     /// every one an accessor the shipped World Rankings and Deal screens call
@@ -10977,6 +13843,23 @@ pub struct StateRival {
 
 /// One met city-state. Its cities remain remembered after sight, while units
 /// are exported only under current visibility just like a major rival's.
+/// One endpoint pair of a rival's outgoing trade route, as
+/// `rivals[].trade_routes` carries it. `-1` on a coordinate the host could
+/// not read; the mirror skips such a route rather than guess.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateRivalRoute {
+    #[serde(default = "minus_one")]
+    pub origin_x: i32,
+    #[serde(default = "minus_one")]
+    pub origin_y: i32,
+    #[serde(default = "minus_one")]
+    pub destination_x: i32,
+    #[serde(default = "minus_one")]
+    pub destination_y: i32,
+    #[serde(default = "minus_one")]
+    pub destination_player: i32,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateMinor {
     #[serde(default)]
@@ -11002,6 +13885,19 @@ pub struct StateMinor {
     pub envoys: i64,
     #[serde(default)]
     pub most_envoys: i64,
+    /// What this city-state is asking US for, per the host's QuestsManager
+    /// (`HasActiveQuestFromPlayer` over `GameInfo.Quests()`, the shipped
+    /// CityStates panel's read). One quest per pair in the shipped rules, so
+    /// the first entry is the request. `None` on an older export leaves the
+    /// board's own roll alone; `Some([])` is a city-state asking nothing.
+    #[serde(default)]
+    pub quests: Option<Vec<StateQuest>>,
+    /// Every alive major's Envoy count at this city-state
+    /// (`GetTokensReceived(player)`, CityStates.lua:1458), zeros included.
+    /// `None` on an older export, where a rival's delegation is seeded as the
+    /// minimum that elects the Suzerain the host names.
+    #[serde(default)]
+    pub envoys_by_player: Option<Vec<StateEnvoyCount>>,
     #[serde(default)]
     pub cities: Vec<StateCity>,
     #[serde(default)]
@@ -11023,9 +13919,39 @@ impl StateMinor {
         !self.civ.is_empty() && !self.is_free_cities() && !self.is_barbarian()
     }
 
-    fn is_present_free_cities(&self) -> bool {
-        self.is_free_cities() && (!self.cities.is_empty() || !self.units.is_empty())
+    fn is_present_free_cities(&self, state: &StateSnapshot) -> bool {
+        self.is_free_cities()
+            && (!self.cities.is_empty()
+                || !self.units.is_empty()
+                || state
+                    .hostiles
+                    .iter()
+                    .any(|unit| hostile_is_free_cities(state, unit)))
     }
+}
+
+/// Whether a `hostiles[]` entry is a Free Cities unit: flagged `free` by a current
+/// mod, or carrying the `player` of the exported Free Cities minor on an older one.
+/// Everything else on that list is a barbarian.
+fn hostile_is_free_cities(state: &StateSnapshot, unit: &StateUnit) -> bool {
+    unit.free
+        || (unit.player >= 0
+            && state
+                .minors
+                .iter()
+                .any(|minor| minor.is_free_cities() && minor.player as i64 == unit.player))
+}
+
+/// Whether the Free Cities actor's own `units[]` already carries this hostile: the
+/// mod exports a met Free Cities player's visible units under `minors[]` as well as
+/// under `hostiles[]`, and one unit is planted once, from the actor's record.
+fn hostile_exported_as_minor_unit(state: &StateSnapshot, unit: &StateUnit) -> bool {
+    unit.id > 0
+        && state
+            .minors
+            .iter()
+            .filter(|minor| minor.is_free_cities())
+            .any(|minor| minor.units.iter().any(|exported| exported.id == unit.id))
 }
 
 fn unknown_strength() -> f64 {
@@ -11074,7 +14000,7 @@ pub fn minor_actor_assignments<'a>(
             if let Some(seat) = city_state_seats.next() {
                 out.push((minor, seat));
             }
-        } else if minor.is_present_free_cities() {
+        } else if minor.is_present_free_cities(state) {
             if let Some(seat) = free_city_seat {
                 out.push((minor, seat));
             }
@@ -11294,6 +14220,17 @@ pub struct StateSnapshot {
     /// missing answer is not; conflating them is the failure above.
     #[serde(default)]
     pub gold_per_turn: Option<f64>,
+    /// The bill behind that net, by source — `PlayerTreasury:GetUnitMaintenance`,
+    /// `GetBuildingMaintenance`, `GetDistrictMaintenance`, the top panel's own
+    /// breakdown (`ToolTipHelper_PlayerYields.lua:22-26`). `None` when the
+    /// host did not answer, exactly like `gold_per_turn`; they reach
+    /// `Game::host_maintenance` and replace the board's own sums there.
+    #[serde(default)]
+    pub unit_maintenance_total: Option<f64>,
+    #[serde(default)]
+    pub building_maintenance_total: Option<f64>,
+    #[serde(default)]
+    pub district_maintenance_total: Option<f64>,
     /// Faith balance. Unlike the rate fields below, this is a stockpile and
     /// crosses directly, exactly like gold.
     #[serde(default)]
@@ -11402,6 +14339,19 @@ pub struct StateSnapshot {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// Our tourism per turn as the host reports it (`GetStats():GetTourism()`,
+    /// the accessor already used for each rival). `None` on an older export.
+    /// The mirror writes it into `Game::observed_tourism_per_turn`, and it is
+    /// the live side of the `tourism` divergence row, which read "no pairs"
+    /// on every run until it crossed.
+    #[serde(default)]
+    pub tourism_per_turn: Option<f64>,
+    /// Cities anywhere following our religion, the religion lane's own
+    /// number (`GetNumCitiesFollowingReligion`, WorldRankings.lua:44), the
+    /// same accessor as each rival's. `None` on an older export or a refused
+    /// read.
+    #[serde(default)]
+    pub cities_following_religion: Option<i64>,
     #[serde(default = "unknown_strength")]
     pub military: f64,
     /// Era Score and the age it decides, from Firaxis's own `Game.GetEras()`.
@@ -11466,6 +14416,17 @@ pub struct StateSnapshot {
     /// binding (`GetMeetingStatus().TurnsLeft`).
     #[serde(default)]
     pub congress_turns_left: Option<i64>,
+    /// Gathering Storm's climate, off `GameClimate` the way the shipped
+    /// ClimateScreen reads it. `None` on an older export or a ruleset without
+    /// the object, where the board's own phase stands.
+    #[serde(default)]
+    pub climate: Option<StateClimate>,
+    /// Where a Trader could go from each of our cities and what the host says
+    /// each route would pay its origin, exported while a route slot is open
+    /// (the 12 richest per origin). `None` when nothing can be started or on
+    /// an older export.
+    #[serde(default)]
+    pub route_options: Option<Vec<StateRouteOption>>,
     /// Firaxis's own outgoing-route capacity. The model can differ because a
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
@@ -11702,6 +14663,61 @@ fn apply_public_empire_stats(
         .filter(|value| *value >= 0);
 }
 
+/// Put a rival's tree by name on its seat, and let its border be derived
+/// from that tree when the host sent the names but not the one-bit answer.
+///
+/// The names are the same `HasTech`/`HasCivic` loop the counts come from,
+/// mapped through `civvis_node_name` exactly as the local seat's lists are,
+/// and ASSIGNED (not merged) so a seat that changed hands between exports
+/// does not keep a tree it no longer holds. With the tree on the seat,
+/// `Game::player_era`, the unit roster and `Game::enforces_borders` (Early
+/// Empire's `open_borders` tree effect) all read a rival the way they read a
+/// native player. A name CIVVIS lacks is filed in `unmapped`, as ours are.
+///
+/// The border: the host's own `enforces_borders` bit wins when it crossed;
+/// without it, a tree that crossed lets the civic decide (`None`, the native
+/// rule); and an export with neither reads as enforced — the conservative
+/// answer and the measured one (run civvis-20260826T184456Z, 37 military
+/// steps into a rival's closed border, none arrived).
+fn apply_rival_tree(
+    game: &mut crate::game::Game,
+    owner: usize,
+    rival: &StateRival,
+    unmapped: &mut Vec<String>,
+) {
+    if let Some(names) = &rival.tech_names {
+        let mut techs = std::collections::BTreeSet::new();
+        for civ6 in names {
+            match civvis_node_name(&game.rules.techs, civ6, "TECH_") {
+                Some(name) => {
+                    techs.insert(crate::name::Name::new(&name));
+                }
+                None if !unmapped.contains(civ6) => unmapped.push(civ6.clone()),
+                None => {}
+            }
+        }
+        game.players[owner].techs = techs;
+    }
+    if let Some(names) = &rival.civic_names {
+        let mut civics = std::collections::BTreeSet::new();
+        for civ6 in names {
+            match civvis_node_name(&game.rules.civics, civ6, "CIVIC_") {
+                Some(name) => {
+                    civics.insert(crate::name::Name::new(&name));
+                }
+                None if !unmapped.contains(civ6) => unmapped.push(civ6.clone()),
+                None => {}
+            }
+        }
+        game.players[owner].civics = civics;
+    }
+    game.players[owner].borders_enforced = match rival.enforces_borders {
+        Some(enforced) => Some(enforced),
+        None if rival.civic_names.is_some() => None,
+        None => Some(true),
+    };
+}
+
 /// Put a rival's host-reported public standings and economy on its seat:
 /// treasury and Faith balances directly, all five top-bar yields as a
 /// host-to-model delta, and aggregate HUD totals separately. This makes the
@@ -11737,15 +14753,51 @@ fn apply_rival_public_economy(
     };
     {
         let observed = game.observed_public_empire_stats.entry(owner).or_default();
-        observed.techs = count(rival.techs);
+        // The science lane's own number (`GetNumTechsResearched`) where it
+        // crossed, else the counted loop an older mod sends; they agree.
+        observed.techs = rival
+            .techs_researched
+            .filter(|value| *value >= 0)
+            .map(|value| value as usize)
+            .or_else(|| count(rival.techs));
         observed.civics = count(rival.civics);
+        observed.cities_following_religion = rival
+            .cities_following_religion
+            .filter(|value| *value >= 0)
+            .map(|value| value as usize);
+        observed.military_no_treasury = rival
+            .military_no_treasury
+            .filter(|value| value.is_finite() && *value >= 0.0);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
+        if known(rival.tourism) {
+            game.observed_tourism_per_turn.insert(owner, rival.tourism);
+        } else {
+            game.observed_tourism_per_turn.remove(&owner);
+        }
         // Like `techs`/`civics`: the observed table is rebuilt from each
         // snapshot (`apply_observed_host_metrics` clears it), so absent or
         // refused reads honestly say None for THIS snapshot. The durable
         // record is the player's `science_projects` below.
         observed.foreign_tourists = count(rival.foreign_tourists);
         observed.domestic_tourists = count(rival.domestic_tourists);
+    }
+    // The rival's majority religion, by the CIVVIS name its founded religion
+    // takes (`civvis_religion_name`): `Game::majority_religion_of` reads it
+    // before counting the cities the board holds, so the religion lane of the
+    // victory tracker (`victory_races`, `religious_conversion_tally`) counts
+    // a rival converted by cities the seat has never seen.
+    if let Some(name) = rival.religion.as_deref().and_then(civvis_religion_name) {
+        game.observed_majority_religion.insert(owner, name);
+    }
+    // Our draw from this rival, keyed the way `visiting_tourists_from` asks:
+    // (tourism source = us, where the tourists come from = them).
+    if let Some(tourists) = rival.tourists_visiting_us.filter(|value| *value >= 0) {
+        game.observed_visiting_tourists.insert((0, owner), tourists);
+    }
+    // Era Score on the rival's own seat, the slot `apply_player_ages` fills
+    // for ours; the standings (`obs.rs`) show it per player.
+    if let Some(score) = rival.era_score.filter(|value| *value >= 0) {
+        game.players[owner].era_score = score;
     }
     // The rival's space-race milestones land on its own player record, exactly
     // as the local seat's do — `rival_victory_pressure_with_culture` reads
@@ -11966,6 +15018,60 @@ fn restore_incoming_foreign_routes(
         }
     }
     unresolved
+}
+
+/// Seat the routes a rival runs OUT of its cities, when both ends are on the
+/// board.
+///
+/// `restore_incoming_foreign_routes` carries only the ones that end in our
+/// cities, so a rival's domestic and third-party routes paid it nothing on
+/// the mirrored board and its route income was CIVVIS's guess from a bare
+/// city. The mod exports a route only when both ends stand on revealed
+/// ground; here the owner is the origin city's seat ON THE BOARD, as for
+/// incoming routes, a route whose end is not planted is skipped rather than
+/// guessed, and our own routes (carried by the seat's own export, which
+/// `restore_active_trade_routes` rebuilds from scratch) are left alone.
+/// Runs after both of those, since the former clears `game.routes`.
+fn restore_rival_outgoing_routes(game: &mut crate::game::Game, rivals: &[StateRival]) {
+    let ends = game.turn.saturating_add(game.max_turns.max(1));
+    for rival in rivals {
+        let Some(routes) = rival.trade_routes.as_ref() else {
+            continue;
+        };
+        for route in routes {
+            if route.origin_x < 0
+                || route.origin_y < 0
+                || route.destination_x < 0
+                || route.destination_y < 0
+            {
+                continue;
+            }
+            let Some(origin) =
+                game.city_at(crate::hex::offset_to_axial(route.origin_x, route.origin_y))
+            else {
+                continue;
+            };
+            let Some(dest) = game.city_at(crate::hex::offset_to_axial(
+                route.destination_x,
+                route.destination_y,
+            )) else {
+                continue;
+            };
+            let owner = game.cities[&origin].owner;
+            if origin == dest || owner == 0 {
+                continue;
+            }
+            let route = crate::game::TradeRoute {
+                origin,
+                dest,
+                owner,
+                ends,
+            };
+            if !game.routes.contains(&route) {
+                game.routes.push(route);
+            }
+        }
+    }
 }
 
 /// The engine id and target vocabulary of one host World Congress resolution,
@@ -12926,13 +16032,46 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
 /// ⚠ A superset is correct, not an error. Serde aliases mean one field answers to two
 /// names — `kind` also accepts `type` — and only the export side needs both.
 const CITY_KEYS: &[&str] = &[
-    "id", "name", "buildings", "pillaged_buildings", "religion", "religion_next",
+    "id",
+    "name",
+    "buildings",
+    "pillaged_buildings",
+    "religion",
+    "religion_next",
     "religion_turns",
-    "pantheon_active", "districts", "wonders", "worked", "specialists", "great_works",
-    "yields", "producing", "producing_hash", "production_progress", "production",
-    "production_cost", "production_turns", "food", "loyalty_per_turn", "falls_to",
-    "x", "y", "pop", "capital", "defense", "damage", "max_damage", "wall_damage",
-    "max_wall_damage", "loyalty", "housing", "housing_from_improvements",
+    "pantheon_active",
+    "districts",
+    "wonders",
+    "worked",
+    "specialists",
+    "great_works",
+    "yields",
+    "producing",
+    "producing_hash",
+    "production_progress",
+    "production",
+    "production_cost",
+    "production_turns",
+    // The host's menus and the queue behind the head, read by
+    // `host_menus_from` and `host_queue_tail`.
+    "buildable",
+    "purchasable",
+    "queue",
+    "food",
+    "loyalty_per_turn",
+    "falls_to",
+    "x",
+    "y",
+    "pop",
+    "capital",
+    "defense",
+    "damage",
+    "max_damage",
+    "wall_damage",
+    "max_wall_damage",
+    "loyalty",
+    "housing",
+    "housing_from_improvements",
     // The host's own amenity ledger and the multiplier it puts on every non-food
     // yield. `the_schema_allowlists_cover_every_declared_field` caught these missing
     // on the first run, which is the whole reason that test exists.
@@ -12981,6 +16120,18 @@ const UNIT_KEYS: &[&str] = &[
     "queued_dest",
     "embarked",
     "attacks_remaining",
+    "free",
+    // The host's per-unit affordances (docs/FIDELITY.md item 9).
+    "upgrade_to",
+    "upgrade_cost",
+    "upgrade_blocked_reason",
+    "maintenance",
+    "religious_strength",
+    "max_moves",
+    "activity",
+    "spy_operation",
+    "spy_operation_end_turn",
+    "spy_missions_available",
 ];
 
 const PUBLIC_STATS_KEYS: &[&str] = &[
@@ -13032,7 +16183,9 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "religions", "prophet_pending",
-        "policies", "policy_slots", "gold", "gold_per_turn", "faith", "faith_per_turn",
+        "policies", "policy_slots", "gold", "gold_per_turn",
+        "unit_maintenance_total", "building_maintenance_total", "district_maintenance_total",
+        "faith", "faith_per_turn",
         "faith_sources", "science",
         "culture", "public_stats", "score", "dvp", "favor", "congress_dvp",
         "spy_capacity",
@@ -13041,6 +16194,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // `schema:state.strategic_resources` gap that was not one.
         "strategic_resources",
         "foreign_tourists", "domestic_tourists",
+        "tourism_per_turn",
+        "cities_following_religion",
         "military",
         "trade_capacity",
         "great_person_points",
@@ -13055,6 +16210,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "era_score", "era_score_baseline", "normal_age_threshold",
         "golden_age_threshold", "world_era", "dark_age", "golden_age",
         "heroic_golden_age", "dedications", "resolutions", "congress_turns_left",
+        // The host's climate and its trade-route projections (2026-08-26).
+        "climate", "route_options",
         "emergencies",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
         // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
@@ -13108,11 +16265,63 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "turns_to_establish", "neutralized_turns", "promotions",
     ];
     const RIVAL: &[&str] = &[
-        "player", "civ", "leader", "government", "dark_age", "golden_age",
-        "heroic_golden_age", "can_declare", "score", "dvp", "military", "at_war",
-        "techs", "civics", "cities", "units",
-        "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
+        "player",
+        "civ",
+        "leader",
+        "government",
+        "dark_age",
+        "golden_age",
+        "heroic_golden_age",
+        "can_declare",
+        // The host's own relationship, ledger, alliance, missions, promises
+        // and visibility for this rival — see `StateRival::diplomatic_state`.
+        "diplomatic_state",
+        "our_grievances_against_them",
+        "grievances_against_us",
+        "grievance_change_per_turn",
+        "alliance_type",
+        "alliance_level",
+        "alliance_turns_left",
+        "our_denounce_turn",
+        "their_denounce_turn",
+        "friendship_turn",
+        "denounce_time_limit",
+        "visibility",
+        "their_visibility_on_us",
+        "open_borders_granted",
+        "delegation_at",
+        "embassy_at",
+        "their_delegation",
+        "their_embassy",
+        "promises_made",
+        "promises_received",
+        "score",
+        "dvp",
+        "military",
+        "at_war",
+        "techs",
+        "civics",
+        "cities",
+        "units",
+        "science",
+        "culture",
+        "tourism",
+        "gold",
+        "gold_per_turn",
+        "faith",
+        "faith_per_turn",
         "public_stats",
+        // The rival's tree by name, the World Rankings lane numbers, its
+        // majority religion, the per-rival tourists, Era Score and routes.
+        "tech_names",
+        "civic_names",
+        "techs_researched",
+        "military_no_treasury",
+        "cities_following_religion",
+        "religion",
+        "tourists_visiting_us",
+        "era_score",
+        "trade_routes",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
@@ -13123,6 +16332,13 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // shipped and filed `schema:rival.open_borders` on every live turn.
         "open_borders",
         "enforces_borders",
+    ];
+    const RIVAL_ROUTE: &[&str] = &[
+        "origin_x",
+        "origin_y",
+        "destination_x",
+        "destination_y",
+        "destination_player",
     ];
     const MINOR: &[&str] = &[
         "player",
@@ -13136,6 +16352,32 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "cities",
         "units",
         "enforces_borders",
+        // The city-state's request and every major's delegation (2026-08-26).
+        "quests",
+        "envoys_by_player",
+    ];
+    const QUEST: &[&str] = &["type", "target", "name"];
+    const ENVOY_COUNT: &[&str] = &["player", "envoys"];
+    const CLIMATE: &[&str] = &[
+        "level",
+        "temperature",
+        "co2_total",
+        "co2_ours",
+        "sea_level_turns",
+        "tiles_flooded",
+        "storm_pct",
+        "flood_pct",
+        "drought_pct",
+    ];
+    const ROUTE_OPTION: &[&str] = &[
+        "origin",
+        "origin_x",
+        "origin_y",
+        "dest",
+        "dest_player",
+        "dest_x",
+        "dest_y",
+        "yields",
     ];
     const RELIGION: &[&str] = &["type", "founder", "beliefs"];
 
@@ -13189,6 +16431,14 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     for rival in value.get("rivals").and_then(|v| v.as_array()).into_iter().flatten() {
         keys(rival, RIVAL, "rival", &mut gaps);
         public_stats(rival.get("public_stats"), "rival.public_stats", &mut gaps);
+        for route in rival
+            .get("trade_routes")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            keys(route, RIVAL_ROUTE, "rival.trade_route", &mut gaps);
+        }
         cities(rival.get("cities"), &mut gaps);
         units(rival.get("units"), &mut gaps);
     }
@@ -13196,6 +16446,36 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         keys(minor, MINOR, "minor", &mut gaps);
         cities(minor.get("cities"), &mut gaps);
         units(minor.get("units"), &mut gaps);
+        for quest in minor
+            .get("quests")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            keys(quest, QUEST, "minor.quest", &mut gaps);
+        }
+        for count in minor
+            .get("envoys_by_player")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            keys(count, ENVOY_COUNT, "minor.envoys_by_player", &mut gaps);
+        }
+    }
+    if let Some(climate) = value.get("climate") {
+        keys(climate, CLIMATE, "climate", &mut gaps);
+    }
+    for option in value
+        .get("route_options")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        keys(option, ROUTE_OPTION, "route_option", &mut gaps);
+        if let Some(yields) = option.get("yields") {
+            keys(yields, YIELDS, "route_option.yields", &mut gaps);
+        }
     }
     for religion in value
         .get("religions")
@@ -13433,6 +16713,50 @@ fn civvis_node_name<T>(
             return Some(alias.to_string());
         }
     }
+    // ★★★★ THE UNIQUE UNITS AND THE TWO WATER DISTRICTS, INBOUND. Civilization
+    // VI files a civilization's unique unit under the civilization
+    // (`UNIT_ROMAN_LEGION`) and the water districts by function
+    // (`DISTRICT_WATER_ENTERTAINMENT_COMPLEX`); `civvis_orders::civ6_unit_type`
+    // and `civ6_district_type` have carried the outbound spellings since #959,
+    // and nothing carried them back. So a city building a Legion read as idle,
+    // a refused Legion never reached `blocked_production`, and — now that
+    // `Game::can_produce` gates on the host's exported menu — every one of
+    // these would have been gated off every live board forever.
+    // `civvis_orders` pins the round trip for every orderable name.
+    if prefix == "UNIT_" {
+        let alias = match base.as_str() {
+            "byzantine_tagma" => Some("tagma"),
+            "roman_legion" => Some("legion"),
+            "portuguese_nau" => Some("nau"),
+            "greek_hoplite" => Some("hoplite"),
+            "aztec_eagle_warrior" => Some("eagle_warrior"),
+            "sumerian_war_cart" => Some("war_cart"),
+            "nubian_pitati" => Some("pitati_archer"),
+            "egyptian_chariot_archer" => Some("maryannu_chariot_archer"),
+            "scythian_horse_archer" => Some("saka_horse_archer"),
+            "mongolian_keshig" => Some("keshig"),
+            "polish_hussar" => Some("winged_hussar"),
+            "ethiopian_oromo_cavalry" => Some("oromo_cavalry"),
+            "maori_toa" => Some("toa"),
+            "chinese_crouching_tiger" => Some("crouching_tiger"),
+            "lahore_nihang" => Some("nihang"),
+            "antiair_gun" => Some("anti_air_gun"),
+            _ => None,
+        };
+        if let Some(alias) = alias.filter(|alias| table.contains_key(alias)) {
+            return Some(alias.to_string());
+        }
+    }
+    if prefix == "DISTRICT_" {
+        let alias = match base.as_str() {
+            "water_entertainment_complex" => Some("water_park"),
+            "water_street_carnival" => Some("copacabana"),
+            _ => None,
+        };
+        if let Some(alias) = alias.filter(|alias| table.contains_key(alias)) {
+            return Some(alias.to_string());
+        }
+    }
     if table.contains_key(&base) {
         return Some(base);
     }
@@ -13489,6 +16813,10 @@ pub struct Reconstruction {
     pub game: crate::game::Game,
     /// CIVVIS unit id -> Civilization VI unit id, for translating orders back.
     pub unit_ids: std::collections::BTreeMap<u32, i64>,
+    /// Civilization VI id -> board id for every FOREIGN unit planted (rival,
+    /// city-state, barbarian, Free Cities). Kept apart from `unit_ids`, whose
+    /// inverse the sync path prunes against `state.units` — our units only.
+    pub foreign_unit_ids: std::collections::BTreeMap<i64, u32>,
     /// CIVVIS city id -> Civilization VI city id.
     pub city_ids: std::collections::BTreeMap<u32, i64>,
     /// Civilization VI city id -> CIVVIS city id for every city retained in the
@@ -14212,6 +17540,140 @@ fn blocked_promotions_from(
     out
 }
 
+/// The typed key the board files a host production item under — the
+/// `Game::production_block_key` vocabulary the refusal sets already use
+/// (`unit:warrior`, `formation:warrior:1`, `building:library`,
+/// `wonder:pyramids`, `district:campus`, `project:campus_research_grants`).
+/// A district needs no plot here; a Corps/Army row carries its tier. `None`
+/// for a host name CIVVIS does not model.
+///
+/// ⚠ This is the one translation the positive gate in `Game::can_produce`
+/// rests on: an item the board can ORDER whose host spelling does not come
+/// back to the same key would be gated off every live board forever.
+/// `civvis_orders` pins the round trip for every orderable item.
+pub fn host_production_key(
+    rules: &crate::rules::Rules,
+    civ6: &str,
+    formation: Option<u8>,
+) -> Option<String> {
+    if let Some(item) = civvis_production_item(rules, Some(civ6), &[], None) {
+        return Some(match (&item, formation) {
+            (crate::game::Item::Unit { unit }, Some(tier @ 1..=2)) => {
+                format!("formation:{unit}:{tier}")
+            }
+            _ => crate::game::Game::production_block_key(&item),
+        });
+    }
+    civvis_node_name(&rules.districts, civ6, "DISTRICT_")
+        .map(|district| format!("district:{district}"))
+}
+
+/// The host's menus translated onto the board, per CIVVIS city id. See
+/// [`crate::game::Game::host_buildable`].
+#[derive(Default)]
+pub(crate) struct HostMenus {
+    pub buildable: BTreeMap<u32, BTreeMap<String, crate::game::HostMenuEntry>>,
+    pub purchasable: BTreeMap<u32, BTreeMap<String, crate::game::HostPurchaseEntry>>,
+    pub district_plots: BTreeMap<u32, BTreeMap<crate::name::Name, BTreeSet<crate::Pos>>>,
+}
+
+fn host_menus_from(
+    cities: &[StateCity],
+    city_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> HostMenus {
+    let reading = |value: f64| (value.is_finite() && value >= 0.0).then_some(value);
+    let mut out = HostMenus::default();
+    for (cid, civ6_id) in city_ids {
+        let Some(city) = cities.iter().find(|city| city.id == *civ6_id) else {
+            continue;
+        };
+        if let Some(menu) = city.buildable.as_deref() {
+            let mut translated = BTreeMap::new();
+            let mut plots: BTreeMap<crate::name::Name, BTreeSet<crate::Pos>> = BTreeMap::new();
+            for row in menu {
+                let Some(key) = host_production_key(rules, &row.t, row.f) else {
+                    continue;
+                };
+                if let Some(district) = key.strip_prefix("district:") {
+                    // Only a COMPLETE offer can say a plot is not legal; a
+                    // capped list says only where some of them are.
+                    if let (Some(sites), Some(offered)) = (row.s.as_ref(), row.n) {
+                        if offered >= 0 && offered as usize == sites.len() {
+                            plots.insert(
+                                crate::name::Name::new(district),
+                                sites
+                                    .iter()
+                                    .map(|plot| crate::hex::offset_to_axial(plot.x, plot.y))
+                                    .collect(),
+                            );
+                        }
+                    }
+                }
+                translated.insert(
+                    key,
+                    crate::game::HostMenuEntry {
+                        cost: reading(row.c),
+                        turns: reading(row.p),
+                    },
+                );
+            }
+            // ⚠ An empty translated menu is a read that failed or a ruleset the
+            // board cannot name, not a city that can build nothing: a
+            // Civilization VI city can always train something. No gate then.
+            if !translated.is_empty() {
+                out.buildable.insert(*cid, translated);
+            }
+            if !plots.is_empty() {
+                out.district_plots.insert(*cid, plots);
+            }
+        }
+        if let Some(menu) = city.purchasable.as_deref() {
+            let translated: BTreeMap<String, crate::game::HostPurchaseEntry> = menu
+                .iter()
+                .filter_map(|row| {
+                    host_production_key(rules, &row.t, None).map(|key| {
+                        (
+                            key,
+                            crate::game::HostPurchaseEntry {
+                                gold: row.g.and_then(reading),
+                                faith: row.f.and_then(reading),
+                            },
+                        )
+                    })
+                })
+                .collect();
+            out.purchasable.insert(*cid, translated);
+        }
+    }
+    out
+}
+
+/// The queue behind the head, translated. A district row has no plot until it
+/// is the head (`ProductionHelper.lua`: "invalid coordinates for everything
+/// but the head node"), so it needs one of the city's placed districts to name
+/// it and is otherwise dropped rather than planted on invented ground.
+fn host_queue_tail(rules: &crate::rules::Rules, city: &StateCity) -> Vec<crate::game::Item> {
+    let centre = Some(crate::hex::offset_to_axial(city.x, city.y));
+    city.queue
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|row| {
+            let item = civvis_production_item(rules, Some(&row.t), &city.districts, centre)?;
+            Some(match (item, row.f) {
+                (crate::game::Item::Unit { unit }, Some(tier @ 1..=2)) => {
+                    crate::game::Item::Formation {
+                        unit,
+                        formation: tier,
+                    }
+                }
+                (item, _) => item,
+            })
+        })
+        .collect()
+}
+
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     city_ids: &std::collections::BTreeMap<u32, i64>,
@@ -14224,14 +17686,7 @@ fn blocked_production_from(
         };
         let translated: std::collections::BTreeSet<String> = names
             .iter()
-            .filter_map(|name| {
-                civvis_production_item(rules, Some(name), &[], None)
-                    .map(|item| crate::game::Game::production_block_key(&item))
-                    .or_else(|| {
-                        civvis_node_name(&rules.districts, name, "DISTRICT_")
-                            .map(|district| format!("district:{district}"))
-                    })
-            })
+            .filter_map(|name| host_production_key(rules, name, None))
             .collect();
         if !translated.is_empty() {
             out.insert(*cid, translated);
@@ -14324,9 +17779,118 @@ fn block_live_spy_production(game: &mut crate::game::Game, capacity: Option<i64>
 /// completed its travel imported with `city: None` and could never be handed
 /// the mission it travelled for. Match whatever city stands on the tile; the
 /// counterspy branch already guards on ownership itself.
+/// A host spy operation type as the CIVVIS mission kind:
+/// `UNITOPERATION_SPY_GAIN_SOURCES` is `gain_sources`, the exact inverse of
+/// the bridge's `SPY_{mission.to_uppercase()}` verb. The shipped
+/// `UnitOperations` table carries fourteen `UNITOPERATION_SPY_*` rows; thirteen
+/// strip to a kind `Game::spy_operation_actions` names and the fourteenth,
+/// `travel_new_city`, is the travel itself, which blocks re-tasking the same
+/// way a mission does.
+fn civvis_spy_mission_kind(operation: &str) -> String {
+    operation
+        .strip_prefix("UNITOPERATION_SPY_")
+        .or_else(|| operation.strip_prefix("UNITOPERATION_"))
+        .unwrap_or(operation)
+        .to_ascii_lowercase()
+}
+
+/// Record what the host said about one of our units under the board's unit
+/// id — see `Game::host_unit_facts` for who reads which. A unit that carries
+/// none of the keys (an older mod) leaves no entry, so every reader falls back
+/// to the board's own rule; a unit that carries any of them gets an entry whose
+/// absent members are real absences — no successor, no operation.
+fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
+    let finite = |value: Option<f64>| value.filter(|value| value.is_finite());
+    let exported = unit.upgrade_to.is_some()
+        || unit.upgrade_cost.is_some()
+        || unit.upgrade_blocked_reason.is_some()
+        || unit.maintenance.is_some()
+        || unit.religious_strength.is_some()
+        || unit.max_moves.is_some()
+        || unit.activity.is_some()
+        || unit.spy_operation.is_some()
+        || unit.spy_operation_end_turn.is_some()
+        || unit.spy_missions_available.is_some();
+    if !exported {
+        game.host_unit_facts.remove(&uid);
+        return;
+    }
+    let upgrade = (unit.upgrade_to.is_some() || unit.upgrade_blocked_reason.is_some()).then(|| {
+        crate::game::HostUnitUpgrade {
+            // The successor in CIVVIS's vocabulary, through the same resolver
+            // the unit itself crossed by; a successor CIVVIS does not model
+            // leaves `None` and the board prices its own.
+            to: unit
+                .upgrade_to
+                .as_deref()
+                .and_then(|to| resolved_civvis_unit_name(&game.rules, to))
+                .map(|name| Name::new(&name)),
+            cost: finite(unit.upgrade_cost).filter(|cost| *cost >= 0.0),
+            blocked: unit
+                .upgrade_blocked_reason
+                .clone()
+                .filter(|reason| !reason.is_empty()),
+        }
+    });
+    let spy_missions = unit
+        .spy_missions_available
+        .as_ref()
+        .map(|menu| {
+            menu.iter()
+                .map(|operation| civvis_spy_mission_kind(operation))
+                .collect::<BTreeSet<String>>()
+        })
+        .filter(|menu| !menu.is_empty());
+    game.host_unit_facts.insert(
+        uid,
+        crate::game::HostUnitFacts {
+            upgrade,
+            maintenance: finite(unit.maintenance).filter(|bill| *bill >= 0.0),
+            religious_strength: finite(unit.religious_strength),
+            max_moves: finite(unit.max_moves),
+            activity: unit.activity.clone(),
+            spy_operation: unit.spy_operation.as_deref().map(civvis_spy_mission_kind),
+            spy_operation_ends: unit
+                .spy_operation_end_turn
+                .filter(|turn| *turn >= 0)
+                .map(|turn| turn as u32),
+            spy_missions,
+        },
+    );
+}
+
+/// The host treasury's bill by source for the seat — see
+/// `Game::host_maintenance`. A reading that is absent, non-finite or negative
+/// is no reading, and a state with none of the three leaves the board billing
+/// itself.
+fn apply_host_maintenance(game: &mut crate::game::Game, state: &StateSnapshot) {
+    let reading = |value: Option<f64>| value.filter(|value| value.is_finite() && *value >= 0.0);
+    let bill = crate::game::HostMaintenance {
+        units: reading(state.unit_maintenance_total),
+        buildings: reading(state.building_maintenance_total),
+        districts: reading(state.district_maintenance_total),
+    };
+    if bill.units.is_some() || bill.buildings.is_some() || bill.districts.is_some() {
+        game.host_maintenance.insert(0, bill);
+    } else {
+        game.host_maintenance.remove(&0);
+    }
+}
+
+/// One seat 0 Spy as `seat_live_spies` reads it off the mirrored unit.
+struct LiveSpySeat {
+    id: u32,
+    level: i64,
+    promotions: std::collections::BTreeSet<String>,
+    city: Option<u32>,
+    mission: Option<crate::game::SpyMission>,
+    ready_turn: u32,
+}
+
 fn seat_live_spies(game: &mut crate::game::Game) {
     game.spies.retain(|_, spy| spy.owner != 0);
-    let live: Vec<(u32, i64, std::collections::BTreeSet<String>, Option<u32>)> = game
+    let turn = game.turn;
+    let live: Vec<LiveSpySeat> = game
         .units
         .values()
         .filter(|unit| unit.owner == 0 && unit.kind == "spy")
@@ -14336,18 +17900,59 @@ fn seat_live_spies(game: &mut crate::game::Game) {
                 .iter()
                 .find(|(_, city)| city.pos == unit.pos)
                 .map(|(id, _)| *id);
-            (
-                unit.id,
-                (unit.level - 1).max(0) as i64,
-                unit.promotions
+            // ★★★ THE HOST'S OWN OPERATION, WHEN IT CROSSED. Every seat 0 Spy
+            // is re-seated fresh on every sync, so until the host's
+            // `GetSpyOperation` reached this board a Spy on a mission read as
+            // idle and was handed the same mission again: `SPY_GAIN_SOURCES`
+            // was refused 195 of 862 times on one run. A running operation
+            // seats as the mission itself when the city it stands in is on
+            // the board, so `legal_spy_actions` offers nothing and
+            // `spy_mission_already_running` sees it; when that city is not
+            // mirrored the Spy is held busy (`ready_turn`) until the host's
+            // end turn instead. No facts at all — an older mod — leaves the
+            // Spy idle exactly as before.
+            let facts = game.host_unit_facts.get(&unit.id);
+            let ends = facts
+                .and_then(|facts| facts.spy_operation_ends)
+                .map_or(turn + 1, |ends| ends.max(turn + 1));
+            let operation = facts.and_then(|facts| facts.spy_operation.clone());
+            let (mission, ready_turn) = match (operation, city) {
+                (Some(kind), Some(city)) => (
+                    Some(crate::game::SpyMission {
+                        kind,
+                        city,
+                        target: unit.pos,
+                        started: turn,
+                        ends,
+                    }),
+                    0,
+                ),
+                (Some(_), None) => (None, ends),
+                (None, _) => (None, 0),
+            };
+            LiveSpySeat {
+                id: unit.id,
+                level: (unit.level - 1).max(0) as i64,
+                promotions: unit
+                    .promotions
                     .iter()
                     .map(|name| name.to_string())
                     .collect(),
                 city,
-            )
+                mission,
+                ready_turn,
+            }
         })
         .collect();
-    for (id, level, promotions, city) in live {
+    for LiveSpySeat {
+        id,
+        level,
+        promotions,
+        city,
+        mission,
+        ready_turn,
+    } in live
+    {
         let spy = game.spies.entry(id).or_insert_with(|| crate::game::Spy {
             id,
             owner: 0,
@@ -14363,6 +17968,8 @@ fn seat_live_spies(game: &mut crate::game::Game) {
         spy.level = level;
         spy.promotions = promotions;
         spy.city = city;
+        spy.mission = mission;
+        spy.ready_turn = ready_turn;
     }
 }
 
@@ -15200,6 +18807,12 @@ fn civvis_production_item(
         "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT" => Some("encampment_training"),
         "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE" => Some("industrial_zone_logistics"),
         "PROJECT_ENHANCE_DISTRICT_THEATER" => Some("theater_square_festival"),
+        // The three space-race rows `civvis_orders` spells the other way; the
+        // fourth, `PROJECT_TERRESTRIAL_LASER`, reaches its CIVVIS name through
+        // the unique-prefix rule in `civvis_node_name`.
+        "PROJECT_LAUNCH_EXOPLANET_EXPEDITION" => Some("exoplanet_expedition"),
+        "PROJECT_LAUNCH_MARS_BASE" => Some("launch_mars_colony"),
+        "PROJECT_ORBITAL_LASER" => Some("lagrange_laser_station"),
         _ => None,
     };
     if let Some(name) = project_alias
@@ -16005,6 +19618,11 @@ fn apply_unit_observation(
     }
     live.fortified = state.fortified;
     live.fortify_turns = state.fortify_turns.clamp(0, 2);
+    // The host's own `IsEmbarked`, pinned to the observed position: it wins over
+    // the "its tile is water" derivation while the unit stands there and lapses
+    // the moment the board moves it. Exported since 2026-08 and read by nothing
+    // until now; an older export carries `None` and derives as before.
+    live.host_embarked = state.embarked.map(|embarked| (live.pos, embarked));
     // ★★★★★ THE LINE THAT MAKES `FORM_ARMY` REACHABLE ON THE LIVE SEAT.
     //
     // `civvis_orders::translate` chooses between `UNITCOMMAND_FORM_CORPS` and
@@ -16055,6 +19673,102 @@ fn apply_mirrored_envoys_free(game: &mut crate::game::Game, state: &StateSnapsho
     }
 }
 
+/// What an established Amani adds to seat 0's delegation at `minor`, read from the
+/// HOST's governor record rather than the board's roster, as `(messenger,
+/// multiplier)` in the shape of `Game::amani_envoy_terms`.
+///
+/// ★★★★ THE HOST'S ENVOY COUNT ALREADY INCLUDES HER. `minors[].envoys` is
+/// `GetTokensReceived`, and on run civvis-20260826T184456Z La Venta read 5 → 7 at
+/// t145 frame 1, the export in which `GOVERNOR_THE_AMBASSADOR` first reported
+/// `established: true` there, with no envoy order to that player. The mirror
+/// stored 7 and `Game::envoys_at` added `city_state_envoys` (2) again: board 9,
+/// host 7, board Suzerain where the host reported a tie (`suzerain -1`), and the
+/// planner stopped sending envoys to a suzerainty it did not hold. So the stored
+/// count is the host's number NET of these terms (`raw_envoys_for`), and the
+/// board's `envoys_at` reproduces the host's. Read from the export so the seed
+/// does not depend on whether `apply_governor_state` has run yet; the board's
+/// own predicate is checked again afterwards in `reconcile_host_envoys`.
+fn host_amani_envoy_terms(
+    rules: &crate::rules::Rules,
+    state: &StateSnapshot,
+    minor: &StateMinor,
+) -> (f64, f64) {
+    let none = (0.0, 1.0);
+    let Some(governors) = state.governors.as_deref() else {
+        return none;
+    };
+    let Some(spec) = rules.governors.get("amani") else {
+        return none;
+    };
+    let Some(amani) = governors
+        .iter()
+        .find(|governor| civvis_governor_name(&governor.kind) == Some("amani"))
+    else {
+        return none;
+    };
+    if !amani.established
+        || amani.neutralized_turns > 0
+        || amani.city_player < 0
+        || amani.city_player as usize != minor.player
+    {
+        return none;
+    }
+    let effect = |key: &str| -> f64 {
+        spec.effects.get(key).copied().unwrap_or(0.0)
+            + amani
+                .promotions
+                .iter()
+                .filter(|promotion| {
+                    civ6_governor_base_promotion("amani") != Some(promotion.as_str())
+                })
+                .filter_map(|promotion| civvis_governor_promotion(promotion))
+                .filter_map(|promotion| spec.promotions.get(promotion))
+                .filter_map(|promotion| promotion.effects.get(key))
+                .sum::<f64>()
+    };
+    (
+        effect("city_state_envoys"),
+        effect("city_state_envoys_multiplier").max(1.0),
+    )
+}
+
+/// The delegation to STORE for seat 0 so that `Game::envoys_at` answers `host`.
+fn raw_envoys_for(host: i64, (messenger, multiplier): (f64, f64)) -> i64 {
+    ((host.max(0) as f64 / multiplier).round() - messenger)
+        .round()
+        .max(0.0) as i64
+}
+
+/// What `Game::envoys_at` answers for a stored delegation under these terms.
+fn effective_envoys(raw: i64, (messenger, multiplier): (f64, f64)) -> i64 {
+    ((raw as f64 + messenger) * multiplier).round() as i64
+}
+
+/// After the governors are on the board: every city-state where the board's
+/// `envoys_at` does not answer the host's number is re-seeded against the BOARD's
+/// own Amani predicate. This is what makes the seed right whichever side of
+/// `apply_governor_state` it was first written on — the host record and the
+/// board can disagree (her city unlocated, an establishment the board times
+/// differently), and the host's count is the fact either way.
+fn reconcile_host_envoys(
+    game: &mut crate::game::Game,
+    minor_assignments: &[(&StateMinor, usize)],
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+) {
+    for &(minor, owner) in minor_assignments {
+        if !minor.is_city_state() || game.envoys_at(0, owner) == minor.envoys.max(0) {
+            continue;
+        }
+        let amani = game.amani_envoy_terms(0, owner);
+        set_mirrored_envoys(
+            &mut game.players[0],
+            owner,
+            raw_envoys_for(minor.envoys, amani),
+        );
+        seed_mirrored_suzerainty(game, minor, owner, seat_of_host, amani);
+    }
+}
+
 fn set_mirrored_envoys(player: &mut crate::game::Player, minor: usize, count: i64) {
     player.envoys.retain(|(seat, _)| *seat != minor);
     if count > 0 {
@@ -16088,6 +19802,7 @@ fn seed_mirrored_suzerainty(
     minor: &StateMinor,
     owner: usize,
     seat_of_host: &std::collections::BTreeMap<usize, usize>,
+    amani: (f64, f64),
 ) {
     if !minor.is_city_state() {
         return;
@@ -16096,32 +19811,48 @@ fn seed_mirrored_suzerainty(
         if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
             let current = mirrored_envoys(&game.players[holder], owner);
             let winning = if holder == 0 {
-                minor.envoys.max(3)
+                // Seat 0's stored count is net of Amani's terms (see
+                // `host_amani_envoy_terms`): the floor is set on the EFFECTIVE
+                // delegation and stored net again.
+                let target = effective_envoys(current, amani).max(3).max(minor.envoys);
+                raw_envoys_for(target, amani).max(current)
             } else {
-                minor.most_envoys.max(minor.envoys.max(0) + 1).max(3)
+                current
+                    .max(3)
+                    .max(minor.most_envoys.max(minor.envoys.max(0) + 1).max(3))
             };
-            set_mirrored_envoys(
-                &mut game.players[holder],
-                owner,
-                current.max(3).max(winning),
-            );
+            set_mirrored_envoys(&mut game.players[holder], owner, winning);
         }
         return;
     }
-    let ours = mirrored_envoys(&game.players[0], owner);
-    let blocker = game
-        .players
-        .iter()
-        .find(|player| player.id != 0 && player.alive && !player.is_minor)
-        .map(|player| player.id);
-    for pid in 1..game.players.len() {
-        if !game.players[pid].is_minor {
-            set_mirrored_envoys(&mut game.players[pid], owner, 0);
+    // The tie is against what the host counts for us — Amani included — and a
+    // rival's stored delegation is its effective one.
+    let ours = effective_envoys(mirrored_envoys(&game.players[0], owner), amani);
+    // Where the export carries every major's count (`envoys_by_player`), the
+    // rival delegations on the board are the host's facts and stay; only an
+    // older export's fabricated ones are cleared before the tie is seeded.
+    let facts = minor.envoys_by_player.is_some();
+    if !facts {
+        for pid in 1..game.players.len() {
+            if !game.players[pid].is_minor {
+                set_mirrored_envoys(&mut game.players[pid], owner, 0);
+            }
         }
     }
     if ours >= 3 {
+        // The rival that ties us: the one the host counts highest where the
+        // counts crossed, else the first alive major — and never LOWERED,
+        // so a rival the host already counts at or above us keeps its number.
+        let blocker = game
+            .players
+            .iter()
+            .filter(|player| player.id != 0 && player.alive && !player.is_minor)
+            .max_by_key(|player| (mirrored_envoys(player, owner), std::cmp::Reverse(player.id)))
+            .map(|player| player.id);
         if let Some(blocker) = blocker {
-            set_mirrored_envoys(&mut game.players[blocker], owner, ours);
+            if mirrored_envoys(&game.players[blocker], owner) < ours {
+                set_mirrored_envoys(&mut game.players[blocker], owner, ours);
+            }
         }
     }
 }
@@ -16539,11 +20270,22 @@ fn apply_observed_host_metrics(
     game.observed_trade_capacity.clear();
     game.observed_yield_adjustments.clear();
     game.observed_public_empire_stats.clear();
+    game.observed_majority_religion.clear();
+    game.observed_visiting_tourists.clear();
     game.observed_city_loyalty_per_turn.clear();
     game.observed_city_strength.clear();
     game.observed_city_max_wall_hp.clear();
+    game.observed_tourism_per_turn.clear();
     if let Some(capacity) = state.trade_capacity.filter(|capacity| *capacity >= 0) {
         game.observed_trade_capacity.insert(0, capacity);
+    }
+    // Our tourism per turn as the host counts it; `Game::tourism_per_turn`
+    // prefers it, the model figure stays behind `tourism_per_turn_model`.
+    if let Some(tourism) = state
+        .tourism_per_turn
+        .filter(|t| t.is_finite() && *t >= 0.0)
+    {
+        game.observed_tourism_per_turn.insert(0, tourism);
     }
     apply_public_empire_stats(game, 0, &state.public_stats);
     {
@@ -16555,6 +20297,10 @@ fn apply_observed_host_metrics(
         let observed = game.observed_public_empire_stats.entry(0).or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
+        observed.cities_following_religion = state
+            .cities_following_religion
+            .filter(|value| *value >= 0)
+            .map(|value| value as usize);
     }
 
     apply_observed_city_economy(game, state, snapshot, unmapped);
@@ -16789,6 +20535,274 @@ fn apply_host_competitions(game: &mut crate::game::Game, state: &StateSnapshot) 
     game.replace_host_competitions(competitions);
 }
 
+/// Write the host's own diplomacy for one rival — seat pair `(0, owner)` —
+/// onto the board, assigned from every export so a lapsed state clears.
+///
+/// Before this the only diplomacy that crossed for a rival was `at_war`,
+/// `open_borders` and `can_declare`, and the last was mirrored as a faked
+/// denouncement (`denounced_until = turn + 1`) so that a Formal War could be
+/// legal on a board whose own five-turn wait never matures. `can_declare`
+/// says a war is LEGAL; it never said whether it was ruinous. Every decision
+/// that reads the ledger — `preferred_war_opening`'s casus belli choice and
+/// its wait, the alliance-partner filter (`grievances < 75`), the coalition
+/// and joint-war partner screens, `relationship_opinion`, the declared-friend
+/// and alliance bars in `legal_actions` — read an empty ledger on every live
+/// turn.
+///
+/// What each host state writes (`civvis_orders --dump-mirror` reads it back):
+/// - `DIPLO_STATE_DENOUNCED`: `denounced_until` / `denounced_since` on the
+///   side(s) that denounced, from the host's `GetDenounceTurn` and
+///   `GetDenounceTimeLimit` (`DiplomacyActionView.lua:1486-1503`), so the
+///   Formal War wait on the board is the host's own clock. When the host
+///   gives neither side's turn the pair reads as denounced from this turn.
+/// - `DIPLO_STATE_DECLARED_FRIEND`: `friends_until` both sides from
+///   `GetDeclaredFriendshipTurn` (`:1510-1511`); `legal_actions` then
+///   withholds war and denouncement, as the host does.
+/// - `DIPLO_STATE_ALLIED`: `alliances` both sides with the host's type, level
+///   and turns to expiry, plus the friendship an alliance implies.
+/// - Any other state clears all three on both sides.
+/// - Independently of the state: the grievance balance both ways, missions
+///   both ways, promises both ways, the Open Borders WE grant, and the
+///   visibility level both ways (`Player::observed_visibility`, which
+///   `Game::diplomatic_visibility` prefers to its derivation).
+///
+/// ⚠ The `can_declare` permission fake stays, in one case: when the host
+/// permits a declaration and the board holds no ACTIVE denouncement of our
+/// own, `denounced_until = turn + 1` is still written. The bridge carries no
+/// `Denounce` order, so a board denouncement never reaches the host; without
+/// the fake `preferred_war_opening` would denounce on the board every turn,
+/// be rebuilt without it, and never declare — the 81-turn, zero-declaration
+/// history that put the fake there. It is the one board fact that is not the
+/// host's, and FIDELITY.md's queue names it.
+///
+/// An export without `diplomatic_state` (an older mod) writes only the fake,
+/// exactly as before.
+pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, rival: &StateRival) {
+    if owner == 0 || owner >= game.players.len() {
+        return;
+    }
+    let turn = game.turn;
+    let permitted = rival.can_declare && !rival.at_war;
+    let Some(state) = rival.diplomatic_state.as_deref() else {
+        if permitted {
+            game.players[0].denounced_until.insert(owner, turn + 1);
+        } else {
+            game.players[0].denounced_until.remove(&owner);
+        }
+        return;
+    };
+    let state = state.strip_prefix("DIPLO_STATE_").unwrap_or(state);
+    let limit = rival
+        .denounce_time_limit
+        .filter(|limit| *limit > 0)
+        .map(|limit| limit as u32);
+    let host_turn = |value: Option<i64>| value.filter(|t| *t > 0).map(|t| t as u32);
+    // A state that began on `since` runs `limit` more host turns (the
+    // denouncement one more, `:1500`); without both it is simply re-read from
+    // the next export.
+    let expiry = |since: Option<u32>, extra: u32| match (since, limit) {
+        (Some(since), Some(limit)) => since.saturating_add(limit).saturating_add(extra),
+        _ => turn + 2,
+    };
+
+    // Denouncement, each side from its own denounce turn.
+    let denounced = state == "DENOUNCED";
+    let ours = denounced
+        .then(|| host_turn(rival.our_denounce_turn))
+        .flatten();
+    let theirs = denounced
+        .then(|| host_turn(rival.their_denounce_turn))
+        .flatten();
+    let side_unknown = denounced && ours.is_none() && theirs.is_none();
+    for (denouncer, target, since, active) in [
+        (0, owner, ours, ours.is_some() || side_unknown),
+        (owner, 0, theirs, theirs.is_some() || side_unknown),
+    ] {
+        let player = &mut game.players[denouncer];
+        if active {
+            player.denounced_until.insert(target, expiry(since, 1));
+            match since {
+                Some(since) => {
+                    player.denounced_since.insert(target, since);
+                }
+                None => {
+                    player.denounced_since.remove(&target);
+                }
+            }
+        } else {
+            player.denounced_until.remove(&target);
+            player.denounced_since.remove(&target);
+        }
+    }
+    // The permission fake (see above): the host permits a declaration and
+    // the board holds no active denouncement of our own.
+    let own_active = game.players[0]
+        .denounced_until
+        .get(&owner)
+        .is_some_and(|until| *until > turn);
+    if permitted && !own_active {
+        game.players[0].denounced_until.insert(owner, turn + 1);
+        game.players[0].denounced_since.remove(&owner);
+    }
+
+    // Declared friendship; an alliance implies it, as the engine's own deal
+    // acceptance writes both.
+    if matches!(state, "DECLARED_FRIEND" | "ALLIED") {
+        let until = expiry(host_turn(rival.friendship_turn), 0);
+        game.players[0].friends_until.insert(owner, until);
+        game.players[owner].friends_until.insert(0, until);
+    } else {
+        game.players[0].friends_until.remove(&owner);
+        game.players[owner].friends_until.remove(&0);
+    }
+
+    // Alliance, with the host's type and level; `ends` past this turn so
+    // `alliance_with` sees it, and past the host's expiry when it is given.
+    if state == "ALLIED" {
+        let kind = rival
+            .alliance_type
+            .as_deref()
+            .map(|kind| {
+                kind.strip_prefix("ALLIANCE_")
+                    .unwrap_or(kind)
+                    .to_ascii_lowercase()
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        let level = rival.alliance_level.unwrap_or(1).max(1);
+        let ends = match rival.alliance_turns_left.filter(|left| *left >= 0) {
+            Some(left) => turn.saturating_add(left as u32).saturating_add(1),
+            None => turn + 2,
+        };
+        // The engine's own level thresholds, so a reader of `points` agrees
+        // with the level the host reports.
+        let points = match level {
+            1 => 0.0,
+            2 => 80.0,
+            _ => 240.0,
+        };
+        let alliance = crate::game::AllianceState {
+            kind,
+            points,
+            level,
+            ends,
+        };
+        game.players[0].alliances.insert(owner, alliance.clone());
+        game.players[owner].alliances.insert(0, alliance);
+    } else {
+        game.players[0].alliances.remove(&owner);
+        game.players[owner].alliances.remove(&0);
+    }
+
+    // The grievance balance, each direction on the aggrieved side's ledger
+    // (`Player::grievances[offender]`), the way `add_direct_grievances`
+    // books it. Untouched when the host gave neither number.
+    if rival.our_grievances_against_them.is_some() || rival.grievances_against_us.is_some() {
+        for (aggrieved, offender, amount) in [
+            (0, owner, rival.our_grievances_against_them),
+            (owner, 0, rival.grievances_against_us),
+        ] {
+            let amount = amount.unwrap_or(0.0);
+            if amount > 0.0 && amount.is_finite() {
+                game.players[aggrieved].grievances.insert(offender, amount);
+            } else {
+                game.players[aggrieved].grievances.remove(&offender);
+            }
+        }
+    }
+
+    // Missions: an Embassy replaces a Delegation, at most one per counterpart.
+    for (sender, host, embassy, delegation) in [
+        (0, owner, rival.embassy_at, rival.delegation_at),
+        (owner, 0, rival.their_embassy, rival.their_delegation),
+    ] {
+        if embassy.is_none() && delegation.is_none() {
+            continue;
+        }
+        let kind = if embassy == Some(true) {
+            Some("embassy")
+        } else if delegation == Some(true) {
+            Some("delegation")
+        } else {
+            None
+        };
+        let missions = &mut game.players[sender].diplomatic_missions;
+        match kind {
+            Some(kind) => {
+                let sent = missions
+                    .get(&host)
+                    .filter(|mission| mission.kind == kind)
+                    .map(|mission| mission.sent)
+                    .unwrap_or(turn);
+                missions.insert(
+                    host,
+                    crate::game::DiplomaticMission {
+                        kind: kind.to_string(),
+                        sent,
+                    },
+                );
+            }
+            None => {
+                missions.remove(&host);
+            }
+        }
+    }
+
+    // Promises, keyed as the engine keys them: the promisor's ledger, by the
+    // requester, by kind. The host names a kind from the requester's side
+    // ("near ME"); three map onto engine kinds, the rest keep their name.
+    let promise_kind = |name: &str| match name {
+        "DONT_SETTLE_NEAR_ME" => "no_settling".to_string(),
+        "DONT_SPY_ON_ME" => "no_spying".to_string(),
+        "DONT_CONVERT_MY_CITIES" => "no_conversion".to_string(),
+        other => other.to_ascii_lowercase(),
+    };
+    for (promisor, requester, names) in [
+        (0, owner, rival.promises_made.as_ref()),
+        (owner, 0, rival.promises_received.as_ref()),
+    ] {
+        let Some(names) = names else {
+            continue;
+        };
+        if names.is_empty() {
+            game.players[promisor].promises.remove(&requester);
+            continue;
+        }
+        let book: BTreeMap<String, u32> = names
+            .iter()
+            .map(|name| (promise_kind(name), turn + 2))
+            .collect();
+        game.players[promisor].promises.insert(requester, book);
+    }
+
+    // Visibility both ways; a missing reading falls back to the derivation.
+    for (viewer, subject, level) in [
+        (0, owner, rival.visibility),
+        (owner, 0, rival.their_visibility_on_us),
+    ] {
+        match level {
+            Some(level) => {
+                game.players[viewer]
+                    .observed_visibility
+                    .insert(subject, level.max(0) as f64);
+            }
+            None => {
+                game.players[viewer].observed_visibility.remove(&subject);
+            }
+        }
+    }
+
+    // The Open Borders WE grant, the mirror image of `rival.open_borders`.
+    match rival.open_borders_granted {
+        Some(true) => {
+            game.players[0].open_borders_until.insert(owner, turn + 2);
+        }
+        Some(false) => {
+            game.players[0].open_borders_until.remove(&owner);
+        }
+        None => {}
+    }
+}
+
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
     snapshot: &Snapshot,
@@ -16893,6 +20907,7 @@ pub fn rebuild_from_state(
     }
 
     let mut unit_ids = std::collections::BTreeMap::new();
+    let mut foreign_unit_ids: std::collections::BTreeMap<i64, u32> = Default::default();
     let mut city_ids = std::collections::BTreeMap::new();
     // Every retained city, including visible rivals.  `city_ids` stays our-city
     // only because order translation must never point a purchase at a rival;
@@ -16976,6 +20991,7 @@ pub fn rebuild_from_state(
     if let Some(net) = state.gold_per_turn.filter(|net| net.is_finite()) {
         game.players[0].gold_per_turn = net;
     }
+    apply_host_maintenance(&mut game, state);
     if state.faith >= 0 {
         game.players[0].faith = state.faith as f64;
     }
@@ -17168,6 +21184,13 @@ pub fn rebuild_from_state(
                 ) {
                     if built.queue.is_empty() {
                         built.queue.push(item);
+                    }
+                }
+                // The queue behind the head, so a Settler two places back reads
+                // as coming rather than as absent.
+                for queued in host_queue_tail(&game.rules, city) {
+                    if !built.queue.contains(&queued) {
+                        built.queue.push(queued);
                     }
                 }
                 if city.production_progress.is_finite() && city.production_progress >= 0.0 {
@@ -17404,10 +21427,15 @@ pub fn rebuild_from_state(
     // Every plant below records the Great People it cannot place; start from
     // nothing so a carried board never keeps a plot a Great Person has left.
     game.great_person_plots.clear();
+    // What the host said about each unit, keyed by the board id it just got.
+    // Written here, before `LiveMirror::new` takes the movement allowance and
+    // before `seat_live_spies` reads a Spy's operation off it.
+    game.host_unit_facts.clear();
     for unit in &state.units {
         if let Some(uid) = plant_unit(&mut game, 0, unit, &mut unmapped, &mut dropped) {
             unit_ids.insert(uid, unit.id);
             placed_units += 1;
+            record_host_unit_facts(&mut game, uid, unit);
         }
     }
 
@@ -17476,9 +21504,11 @@ pub fn rebuild_from_state(
         } else {
             game.at_war.remove(&bond);
         }
-        if rival.can_declare && !rival.at_war {
-            game.players[0].denounced_until.insert(owner, game.turn + 1);
-        }
+        // The host's relationship, ledger, alliance, missions, promises and
+        // visibility for this rival — and, inside it, the `can_declare`
+        // permission fake an older export is left with. See
+        // `apply_host_diplomacy`.
+        apply_host_diplomacy(&mut game, owner, rival);
         // The host's own "received Open Borders" answer, assigned rather than
         // extended: the flag is re-read from every export, so an agreement
         // that lapses on the host closes the mirrored grant on the next
@@ -17497,7 +21527,9 @@ pub fn rebuild_from_state(
         // view — the fogged seal below never applied to attributed ground.
         // Assigned, not extended, like the grant: an older export without the
         // key reads as enforced, the conservative answer and the measured one.
-        game.players[owner].borders_enforced = Some(rival.enforces_borders.unwrap_or(true));
+        // The rival's tree by name lands on the seat in the same call, and a
+        // tree without the bit lets Early Empire decide (`apply_rival_tree`).
+        apply_rival_tree(&mut game, owner, rival, &mut unmapped);
         for city in &rival.cities {
             if let Some(cid) = plant_city(&mut game, owner, city) {
                 if city.id > 0 {
@@ -17508,7 +21540,8 @@ pub fn rebuild_from_state(
             }
         }
         for unit in &rival.units {
-            if plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped).is_some() {
+            if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
+                foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
             }
         }
@@ -17535,7 +21568,15 @@ pub fn rebuild_from_state(
         }
         game.players[0].met.insert(owner);
         game.players[owner].met.insert(0);
-        set_mirrored_envoys(&mut game.players[0], owner, minor.envoys.max(0));
+        // Net of an established Amani's terms: see `host_amani_envoy_terms`.
+        let amani = host_amani_envoy_terms(&game.rules, state, minor);
+        set_mirrored_envoys(
+            &mut game.players[0],
+            owner,
+            raw_envoys_for(minor.envoys, amani),
+        );
+        apply_host_rival_envoys(&mut game, minor, owner, &seat_of_host);
+        apply_host_quest(&mut game, minor, owner, &mut unmapped);
         if minor.score >= 0 {
             game.observed_score.insert(owner, minor.score);
         }
@@ -17565,7 +21606,8 @@ pub fn rebuild_from_state(
             }
         }
         for unit in &minor.units {
-            if plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped).is_some() {
+            if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
+                foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
             }
         }
@@ -17573,8 +21615,9 @@ pub fn rebuild_from_state(
     // The suzerain is public even when it is another major — and so is its
     // absence. Seed the delegations after every host id has a compact seat
     // mapping.
-    for (minor, owner) in minor_assignments {
-        seed_mirrored_suzerainty(&mut game, minor, owner, &seat_of_host);
+    for &(minor, owner) in &minor_assignments {
+        let amani = host_amani_envoy_terms(&game.rules, state, minor);
+        seed_mirrored_suzerainty(&mut game, minor, owner, &seat_of_host, amani);
     }
 
     // Barbarians go on CIVVIS's own barbarian seat rather than a rival's, so the
@@ -17603,20 +21646,44 @@ pub fn rebuild_from_state(
             .iter()
             .position(|player| player.is_barbarian && !player.is_free_city)
     });
-    match barbarian_seat {
-        Some(barb) => {
-            for unit in &state.hostiles {
-                if plant_unit(&mut game, barb, unit, &mut unmapped, &mut dropped).is_some() {
-                    placed_rival_units += 1;
-                }
-            }
+    // ★★★★ A FREE CITIES UNIT GOES ON THE FREE CITIES SEAT. `hostiles[]` carries
+    // two players' units — `GetAliveBarbarianIDs()` and every `IsFreeCities()`
+    // player — and every entry used to be handed to `barb` whatever its `player`
+    // said, so the army that took four cities on run civvis-20260802T064240Z was
+    // mirrored as barbarians (docs/FIDELITY.md, "The one-to-one map", item 3). A
+    // unit the Free Cities actor's own `units[]` already planted is not planted
+    // twice; a seat that holds one is alive, whether or not the aggregate actor
+    // was exported under `minors[]`.
+    let free_cities_seat = game
+        .players
+        .iter()
+        .find(|player| player.is_free_city)
+        .map(|player| player.id);
+    for unit in &state.hostiles {
+        let free = hostile_is_free_cities(state, unit);
+        if free && hostile_exported_as_minor_unit(state, unit) {
+            continue;
         }
+        let seat = if free {
+            free_cities_seat.or(barbarian_seat)
+        } else {
+            barbarian_seat
+        };
         // ⚠ NEVER SKIP SILENTLY. A roster with no barbarian seat is a reconstruction
         // that cannot hold the threat list, and the planner has to be told rather
         // than left to read an empty board as a safe one.
-        None => {
-            for unit in &state.hostiles {
-                dropped.push(format!("{}@{},{}:no_barbarian_seat", unit.kind, unit.x, unit.y));
+        let Some(owner) = seat else {
+            dropped.push(format!(
+                "{}@{},{}:no_barbarian_seat",
+                unit.kind, unit.x, unit.y
+            ));
+            continue;
+        };
+        if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
+            foreign_unit_ids.insert(unit.id, uid);
+            placed_rival_units += 1;
+            if game.players[owner].is_free_city {
+                game.players[owner].alive = true;
             }
         }
     }
@@ -17646,7 +21713,15 @@ pub fn rebuild_from_state(
         &known_city_ids,
     ));
     unmapped.extend(restore_incoming_foreign_routes(&mut game, &state.cities));
+    restore_rival_outgoing_routes(&mut game, &state.rivals);
+
+    unmapped.extend(restore_route_options(
+        &mut game,
+        state.route_options.as_deref(),
+        &known_city_ids,
+    ));
     apply_governor_state(&mut game, state, &mut unmapped);
+    reconcile_host_envoys(&mut game, &minor_assignments, &seat_of_host);
     apply_great_person_points(&mut game, state, &mut unmapped);
     apply_strategic_stockpiles(&mut game, state, &mut unmapped);
     // The age and its Dedications change what the model pays (Heartbeat of
@@ -17678,6 +21753,12 @@ pub fn rebuild_from_state(
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
+    // ★ The host's menus — the positive gate beside the refusal cooldown
+    // above, and the price list the purchase lanes read. See
+    // `Game::host_buildable`; wired on BOTH paths for the reason the
+    // promotion blocks are.
+    let menus = host_menus_from(&state.cities, &city_ids, &game.rules);
+    game.replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
     seat_live_spies(&mut game);
     block_live_spy_production(&mut game, state.spy_capacity);
     let blocked_purchases =
@@ -17703,10 +21784,14 @@ pub fn rebuild_from_state(
     // rather than before.
     apply_player_ages(&mut game, state);
 
-    record_host_observed(&mut game);
+    // The host's climate needs the finished map (the lowland bands) and the
+    // finished city roster (a Flood Barrier keeps its ground).
+    apply_host_climate(&mut game, state);
+    record_host_observed(&mut game, snapshot);
     Reconstruction {
         game,
         unit_ids,
+        foreign_unit_ids,
         city_ids,
         known_city_ids,
         placed_cities,
@@ -17717,6 +21802,245 @@ pub fn rebuild_from_state(
         unmapped,
         dropped_units: dropped,
     }
+}
+
+/// Seat every rival's delegation at a city-state from the host's own count
+/// (`envoys_by_player`: `GetTokensReceived` per alive major, the shipped
+/// CityStates panel's read). Seat 0's count is `minor.envoys`, seeded beside
+/// this call and never touched here. A listed export is authoritative for
+/// every major seat: a rival absent from it, or at zero, holds nothing there.
+/// `None` (an older export) leaves `seed_mirrored_suzerainty`'s minimum
+/// winning delegation to do what it did — which could never tell one envoy
+/// from five, nor see that we stood one short of a suzerainty.
+fn apply_host_rival_envoys(
+    game: &mut crate::game::Game,
+    minor: &StateMinor,
+    owner: usize,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+) {
+    let Some(counts) = minor.envoys_by_player.as_ref() else {
+        return;
+    };
+    for pid in 1..game.players.len() {
+        if !game.players[pid].is_minor {
+            set_mirrored_envoys(&mut game.players[pid], owner, 0);
+        }
+    }
+    for count in counts {
+        if count.player < 0 {
+            continue;
+        }
+        let Some(&seat) = seat_of_host.get(&(count.player as usize)) else {
+            continue;
+        };
+        if seat == 0 || seat >= game.players.len() || game.players[seat].is_minor {
+            continue;
+        }
+        set_mirrored_envoys(&mut game.players[seat], owner, count.envoys.max(0));
+    }
+}
+
+/// Seat the request a city-state is making of us, from the host's
+/// QuestsManager, on the pair (`Player::quests[minor]`) where
+/// `Game::city_state_quest` and the `quest-*` genes read it. The board rolled
+/// its own quest for every pair from a hash and paid itself the Envoy when its
+/// model said so; the host's actual request never crossed.
+///
+/// The host's `QUEST_*` type is the board's kind by name (`QUEST_TRAIN_UNIT_TYPE`
+/// → `train_unit_type`, all eight); the target the mod recovered from the
+/// description is translated the way every other host name is, and an
+/// untranslatable one is filed under `unmapped` and kept verbatim, so the
+/// kind still reads. `None` (an older export) leaves the board's own roll;
+/// `Some([])` clears it.
+fn apply_host_quest(
+    game: &mut crate::game::Game,
+    minor: &StateMinor,
+    owner: usize,
+    unmapped: &mut Vec<String>,
+) {
+    let Some(quests) = minor.quests.as_ref() else {
+        return;
+    };
+    let mut note = |issue: String| {
+        if !unmapped.contains(&issue) {
+            unmapped.push(issue);
+        }
+    };
+    game.players[0].quests.remove(&owner);
+    let Some(quest) = quests.first() else {
+        return;
+    };
+    let kind = quest
+        .kind
+        .strip_prefix("QUEST_")
+        .unwrap_or(&quest.kind)
+        .to_ascii_lowercase();
+    if !crate::game::quests::QUEST_KINDS.contains(&kind.as_str()) {
+        note(format!("quest:{}", quest.kind));
+        return;
+    }
+    let host_target = quest.target.as_deref().unwrap_or("");
+    let translated = match kind.as_str() {
+        "train_unit_type" => resolved_civvis_unit_name(&game.rules, host_target),
+        "zone_district_type" => civvis_node_name(&game.rules.districts, host_target, "DISTRICT_")
+            .map(|district| game.district_family(Name::new(&district)).to_string()),
+        "trigger_tech_boost" => civvis_node_name(&game.rules.techs, host_target, "TECH_"),
+        "trigger_civic_boost" => civvis_node_name(&game.rules.civics, host_target, "CIVIC_"),
+        "recruit_great_person_class" => host_target
+            .strip_prefix("GREAT_PERSON_CLASS_")
+            .map(|class| class.to_ascii_lowercase()),
+        _ => Some(String::new()),
+    };
+    let target = match translated {
+        Some(target) => target,
+        None => {
+            note(format!(
+                "quest_target:{kind}:{}",
+                if host_target.is_empty() {
+                    "none"
+                } else {
+                    host_target
+                }
+            ));
+            host_target.to_ascii_lowercase()
+        }
+    };
+    let (pos, mark) = match kind.as_str() {
+        "clear_barbarian_camp" => (
+            game.camps_near_city_state(owner).into_iter().next(),
+            game.players[0].counters.get("camps").copied().unwrap_or(0),
+        ),
+        "recruit_great_person_class" => (
+            None,
+            game.players[0]
+                .gp_claimed
+                .get(&target)
+                .copied()
+                .unwrap_or(0),
+        ),
+        _ => (None, 0),
+    };
+    game.players[0].quests.insert(
+        owner,
+        crate::game::quests::CityStateQuest {
+            kind,
+            target,
+            era: game.world_era,
+            pos,
+            mark,
+        },
+    );
+}
+
+/// Carry the host's climate onto the board: the level is the phase
+/// (`Game::mirror_set_climate_phase`, which also floods the lowland bands the
+/// shipped `CoastalLowlands` table names for it), our own CO2 is the seat's
+/// `co2_emissions`, and the rest — the world's CO2, the temperature, the
+/// sea-level and disaster forecasts — is `Game::observed_climate`, which
+/// `global_co2_emissions` prefers to the board's own sum. `None` (an older
+/// export, or a ruleset without `GameClimate`) leaves all of it alone.
+fn apply_host_climate(game: &mut crate::game::Game, state: &StateSnapshot) {
+    let Some(climate) = state.climate.as_ref() else {
+        // An older export: the phase the board holds stays, and the bands it
+        // floods are re-marked on the map the sync has just re-applied.
+        if game.climate_phase > 0 {
+            let phase = game.climate_phase;
+            game.mirror_set_climate_phase(phase);
+        }
+        return;
+    };
+    if (0..=7).contains(&climate.level) {
+        game.mirror_set_climate_phase(climate.level as u8);
+    }
+    let finite = |value: Option<f64>| value.filter(|value| value.is_finite() && *value >= 0.0);
+    let counted = |value: Option<i64>| value.filter(|value| *value >= 0);
+    if let Some(ours) = finite(climate.co2_ours) {
+        game.players[0].co2_emissions = ours;
+    }
+    game.observed_climate = Some(crate::game::ObservedClimate {
+        temperature: climate.temperature.filter(|value| value.is_finite()),
+        co2_total: finite(climate.co2_total),
+        sea_level_turns: counted(climate.sea_level_turns),
+        tiles_flooded: counted(climate.tiles_flooded),
+        storm_pct: finite(climate.storm_pct),
+        flood_pct: finite(climate.flood_pct),
+        drought_pct: finite(climate.drought_pct),
+    });
+}
+
+/// Seat the host's projection for every route a Trader could start
+/// (`route_options`) on `Game::observed_route_options`, keyed by the
+/// (origin, destination) pair, where the trader-destination chooser
+/// (`AdvancedAi::trade_route_destination_value_from`) prices the pair from
+/// it instead of from the model. Cleared on every apply: the host sends the
+/// list only while a route slot is open, and a projection for a slot that
+/// closed is not one. Endpoints resolve by coordinates first, the way active
+/// routes do, because Firaxis city ids are per player; a destination the
+/// board does not hold is skipped and filed once.
+fn restore_route_options(
+    game: &mut crate::game::Game,
+    options: Option<&[StateRouteOption]>,
+    city_of_civ6: &std::collections::BTreeMap<i64, u32>,
+) -> Vec<String> {
+    game.observed_route_options.clear();
+    let Some(options) = options else {
+        return Vec::new();
+    };
+    let mut unresolved: Vec<String> = Vec::new();
+    let mut file = |issue: &str| {
+        if !unresolved.iter().any(|filed| filed == issue) {
+            unresolved.push(issue.to_string());
+        }
+    };
+    for option in options {
+        let origin = if option.origin_x >= 0 && option.origin_y >= 0 {
+            game.city_at(crate::hex::offset_to_axial(
+                option.origin_x,
+                option.origin_y,
+            ))
+        } else {
+            None
+        }
+        .or_else(|| city_of_civ6.get(&option.origin).copied());
+        let Some(origin) = origin else {
+            file("route_option:origin");
+            continue;
+        };
+        if game.cities.get(&origin).map(|city| city.owner) != Some(0) {
+            file("route_option:origin_not_ours");
+            continue;
+        }
+        let destination = if option.dest_x >= 0 && option.dest_y >= 0 {
+            game.city_at(crate::hex::offset_to_axial(option.dest_x, option.dest_y))
+        } else {
+            None
+        };
+        let Some(destination) = destination else {
+            file("route_option:destination");
+            continue;
+        };
+        if destination == origin {
+            continue;
+        }
+        let Some(yields) = option.yields else {
+            continue;
+        };
+        let finite = [
+            yields.food,
+            yields.production,
+            yields.gold,
+            yields.science,
+            yields.culture,
+            yields.faith,
+        ]
+        .iter()
+        .all(|value| value.is_finite() && *value >= 0.0);
+        if finite {
+            game.observed_route_options
+                .insert((origin, destination), yields);
+        }
+    }
+    unresolved
 }
 
 /// Record the ground Civilization VI has just proved this seat can see.
@@ -17731,13 +22055,29 @@ pub fn rebuild_from_state(
 /// Taken from the board rather than from the three planting loops so it cannot
 /// fall out of step with them: rivals, city-states and barbarians all land here,
 /// and a fourth channel added later is covered without being remembered.
-fn record_host_observed(game: &mut crate::game::Game) {
-    game.host_observed = game
+///
+/// And, since 2026-08-26, every plot the sweep marked `vis`
+/// (`PlayersVisibility[pid]:IsVisible`), which is the same fact for EMPTY
+/// ground: the export carried only "revealed once", so fog and sight were one
+/// state to the board. The signature re-sends a plot when its sight flips, so
+/// the accumulated record is current as of the last delta.
+fn record_host_observed(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    let mut observed: BTreeSet<crate::Pos> = game
         .units
         .values()
         .filter(|unit| unit.owner != crate::game::MIRRORED_SEAT)
         .map(|unit| unit.pos)
         .collect();
+    for (x, y) in snapshot.revealed_positions() {
+        if !snapshot.plot((x, y)).is_some_and(|plot| plot.vis) {
+            continue;
+        }
+        let pos = crate::hex::offset_to_axial(x, y);
+        if game.map.get(pos).is_some() {
+            observed.insert(pos);
+        }
+    }
+    game.host_observed = observed;
 }
 
 /// Give every revealed plot the owner Civilization VI says it has.
@@ -18152,6 +22492,13 @@ pub struct LiveMirror {
     /// Civilization VI unit id -> the CIVVIS unit standing in for it. Stable for the
     /// life of the unit, which is the point.
     pub uid_of: std::collections::BTreeMap<i64, u32>,
+    /// Civilization VI id -> board id for the foreign units on the board,
+    /// rebuilt with them on every sync. `live_divergence::combat_pairs` needs
+    /// the foreign side of a `combat` event to resolve; before this every
+    /// `combat_damage` row read "no pairs" because only `uid_of` — our units —
+    /// was ever consulted (184 combats in run civvis-20260826T184456Z, 110 of
+    /// them unit-vs-unit, none paired).
+    pub foreign_uid_of: std::collections::BTreeMap<i64, u32>,
     pub civ6_of: std::collections::BTreeMap<u32, i64>,
     /// Civilization VI city id -> CIVVIS city id.
     pub cid_of: std::collections::BTreeMap<i64, u32>,
@@ -18350,14 +22697,27 @@ impl LiveMirror {
         for (cid, civ6) in &rebuilt.city_ids {
             cid_of.insert(*civ6, *cid);
         }
+        // ⚠ Every foreign unit the rebuild planted, so the FIRST sync can clear it
+        // the way every later sync clears its own. These lists started empty, so a
+        // rival, city-state or hostile standing on the board at construction was
+        // never removed: the next export's copy of it was dropped as `hostile_tile`
+        // (same plot) or planted beside it (moved), and the construction reading
+        // of its hp stood for the rest of the game.
+        let foreign_units: Vec<u32> = game
+            .units
+            .values()
+            .filter(|unit| unit.owner != 0)
+            .map(|unit| unit.id)
+            .collect();
         LiveMirror {
             game,
             civ6_of: rebuilt.unit_ids,
             uid_of,
+            foreign_uid_of: rebuilt.foreign_unit_ids,
             cid_of,
             known_city_ids: rebuilt.known_city_ids,
             active_trade_route_traders: active_trade_route_traders(state),
-            rival_units: Vec::new(),
+            rival_units: foreign_units,
             hostile_units: Vec::new(),
             rival_cities: std::collections::BTreeSet::new(),
             unmapped: rebuilt.unmapped,
@@ -18564,6 +22924,19 @@ impl LiveMirror {
             &self.game.rules,
         );
         self.game.replace_blocked_production(blocked_production);
+        // The host's menus, replaced like the cooldown snapshot above so a
+        // city whose export lost the key stops being gated.
+        let menus = host_menus_from(
+            &state.cities,
+            &self
+                .cid_of
+                .iter()
+                .map(|(civ6, cid)| (*cid, *civ6))
+                .collect(),
+            &self.game.rules,
+        );
+        self.game
+            .replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
         let blocked_purchases = blocked_production_from(
             &state.refused_purchases,
             &self
@@ -18593,6 +22966,7 @@ impl LiveMirror {
         if state.military.is_finite() && state.military >= 0.0 {
             self.game.observed_military_power.insert(0, state.military);
         }
+        apply_host_maintenance(&mut self.game, state);
         if state.gold >= 0 {
             self.game.players[0].gold = state.gold as f64;
             // The host's own figure first: it needs no history and so survives
@@ -18771,6 +23145,11 @@ impl LiveMirror {
         apply_city_memory(&mut self.game);
 
         // --- our units -------------------------------------------------------
+        if !skip_units {
+            // Re-read from this export; a unit that stopped carrying a key
+            // falls back to the board's rule rather than keeping a stale fact.
+            self.game.host_unit_facts.clear();
+        }
         let mut seen: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
         for unit in if skip_units { &[][..] } else { &state.units[..] } {
             seen.insert(unit.id);
@@ -18788,6 +23167,9 @@ impl LiveMirror {
                         unit,
                         &mut self.unmapped,
                     );
+                    // Before the allowance below is taken: `unit_max_moves`
+                    // reads the host's `max_moves` off this.
+                    record_host_unit_facts(&mut self.game, uid, unit);
                     if let Some(live) = self.game.units.get_mut(&uid) {
                         apply_unit_observation(live, unit, progress);
                         // ★★★★★ REFRESH THE TURN FROM REALITY, DO NOT SIMULATE IT.
@@ -18865,6 +23247,7 @@ impl LiveMirror {
                     let uid = self.game.spawn_unit(&name, 0, pos);
                     self.uid_of.insert(unit.id, uid);
                     self.civ6_of.insert(uid, unit.id);
+                    record_host_unit_facts(&mut self.game, uid, unit);
                 }
             }
         }
@@ -18879,6 +23262,7 @@ impl LiveMirror {
         for civ6 in gone {
             if let Some(uid) = self.uid_of.remove(&civ6) {
                 self.civ6_of.remove(&uid);
+                self.game.host_unit_facts.remove(&uid);
                 if self.game.units.contains_key(&uid) {
                     self.game.remove_unit(uid);
                 }
@@ -19001,6 +23385,11 @@ impl LiveMirror {
                     if let Some(item) = queued {
                         live.queue.push(item);
                     }
+                    for queued in host_queue_tail(&self.game.rules, city) {
+                        if !live.queue.contains(&queued) {
+                            live.queue.push(queued);
+                        }
+                    }
                     if city.production_progress.is_finite() && city.production_progress >= 0.0 {
                         live.production = city.production_progress;
                     }
@@ -19043,6 +23432,7 @@ impl LiveMirror {
             apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
             return;
         }
+        self.foreign_uid_of.clear();
         for uid in std::mem::take(&mut self.rival_units) {
             if self.game.units.contains_key(&uid) {
                 self.game.remove_unit(uid);
@@ -19070,34 +23460,51 @@ impl LiveMirror {
                 self.game.remove_unit(uid);
             }
         }
-        if let Some(barb) = self.game.barb_pid {
-            for unit in &state.hostiles {
-                let Some(name) = resolved_civvis_unit_name(&self.game.rules, &unit.kind) else {
-                    // ⚠ Counted, not swallowed. A barbarian type CIVVIS cannot name is
-                    // a threat it cannot see, and that is the whole of this defect.
-                    if !self.unmapped.contains(&unit.kind) {
-                        self.unmapped.push(unit.kind.clone());
-                    }
-                    continue;
-                };
-                let pos = crate::hex::offset_to_axial(unit.x, unit.y);
-                if self.game.map.get(pos).is_none()
-                    || self.game.units.values().any(|u| u.pos == pos)
-                {
-                    self.dropped_units
-                        .push(format!("{}@{},{}:hostile_tile", unit.kind, unit.x, unit.y));
-                    continue;
+        // See `rebuild_from_state`: a Free Cities unit goes on the Free Cities seat,
+        // and one the actor's own `units[]` carries is planted from there instead.
+        let free_cities_seat = self
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_free_city)
+            .map(|player| player.id);
+        for unit in &state.hostiles {
+            let free = hostile_is_free_cities(state, unit);
+            if free && hostile_exported_as_minor_unit(state, unit) {
+                continue;
+            }
+            let seat = if free {
+                free_cities_seat.or(self.game.barb_pid)
+            } else {
+                self.game.barb_pid
+            };
+            let Some(owner) = seat else {
+                self.dropped_units.push(format!(
+                    "{}@{},{}:no_barbarian_seat",
+                    unit.kind, unit.x, unit.y
+                ));
+                continue;
+            };
+            let Some(name) = resolved_civvis_unit_name(&self.game.rules, &unit.kind) else {
+                // ⚠ Counted, not swallowed. A barbarian type CIVVIS cannot name is
+                // a threat it cannot see, and that is the whole of this defect.
+                if !self.unmapped.contains(&unit.kind) {
+                    self.unmapped.push(unit.kind.clone());
                 }
-                let uid = self.game.spawn_unit(&name, barb, pos);
-                let progress = observed_unit_progress(
-                    &self.game.rules,
-                    unit,
-                    &mut self.unmapped,
-                );
-                if let Some(live) = self.game.units.get_mut(&uid) {
-                    apply_unit_observation(live, unit, progress);
-                    self.hostile_units.push(uid);
-                }
+                continue;
+            };
+            let pos = crate::hex::offset_to_axial(unit.x, unit.y);
+            if self.game.map.get(pos).is_none() || self.game.units.values().any(|u| u.pos == pos) {
+                self.dropped_units
+                    .push(format!("{}@{},{}:hostile_tile", unit.kind, unit.x, unit.y));
+                continue;
+            }
+            let uid = self.game.spawn_unit(&name, owner, pos);
+            let progress = observed_unit_progress(&self.game.rules, unit, &mut self.unmapped);
+            if let Some(live) = self.game.units.get_mut(&uid) {
+                apply_unit_observation(live, unit, progress);
+                self.hostile_units.push(uid);
+                self.foreign_uid_of.insert(unit.id, uid);
             }
         }
 
@@ -19171,11 +23578,11 @@ impl LiveMirror {
             } else {
                 self.game.at_war.remove(&bond);
             }
-            if rival.can_declare && !rival.at_war {
-                self.game.players[0].denounced_until.insert(owner, self.game.turn + 1);
-            } else {
-                self.game.players[0].denounced_until.remove(&owner);
-            }
+            // The permission above, and — when the mod exports it — the
+            // host's whole relationship for this rival: state, grievance
+            // ledger, alliance, missions, promises and visibility. See
+            // `apply_host_diplomacy`.
+            apply_host_diplomacy(&mut self.game, owner, rival);
             // The host's "received Open Borders" answer, applied the same way
             // `at_war` is: assigned from every export, so a lapsed agreement
             // closes the mirrored grant on the next sync. The border-sealing
@@ -19188,10 +23595,9 @@ impl LiveMirror {
             } else {
                 self.game.players[owner].open_borders_until.remove(&0);
             }
-            // See `rebuild_from_state`: the host's own Early Empire answer,
-            // re-read from every export.
-            self.game.players[owner].borders_enforced =
-                Some(rival.enforces_borders.unwrap_or(true));
+            // See `rebuild_from_state`: the host's own Early Empire answer
+            // and the rival's tree by name, re-read from every export.
+            apply_rival_tree(&mut self.game, owner, rival, &mut self.unmapped);
             for city in &rival.cities {
                 if !snapshot.is_revealed((city.x, city.y)) {
                     continue;
@@ -19243,6 +23649,7 @@ impl LiveMirror {
                 if let Some(live) = self.game.units.get_mut(&uid) {
                     apply_unit_observation(live, unit, progress);
                     self.rival_units.push(uid);
+                    self.foreign_uid_of.insert(unit.id, uid);
                 }
             }
         }
@@ -19261,8 +23668,14 @@ impl LiveMirror {
             .filter(|player| player.is_free_city)
             .map(|player| player.id)
             .collect();
+        // A Free Cities seat holding units planted from `hostiles[]` above is alive
+        // whether or not the aggregate actor is exported under `minors[]`.
+        let free_cities_armed = state
+            .hostiles
+            .iter()
+            .any(|unit| hostile_is_free_cities(state, unit));
         for owner in free_city_seats {
-            self.game.players[owner].alive = false;
+            self.game.players[owner].alive = free_cities_armed;
             self.game.at_war.remove(&(0, owner));
             self.game.observed_score.remove(&owner);
             self.game.observed_military_power.remove(&owner);
@@ -19275,7 +23688,15 @@ impl LiveMirror {
             }
             self.game.players[0].met.insert(owner);
             self.game.players[owner].met.insert(0);
-            set_mirrored_envoys(&mut self.game.players[0], owner, minor.envoys.max(0));
+            // Net of an established Amani's terms: see `host_amani_envoy_terms`.
+            let amani = host_amani_envoy_terms(&self.game.rules, state, minor);
+            set_mirrored_envoys(
+                &mut self.game.players[0],
+                owner,
+                raw_envoys_for(minor.envoys, amani),
+            );
+            apply_host_rival_envoys(&mut self.game, minor, owner, &seat_of_host);
+            apply_host_quest(&mut self.game, minor, owner, &mut self.unmapped);
             if minor.score >= 0 {
                 self.game.observed_score.insert(owner, minor.score);
             }
@@ -19339,27 +23760,35 @@ impl LiveMirror {
                     if let Some(live) = self.game.units.get_mut(&uid) {
                         apply_unit_observation(live, unit, progress);
                         self.rival_units.push(uid);
+                        self.foreign_uid_of.insert(unit.id, uid);
                     }
                 }
             }
         }
-        for (minor, owner) in minor_assignments {
-            seed_mirrored_suzerainty(&mut self.game, minor, owner, &seat_of_host);
+        for &(minor, owner) in &minor_assignments {
+            let amani = host_amani_envoy_terms(&self.game.rules, state, minor);
+            seed_mirrored_suzerainty(&mut self.game, minor, owner, &seat_of_host, amani);
         }
 
         self.active_trade_route_traders = active_trade_route_traders(state);
-        for issue in restore_active_trade_routes(
-            &mut self.game,
-            &state.trade_routes,
-            &self.known_city_ids,
-        )
-        .into_iter()
-        .chain(restore_incoming_foreign_routes(&mut self.game, &state.cities))
+        for issue in
+            restore_active_trade_routes(&mut self.game, &state.trade_routes, &self.known_city_ids)
+                .into_iter()
+                .chain(restore_incoming_foreign_routes(
+                    &mut self.game,
+                    &state.cities,
+                ))
+                .chain(restore_route_options(
+                    &mut self.game,
+                    state.route_options.as_deref(),
+                    &self.known_city_ids,
+                ))
         {
             if !self.unmapped.contains(&issue) {
                 self.unmapped.push(issue);
             }
         }
+        restore_rival_outgoing_routes(&mut self.game, &state.rivals);
 
         // City placement is a native CIVVIS action and may clear host terrain;
         // repeat the authoritative passes only after every new own/rival city is
@@ -19372,6 +23801,7 @@ impl LiveMirror {
         apply_tile_memory(&mut self.game, snapshot);
         apply_city_memory(&mut self.game);
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
+        reconcile_host_envoys(&mut self.game, &minor_assignments, &seat_of_host);
         apply_great_person_points(&mut self.game, state, &mut self.unmapped);
         apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
         // Age and Dedications before the corrections are measured — see the
@@ -19384,10 +23814,11 @@ impl LiveMirror {
         // planting a city awards era score, and Firaxis's reading must be what
         // survives rather than what the sync happened to add on its way there.
         apply_player_ages(&mut self.game, state);
+        apply_host_climate(&mut self.game, state);
         // Last, because it reads the finished board: every rival, minor and
         // barbarian for this turn has been re-planted by now, and the previous
         // turn's sightings were removed with them.
-        record_host_observed(&mut self.game);
+        record_host_observed(&mut self.game, snapshot);
     }
 }
 
@@ -19767,7 +24198,7 @@ mod host_fact_tests {
             o: 0,
             w: false,
             i: false,
-            fw: false,
+            fw: None,
             im: None,
             rv: 0,
             ri: false,
@@ -19780,6 +24211,9 @@ mod host_fact_tests {
             rt: None,
             rp: false,
             yl: None,
+            ap: None,
+            np: false,
+            vis: false,
         }
     }
 

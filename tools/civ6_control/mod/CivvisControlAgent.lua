@@ -5403,6 +5403,301 @@ end
 -- minutes once already. This runs from `playTurn`, which is once per turn, and
 -- only when `cfg.ExportState` asks for it. Tiles are emitted in chunks so no
 -- single log line is unbounded.
+-- ★★★★★ THE HOST'S OWN PRODUCTION AND PURCHASE MENUS, PER CITY.
+--
+-- Production is the highest-frequency decision the board makes, and until this
+-- block it made that decision from its own catalogue and learned legality only
+-- from refusals -- `civvis_build_unplayable` AFTER the order, one item per city
+-- per turn, never the set. The predicate that decides was already in this
+-- file: `city:GetBuildQueue():CanProduce(hash, false, true)` inside the chooser
+-- above and `city:GetGold():GetPurchaseCost(currency, hash)` inside the purchase
+-- actuator below. Neither was ever exported.
+--
+-- The loops are the shipped `UI/Panels/ProductionPanel.lua`'s, family by
+-- family (districts 1898-2003, buildings 2019-2100, units 2107-2203, projects
+-- 2207-2237): `CanProduce(hash, true)` is the EXCLUSION test that decides
+-- whether an item is listed at all, `CanProduce(hash, false, true)` whether it
+-- can be STARTED now, and the typed cost accessors take `row.Index` -- see
+-- `productionProgress` for what the hash form does. Purchases follow
+-- `ComposeUnitForPurchase` / `ComposeBldgForPurchase` /
+-- `ComposeDistrictForPurchase` (1632-1820): `CityManager.CanStartCommand(city,
+-- PURCHASE, true, params, false)` lists, the same call with `(false, params,
+-- true)` decides, `GetPurchaseCost(yield, hash)` prices. The queue behind the
+-- head is `ProductionHelper.lua:185` -- `GetAt(i)` for i >= 1, each entry a
+-- `Directive` and a typed index.
+--
+-- Only what the host says can START now crosses; a listed-but-disabled item is
+-- not a choice. Compact on purpose, because it rides on every state export of
+-- every city: one `{t, c, p}` per startable item, `f` = 1/2 for a Corps/Army
+-- the results table says the city may train, `n`/`s` the number of plots the
+-- engine offers a district and up to sixteen of them (the mirror trusts the
+-- list only when it is complete). Corps/Army PURCHASES are not priced.
+--
+-- ⚠ Each family is guarded on its own and the whole record under `try` at the
+-- call site: a nil answer is "unknown" on the mirror (no gate), never "nothing
+-- buildable". A global table, not a file-scope local -- the main chunk is at
+-- Lua's 200-local ceiling.
+CivvisMenus = {};
+
+-- `AdjacencyBonusSupport.lua:280`: the engine's own placement offer for a
+-- district. Returns the count and up to sixteen of the plots.
+CivvisMenus.plots = function(city, param, hash)
+	local plots = try(function()
+		local probe = {};
+		probe[param] = hash;
+		local results = CityManager.GetOperationTargets(
+			city, CityOperationTypes.BUILD, probe);
+		return results and results[CityOperationResults.PLOTS] or nil;
+	end);
+	if plots == nil then return nil, nil; end
+	local offered, out = 0, {};
+	for _, plotIndex in pairs(plots) do
+		local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+		local px = plot and try(function() return plot:GetX(); end, -1) or -1;
+		local py = plot and try(function() return plot:GetY(); end, -1) or -1;
+		if px >= 0 and py >= 0 then
+			offered = offered + 1;
+			if #out < 16 then out[#out + 1] = { x = px, y = py }; end
+		end
+	end
+	return offered, out;
+end;
+
+CivvisMenus.buildable = function(city)
+	local queue = city:GetBuildQueue();
+	if queue == nil then return nil; end
+	local function listed(arg)
+		return try(function() return queue:CanProduce(arg, true); end, false) == true;
+	end
+	-- The three-argument form returns (can, results); a raise is "no".
+	local function startable(arg)
+		local ok, can, results = pcall(function()
+			return queue:CanProduce(arg, false, true);
+		end);
+		if ok and can == true then return true, results; end
+		return false, nil;
+	end
+	local out = {};
+	for row in GameInfo.Districts() do
+		if not row.InternalOnly and listed(row.Hash) and startable(row.Hash) then
+			local offered, plots = CivvisMenus.plots(
+				city, CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash);
+			out[#out + 1] = {
+				t = row.DistrictType,
+				c = try(function() return queue:GetDistrictCost(row.Index); end, -1),
+				p = try(function() return queue:GetTurnsLeft(row.DistrictType); end, -1),
+				n = offered,
+				s = plots,
+			};
+		end
+	end
+	for row in GameInfo.Buildings() do
+		if not row.MustPurchase and listed(row.Hash) and startable(row.Hash) then
+			out[#out + 1] = {
+				t = row.BuildingType,
+				c = try(function() return queue:GetBuildingCost(row.Index); end, -1),
+				p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+			};
+		end
+	end
+	-- Both spellings of the tier enum, for the reason `CivvisMilitaryFormation`
+	-- records: the two Lua VMs name the members differently.
+	local tiers = MilitaryFormationTypes or {};
+	local standard = tiers.STANDARD_MILITARY_FORMATION or tiers.STANDARD_FORMATION;
+	local corps = tiers.CORPS_MILITARY_FORMATION or tiers.CORPS_FORMATION;
+	local army = tiers.ARMY_MILITARY_FORMATION or tiers.ARMY_FORMATION;
+	for row in GameInfo.Units() do
+		if not row.MustPurchase then
+			local arg = row.Hash;
+			if standard ~= nil then
+				arg = { UnitType = row.Hash, MilitaryFormationType = standard };
+			end
+			if listed(arg) then
+				local can, results = startable(arg);
+				if can then
+					out[#out + 1] = {
+						t = row.UnitType,
+						c = try(function() return queue:GetUnitCost(row.Index); end, -1),
+						p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+					};
+					-- `ProductionPanel.lua:2150-2172`: the results table says whether
+					-- a Corps or Army may be trained here; each tier is asked again.
+					local canCorps = try(function()
+						return results[CityOperationResults.CAN_TRAIN_CORPS] == true;
+					end, false);
+					if corps ~= nil and canCorps
+							and startable({ UnitType = row.Hash, MilitaryFormationType = corps }) then
+						out[#out + 1] = {
+							t = row.UnitType,
+							f = 1,
+							c = try(function() return queue:GetUnitCorpsCost(row.Index); end, -1),
+							p = try(function() return queue:GetTurnsLeft(row.Hash, corps); end, -1),
+						};
+					end
+					local canArmy = try(function()
+						return results[CityOperationResults.CAN_TRAIN_ARMY] == true;
+					end, false);
+					if army ~= nil and canArmy
+							and startable({ UnitType = row.Hash, MilitaryFormationType = army }) then
+						out[#out + 1] = {
+							t = row.UnitType,
+							f = 2,
+							c = try(function() return queue:GetUnitArmyCost(row.Index); end, -1),
+							p = try(function() return queue:GetTurnsLeft(row.Hash, army); end, -1),
+						};
+					end
+				end
+			end
+		end
+	end
+	for row in GameInfo.Projects() do
+		if listed(row.Hash) and startable(row.Hash) then
+			out[#out + 1] = {
+				t = row.ProjectType,
+				c = try(function() return queue:GetProjectCost(row.Index); end, -1),
+				p = try(function() return queue:GetTurnsLeft(row.ProjectType); end, -1),
+			};
+		end
+	end
+	return out;
+end;
+
+CivvisMenus.purchasable = function(city)
+	local gold = try(function() return GameInfo.Yields["YIELD_GOLD"].Index; end);
+	local faith = try(function() return GameInfo.Yields["YIELD_FAITH"].Index; end);
+	if gold == nil or faith == nil then return nil; end
+	local wallet = try(function() return city:GetGold(); end);
+	if wallet == nil then return nil; end
+	-- `ComposeUnitForPurchase`: UNIT_TYPE and YIELD_TYPE only. The purchase
+	-- actuator below records why the formation parameter must stay off the
+	-- eligibility question.
+	local function price(param, hash, currency)
+		local params = {};
+		params[param] = hash;
+		params[CityCommandTypes.PARAM_YIELD_TYPE] = currency;
+		local shown = try(function()
+			return CityManager.CanStartCommand(
+				city, CityCommandTypes.PURCHASE, true, params, false);
+		end, false);
+		if shown ~= true then return nil; end
+		local ok, can = pcall(function()
+			return CityManager.CanStartCommand(
+				city, CityCommandTypes.PURCHASE, false, params, true);
+		end);
+		if not ok or can ~= true then return nil; end
+		local cost = try(function() return wallet:GetPurchaseCost(currency, hash); end);
+		if type(cost) ~= "number" or cost < 0 then return nil; end
+		return cost;
+	end
+	local out, seen = {}, {};
+	local function record(name, g, f)
+		if name == nil or (g == nil and f == nil) then return; end
+		local entry = seen[name];
+		if entry == nil then
+			entry = { t = name };
+			seen[name] = entry;
+			out[#out + 1] = entry;
+		end
+		if g ~= nil then entry.g = g; end
+		if f ~= nil then entry.f = f; end
+	end
+	for row in GameInfo.Units() do
+		local g, f = nil, nil;
+		if row.PurchaseYield == "YIELD_GOLD" then
+			g = price(CityCommandTypes.PARAM_UNIT_TYPE, row.Hash, gold);
+		end
+		if row.PurchaseYield == "YIELD_FAITH" or try(function()
+			return wallet:IsUnitFaithPurchaseEnabled(row.Hash);
+		end, false) == true then
+			f = price(CityCommandTypes.PARAM_UNIT_TYPE, row.Hash, faith);
+		end
+		record(row.UnitType, g, f);
+	end
+	for row in GameInfo.Buildings() do
+		local g, f = nil, nil;
+		if row.PurchaseYield == "YIELD_GOLD" then
+			g = price(CityCommandTypes.PARAM_BUILDING_TYPE, row.Hash, gold);
+		end
+		if row.PurchaseYield == "YIELD_FAITH" or try(function()
+			return wallet:IsBuildingFaithPurchaseEnabled(row.Hash);
+		end, false) == true then
+			f = price(CityCommandTypes.PARAM_BUILDING_TYPE, row.Hash, faith);
+		end
+		record(row.BuildingType, g, f);
+	end
+	for row in GameInfo.Districts() do
+		if not row.InternalOnly then
+			record(row.DistrictType,
+				price(CityCommandTypes.PARAM_DISTRICT_TYPE, row.Hash, gold),
+				price(CityCommandTypes.PARAM_DISTRICT_TYPE, row.Hash, faith));
+		end
+	end
+	return out;
+end;
+
+-- The queue BEHIND the head. The head crosses as `producing`; until this the
+-- rest of a real multi-item queue never did.
+CivvisMenus.queue = function(city)
+	local queue = city:GetBuildQueue();
+	if queue == nil then return nil; end
+	local size = try(function() return queue:GetSize(); end, 0) or 0;
+	if size <= 1 then return nil; end
+	local directives = CityProductionDirectives;
+	if directives == nil then return nil; end
+	local tiers = MilitaryFormationTypes or {};
+	local out = {};
+	for i = 1, size - 1 do
+		local entry = try(function() return queue:GetAt(i); end);
+		local directive = type(entry) == "table" and entry.Directive or nil;
+		local rec = nil;
+		if directive == nil then
+			rec = nil;
+		elseif directive == directives.TRAIN then
+			local row = try(function() return GameInfo.Units[entry.UnitType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.UnitType,
+					pr = try(function() return queue:GetUnitProgress(row.Index); end),
+				};
+				local tier = entry.MilitaryFormationType;
+				if tier ~= nil and (tier == tiers.CORPS_FORMATION
+						or tier == tiers.CORPS_MILITARY_FORMATION) then
+					rec.f = 1;
+				elseif tier ~= nil and (tier == tiers.ARMY_FORMATION
+						or tier == tiers.ARMY_MILITARY_FORMATION) then
+					rec.f = 2;
+				end
+			end
+		elseif directive == directives.CONSTRUCT then
+			local row = try(function() return GameInfo.Buildings[entry.BuildingType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.BuildingType,
+					pr = try(function() return queue:GetBuildingProgress(row.Index); end),
+				};
+			end
+		elseif directive == directives.ZONE then
+			local row = try(function() return GameInfo.Districts[entry.DistrictType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.DistrictType,
+					pr = try(function() return queue:GetDistrictProgress(row.Index); end),
+				};
+			end
+		elseif directive == directives.PROJECT then
+			local row = try(function() return GameInfo.Projects[entry.ProjectType]; end);
+			if row ~= nil then
+				rec = {
+					t = row.ProjectType,
+					pr = try(function() return queue:GetProjectProgress(row.Index); end),
+				};
+			end
+		end
+		if rec ~= nil then out[#out + 1] = rec; end
+	end
+	return out;
+end;
+
 local function exportState(player, pid, turn, frame)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
@@ -6076,6 +6371,13 @@ local function exportState(player, pid, turn, frame)
 			production_turns = try(function()
 				return city:GetBuildQueue():GetTurnsLeft();
 			end, -1),
+			-- ★ THE HOST'S MENUS -- see `CivvisMenus` above. What this city can
+			-- START now, with the engine's cost and turns; what it can BUY now,
+			-- with the engine's price; and the queue behind `producing`. Each
+			-- is nil when the read fails, which the mirror treats as unknown.
+			buildable = try(function() return CivvisMenus.buildable(city); end),
+			purchasable = try(function() return CivvisMenus.purchasable(city); end),
+			queue = try(function() return CivvisMenus.queue(city); end),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			-- ★★★★★ THE EMPIRE'S HAPPINESS WAS NEVER ASKED FOR, AND IT MULTIPLIES
 			-- EVERY YIELD ON THE BOARD.
@@ -6323,6 +6625,101 @@ local function exportState(player, pid, turn, frame)
 			};
 		end
 		local progress = unitProgress(unit);
+		-- ★★★ THE HOST'S OWN UPGRADE VERDICT, MAINTENANCE, ACTIVITY AND SPY
+		-- STATE, ONE-TO-ONE (docs/FIDELITY.md, "The one-to-one map", item 9).
+		-- The board derived every one of these from its own rules: `UPGRADE`
+		-- was 933 refusals over the 08-04/08-05 runs because the board's
+		-- successor, territory and price rules disagreed with the host's, and
+		-- `SPY_GAIN_SOURCES` was refused 195 of 862 times in one run because
+		-- the board re-tasked a Spy the host already had on an operation.
+		--
+		-- Upgrade, the shipped UnitPanel.lua:470-483 read: the loose
+		-- `CanStartCommand(pUnit, UPGRADE, true, true)` returns the results
+		-- table whose `UnitCommandResults.UNIT_TYPE` names the successor, the
+		-- strict `(false, true)` says whether it can start NOW, and
+		-- `pUnit:GetUpgradeCost()` is the bill. The strict call's
+		-- `FAILURE_REASONS` is the table `upgradeUnit` already reads; its
+		-- first entry crosses as `upgrade_blocked_reason`, and a block the
+		-- host would not name crosses as "unnamed" so the verdict still
+		-- stands. A unit with no successor at all exports none of the three.
+		local upgradeTo, upgradeCost, upgradeBlocked = nil, nil, nil;
+		try(function()
+			local hash = CMD["UNITCOMMAND_UPGRADE"];
+			if hash == nil then return; end
+			local now, strict = UnitManager.CanStartCommand(unit, hash, false, true);
+			local ever, loose = UnitManager.CanStartCommand(unit, hash, true, true);
+			if ever ~= true and now ~= true then return; end
+			local keys = UnitCommandResults;
+			local kind = nil;
+			if keys ~= nil then
+				if type(strict) == "table" then kind = strict[keys.UNIT_TYPE]; end
+				if kind == nil and type(loose) == "table" then
+					kind = loose[keys.UNIT_TYPE];
+				end
+			end
+			local target = kind ~= nil and GameInfo.Units[kind] or nil;
+			upgradeTo = target ~= nil and target.UnitType or nil;
+			upgradeCost = unit:GetUpgradeCost();
+			if now == true then return; end
+			local reasons = (keys ~= nil and type(strict) == "table")
+				and strict[keys.FAILURE_REASONS] or nil;
+			upgradeBlocked = (type(reasons) == "table" and reasons[1] ~= nil)
+				and tostring(reasons[1]) or "unnamed";
+		end);
+		-- Activity: `UnitManager.GetActivityType`, the WorldTracker.lua:544
+		-- status read — SLEEP, HOLD (skip turn), OPERATION (a Spy on a
+		-- mission, UnitPanel.lua:2147), AWAKE. Named through the enum, never
+		-- the raw integer, for the same reason `CivvisMilitaryFormation` is.
+		local activity = try(function()
+			local kind = UnitManager.GetActivityType(unit);
+			if kind == nil then return nil; end
+			for _, label in ipairs({ "SLEEP", "HOLD", "OPERATION", "AWAKE" }) do
+				if ActivityTypes["ACTIVITY_" .. label] == kind then
+					return string.lower(label);
+				end
+			end
+			return tostring(kind);
+		end, nil);
+		-- Spy: `GetSpyOperation()` is -1 when idle, else the UnitOperations
+		-- row (EspionageOverview.lua:659-676, with `GetSpyOperationEndTurn`).
+		-- The missions the host would let an IDLE Spy start from the city it
+		-- stands in are the EspionageChooser.lua:199-213 loop — counterspy in
+		-- our own city, `CategoryInUI == "OFFENSIVESPY"` in anyone else's —
+		-- names only. ⚠ nil, not `{}`, when there are none (see
+		-- `great_person_points`), and nil when the Spy is busy: the mirror
+		-- filters the board's mission menu only on a list with entries.
+		local spyOperation, spyEnds, spyMissions = nil, nil, nil;
+		if name == "UNIT_SPY" then
+			try(function()
+				local op = unit:GetSpyOperation();
+				if op == nil or op == -1 then return; end
+				local opRow = GameInfo.UnitOperations[op];
+				spyOperation = opRow ~= nil and opRow.OperationType or tostring(op);
+				spyEnds = unit:GetSpyOperationEndTurn();
+			end);
+			if spyOperation == nil then
+				spyMissions = try(function()
+					local here = Map.GetPlot(unit:GetX(), unit:GetY());
+					local city = Cities.GetPlotPurchaseCity(here);
+					if city == nil then return nil; end
+					local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
+					local ours = city:GetOwner() == pid;
+					local names = {};
+					for operation in GameInfo.UnitOperations() do
+						local wanted = (ours
+							and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
+							or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
+						if wanted and UnitManager.CanStartOperation(
+								unit, operation.Hash, cityPlot, false, true) == true then
+							names[#names + 1] = operation.OperationType;
+						end
+					end
+					if #names == 0 then return nil; end
+					table.sort(names);
+					return names;
+				end, nil);
+			end
+		end
 		CivvisLedger.kinds[tostring(try(function() return unit:GetID(); end, -1))] = name;
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
@@ -6387,6 +6784,37 @@ local function exportState(player, pid, turn, frame)
 			-- SelectedUnit read). The mirror plans a frame's second strike only
 			-- for units that still have one.
 			attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
+			-- The host's upgrade verdict: see the block above `units[#units + 1]`.
+			-- `upgrade_to` is the successor's UnitType, `upgrade_cost` the Gold
+			-- the host would charge, `upgrade_blocked_reason` present exactly
+			-- when a successor exists and the command cannot start this turn.
+			upgrade_to = upgradeTo,
+			upgrade_cost = upgradeCost,
+			upgrade_blocked_reason = upgradeBlocked,
+			-- The per-type bill the shipped ReportScreen.lua:314-334 sums and
+			-- ToolTipHelper.lua:705 prints, by formation the way that screen
+			-- reads it: `GetUnitArmyMaintenance` for an Army/Armada,
+			-- `GetUnitCorpsMaintenance` for a Corps/Fleet, `GetUnitMaintenance`
+			-- otherwise. BEFORE the player's `GetMaintDiscountPerUnit`, which
+			-- ReportScreen.lua:338 subtracts afterwards and the board keeps
+			-- as its own policy term. ⚠ nil when the tier could not be read
+			-- (`CivvisMilitaryFormation` -1): a Corps billed as a plain unit
+			-- would read as a discount the host never gave.
+			maintenance = try(function()
+				if row == nil then return nil; end
+				local tier = CivvisMilitaryFormation(unit);
+				if tier == 2 then return UnitManager.GetUnitArmyMaintenance(row.Hash); end
+				if tier == 1 then return UnitManager.GetUnitCorpsMaintenance(row.Hash); end
+				if tier == 0 then return UnitManager.GetUnitMaintenance(row.Hash); end
+				return nil;
+			end, nil),
+			-- UnitPanel.lua:2257 and :2242, the panel's own stat reads.
+			religious_strength = try(function() return unit:GetReligiousStrength(); end, nil),
+			max_moves = try(function() return unit:GetMaxMoves(); end, nil),
+			activity = activity,
+			spy_operation = spyOperation,
+			spy_operation_end_turn = spyEnds,
+			spy_missions_available = spyMissions,
 			great_person = greatPerson,
 		};
 	end);
@@ -6570,6 +6998,126 @@ local function exportState(player, pid, turn, frame)
 				can_declare = try(function()
 					return diplomacy:CanDeclareWarOn(otherId);
 				end, false),
+				-- ★★★★★ THE RELATIONSHIP ITSELF, ONE-TO-ONE. `can_declare` says a war is
+				-- LEGAL; nothing said whether it was ruinous. Every war, peace,
+				-- denounce and alliance decision on the board was taken blind to the
+				-- host's diplomatic state, grievance ledger, alliance, missions,
+				-- promises and visibility (docs/FIDELITY.md, "The one-to-one map",
+				-- item 1). Each accessor is one the shipped screens call on the same
+				-- objects in this same InGame context:
+				--   DiplomacyActionView.lua:870,1473  GetDiplomaticAI():GetDiplomaticStateIndex
+				--                                     -> GameInfo.DiplomaticStates[i].StateType
+				--   DiplomacyActionView.lua:1486-1511 GetDenounceTurn (both sides),
+				--                                     GetDeclaredFriendshipTurn,
+				--                                     Game.GetGameDiplomacy():GetDenounceTimeLimit
+				--   DiplomacyActionView_WorldCongressTab.lua:42,78
+				--                                     GetGrievancesAgainst is ONE SIGNED BALANCE:
+				--                                     > 0 ours against them, < 0 theirs against
+				--                                     us; GetGrievanceChangePerTurn(them, us)
+				--   DiplomacyRibbon_Expansion1.lua:24-27 GetAllianceType (-1 = none) /
+				--                                     GetAllianceLevel
+				--   DiplomacyActionView_AllianceTab.lua:44 GetAllianceTurnsUntilExpiration
+				--   DiplomacyActionView.lua:992       GetVisibilityOn (GameInfo.Visibilities index)
+				--   DiplomacyActionView_AllianceRow.lua:61-70 IsPromiseMade(other, PromiseTypes.*)
+				-- `nil` wherever the host cannot be asked; the mirror keeps its
+				-- `can_declare` fallback whenever `diplomatic_state` is absent.
+				diplomatic_state = try(function()
+					local index = other:GetDiplomaticAI():GetDiplomaticStateIndex(pid);
+					local row = GameInfo.DiplomaticStates[index];
+					return row ~= nil and row.StateType or nil;
+				end, nil),
+				our_grievances_against_them = try(function()
+					local balance = diplomacy:GetGrievancesAgainst(otherId);
+					return balance > 0 and balance or 0;
+				end, nil),
+				grievances_against_us = try(function()
+					local theirs = try(function()
+						return other:GetDiplomacy():GetGrievancesAgainst(pid);
+					end, nil);
+					if type(theirs) == "number" then
+						return theirs > 0 and theirs or 0;
+					end
+					local balance = diplomacy:GetGrievancesAgainst(otherId);
+					return balance < 0 and -balance or 0;
+				end, nil),
+				grievance_change_per_turn = try(function()
+					return Game.GetGameDiplomacy():GetGrievanceChangePerTurn(otherId, pid);
+				end, nil),
+				alliance_type = try(function()
+					local kind = diplomacy:GetAllianceType(otherId);
+					if type(kind) ~= "number" or kind < 0 then return nil; end
+					local row = GameInfo.Alliances[kind];
+					return row ~= nil and row.AllianceType or nil;
+				end, nil),
+				alliance_level = try(function()
+					if diplomacy:GetAllianceType(otherId) < 0 then return nil; end
+					return diplomacy:GetAllianceLevel(otherId);
+				end, nil),
+				alliance_turns_left = try(function()
+					if diplomacy:GetAllianceType(otherId) < 0 then return nil; end
+					return diplomacy:GetAllianceTurnsUntilExpiration(otherId);
+				end, nil),
+				our_denounce_turn = try(function()
+					return diplomacy:GetDenounceTurn(otherId);
+				end, nil),
+				their_denounce_turn = try(function()
+					return other:GetDiplomacy():GetDenounceTurn(pid);
+				end, nil),
+				friendship_turn = try(function()
+					return diplomacy:GetDeclaredFriendshipTurn(otherId);
+				end, nil),
+				denounce_time_limit = try(function()
+					return Game.GetGameDiplomacy():GetDenounceTimeLimit();
+				end, nil),
+				visibility = try(function()
+					return diplomacy:GetVisibilityOn(otherId);
+				end, nil),
+				their_visibility_on_us = try(function()
+					return other:GetDiplomacy():GetVisibilityOn(pid);
+				end, nil),
+				-- The grant WE make (their overview's "received" direction).
+				open_borders_granted = try(function()
+					return other:GetDiplomacy():HasOpenBordersFrom(pid);
+				end, nil),
+				delegation_at = try(function()
+					return diplomacy:HasDelegationAt(otherId);
+				end, nil),
+				embassy_at = try(function()
+					return diplomacy:HasEmbassyAt(otherId);
+				end, nil),
+				their_delegation = try(function()
+					return other:GetDiplomacy():HasDelegationAt(pid);
+				end, nil),
+				their_embassy = try(function()
+					return other:GetDiplomacy():HasEmbassyAt(pid);
+				end, nil),
+				-- Promise-type names as the shipped Alliance row lists them. The
+				-- enum member is named from the REQUESTER's side ("near ME"), so
+				-- `ours:IsPromiseMade(them, kind)` is a promise WE made to them and
+				-- `theirs:IsPromiseMade(us, kind)` one they made to us.
+				promises_made = try(function()
+					local made = {};
+					for _, name in ipairs({ "DONT_SETTLE_NEAR_ME", "DONT_SPY_ON_ME",
+							"DONT_CONVERT_MY_CITIES", "DONT_DIG_UP_MY_ARTIFACTS" }) do
+						local kind = PromiseTypes[name];
+						if kind ~= nil and diplomacy:IsPromiseMade(otherId, kind) then
+							made[#made + 1] = name;
+						end
+					end
+					return made;
+				end, nil),
+				promises_received = try(function()
+					local theirs = other:GetDiplomacy();
+					local received = {};
+					for _, name in ipairs({ "DONT_SETTLE_NEAR_ME", "DONT_SPY_ON_ME",
+							"DONT_CONVERT_MY_CITIES", "DONT_DIG_UP_MY_ARTIFACTS" }) do
+						local kind = PromiseTypes[name];
+						if kind ~= nil and theirs:IsPromiseMade(pid, kind) then
+							received[#received + 1] = name;
+						end
+					end
+					return received;
+				end, nil),
 				score = try(function() return other:GetScore(); end, -1),
 				-- Diplomatic-victory points, so the denial logic can see the one
 				-- victory that ended three of the last thirteen games early.
@@ -6618,6 +7166,118 @@ local function exportState(player, pid, turn, frame)
 					end
 					return n;
 				end, -1),
+				-- ★★★★ THE RIVAL'S TREE BY NAME, NOT ONLY BY COUNT. The counts say
+				-- how far ahead a rival is; the names say WHAT it holds, which is
+				-- what the board needs to derive its era (`player_era` reads the
+				-- seat's own tech and civic sets), the units it can field, and
+				-- whether its border is enforced at all (Early Empire —
+				-- `enforces_borders` above exports that one civic as one bit; with
+				-- the tree on the seat the board derives it natively and keeps the
+				-- bit as the override). Same `HasTech`/`HasCivic` loops as the
+				-- counts, collected instead of summed: ~70 + ~50 names of ~20
+				-- bytes per met rival, a few kilobytes per export. nil (absent)
+				-- when the host cannot be asked; an empty list is a real "nothing
+				-- yet", which serialises as `[]` and reads as an empty list.
+				tech_names = try(function()
+					local t = other:GetTechs();
+					if t == nil then return nil; end
+					local names = {};
+					for row in GameInfo.Technologies() do
+						if t:HasTech(row.Index) then names[#names + 1] = row.TechnologyType; end
+					end
+					return names;
+				end, nil),
+				civic_names = try(function()
+					local c = other:GetCulture();
+					if c == nil then return nil; end
+					local names = {};
+					for row in GameInfo.Civics() do
+						if c:HasCivic(row.Index) then names[#names + 1] = row.CivicType; end
+					end
+					return names;
+				end, nil),
+				-- The shipped World Rankings overview's own lane numbers for this
+				-- rival (`g_victoryData`, WorldRankings.lua:27,44,55): the science
+				-- lane's `GetNumTechsResearched`, the domination lane's
+				-- `GetMilitaryStrengthWithoutTreasury` (the army alone; `military`
+				-- above is the ribbon figure with the treasury folded in) and the
+				-- religion lane's `GetNumCitiesFollowingReligion` — the
+				-- religious-victory progress the board could only guess from the
+				-- rival cities it happened to have seen. nil when unreadable.
+				techs_researched = try(function()
+					return other:GetStats():GetNumTechsResearched();
+				end, nil),
+				military_no_treasury = try(function()
+					return other:GetStats():GetMilitaryStrengthWithoutTreasury();
+				end, nil),
+				cities_following_religion = try(function()
+					return other:GetStats():GetNumCitiesFollowingReligion();
+				end, nil),
+				-- The religion a majority of this rival's cities follow — the
+				-- exact test the shipped religion tab runs to mark a civilization
+				-- converted (WorldRankings.lua:2049, `GetReligionInMajorityOfCities`
+				-- against each founder's `GetReligionTypeCreated`). nil when no
+				-- religion holds a majority or the host cannot be asked.
+				religion = try(function()
+					local index = other:GetReligion():GetReligionInMajorityOfCities();
+					if type(index) ~= "number" or index < 0 then return nil; end
+					local row = GameInfo.Religions[index];
+					return row ~= nil and row.ReligionType or nil;
+				end, nil),
+				-- Tourists visiting US from this rival: the culture tab's
+				-- "Visiting us" column (WorldRankings.lua:1766, `GetTouristsFrom(
+				-- playerID)` on the LOCAL player's culture). The top-level
+				-- `foreign_tourists` is the sum of these over every rival; this
+				-- is the per-rival term, the one the culture race is scored on.
+				tourists_visiting_us = try(function()
+					return Players[pid]:GetCulture():GetTouristsFrom(otherId);
+				end, nil),
+				-- The rival's Era Score, from the same `GetPlayerCurrentScore` the
+				-- top-level `era_score` reads for us: the age flags above say
+				-- which age it is in, this says how close the next one is.
+				era_score = try(function()
+					return Game.GetEras():GetPlayerCurrentScore(otherId);
+				end, nil),
+				-- The rival's outgoing trade routes, by endpoint. The same
+				-- `city:GetTrade():GetOutgoingRoutes()` walk `incomingRoutes` makes
+				-- for routes INTO our cities (TradeOverview.lua:60-78 reads the
+				-- same rows), kept only when BOTH ends stand on ground revealed
+				-- to us — the reading a player at the keyboard has, since a
+				-- Trader's path is drawn on the map it walks and a route between
+				-- two cities never seen is not. The mirror seats each as a route
+				-- the rival's seat owns (`restore_rival_outgoing_routes`), so the
+				-- rival's own route income stops being a guess from a bare city.
+				trade_routes = try(function()
+					local routes = {};
+					for _, city in other:GetCities():Members() do
+						local cx, cy = city:GetX(), city:GetY();
+						if plotRevealed(pid, cx, cy) then
+							for _, route in ipairs(try(function()
+								return city:GetTrade():GetOutgoingRoutes();
+							end, {}) or {}) do
+								local destinationPlayer = try(function()
+									return route.DestinationCityPlayer;
+								end, -1);
+								local destination = try(function()
+									return Players[destinationPlayer]:GetCities():FindID(route.DestinationCityID);
+								end);
+								if destination ~= nil then
+									local dx, dy = destination:GetX(), destination:GetY();
+									if plotRevealed(pid, dx, dy) then
+										routes[#routes + 1] = {
+											origin_x = cx,
+											origin_y = cy,
+											destination_x = dx,
+											destination_y = dy,
+											destination_player = destinationPlayer,
+										};
+									end
+								end
+							end
+						end
+					end
+					return routes;
+				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
 				-- fast it is moving. Every accessor is one the shipped World
@@ -6775,6 +7435,78 @@ local function exportState(player, pid, turn, frame)
 				most_envoys = influence ~= nil and try(function()
 					return influence:GetMostTokensReceived();
 				end, 0) or 0,
+				-- ★★★ WHO ELSE HOLDS ENVOYS HERE, AND HOW MANY. `envoys` and
+				-- `most_envoys` said ours and the leader's; the board seeded a
+				-- rival's delegation as the minimum that elects the Suzerain the
+				-- host names, so it could never tell one envoy from five, nor
+				-- see that it stood one short of taking a city-state. The
+				-- shipped panel reads every alive major's count off the same
+				-- object (Base/Assets/UI/PartialScreens/CityStates.lua:1458
+				-- `GetTokensReceived(iInfluencePlayer)`). Every major, zeros
+				-- included, so a lapsed delegation clears; a list rather than a
+				-- map because `encode` writes an empty table as `[]`.
+				envoys_by_player = influence ~= nil and try(function()
+					local out = {};
+					for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+						out[#out + 1] = {
+							player = otherId,
+							envoys = try(function() return influence:GetTokensReceived(otherId); end, 0) or 0,
+						};
+					end
+					return out;
+				end, nil) or nil,
+				-- ★★★ WHAT THE CITY-STATE IS ASKING US FOR. The board rolled its
+				-- own quest for every pair from its own hash and paid itself the
+				-- Envoy when its model said so; the host's actual request never
+				-- crossed, so the `quest-*` genes priced a request nobody made.
+				-- CityStates.lua:257-266 is the accessor set:
+				-- `HasActiveQuestFromPlayer` over `GameInfo.Quests()`, then
+				-- `GetActiveQuestName` / `GetActiveQuestDescription` (both
+				-- already localized text; the panel prints them as they are).
+				-- The host names the quest's TARGET only inside that
+				-- description (`LOC_QUEST_TRAIN_UNIT_TYPE_INSTANCE_DESCRIPTION`
+				-- is "Train {1_UnitName} military unit"), so the target type is
+				-- the row of the quest's own family whose localized name occurs
+				-- in it, longest match first (Warrior Monk over Warrior). nil
+				-- when the manager is absent; an empty list is a city-state
+				-- asking nothing.
+				quests = try(function()
+					local manager = Game.GetQuestsManager();
+					if manager == nil then return nil; end
+					local out = {};
+					for questInfo in GameInfo.Quests() do
+						if manager:HasActiveQuestFromPlayer(pid, mid, questInfo.Index) then
+							local description = try(function()
+								return tostring(manager:GetActiveQuestDescription(pid, mid, questInfo.Index));
+							end, "") or "";
+							local family = ({
+								QUEST_TRAIN_UNIT_TYPE = { "Units", "UnitType" },
+								QUEST_ZONE_DISTRICT_TYPE = { "Districts", "DistrictType" },
+								QUEST_TRIGGER_TECH_BOOST = { "Technologies", "TechnologyType" },
+								QUEST_TRIGGER_CIVIC_BOOST = { "Civics", "CivicType" },
+								QUEST_RECRUIT_GREAT_PERSON_CLASS = { "GreatPersonClasses", "GreatPersonClassType" },
+							})[questInfo.QuestType];
+							local target, best = nil, 0;
+							if family ~= nil and description ~= "" then
+								for row in GameInfo[family[1]]() do
+									local name = try(function() return Locale.Lookup(row.Name); end, nil);
+									if type(name) == "string" and #name > best
+										and description:find(name, 1, true) then
+										target, best = row[family[2]], #name;
+									end
+								end
+							end
+							out[#out + 1] = {
+								type = questInfo.QuestType,
+								target = target,
+								name = try(function()
+									return tostring(manager:GetActiveQuestName(pid, mid, questInfo.Index));
+								end, nil),
+							};
+						end
+					end
+					return out;
+				end, nil),
 				suzerain = influence ~= nil and try(function()
 					return influence:GetSuzerain();
 				end, -1) or -1,
@@ -6949,21 +7681,47 @@ local function exportState(player, pid, turn, frame)
 	-- GlobalResourcePopup.lua writes `if pPlayer.IsFreeCities and
 	-- pPlayer:IsFreeCities()` with the comment "Not avail in base game". A build
 	-- without the method must fall through, not error.
-	local function addUnitsOf(bid)
+	-- ★★★★ ONE RECORD FOR BOTH PLAYERS, BEHIND ONE GATE. Free Cities units used
+	-- to cross with id/x/y/player/type only, behind `plotRevealed`, while a
+	-- barbarian carried hp, moves, xp, promotions, charges, strength and fortify
+	-- state behind `PlayersVisibility[pid]:IsVisible` — and the mirror then
+	-- planted every entry as a full-health barbarian (docs/FIDELITY.md, "The
+	-- one-to-one map", item 3). The builder below serves both walks; `free`
+	-- marks a Free Cities unit so the mirror can seat it without knowing
+	-- Firaxis's player index for that aggregate (nil, not false, elsewhere: an
+	-- absent key costs no bytes and reads as a barbarian on every mirror).
+	local function addUnitsOf(bid, isFree)
 		local other = Players[bid];
 		if other == nil then return; end
 		pcall(function()
 			for _, unit in other:GetUnits():Members() do
 				local ux, uy = unit:GetX(), unit:GetY();
-				if plotRevealed(pid, ux, uy) then
+				if PlayersVisibility[pid]:IsVisible(ux, uy) then
+					local name = try(function()
+						return GameInfo.Units[unit:GetUnitType()].UnitType;
+					end, "?");
+					local row = GameInfo.Units[name];
+					local progress = unitProgress(unit);
 					hostiles[#hostiles + 1] = {
 						-- The host's own unit id, so a combat event and a
 						-- next-frame sighting name the same unit. See CivvisLedger.
 						id = try(function() return unit:GetID(); end, nil),
 						x = ux, y = uy, player = bid,
-						type = try(function()
-							return GameInfo.Units[unit:GetUnitType()].UnitType;
-						end, "?"),
+						type = name,
+						free = isFree or nil,
+						hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+						moves = try(function() return unit:GetMovesRemaining(); end, -1),
+						xp = progress.xp, level = progress.level,
+						promotions = progress.promotions,
+						build_charges = progress.build_charges,
+						spread_charges = progress.spread_charges,
+						religion = progress.religion,
+						combat = row ~= nil and (row.Combat or 0) or 0,
+						ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+						fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+						fortified = try(function()
+							return (unit:GetFortifyTurns() or 0) > 0;
+						end, false),
 					};
 				end
 			end
@@ -6976,46 +7734,12 @@ local function exportState(player, pid, turn, frame)
 			local free = other ~= nil and try(function()
 				return other.IsFreeCities ~= nil and other:IsFreeCities() == true;
 			end, false);
-			if free == true then addUnitsOf(oid); end
+			if free == true then addUnitsOf(oid, true); end
 		end
 	end);
 	pcall(function()
 		local ids = try(function() return PlayerManager.GetAliveBarbarianIDs(); end, {}) or {};
-		for _, bid in ipairs(ids) do
-			local barb = Players[bid];
-			if barb ~= nil then
-				pcall(function()
-					for _, unit in barb:GetUnits():Members() do
-						local ux, uy = unit:GetX(), unit:GetY();
-						if PlayersVisibility[pid]:IsVisible(ux, uy) then
-							local name = try(function()
-								return GameInfo.Units[unit:GetUnitType()].UnitType;
-							end, "?");
-							local row = GameInfo.Units[name];
-							local progress = unitProgress(unit);
-							hostiles[#hostiles + 1] = {
-								id = try(function() return unit:GetID(); end, nil),
-								x = ux, y = uy, player = bid,
-								type = name,
-								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
-								moves = try(function() return unit:GetMovesRemaining(); end, -1),
-								xp = progress.xp, level = progress.level,
-								promotions = progress.promotions,
-								build_charges = progress.build_charges,
-								spread_charges = progress.spread_charges,
-								religion = progress.religion,
-								combat = row ~= nil and (row.Combat or 0) or 0,
-								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
-								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
-								fortified = try(function()
-									return (unit:GetFortifyTurns() or 0) > 0;
-								end, false),
-							};
-						end
-					end
-				end);
-			end
-		end
+		for _, bid in ipairs(ids) do addUnitsOf(bid, false); end
 	end);
 
 	-- ★★★★ WHAT GOVERNMENT WE ARE ALREADY UNDER.
@@ -7351,6 +8075,21 @@ local function exportState(player, pid, turn, frame)
 			local treasury = player:GetTreasury();
 			return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
 		end, nil),
+		-- The bill by source, the TopPanel's own breakdown
+		-- (ToolTipHelper_PlayerYields.lua:26-30): `GetUnitMaintenance`,
+		-- `GetBuildingMaintenance` and `GetDistrictMaintenance` on the
+		-- treasury. The board simulates its own bill from its rules for every
+		-- plan it prices; these let the mirrored seat's forecast carry the
+		-- host's components instead. Same nil-not-0 rule as `gold_per_turn`.
+		unit_maintenance_total = try(function()
+			return player:GetTreasury():GetUnitMaintenance();
+		end, nil),
+		building_maintenance_total = try(function()
+			return player:GetTreasury():GetBuildingMaintenance();
+		end, nil),
+		district_maintenance_total = try(function()
+			return player:GetTreasury():GetDistrictMaintenance();
+		end, nil),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
 		-- ★★★★ FAITH PER TURN, THE TOP BAR'S OWN FIGURE. `GetFaithYield()` is
 		-- what TopPanel prints beside the Faith balance, and it is NOT the sum
@@ -7406,6 +8145,20 @@ local function exportState(player, pid, turn, frame)
 		domestic_tourists = try(function()
 			return player:GetCulture():GetStaycationers();
 		end, -1),
+		-- Our own tourism per turn, the accessor each rival's `tourism` already
+		-- uses (GetStats():GetTourism()). The board prefers it to its model and
+		-- the divergence instrument scores the model against it; until it
+		-- crossed the `tourism` row read "no pairs" on every run.
+		tourism_per_turn = try(function()
+			return player:GetStats():GetTourism();
+		end, nil),
+		-- The religion lane's own number for us, the same accessor as each
+		-- rival's `cities_following_religion` (WorldRankings.lua:44): cities
+		-- anywhere following OUR religion, including ones the seat has never
+		-- seen. nil when the host cannot be asked.
+		cities_following_religion = try(function()
+			return player:GetStats():GetNumCitiesFollowingReligion();
+		end, nil),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
 		-- ★★★★★ THE AGE, WHICH THE BRIDGE HAS NEVER CARRIED.
@@ -7512,6 +8265,108 @@ local function exportState(player, pid, turn, frame)
 		congress_turns_left = try(function()
 			local status = Game.GetWorldCongress():GetMeetingStatus();
 			return status and tonumber(status.TurnsLeft) or nil;
+		end, nil),
+		-- ★★★★ THE CLIMATE, WHICH THE BOARD HAS NEVER CARRIED. `cl` (the
+		-- coastal-lowland band) has crossed per plot since the yield export
+		-- with no phase to read it against: the mirror's `climate_phase` sat
+		-- at 0 on every live turn, so the Flood Barrier price, the clean-power
+		-- premium and the flooding of the very bands `cl` was exported for
+		-- all ran under a pre-industrial sky. Every accessor is the one the
+		-- shipped ClimateScreen calls (DLC/Expansion2/UI/Additions/
+		-- ClimateScreen.lua:128 `GetTotalCO2Footprint`, :399
+		-- `GetPlayerCO2Footprint(id, false)`, :410 `GetTemperatureChange`,
+		-- :425/:428/:440 the storm, flood and drought percent chances, :445
+		-- `GetTilesFlooded`, :447 `GetNextSeaLevelRiseTurns`, :1046
+		-- `GetClimateChangeLevel`). Each field is guarded on its own, so a
+		-- ruleset missing one accessor still sends the rest; the whole object
+		-- is nil where `GameClimate` is absent or answers nothing (⚠ never an
+		-- empty table: `encode` writes that as `[]`, which is not an object).
+		climate = try(function()
+			if GameClimate == nil then return nil; end
+			local out = {
+				level = try(function() return GameClimate.GetClimateChangeLevel(); end, nil),
+				temperature = try(function() return GameClimate.GetTemperatureChange(); end, nil),
+				co2_total = try(function() return GameClimate.GetTotalCO2Footprint(); end, nil),
+				co2_ours = try(function() return GameClimate.GetPlayerCO2Footprint(pid, false); end, nil),
+				sea_level_turns = try(function() return GameClimate.GetNextSeaLevelRiseTurns(); end, nil),
+				tiles_flooded = try(function() return GameClimate.GetTilesFlooded(); end, nil),
+				storm_pct = try(function() return GameClimate.GetStormPercentChance(); end, nil),
+				flood_pct = try(function() return GameClimate.GetFloodPercentChance(); end, nil),
+				drought_pct = try(function() return GameClimate.GetDroughtPercentChance(); end, nil),
+			};
+			for _ in pairs(out) do return out; end
+			return nil;
+		end, nil),
+		-- ★★★★ WHERE A TRADER COULD GO AND WHAT EACH ROUTE WOULD PAY, priced
+		-- by the host. `trade_routes[].yields` has carried the host's figure
+		-- for ACTIVE routes; the choice of the NEXT route was priced by the
+		-- model alone, which cannot see a destination's districts in fog
+		-- (Ostia -> Stockholm read "+1 Science", run civvis-20260816T233226Z
+		-- t177+). The shipped chooser's own legality and yield calls
+		-- (Base/Assets/UI/Choosers/TradeRouteChooser.lua:227 `CanStartRoute`,
+		-- :864 `CalculateOriginYieldFromPotentialRoute`) over every city of
+		-- every player from each of our cities, only while a route slot is
+		-- open (`GetOutgoingRouteCapacity` above the active count, the gate
+		-- under which a Trader can start one at all), the 12 richest per
+		-- origin so the record stays bounded. Yields are summed the way the
+		-- active-route export sums them (route + path + modifiers under the
+		-- international multiplier). nil when nothing can be started.
+		route_options = try(function()
+			local trade = player:GetTrade();
+			if trade == nil then return nil; end
+			local capacity = trade:GetOutgoingRouteCapacity() or 0;
+			if capacity <= #tradeRoutes then return nil; end
+			local manager = Game.GetTradeManager();
+			if manager == nil then return nil; end
+			local names = { food = "FOOD", production = "PRODUCTION", gold = "GOLD", science = "SCIENCE", culture = "CULTURE", faith = "FAITH" };
+			local out = {};
+			for _, origin in player:GetCities():Members() do
+				local originID = origin:GetID();
+				local options = {};
+				for _, other in ipairs(Game.GetPlayers() or {}) do
+					local otherId = try(function() return other:GetID(); end, -1);
+					pcall(function()
+						for _, city in other:GetCities():Members() do
+							local cityID = city:GetID();
+							if not (otherId == pid and cityID == originID)
+								and manager:CanStartRoute(pid, originID, otherId, cityID) then
+								local fromRoute = manager:CalculateOriginYieldsFromPotentialRoute(pid, originID, otherId, cityID);
+								if type(fromRoute) == "table" then
+									local fromPath = manager:CalculateOriginYieldsFromPath(pid, originID, otherId, cityID);
+									local fromModifiers = manager:CalculateOriginYieldsFromModifiers(pid, originID, otherId, cityID);
+									local yields, total = {}, 0;
+									for key, tag in pairs(names) do
+										local index = YieldTypes[tag];
+										if index ~= nil then
+											local sum = (fromRoute[index + 1] or 0)
+												+ ((type(fromPath) == "table" and fromPath[index + 1]) or 0)
+												+ ((type(fromModifiers) == "table" and fromModifiers[index + 1]) or 0);
+											local mult = otherId ~= pid and trade:GetInternationalYieldModifier(index) or 1;
+											if type(mult) ~= "number" or mult <= 0 then mult = 1; end
+											yields[key] = sum * mult;
+											total = total + yields[key];
+										end
+									end
+									options[#options + 1] = {
+										origin = originID,
+										origin_x = origin:GetX(), origin_y = origin:GetY(),
+										dest = cityID, dest_player = otherId,
+										dest_x = city:GetX(), dest_y = city:GetY(),
+										yields = yields, total = total,
+									};
+								end
+							end
+						end
+					end);
+				end
+				table.sort(options, function(a, b) return a.total > b.total; end);
+				for i = 1, math.min(12, #options) do
+					options[i].total = nil;
+					out[#out + 1] = options[i];
+				end
+			end
+			if #out == 0 then return nil; end
+			return out;
 		end, nil),
 		-- Great Person POINTS, not the Great People already earned. The planner
 		-- prices every district project against the live race -- how close we
@@ -8078,7 +8933,12 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 							local district = CityManager.GetDistrictAt(x, y);
 							return district ~= nil and district:IsComplete();
 						end, false) and 1 or 0) .. ":"
-						.. (try(function() return plot:GetWonderType(); end, -1) or -1);
+						.. (try(function() return plot:GetWonderType(); end, -1) or -1) .. ":"
+						-- Appeal moves when a NEIGHBOUR changes and sight moves
+						-- every turn; both join the signature so the record the
+						-- board reads between sweeps is this turn's.
+						.. (try(function() return plot:GetAppeal(); end, 0) or 0) .. ":"
+						.. (try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) and 1 or 0);
 				end
 				local key = y * width + x;
 				local changed = mark ~= nil and (full or known[key] ~= mark);
@@ -8165,6 +9025,26 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						-- ★★★ APPEAL, AS THE HOST COUNTS IT. The board derived appeal
+						-- from its own six neighbours and could not see a wonder's
+						-- +2 in fog, a Governor's promotion or a rival's district;
+						-- Neighborhood housing, Seaside and Ski Resorts and
+						-- National Parks are all priced on it. The shipped
+						-- PlotToolTip reads `plot:GetAppeal()` (Base/Assets/UI/
+						-- ToolTips/PlotToolTip.lua:641) and `IsNationalPark`
+						-- (:743). Sent on every revealed plot; absent only when the
+						-- read fails, so the mirror keeps its derivation there.
+						ap = try(function() return plot:GetAppeal(); end, nil),
+						np = try(function() return plot:IsNationalPark() and true or nil; end, nil),
+						-- ★★★ IN SIGHT NOW, not merely revealed once. `IsRevealed`
+						-- gates the record; the board re-derived sight from its own
+						-- radii on a reconstructed map and disagreed with the host
+						-- on the tiles that mattered (`Game::host_observed`). The
+						-- same call the shipped combat preview makes
+						-- (Base/Assets/UI/Civ6Common.lua:115). true or absent.
+						vis = try(function()
+							return PlayersVisibility[pid]:IsVisible(x, y) and true or nil;
+						end, nil),
 						-- ★★★★ THE ROAD. Never exported; the mirror wrote `road = 0`
 						-- everywhere and priced every march across roadless ground.
 						-- Sent by name (`GameInfo.Routes`), nil where none stands.
@@ -10085,6 +10965,36 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "delegation_asked" or "throw";
 	end
 
+	-- ★★★★ A DENOUNCEMENT IS A SESSION, LIKE A DELEGATION. The shipped view
+	-- opens it with DiplomacyManager.RequestSession(local, other, "DENOUNCE")
+	-- (DiplomacyActionView.lua:469); there is no PlayerOperations verb. The
+	-- host's own record of it (GetDenounceTurn) crosses on every rival, which
+	-- is how the verdict reads the next frame, and how a second ask inside
+	-- the shipped time limit is refused here before it opens a leader scene.
+	if kind == "denounce" then
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if subject < 0 then return false, "denounce_target_unmapped"; end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "denounce_at_war";
+		end
+		local since = try(function() return diplomacy:GetDenounceTurn(subject); end, -1) or -1;
+		local limit = try(function() return Game.GetGameDiplomacy():GetDenounceTimeLimit(); end, 0) or 0;
+		if since >= 0 and (turn - since) < limit then
+			return false, "denounce_already";
+		end
+		local key = "DENOUNCE" .. subject;
+		local asked = peaceAsked[key];
+		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
+			return false, "denounce_cooldown";
+		end
+		local ok = pcall(function()
+			DiplomacyManager.RequestSession(pid, subject, "DENOUNCE");
+		end);
+		if ok then peaceAsked[key] = turn; end
+		return ok, ok and "denounce_asked" or "throw";
+	end
+
 	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid
 	-- Requests: a completed `PROJECT_SEND_AID` gives 200, and every Gold gift
 	-- to the emergency target gives one. The Rust side sends this arm only when
@@ -11658,7 +12568,13 @@ local function applyOrder(player, pid, row, turn)
 			end
 			return placed, "found";
 		end
-		if verb == "MOVE_TO" or verb == "ATTACK" then
+		-- CAPTURE is a MOVE_TO onto an enemy civilian with the attack modifier
+		-- and without a strike ledger entry: no combat follows, the unit simply
+		-- arrives and the civilian is ours. Without the modifier the host walks
+		-- next to the civilian and stops (see `attackModifiers`); measured on
+		-- the 273 live runs that carried #2075: 65 bare MOVE_TO orders aimed at
+		-- an unguarded barbarian-held settler, zero captures.
+		if verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE" then
 			if x == nil or y == nil then return false, "no_dest"; end
 			-- ★★★★★ SEND THIS TURN'S LEG, NOT A PATH THE HOST WALKS NEXT TURN.
 			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
@@ -11681,14 +12597,16 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			if verb == "ATTACK" then
+			if verb == "ATTACK" or verb == "CAPTURE" then
 				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
 				-- a strike, and the whole army has been swinging at air.
 				local modifiers = CivvisLedger.attackModifiers();
 				if modifiers ~= nil then
 					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
 				end
-				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+				if verb == "ATTACK" then
+					CivvisLedger.strike(unit, subject, verb, x, y, turn);
+				end
 			end
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
 			if not moved then
@@ -12845,7 +13763,7 @@ CivvisQueue.drain = function(player, pid, turn)
 				elseif ready then
 					local row = entry.rows[entry.next];
 					local verb = tostring(row.verb or "");
-					if spent and (verb == "MOVE_TO" or CivvisQueue.isStrike(row)) then
+					if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or CivvisQueue.isStrike(row)) then
 						-- Nothing that needs movement can run; say why, don't ask.
 						CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
 					else

@@ -1470,3 +1470,103 @@ instrument that plays both arms under the same rules measures controllers, not
 rules.** Rules are measured against the shipped game or not at all — see the
 open item in `docs/FIDELITY.md` on verifying legality in both directions across
 the live bridge.
+
+## The engine has no Great General (2026-08-26)
+
+Recorded because a ranking asked for a Great General aura and there is
+nothing to give one to. Great People are recruited *effects*, not board
+pieces: `data/units.json` has no `great_person` class and no general unit,
+and `Game`'s `"general"` / `"admiral"` arm is a one-shot empire-wide `+1
+level` on recruitment plus 100 gold for an admiral. Civilization VI's own
+Great General is a unit that moves with an army and gives +5 combat strength
+and +1 movement to land units within two tiles — a persistent, positional
+effect that is a large part of how a real army fights, and the reason a
+player escorts one.
+
+The engine's only adjacency combat terms are `flanking_bonus` (+2 per
+adjacent friend of the attacker, once `flanking_support` is unlocked),
+`support_bonus` (the same for the defender), and one unique unit carrying
+`adjacent_combat_strength`. The support-unit auras
+(`adjacent_siege_range`, `adjacent_heal`, `adjacent_movement`,
+`adjacent_siege_bombard`) are real but none is a combat-strength aura.
+
+This is a fidelity gap in the engine, not a controller gene: a Great General
+would need a unit kind, a recruitment path that puts it on the board, an
+aura in `unit_unembarked_strength`, and a controller that keeps it alive
+behind the line. `civ6_fidelity` would be the instrument to size it.
+
+## Exact arithmetic did not make the controller fight better (2026-08-26)
+
+`exchange-is-the-engines` and `defend-where-you-stand` (`Kind::OptIn`, both
+off) replace the controller's two hand-written estimates of a fight with the
+engine's own: `melee_exchange_strengths` / `ranged_strike_strengths` in
+`exchange_score`, and the defender priced on the candidate tile with that
+tile's defence in `projected_counter_damage` and the mover's threat term.
+Both are strictly more accurate. Both measure null: `battle_bench` +10.9 ±
+11.9 and +5.4 ± 16.2, the doctrine curriculum +8.1 ± 10.3 and +2.1 ± 6.4,
+and a captured 68-war file −10.0 ± 6.7 and −13.9 ± 8.8 with healing on. They
+fire heavily — 79 and 140 of 160 skirmish seeds diverged — so this is a
+measurement, not a silent arm.
+
+The hypothesis worth testing next, from `docs/TACTICS.md` §3's own lesson
+("charge the shipped attack toll", or a change conflates two things):
+`exchange_score`'s output is compared against `attack_threshold`, and that
+threshold was calibrated against the *biased* estimate. Making the estimate
+exact without recalibrating the toll changes every accept/decline decision
+as a side effect, which is a second change riding along with the first. A
+version that re-fits `attack_threshold` to the exact scale — or that applies
+the exact pricing only to `force_focus_target`, which is pure ranking with
+no threshold — would separate them.
+
+## A six-player 250-turn screen crawls after about turn 200, and it is not a livelock (2026-08-27)
+
+Recorded because the symptom reads as a hang and the first diagnosis — mine —
+was wrong.
+
+A 1,200-game continuous-shape batch (6p, 74×46 continents, online, 250 turns,
+9 city-states) completed 226 games and then completed **none** for over two
+hours while its twelve workers burned about eleven cores. Nothing was
+deadlocked: `sample` on two workers put the main thread here, in both arms,
+including the arm with no treatment genes on at all:
+
+```
+AdvancedAi::take_turn → take_turn_inner → advanced_units
+  → advance_unit_serial → advanced_military_step_with_decline
+    → BasicAi::healing_step → retreat_step        (and safe_healing_step)
+      → BasicAi::enemy_attack_envelopes
+        → compute_enemy_attack_envelopes
+          → Game::attack_reach_from_flood → Game::flow_past
+```
+
+That is exactly the pathology `BasicAi::enemy_attack_envelopes` documents on
+itself, arriving at late-game scale: the envelope table is keyed on a
+board-wide fingerprint, `retreat_step` asks for it **per own military unit
+per turn**, and each miss is one `attack_reach` flood **per visible enemy**.
+A serial unit loop moves an own unit between two asks, which moves the
+fingerprint, so the whole table is rebuilt for the next unit. The cost is
+roughly own-units × enemy-units × flood, and on turn 200 of a six-player
+continental game both factors are large. Early games finish in about a
+minute; the late ones do not finish at all on a contended machine.
+
+**The mitigation exists and was priced and rejected.**
+`BasicAi::envelope_cache_across_own_moves` drops this seat's own units from
+the fingerprint, so the table survives a serial loop. Its own doc records the
+verdict: `--matrix --pairs 40` **retained the exact key** — parity on the
+fieldless profiles, but 43.8 % on the contested one (11 of 80 games against
+21, twelve maps to two, sign p = 0.013). It is off in production on purpose.
+The instrument that priced it — the evaluator arms — was retired on
+2026-08-23, so the flag is now an unreachable toggle in
+`docs/genome_reach_debt.json` with no route to a re-measurement.
+
+**What to do about it, in order.** (1) Do not read this as a hang: no
+watchdog, no livelock hunt, and `audit`'s livelock reading will not find it.
+(2) Size a batch by *completed* games and expect the tail to be
+disproportionately expensive; a 3,000-game rotation is not three times a
+1,000-game one. (3) The real fix is neither the coarse key nor the rejected
+one: `retreat_step` needs the table for a membership question
+(`anything_can_reach`) far more often than for the damage arithmetic, and the
+per-enemy `EnemyEnvelope { reach, sensitive }` neighbourhood keys already in
+`compute_enemy_attack_envelopes` are the shape a correct fix would extend —
+reuse an unmoved enemy's flood across an own move, without changing what any
+seat decides. That would be a perf change with a byte-identical report, which
+is the only kind this subsystem has ever accepted.

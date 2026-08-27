@@ -5,20 +5,34 @@ One row per run per subsystem, newest run first. MAE is the mean absolute error 
 
 | Run | Processed | Subsystem | Pairs | Coverage | MAE | Median | Threshold | Status |
 |---|---|---|---:|---:|---:|---:|---:|---|
-| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_science | 1750 | 100% | 0.928 | 0.002 | 0.995 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_science | 841 | 100% | 0.428 | 0.002 | 0.995 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_culture | 841 | 100% | 0.116 | 0.002 | 0.974 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_gold | 841 | 100% | 0.089 | 0.002 | 1.139 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_faith | 841 | 100% | 0.019 | 0.000 | 0.117 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_food | 841 | 100% | 0.138 | 0.000 | 0.379 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_production | 841 | 100% | 0.250 | 0.002 | 1.495 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | empire_gold_delta | 148 | 100% | 18.059 | 16.160 | 133.990 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | empire_faith_delta | 148 | 100% | 2.050 | 1.000 | 43.135 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | empire_favor_delta | 148 | 100% | 0.081 | 0.000 | 2.357 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_loyalty | 841 | 100% | 0.129 | 0.000 | 1.345 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | city_religion | 567 | 78% | 0.034 | 0.000 | 0.034 | OK |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | tourism | 0 | 0% | - | - | - | no pairs |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | combat_damage | 0 | 0% | - | - | - | no pairs |
+| [civvis-20260826T184456Z](civvis-20260826T184456Z.md) | 2026-08-26 | deal_outcome | 0 | 0% | - | - | - | no pairs |
 | [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_culture | 1750 | 100% | 0.360 | 0.002 | 0.974 | OK |
-| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_gold | 1750 | 100% | 0.673 | 0.000 | 1.139 | OK |
 | [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_faith | 1750 | 100% | 0.009 | 0.000 | 0.117 | OK |
 | [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_food | 1750 | 100% | 0.228 | 0.000 | 0.379 | OK |
-| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_production | 1750 | 100% | 1.450 | 0.003 | 1.495 | OK |
-| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | empire_gold_delta | 249 | 100% | 28.165 | 7.832 | 133.990 | OK |
-| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | empire_faith_delta | 249 | 100% | 3.132 | 0.000 | 43.135 | OK |
-| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | empire_favor_delta | 249 | 100% | 2.357 | 3.000 | 2.357 | OK |
+| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_gold | 1750 | 100% | 0.673 | 0.000 | 1.139 | OK |
 | [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_loyalty | 1750 | 100% | 1.345 | 0.000 | 1.345 | OK |
+| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_production | 1750 | 100% | 1.450 | 0.003 | 1.495 | OK |
 | [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_religion | 1531 | 77% | 0.034 | 0.000 | 0.034 | OK |
-| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | tourism | 0 | 0% | - | - | - | no pairs |
+| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | city_science | 1750 | 100% | 0.928 | 0.002 | 0.995 | OK |
 | [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | combat_damage | 0 | 0% | - | - | - | no pairs |
 | [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | deal_outcome | 0 | 0% | - | - | - | no pairs |
+| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | empire_faith_delta | 249 | 100% | 3.132 | 0.000 | 43.135 | OK |
+| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | empire_favor_delta | 249 | 100% | 2.357 | 3.000 | 2.357 | OK |
+| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | empire_gold_delta | 249 | 100% | 28.165 | 7.832 | 133.990 | OK |
+| [civvis-20260819T035349Z](civvis-20260819T035349Z.md) | 2026-08-25 | tourism | 0 | 0% | - | - | - | no pairs |
 | [civvis-20260819T081800Z](civvis-20260819T081800Z.md) | 2026-08-25 | city_culture | 2652 | 100% | 0.253 | 0.002 | 0.974 | OK |
 | [civvis-20260819T081800Z](civvis-20260819T081800Z.md) | 2026-08-25 | city_faith | 2652 | 100% | 0.029 | 0.000 | 0.117 | OK |
 | [civvis-20260819T081800Z](civvis-20260819T081800Z.md) | 2026-08-25 | city_food | 2652 | 100% | 0.245 | 0.000 | 0.379 | OK |

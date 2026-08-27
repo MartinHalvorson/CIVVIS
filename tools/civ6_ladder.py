@@ -314,6 +314,67 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
     return ledger["orders_seen"], ledger["orders_applied"]
 
 
+def combat_totals(events_path: Path) -> dict | None:
+    """What the army did, summed from the run's own `combat`, `unit_lost` and
+    `city_occupation` events: ``{kills, losses, kills_per_loss, damage_dealt,
+    damage_taken, cities_taken, cities_lost, military_units_gone}``.
+
+    ⭐ THE LADDER HAS NEVER SAID HOW THE FIGHTING WENT. It has carried
+    `applied_pct` since the bridge existed and nothing else about the army,
+    so every claim about the live seat's exchange ratio has come from
+    reading `HallofFame.sqlite` by hand or from a code comment. The mod has
+    emitted these events since the tactical ledger landed; this lifts the
+    cheap half — the half that needs only `events.jsonl`, not the run's
+    `orders.sqlite` — onto the row.
+
+    `None` when the run's mod predates the ledger and emitted no `combat`
+    event, which is a different statement from a run that fought nothing.
+    """
+    try:
+        import civ6_tactics_ledger
+    except ImportError:  # pragma: no cover - a caller that imported us by path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import civ6_tactics_ledger
+        except ImportError:
+            return None
+    events = []
+    local_player = None
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            kind = event.get("kind")
+            if kind == "seat" and isinstance(event.get("local_player"), int):
+                local_player = event["local_player"]
+            if kind in ("combat", "unit_lost", "city_occupation"):
+                events.append(event)
+    combat = civ6_tactics_ledger.combat_section(events, local_player)
+    if combat is None:
+        return None
+    roster = civ6_tactics_ledger.roster_section(events)
+    return {
+        "kills": combat["kills"],
+        "losses": combat["losses"],
+        "kills_per_loss": combat["kills_per_loss"],
+        "damage_dealt": combat["damage_dealt"],
+        "damage_taken": combat["damage_taken"],
+        "cities_taken": combat["cities_taken"],
+        "cities_lost": combat["cities_lost"],
+        "military_units_gone": roster["military_units_gone"],
+        # How many of those the seat saw coming; see
+        # `civ6_tactics_ledger.SALVAGEABLE_HP`.
+        "lost_when_salvageable": roster["lost_when_salvageable"],
+    }
+
+
 def open_events(events_path: Path):
     """Text handle over `events.jsonl`, or its gzipped copy off the ledger branch."""
     if events_path.suffix == ".gz":
@@ -768,7 +829,18 @@ def entry_from(summary: dict) -> dict:
         # launchers could withhold anything carry None — unknown, which is not
         # the same claim as "nothing was withheld".
         "withheld": summary.get("withheld"),
+        # And which genes the arm SEATED — a held-off opt-in a `--with` run
+        # added. `withheld` has always been on the row and `forced` never was,
+        # so the two halves of an arm's identity were kept apart; a row that
+        # names neither is the shipped genome.
+        "forced": summary.get("forced"),
         "mod_arms": summary.get("mod_arms"),
+        # ⭐ HOW THE ARMY FOUGHT. The ladder has carried `applied_pct` since
+        # the bridge existed and nothing about the fighting, so the seat's
+        # exchange ratio has only ever been readable by opening
+        # `HallofFame.sqlite` by hand. See `combat_totals`; `None` on a run
+        # whose mod predates the tactical ledger.
+        "combat": summary.get("combat"),
         # The opening tempo (`civ6_play.OPENING_TEMPO_TURN`). Over the 35
         # completed runs of 2026-08-16/17 these were the strongest correlates
         # the live ladder has produced: cities at t60 r=+0.69 with final lead,

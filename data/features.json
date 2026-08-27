@@ -68,7 +68,8 @@
     "impassable": true
   },
   "volcano": {
-    "impassable": true
+    "impassable": true,
+    "volcano": true
   },
   "volcanic_soil": {},
   "impact_zone": {
@@ -505,6 +506,7 @@
       "food": 2
     },
     "natural_wonder": true,
+    "volcano": true,
     "impassable": true,
     "sight_through": 2,
     "placement": {
@@ -687,6 +689,7 @@
       "production": 1
     },
     "natural_wonder": true,
+    "volcano": true,
     "impassable": true,
     "sight_through": 2,
     "placement": {
@@ -758,6 +761,7 @@
       "food": 1
     },
     "natural_wonder": true,
+    "volcano": true,
     "impassable": true,
     "sight_through": 2,
     "placement": {
