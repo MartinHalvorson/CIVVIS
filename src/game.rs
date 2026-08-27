@@ -18999,12 +18999,14 @@ impl Game {
     /// activates between 45% and 95% of them depending on disaster intensity;
     /// the answer is derived from the seed and the tile so it survives a save
     /// without being stored.
+    ///
+    /// The test is the shipped `Features_XP2.Volcano` flag, so the three
+    /// volcanic Natural Wonders stand in the lottery beside the generic cone.
     pub fn volcano_active(&self, position: Pos) -> bool {
-        if self
+        if !self
             .map
             .get(position)
-            .and_then(|tile| tile.feature.as_deref())
-            != Some("volcano")
+            .is_some_and(|tile| self.rules.is_volcano(tile))
         {
             return false;
         }
@@ -19158,7 +19160,7 @@ impl Game {
             let Some(tile) = self.map.get(position) else {
                 continue;
             };
-            if self.rules.is_water(tile) || tile.feature.as_deref() == Some("volcano") {
+            if self.rules.is_water(tile) || self.rules.is_volcano(tile) {
                 continue;
             }
             let natural_wonder = tile
@@ -19217,7 +19219,7 @@ impl Game {
             .map
             .tiles
             .iter()
-            .filter(|(_, tile)| tile.feature.as_deref() == Some("volcano"))
+            .filter(|(_, tile)| self.rules.is_volcano(tile))
             .map(|(position, _)| *position)
             .filter(|position| self.volcano_active(*position))
             .collect();
@@ -37651,9 +37653,7 @@ impl Game {
                             )
                         )
                 }),
-                nearby
-                    .iter()
-                    .any(|near| near.feature.as_deref() == Some("volcano")),
+                nearby.iter().any(|near| self.rules.is_volcano(near)),
                 nearby
                     .iter()
                     .any(|near| self.tile_is_natural_wonder(near)),

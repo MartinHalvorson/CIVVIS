@@ -14180,7 +14180,12 @@ fetchpriority=\"high\""
             .and_then(|tail| tail.split("const STRATEGIC_MOUNTAIN_ICON_SCALE").next())
             .expect("strategic Volcanic Soil renderer");
         assert!(splat.contains("nbrTile(t.pos, DIRS[side])"));
-        assert!(splat.contains("neighbor?.feature === \"volcano\""));
+        // The source edge is any volcanic feature, not the generic cone alone:
+        // Vesuvius, Kilimanjaro and Eyjafjallajokull erupt too, and soil they
+        // left used to fall through to the coordinate-seeded fallback and aim
+        // in an arbitrary direction.
+        assert!(splat.contains("isVolcano(neighbor?.feature)"));
+        assert!(!splat.contains("neighbor?.feature === \"volcano\""));
         assert!(splat.contains("cx.rotate(Math.atan2(sourceY, sourceX))"));
         assert!(splat.contains("hexPath(x, y, S); cx.clip();"));
         assert!(splat.contains("const soilFan = cx.createLinearGradient(0, 0, S + 2, 0)"));
@@ -14204,6 +14209,37 @@ fetchpriority=\"high\""
             .nth(1)
             .expect("strategic decoration pass");
         assert!(!decorations.contains("drawStrategicVolcanicSoil(t, x, y)"));
+
+        // The globe paints the same fallout and has to find the same source.
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetStrategicVolcanicSoil")
+            .nth(1)
+            .and_then(|tail| tail.split("\nfunction ").next())
+            .expect("globe Volcanic Soil renderer");
+        assert!(planet.contains("isVolcano(neighbor?.feature)"));
+        assert!(!planet.contains("neighbor?.feature === \"volcano\""));
+
+        // A volcano is the shipped `Features_XP2.Volcano` flag, which rides
+        // four features. The roster is the pre-/rules fallback, exactly as the
+        // Natural Wonder art table is.
+        let helper = EMBEDDED_INDEX
+            .split("function isVolcano(feature)")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("isVolcano helper");
+        assert!(helper.contains("VOLCANO_FEATURES.has(feature)"));
+        assert!(helper.contains("RULES.features[feature].volcano"));
+        for volcano in ["\"volcano\"", "\"vesuvius\"", "\"kilimanjaro\"", "\"eyjafjallajokull\""] {
+            assert!(
+                EMBEDDED_INDEX
+                    .split("const VOLCANO_FEATURES = new Set([")
+                    .nth(1)
+                    .and_then(|tail| tail.split("]);").next())
+                    .expect("volcano roster")
+                    .contains(volcano),
+                "the client's volcano roster is missing {volcano}"
+            );
+        }
     }
 
     #[test]
