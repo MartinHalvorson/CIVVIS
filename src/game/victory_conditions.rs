@@ -1483,7 +1483,7 @@ fn an_unemployed_citizen_pays_half_a_gold_and_nothing_else() {
     let cid = g.player_city_ids(0)[0];
     g.cities.get_mut(&cid).unwrap().loyalty = 100.0;
     // Hold the Amenity band still across the growth by supplying it.
-    g.observed_city_amenity_adjustments.insert(cid, 40);
+    std::sync::Arc::make_mut(&mut g.observed_city_amenity_adjustments).insert(cid, 40);
     let workable = g.city_citizen_plan(cid).worked_tiles.len().max(1);
     let mut pin = |pop: i32| {
         g.cities.get_mut(&cid).unwrap().pop = pop;
@@ -1530,13 +1530,13 @@ fn the_hosts_route_posts_replace_the_straight_line_walk() {
     let origin = g.player_city_ids(0)[0];
     let dest = g.player_city_ids(1)[0];
     let walked = g.trading_post_route_gold(0, origin, dest);
-    g.observed_route_posts.insert((origin, dest), (2, 1));
+    std::sync::Arc::make_mut(&mut g.observed_route_posts).insert((origin, dest), (2, 1));
     let own = g.civ_effect(0, "own_trading_post_route_gold");
     assert!(own > 0.0, "the fixture is Roman");
     assert_eq!(g.trading_post_route_gold(0, origin, dest), 2.0 * own + 1.0);
     // Only that route: nothing is known about the reverse one.
     assert!(!g.observed_route_posts.contains_key(&(dest, origin)));
-    g.observed_route_posts.clear();
+    std::sync::Arc::make_mut(&mut g.observed_route_posts).clear();
     assert_eq!(g.trading_post_route_gold(0, origin, dest), walked);
 }
 

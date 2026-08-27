@@ -14,9 +14,9 @@ fn scientist_game(seed: u64) -> (Game, u32, Pos) {
 }
 
 fn set_test_city_amenity_surplus(game: &mut Game, city: u32, surplus: i64) {
-    game.observed_city_amenity_adjustments.remove(&city);
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).remove(&city);
     let modeled = game.city_amenity_surplus(&game.cities[&city]);
-    game.observed_city_amenity_adjustments
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
         .insert(city, surplus - modeled);
 }
 
