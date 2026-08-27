@@ -3121,6 +3121,70 @@ run is not quoted: the host was at load 61 with a sibling simulation on it, and
 `docs/speed_ledger.json`'s conditions block is right that a number measured
 there is a measurement of the machine.
 
+## 2026-08-27 — the forcing-reply tie-break stopped formatting a `Debug` string it usually never needs
+
+`forcing_reply_penalty_applied` / `forcing_reply_line` (7-14% of the main
+thread; see the profiles above) hard-coded its search shape and built a
+sort-tie-break `String` eagerly for every candidate reply, whether or not the
+sort ever looked at it. Three decision-neutral changes, none touching what
+the search decides:
+
+- The extension depth (`2`, at the `forcing_reply_line` call inside
+  `forcing_reply_penalty_from_position`) and the move-ordering width
+  (`.take(4)`) are now `AdvancedAi::FORCING_REPLY_DEPTH` and
+  `FORCING_REPLY_WIDTH`, same values, with the reasoning attached at the
+  declaration instead of left implicit at the call site.
+- `reply_branches`/`ordered` used to store `format!("{reply:?}")` (or
+  `format!("{movement:?} -> {followup:?}")`) as the sort key the moment a
+  candidate was built. They now store the raw `Action`(s); the `sort_by`'s
+  `then_with` only calls the new `forcing_reply_label` helper — the same two
+  `format!` bodies, unmoved — when two candidates already tie on the primary
+  `f64` score. `total_cmp`/`String::cmp` semantics are unchanged, so the
+  final order cannot move; a unit test
+  (`ai::advanced::forcing_reply_lazy_key_tests::lazy_tie_break_matches_eager_key_ordering`)
+  sorts one synthetic candidate list (including a three-way tie) both the old
+  eager way and the new lazy way and asserts the two orders — and a
+  hand-checked expected order — are identical.
+- **Measured with a temporary, uncommitted counter** (one `AtomicU64` behind
+  `forcing_reply_label`, one at the point a candidate is queued — deleted
+  before this shipped): one 150-turn, 6-player, 9-city-state game (seed
+  7,320,000, online speed, `AdvancedAi::new()` in every seat) queued **5,913**
+  reply candidates — what the old code would have formatted unconditionally
+  — and the lazy tie-break actually called `forcing_reply_label` **2,752**
+  times, a 53.5% cut in that allocation. (The remaining 2,752 is not noise:
+  a large share of candidates score exactly `0.0` — a reply that never
+  connects with the victim — so ties are common at that one value, and
+  `sort_by`, unlike `sort_by_cached_key`, can re-invoke the comparator on the
+  same pair more than once during the sort.)
+
+**Not done, and why:** `forcing_reply_penalty_from_position` clones the
+position once per enemy seat (`after.speculative_clone()`) before resetting
+that seat's move/attack/strike state for the search. Skipping that clone for
+a seat that provably has no reachable reply would be exact, but "provably
+no reachable reply" has to reproduce two different distance thresholds
+exactly — the direct-attack test inside `forcing_attacks_to` (adjacency for
+melee, `attack_range` for ranged, plus the city/encampment strike range) and
+the wider `attack_range + 2` mobile-attacker test inside `forcing_reply_line`
+itself — kept in lockstep with whichever of those two changes next. That
+duplication risk, in a file several other agents are editing concurrently
+this session, is not a decision-neutral change I could sign off on in this
+pass, so the clone stayed. Clone/`speculative_clone` counts are therefore
+unchanged by this entry. Separately, `forcing_reply_penalty` (the
+`#[allow(dead_code)]`, tests-only sibling of `forcing_reply_penalty_applied`)
+already carries its own justification comment from #2578 explaining why it
+is kept; its callers live in `src/ai/advanced/tests.rs`, a path this task did
+not claim (owned by a concurrent PR), so it was left untouched rather than
+edited out from under that PR.
+
+Exactness: `tools/speed_ab.py` on 2 games/seed 7,320,000 (6p, 74x46, 9CS,
+150t, online) reported *"the two metrics agree, as they must when both arms
+play the same game"* — no digest mismatch across either pair. `cargo test
+--profile ci --locked advanced_v1_plays_the_same_game_it_always_did` passed.
+Per the note above the 2026-08-23 entries, the timing number from that
+`speed_ab` run is not quoted here: the host was carrying another CIVVIS
+process at the time (load average 43-49), so only the identity result is
+load-bearing.
+
 ## 2026-08-27 — three copies of the movement flood became one, and the tie-break inside it was the whole risk
 
 `Game::flow_past`, `Game::path_to` and `Game::approach_reach` were three
