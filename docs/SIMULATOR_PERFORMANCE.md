@@ -2853,3 +2853,81 @@ Two things worth keeping from the pair of readings:
   runs, fourteen paired 250-turn games in total, at load 62 and at load 2.84.
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
+
+## 2026-08-27 — purchase-price memo and a non-allocating production block key
+
+`legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation` once
+per unit kind, formation (0/1/2) and currency (gold/faith) — six full price
+derivations per unit kind per city per ask, each one walking policies,
+buildings, districts, era, game speed and Great People/religion discounts.
+`legal_actions_within`'s purchase family repeats the identical sweep, and
+several AI call sites (`ai.rs`, `ai/advanced.rs`, `gold_and_cards.rs`,
+`religion.rs`) ask the same price again elsewhere in the same turn's
+decision-making, all against a board that has not changed between asks.
+
+**The fix mirrors `producible_items` exactly rather than inventing a new
+pattern.** `QueryCache::purchase_price` memoizes
+`(pid, cid, unit, formation, currency) -> Option<f64>` and shares
+`producible`'s outlives-`QueryMemo` lifetime: it is cleared at every one of
+`producible`'s clear sites (a successful `Game::apply`, `replace_blocked_production`,
+`replace_host_competitions`, `replace_host_menus`, and both competition-start
+sites), plus one site `producible` does not need — `replace_blocked_purchases`
+— because the price's host-priced branch reads `purchase_is_blocked`
+(`blocked_purchases`) even though `producible_items` never does. Missing that
+one site was the easiest way to ship a stale price; `purchase_price_memo_tests.rs`
+has a test that pins it (buy a Warrior, then confirm a second ask correctly
+returns `None` because the land-combat slot is now filled — a stale cached
+price would wrongly still quote one).
+
+Second, `production_block_key` built a fresh `String` (`format!("formation:{unit}:{formation}")`
+and five siblings) for every candidate item at several call sites, including
+unconditionally at the top of `can_produce` and once per queued item in its
+duplicate-scan. `ProductionKey` is a `Copy` enum over `Name` (already an
+interned `u32`) standing in wherever a key is only compared or hashed;
+`production_block_key` becomes a thin `.to_block_string()` wrapper kept at the
+three external boundaries that still need a `String` — `blocked_production`,
+`blocked_purchases`, `host_buildable`/`host_purchasable` — because those maps
+cross the live mirror's serde boundary (`mirror.rs` calls
+`Game::production_block_key` directly and was left untouched). `can_produce`
+now only builds that `String` when `blocked_production`/`host_buildable`
+actually holds an entry for the city — empty on an ordinary, non-mirrored
+board — and its queue duplicate-scan compares `ProductionKey` values directly
+instead of formatting one `String` per queued item.
+
+### Measured
+
+A temporary `AtomicU64` pair (`SCRATCH_PURCHASE_COST_ASKS` incremented in the
+memoized entry point, `SCRATCH_PURCHASE_COST_DERIVATIONS` incremented only in
+the uncached derivation — a scratch build, not committed) over one standard
+6-player, 9-city-state, 150-turn game (seed 7311001, `AdvancedAi::fleet` +
+`ai::run_game`, Continents):
+
+| | |
+| --- | ---: |
+| `unit_purchase_cost_for_formation` asks | 4,375,259 |
+| of those, an actual (uncached) derivation | 2,993,698 |
+| served from the memo | 1,381,561 |
+| **reduction in full derivations** | **31.6%** |
+
+That is the honest number, not the six-fold reduction the per-city loop's
+shape might suggest: within one `legal_purchase_actions_for_city` call each
+`(unit, formation, currency)` combination is asked exactly once by
+construction, so the loop itself has no internal duplication to remove. The
+31.6% comes from the *cross-call-site* duplication the memo was built to
+catch — `legal_actions_within`'s purchase family re-asking the same combos
+`legal_purchase_actions_for_city` already priced, and the scattered
+`unit_purchase_cost` call sites re-asking a specific unit's price again later
+in the same turn — all against a board a successful `apply` has not yet
+invalidated.
+
+### Exactness
+
+`legal_purchase_actions` before/after is covered by
+`purchase_price_memo_tests::a_warm_purchase_price_memo_matches_a_cold_derivation_across_several_cities`
+(a warm ask against a cold ask, byte-identical, across a three-city fixture,
+plus every memoized answer checked against an uncached re-derivation for every
+unit/formation/currency/city). `tools/speed_ab.py` and
+`advanced_v1_plays_the_same_game_it_always_did` both agree on report digests
+before and after — see the PR body for the exact command and hashes. No
+action list changed order or content; this is a pure caching and allocation
+change.
