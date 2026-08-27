@@ -2854,6 +2854,88 @@ Two things worth keeping from the pair of readings:
   A report digest does not care what else the machine is doing, which is why it
   is the half of a paired run worth quoting when the timing is not.
 
+
+## 2026-08-27 — purchase-price memo (scoped to one `QueryMemo` guard) and a non-allocating production block key
+
+`legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
+once per unit kind, formation (0/1/2) and currency (gold/faith) — six full
+price derivations per unit kind per city per ask, each one walking policies,
+buildings, districts, era, game speed and Great People/religion discounts.
+`legal_actions_within`'s purchase family repeats the identical sweep, and
+several AI call sites (`ai.rs`, `ai/advanced.rs`, `gold_and_cards.rs`,
+`religion.rs`) ask the same price again elsewhere in the same turn's
+decision-making.
+
+### ⚠ The first design was wrong, and a pre-existing test caught it before it shipped
+
+The first cut mirrored `producible_items`: a cache keyed on
+`(pid, cid, unit, formation, currency)` that outlives `QueryMemo`, cleared
+only at explicit sites (a successful `Game::apply`, the mirror-input
+`replace_*` calls). `district_building_wonder_runtime_tests::
+land_combat_purchase_requires_an_unreserved_city_center_combat_layer` failed
+against it: `unit_purchase_cost_for_formation` reads live unit occupancy
+through `land_combat_purchase_slot_open` (`self.units_at(city.pos)`) and the
+production queue head (`city.queue.first()`), and that test edits the queue
+and calls `relocate` directly — both `pub(crate)`, neither going through
+`Game::apply` — between two otherwise-identical asks, expecting the second to
+differ. The persistent design served the first answer back stale.
+
+**The fix scopes the cache like `Game::tile_appeal`'s `appeal` field instead**
+(`QueryCache::purchase_price`, now `RefCell<Option<BTreeMap<...>>>`): armed
+only while a `QueryMemo` guard is open, cleared on that guard's outermost
+`Drop`, exactly like `appeal`, `movement`, `unit_ids` and the rest of that
+family. Outside any guard — a bare call, which is what the caught test and
+any direct-mutation caller do — the field stays `None` and every ask derives
+fresh, byte-for-byte the function's behaviour before this cache existed. That
+also makes the fix airtight against the exact bug that broke the first
+design: a `QueryMemo` guard holds `&Game`, so `Game::apply` (`&mut self`)
+cannot be called while one is alive, and `relocate`/a queue edit made outside
+any guard never had a stale answer to leave behind in the first place.
+
+The benefit this design keeps is real but narrower than the persistent one:
+it removes duplication only between calls that share one already-open guard
+(nested `query_memo()` calls inside one decision), not across separate
+top-level calls. `legal_purchase_actions_for_city` itself has no internal
+duplication to remove — each `(unit, formation, currency)` combination is
+asked exactly once per city by construction — so the saving is entirely
+cross-call-site, and how much of it survives the narrower scope depends on
+how much of the AI's purchase-pricing work already runs under one shared
+guard. The scratch `AtomicU64` measurement taken against the first (buggy)
+design read 4,375,259 asks / 2,993,698 derivations over one 150-turn game;
+that number is **retracted** along with the design it measured; a fresh
+measurement against the guard-scoped version is the next reader's first
+follow-up here, not yet re-taken under fleet time pressure.
+
+### The second half, unaffected by the above: a non-allocating production block key
+
+`production_block_key` built a fresh `String` (`format!("formation:{unit}:{formation}")`
+and five siblings) for every candidate item at several call sites, including
+unconditionally at the top of `can_produce` and once per queued item in its
+duplicate-scan. `ProductionKey` is a `Copy` enum over `Name` (already an
+interned `u32`) standing in wherever a key is only compared or hashed;
+`production_block_key` becomes a thin `.to_block_string()` wrapper kept at the
+three external boundaries that still need a `String` — `blocked_production`,
+`blocked_purchases`, `host_buildable`/`host_purchasable` — because those maps
+cross the live mirror's serde boundary (`mirror.rs` calls
+`Game::production_block_key` directly and was left untouched). `can_produce`
+now only builds that `String` when `blocked_production`/`host_buildable`
+actually holds an entry for the city — empty on an ordinary, non-mirrored
+board — and its queue duplicate-scan compares `ProductionKey` values directly
+instead of formatting one `String` per queued item. This half introduces no
+caching and carries none of the risk above: it changes only how a key is
+represented, never when or whether one is computed fresh.
+
+### Exactness
+
+`purchase_price_memo_tests.rs` covers: a warm ask matching a cold ask under
+one shared guard, across a three-city fixture, with every memoized answer
+also checked against an uncached re-derivation for every unit/formation/
+currency/city; the memo field never arming outside a guard (the shape of the
+bug above, pinned directly); and a host-priced answer reflecting a later
+purchase refusal immediately. `tools/speed_ab.py` and
+`advanced_v1_plays_the_same_game_it_always_did` both agree on report digests
+before and after — see the PR body for the exact command and hashes. No
+action list changed order or content.
 ## 2026-08-27: per-ask vision allocations paid for answers that had not moved
 
 Vision sat at roughly 9% of the main thread, and a chunk of that share was

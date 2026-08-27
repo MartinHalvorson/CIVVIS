@@ -1242,6 +1242,10 @@ type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
+/// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
+/// guard: keyed on (player, city, unit kind, formation, faith?) → price.
+type PurchasePriceMemo = BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>;
+
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
@@ -1286,6 +1290,19 @@ pub struct QueryCache {
     /// The answers are computed once per unit per memo scope instead.
     movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
+    // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
+    // for every unit kind in the ruleset, at all three formations and both
+    // currencies, and `legal_actions_within`'s purchase family repeats the
+    // same sweep, none of the asks sharing an answer. The price reads live
+    // unit occupancy (`land_combat_purchase_slot_open`) and the production
+    // queue head, both of which a caller can change without going through
+    // `Game::apply` — `relocate` and a direct queue edit are `pub(crate)`,
+    // and `land_combat_purchase_requires_an_unreserved_city_center_combat_layer`
+    // exercises exactly that from a test. So this is scoped like `appeal` and
+    // `movement`, not like `producible`: cached only for the life of one
+    // `QueryMemo` guard, which is also the only span the codebase already
+    // guarantees nothing mutates the world out from under a `&self` query.
+    purchase_price: std::cell::RefCell<Option<PurchasePriceMemo>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
@@ -1525,6 +1542,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.passage_improvements.borrow_mut() = None;
             *self.game.query_memo.movement.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
+            *self.game.query_memo.purchase_price.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
@@ -3058,6 +3076,44 @@ pub enum Item {
     Product {
         product: Name,
     },
+}
+
+/// [`Item`], reduced to exactly what [`Game::production_block_key`] hashes
+/// into a string — the `pos` an `Item::District`, `Item::Wonder` or
+/// `Item::Repair` carries never enters the key. `Name` is `Copy`, so this
+/// type is too: building one, comparing two, or hashing one touches no
+/// allocator, unlike the `String` `production_block_key` used to be the only
+/// way to ask any of those questions.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) enum ProductionKey {
+    Formation(Name, u8),
+    Unit(Name),
+    Building(Name),
+    District(Name),
+    Wonder(Name),
+    Repair(Name),
+    Project(Name),
+    Product(Name),
+}
+
+impl ProductionKey {
+    /// The `String` form external maps fed by the live mirror are keyed by
+    /// (`blocked_production`, `blocked_purchases`, `host_buildable`,
+    /// `host_purchasable`) — byte-identical to the old `production_block_key`
+    /// output. Allocate only at that boundary; an internal comparison should
+    /// use the key itself instead of calling this.
+    fn to_block_string(self) -> String {
+        match self {
+            ProductionKey::Formation(unit, formation) => format!("formation:{unit}:{formation}"),
+            ProductionKey::Unit(unit) => format!("unit:{unit}"),
+            ProductionKey::Building(building) => format!("building:{building}"),
+            ProductionKey::District(district) => format!("district:{district}"),
+            ProductionKey::Wonder(wonder) => format!("wonder:{wonder}"),
+            ProductionKey::Repair(repair) => format!("repair:{repair}"),
+            ProductionKey::Project(project) => format!("project:{project}"),
+            ProductionKey::Product(product) => format!("product:{product}"),
+        }
+    }
 }
 
 /// One row of the host's production menu for a city: what the engine says the
@@ -30695,6 +30751,7 @@ impl Game {
             *self.query_memo.passage_improvements.borrow_mut() = None;
             *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.purchase_price.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
@@ -33733,17 +33790,28 @@ impl Game {
         true
     }
 
-    pub(crate) fn production_block_key(item: &Item) -> String {
+    /// Non-allocating twin of [`Game::production_block_key`], for callers
+    /// that only ever compare or hash the key — never look it up in a
+    /// `String`-keyed map fed by the live mirror (`blocked_production`,
+    /// `blocked_purchases`, `host_buildable`, `host_purchasable`; those stay
+    /// `String`-keyed because they cross the bridge's serde boundary).
+    /// `Name` is already an interned, `Copy` id, so building this key touches
+    /// no allocator.
+    pub(crate) fn production_key(item: &Item) -> ProductionKey {
         match item {
-            Item::Formation { unit, formation } => format!("formation:{unit}:{formation}"),
-            Item::Unit { unit } => format!("unit:{unit}"),
-            Item::Building { building } => format!("building:{building}"),
-            Item::District { district, .. } => format!("district:{district}"),
-            Item::Wonder { wonder, .. } => format!("wonder:{wonder}"),
-            Item::Repair { repair, .. } => format!("repair:{repair}"),
-            Item::Project { project } => format!("project:{project}"),
-            Item::Product { product } => format!("product:{product}"),
+            Item::Formation { unit, formation } => ProductionKey::Formation(*unit, *formation),
+            Item::Unit { unit } => ProductionKey::Unit(*unit),
+            Item::Building { building } => ProductionKey::Building(*building),
+            Item::District { district, .. } => ProductionKey::District(*district),
+            Item::Wonder { wonder, .. } => ProductionKey::Wonder(*wonder),
+            Item::Repair { repair, .. } => ProductionKey::Repair(*repair),
+            Item::Project { project } => ProductionKey::Project(*project),
+            Item::Product { product } => ProductionKey::Product(*product),
         }
+    }
+
+    pub(crate) fn production_block_key(item: &Item) -> String {
+        Self::production_key(item).to_block_string()
     }
 
     pub(crate) fn replace_blocked_production(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
@@ -34400,12 +34468,13 @@ impl Game {
         if self.is_arena() && self.tactics.production == 0 {
             return false;
         }
-        let blocked = Self::production_block_key(item);
-        if self
-            .blocked_production
-            .get(&cid)
-            .is_some_and(|items| items.contains(&blocked))
-        {
+        // Both maps a block key is looked up in are keyed by the live
+        // mirror, and empty otherwise — so build the (allocating) `String`
+        // form only when a map actually holds an entry for this city, not
+        // unconditionally on every candidate item of every ordinary board.
+        if self.blocked_production.get(&cid).is_some_and(|items| {
+            !items.is_empty() && items.contains(Self::production_block_key(item).as_str())
+        }) {
             return false;
         }
         let city = &self.cities[&cid];
@@ -34417,11 +34486,15 @@ impl Game {
         // head is the host's own `producing`, listed or not at its discretion.
         if Self::host_menu_gates(item) {
             if let Some(menu) = self.host_buildable.get(&cid) {
-                if !menu.contains_key(&blocked)
+                // The queue scan below only ever compares keys, never looks
+                // one up in a `String`-keyed map, so it stays on the
+                // non-allocating `ProductionKey` throughout.
+                let key = Self::production_key(item);
+                if !menu.contains_key(key.to_block_string().as_str())
                     && !city
                         .queue
                         .iter()
-                        .any(|queued| Self::production_block_key(queued) == blocked)
+                        .any(|queued| Self::production_key(queued) == key)
                 {
                     return false;
                 }
@@ -40723,7 +40796,52 @@ impl Game {
         })
     }
 
+    /// Memoized front door for [`Game::unit_purchase_cost_for_formation_uncached`],
+    /// scoped like [`Game::tile_appeal`] rather than like `producible_items`:
+    /// cached only for the life of one [`QueryMemo`] guard (see
+    /// `QueryCache::purchase_price`), because the price reads live unit
+    /// occupancy and the production queue head, and a `QueryMemo` guard is
+    /// the one span the codebase already guarantees nothing mutates those
+    /// out from under a `&self` query. Outside any guard every call still
+    /// derives fresh, exactly as before this cache existed.
+    ///
+    /// `legal_purchase_actions_for_city` calls the uncached derivation six
+    /// times per unit kind per city (three formations, two currencies), and
+    /// `legal_actions_within`'s purchase family repeats the identical sweep
+    /// under its own guard — sharing one answer per
+    /// `(pid, cid, unit, formation, currency)` removes the duplication
+    /// between call sites that both run inside the same decision's guard.
     fn unit_purchase_cost_for_formation(
+        &self,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        formation: u8,
+        currency: &str,
+    ) -> Option<f64> {
+        let currency_is_gold = match currency {
+            "gold" => true,
+            "faith" => false,
+            // The uncached path also refuses any other currency; skip the
+            // lookups and the memo entirely rather than cache a key no real
+            // caller asks for.
+            _ => return None,
+        };
+        let key = (pid, cid, Name::new(unit), formation, currency_is_gold);
+        if let Some(memo) = self.query_memo.purchase_price.borrow().as_ref() {
+            if let Some(cached) = memo.get(&key) {
+                return *cached;
+            }
+        }
+        let cost =
+            self.unit_purchase_cost_for_formation_uncached(pid, cid, unit, formation, currency);
+        if let Some(memo) = self.query_memo.purchase_price.borrow_mut().as_mut() {
+            memo.insert(key, cost);
+        }
+        cost
+    }
+
+    fn unit_purchase_cost_for_formation_uncached(
         &self,
         pid: usize,
         cid: u32,
@@ -53362,6 +53480,9 @@ mod world_lap_tests;
 
 #[cfg(test)]
 mod purchase_gate_tests;
+
+#[cfg(test)]
+mod purchase_price_memo_tests;
 
 #[cfg(test)]
 mod unit_upgrade_price_tests;
