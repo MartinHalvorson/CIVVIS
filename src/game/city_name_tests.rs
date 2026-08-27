@@ -35,7 +35,7 @@ fn a_host_refused_site_is_not_settleable_but_its_neighbour_still_is() {
         "the site must be settleable before anything blocks it, or the test proves nothing"
     );
 
-    game.blocked_city_sites.insert(site);
+    std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(site);
     assert!(
         !game.can_found_city(settler),
         "a site Civilization VI refused must not be offered again"
@@ -162,7 +162,7 @@ fn a_host_refused_tile_offers_no_improvements() {
         panic!("the ground around a capital should contain an improvable tile");
     };
 
-    game.blocked_improvement_sites.insert(pos);
+    std::sync::Arc::make_mut(&mut game.blocked_improvement_sites).insert(pos);
     assert!(
         game.valid_improvements(0, pos).is_empty(),
         "a tile Civilization VI refused must offer nothing, or the builder loops on it"
@@ -277,7 +277,7 @@ fn a_host_refused_trade_route_is_not_offered_again() {
     let destination_city = game.place_city(1, destination, None);
     assert!(game.can_establish_trade_route(0, origin_city, destination_city));
 
-    game.blocked_trade_routes.insert((origin, destination));
+    std::sync::Arc::make_mut(&mut game.blocked_trade_routes).insert((origin, destination));
     assert!(!game.can_establish_trade_route(0, origin_city, destination_city));
 }
 
@@ -308,7 +308,7 @@ fn a_host_refused_trade_route_is_not_enumerated_either() {
     let trader = game.spawn_test_unit("trader", 0, origin);
     // The enumeration sits behind the empire capacity gate, which is zero
     // before Foreign Trade; the gate is not what this test is about.
-    game.observed_trade_capacity.insert(0, 1);
+    std::sync::Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 1);
 
     let offered = |game: &Game| {
         game.legal_actions(0).into_iter().any(|action| {
@@ -321,7 +321,7 @@ fn a_host_refused_trade_route_is_not_enumerated_either() {
     };
     assert!(offered(&game), "the fixture route must start legal");
 
-    game.blocked_trade_routes.insert((origin, destination));
+    std::sync::Arc::make_mut(&mut game.blocked_trade_routes).insert((origin, destination));
     assert!(
         !offered(&game),
         "a host-refused route must vanish from the enumeration, not \

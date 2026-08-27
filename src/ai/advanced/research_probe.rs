@@ -327,7 +327,7 @@ fn a_settler_on_a_site_it_can_no_longer_found_retires_it_and_moves_on() {
     ai.settler_targets.insert(settler, site);
     // The mirror's loyalty forecast, a host `found_refused`, or a
     // city-state's border all arrive through this one set.
-    game.blocked_city_sites.insert(site);
+    std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(site);
     assert!(!game.can_found_city(settler));
 
     game.units.get_mut(&settler).unwrap().moves_left = 2.0;
@@ -662,7 +662,7 @@ fn a_live_settler_holds_when_every_new_target_is_loyalty_doomed() {
     }
     for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
         if position != doomed {
-            game.blocked_city_sites.insert(position);
+            std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(position);
         }
     }
     let settler = game.spawn_test_unit("settler", 0, doomed);
@@ -694,6 +694,132 @@ fn a_live_settler_holds_when_every_new_target_is_loyalty_doomed() {
     assert!(
         !live.settler_targets.contains_key(&settler),
         "no doomed target is retained after exhaustion"
+    );
+}
+
+/// A global site ranking can quite reasonably put three rich, distant colonies
+/// ahead of a merely adequate nearby city. When all three are beyond the
+/// unexplored Loyalty horizon, the live controller must still try the nearby
+/// ranked site before leaving the Settler parked indefinitely.
+#[test]
+fn live_settler_uses_a_ranked_local_site_after_distant_loyalty_failures() {
+    let mut game = Game::new_full(2, 40, 24, 91_780, 250, 0, false);
+    game.current = 0;
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    let home = game.units[&founding_settler].pos;
+    game.remove_unit(founding_settler);
+    game.found_city_for(0, home, None);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.river_edges = [false; 6];
+        tile.riverside = false;
+    }
+    let known_home = game.wdisk(home, 6);
+    game.players[0].explored.clear();
+    game.players[0].explored.extend(known_home);
+
+    let local = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.wdist(home, *position) == 6)
+        .expect("fixture needs a local settlement ring");
+    let source = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.wdist(local, *position) == 8 && game.wdist(home, *position) >= 6)
+        .expect("fixture needs a starting tile within the local fallback radius");
+    let mut distant = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| {
+            game.wdist(home, *position) >= 7
+                && (9..=12).contains(&game.wdist(source, *position))
+                && game.wdist(local, *position) >= 8
+                && game
+                    .wdisk(*position, 2)
+                    .into_iter()
+                    .all(|ring| game.map.tiles.contains_key(&ring))
+        })
+        .collect::<Vec<_>>();
+    distant.sort_unstable();
+    let distant = distant.into_iter().step_by(8).take(3).collect::<Vec<_>>();
+    assert_eq!(distant.len(), 3, "fixture needs three distant colonies");
+    for site in &distant {
+        for position in game.wdisk(*site, 2) {
+            if let Some(tile) = game.map.tiles.get_mut(&position) {
+                tile.hills = true;
+                tile.resource = Some(crate::name!("rice"));
+            }
+        }
+        assert!(
+            AdvancedAi::beyond_loyalty_reach(&game, 0, *site),
+            "each rich distant site must be outside the known Loyalty halo"
+        );
+    }
+    for site in &distant {
+        let sight = game
+            .nbrs(*site)
+            .into_iter()
+            .find(|position| !distant.contains(position) && *position != local)
+            .expect("fixture needs a distinct scouting tile beside each distant site");
+        game.spawn_test_unit("scout", 0, sight);
+    }
+    for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        if position != local && !distant.contains(&position) {
+            std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(position);
+        }
+    }
+    let settler = game.spawn_test_unit("settler", 0, source);
+    game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.enable_loyalty_rate_alarm();
+    assert!(live.frontier_loyalty);
+    let selected = live
+        .best_settler_target(&game, 0, settler, 8, None)
+        .map(|(position, _)| position);
+    let ranking = live.settle_ranking(&game, 0, source, 12);
+    assert!(
+        selected.is_some_and(|position| distant.contains(&position)),
+        "the main ranking must try a richer distant site before the local fallback; \
+         home {home:?}, source {source:?}, selected {selected:?}, local {local:?}, \
+         distant {distant:?}, ranking {ranking:?}"
+    );
+    assert!(
+        live.advanced_settler_step(&mut game, 0, settler),
+        "a verified-safe local site must replace a string of doomed distant targets"
+    );
+    assert_eq!(live.settler_targets.get(&settler), Some(&local));
+    for site in distant {
+        assert!(
+            live.settler_site_is_dead(settler, site),
+            "the live Loyalty gate must still retire every distant failure"
+        );
+    }
+    assert!(
+        !live.settler_site_is_dead(settler, local),
+        "the safe local fallback must remain viable"
     );
 }
 
@@ -1769,7 +1895,7 @@ fn wartime_reinforcement_marches_the_standing_rear_to_the_objective() {
         .into_iter()
         .find(|pos| {
             *pos != after
-                && game.units_at(*pos).is_empty()
+                && game.unit_ids_at(*pos).is_empty()
                 && game.city_at(*pos).is_none()
                 && game
                     .map
