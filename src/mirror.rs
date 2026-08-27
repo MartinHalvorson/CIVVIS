@@ -21045,18 +21045,18 @@ pub(crate) enum MirrorMode {
     Sync,
 }
 
-/// A step runs on the rebuild pass.
-const ON_REBUILD: u8 = 1;
-/// A step runs on the sync pass.
-const ON_SYNC: u8 = 2;
+/// A step runs on the rebuild pass only.
+const REBUILD: u8 = 1;
+/// A step runs on the sync pass only.
+const SYNC: u8 = 2;
 /// A step runs on both passes — what almost every step is.
-const ON_BOTH: u8 = ON_REBUILD | ON_SYNC;
+const BOTH: u8 = REBUILD | SYNC;
 
 impl MirrorMode {
     const fn bit(self) -> u8 {
         match self {
-            MirrorMode::Rebuild => ON_REBUILD,
-            MirrorMode::Sync => ON_SYNC,
+            MirrorMode::Rebuild => REBUILD,
+            MirrorMode::Sync => SYNC,
         }
     }
 }
@@ -21173,13 +21173,13 @@ impl<'a> HostStepCtx<'a> {
     }
 }
 
-/// One entry of [`HOST_STATE_STEPS`]: the phase it belongs to, its NAME, the
-/// passes that take it, and what it does.
+/// One entry of [`HOST_STATE_STEPS`]: its NAME, the passes that take it, and
+/// what it does.
 ///
 /// The name is what the tests record, so a step that appears on one pass only
 /// is a failure with a name on it rather than a live seat that quietly drifts.
 /// A tuple rather than a struct so the table below stays a readable list.
-type HostStep = (HostPhase, &'static str, u8, fn(&mut HostStepCtx<'_>));
+type HostStep = (&'static str, u8, fn(&mut HostStepCtx<'_>));
 
 /// ⚠⚠ THE ORDERED HOST-STATE STEP LIST — THE ONE COPY.
 ///
@@ -21203,61 +21203,95 @@ type HostStep = (HostPhase, &'static str, u8, fn(&mut HostStepCtx<'_>));
 /// the sync UNIONS some of them into what the caller already added and runs
 /// them before `Empire`. Different position, different bodies — folding them in
 /// would hide the difference rather than state it.
-const HOST_STATE_STEPS: &[HostStep] = &[
-    // --- empire ---------------------------------------------------------
-    (HostPhase::Empire, "game_speed", ON_REBUILD, step_game_speed),
-    (HostPhase::Empire, "seat_victories", ON_REBUILD, step_seat_victories),
-    (HostPhase::Empire, "difficulty", ON_REBUILD, step_difficulty),
-    (HostPhase::Empire, "human_seat", ON_REBUILD, step_human_seat),
-    (HostPhase::Empire, "map_script", ON_REBUILD, step_map_script),
-    (HostPhase::Empire, "refused_site_blocks", ON_REBUILD, step_refused_site_blocks),
-    (HostPhase::Empire, "identity", ON_BOTH, step_identity),
-    // --- economy --------------------------------------------------------
-    (HostPhase::Economy, "turn_and_score", ON_BOTH, step_turn_and_score),
-    (HostPhase::Economy, "max_turns", ON_REBUILD, step_max_turns),
-    // ⚠ The treasury is read BEFORE the maintenance bill on the rebuild and
-    // AFTER it on the sync. Both orders are what shipped; neither helper reads
-    // what the other writes (`host_maintenance` is its own map, the gold lands
-    // on `players[0]`), so the two entries are kept where they were rather than
-    // moved onto one line and quietly changing a live board.
-    (HostPhase::Economy, "host_gold", ON_REBUILD, step_host_gold),
-    (HostPhase::Economy, "host_maintenance", ON_BOTH, step_host_maintenance),
-    (HostPhase::Economy, "host_gold", ON_SYNC, step_host_gold),
-    (HostPhase::Economy, "faith_and_dvp", ON_BOTH, step_faith_and_dvp),
-    (HostPhase::Economy, "congress_dvp", ON_BOTH, step_congress_dvp),
-    (HostPhase::Economy, "host_competitions", ON_BOTH, step_host_competitions),
-    (HostPhase::Economy, "diplomatic_favor", ON_BOTH, step_diplomatic_favor),
-    (HostPhase::Economy, "mirrored_envoys_free", ON_BOTH, step_mirrored_envoys_free),
-    (HostPhase::Economy, "player_religion", ON_BOTH, step_player_religion),
-    // --- refresh (sync only) --------------------------------------------
-    // Newly revealed ground, and the traversability prior redrawn beyond it.
-    // The rebuild has nothing to refresh: it has not planted a city yet, and its
-    // own terrain pass is the board phase below.
-    (HostPhase::Refresh, "terrain", ON_SYNC, step_terrain),
-    (HostPhase::Refresh, "territory", ON_SYNC, step_territory),
-    (HostPhase::Refresh, "city_memory", ON_SYNC, step_city_memory),
-    // --- board ----------------------------------------------------------
-    // ⚠ The trade routes are restored BEFORE the terrain passes on the sync and
-    // after `city_memory` on the rebuild. Kept where each pass had them.
-    (HostPhase::Board, "trade_routes", ON_SYNC, step_trade_routes),
-    (HostPhase::Board, "terrain", ON_BOTH, step_terrain),
-    (HostPhase::Board, "territory", ON_BOTH, step_territory),
-    (HostPhase::Board, "tile_memory", ON_BOTH, step_tile_memory),
-    (HostPhase::Board, "city_memory", ON_BOTH, step_city_memory),
-    (HostPhase::Board, "trade_routes", ON_REBUILD, step_trade_routes),
-    (HostPhase::Board, "governor_state", ON_BOTH, step_governor_state),
-    (HostPhase::Board, "host_envoys", ON_BOTH, step_host_envoys),
-    (HostPhase::Board, "great_person_points", ON_BOTH, step_great_person_points),
-    (HostPhase::Board, "strategic_stockpiles", ON_BOTH, step_strategic_stockpiles),
-    (HostPhase::Board, "player_ages", ON_BOTH, step_player_ages),
-    (HostPhase::Board, "host_congress", ON_BOTH, step_host_congress),
-    (HostPhase::Board, "observed_host_metrics", ON_BOTH, step_observed_host_metrics),
-    (HostPhase::Board, "loyalty_doomed_sites", ON_BOTH, step_loyalty_doomed_sites),
-    // --- finish ---------------------------------------------------------
-    (HostPhase::Finish, "player_ages", ON_BOTH, step_player_ages),
-    (HostPhase::Finish, "host_climate", ON_BOTH, step_host_climate),
-    (HostPhase::Finish, "record_host_observed", ON_BOTH, step_record_host_observed),
+const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
+    (
+        HostPhase::Empire,
+        &[
+            ("game_speed", REBUILD, step_game_speed),
+            ("seat_victories", REBUILD, step_seat_victories),
+            ("difficulty", REBUILD, step_difficulty),
+            ("human_seat", REBUILD, step_human_seat),
+            ("map_script", REBUILD, step_map_script),
+            ("refused_site_blocks", REBUILD, step_refused_site_blocks),
+            ("identity", BOTH, step_identity),
+        ],
+    ),
+    (
+        HostPhase::Economy,
+        &[
+            ("turn_and_score", BOTH, step_turn_and_score),
+            ("max_turns", REBUILD, step_max_turns),
+            // ⚠ The treasury is read BEFORE the maintenance bill on the
+            // rebuild and AFTER it on the sync. Both orders are what shipped;
+            // neither helper reads what the other writes (`host_maintenance`
+            // is its own map, the gold lands on `players[0]`), so the two
+            // entries stay where they were rather than being moved onto one
+            // line and quietly changing a live board.
+            ("host_gold", REBUILD, step_host_gold),
+            ("host_maintenance", BOTH, step_host_maintenance),
+            ("host_gold", SYNC, step_host_gold),
+            ("faith_and_dvp", BOTH, step_faith_and_dvp),
+            ("congress_dvp", BOTH, step_congress_dvp),
+            ("host_competitions", BOTH, step_host_competitions),
+            ("diplomatic_favor", BOTH, step_diplomatic_favor),
+            ("mirrored_envoys_free", BOTH, step_mirrored_envoys_free),
+            ("player_religion", BOTH, step_player_religion),
+        ],
+    ),
+    (
+        HostPhase::Refresh,
+        &[
+            // Newly revealed ground, and the traversability prior redrawn
+            // beyond it. The rebuild has nothing to refresh: it has not planted
+            // a city yet, and its own terrain pass is the board phase below.
+            ("terrain", SYNC, step_terrain),
+            ("territory", SYNC, step_territory),
+            ("city_memory", SYNC, step_city_memory),
+        ],
+    ),
+    (
+        HostPhase::Board,
+        &[
+            // ⚠ The trade routes are restored BEFORE the terrain passes on the
+            // sync and after `city_memory` on the rebuild. Kept where each pass
+            // had them.
+            ("trade_routes", SYNC, step_trade_routes),
+            ("terrain", BOTH, step_terrain),
+            ("territory", BOTH, step_territory),
+            ("tile_memory", BOTH, step_tile_memory),
+            ("city_memory", BOTH, step_city_memory),
+            ("trade_routes", REBUILD, step_trade_routes),
+            ("governor_state", BOTH, step_governor_state),
+            ("host_envoys", BOTH, step_host_envoys),
+            ("great_person_points", BOTH, step_great_person_points),
+            ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
+            ("player_ages", BOTH, step_player_ages),
+            ("host_congress", BOTH, step_host_congress),
+            ("observed_host_metrics", BOTH, step_observed_host_metrics),
+            ("loyalty_doomed_sites", BOTH, step_loyalty_doomed_sites),
+        ],
+    ),
+    (
+        HostPhase::Finish,
+        &[
+            ("player_ages", BOTH, step_player_ages),
+            ("host_climate", BOTH, step_host_climate),
+            ("record_host_observed", BOTH, step_record_host_observed),
+        ],
+    ),
 ];
+
+/// The steps of one phase, in the order [`HOST_STATE_STEPS`] lists them.
+fn steps_of(phase: HostPhase) -> &'static [HostStep] {
+    HOST_STATE_STEPS
+        .iter()
+        .find(|(listed, _)| *listed == phase)
+        .map(|(_, steps)| *steps)
+        // A phase with no entry would silently apply nothing, which is the very
+        // failure this table exists to catch — so the recorded-order test names
+        // every phase and every step it must hold.
+        .unwrap_or_default()
+}
 
 /// Run every step of `phase` that `ctx.mode` takes, in table order.
 fn run_host_steps(ctx: &mut HostStepCtx<'_>, phase: HostPhase) {
@@ -21265,8 +21299,8 @@ fn run_host_steps(ctx: &mut HostStepCtx<'_>, phase: HostPhase) {
     // culture as the `CIVVIS_SYNC_NO_*` bisects — which step a board picked up a
     // wrong reading from is otherwise invisible from outside the process.
     let trace = std::env::var("CIVVIS_MIRROR_STEP_TRACE").is_ok();
-    for &(step_phase, name, modes, run) in HOST_STATE_STEPS {
-        if step_phase == phase && modes & ctx.mode.bit() != 0 {
+    for &(name, modes, run) in steps_of(phase) {
+        if modes & ctx.mode.bit() != 0 {
             if trace {
                 eprintln!("[host-step] {:?} {:?} {name}", ctx.mode, phase);
             }
@@ -21278,10 +21312,10 @@ fn run_host_steps(ctx: &mut HostStepCtx<'_>, phase: HostPhase) {
 /// The ordered step names `mode` runs in `phase` — the driver's own walk, named.
 #[cfg(test)]
 pub(crate) fn host_step_names(mode: MirrorMode, phase: HostPhase) -> Vec<&'static str> {
-    HOST_STATE_STEPS
+    steps_of(phase)
         .iter()
-        .filter(|(step_phase, _, modes, _)| *step_phase == phase && modes & mode.bit() != 0)
-        .map(|(_, name, _, _)| *name)
+        .filter(|(_, modes, _)| modes & mode.bit() != 0)
+        .map(|(name, _, _)| *name)
         .collect()
 }
 
