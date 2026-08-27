@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `capture-go-or-stand-down` | off (unmeasured) | A declared war's objective nobody of ours has been near for `CAPTURE_GO_TURNS` consecutive turns is stood down explicitly and the strategy re-assessed, instead of being held unprosecuted. | 1 \| 1 |
+| `commitment-patience` | off (unmeasured) | A settle or improve target survives a passing threat, and the commitment ledger retires it after `COMMITMENT_PATIENCE` consecutive forgotten turns, parking the site. | 1 \| 1 |
 | `island-exploration` | off (unmeasured) | Once the Palace landmass has at most two independent city sites left, rebuild a naval eye and favor water that can reveal a known foreign landfall. | 1 \| 1 |
 | `overseas-settlement` | off (unmeasured) | When the main landmass has little room left, route a Settler to the nearest viable foreign site the player has discovered. | 1 \| 1 |
 | `relief-column-marches` | **on** (unmeasured) | A force group beyond `THREAT_RELIEF_RADIUS` of the threatened city is a relief column: it advances on the siege when locally superior, holds at the city when too weak, and while a city is threatened focuses only on combatants and cities. | 1 \| 1 |
