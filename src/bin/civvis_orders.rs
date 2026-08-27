@@ -6314,6 +6314,31 @@ fn main() {
             .filter(|kind| !game.great_person_class_earnable(0, kind))
             .cloned()
             .collect::<Vec<_>>();
+        // What crossed for the first time on 2026-08-26, read back from the
+        // board it landed on: the host's climate beside the phase it set, the
+        // request each city-state is making, and the routes the host priced.
+        let quests: Vec<serde_json::Value> = game.players[0]
+            .quests
+            .iter()
+            .map(|(minor, quest)| {
+                serde_json::json!({
+                    "minor": game.players.get(*minor).map(|player| player.civ.clone()),
+                    "kind": quest.kind,
+                    "target": quest.target,
+                })
+            })
+            .collect();
+        let route_options: Vec<serde_json::Value> = game
+            .observed_route_options
+            .iter()
+            .map(|((origin, destination), yields)| {
+                serde_json::json!({
+                    "origin": game.cities.get(origin).map(|city| city.name.to_string()),
+                    "dest": game.cities.get(destination).map(|city| city.name.to_string()),
+                    "yields": yields,
+                })
+            })
+            .collect();
         println!(
             "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
              \"unresolved_terrain\":{{{}}},\"plots\":[{}],\"cities\":{},\
@@ -6322,7 +6347,9 @@ fn main() {
              \"empire_yields\":{},\"model_empire_yields\":{},\
              \"player_extras\":{},\"unused_great_person_faith\":{},\
              \"great_person_points_per_turn\":{},\"unused_great_person_classes\":{},\
-             \"host_faith_per_turn\":{}}}",
+             \"host_faith_per_turn\":{},\"climate_phase\":{},\"climate\":{},\
+             \"quests\":{},\"route_options\":{},\"observed_appeal\":{},\
+             \"host_observed\":{}}}",
             state.turn,
             width,
             height,
@@ -6342,6 +6369,12 @@ fn main() {
             serde_json::to_string(&great_person_points_per_turn).unwrap(),
             serde_json::to_string(&unused_great_person_classes).unwrap(),
             serde_json::to_string(&state.faith_per_turn).unwrap(),
+            game.climate_phase,
+            serde_json::to_string(&game.observed_climate).unwrap(),
+            serde_json::to_string(&quests).unwrap(),
+            serde_json::to_string(&route_options).unwrap(),
+            game.observed_appeal.len(),
+            game.host_observed.len(),
         );
         return;
     }
@@ -11839,6 +11872,9 @@ mod tests {
             rt: None,
             rp: false,
             yl: None,
+            ap: None,
+            np: false,
+            vis: false,
         }
     }
 
