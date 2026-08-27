@@ -5028,6 +5028,26 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// `relief-column-marches`: a force group standing beyond
+    /// `THREAT_RELIEF_RADIUS` of the threatened city is a relief column, not
+    /// part of that city's defence. It advances on the siege when it is
+    /// locally superior; too weak, it holds AT the city — reinforcing the
+    /// garrison — rather than at its own centroid; and while any city is
+    /// threatened its focus is a combatant or a city, never a religious or
+    /// civilian unit. A group inside the radius holds its ring as before.
+    ///
+    /// ⚠ Run `civvis-20260827T113726Z`, t160–164: China declared at 430
+    /// military against our 1,071 and put Artillery, a Field Cannon, three
+    /// Infantry and two Cuirassiers on Aquileia (pop 15, walled, no
+    /// garrison). Our main army — seven units, 1.58 local strength against
+    /// that stack, objective the besieger at (20,30) — logged "will hold —
+    /// held back to cover a threat" on every frame of every turn and stood
+    /// at x=7–13, nine hexes west, because `relieving` was
+    /// `plan.threatened_city.is_some()` and Hold's mover target is the
+    /// group's own anchor. The city fell on t164. #354 shipped this reach
+    /// test off as `scoped_relief_hold` after an inconclusive sim pairing;
+    /// #1194 pruned it. See `rebuild_force_groups`.
+    relief_column_marches: bool,
     /// Stop paying the entry fee for a religion race that is already closed.
     ///
     /// ★★★★ THE PRIZE IS GATED AND THE FEE IS NOT -- AND THE RACE IS OVER.
@@ -5222,6 +5242,16 @@ pub struct AdvancedAi {
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-city-reserve`: while a city of ours is threatened
+    /// (`plan.threatened_city`) or bleeding (`native_city_emergency`), every
+    /// ordinary Gold purchase — the strategic buyer here and the baseline
+    /// `spend_gold` — leaves one emergency defender's price in the treasury.
+    /// The same run bought a Water Mill in Rome at t160 (399 Gold, Aquileia
+    /// named under threat that turn, a Line Infantry at 360) and a Market in
+    /// Aquileia itself at t162 with its walls half down, leaving 29 Gold the
+    /// turn the emergency purchase first became legal. See
+    /// `advanced/gold_and_cards.rs`.
+    threatened_city_reserve: bool,
     /// The two yield-floor shortfalls, computed once a seat-turn. See
     /// `advanced/yield_floors.rs`.
     yield_floor_frame: RefCell<yield_floors::YieldFloorFrame>,
@@ -6476,6 +6506,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            relief_column_marches: false,
             religion_race_is_closed: false,
             peace_when_war_does_not_pay: false,
             quest_production: false,
@@ -6501,6 +6532,7 @@ impl AdvancedAi {
             siege_is_progress_2: false,
 
             // ---- append: t-z ----------------------------------------
+            threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
             treasury_at_work: false,
             treasury_at_work_2: false,
@@ -16742,6 +16774,10 @@ impl AdvancedAi {
         // unchanged while both versions are off. See
         // `advanced/gold_and_cards.rs`.
         let reserve = self.working_treasury_reserve(g, pid, reserve);
+        // `threatened-city-reserve`: never below one emergency defender
+        // while a city of ours is threatened or bleeding. `stock` comes back
+        // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
+        let reserve = self.reserve_for_the_threatened_city(g, pid, plan, reserve);
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -28599,6 +28635,26 @@ impl AdvancedAi {
         None
     }
 
+    /// `relief_column_marches`: where a holding group stands while a city of
+    /// ours is threatened and the group is beyond `THREAT_RELIEF_RADIUS` of
+    /// it — the city itself, so a column too weak to break the siege still
+    /// reinforces the garrison instead of standing at its own centroid. The
+    /// mover's role spacing then arranges it around the centre the way it
+    /// arranges a ring around any objective. `None` for a group inside the
+    /// radius (it holds its ring as before), with no threatened city, and
+    /// with the gene off.
+    fn relief_hold_point(&self, g: &Game, group: &ForceGroup) -> Option<Pos> {
+        if !self.relief_column_marches {
+            return None;
+        }
+        let city = self
+            .plan
+            .as_ref()?
+            .threatened_city
+            .and_then(|cid| g.cities.get(&cid))?;
+        (g.wdist(group.anchor, city.pos) > THREAT_RELIEF_RADIUS).then_some(city.pos)
+    }
+
     fn force_anchor(g: &Game, units: &[u32]) -> Pos {
         units
             .iter()
@@ -28799,6 +28855,14 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> Option<Pos> {
         let visible = self.battlefront_visibility(g, pid);
+        // `relief_column_marches`: with a city under threat, only a
+        // combatant or a city can be the force's focus. See
+        // `rebuild_force_groups`.
+        let combatants_only = self.relief_column_marches && plan.threatened_city.is_some();
+        let is_contact = |other: u32| {
+            enemies.contains(&g.units[&other].owner)
+                && (!combatants_only || g.rules.units[g.units[&other].kind].class == "military")
+        };
         let mut targets = BTreeSet::new();
         for uid in units {
             let unit = &g.units[uid];
@@ -28818,9 +28882,12 @@ impl AdvancedAi {
                             .city_at(pos)
                             .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
                             || g.units_at(pos).into_iter().any(|other| {
-                                enemies.contains(&g.units[&other].owner)
-                                    && self.battlefront_unit_visible(g, pid, other)
+                                is_contact(other) && self.battlefront_unit_visible(g, pid, other)
                             }))
+                } else if combatants_only {
+                    g.city_at(pos)
+                        .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
+                        || g.units_at(pos).into_iter().any(is_contact)
                 } else {
                     self.base.is_enemy_tile(g, pos, enemies)
                 };
@@ -29118,7 +29185,27 @@ impl AdvancedAi {
                 low_hp_unit || capturable_city
             });
             let arena = g.is_arena();
-            let relieving = plan.threatened_city.is_some();
+            // `relief_column_marches`: how far this group stands from the
+            // threatened city, when there is one. Inside
+            // `THREAT_RELIEF_RADIUS` it is part of the defence and holds its
+            // ring; beyond it, it is a column that has to get there.
+            let relief_distance = plan
+                .threatened_city
+                .and_then(|cid| g.cities.get(&cid))
+                .map(|city| g.wdist(anchor, city.pos));
+            let relieving = if self.relief_column_marches {
+                relief_distance.is_some_and(|distance| distance <= THREAT_RELIEF_RADIUS)
+            } else {
+                plan.threatened_city.is_some()
+            };
+            let relief_column = self.relief_column_marches
+                && !arena
+                && relief_distance.is_some_and(|distance| distance > THREAT_RELIEF_RADIUS);
+            // While a city is threatened a column's contact is a combatant:
+            // an Apostle or a Builder standing beside the army must not hold
+            // it in "Engage" nine hexes from the siege (t160 of the same run,
+            // "crossbowman declines apostle" on every frame).
+            let combatants_only = self.relief_column_marches && plan.threatened_city.is_some();
             // Recovery is a bounded defensive posture when it was selected
             // solely because the empire is globally outmatched. A fogged
             // enemy city can still make the local ratio read 3.00, but that
@@ -29178,6 +29265,7 @@ impl AdvancedAi {
                                 || (g.sees(&visible, enemy.pos)
                                     && self.battlefront_unit_visible(g, pid, enemy.id)))
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
+                            && (!combatants_only || g.rules.units[enemy.kind].class == "military")
                             && (locally_superior
                                 || plan.threatened_city.is_some()
                                 || enemy.hp <= 35)
@@ -29185,6 +29273,11 @@ impl AdvancedAi {
                 }))
             {
                 ForcePosture::Engage
+            } else if relief_column && locally_superior {
+                // `relief_column_marches`: a column strong enough to break
+                // the siege marches on it now — it does not wait to muster,
+                // because the city cannot wait for its stragglers.
+                ForcePosture::Advance
             } else if !arena && (relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR) {
                 ForcePosture::Hold
             } else if !arena && units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
@@ -29300,6 +29393,9 @@ impl AdvancedAi {
         let role = Self::force_role(g, uid);
         let spec = &g.rules.units[unit.kind];
         let target = match group.posture {
+            ForcePosture::Hold if self.relief_column_marches => {
+                self.relief_hold_point(g, group).unwrap_or(group.anchor)
+            }
             ForcePosture::Muster | ForcePosture::Hold | ForcePosture::Recover => group.anchor,
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             ForcePosture::Advance => group.objective,
@@ -34186,6 +34282,10 @@ impl AdvancedAi {
         {
             let counts = self.counts(g, pid);
             let cities = g.player_city_ids(pid);
+            // `threatened-city-reserve`: the baseline buyer is the one that
+            // actually spends on the live seat (its wartime reserve is
+            // 40 + 10 a city); hand it the same floor for this call only.
+            self.base.reserve_floor = self.threatened_city_gold_floor(g, pid, &plan);
             self.base.spend_gold(
                 g,
                 pid,
@@ -34197,6 +34297,7 @@ impl AdvancedAi {
                 counts.melee,
                 counts.ranged,
             );
+            self.base.reserve_floor = 0.0;
         }
         if self.victory_planning {
             self.advanced_command_actions(g, pid, &plan);
