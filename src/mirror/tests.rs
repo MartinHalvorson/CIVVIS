@@ -598,8 +598,7 @@ fn frontier_access_never_turns_unknown_into_mock_land_or_water() {
     );
 
     let saved = serde_json::to_string(&game).expect("the mirror game saves");
-    let loaded: crate::game::Game =
-        serde_json::from_str(&saved).expect("the mirror game reloads");
+    let loaded: crate::game::Game = serde_json::from_str(&saved).expect("the mirror game reloads");
     assert!(loaded.rules.is_unknown(&loaded.map.tiles[&frontier]));
     assert!(loaded.map.tiles[&frontier].assumed_traversable);
 
@@ -724,8 +723,7 @@ fn the_fog_beyond_charted_water_is_the_seas_frontier() {
     apply_terrain(&mut game, &snapshot);
     assert!(game.map.tiles[&edge].assumed_navigable);
     let saved = serde_json::to_string(&game).expect("the mirror game saves");
-    let loaded: crate::game::Game =
-        serde_json::from_str(&saved).expect("the mirror game reloads");
+    let loaded: crate::game::Game = serde_json::from_str(&saved).expect("the mirror game reloads");
     assert!(loaded.map.tiles[&edge].assumed_navigable);
     grow_frontier(&mut game, &snapshot, 0);
     assert!(!game.map.tiles[&edge].assumed_navigable);
@@ -1229,8 +1227,7 @@ fn a_refused_wonder_is_read_from_the_building_key_not_the_district_key() {
     // And it translates through the shipped wonder table, dropping the bare hash
     // rather than inserting a name that matches nothing.
     let rules = crate::rules::Rules::embedded();
-    let city_ids: std::collections::BTreeMap<u32, i64> =
-        [(7u32, 65536i64)].into_iter().collect();
+    let city_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 65536i64)].into_iter().collect();
     let blocked = blocked_wonders_from(&wonders, &city_ids, &rules);
     assert_eq!(
         blocked.get(&7).map(|set| set.len()),
@@ -1295,8 +1292,7 @@ fn a_refused_district_cools_down_like_every_other_production_refusal() {
     // ⚠ The half that was dead code: the name has to survive translation into a
     // key `Game::can_produce` actually checks.
     let rules = crate::rules::Rules::embedded();
-    let city_ids: std::collections::BTreeMap<u32, i64> =
-        [(7u32, 65536i64)].into_iter().collect();
+    let city_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 65536i64)].into_iter().collect();
     let blocked = blocked_production_from(&refused, &city_ids, &rules);
     let keys = blocked.get(&7).expect("translated block for the city");
     assert!(
@@ -1994,13 +1990,9 @@ fn the_hosts_upgrade_verdict_prices_the_lane_and_a_named_block_silences_it() {
             .game
             .unit_gold_upgrade_detail(0, uid)
             .map(|(to, gold, _)| (to.to_string(), gold));
-        let lane = mirror
-            .game
-            .legal_unit_upgrade_actions(0)
-            .iter()
-            .any(|action| {
-                matches!(action, crate::game::Action::UpgradeUnit { unit } if *unit == uid)
-            });
+        let lane = mirror.game.legal_unit_upgrade_actions(0).iter().any(
+            |action| matches!(action, crate::game::Action::UpgradeUnit { unit } if *unit == uid),
+        );
         (offer, lane)
     };
 
@@ -3811,8 +3803,7 @@ fn exact_city_economy_and_great_work_survive_reconstruction() {
     assert_eq!(recon.game.city_yields(cid), host_yields);
 
     let saved = serde_json::to_string(&recon.game).expect("save exact city mirror");
-    let loaded: crate::game::Game =
-        serde_json::from_str(&saved).expect("load exact city mirror");
+    let loaded: crate::game::Game = serde_json::from_str(&saved).expect("load exact city mirror");
     assert_eq!(
         loaded.city_citizen_plan(cid).worked_tiles,
         plan.worked_tiles
@@ -4721,8 +4712,8 @@ fn corrections_are_measured_after_population_and_dedications_are_on_the_board() 
 }
 
 #[test]
-fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_before_the_correction(
-) {
+fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_before_the_correction()
+{
     let side = 16;
     let plots: Vec<Plot> = (0..side)
         .flat_map(|x| {
@@ -4936,8 +4927,7 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
 #[test]
 fn host_resolutions_translate_into_the_models_congress_vocabulary() {
     let rules = crate::rules::Rules::shipped();
-    let seats: std::collections::BTreeMap<usize, usize> =
-        [(0, 0), (5, 2)].into_iter().collect();
+    let seats: std::collections::BTreeMap<usize, usize> = [(0, 0), (5, 2)].into_iter().collect();
     let map = |kind: &str, option: i64, target: &str| {
         civvis_congress_effect(
             &rules,
@@ -5360,8 +5350,8 @@ fn a_host_quest_seats_the_city_states_request_on_the_pair() {
         chunk: 1,
         plots: vec![plot(6, 6, "TERRAIN_PLAINS"), plot(12, 6, "TERRAIN_PLAINS")],
     }]);
-    let minor = |player: usize, civ: &str, x: i32, y: i32, quests: Option<Vec<StateQuest>>| {
-        StateMinor {
+    let minor =
+        |player: usize, civ: &str, x: i32, y: i32, quests: Option<Vec<StateQuest>>| StateMinor {
             player,
             civ: civ.to_string(),
             cities: vec![StateCity {
@@ -5374,8 +5364,7 @@ fn a_host_quest_seats_the_city_states_request_on_the_pair() {
             }],
             quests,
             ..StateMinor::default()
-        }
-    };
+        };
     let mut state = StateSnapshot {
         turn: 30,
         minors: vec![
@@ -5470,8 +5459,8 @@ fn rival_envoy_counts_cross_and_a_missing_list_keeps_the_minimum_winning_seed() 
         chunk: 1,
         plots: vec![plot(6, 6, "TERRAIN_PLAINS")],
     }]);
-    let state = |envoys: i64, suzerain: i32, most: i64, counts: Option<Vec<(i64, i64)>>| {
-        StateSnapshot {
+    let state =
+        |envoys: i64, suzerain: i32, most: i64, counts: Option<Vec<(i64, i64)>>| StateSnapshot {
             turn: 30,
             rivals: vec![StateRival {
                 player: 3,
@@ -5502,8 +5491,7 @@ fn rival_envoy_counts_cross_and_a_missing_list_keeps_the_minimum_winning_seed() 
                 ..StateMinor::default()
             }],
             ..StateSnapshot::default()
-        }
-    };
+        };
     let seat = |game: &crate::game::Game| {
         game.players
             .iter()
@@ -6727,8 +6715,7 @@ fn a_host_approved_district_site_reopens_the_same_city() {
             break;
         }
     }
-    let (district, site) =
-        candidate.expect("an unlocked grown city needs a buildable district");
+    let (district, site) = candidate.expect("an unlocked grown city needs a buildable district");
 
     Arc::make_mut(&mut game.blocked_districts)
         .entry(city)
@@ -7269,8 +7256,7 @@ fn a_civ6_name_that_truncates_a_civvis_one_resolves_only_when_unambiguous() {
     // district; without the boundary check it would swallow anything starting
     // "dam...".
     assert!(
-        civvis_node_name(&rules.districts, "DISTRICT_DAM", "DISTRICT_").as_deref()
-            == Some("dam"),
+        civvis_node_name(&rules.districts, "DISTRICT_DAM", "DISTRICT_").as_deref() == Some("dam"),
         "an exact short name resolves to itself, not to a longer neighbour"
     );
     // A name CIVVIS genuinely does not have still answers None rather than
@@ -8494,10 +8480,9 @@ fn a_promotion_the_host_refused_is_not_offered_again() {
     );
 
     let rules = crate::rules::Rules::embedded();
-    let unit_ids: std::collections::BTreeMap<u32, i64> =
-        [(7u32, 3342338i64), (9u32, 5111818i64)]
-            .into_iter()
-            .collect();
+    let unit_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 3342338i64), (9u32, 5111818i64)]
+        .into_iter()
+        .collect();
     let blocked = blocked_promotions_from(&later, &unit_ids, &rules);
     assert!(
         blocked[&7].contains(&crate::name::Name::new("translator")),

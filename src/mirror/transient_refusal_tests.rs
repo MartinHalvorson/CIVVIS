@@ -3,8 +3,7 @@ use super::*;
 /// Same temp-dir convention as the rest of this file's tests: `tempfile` is
 /// not a dependency of this crate.
 fn events(name: &str, lines: &[&str]) -> std::path::PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("civvis-refusal-{}-{}", name, std::process::id()));
+    let dir = std::env::temp_dir().join(format!("civvis-refusal-{}-{}", name, std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join("events.jsonl");
     std::fs::write(&path, lines.join("\n") + "\n").expect("write events");

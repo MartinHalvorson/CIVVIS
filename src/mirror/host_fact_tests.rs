@@ -1196,8 +1196,7 @@ fn an_unanswered_era_getter_leaves_the_board_alone() {
     let refused = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
     let absent = rebuild_from_state(&snapshot, &silent, 4, 1, 250, 0);
     assert_eq!(
-        refused.game.players[0].normal_age_threshold,
-        absent.game.players[0].normal_age_threshold,
+        refused.game.players[0].normal_age_threshold, absent.game.players[0].normal_age_threshold,
         "a -1 answer must leave the threshold exactly where no answer leaves it"
     );
     assert_eq!(
@@ -1597,9 +1596,8 @@ fn every_civvis_governor_and_promotion_round_trips_through_firaxis_ids() {
             .unwrap_or_else(|| panic!("{governor} needs a Firaxis Governor type"));
         assert_eq!(civvis_governor_name(host), Some(governor.as_str()));
         for promotion in spec.promotions.keys() {
-            let host = civ6_governor_promotion(promotion).unwrap_or_else(|| {
-                panic!("{governor}.{promotion} needs a Firaxis promotion type")
-            });
+            let host = civ6_governor_promotion(promotion)
+                .unwrap_or_else(|| panic!("{governor}.{promotion} needs a Firaxis promotion type"));
             assert_eq!(
                 civvis_governor_promotion(host),
                 Some(promotion.as_str()),
@@ -1736,8 +1734,7 @@ fn a_host_that_never_reported_envoys_says_nothing_rather_than_zero() {
 
     // The other shape: the host was asked and could not answer.
     let failed: StateSnapshot =
-        serde_json::from_str(r#"{"turn":40,"envoys_free":-1,"minors":[]}"#)
-            .expect("deserializes");
+        serde_json::from_str(r#"{"turn":40,"envoys_free":-1,"minors":[]}"#).expect("deserializes");
     assert_eq!(
         host_envoy_report(&failed),
         "",
@@ -1818,8 +1815,8 @@ fn host_amenity_deficit_calibrates_planning_without_freezing_arena_gain() {
             .contains_key(&cid),
         "a known host ledger must not remain a diagnostic-only field"
     );
-    let saved = serde_json::to_string(&rebuilt.game)
-        .expect("the live calibration remains save-compatible");
+    let saved =
+        serde_json::to_string(&rebuilt.game).expect("the live calibration remains save-compatible");
     let restored: crate::game::Game =
         serde_json::from_str(&saved).expect("the calibration round-trips through a save");
     assert_eq!(
