@@ -3533,11 +3533,7 @@ fn nuclear_war_fixture() -> (Game, u32, u32, u32, Pos) {
         .map(|tile| tile.pos)
         .next()
         .expect("map has a separate ICBM-range city site");
-    let spaceport_city = game.found_city_for(
-        1,
-        spaceport_site,
-        Some("Launch Complex".to_string()),
-    );
+    let spaceport_city = game.found_city_for(1, spaceport_site, Some("Launch Complex".to_string()));
     let spaceport = game
         .map
         .tiles
@@ -3558,8 +3554,7 @@ fn nuclear_war_fixture() -> (Game, u32, u32, u32, Pos) {
     tile.pillaged = false;
     let city = game.cities.get_mut(&spaceport_city).unwrap();
     city.owned_tiles.push(spaceport);
-    city.districts
-        .insert(crate::name!("spaceport"), spaceport);
+    city.districts.insert(crate::name!("spaceport"), spaceport);
     install_ai_test_district(&mut game, launch_city, "industrial_zone");
     game.players[1]
         .science_projects
@@ -5511,10 +5506,8 @@ fn nuclear_program_beelines_only_for_a_reachable_goal_and_stops_at_its_arsenal()
     );
     let mut unforced = AdvancedAi::new();
     unforced.plan = Some(plan.clone());
-    let planned_quiet =
-        unforced.tech_value(&quiet, 0, "nuclear_fission", GrandStrategy::Conquest);
-    let planned_urgent =
-        unforced.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let planned_quiet = unforced.tech_value(&quiet, 0, "nuclear_fission", GrandStrategy::Conquest);
+    let planned_urgent = unforced.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
     assert!(
         planned_urgent > planned_quiet + 20.0,
         "an ordinary AI's named Conquest target must also start the counter-program: \
@@ -5564,10 +5557,9 @@ fn nuclear_program_beelines_only_for_a_reachable_goal_and_stops_at_its_arsenal()
         "project_effect:nuclear_devices".to_string(),
         goal.desired_stockpile.saturating_sub(1),
     );
-    game.players[0].counters.insert(
-        "project_effect:thermonuclear_devices".to_string(),
-        1,
-    );
+    game.players[0]
+        .counters
+        .insert("project_effect:thermonuclear_devices".to_string(), 1);
     let capped_value = ai.production_value(&game, 0, launch_city, &device, &plan, &counts);
     assert!(
         capped_value < -9_000.0,

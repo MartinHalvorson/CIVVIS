@@ -18715,9 +18715,11 @@ impl AdvancedAi {
             {
                 return None;
             }
-            let pressure = if g.players.get(hit_city.owner).is_some_and(|player| {
-                !player.is_minor && !player.is_barbarian
-            }) {
+            let pressure = if g
+                .players
+                .get(hit_city.owner)
+                .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+            {
                 self.rival_victory_pressure(g, hit_city.owner)
             } else {
                 VictoryFocus {
@@ -18858,9 +18860,9 @@ impl AdvancedAi {
                 .filter(|city| city.owner == rival.id)
                 .filter(|city| g.players[pid].explored.contains(&city.pos))
                 .filter(|city| {
-                    launchers.iter().any(|launcher| {
-                        g.wdist(g.cities[launcher].pos, city.pos) <= range
-                    })
+                    launchers
+                        .iter()
+                        .any(|launcher| g.wdist(g.cities[launcher].pos, city.pos) <= range)
                 })
                 // Plan from the best device the program can unlock.  A
                 // Spaceport two tiles from its centre is a real
@@ -18870,9 +18872,7 @@ impl AdvancedAi {
                 .filter_map(|city| {
                     let standard = launchers
                         .iter()
-                        .any(|launcher| {
-                            g.wdist(g.cities[launcher].pos, city.pos) <= nuclear_range
-                        })
+                        .any(|launcher| g.wdist(g.cities[launcher].pos, city.pos) <= nuclear_range)
                         .then(|| self.nuclear_target_value(g, pid, city.pos, false))
                         .flatten();
                     let thermonuclear = launchers
@@ -18986,12 +18986,11 @@ impl AdvancedAi {
                 if completed.contains("manhattan_project")
                     && nuclear_devices < standard_stockpile_cap =>
             {
-                base
-                    + if goal.needs_thermonuclear {
-                        1_100.0
-                    } else {
-                        1_450.0
-                    }
+                base + if goal.needs_thermonuclear {
+                    1_100.0
+                } else {
+                    1_450.0
+                }
             }
             "build_thermonuclear_device"
                 if completed.contains("operation_ivy") && thermonuclear_needed =>
