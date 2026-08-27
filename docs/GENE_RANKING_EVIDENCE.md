@@ -16,7 +16,7 @@ Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**
 |---|---:|---:|---:|---|---|
 | `air-surge` | +101 [+76, +125] | 100.0% | 2 | on | **on** |
 | `barbarian-scouts-are-scouts` | +30 [+8, +51] | 99.6% | 5 | on | **on** |
-| `bounded-recovery` | +31 [+14, +48] | 100.0% | 5 | off | **on** |
+| `bounded-recovery` | +31 [+14, +48] | 100.0% | 5 | on | **on** |
 | `buildings-before-projects` | +28 [+5, +51] | 99.2% | 5 | on | **on** |
 | `culture-building-debt` | +26 [+1, +51] | 97.8% | 2 | on | **on** |
 | `engine-faith-price` | +63 [+25, +101] | 99.9% | 1 | on | **on** |
@@ -27,12 +27,12 @@ Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**
 | `loyalty-rate-alarm` | +40 [+22, +58] | 100.0% | 5 | on | **on** |
 | `maintenance-aware-deck` | +61 [+24, +99] | 99.9% | 1 | on | **on** |
 | `opportunistic-war` | +48 [+20, +76] | 100.0% | 3 | on | **on** |
-| `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | off | **on** |
+| `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | on | **on** |
 | `price-the-suzerainty` | +56 [+18, +93] | 99.8% | 1 | on | **on** |
-| `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | off | **on** |
+| `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | on | **on** |
 | `recon-replacement` | +51 [+30, +72] | 100.0% | 5 | on | **on** |
 | `recorded-tactical-step` | +17 [+0, +33] | 97.5% | 5 | on | **on** |
-| `score-horizon` | +17 [+0, +34] | 97.6% | 5 | off | **on** |
+| `score-horizon` | +17 [+0, +34] | 97.6% | 5 | on | **on** |
 | `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | on | **on** |
 | `wide-map-capacity` | +61 [+28, +93] | 100.0% | 5 | on | **on** |
 
@@ -106,34 +106,29 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 |---|---:|---:|---|---:|---:|
 | `holy-lane-parity` | +32 [-6, +71] | 95.0% | off | +32.4 | 5,971 |
 | `war-economy` | +13 [-89, +115] | 60.1% | off | +25.8 | 116,162 |
-| `garrison-under-fire` | +15 [-17, +48] | 82.6% | off | +15.5 | 68,721 |
 | `lane-policy-deck` | +13 [-16, +42] | 80.9% | off | +12.9 | 103,406 |
-| `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
 | `amenity-district-path` | +12 [-5, +28] | 91.2% | off | +11.5 | 83,886 |
-| `blind-objective-strength` | +11 [-10, +31] | 84.9% | off | +10.8 | 131,056 |
+| `unit-objective-memory` | +10 [-28, +47] | 69.7% | off | +10.9 | 201,764 |
 | `strategic-wonders` | +9 [-7, +25] | 85.6% | off | +8.8 | 192,886 |
 | `lane-culture-spending` | +9 [-15, +32] | 75.9% | off | +8.6 | 250,826 |
-| `come-ashore` | +7 [-10, +24] | 79.3% | off | +7.0 | 353,593 |
-| `science-multiplier-payoff` | +6 [-24, +35] | 64.5% | off | +6.6 | 639,181 |
+| `pantheon-board` | +5 [-32, +43] | 61.0% | off | +7.5 | 728,917 |
 | `religion-sues-peace` | +7 [-11, +24] | 77.2% | off | +6.6 | 421,343 |
+| `holy-site-where-the-threat-is` | -1 [-38, +36] | 47.7% | on | +4.9 | 17,424,370 |
 | `campus-adjacency-threshold` | +0 [-38, +38] | 50.3% | off | +4.5 | 829,756,465 |
 | `coordinated-finish` | -0 [-38, +37] | 49.1% | off | +4.1 | 110,743,705 |
-| `holy-site-where-the-threat-is` | -1 [-38, +36] | 47.7% | off | +3.8 | 17,424,370 |
 | `builder-barbarian-safety` | +3 [-16, +23] | 62.9% | off | +3.6 | 1,859,339 |
-| `naval-recon` | -3 [-19, +13] | 35.6% | on | +3.2 | 2,174,265 |
+| `one-shot-recovery` | -2 [-25, +22] | 43.7% | on | +3.0 | 5,846,162 |
+| `lane-space-race` | +1 [-22, +25] | 54.3% | off | +2.7 | 12,292,990 |
 | `amenity-project-preemption` | -1 [-26, +25] | 48.2% | on | +2.5 | 62,802,848 |
 | `power-the-laboratory` | +1 [-23, +24] | 52.0% | off | +2.2 | 57,902,647 |
-| `pantheon-board` | +5 [-32, +43] | 61.0% | on | +2.2 | 728,917 |
 | `housing-research` | +0 [-22, +23] | 51.6% | off | +1.9 | 97,478,820 |
 | `religious-defence-scales` | -0 [-24, +24] | 49.1% | off | +1.8 | 290,353,107 |
 | `promote-when-wounded` | +7 [-31, +45] | 64.5% | on | +1.7 | 396,852 |
-| `district-coverage` | +0 [-20, +20] | 50.8% | off | +1.5 | 558,338,216 |
-| `lane-space-race` | +1 [-22, +25] | 54.3% | on | +1.4 | 12,292,990 |
-| `one-shot-recovery` | -2 [-25, +22] | 43.7% | off | +1.1 | 5,846,162 |
-| `unit-objective-memory` | +10 [-28, +47] | 69.7% | on | +1.1 | 201,764 |
+| `district-coverage` | +0 [-20, +20] | 50.8% | on | +1.3 | 558,338,216 |
+| `blind-objective-units` | +0 [-16, +16] | 51.4% | off | +1.1 | 245,127,417 |
 | `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | off | +1.0 | 1,036,197,883 |
+| `science-multiplier-payoff` | +6 [-24, +35] | 64.5% | on | +0.9 | 639,181 |
 | `enhancer-for-the-corps` | +3 [-21, +26] | 58.6% | on | +0.9 | 2,978,891 |
-| `blind-objective-units` | +0 [-16, +16] | 51.4% | on | +0.8 | 245,127,417 |
 | `research-tier-premium` | +10 [-24, +43] | 71.2% | on | +0.7 | 208,314 |
 | `district-planning` | +12 [-25, +49] | 74.1% | on | +0.7 | 125,973 |
 | `settlement-gap-target` | +14 [-23, +52] | 77.5% | on | +0.5 | 87,669 |
@@ -143,10 +138,15 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `competition-victory-points` | +16 [-19, +50] | 81.3% | on | +0.2 | 67,501 |
 | `army-target-weighs-enemy` | +5 [-16, +25] | 67.3% | on | +0.2 | 903,207 |
 | `early-contact-window` | +8 [-16, +31] | 73.8% | on | +0.1 | 318,670 |
+| `naval-recon` | -3 [-19, +13] | 35.6% | off | +0.1 | 2,174,265 |
+| `garrison-under-fire` | +15 [-17, +48] | 82.6% | on | +0.1 | 68,721 |
 | `apostle-promotion-by-role` | +6 [-15, +27] | 71.4% | on | +0.1 | 520,461 |
 | `settler-guard-holds` | +3 [-13, +19] | 65.5% | on | +0.1 | 1,871,682 |
 | `religious-units-heal-first` | +9 [-14, +33] | 78.0% | on | +0.0 | 208,321 |
+| `come-ashore` | +7 [-10, +24] | 79.3% | on | +0.0 | 353,593 |
 | `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | on | +0.0 | 126,996 |
+| `blind-objective-strength` | +11 [-10, +31] | 84.9% | on | +0.0 | 131,056 |
+| `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | on | +0.0 | 96,625 |
 | `relief-targets-the-siege` | +10 [-7, +26] | 87.0% | on | +0.0 | 153,392 |
 | `settler-threat-detour` | +24 [-2, +51] | 96.4% | on | +0.0 | 5,630 |
 | `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
@@ -176,7 +176,7 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-great-people` | **on** | +33 | +0.10 (z +1.26) ~ | +13 [-22, +48] | unresolved |
 | `lane-policy-deck` | off | +29 | +0.08 (z +1.07) ~ | +13 [-16, +42] | unresolved |
 | `lane-culture-spending` | off | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
-| `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
+| `lane-space-race` | off | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
 ## Removed from the code
@@ -253,7 +253,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 
 Every screenable heuristic gene on the Advanced controller, ranked by the displayed pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch header carries its actual player-seat count and whole-batch average games/minute once; a historical artifact without scheduler timing says `not recorded` rather than guessing from its rows. Cells show the enabled arm's excess projected to 10,000 **total** player seats, where a six-player chance expectation is 1,667 wins. A dash means that batch did not screen the gene. The *Total* win-rate columns pool the displayed observations and retain their real per-gene on/off seat counts in every row. *Diff* is that display total's on rate minus off rate, in percentage points. *Default* is the retained deployment selection (`docs/gene_ledger.json`, `rules.deployment_genome`): the selected genome decides, and every batch column remains evidence. Screenable genes awaiting every displayed measurement are listed separately below without a rank.
 
-**Selected defaults.** This reporting-only publication keeps the prior on/off selection, including the operator-named genes: `apostle-promotion-by-role`, `army-target-weighs-enemy`, `barbarian-settler-capture`, `boost-wait-research`, `builder-supply-floor`, `buildings-before-projects`, `buy-what-cards-cannot-boost`, `camp-party`, `campaign-pillage`, `chokepoint-claim`, `civilian-out-of-reach`, `coalition-before-war`, `deals-at-the-ceiling`, `deals-for-our-gain`, `defensible-sites`, `district-planning`, `early-contact-window`, `elective-war-yields-to-a-lane`, `enhancer-for-the-corps`, `expansion-schedule`, `founder-temple`, `gold-for-the-young-city`, `holy-site-where-the-threat-is-2`, `idle-faith-patronage`, `lane-great-people`, `loyalty-rate-alarm`, `missionary-evades-raiders`, `native-emergency-purchase`, `naval-threat-triage`, `never-an-empty-queue`, `one-launch-pad`, `pantheon-board`, `quest-boost`, `quest-trade-route`, `recon-replacement`, `relief-targets-the-siege`, `religious-units-heal-first`, `research-tier-premium`, `rival-suzerainty-alarm`, `science-chain-alarm`, `settler-screen`, `settler-target-hysteresis-2`, `settler-threat-detour`, `stranded-settler-discount`, `unchosen-war-keeps-the-lane`, `unit-cost-efficiency`, `unit-objective-memory`, `wonder-adjacent-sites`, `wonder-score-tally`. The batch rule's readings remain visible in `rules.batch_decisions`, but do not change a default during table rotation.
+**Selected defaults.** This reporting-only publication keeps the prior on/off selection, including the operator-named genes: `amenity-project-preemption`, `apostle-promotion-by-role`, `army-target-weighs-enemy`, `barbarian-settler-capture`, `blind-objective-strength`, `boost-wait-research`, `bounded-recovery`, `buildings-before-projects`, `camp-party`, `camp-tile-buyout`, `canal-city`, `chain-payback-window-2`, `chokepoint-claim`, `civilian-out-of-reach`, `close-as-a-body`, `coalition-before-war`, `coastal-city-sites`, `come-ashore`, `contested-land-first`, `conversion-majority-alarm`, `deals-at-the-ceiling`, `defend-where-you-stand`, `defensible-sites`, `district-coverage`, `district-planning`, `early-archers`, `early-contact-window`, `elective-war-yields-to-a-lane`, `enemy-of-my-enemy`, `enhancer-for-the-corps`, `exchange-is-the-engines`, `expansion-pays-back`, `expansion-schedule`, `founder-temple`, `garrison-under-fire`, `gold-for-the-young-city`, `gold-income-floor`, `guru-heals-the-corps-2`, `holy-site-where-the-threat-is`, `idle-faith-patronage`, `lane-great-people`, `loyalty-rate-alarm`, `missionary-evades-raiders`, `naval-threat-triage`, `one-launch-pad`, `one-shot-recovery`, `one-war-at-a-time`, `order-retry`, `peace-when-the-war-does-not-pay`, `peacetime-deterrence`, `power-the-laboratory-2`, `quest-boost`, `quest-production`, `quest-trade-route`, `raid-pillage-prizes`, `recon-replacement`, `relief-targets-the-siege`, `religion-race-is-closed`, `religious-units-heal-first`, `research-tier-premium`, `rival-suzerainty-alarm`, `science-chain-alarm`, `science-multiplier-payoff`, `score-horizon`, `settler-screen`, `settler-target-hysteresis-2`, `settler-threat-detour`, `stranded-settler-discount`, `treasury-at-work`, `unchosen-war-keeps-the-lane`, `unit-cost-efficiency`, `upgrade-the-garrison`, `whole-turn-backtrack-guard`, `wonder-score-tally`. The batch rule's readings remain visible in `rules.batch_decisions`, but do not change a default during table rotation.
 
 **Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` (`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's *on* is the seats that played that version, and every other seat — off, or a sibling version on — is its *off*. *Best version | Total versions* names the family's head (`1` is the original) and how many versions of it the code holds, on every row of the family, so `2 | 3` is three versions of which the second is best. The head is the priced version with the highest tracked wins (pooled *Diff*), ties to the higher version. A retained selection keeps its chosen version on its row alone; every version's batch rule reading remains evidence. A versioned row's *Total (on)* and *Total (off)* cells show the best two versions' rates side by side, best first, each with its own `n`. A gene with no versions is its own original and its whole family, and reads `1 | 1`; the left half is `—` for a family none of whose versions is priced yet. A family holds at most three versions; before a fourth is added the third-best by tracked wins leaves the code (`python3 tools/genes.py versions`).
 

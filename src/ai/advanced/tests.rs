@@ -2902,8 +2902,8 @@ fn production_advanced_omits_measured_null_arms() {
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        !live_bridge.bounded_recovery,
-        "the live bridge applies the ledger, which demoted the gene on 2026-08-25"
+        live_bridge.bounded_recovery,
+        "the live bridge applies the 2026-08-27 operator default"
     );
 }
 
@@ -33600,17 +33600,17 @@ fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
     );
 }
 
-/// The gene is off in the stock and legacy agents and reaches a seat only
-/// through the ledger: the 2026-08-25 operator directive pinned it on.
+/// The gene is off in the stock and legacy agents and remains off through the
+/// ledger under the 2026-08-27 operator directive.
 #[test]
-fn builder_tries_the_next_tile_is_on_only_through_the_ledger() {
+fn builder_tries_the_next_tile_stays_off_through_the_ledger() {
     assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
     assert!(
-        deployment.base.builder_tries_the_next_tile,
-        "pinned on by the 2026-08-25 operator directive"
+        !deployment.base.builder_tries_the_next_tile,
+        "held off by the 2026-08-27 operator directive"
     );
 }
 

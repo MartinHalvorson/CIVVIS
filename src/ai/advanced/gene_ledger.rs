@@ -993,11 +993,11 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
-        // A live (repair) gene the batch rule holds off as of the 2026-08-25
-        // batches (+1 / −4 / +5); pick another held live gene if a later batch
-        // turns it on (`ledger_held_live_treatments()` lists them).
-        let forced = ["whole-turn-backtrack-guard"];
-        assert!(ledger_held_live_treatment("whole-turn-backtrack-guard"));
+        // A live (repair) gene the operator currently holds off. Pick another
+        // held live gene if the deployment selection changes
+        // (`ledger_held_live_treatments()` lists them).
+        let forced = ["blind-objective-units"];
+        assert!(ledger_held_live_treatment("blind-objective-units"));
         assert!(
             !ledger_held_live_treatment("parallel-settlers"),
             "host-only treatments already follow their live-universe default"
@@ -1016,9 +1016,9 @@ mod tests {
             .copied()
             .expect("the registry holds opt-ins the ledger has not turned on");
         assert!(!ledger_held_live_treatment(held_opt_in));
-        assert!(!ledger_held_opt_in("whole-turn-backtrack-guard"));
+        assert!(!ledger_held_opt_in("blind-objective-units"));
         let forceable = forceable_treatments();
-        assert!(forceable.contains(&"whole-turn-backtrack-guard"));
+        assert!(forceable.contains(&"blind-objective-units"));
         assert!(forceable.contains(&held_opt_in));
         let seated = deployment_treatments_with_forced_live(&[held_opt_in]);
         assert!(
@@ -1029,16 +1029,16 @@ mod tests {
         seat.enable_live_bridge_universe();
         let applied = seat.apply_gene_ledger_with_forced_live(&[held_opt_in]);
         assert!(applied.forced.contains(&held_opt_in));
-        assert!(ledger_held_live_treatments().contains(&"whole-turn-backtrack-guard"));
+        assert!(ledger_held_live_treatments().contains(&"blind-objective-units"));
 
         let deployed = deployment_treatments();
         let forced_deployment = deployment_treatments_with_forced_live(&forced);
         assert!(
-            !deployed.contains(&"whole-turn-backtrack-guard"),
+            !deployed.contains(&"blind-objective-units"),
             "the verification override must not change deployment"
         );
         assert!(
-            forced_deployment.contains(&"whole-turn-backtrack-guard"),
+            forced_deployment.contains(&"blind-objective-units"),
             "the genome event must name the treatment the arm actually restored"
         );
         assert_eq!(
@@ -1051,16 +1051,16 @@ mod tests {
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
         assert!(
-            ai.base.whole_turn_backtrack_guard,
+            ai.blind_objective_units,
             "the named live treatment stands"
         );
         assert!(
-            !ai.blind_objective_strength,
+            !ai.base.naval_recon,
             "another ledger-held treatment stays off unless named too"
         );
-        assert_eq!(applied.forced, vec!["whole-turn-backtrack-guard"]);
+        assert_eq!(applied.forced, vec!["blind-objective-units"]);
         assert!(
-            !applied.withheld.contains(&"whole-turn-backtrack-guard"),
+            !applied.withheld.contains(&"blind-objective-units"),
             "an explicit arm cannot report its restored gene as withheld"
         );
     }
