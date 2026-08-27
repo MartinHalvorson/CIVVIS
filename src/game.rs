@@ -1039,6 +1039,14 @@ struct VisionFrame {
     visible: Arc<TileBits>,
 }
 
+/// The folded suzerain-of-every-minor map, beside the diplomacy epoch (see
+/// `Game::diplomacy_epoch`) it was built from.
+type SuzerainMapCache = std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<usize>>)>>;
+/// Per-pid shared-vision viewer sets, beside the diplomacy epoch they were
+/// built from. Indexed by pid; a pid nobody has asked about this epoch keeps
+/// its slot `None` rather than being folded speculatively.
+type ViewersCache = std::cell::RefCell<Option<(u64, Vec<Option<BTreeSet<usize>>>)>>;
+
 /// Runtime-only per-seat visibility frames.  A cloned game inherits its
 /// parent's, because each frame carries the stamp of every input the
 /// derivation reads: a branch that moves its sight sources before its first
@@ -1061,12 +1069,12 @@ struct VisionFrameCache {
     /// instead of once per single-seat vision ask.  `suzerain_of` is cheap
     /// once the relationship is known, but `suzerain_input_map` used to
     /// allocate this `BTreeMap` fresh on every `player_vision_frame` call.
-    suzerain_map: std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<usize>>)>>,
+    suzerain_map: SuzerainMapCache,
     /// Per-pid shared-vision viewer sets — team, military-alliance, and live
     /// emergency partners — folded lazily per pid the first time a
     /// diplomacy epoch asks for it. `visibility_viewers` used to allocate a
     /// fresh `BTreeSet` on every ask even when nothing diplomatic had moved.
-    viewers: std::cell::RefCell<Option<(u64, Vec<Option<BTreeSet<usize>>>)>>,
+    viewers: ViewersCache,
 }
 
 impl Clone for VisionFrameCache {
@@ -1714,7 +1722,8 @@ impl std::ops::IndexMut<usize> for Players {
 
 impl<'a> IntoIterator for &'a Players {
     type Item = &'a Player;
-    type IntoIter = std::iter::Map<std::slice::Iter<'a, Arc<Player>>, fn(&'a Arc<Player>) -> &'a Player>;
+    type IntoIter =
+        std::iter::Map<std::slice::Iter<'a, Arc<Player>>, fn(&'a Arc<Player>) -> &'a Player>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter().map(|seat| &**seat)
@@ -23452,7 +23461,10 @@ impl Game {
     /// per-pass memo (`with_suzerain_read_memo`) is installed; this is what
     /// stopped the map itself from being a fresh `BTreeMap` allocation on
     /// every single-seat vision ask.
-    fn with_suzerain_input_map<R>(&self, read: impl FnOnce(&BTreeMap<usize, Option<usize>>) -> R) -> R {
+    fn with_suzerain_input_map<R>(
+        &self,
+        read: impl FnOnce(&BTreeMap<usize, Option<usize>>) -> R,
+    ) -> R {
         let epoch = self.diplomacy_epoch();
         let stale = match self.vision_frames.suzerain_map.borrow().as_ref() {
             Some((cached_epoch, _)) => *cached_epoch != epoch,
@@ -23472,7 +23484,11 @@ impl Game {
     /// Reuse one pid's shared-vision viewer set until the diplomacy epoch
     /// moves, folding a pid's entry lazily so one nobody asks about this
     /// epoch is never built.
-    fn with_visibility_viewers<R>(&self, pid: usize, read: impl FnOnce(&BTreeSet<usize>) -> R) -> R {
+    fn with_visibility_viewers<R>(
+        &self,
+        pid: usize,
+        read: impl FnOnce(&BTreeSet<usize>) -> R,
+    ) -> R {
         let epoch = self.diplomacy_epoch();
         {
             let cache = self.vision_frames.viewers.borrow();
@@ -23533,11 +23549,7 @@ impl Game {
         });
         if pid == MIRRORED_SEAT {
             for position in &self.host_observed {
-                stamp = vision_key(&[
-                    stamp,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
+                stamp = vision_key(&[stamp, position.0 as i64 as u64, position.1 as i64 as u64]);
             }
         }
         stamp

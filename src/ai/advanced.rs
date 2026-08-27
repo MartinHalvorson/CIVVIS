@@ -29084,7 +29084,8 @@ impl AdvancedAi {
             if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
                 value -= crate::ai::WATER_MARCH_PENALTY;
             }
-            value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_deref());
+            value +=
+                self.strike_opening_value(g, pid, uid, tile, group, enemies, visible.as_deref());
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
