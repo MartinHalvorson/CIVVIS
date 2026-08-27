@@ -11670,7 +11670,10 @@ mod tests {
         );
 
         assert_eq!(rebuild(HostPhase::Refresh), [] as [&str; 0]);
-        assert_eq!(sync(HostPhase::Refresh), ["terrain", "territory", "city_memory"]);
+        assert_eq!(
+            sync(HostPhase::Refresh),
+            ["terrain", "territory", "city_memory"]
+        );
 
         // ⚠ `trade_routes` likewise: before the terrain passes on the sync,
         // after `city_memory` on the rebuild.
@@ -11763,7 +11766,11 @@ mod tests {
         );
         assert_eq!(
             sync_only,
-            ["Refresh/terrain", "Refresh/territory", "Refresh/city_memory"]
+            [
+                "Refresh/terrain",
+                "Refresh/territory",
+                "Refresh/city_memory"
+            ]
         );
     }
 
@@ -11829,7 +11836,6 @@ mod tests {
         }
         effects
     }
-
 }
 
 /// Read every `tiles` chunk out of a run's `events.jsonl`.
@@ -21167,15 +21173,13 @@ impl<'a> HostStepCtx<'a> {
     }
 }
 
-/// One entry of [`HOST_STATE_STEPS`].
-struct HostStep {
-    phase: HostPhase,
-    /// Recorded by the tests, so a step that appears on one pass only is a
-    /// failure with a name on it rather than a live seat that quietly drifts.
-    name: &'static str,
-    modes: u8,
-    run: fn(&mut HostStepCtx<'_>),
-}
+/// One entry of [`HOST_STATE_STEPS`]: the phase it belongs to, its NAME, the
+/// passes that take it, and what it does.
+///
+/// The name is what the tests record, so a step that appears on one pass only
+/// is a failure with a name on it rather than a live seat that quietly drifts.
+/// A tuple rather than a struct so the table below stays a readable list.
+type HostStep = (HostPhase, &'static str, u8, fn(&mut HostStepCtx<'_>));
 
 /// ⚠⚠ THE ORDERED HOST-STATE STEP LIST — THE ONE COPY.
 ///
@@ -21201,58 +21205,58 @@ struct HostStep {
 /// would hide the difference rather than state it.
 const HOST_STATE_STEPS: &[HostStep] = &[
     // --- empire ---------------------------------------------------------
-    HostStep { phase: HostPhase::Empire, name: "game_speed", modes: ON_REBUILD, run: step_game_speed },
-    HostStep { phase: HostPhase::Empire, name: "seat_victories", modes: ON_REBUILD, run: step_seat_victories },
-    HostStep { phase: HostPhase::Empire, name: "difficulty", modes: ON_REBUILD, run: step_difficulty },
-    HostStep { phase: HostPhase::Empire, name: "human_seat", modes: ON_REBUILD, run: step_human_seat },
-    HostStep { phase: HostPhase::Empire, name: "map_script", modes: ON_REBUILD, run: step_map_script },
-    HostStep { phase: HostPhase::Empire, name: "refused_site_blocks", modes: ON_REBUILD, run: step_refused_site_blocks },
-    HostStep { phase: HostPhase::Empire, name: "identity", modes: ON_BOTH, run: step_identity },
+    (HostPhase::Empire, "game_speed", ON_REBUILD, step_game_speed),
+    (HostPhase::Empire, "seat_victories", ON_REBUILD, step_seat_victories),
+    (HostPhase::Empire, "difficulty", ON_REBUILD, step_difficulty),
+    (HostPhase::Empire, "human_seat", ON_REBUILD, step_human_seat),
+    (HostPhase::Empire, "map_script", ON_REBUILD, step_map_script),
+    (HostPhase::Empire, "refused_site_blocks", ON_REBUILD, step_refused_site_blocks),
+    (HostPhase::Empire, "identity", ON_BOTH, step_identity),
     // --- economy --------------------------------------------------------
-    HostStep { phase: HostPhase::Economy, name: "turn_and_score", modes: ON_BOTH, run: step_turn_and_score },
-    HostStep { phase: HostPhase::Economy, name: "max_turns", modes: ON_REBUILD, run: step_max_turns },
+    (HostPhase::Economy, "turn_and_score", ON_BOTH, step_turn_and_score),
+    (HostPhase::Economy, "max_turns", ON_REBUILD, step_max_turns),
     // ⚠ The treasury is read BEFORE the maintenance bill on the rebuild and
     // AFTER it on the sync. Both orders are what shipped; neither helper reads
     // what the other writes (`host_maintenance` is its own map, the gold lands
     // on `players[0]`), so the two entries are kept where they were rather than
     // moved onto one line and quietly changing a live board.
-    HostStep { phase: HostPhase::Economy, name: "host_gold", modes: ON_REBUILD, run: step_host_gold },
-    HostStep { phase: HostPhase::Economy, name: "host_maintenance", modes: ON_BOTH, run: step_host_maintenance },
-    HostStep { phase: HostPhase::Economy, name: "host_gold", modes: ON_SYNC, run: step_host_gold },
-    HostStep { phase: HostPhase::Economy, name: "faith_and_dvp", modes: ON_BOTH, run: step_faith_and_dvp },
-    HostStep { phase: HostPhase::Economy, name: "congress_dvp", modes: ON_BOTH, run: step_congress_dvp },
-    HostStep { phase: HostPhase::Economy, name: "host_competitions", modes: ON_BOTH, run: step_host_competitions },
-    HostStep { phase: HostPhase::Economy, name: "diplomatic_favor", modes: ON_BOTH, run: step_diplomatic_favor },
-    HostStep { phase: HostPhase::Economy, name: "mirrored_envoys_free", modes: ON_BOTH, run: step_mirrored_envoys_free },
-    HostStep { phase: HostPhase::Economy, name: "player_religion", modes: ON_BOTH, run: step_player_religion },
+    (HostPhase::Economy, "host_gold", ON_REBUILD, step_host_gold),
+    (HostPhase::Economy, "host_maintenance", ON_BOTH, step_host_maintenance),
+    (HostPhase::Economy, "host_gold", ON_SYNC, step_host_gold),
+    (HostPhase::Economy, "faith_and_dvp", ON_BOTH, step_faith_and_dvp),
+    (HostPhase::Economy, "congress_dvp", ON_BOTH, step_congress_dvp),
+    (HostPhase::Economy, "host_competitions", ON_BOTH, step_host_competitions),
+    (HostPhase::Economy, "diplomatic_favor", ON_BOTH, step_diplomatic_favor),
+    (HostPhase::Economy, "mirrored_envoys_free", ON_BOTH, step_mirrored_envoys_free),
+    (HostPhase::Economy, "player_religion", ON_BOTH, step_player_religion),
     // --- refresh (sync only) --------------------------------------------
     // Newly revealed ground, and the traversability prior redrawn beyond it.
     // The rebuild has nothing to refresh: it has not planted a city yet, and its
     // own terrain pass is the board phase below.
-    HostStep { phase: HostPhase::Refresh, name: "terrain", modes: ON_SYNC, run: step_terrain },
-    HostStep { phase: HostPhase::Refresh, name: "territory", modes: ON_SYNC, run: step_territory },
-    HostStep { phase: HostPhase::Refresh, name: "city_memory", modes: ON_SYNC, run: step_city_memory },
+    (HostPhase::Refresh, "terrain", ON_SYNC, step_terrain),
+    (HostPhase::Refresh, "territory", ON_SYNC, step_territory),
+    (HostPhase::Refresh, "city_memory", ON_SYNC, step_city_memory),
     // --- board ----------------------------------------------------------
     // ⚠ The trade routes are restored BEFORE the terrain passes on the sync and
     // after `city_memory` on the rebuild. Kept where each pass had them.
-    HostStep { phase: HostPhase::Board, name: "trade_routes", modes: ON_SYNC, run: step_trade_routes },
-    HostStep { phase: HostPhase::Board, name: "terrain", modes: ON_BOTH, run: step_terrain },
-    HostStep { phase: HostPhase::Board, name: "territory", modes: ON_BOTH, run: step_territory },
-    HostStep { phase: HostPhase::Board, name: "tile_memory", modes: ON_BOTH, run: step_tile_memory },
-    HostStep { phase: HostPhase::Board, name: "city_memory", modes: ON_BOTH, run: step_city_memory },
-    HostStep { phase: HostPhase::Board, name: "trade_routes", modes: ON_REBUILD, run: step_trade_routes },
-    HostStep { phase: HostPhase::Board, name: "governor_state", modes: ON_BOTH, run: step_governor_state },
-    HostStep { phase: HostPhase::Board, name: "host_envoys", modes: ON_BOTH, run: step_host_envoys },
-    HostStep { phase: HostPhase::Board, name: "great_person_points", modes: ON_BOTH, run: step_great_person_points },
-    HostStep { phase: HostPhase::Board, name: "strategic_stockpiles", modes: ON_BOTH, run: step_strategic_stockpiles },
-    HostStep { phase: HostPhase::Board, name: "player_ages", modes: ON_BOTH, run: step_player_ages },
-    HostStep { phase: HostPhase::Board, name: "host_congress", modes: ON_BOTH, run: step_host_congress },
-    HostStep { phase: HostPhase::Board, name: "observed_host_metrics", modes: ON_BOTH, run: step_observed_host_metrics },
-    HostStep { phase: HostPhase::Board, name: "loyalty_doomed_sites", modes: ON_BOTH, run: step_loyalty_doomed_sites },
+    (HostPhase::Board, "trade_routes", ON_SYNC, step_trade_routes),
+    (HostPhase::Board, "terrain", ON_BOTH, step_terrain),
+    (HostPhase::Board, "territory", ON_BOTH, step_territory),
+    (HostPhase::Board, "tile_memory", ON_BOTH, step_tile_memory),
+    (HostPhase::Board, "city_memory", ON_BOTH, step_city_memory),
+    (HostPhase::Board, "trade_routes", ON_REBUILD, step_trade_routes),
+    (HostPhase::Board, "governor_state", ON_BOTH, step_governor_state),
+    (HostPhase::Board, "host_envoys", ON_BOTH, step_host_envoys),
+    (HostPhase::Board, "great_person_points", ON_BOTH, step_great_person_points),
+    (HostPhase::Board, "strategic_stockpiles", ON_BOTH, step_strategic_stockpiles),
+    (HostPhase::Board, "player_ages", ON_BOTH, step_player_ages),
+    (HostPhase::Board, "host_congress", ON_BOTH, step_host_congress),
+    (HostPhase::Board, "observed_host_metrics", ON_BOTH, step_observed_host_metrics),
+    (HostPhase::Board, "loyalty_doomed_sites", ON_BOTH, step_loyalty_doomed_sites),
     // --- finish ---------------------------------------------------------
-    HostStep { phase: HostPhase::Finish, name: "player_ages", modes: ON_BOTH, run: step_player_ages },
-    HostStep { phase: HostPhase::Finish, name: "host_climate", modes: ON_BOTH, run: step_host_climate },
-    HostStep { phase: HostPhase::Finish, name: "record_host_observed", modes: ON_BOTH, run: step_record_host_observed },
+    (HostPhase::Finish, "player_ages", ON_BOTH, step_player_ages),
+    (HostPhase::Finish, "host_climate", ON_BOTH, step_host_climate),
+    (HostPhase::Finish, "record_host_observed", ON_BOTH, step_record_host_observed),
 ];
 
 /// Run every step of `phase` that `ctx.mode` takes, in table order.
@@ -21261,12 +21265,12 @@ fn run_host_steps(ctx: &mut HostStepCtx<'_>, phase: HostPhase) {
     // culture as the `CIVVIS_SYNC_NO_*` bisects — which step a board picked up a
     // wrong reading from is otherwise invisible from outside the process.
     let trace = std::env::var("CIVVIS_MIRROR_STEP_TRACE").is_ok();
-    for step in HOST_STATE_STEPS {
-        if step.phase == phase && step.modes & ctx.mode.bit() != 0 {
+    for &(step_phase, name, modes, run) in HOST_STATE_STEPS {
+        if step_phase == phase && modes & ctx.mode.bit() != 0 {
             if trace {
-                eprintln!("[host-step] {:?} {:?} {}", ctx.mode, phase, step.name);
+                eprintln!("[host-step] {:?} {:?} {name}", ctx.mode, phase);
             }
-            (step.run)(ctx);
+            run(ctx);
         }
     }
 }
@@ -21276,8 +21280,8 @@ fn run_host_steps(ctx: &mut HostStepCtx<'_>, phase: HostPhase) {
 pub(crate) fn host_step_names(mode: MirrorMode, phase: HostPhase) -> Vec<&'static str> {
     HOST_STATE_STEPS
         .iter()
-        .filter(|step| step.phase == phase && step.modes & mode.bit() != 0)
-        .map(|step| step.name)
+        .filter(|(step_phase, _, modes, _)| *step_phase == phase && modes & mode.bit() != 0)
+        .map(|(_, name, _, _)| *name)
         .collect()
 }
 
@@ -21379,7 +21383,9 @@ fn step_turn_and_score(ctx: &mut HostStepCtx<'_>) {
         ctx.game.observed_score.insert(0, ctx.state.score);
     }
     if ctx.state.military.is_finite() && ctx.state.military >= 0.0 {
-        ctx.game.observed_military_power.insert(0, ctx.state.military);
+        ctx.game
+            .observed_military_power
+            .insert(0, ctx.state.military);
     }
 }
 
@@ -21638,7 +21644,6 @@ fn mirror_net_income_from(
         false => Some(delta),
     }
 }
-
 
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
@@ -23704,11 +23709,8 @@ impl LiveMirror {
         self.game.replace_blocked_purchases(blocked_purchases);
         // Unit ids are only in hand here, so the promotion blocks are wired late for
         // the same reason the production blocks are.
-        self.game.blocked_promotions = blocked_promotions_from(
-            &state.refused_promotions,
-            &self.civ6_of,
-            &self.game.rules,
-        );
+        self.game.blocked_promotions =
+            blocked_promotions_from(&state.refused_promotions, &self.civ6_of, &self.game.rules);
         // ⚠ ONE ORDERED STEP LIST, WALKED BY BOTH PASSES. See
         // `HOST_STATE_STEPS`: everything this method and `rebuild_from_state`
         // apply from the host state is written there once and told apart by
