@@ -63,11 +63,6 @@ jobs:
           # branch may lack it and no branch may audition its own judge.
           git fetch --quiet origin main
           git show origin/main:tools/overwrite_guard.py > /tmp/overwrite_guard.py
-          # ⚠ AND ITS SIBLING. #2642 gave the tool `import _common`, resolved
-          # against its own directory — which is /tmp here, not tools/ — so
-          # without this the judge dies on ModuleNotFoundError before it reads a
-          # single diff, and EVERY pull request reads `overwrite-guard: fail`.
-          git show origin/main:tools/_common.py > /tmp/_common.py
           # The tool takes the merge base itself now, and the merge base of a
           # merge base and the head is itself, so this stays correct and keeps
           # the workflow working against main's older copies of the tool.
