@@ -8437,7 +8437,7 @@ impl BasicAi {
             if g.city_can_strike(&g.cities[cid]) {
                 let cpos = g.cities[cid].pos;
                 for pos in g.wdisk(cpos, 2) {
-                    let hit = g.unit_ids_at(pos).into_iter().any(|oid| {
+                    let hit = g.unit_ids_at(pos).iter().any(|oid| {
                         let o = &g.units[&oid];
                         o.owner != pid && g.is_at_war(pid, o.owner)
                     });
@@ -8794,7 +8794,7 @@ impl BasicAi {
                     // only bites the live bridge. The refusals are all live.
                     let center = g.cities[cid].pos;
                     let occupied = self.live_religious_purchase_guard
-                        && g.unit_ids_at(center).into_iter().any(|uid| {
+                        && g.unit_ids_at(center).iter().any(|uid| {
                             let unit = &g.units[&uid];
                             unit.owner == pid
                                 && g.rules
@@ -13028,7 +13028,7 @@ impl BasicAi {
         // strength bearing down, then the most damage already taken.
         let mut wanting: Vec<(i64, Pos)> = Vec::new();
         for city in g.cities.values().filter(|city| city.owner == pid) {
-            let held = g.unit_ids_at(city.pos).into_iter().any(|uid| {
+            let held = g.unit_ids_at(city.pos).iter().any(|uid| {
                 g.units[&uid].owner == pid && g.rules.units[g.units[&uid].kind].class == "military"
             });
             if held {
@@ -13265,7 +13265,7 @@ impl BasicAi {
         if !self.naval_threat_triage || !ranged {
             return 0.0;
         }
-        let harmless_ship = g.unit_ids_at(target).into_iter().any(|other| {
+        let harmless_ship = g.unit_ids_at(target).iter().any(|other| {
             let unit = &g.units[&other];
             Some(unit.owner) == g.barb_pid
                 && Self::is_barbarian_raider(g, unit)
@@ -14695,7 +14695,7 @@ impl BasicAi {
             None
         };
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
-            g.unit_ids_at(position).into_iter().any(|other| {
+            g.unit_ids_at(position).iter().any(|other| {
                 g.units[&other].owner != pid
                     && g.is_at_war(pid, g.units[&other].owner)
                     && g.units[&other].kind == "settler"
@@ -15140,8 +15140,8 @@ impl BasicAi {
         // A unit standing on or beside one of our own settlers is plausibly
         // its escort; rescuing one civilian must not expose another.
         let beside_own_settler = g.nbrs(origin).into_iter().chain([origin]).any(|position| {
-            g.unit_ids_at(position).into_iter().any(|other| {
-                *other != uid && g.units[&other].owner == pid && g.units[&other].kind == "settler"
+            g.unit_ids_at(position).iter().any(|other| {
+                *other != uid && g.units[other].owner == pid && g.units[other].kind == "settler"
             })
         });
         if beside_own_settler {
@@ -15206,7 +15206,7 @@ impl BasicAi {
                 }
                 // A civilian standing under an enemy military unit cannot be
                 // captured by entering; that tile is an attack problem.
-                let guarded = g.unit_ids_at(other.pos).into_iter().any(|oid| {
+                let guarded = g.unit_ids_at(other.pos).iter().any(|oid| {
                     let blocker = &g.units[&oid];
                     blocker.owner != pid && g.rules.units[blocker.kind].class == "military"
                 });

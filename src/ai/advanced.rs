@@ -15117,9 +15117,9 @@ impl AdvancedAi {
             .filter(|pos| {
                 *pos != objective
                     && g.unit_can_traverse(uid, *pos)
-                    && g.unit_ids_at(*pos).iter().all(|other| {
-                        g.units.get(other).is_some_and(|other| other.owner != pid)
-                    })
+                    && g.unit_ids_at(*pos)
+                        .iter()
+                        .all(|other| g.units.get(other).is_some_and(|other| other.owner != pid))
             })
             .collect();
         if ring.is_empty() {
@@ -26442,7 +26442,7 @@ impl AdvancedAi {
                 .settler_guard_holds
                 .then(|| self.battlefront_visibility(g, pid));
             let guarded_here = g.city_at(current).is_some()
-                || g.unit_ids_at(current).into_iter().any(|other| {
+                || g.unit_ids_at(current).iter().any(|other| {
                     *other != uid
                         && g.units.get(&other).is_some_and(|unit| {
                             unit.owner == pid
@@ -27002,28 +27002,29 @@ impl AdvancedAi {
                 "it is already standing on its target".to_string()
             } else {
                 match g.route_step(uid, target, 0) {
-                None => "no route to it on our own board".to_string(),
-                Some(step) if !g.can_move(uid, step) => {
-                    let occupant = g
-                        .unit_ids_at(step)
-                        .into_iter()
-                        .filter(|other| **other != uid)
-                        .find_map(|other| {
-                            g.units.get(&other).map(|unit| (unit.owner, unit.kind))
-                        });
-                    match occupant {
-                        Some((owner, kind)) if owner == pid => {
-                            format!("our own {kind} is standing on the next tile")
+                    None => "no route to it on our own board".to_string(),
+                    Some(step) if !g.can_move(uid, step) => {
+                        let occupant = g
+                            .unit_ids_at(step)
+                            .into_iter()
+                            .filter(|other| **other != uid)
+                            .find_map(|other| {
+                                g.units.get(&other).map(|unit| (unit.owner, unit.kind))
+                            });
+                        match occupant {
+                            Some((owner, kind)) if owner == pid => {
+                                format!("our own {kind} is standing on the next tile")
+                            }
+                            Some((_, kind)) => format!("a foreign {kind} holds the next tile"),
+                            None if g.units[&uid].moves_left <= 0.0 => {
+                                "it had no movement left".to_string()
+                            }
+                            None => {
+                                "the next tile refuses it and nothing is standing there".to_string()
+                            }
                         }
-                        Some((_, kind)) => format!("a foreign {kind} holds the next tile"),
-                        None if g.units[&uid].moves_left <= 0.0 => {
-                            "it had no movement left".to_string()
-                        }
-                        None => "the next tile refuses it and nothing is standing there"
-                            .to_string(),
                     }
-                }
-                Some(_) => "the safe-step guard rejected every neighbour".to_string(),
+                    Some(_) => "the safe-step guard rejected every neighbour".to_string(),
                 }
             };
             think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
@@ -27337,7 +27338,7 @@ impl AdvancedAi {
                 .is_some_and(|city| city.owner != pid)
         });
         let hostile_nearby = g.wdisk(pos, 4).into_iter().any(|neighbor| {
-            g.unit_ids_at(neighbor).into_iter().any(|uid| {
+            g.unit_ids_at(neighbor).iter().any(|uid| {
                 let unit = &g.units[&uid];
                 unit.owner != pid && g.is_at_war(pid, unit.owner)
             })
@@ -28597,7 +28598,7 @@ impl AdvancedAi {
                     .is_some_and(|former| g.players.get(former).is_some_and(|p| p.alive))
             })
             .filter(|city| {
-                !g.unit_ids_at(city.pos).into_iter().any(|unit| {
+                !g.unit_ids_at(city.pos).iter().any(|unit| {
                     g.units[&unit].owner == pid
                         && g.rules.units[g.units[&unit].kind].class == "military"
                 })
@@ -28891,7 +28892,7 @@ impl AdvancedAi {
                         && (g
                             .city_at(pos)
                             .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
-                            || g.unit_ids_at(pos).into_iter().any(|other| {
+                            || g.unit_ids_at(pos).iter().any(|other| {
                                 is_contact(*other) && self.battlefront_unit_visible(g, pid, *other)
                             }))
                 } else if combatants_only {
@@ -29175,7 +29176,7 @@ impl AdvancedAi {
             let average_hp = units.iter().map(|uid| g.units[uid].hp).sum::<i32>() as f64
                 / units.len().max(1) as f64;
             let forcing_focus = focus_target.is_some_and(|target| {
-                let low_hp_unit = g.unit_ids_at(target).into_iter().any(|unit| {
+                let low_hp_unit = g.unit_ids_at(target).iter().any(|unit| {
                     enemies.contains(&g.units[&unit].owner)
                         && (!self.battlefront_observation
                             || (g.sees(&visible, target)
@@ -30250,7 +30251,8 @@ impl AdvancedAi {
                 let other = &g.units[other];
                 other.owner != pid && g.is_at_war(pid, other.owner)
             })
-            .copied().collect();
+            .copied()
+            .collect();
         if threatened.is_empty() {
             return None;
         }
@@ -30540,7 +30542,7 @@ impl AdvancedAi {
             }
             _ => return None,
         };
-        let victim = g.unit_ids_at(target).into_iter().find(|other| {
+        let victim = g.unit_ids_at(target).iter().find(|other| {
             let defender = &g.units[other];
             defender.owner != pid
                 && g.is_at_war(pid, defender.owner)
@@ -30768,7 +30770,7 @@ impl AdvancedAi {
             .flatten();
         let target_unit = (target_city.is_none() && target_encampment.is_none())
             .then(|| {
-                g.unit_ids_at(target).into_iter().find(|other| {
+                g.unit_ids_at(target).iter().find(|other| {
                     let defender = &g.units[other];
                     defender.owner != pid
                         && g.is_at_war(pid, defender.owner)
@@ -32082,12 +32084,14 @@ impl AdvancedAi {
             let focus = group.as_ref().and_then(|orders| orders.focus_target);
             let mut volley_indices: Vec<usize> = (0..scored.len())
                 .filter(|index| {
-                    g.unit_ids_at(scored[*index].target).into_iter().any(|other| {
-                        let defender = &g.units[&other];
-                        defender.owner != pid
-                            && g.is_at_war(pid, defender.owner)
-                            && g.rules.units[defender.kind].class == "military"
-                    })
+                    g.unit_ids_at(scored[*index].target)
+                        .into_iter()
+                        .any(|other| {
+                            let defender = &g.units[&other];
+                            defender.owner != pid
+                                && g.is_at_war(pid, defender.owner)
+                                && g.rules.units[defender.kind].class == "military"
+                        })
                 })
                 .collect();
             volley_indices.sort_by(|left, right| {
@@ -32208,7 +32212,9 @@ impl AdvancedAi {
                     .and_then(|cid| g.cities.get(&cid))
                     .map(|city| city.name.clone())
                     .or_else(|| {
-                        g.unit_ids_at(at).first().map(|oid| plain(&g.units[oid].kind))
+                        g.unit_ids_at(at)
+                            .first()
+                            .map(|oid| plain(&g.units[oid].kind))
                     })
                     .unwrap_or_else(|| format!("{at:?}"));
                 think!(self.journal(), Military, Detail,
@@ -32714,7 +32720,7 @@ impl AdvancedAi {
                 .collect()
         };
         for with in embarked_settlers {
-            let escort = g.unit_ids_at(g.units[&with].pos).into_iter().find(|uid| {
+            let escort = g.unit_ids_at(g.units[&with].pos).iter().find(|uid| {
                 let unit = &g.units[uid];
                 unit.owner == pid
                     && unit.linked_to.is_none()

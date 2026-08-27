@@ -16221,7 +16221,7 @@ fn diagnostic_how_often_is_a_city_garrisoned_and_under_loyalty_pressure() {
                     continue;
                 }
                 let pos = city.pos;
-                let held = g.unit_ids_at(pos).into_iter().any(|uid| {
+                let held = g.unit_ids_at(pos).iter().any(|uid| {
                     g.units[&uid].owner == owner
                         && g.rules.units[g.units[&uid].kind].class == "military"
                 });
@@ -24715,7 +24715,7 @@ fn city_loss_autopsy() {
                 let hp = city.hp;
                 // Cities cap at 200 hp; `Game` clamps to that in its own scoring.
                 let maxhp = 200;
-                let garrison = game.unit_ids_at(pos).into_iter().any(|u| {
+                let garrison = game.unit_ids_at(pos).iter().any(|u| {
                     let unit = &game.units[&u];
                     unit.owner == 0 && game.rules.units[unit.kind].class == "military"
                 });

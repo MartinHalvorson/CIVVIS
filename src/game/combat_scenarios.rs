@@ -2834,15 +2834,16 @@ fn air_pillage_uses_exact_health_floor_layer_order_and_no_spoils() {
         .buildings
         .extend([crate::name!("library"), crate::name!("university")]);
 
-    let spotter =
-        game.nbrs(campus)
-            .into_iter()
-            .find(|position| {
-                game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                }) && game.unit_ids_at(*position).is_empty()
-            })
-            .unwrap();
+    let spotter = game
+        .nbrs(campus)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.unit_ids_at(*position).is_empty()
+        })
+        .unwrap();
     game.spawn_unit("warrior", 0, spotter);
 
     let bomber = game.spawn_unit("bomber", 0, base);

@@ -2074,7 +2074,9 @@ fn a_flag_arena_gives_every_side_a_flag_of_its_own() {
         );
         // Its own army is the garrison: a side opens sitting on its flag.
         assert!(
-            game.unit_ids_at(flag).iter().all(|uid| game.units[uid].owner == seat),
+            game.unit_ids_at(flag)
+                .iter()
+                .all(|uid| game.units[uid].owner == seat),
             "seat {seat}'s flag opens held by somebody else"
         );
     }
@@ -2889,7 +2891,10 @@ fn an_arena_is_walled_where_a_world_wraps() {
     let west = crate::hex::offset_to_axial(0, 4);
     let east = crate::hex::offset_to_axial(arena.map.width - 1, 4);
     let mut arena = arena;
-    assert!(arena.unit_ids_at(west).is_empty(), "the wall hex is free to stand on");
+    assert!(
+        arena.unit_ids_at(west).is_empty(),
+        "the wall hex is free to stand on"
+    );
     let uid = arena.spawn_test_unit("horseman", 0, west);
     assert!(
         !arena.can_move(uid, east),

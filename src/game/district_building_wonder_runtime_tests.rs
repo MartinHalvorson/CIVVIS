@@ -156,9 +156,10 @@ fn formations_can_be_bought_directly_for_full_constituent_cost() {
         .nbrs(center)
         .into_iter()
         .find(|position| {
-            game.map.get(*position).is_some_and(|tile| {
-                game.rules.is_passable(tile) && !game.rules.is_water(tile)
-            }) && game.unit_ids_at(*position).is_empty()
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.unit_ids_at(*position).is_empty()
         })
         .unwrap();
     game.relocate(bought, open_land);
@@ -431,24 +432,24 @@ fn meteors_pepper_open_land_and_grant_advanced_heavy_cavalry() {
 #[test]
 fn routes_level_per_tile_and_engineers_lay_railroads() {
     let (mut game, _city, _) = one_city(88_2071);
-    let (a, b) = game
-        .map
-        .tiles
-        .iter()
-        .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
-        .find_map(|(position, _)| {
-            game.nbrs(*position).into_iter().find_map(|neighbor| {
-                let ok = game.map.get(neighbor).is_some_and(|tile| {
-                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
-                }) && !game.crosses_river(*position, neighbor)
-                    && game.unit_ids_at(*position).is_empty()
-                    && game.unit_ids_at(neighbor).is_empty()
-                    && game.map.tiles[position].district.is_none()
-                    && game.map.tiles[&neighbor].district.is_none();
-                ok.then_some((*position, neighbor))
+    let (a, b) =
+        game.map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .find_map(|(position, _)| {
+                game.nbrs(*position).into_iter().find_map(|neighbor| {
+                    let ok = game.map.get(neighbor).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && !game.crosses_river(*position, neighbor)
+                        && game.unit_ids_at(*position).is_empty()
+                        && game.unit_ids_at(neighbor).is_empty()
+                        && game.map.tiles[position].district.is_none()
+                        && game.map.tiles[&neighbor].district.is_none();
+                    ok.then_some((*position, neighbor))
+                })
             })
-        })
-        .expect("test map has an adjacent riverless land pair");
+            .expect("test map has an adjacent riverless land pair");
     // Hills on the destination so the base step costs 2 MP and each
     // route level's discount is visible.
     for (position, hills) in [(a, false), (b, true)] {
@@ -518,24 +519,24 @@ fn routes_level_per_tile_and_engineers_lay_railroads() {
 #[test]
 fn a_bridged_river_crossing_costs_its_route_and_never_returns_movement() {
     let (mut game, _city, _) = one_city(88_2073);
-    let (a, b) = game
-        .map
-        .tiles
-        .iter()
-        .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
-        .find_map(|(position, _)| {
-            game.nbrs(*position).into_iter().find_map(|neighbor| {
-                let ok = game.map.get(neighbor).is_some_and(|tile| {
-                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
-                }) && !game.crosses_river(*position, neighbor)
-                    && game.unit_ids_at(*position).is_empty()
-                    && game.unit_ids_at(neighbor).is_empty()
-                    && game.map.tiles[position].district.is_none()
-                    && game.map.tiles[&neighbor].district.is_none();
-                ok.then_some((*position, neighbor))
+    let (a, b) =
+        game.map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .find_map(|(position, _)| {
+                game.nbrs(*position).into_iter().find_map(|neighbor| {
+                    let ok = game.map.get(neighbor).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && !game.crosses_river(*position, neighbor)
+                        && game.unit_ids_at(*position).is_empty()
+                        && game.unit_ids_at(neighbor).is_empty()
+                        && game.map.tiles[position].district.is_none()
+                        && game.map.tiles[&neighbor].district.is_none();
+                    ok.then_some((*position, neighbor))
+                })
             })
-        })
-        .expect("test map has an adjacent riverless land pair");
+            .expect("test map has an adjacent riverless land pair");
     for position in [a, b] {
         let tile = game.map.tiles.get_mut(&position).unwrap();
         tile.terrain = crate::name!("plains");
@@ -777,7 +778,8 @@ fn a_returning_levy_never_shares_a_tile_with_its_own_class() {
             game.units[uid].owner == minor
                 && game.rules.units[game.units[uid].kind].class == "military"
         })
-        .copied().collect();
+        .copied()
+        .collect();
     assert!(
         here.len() <= 1,
         "two military units of {} share {:?}: {:?}",

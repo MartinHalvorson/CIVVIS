@@ -443,7 +443,7 @@ pub(crate) fn install_test_district(game: &mut Game, city: u32, district: &str) 
 #[cfg(test)]
 pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, city: u32) {
     let center = game.cities[&city].pos;
-    let blocker = game.unit_ids_at(center).into_iter().find(|unit| {
+    let blocker = game.unit_ids_at(center).iter().find(|unit| {
         let unit = &game.units[unit];
         let spec = &game.rules.units[unit.kind];
         unit.owner == player
@@ -451,15 +451,15 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
             && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
     });
     if let Some(unit) = blocker {
-        let destination = game
-            .nbrs(center)
-            .into_iter()
-            .find(|position| {
-                game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                }) && game.unit_ids_at(*position).is_empty()
-            })
-            .expect("test city has an open adjacent land-combat slot");
+        let destination =
+            game.nbrs(center)
+                .into_iter()
+                .find(|position| {
+                    game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.unit_ids_at(*position).is_empty()
+                })
+                .expect("test city has an open adjacent land-combat slot");
         game.relocate(*unit, destination);
     }
 }
@@ -9199,9 +9199,10 @@ impl Game {
                 return None;
             }
             if self.city_at(position).is_some()
-                || self.unit_ids_at(position).into_iter().any(|unit| {
-                    self.rules.units[self.units[&unit].kind].class == "military"
-                })
+                || self
+                    .unit_ids_at(position)
+                    .into_iter()
+                    .any(|unit| self.rules.units[self.units[&unit].kind].class == "military")
             {
                 return None;
             }
@@ -12402,9 +12403,10 @@ impl Game {
                 .filter(|position| {
                     self.map.get(*position).is_some_and(|tile| {
                         self.rules.is_passable(tile) && !self.rules.is_water(tile)
-                    }) && !self.unit_ids_at(*position).iter().any(|unit| {
-                        self.rules.units[self.units[unit].kind].class == "military"
-                    })
+                    }) && !self
+                        .unit_ids_at(*position)
+                        .iter()
+                        .any(|unit| self.rules.units[self.units[unit].kind].class == "military")
                 })
                 .take(2)
                 .collect();
@@ -13927,7 +13929,7 @@ impl Game {
             strength += self.governor_effect(unit.owner, city.id, "theological_strength");
         }
         if self.wdisk(unit.pos, 1).into_iter().any(|position| {
-            self.unit_ids_at(position).into_iter().any(|other| {
+            self.unit_ids_at(position).iter().any(|other| {
                 self.units[&other].owner == unit.owner
                     && self.units[&other].kind == "guru"
                     && self.units[&other].religion == unit.religion
@@ -16511,7 +16513,7 @@ impl Game {
                 unit.acted = true;
                 (self.rules.units[unit.kind].class.clone(), unit.pos)
             };
-            let occupied = self.unit_ids_at(current_pos).into_iter().any(|other| {
+            let occupied = self.unit_ids_at(current_pos).iter().any(|other| {
                 *other != unit_id
                     && self.units[&other].owner == minor
                     && self.rules.units[self.units[&other].kind].class == class
@@ -16531,7 +16533,7 @@ impl Game {
                 candidates.dedup();
                 let free = candidates.into_iter().find(|position| {
                     self.unit_can_traverse(unit_id, *position)
-                        && !self.unit_ids_at(*position).into_iter().any(|other| {
+                        && !self.unit_ids_at(*position).iter().any(|other| {
                             self.units[&other].owner == minor
                                 && self.rules.units[self.units[&other].kind].class == class
                         })
@@ -20496,7 +20498,7 @@ impl Game {
         if !city.districts.is_empty() {
             supply += government.district_city_amenity;
         }
-        let garrison = self.unit_ids_at(city.pos).into_iter().any(|id| {
+        let garrison = self.unit_ids_at(city.pos).iter().any(|id| {
             let o = &self.units[&id];
             o.owner == city.owner && self.rules.units[o.kind].class == "military"
         });
@@ -22206,12 +22208,11 @@ impl Game {
                     .filter(|other| {
                         **other != uid
                             && self.units[other].owner == carrier.owner
-                            && self.rules.units[self.units[other].kind]
-                                .domain
-                                .as_deref()
+                            && self.rules.units[self.units[other].kind].domain.as_deref()
                                 == Some("air")
                     })
-                    .copied().collect()
+                    .copied()
+                    .collect()
             })
             .unwrap_or_default();
         if record_lifetime {
@@ -25374,7 +25375,7 @@ impl Game {
         {
             return false;
         }
-        self.unit_ids_at(pos).into_iter().all(|other_id| {
+        self.unit_ids_at(pos).iter().all(|other_id| {
             if moving.contains(&other_id) {
                 return true;
             }
@@ -25459,12 +25460,10 @@ impl Game {
                 .filter(|other| {
                     **other != uid
                         && self.units[other].owner == self.units[&uid].owner
-                        && self.rules.units[self.units[other].kind]
-                            .domain
-                            .as_deref()
-                            == Some("air")
+                        && self.rules.units[self.units[other].kind].domain.as_deref() == Some("air")
                 })
-                .copied().collect()
+                .copied()
+                .collect()
         } else {
             Vec::new()
         };
@@ -27035,23 +27034,20 @@ impl Game {
     }
 
     fn district_under_siege(&self, owner: usize, position: Pos) -> bool {
-        self.map
-            .around(position)
-            .into_iter()
-            .all(|pos| {
-                let Some(tile) = self.map.get(pos) else {
-                    return true;
-                };
-                if !self.rules.is_passable(tile) {
-                    return true;
-                }
-                self.unit_ids_at(pos).into_iter().any(|id| {
-                    let unit = &self.units[&id];
-                    unit.owner != owner
-                        && self.is_at_war(owner, unit.owner)
-                        && self.rules.units[unit.kind].class == "military"
-                }) || self.in_enemy_zoc(owner, pos)
-            })
+        self.map.around(position).into_iter().all(|pos| {
+            let Some(tile) = self.map.get(pos) else {
+                return true;
+            };
+            if !self.rules.is_passable(tile) {
+                return true;
+            }
+            self.unit_ids_at(pos).iter().any(|id| {
+                let unit = &self.units[&id];
+                unit.owner != owner
+                    && self.is_at_war(owner, unit.owner)
+                    && self.rules.units[unit.kind].class == "military"
+            }) || self.in_enemy_zoc(owner, pos)
+        })
     }
 
     /// A city cannot heal when every adjacent passable tile is occupied by a
@@ -34076,7 +34072,7 @@ impl Game {
                     Some(d) => city.districts.iter().any(|(built, position)| {
                         self.district_is_family(built, d)
                             && self.district_is_active(city, built, *position)
-                            && !self.unit_ids_at(*position).into_iter().any(|unit| {
+                            && !self.unit_ids_at(*position).iter().any(|unit| {
                                 self.units[&unit].owner != pid
                                     && self.is_at_war(pid, self.units[&unit].owner)
                             })
@@ -34123,7 +34119,7 @@ impl Game {
                 };
                 if tile.owner_city != Some(cid)
                     || tile.district.is_none()
-                    || self.unit_ids_at(*pos).into_iter().any(|unit| {
+                    || self.unit_ids_at(*pos).iter().any(|unit| {
                         self.units[&unit].owner != pid
                             && self.is_at_war(pid, self.units[&unit].owner)
                     })
@@ -35067,7 +35063,7 @@ impl Game {
                 && u.attacks_left > 0
             {
                 for target in self.nbrs(u.pos) {
-                    let rival = self.unit_ids_at(target).into_iter().any(|id| {
+                    let rival = self.unit_ids_at(target).iter().any(|id| {
                         let other = &self.units[&id];
                         self.rules.units[other.kind].class == "religious"
                             && other.owner != pid
@@ -35403,7 +35399,7 @@ impl Game {
                         if !self.map.tiles.contains_key(&pos) {
                             continue;
                         }
-                        let hit = self.unit_ids_at(pos).into_iter().any(|oid| {
+                        let hit = self.unit_ids_at(pos).iter().any(|oid| {
                             let o = &self.units[&oid];
                             o.owner != pid
                                 && self.is_at_war(pid, o.owner)
@@ -35435,7 +35431,7 @@ impl Game {
                         continue;
                     };
                     for pos in self.wdisk(source, 2) {
-                        let hit = self.unit_ids_at(pos).into_iter().any(|id| {
+                        let hit = self.unit_ids_at(pos).iter().any(|id| {
                             let other = &self.units[&id];
                             other.owner != pid
                                 && self.is_at_war(pid, other.owner)
@@ -36050,11 +36046,12 @@ impl Game {
                     && self.is_at_war(pid, unit.owner)
                     && self.rules.units[unit.kind].class == "support"
             })
-            .copied().collect();
+            .copied()
+            .collect();
         supports.sort_unstable();
         supports.into_iter().find(|support| {
             let owner = self.units[support].owner;
-            self.unit_ids_at(pos).into_iter().any(|escort| {
+            self.unit_ids_at(pos).iter().any(|escort| {
                 let escort = &self.units[&escort];
                 escort.owner == owner
                     && self.rules.units[escort.kind].class == "military"
@@ -36725,8 +36722,9 @@ impl Game {
                 {
                     return None;
                 }
-                let destination = self.city_active_district_family_position(city, crate::name!("aerodrome"))?;
-                (!self.unit_ids_at(destination).into_iter().any(|other| {
+                let destination =
+                    self.city_active_district_family_position(city, crate::name!("aerodrome"))?;
+                (!self.unit_ids_at(destination).iter().any(|other| {
                     let other = &self.units[&other];
                     other.owner != pid || self.rules.units[other.kind].class == spec.class
                 }))
@@ -36783,12 +36781,10 @@ impl Game {
                 .filter(|other| {
                     **other != uid
                         && self.units[other].owner == pid
-                        && self.rules.units[self.units[other].kind]
-                            .domain
-                            .as_deref()
-                            == Some("air")
+                        && self.rules.units[self.units[other].kind].domain.as_deref() == Some("air")
                 })
-                .copied().collect()
+                .copied()
+                .collect()
         } else {
             Vec::new()
         };
@@ -36967,7 +36963,7 @@ impl Game {
         }
         if u.kind == "hoplite"
             && self.nbrs(u.pos).into_iter().any(|p| {
-                self.unit_ids_at(p).into_iter().any(|id| {
+                self.unit_ids_at(p).iter().any(|id| {
                     *id != uid
                         && self.units[&id].owner == u.owner
                         && self.units[&id].kind == "hoplite"
@@ -37309,7 +37305,8 @@ impl Game {
                 self.units[id].owner == defender
                     && self.rules.units[self.units[id].kind].class == "military"
             })
-            .copied().collect();
+            .copied()
+            .collect();
         for id in garrison {
             self.remove_unit(id);
             self.on_unit_lost(defender);
@@ -37492,7 +37489,8 @@ impl Game {
                 let owner = self.units[id].owner;
                 owner != pid && self.is_at_war(pid, owner)
             })
-            .copied().collect();
+            .copied()
+            .collect();
         let mut city_id = self.city_at(target);
         if let Some(cid) = city_id {
             let owner = self.cities[&cid].owner;
@@ -37619,7 +37617,7 @@ impl Game {
                 return Ok(());
             }
             if d_dead {
-                let enemy_military_left = self.unit_ids_at(target).into_iter().any(|id| {
+                let enemy_military_left = self.unit_ids_at(target).iter().any(|id| {
                     let o = &self.units[&id];
                     o.owner != pid && self.rules.units[o.kind].class == "military"
                 });
@@ -37843,7 +37841,8 @@ impl Game {
                     && self.is_at_war(pid, owner)
                     && self.unit_currently_visible_to(**id, pid)
             })
-            .copied().collect();
+            .copied()
+            .collect();
         enemy_ids.extend(self.units.values().filter_map(|unit| {
             (unit.air_patrol
                 && unit.air_patrol_pos == Some(target)
@@ -39469,13 +39468,9 @@ impl Game {
         let mut aircraft: Vec<u32> = self
             .unit_ids_at(pos)
             .into_iter()
-            .filter(|unit| {
-                self.rules.units[self.units[unit].kind]
-                    .domain
-                    .as_deref()
-                    == Some("air")
-            })
-            .copied().collect();
+            .filter(|unit| self.rules.units[self.units[unit].kind].domain.as_deref() == Some("air"))
+            .copied()
+            .collect();
         aircraft.sort_unstable();
         let retained = aircraft
             .first()
@@ -39908,7 +39903,7 @@ impl Game {
                 self.remove_unit(defender_id);
                 self.on_unit_lost(defender.owner);
             }
-        } else if let Some(defender_id) = self.unit_ids_at(target).into_iter().find(|id| {
+        } else if let Some(defender_id) = self.unit_ids_at(target).iter().find(|id| {
             self.units[id].owner != pid
                 && self.is_at_war(pid, self.units[id].owner)
                 && self.rules.units[self.units[id].kind].class == "support"
@@ -40161,7 +40156,7 @@ impl Game {
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
             })
         };
-        if self.unit_ids_at(city.pos).into_iter().any(|uid| {
+        if self.unit_ids_at(city.pos).iter().any(|uid| {
             let other = &self.units[&uid];
             other.owner != pid || is_land_combat(&other.kind)
         }) {
@@ -41676,7 +41671,8 @@ impl Game {
                     && self.is_at_war(pid, o.owner)
                     && self.unit_currently_visible_to(**id, pid)
             })
-            .copied().collect();
+            .copied()
+            .collect();
         if enemies.is_empty() {
             return Err("no enemy target".into());
         }
@@ -44273,7 +44269,7 @@ impl Game {
                 if territory_owner.is_some_and(|owner| owner != unit.owner) {
                     return false;
                 }
-                self.unit_ids_at(**position).into_iter().all(|other_id| {
+                self.unit_ids_at(**position).iter().all(|other_id| {
                     *other_id == unit_id
                         || (self.units[&other_id].owner == unit.owner
                             && self.rules.units[self.units[&other_id].kind].class
