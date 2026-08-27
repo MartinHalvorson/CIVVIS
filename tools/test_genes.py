@@ -569,6 +569,7 @@ class TheOperatorPins(unittest.TestCase):
             "quest-boost",
             "quest-trade-route",
             "recon-replacement",
+            "relief-column-marches",
             "relief-targets-the-siege",
             "religious-units-heal-first",
             "research-tier-premium",
@@ -578,6 +579,7 @@ class TheOperatorPins(unittest.TestCase):
             "settler-target-hysteresis-2",
             "settler-threat-detour",
             "stranded-settler-discount",
+            "threatened-city-reserve",
             "unchosen-war-keeps-the-lane",
             "unit-cost-efficiency",
             "unit-objective-memory",
@@ -586,7 +588,7 @@ class TheOperatorPins(unittest.TestCase):
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 49)
+        self.assertEqual(len(pins), 51)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         # ⭐ The versioned family the operator moved on 2026-08-26: the ship
