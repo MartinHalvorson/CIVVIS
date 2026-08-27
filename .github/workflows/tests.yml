@@ -92,10 +92,13 @@ jobs:
           set -euo pipefail
           # actions/checkout is intentionally shallow. Fetch just the event's
           # base commit so the comparison is exact even while main advances.
+          # HEAD is GitHub's synthetic pull-request merge result, so compare
+          # its tree directly with the base tree; `...` would need a merge-base
+          # traversal that a depth-one checkout intentionally does not have.
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           # Do not allow Git's optional rename detection to hide a Rust-file
           # deletion behind an allowlisted destination path.
-          git diff --no-renames --name-only -z "$BASE_SHA...HEAD" \
+          git diff --no-renames --name-only -z "$BASE_SHA..HEAD" \
             | python3 tools/ci_scope.py --paths0 \
             | tee -a "$GITHUB_OUTPUT"
       - name: Fetch clean source revisions for ledger checks

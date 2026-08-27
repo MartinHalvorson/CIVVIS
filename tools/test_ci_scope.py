@@ -52,7 +52,9 @@ class CiScopeTests(unittest.TestCase):
         workflow = (
             Path(__file__).resolve().parent.parent / ".github/workflows/tests.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("git diff --no-renames --name-only -z", workflow)
+        self.assertIn(
+            'git diff --no-renames --name-only -z "$BASE_SHA..HEAD"', workflow
+        )
         self.assertTrue(
             ci_scope.requires_rust_gate(["src/lib.rs", "README.md"]),
         )
