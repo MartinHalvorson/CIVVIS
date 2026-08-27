@@ -30498,10 +30498,17 @@ impl AdvancedAi {
             .map(|player| player.id)
             .collect();
         let mut worst_reply = 0.0_f64;
+        // With one front there is no clone to save, so retain the original
+        // path exactly. The broad geometry scan only earns its keep when it
+        // can eliminate one or more other warring seats.
+        let has_multiple_enemies = enemies.len() > 1;
 
-        for enemy in enemies.into_iter().filter(|enemy| {
-            Self::enemy_can_force_a_reply_against_any(after, *enemy, &victims)
-        }) {
+        for enemy in enemies {
+            if has_multiple_enemies
+                && !Self::enemy_can_force_a_reply_against_any(after, enemy, &victims)
+            {
+                continue;
+            }
             let mut reply_position = after.speculative_clone();
             reply_position.current = enemy;
             for unit in reply_position
