@@ -2908,8 +2908,15 @@ mod tests {
             assert_eq!(held.owner, 1, "the garrison holds it");
             assert_eq!(held.pos, hex::offset_to_axial(17, 6));
             assert_eq!(held.hp, 200);
-            assert_eq!(held.wall_hp, 100, "a wall a melee unit cannot capture through");
-            assert_eq!(game.city_max_wall_hp(held), 100, "and the pool is the stated one");
+            assert_eq!(
+                held.wall_hp, 100,
+                "a wall a melee unit cannot capture through"
+            );
+            assert_eq!(
+                game.city_max_wall_hp(held),
+                100,
+                "and the pool is the stated one"
+            );
             assert!(
                 game.units_at(held.pos).is_empty(),
                 "seed {seed}: the muster does not seat a unit on the city"
@@ -2952,8 +2959,9 @@ mod tests {
         // The besieger starts six tiles out; walk it up first, because a
         // board is taken at contact. A city heals between turns, so the
         // damage is stamped after the march and before the capture.
-        let mut ais: Vec<Box<dyn Ai>> =
-            (0..2).map(|pid| builtin_ai("advanced", 6 + pid as u64)).collect();
+        let mut ais: Vec<Box<dyn Ai>> = (0..2)
+            .map(|pid| builtin_ai("advanced", 6 + pid as u64))
+            .collect();
         let mut in_contact = false;
         for _ in 0..30 {
             if capture_engagement(&g, 0, 1, 12, 10, "probe").is_some() {
