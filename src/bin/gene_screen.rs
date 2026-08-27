@@ -2098,6 +2098,11 @@ struct Seats<'a> {
     clusters: Vec<GameKey>,
     wins: Vec<f64>,
     shares: Vec<f64>,
+    /// `docs/COMMITMENTS.md`: the seat's decisions completed, as a share of
+    /// those made; and the share of its open commitment-turns on which the
+    /// owner had movement and did not act. Zero for a seat that made none.
+    done: Vec<f64>,
+    forgotten: Vec<f64>,
 }
 
 impl<'a> Seats<'a> {
@@ -2125,6 +2130,21 @@ impl<'a> Seats<'a> {
             .map(|row| f64::from(u8::from(row.win)))
             .collect();
         let shares = rows.iter().map(|row| row.score_share).collect();
+        let ratio = |part: i64, whole: i64| {
+            if whole > 0 {
+                part as f64 / whole as f64
+            } else {
+                0.0
+            }
+        };
+        let done = rows
+            .iter()
+            .map(|row| ratio(row.commit_completed, row.commit_made))
+            .collect();
+        let forgotten = rows
+            .iter()
+            .map(|row| ratio(row.commit_forgotten_turns, row.commit_open_turns))
+            .collect();
         Seats {
             rows,
             columns,
@@ -2132,6 +2152,8 @@ impl<'a> Seats<'a> {
             clusters,
             wins,
             shares,
+            done,
+            forgotten,
         }
     }
 
@@ -2289,6 +2311,14 @@ struct GeneEstimate {
     share_delta: f64,
     share_se: f64,
     adjusted: Option<(f64, f64)>,
+    /// Decisiveness (`docs/COMMITMENTS.md`): on−off Δ of the share of
+    /// decisions completed, and of the share of open commitment-turns
+    /// forgotten, each with its clustered error. Zero-width when the rows
+    /// predate the ledger.
+    done_delta: f64,
+    done_se: f64,
+    forgotten_delta: f64,
+    forgotten_se: f64,
 }
 
 impl GeneEstimate {
@@ -2351,6 +2381,8 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
             }
             let (win_delta, win_se) = seats.contrast(column, &seats.wins);
             let (share_delta, share_se) = seats.contrast(column, &seats.shares);
+            let (done_delta, done_se) = seats.contrast(column, &seats.done);
+            let (forgotten_delta, forgotten_se) = seats.contrast(column, &seats.forgotten);
             let rate = |wins: usize, n: usize| if n > 0 { wins as f64 / n as f64 } else { 0.0 };
             GeneEstimate {
                 tag: header.genes[index].clone(),
@@ -2363,6 +2395,10 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
                 share_delta,
                 share_se,
                 adjusted: adjusted.as_ref().map(|all| all[column]),
+                done_delta,
+                done_se,
+                forgotten_delta,
+                forgotten_se,
             }
         })
         .collect();
@@ -3396,6 +3432,51 @@ fn print_table(header: &Header, rows: &[Row]) {
             read
         );
     }
+    // Decisiveness (`docs/COMMITMENTS.md`), only for rows that carry the
+    // ledger: the genes that most change how many decisions complete and
+    // how many committed turns are forgotten.
+    if genes
+        .iter()
+        .any(|e| e.done_se > 0.0 && e.done_se.is_finite())
+    {
+        println!(
+            "\n{:<28} {:>14} {:>7}  {:>14} {:>7}",
+            "decisiveness", "doneΔpp", "z", "forgottenΔpp", "z"
+        );
+        let mut by_forgotten: Vec<&GeneEstimate> = genes.iter().collect();
+        by_forgotten.sort_by(|a, b| {
+            let za = if a.forgotten_se > 0.0 {
+                a.forgotten_delta / a.forgotten_se
+            } else {
+                0.0
+            };
+            let zb = if b.forgotten_se > 0.0 {
+                b.forgotten_delta / b.forgotten_se
+            } else {
+                0.0
+            };
+            za.abs().total_cmp(&zb.abs()).reverse()
+        });
+        for e in by_forgotten {
+            let z = |delta: f64, se: f64| {
+                if se > 0.0 && se.is_finite() {
+                    delta / se
+                } else {
+                    0.0
+                }
+            };
+            println!(
+                "{:<28} {:>+7.2}±{:<5.2} {:>+7.2}  {:>+7.2}±{:<5.2} {:>+7.2}",
+                e.tag,
+                100.0 * e.done_delta,
+                100.0 * e.done_se,
+                z(e.done_delta, e.done_se),
+                100.0 * e.forgotten_delta,
+                100.0 * e.forgotten_se,
+                z(e.forgotten_delta, e.forgotten_se),
+            );
+        }
+    }
     println!(
         "\n`*` = |z|≥2 (a screen flag, ~1 in 22 by chance); `**` = past the family-wise bar; the read \
          column names the win Δ first and the score-share Δ when it says more. `~` = unresolved at \
@@ -3667,6 +3748,12 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 "share_se_pp": 100.0 * e.share_se,
                 "share_z": e.share_z(),
                 "share_resolves_pp": resolving_power(e.share_se),
+                // Decisiveness, `docs/COMMITMENTS.md`: decisions completed
+                // and commitment-turns forgotten, on − off, in points.
+                "done_delta_pp": 100.0 * e.done_delta,
+                "done_se_pp": 100.0 * e.done_se,
+                "forgotten_delta_pp": 100.0 * e.forgotten_delta,
+                "forgotten_se_pp": 100.0 * e.forgotten_se,
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
@@ -7886,6 +7973,10 @@ mod tests {
             share_delta: 0.0,
             share_se: win,
             adjusted: None,
+            done_delta: 0.0,
+            done_se: 0.0,
+            forgotten_delta: 0.0,
+            forgotten_se: 0.0,
         };
         let genes = vec![se(0.05), se(0.10), se(f64::INFINITY)];
         assert!(

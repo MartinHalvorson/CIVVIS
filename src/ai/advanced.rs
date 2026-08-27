@@ -4467,6 +4467,16 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `capture-go-or-stand-down`: a declared war's objective that no unit of
+    /// ours has been within `commitments::CAPTURE_PRESENCE_RADIUS` of for
+    /// `commitments::CAPTURE_GO_TURNS` consecutive turns is stood down
+    /// explicitly — excluded from the target ranking for
+    /// `commitments::CAPTURE_STAND_DOWN_TURNS` and the strategy re-assessed
+    /// now — instead of being held, unprosecuted, until the five-turn cadence
+    /// happens to drop it. Opt-in gene; see `advanced/commitments.rs`.
+    capture_go_or_stand_down: bool,
+    /// City id → turn the stand-down expires. Written only by the gene.
+    capture_stood_down: BTreeMap<u32, u32>,
     /// On an advance, no unit ends the turn more than the body's pace plus
     /// one tile closer to the objective than the force's anchor stood. Opt-in
     /// gene `close-as-a-body`; see `advanced/close_as_a_body.rs`.
@@ -6455,6 +6465,8 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            capture_go_or_stand_down: false,
+            capture_stood_down: BTreeMap::new(),
             close_as_a_body: false,
             culture_floor: false,
             city_target_meets_the_map: false,
@@ -6917,6 +6929,14 @@ impl AdvancedAi {
 
     fn plan_stale(&self, g: &Game, pid: usize) -> bool {
         let Some(plan) = &self.plan else { return true };
+        // `capture-go-or-stand-down`: the ledger stood the target down this
+        // turn; re-assess now rather than on the cadence.
+        if plan
+            .target_city
+            .is_some_and(|city| self.capture_stood_down_holds(g, city))
+        {
+            return true;
+        }
         let unavailable_victory_plan = matches!(
             plan.strategy,
             GrandStrategy::Science
@@ -10354,6 +10374,30 @@ impl AdvancedAi {
                 })
         } else {
             None
+        };
+        // `capture-go-or-stand-down`: a city the ledger stood down is not
+        // ranked again until the stand-down expires; the next-best city of the
+        // same rival takes its place. A home emergency is never stood down.
+        let ranked_target_city = if self.capture_go_or_stand_down && emergency_objective.is_none() {
+            ranked_target_city
+                .filter(|city| !self.capture_stood_down_holds(g, *city))
+                .or_else(|| {
+                    target_player.and_then(|target| {
+                        g.cities
+                            .values()
+                            .filter(|c| {
+                                c.owner == target && !self.capture_stood_down_holds(g, c.id)
+                            })
+                            .min_by(|left, right| {
+                                self.campaign_city_value(g, pid, left, strategy)
+                                    .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
+                                    .then_with(|| left.id.cmp(&right.id))
+                            })
+                            .map(|c| c.id)
+                    })
+                })
+        } else {
+            ranked_target_city
         };
         let target_city = committed_target_city.or(ranked_target_city);
 
