@@ -1318,6 +1318,86 @@ pub struct QueryCache {
     // catalog with the next helper in the same decision; retaining it only
     // inside one guard would miss the duplicate scans this cache exists for.
     producible: std::cell::RefCell<BTreeMap<(usize, u32), Vec<Item>>>,
+    // What a read-only sweep asked one seat's policy deck, while a
+    // `Game::trace_policy_reads` guard is alive. Nothing records unless a
+    // caller opens a trace, so the ordinary path pays one predicted `Cell`
+    // load per policy question and nothing else. It lives here rather than on
+    // `Game` for the same two reasons the rest of this struct does: it is
+    // derived, and a clone must start empty.
+    policy_reads_on: std::cell::Cell<bool>,
+    policy_reads: std::cell::RefCell<PolicyReadSet>,
+}
+
+/// What one read-only sweep asked a seat's policy deck — see
+/// [`Game::trace_policy_reads`].
+///
+/// Every route from a slotted card to an answer runs through
+/// [`Game::policy_effect`], [`Game::policy_effect_for_unit`] or
+/// [`Game::has_policy`]; outside those three the deck is touched only by the
+/// mutators that seat and drop cards, and by [`Game::modifier_context`], whose
+/// callers are gated below. So a card naming none of the effect keys and none
+/// of the card names recorded here cannot move a single number the sweep
+/// produced: every lookup returns the value it already returned, the two runs
+/// stay in lockstep, and the result is bit-for-bit the same `f64`.
+#[derive(Clone, Debug, Default)]
+pub struct PolicyReadSet {
+    /// Effect keys the sweep asked for, restricted to keys some card in the
+    /// ruleset grants — a key no card grants cannot be a card's key.
+    effects: BTreeSet<String>,
+    /// Cards the sweep named to [`Game::has_policy`].
+    cards: BTreeSet<Name>,
+    /// The traced seat carries a runtime modifier attachment. Those are
+    /// matched against the whole deck by name in
+    /// [`crate::rules::ModifierRequirements`] rather than by effect key, so a
+    /// trace taken on such a seat can rule nothing inert.
+    opaque: bool,
+}
+
+impl PolicyReadSet {
+    /// Whether slotting or unslotting `card` is guaranteed to leave every
+    /// number the traced sweep produced bit-for-bit identical.
+    ///
+    /// Conservative in one direction only. An unknown card, an effect key the
+    /// sweep did ask for, or a seat carrying an attachment all answer `false`,
+    /// which costs the caller exactly the sweep it would have run anyway.
+    pub fn card_is_inert(&self, rules: &Rules, card: Name) -> bool {
+        if self.opaque || self.cards.contains(&card) {
+            return false;
+        }
+        match rules.policies.get_interned(card) {
+            Some(spec) => !spec
+                .effects
+                .keys()
+                .any(|key| self.effects.contains(key.as_str())),
+            None => false,
+        }
+    }
+
+    /// Whether this trace can rule anything inert at all.
+    pub fn is_opaque(&self) -> bool {
+        self.opaque
+    }
+}
+
+/// Records what the sweep running under it asks the policy deck. Recording
+/// stops when the guard is dropped, whether or not the caller took the answer.
+pub struct PolicyReadTrace<'a> {
+    game: &'a Game,
+}
+
+impl PolicyReadTrace<'_> {
+    /// Stop recording and take what was recorded.
+    pub fn finish(&self) -> PolicyReadSet {
+        self.game.query_memo.policy_reads_on.set(false);
+        std::mem::take(&mut *self.game.query_memo.policy_reads.borrow_mut())
+    }
+}
+
+impl Drop for PolicyReadTrace<'_> {
+    fn drop(&mut self) {
+        self.game.query_memo.policy_reads_on.set(false);
+        *self.game.query_memo.policy_reads.borrow_mut() = PolicyReadSet::default();
+    }
 }
 
 impl Clone for QueryCache {
@@ -10862,7 +10942,47 @@ impl Game {
     }
 
     pub fn has_policy(&self, pid: usize, name: &str) -> bool {
-        !self.in_anarchy(pid) && self.players[pid].policies.contains(&Name::new(name))
+        let card = Name::new(name);
+        self.note_policy_card_read(card);
+        !self.in_anarchy(pid) && self.players[pid].policies.contains(&card)
+    }
+
+    /// Record every question the next read-only sweep asks `pid`'s policy
+    /// deck, so a caller that runs the same sweep once per candidate card can
+    /// tell which candidates it already holds the answer for. See
+    /// [`PolicyReadSet`].
+    ///
+    /// One trace covers one sweep; opening a second while the first is alive
+    /// restarts the recording rather than nesting.
+    pub fn trace_policy_reads(&self, pid: usize) -> PolicyReadTrace<'_> {
+        *self.query_memo.policy_reads.borrow_mut() = PolicyReadSet {
+            // A runtime attachment is matched against the deck by card name,
+            // not by effect key, so a seat carrying one is not classifiable.
+            opaque: !self.has_no_attachments(pid),
+            ..PolicyReadSet::default()
+        };
+        self.query_memo.policy_reads_on.set(true);
+        PolicyReadTrace { game: self }
+    }
+
+    #[inline]
+    fn note_policy_effect_read(&self, effect: &str) {
+        if !self.query_memo.policy_reads_on.get() {
+            return;
+        }
+        // `insert` would build the `String` before discovering it is already
+        // there, and a sweep asks the same few dozen keys once per city.
+        let mut seen = self.query_memo.policy_reads.borrow_mut();
+        if !seen.effects.contains(effect) {
+            seen.effects.insert(effect.to_string());
+        }
+    }
+
+    #[inline]
+    fn note_policy_card_read(&self, card: Name) {
+        if self.query_memo.policy_reads_on.get() {
+            self.query_memo.policy_reads.borrow_mut().cards.insert(card);
+        }
     }
 
     /// Sum a reusable modifier bundle attached directly to one player.
@@ -11035,7 +11155,13 @@ impl Game {
         // A runtime attachment can carry any key at all, and the table it
         // comes from is swapped in after the ruleset is indexed, so the
         // index only settles this for a seat carrying no attachments.
-        if !self.rules.effect_index.policies(effect) && self.has_no_attachments(pid) {
+        let granted = self.rules.effect_index.policies(effect);
+        if granted {
+            // A key no card in the ruleset grants cannot be a card's key, so
+            // a trace loses nothing by recording only the ones that are.
+            self.note_policy_effect_read(effect);
+        }
+        if !granted && self.has_no_attachments(pid) {
             return 0.0;
         }
         // The generic empire/city path collects player-wide and city-wide
@@ -11174,6 +11300,7 @@ impl Game {
 
     /// Sums a policy effect over the cards whose era window admits `era`.
     fn policy_effect_for_unit(&self, pid: usize, effect: &str, unit: &str) -> f64 {
+        self.note_policy_effect_read(effect);
         let attached = self.player_modifier_effect_in_collections(
             pid,
             effect,
