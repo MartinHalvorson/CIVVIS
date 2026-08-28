@@ -2883,6 +2883,22 @@ impl AdvancedAi {
         self.capture_stood_down.clear();
     }
 
+    /// Version 2 of `capture_go_or_stand_down`: also stands down a siege
+    /// whose bodies are at the objective but have not pushed the city to a
+    /// new low for `CAPTURE_STALL_TURNS` stalled readings. One version of a
+    /// family plays, so this turns version 1 off. Opt-in gene
+    /// `capture-go-or-stand-down-2`. Filed here rather than under a marker.
+    pub fn enable_capture_go_or_stand_down_2(&mut self) {
+        self.capture_go_or_stand_down = false;
+        self.capture_go_or_stand_down_2 = true;
+    }
+
+    /// The twin of `enable_capture_go_or_stand_down_2`.
+    pub fn disable_capture_go_or_stand_down_2(&mut self) {
+        self.capture_go_or_stand_down_2 = false;
+        self.capture_stood_down.clear();
+    }
+
     /// A settle or improve target survives a passing threat, and the
     /// commitment ledger retires it after `COMMITMENT_PATIENCE` consecutive
     /// forgotten turns, parking the site. Filed here rather than under a

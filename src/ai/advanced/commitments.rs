@@ -54,6 +54,14 @@ pub const CAPTURE_GO_TURNS: u32 = 6;
 /// [`CONQUEST_ETA_TURNS`]: the same patience the campaign layer gives a plan.
 pub const CAPTURE_STAND_DOWN_TURNS: u32 = 20;
 
+/// `capture-go-or-stand-down-2`: consecutive stalled readings — bodies at the
+/// objective, the city not pushed to a new low — before the siege is stood
+/// down. A stalled reading starts [`STALL_TURNS`] turns after the last new
+/// low, so six of them is nine turns of a siege that is not winning: the
+/// arena's `the_storming` board resolves in 34 and a live siege that took a
+/// city did it inside ten of the declaration (`TIMED_WAR_CAPTURE_WINDOW`).
+pub const CAPTURE_STALL_TURNS: u32 = 6;
+
 /// `commitment-patience`: consecutive forgotten turns a settle or improve
 /// commitment survives before the ledger retires it — the target dropped and
 /// parked in the owner's avoid map for the hysteresis window, so the next
@@ -133,6 +141,12 @@ pub struct Commitment {
     /// acted on resets it, a turn with no reading leaves it.
     pub forgotten_streak: u32,
     pub stalled_turns: u32,
+    /// Consecutive stalled readings as of the last one; a new low resets it,
+    /// a forgotten turn (nobody present) resets it.
+    pub stalled_streak: u32,
+    /// The reading has been below its initial value at least once: for a
+    /// capture, the city was pushed lower than when the decision was made.
+    pub engaged: bool,
 }
 
 /// What became of one kind of decision, summed over a seat or a board.
@@ -320,17 +334,23 @@ impl CommitmentLedger {
         if reading < c.best {
             c.best = reading;
             c.best_turn = turn;
+            c.stalled_streak = 0;
+        }
+        if reading < c.initial {
+            c.engaged = true;
         }
         match acted {
             Some(false) => {
                 c.forgotten_turns += 1;
                 c.forgotten_streak += 1;
+                c.stalled_streak = 0;
                 census.forgotten_turns += 1;
                 *self.forgotten_why.entry((key.0, why)).or_default() += 1;
             }
             Some(true) if turn.saturating_sub(c.best_turn) >= STALL_TURNS => {
                 c.forgotten_streak = 0;
                 c.stalled_turns += 1;
+                c.stalled_streak += 1;
                 census.stalled_turns += 1;
             }
             Some(true) => c.forgotten_streak = 0,
@@ -462,6 +482,8 @@ impl CommitmentLedger {
                         turns_open: 0,
                         forgotten_turns: 0,
                         forgotten_streak: 0,
+                        stalled_streak: 0,
+                        engaged: false,
                         stalled_turns: 0,
                     });
                 }
@@ -503,6 +525,8 @@ impl CommitmentLedger {
                     turns_open: 0,
                     forgotten_turns: 0,
                     forgotten_streak: 0,
+                    stalled_streak: 0,
+                    engaged: false,
                     stalled_turns: 0,
                 });
             }
@@ -538,10 +562,15 @@ impl CommitmentLedger {
                     // army behind it.
                     let split = if c.turns_open > 0 && c.forgotten_turns == c.turns_open {
                         "ended, nobody ever went"
-                    } else if c.forgotten_turns == 0 && c.turns_open > 0 {
-                        "ended, always present"
                     } else {
-                        "ended, went then left"
+                        // And once there, did the siege ever push the city
+                        // below where it stood when the decision was made?
+                        match (c.forgotten_turns == 0 && c.turns_open > 0, c.engaged) {
+                            (true, true) => "ended, always present, engaged",
+                            (true, false) => "ended, always present, never scratched it",
+                            (false, true) => "ended, went then left, engaged",
+                            (false, false) => "ended, went then left, never scratched it",
+                        }
                     };
                     *self.endings.entry((Kind::Capture, split)).or_default() += 1;
                 }
@@ -571,6 +600,8 @@ impl CommitmentLedger {
                 turns_open: 0,
                 forgotten_turns: 0,
                 forgotten_streak: 0,
+                stalled_streak: 0,
+                engaged: false,
                 stalled_turns: 0,
             });
         }
@@ -834,27 +865,42 @@ impl AdvancedAi {
         // declared objective forgotten for CAPTURE_GO_TURNS running is stood
         // down: out of the ranking until the stand-down expires, and
         // `plan_stale` re-assesses the strategy next turn.
-        if self.capture_go_or_stand_down {
+        if self.capture_go_or_stand_down || self.capture_go_or_stand_down_2 {
             self.capture_stood_down.retain(|_, until| g.turn < *until);
             if let Some(c) = ledger.open_for(Kind::Capture, Owner::Empire) {
                 let Target::City(cid) = c.target else {
                     unreachable!("a capture targets a city")
                 };
-                if c.forgotten_streak >= CAPTURE_GO_TURNS
-                    && !self.capture_stood_down.contains_key(&cid)
-                {
-                    let (turns_open, streak) = (c.turns_open, c.forgotten_streak);
+                let nobody_went = c.forgotten_streak >= CAPTURE_GO_TURNS;
+                // Version 2: bodies at the objective and the city not pushed
+                // to a new low for CAPTURE_STALL_TURNS stalled readings — a
+                // siege that is not winning is stood down the same way.
+                let not_winning =
+                    self.capture_go_or_stand_down_2 && c.stalled_streak >= CAPTURE_STALL_TURNS;
+                if (nobody_went || not_winning) && !self.capture_stood_down.contains_key(&cid) {
+                    let (turns_open, forgotten, stalled) =
+                        (c.turns_open, c.forgotten_streak, c.stalled_streak);
                     self.capture_stood_down
                         .insert(cid, g.turn + CAPTURE_STAND_DOWN_TURNS);
+                    let counter = if nobody_went {
+                        "commit:capture:gene_stand_downs"
+                    } else {
+                        "commit:capture:stall_stand_downs"
+                    };
                     *g.players[pid]
                         .counters
-                        .entry("commit:capture:gene_stand_downs".to_string())
+                        .entry(counter.to_string())
                         .or_insert(0) += 1;
                     if let Some(city) = g.cities.get(&cid) {
                         let (name, pos) = (city.name.clone(), city.pos);
-                        think!(self.journal(), Military, Strategy, "Standing down the objective nobody went to";
-                               "{name} was the target for {turns_open} turns and no unit of ours came within {} hexes on the last {streak}",
-                               CAPTURE_PRESENCE_RADIUS; pos);
+                        if nobody_went {
+                            think!(self.journal(), Military, Strategy, "Standing down the objective nobody went to";
+                                   "{name} was the target for {turns_open} turns and no unit of ours came within {} hexes on the last {forgotten}",
+                                   CAPTURE_PRESENCE_RADIUS; pos);
+                        } else {
+                            think!(self.journal(), Military, Strategy, "Standing down a siege that is not winning";
+                                   "{name} was the target for {turns_open} turns; the army has been there and has not pushed it to a new low in {stalled} stalled readings"; pos);
+                        }
                     }
                 }
             }
@@ -869,10 +915,15 @@ impl AdvancedAi {
         ledger.export(g, pid);
     }
 
+    /// `capture-go-or-stand-down` family: either version is on.
+    pub(super) fn capture_stand_down_on(&self) -> bool {
+        self.capture_go_or_stand_down || self.capture_go_or_stand_down_2
+    }
+
     /// `capture-go-or-stand-down`: whether the gene holds this city out of
     /// the target ranking this turn.
     pub(super) fn capture_stood_down_holds(&self, g: &Game, city: u32) -> bool {
-        self.capture_go_or_stand_down
+        self.capture_stand_down_on()
             && self
                 .capture_stood_down
                 .get(&city)
@@ -911,6 +962,8 @@ mod tests {
             turns_open: 0,
             forgotten_turns: 0,
             forgotten_streak: 0,
+            stalled_streak: 0,
+            engaged: false,
             stalled_turns: 0,
         });
         ledger
@@ -986,6 +1039,8 @@ mod tests {
             turns_open: 0,
             forgotten_turns: 0,
             forgotten_streak: 0,
+            stalled_streak: 0,
+            engaged: false,
             stalled_turns: 0,
         });
         let key = (Kind::Capture, Owner::Empire);
@@ -1034,9 +1089,9 @@ mod tests {
     /// unprosecuted turns stand the city down: it leaves the ranking, the
     /// plan is stale at once, and the re-assessment names something else.
     /// With the gene off the ledger only counts, and nothing is written.
-    #[test]
-    fn a_declared_objective_nobody_goes_to_is_stood_down_and_the_ranking_moves_on() {
-        use super::super::StrategicPlan;
+    /// Two rival cities, a war, and the rival city farthest from our capital
+    /// as the objective — out of our starting units' reach.
+    fn conquest_fixture() -> (Game, u32) {
         use crate::game::Action;
 
         let fixture = || {
@@ -1081,17 +1136,26 @@ mod tests {
             );
             (game, target)
         };
-        let aim = |ai: &mut AdvancedAi, game: &Game, target: u32| {
-            ai.plan = Some(StrategicPlan {
-                strategy: GrandStrategy::Conquest,
-                target_player: Some(1),
-                target_city: Some(target),
-                threatened_city: None,
-                desired_cities: 4,
-                assessed_turn: game.turn,
-                rush: false,
-            });
-        };
+        fixture()
+    }
+
+    /// Aim a Conquest plan at `target`.
+    fn aim(ai: &mut AdvancedAi, game: &Game, target: u32) {
+        use super::super::StrategicPlan;
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+    }
+
+    #[test]
+    fn a_declared_objective_nobody_goes_to_is_stood_down_and_the_ranking_moves_on() {
+        let fixture = conquest_fixture;
 
         let (mut game, target) = fixture();
         let mut ai = AdvancedAi::new();
@@ -1147,6 +1211,130 @@ mod tests {
                 .forgotten_streak,
             CAPTURE_GO_TURNS,
             "off: the ledger still counts"
+        );
+    }
+
+    #[test]
+    fn a_stalled_streak_counts_present_readings_without_a_new_low_and_engaged_marks_a_dent() {
+        let mut ledger = CommitmentLedger::default();
+        ledger.open_new(Commitment {
+            kind: Kind::Capture,
+            owner: Owner::Empire,
+            target: Target::City(9),
+            made: 50,
+            eta: 70,
+            initial: 300,
+            best: 300,
+            best_turn: 50,
+            last_pos: None,
+            improvement_then: None,
+            retargets: 0,
+            turns_open: 0,
+            forgotten_turns: 0,
+            forgotten_streak: 0,
+            stalled_turns: 0,
+            stalled_streak: 0,
+            engaged: false,
+        });
+        let key = (Kind::Capture, Owner::Empire);
+        let open = |ledger: &CommitmentLedger| ledger.open_for(key.0, key.1).unwrap().clone();
+        // Present, city static: stalled readings start after STALL_TURNS.
+        for turn in 51..=53 {
+            ledger.observe_open(key, turn, 300, Some(true), None, "x");
+        }
+        assert_eq!(
+            open(&ledger).stalled_streak,
+            1,
+            "turn 53 is the first stalled reading"
+        );
+        ledger.observe_open(key, 54, 300, Some(true), None, "x");
+        assert_eq!(open(&ledger).stalled_streak, 2);
+        assert!(!open(&ledger).engaged);
+        // A new low resets the streak and marks the siege as engaged.
+        ledger.observe_open(key, 55, 250, Some(true), None, "x");
+        assert_eq!(open(&ledger).stalled_streak, 0);
+        assert!(open(&ledger).engaged);
+        // The city heals back: no new low, the streak grows again from
+        // STALL_TURNS after the low; a forgotten turn resets it.
+        for turn in 56..=59 {
+            ledger.observe_open(key, turn, 280, Some(true), None, "x");
+        }
+        assert_eq!(open(&ledger).stalled_streak, 2);
+        ledger.observe_open(key, 60, 280, Some(false), None, "x");
+        assert_eq!(open(&ledger).stalled_streak, 0);
+    }
+
+    /// `capture-go-or-stand-down-2`: our warrior stands beside the objective
+    /// every turn and the city is never pushed lower. Version 1 never fires —
+    /// somebody went — while version 2 stands the siege down once the stalled
+    /// streak reaches CAPTURE_STALL_TURNS, and only version 2 is on then.
+    #[test]
+    fn a_siege_that_is_present_but_not_winning_is_stood_down_by_version_two() {
+        let (mut game, target) = conquest_fixture();
+        let at = game.cities[&target].pos;
+        let beside = game
+            .wdisk(at, 1)
+            .into_iter()
+            .find(|pos| {
+                *pos != at
+                    && !game.rules.is_water(&game.map.tiles[pos])
+                    && game.units_at(*pos).is_empty()
+            })
+            .expect("a land hex beside the objective");
+        game.spawn_test_unit("warrior", 0, beside);
+        let rounds = 1 + STALL_TURNS + CAPTURE_STALL_TURNS;
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_capture_go_or_stand_down_2();
+        assert!(
+            !v2.capture_go_or_stand_down,
+            "one version of the family plays"
+        );
+        aim(&mut v2, &game, target);
+        let mut g2 = game.clone();
+        for _ in 0..rounds {
+            v2.reconcile_commitments(&mut g2, 0);
+            g2.turn += 1;
+        }
+        let open = v2
+            .commitments()
+            .open_for(Kind::Capture, Owner::Empire)
+            .expect("open");
+        assert_eq!(open.forgotten_streak, 0, "somebody was there every turn");
+        assert!(
+            open.stalled_streak >= CAPTURE_STALL_TURNS,
+            "{}",
+            open.stalled_streak
+        );
+        assert!(
+            v2.capture_stood_down.contains_key(&target),
+            "version 2 stands the siege down"
+        );
+        assert_eq!(
+            g2.players[0]
+                .counters
+                .get("commit:capture:stall_stand_downs"),
+            Some(&1)
+        );
+        assert!(v2.plan_stale(&g2, 0));
+
+        let mut v1 = AdvancedAi::new();
+        v1.enable_capture_go_or_stand_down();
+        aim(&mut v1, &game, target);
+        let mut g1 = game.clone();
+        for _ in 0..rounds {
+            v1.reconcile_commitments(&mut g1, 0);
+            g1.turn += 1;
+        }
+        assert!(
+            v1.capture_stood_down.is_empty(),
+            "version 1 only acts when nobody went"
+        );
+        assert_eq!(
+            g1.players[0]
+                .counters
+                .get("commit:capture:stall_stand_downs"),
+            None
         );
     }
 

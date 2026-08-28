@@ -4505,6 +4505,11 @@ pub struct AdvancedAi {
     capture_go_or_stand_down: bool,
     /// City id → turn the stand-down expires. Written only by the gene.
     capture_stood_down: BTreeMap<u32, u32>,
+    /// Version 2 of `capture_go_or_stand_down`: the same, and a siege with
+    /// bodies at the objective that has not pushed the city to a new low for
+    /// `commitments::CAPTURE_STALL_TURNS` stalled readings is stood down too.
+    /// One version of the family plays. Opt-in gene `capture-go-or-stand-down-2`.
+    capture_go_or_stand_down_2: bool,
     /// On an advance, no unit ends the turn more than the body's pace plus
     /// one tile closer to the objective than the force's anchor stood. Opt-in
     /// gene `close-as-a-body`; see `advanced/close_as_a_body.rs`.
@@ -6578,6 +6583,7 @@ impl AdvancedAi {
             commitment_patience: false,
             capture_go_or_stand_down: false,
             capture_stood_down: BTreeMap::new(),
+            capture_go_or_stand_down_2: false,
             close_as_a_body: false,
             culture_floor: false,
             city_target_meets_the_map: false,
@@ -10425,7 +10431,7 @@ impl AdvancedAi {
         // `capture-go-or-stand-down`: a city the ledger stood down is not
         // ranked again until the stand-down expires; the next-best city of the
         // same rival takes its place. A home emergency is never stood down.
-        let ranked_target_city = if self.capture_go_or_stand_down && emergency_objective.is_none() {
+        let ranked_target_city = if self.capture_stand_down_on() && emergency_objective.is_none() {
             ranked_target_city
                 .filter(|city| !self.capture_stood_down_holds(g, *city))
                 .or_else(|| {
