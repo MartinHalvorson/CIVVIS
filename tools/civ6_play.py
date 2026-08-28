@@ -907,9 +907,15 @@ DROPDOWN_RETRY_DELAYS = (0.0, 2.0, 4.0)
 #: and they were all unbounded. `watch.follow` calls `each_poll` (which is
 #: `keep_foreground` -> `focus_game` + `place_game`) and `pause_when` (which is
 #: `console_locked` -> `screen_locked`) once per iteration. `game_pids` was the
-#: fourth and #2700 fixed it after it hung a game at turn 8; the stack was
-#: `subprocess.run` -> `communicate` -> `selector.select`, and the wedge sample
-#: showed every Civilization VI thread idle because nothing was driving it.
+#: fourth and #2700 bounded it.
+#:
+#: ⚠ #2700 and this comment originally said that call HUNG a game at turn 8, on
+#: the strength of a traceback ending there after a SIGINT. That was wrong: a
+#: later wedge on a build carrying the timeout produced the same traceback with
+#: zero timeout messages in its log, so the interrupt merely lands wherever the
+#: process is. See `civ6_env.game_pids`. The real cause was the end-turn
+#: deadlock (#2702, #2703). These bounds are worth having anyway — an unbounded
+#: subprocess in the driving loop is a hazard whether or not it has fired.
 #:
 #: These three are the same shape and worse-placed: `osascript` reaching System
 #: Events blocks on the Accessibility subsystem, which is exactly what a busy or
