@@ -16,7 +16,9 @@
 --   7. the stall cap gives up by name;
 --   8. unmentioned combat units near a hostile are NOT handed to explore
 --      automation but ARE given a holding order, and units far from one still
---      explore. A held unit with no order at all blocks the end of the turn.
+--      explore. A held unit with no order at all blocks the end of the turn;
+--   8b. an unmentioned civilian is never explored but IS told to skip, for the
+--      same reason: exclusion is not a disposition.
 --
 -- Run: lua5.1 tools/civ6_control/mod/order_queue_test.lua
 
@@ -290,6 +292,21 @@ check("far soldier explored", ops(17), "UNITOPERATION_AUTOMATE_EXPLORE")
 check("orders event counts the guard", field(lastEvent("orders"), "explore_guarded"), 1)
 check("the guard reports the unit HELD, not merely counted",
       field(lastEvent("orders"), "explore_guarded_held"), 1)
+
+-- 8b. An unmentioned CIVILIAN is excluded from the explore hand-off — a settler
+-- that wanders never founds — but exclusion is not a disposition. Civilization
+-- VI will not end a turn while any unit awaits orders, civilian included, so it
+-- has to be told to skip. Seven of the nineteen ENDTURN_BLOCKING_UNITS turns in
+-- run civvis-20260828T165926Z had an unordered civilian on them.
+reset()
+host.units[18] = { id = 18, kind = "UNIT_SETTLER", x = 40, y = 40, moves = 2 }
+host.units[19] = { id = 19, kind = "UNIT_BUILDER", x = 41, y = 41, moves = 2 }
+applyOrders(player, PID, 7, {})
+check("idle settler is not explored",
+      ops(18):find("AUTOMATE_EXPLORE", 1, true) ~= nil, false)
+check("idle settler is told to skip", ops(18), "UNITOPERATION_SKIP_TURN")
+check("idle builder is told to skip", ops(19), "UNITOPERATION_SKIP_TURN")
+check("the orders event counts both", field(lastEvent("orders"), "civilians_skipped"), 2)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
