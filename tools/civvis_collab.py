@@ -2950,6 +2950,49 @@ def ladder_watchdog_source(repo: Path) -> Path:
     return repo_root(repo) / "tools" / "ops" / "ladder_watchdog.py"
 
 
+#: The operator's own launch wrapper, if this host has one. Only its EXISTENCE
+#: is a decision here; its contents are the operator's.
+LADDER_OPERATOR_WRAPPER = Path.home() / "civvis-verification-launch.command"
+
+
+def ephemeral_service_source(path: Path) -> bool:
+    """Whether a service program lives somewhere that is deleted out from under it.
+
+    ⚠⚠ A LaunchAgent's program path has to outlive the job that installed it,
+    and on 2026-08-28 one did not. `com.civvis.ladder-watchdog` was rewritten by
+    a bootstrap run from `~/.civvis-gene-batch-joined-20260828/repo` — a batch
+    scheduler's working clone, made that morning and rotated per batch — so the
+    keeper for the live Civ 6 ladder was pointed at a directory whose whole
+    purpose is to be replaced. The same class of failure took the exhibition
+    down on 2026-08-18, when `civvis_worktree_audit.py --reap` deleted the
+    worktree `civvis-spectator-runner.sh` exec'd its supervisor from, and its
+    own restart loop could not recover either.
+
+    Every one of these roots is a `.civvis-*` state directory in $HOME that some
+    other job creates, rotates and deletes. A tracked checkout is not.
+    """
+    return any(part.startswith(".civvis-") for part in Path(path).parts)
+
+
+def installed_keeper_is_durable(path: Path) -> bool:
+    """Whether a ladder keeper is already installed from a tree that will last.
+
+    Read as text rather than parsed: this only has to answer whether some
+    `ladder_watchdog.py` in the plist's arguments sits outside a `.civvis-*`
+    state directory, and an unreadable or absent file answers "no" so the
+    caller installs one.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(
+        candidate.endswith("ladder_watchdog.py")
+        and not ephemeral_service_source(Path(candidate))
+        for candidate in re.findall(r"<string>([^<]*)</string>", text)
+    )
+
+
 def host_plays_civ6(runs: Optional[Path] = None) -> bool:
     """Whether this host is a Civilization VI seat, on evidence rather than hope.
 
@@ -2962,7 +3005,8 @@ def host_plays_civ6(runs: Optional[Path] = None) -> bool:
     return runs.is_dir()
 
 
-def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
+def macos_ladder_watchdog_plist(
+        watchdog: Path, wrapper_path: Optional[Path] = None) -> bytes:
     """The ladder keeper: one interval job, its own process, its own clock.
 
     ⚠⚠⚠ THERE IS DELIBERATELY NO `KeepAlive` JOB RUNNING THE SUPERVISOR. #1888
@@ -2981,10 +3025,17 @@ def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
     matters is that it runs in its own process, so it outlives what it watches.
     """
     logs = Path.home() / "Library" / "Logs" / "civvis-ladder-watchdog.log"
+    # ⚠ The keeper restarts the loop through Terminal, and with no `--supervisor`
+    # it restarts the STOCK launcher — which is how a recovery on 2026-08-19
+    # silently replaced the operator's configured chain (difficulty, victory
+    # lane, mirror bounds, attempts per cycle) with the tree's defaults for the
+    # rest of the night. Hand it the operator's own wrapper where the host has
+    # one, so a recovered loop is the same loop.
+    wrapper = () if wrapper_path is None else ("--supervisor", str(wrapper_path))
     arguments = "".join(
         f"\n\t\t<string>{value}</string>"
         for value in (sys.executable, str(watchdog),
-                      "--stale-hours", LADDER_STALE_HOURS)
+                      "--stale-hours", LADDER_STALE_HOURS, *wrapper)
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -3093,7 +3144,18 @@ def install_ladder_supervisor(repo: Path) -> List[Path]:
 
     agents = Path.home() / "Library" / "LaunchAgents"
     path = agents / f"{LADDER_WATCHDOG_LABEL}.plist"
-    changed = write_managed_service(path, macos_ladder_watchdog_plist(watchdog))
+    # ⚠⚠ A bootstrap from a scheduler's working clone must not repoint the live
+    # keeper at that clone. See `ephemeral_service_source`: on 2026-08-28 one
+    # did, and the keeper for the real Civ 6 ladder was left naming a directory
+    # that gets rotated per batch. An install from an ephemeral tree is still
+    # better than no keeper at all, so it only stands down when a durable one is
+    # already installed.
+    if ephemeral_service_source(watchdog) and installed_keeper_is_durable(path):
+        return [path]
+    wrapper = (LADDER_OPERATOR_WRAPPER
+               if LADDER_OPERATOR_WRAPPER.is_file() else None)
+    changed = write_managed_service(
+        path, macos_ladder_watchdog_plist(watchdog, wrapper))
     domain = f"gui/{os.getuid()}"
     loaded = not run(("launchctl", "print", f"{domain}/{LADDER_WATCHDOG_LABEL}"),
                      check=False).returncode

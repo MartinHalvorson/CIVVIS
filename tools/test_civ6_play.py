@@ -1878,7 +1878,7 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
-    """The sole current early stop is below 40 % of the leader after turn 150.
+    """The sole current early stop is below 60 % of the leader after turn 150.
 
     The first qualifying reading ends the game and is filed as its own reason.
     """
@@ -1888,18 +1888,20 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         return {"kind": kind, "ctx": ctx, "turn": turn, "score": score,
                 "rival_best": rival}
 
-    def test_the_line_is_forty_percent_from_turn_150(self):
-        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.40)
+    def test_the_line_is_sixty_percent_from_turn_150(self):
+        # ⚠ 0.40 shipped here while docs/CIV6_COMPUTER_CONTROL.md, the ladder's
+        # row comment and the operator all said 60 %. The prose was the policy.
+        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.60)
         self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 150)
 
     def test_one_reading_under_the_line_immediately_abandons_with_the_standing(self):
         state = {}
         verdict = civ6_play.below_leader_score_reading(
-            state, self._turn(150, 39, 100), 0.40)
+            state, self._turn(150, 59, 100), 0.60)
         self.assertEqual(verdict, {
-            "rule": "below_leader_score", "turn": 150, "score": 39,
-            "rival_best": 100, "score_ratio": 0.39,
-            "score_ratio_ceiling": 0.40, "min_turn": 150,
+            "rule": "below_leader_score", "turn": 150, "score": 59,
+            "rival_best": 100, "score_ratio": 0.59,
+            "score_ratio_ceiling": 0.60, "min_turn": 150,
         })
         self.assertEqual(state, {})
 
@@ -1907,31 +1909,37 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         state = {}
         for turn in range(1, 150):
             self.assertIsNone(civ6_play.below_leader_score_reading(
-                state, self._turn(turn, 10, 500), 0.40))
+                state, self._turn(turn, 10, 500), 0.60))
         self.assertEqual(state, {})
 
     def test_at_the_line_is_not_under_it_but_the_next_low_reading_ends_it(self):
         state = {}
-        # Exactly 40 % is not under the line.
+        # Exactly 60 % is not under the line.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(150, 200, 500), 0.40))
+            state, self._turn(150, 300, 500), 0.60))
         self.assertEqual(civ6_play.below_leader_score_reading(
-            state, self._turn(151, 199, 500), 0.40)["turn"], 151)
+            state, self._turn(151, 299, 500), 0.60)["turn"], 151)
 
     def test_only_a_readable_agent_turn_is_a_termination_reading(self):
         state = {}
         # No standing is not a decision to abandon.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(171, 300, None), 0.40))
+            state, self._turn(171, 300, None), 0.60))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(172, 300, 0), 0.40))
+            state, self._turn(172, 300, 0), 0.60))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(173, None, 500), 0.40))
+            state, self._turn(173, None, 500), 0.60))
         # Other contexts and event kinds are not termination readings either.
+        # ⚠ These two used to read 300/500 against a 0.40 line — 60 % is not
+        # under 40 %, so they returned None whatever `ctx` and `kind` said and
+        # proved nothing. 100/500 is 20 %: it fires on an agent `turn` event and
+        # must stay silent on every other one.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(174, 300, 500, ctx="spectator"), 0.40))
+            state, self._turn(174, 100, 500, ctx="spectator"), 0.60))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(174, 300, 500, kind="state"), 0.40))
+            state, self._turn(174, 100, 500, kind="state"), 0.60))
+        self.assertEqual(civ6_play.below_leader_score_reading(
+            state, self._turn(174, 100, 500), 0.60)["turn"], 174)
         self.assertEqual(state, {})
 
     def test_zero_or_an_invalid_line_plays_every_game_out(self):
@@ -1948,7 +1956,7 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         own stop takes it; a game that exited or stalled in the same poll keeps
         that ending; a refusal still outranks everything."""
         abandoned = {"rule": "below_leader_score", "turn": 150,
-                     "score_ratio": 0.4, "score_ratio_ceiling": 0.40}
+                     "score_ratio": 0.59, "score_ratio_ceiling": 0.60}
         state = {"abandoned": abandoned, "seat": {"x": 1}, "configured": True,
                  "ruleset_match": True, "mode_mismatch": False}
         self.assertEqual(civ6_play.summary_reason(state, "stopped"), "abandoned")
@@ -2247,3 +2255,86 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
             self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
             civ6_play.write_leader_hint(Path(temporary), "LEADER_TRAJAN", 99)  # out of range
             self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
+
+
+class EveryArgparseHelpStringCanActuallyBeRendered(unittest.TestCase):
+    """`--help` must not traceback, and for two harness CLIs it did.
+
+    ⚠ `civ6_play.py --help` and `civ6_civvis_climb.py --help` both died with a
+    traceback on EVERY interpreter on this host, because argparse formats each
+    help string as `help % params` and both said "60% of the leader's score".
+    Python 3.9 (the production `/usr/bin/python3`) raised
+    `TypeError: %o format: an integer is required, not dict` from `_expand_help`
+    at print time; Python 3.14 raises `ValueError: badly formed help string`
+    eagerly from `add_argument`, which took the climb's whole parser down and
+    turned 24 of its unit tests into errors. A literal percent in an argparse
+    help string must be written `%%`.
+
+    Scanned by AST rather than by importing each tool, because most of them
+    reach the screen, the Steam install or the network at import time.
+    """
+
+    #: argparse substitutes `%(name)s`-style mapping keys; everything else that
+    #: follows a `%` has to be an escaped `%%` or the format blows up.
+    _SPEC = re.compile(
+        r"%(?:%|\((?P<name>\w+)\)[-#0 +]*\d*(?:\.\d+)*[hlL]?"
+        r"[diouxXeEfFgGcrsa])")
+
+    @classmethod
+    def _unformattable_offsets(cls, text: str) -> list[int]:
+        offsets, index = [], 0
+        while True:
+            found = text.find("%", index)
+            if found < 0:
+                return offsets
+            matched = cls._SPEC.match(text, found)
+            if matched:
+                index = matched.end()
+            else:
+                offsets.append(found)
+                index = found + 1
+
+    def test_no_tool_hides_a_bare_percent_in_an_argparse_help_string(self):
+        import ast
+
+        tools = Path(__file__).resolve().parent
+        offenders = []
+        for source_file in sorted(tools.rglob("*.py")):
+            if "__pycache__" in source_file.parts:
+                continue
+            try:
+                tree = ast.parse(source_file.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover - a parse failure is its own test
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = getattr(node.func, "attr", None) or getattr(
+                    node.func, "id", None)
+                if name != "add_argument":
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg != "help":
+                        continue
+                    try:
+                        value = ast.literal_eval(keyword.value)
+                    except Exception:
+                        continue
+                    if isinstance(value, str) and self._unformattable_offsets(value):
+                        offenders.append(
+                            f"{source_file.name}:{node.lineno}: {value}")
+        self.assertEqual(offenders, [], "write a literal percent as %%:\n"
+                         + "\n".join(offenders))
+
+    def test_the_two_harness_entry_points_render_their_own_help(self):
+        """The regression itself: both CLIs must print help and exit 0."""
+        import subprocess
+
+        tools = Path(__file__).resolve().parent
+        for script in ("civ6_play.py", "civ6_civvis_climb.py"):
+            with self.subTest(script=script):
+                done = subprocess.run(
+                    [sys.executable, str(tools / script), "--help"],
+                    capture_output=True, text=True, timeout=120)
+                self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+                self.assertIn("--restart-below-leader-ratio", done.stdout)
