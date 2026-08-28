@@ -63,24 +63,24 @@ class NativeRecordingProtectionTest(unittest.TestCase):
         self.assertFalse(popup_clear.native_recording_command(
             "/usr/bin/python3 tools/civ6_control/popup_clear.py"))
 
-    def test_native_recording_ui_always_yields_to_the_user_capture(self) -> None:
+    def test_native_recording_ui_does_not_pause_authorized_pixel_capture(self) -> None:
         with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=True), \
                 mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", False), \
+                mock.patch.object(popup_clear, "systemstatusd_cpu", return_value=12.0) as daemon_cpu:
+            self.assertIsNone(popup_clear.capture_pause_reason())
+        daemon_cpu.assert_called_once_with()
+
+    def test_native_recording_ui_still_waits_after_a_permission_denial(self) -> None:
+        with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=True), \
+                mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", True), \
+                mock.patch.object(popup_clear.macos_capture,
+                                  "screen_capture_access_available", return_value=False), \
                 mock.patch.object(popup_clear, "systemstatusd_cpu") as daemon_cpu:
             self.assertEqual(
                 popup_clear.capture_pause_reason(),
-                "native screen recording UI is active",
+                "screen capture access is unavailable",
             )
         daemon_cpu.assert_not_called()
-
-    def test_native_recording_ui_yields_even_when_coregraphics_is_available(self) -> None:
-        with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=True), \
-                mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", False), \
-                mock.patch.object(popup_clear, "systemstatusd_cpu", return_value=12.0):
-            self.assertEqual(
-                popup_clear.capture_pause_reason(),
-                "native screen recording UI is active",
-            )
 
     def test_a_stale_interactive_helper_does_not_hold_the_ladder_forever(self) -> None:
         stale = "/usr/sbin/screencapture -pdiU -z keyboard.interactive"
@@ -98,8 +98,7 @@ class NativeRecordingProtectionTest(unittest.TestCase):
             self.assertTrue(popup_clear.native_recording_ui_active())
 
     def test_capture_permission_is_rechecked_without_a_raw_fallback(self) -> None:
-        with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=False), \
-                mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", True), \
+        with mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", True), \
                 mock.patch.object(popup_clear.macos_capture,
                                   "screen_capture_access_available", return_value=False), \
                 mock.patch.object(popup_clear, "systemstatusd_cpu") as daemon_cpu:
