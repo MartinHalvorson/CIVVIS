@@ -85,7 +85,17 @@ OPENING_TEMPO_TURN = 60
 
 # ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
 # policy: play verification games out in full, except at or after turn 150
-# when our score is under 40 % of the leader's score (more than 60 % behind).
+# when our score is under 60 % of the leader's score.
+#
+# ⚠ THE NUMBER HERE WAS 0.40 AND EVERY PROSE STATEMENT OF THE POLICY SAID 60 %.
+# `docs/CIV6_COMPUTER_CONTROL.md` ("under 60 % of the leader after turn 150 is
+# the one exception", `--restart-below-leader-ratio 0.60`) and `civ6_ladder.py`'s
+# row comment both described the rule the operator restated on 2026-08-27:
+# "only call games early at turn 150 or later if we are at less than 60 % score
+# of the leader". The constant, the climb's help, the supervisor's default and
+# their tests all carried 0.40 instead, so every game between 40 % and 60 % of
+# the leader was played to turn 250 against policy. The prose was right and the
+# code was wrong; this makes them agree at 0.60.
 #
 # Until then the harness carried four early stops, and on King they ended 73
 # of 81 games before the game could: the three-cities-by-turn-32 and
@@ -95,9 +105,9 @@ OPENING_TEMPO_TURN = 60
 # the measured win-rate table behind the old abandon floor (#2174; off). All
 # four are gone. What remains is the operator's one rule, and it is a default
 # of the harness itself, not of a launcher: at or after turn 150, a readable
-# score under 40 % of the leader's immediately abandons the game. This leaves
-# a trailing but developing empire — such as a seven-city seat that is 48 %
-# behind on score — in play to finish its game.
+# score under 60 % of the leader's immediately abandons the game. A seat still
+# within reach of the field — two thirds of the leader's score at turn 150 —
+# stays in play to finish its game.
 #
 # "The leader" is the best-scoring rival the seat has met — `rival_best` in
 # the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
@@ -108,7 +118,7 @@ OPENING_TEMPO_TURN = 60
 # An abandoned game is filed as its own ending (`reason: "abandoned"` with the
 # verdict), never as a stall, a wedge or a defeat.
 LEADER_SCORE_MIN_TURN = 150
-DEFAULT_LEADER_SCORE_RATIO = 0.40
+DEFAULT_LEADER_SCORE_RATIO = 0.60
 
 
 def _nonnegative_metric(value: object) -> float | int | None:
@@ -3714,8 +3724,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="immediately abandon on a readable turn at or after "
                          "LEADER_SCORE_MIN_TURN when our score is under this "
                          "share of the leader's (best met rival); 0 plays every "
-                         "game out. Current operator policy: 0.40 (more than "
-                         "60% behind), and no "
+                         "game out. Current operator policy: 0.60 (less than "
+                         "60%% of the leader's score), and no "
                          "other early stop")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")

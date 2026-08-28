@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest import mock
 import concurrent.futures
 import ast
+import plistlib
 import re
 import json
 import os
@@ -2452,6 +2453,96 @@ class OneIdiomTests(unittest.TestCase):
         self.assertIsNone(self.guard.waiver_reason("    overwrite-guard: allow why"))
         self.assertIsNone(self.speed.acknowledged("    paired-cost: allow why"))
         self.assertEqual(collab.parse_claims("    - Machine ID: `sneaky`"), {})
+
+
+class TheLadderKeeperIsInstalledSomewhereItSurvives(unittest.TestCase):
+    """Two ways the keeper for the live Civ 6 ladder stopped being a keeper.
+
+    Both were live on 2026-08-28 and neither is visible from the process table:
+    the job was loaded and green the whole time.
+    """
+
+    def test_a_state_directory_is_not_somewhere_a_service_may_live(self):
+        home = Path.home()
+        self.assertTrue(collab.ephemeral_service_source(
+            home / ".civvis-gene-batch-joined-20260828/repo/tools/ops/ladder_watchdog.py"))
+        self.assertTrue(collab.ephemeral_service_source(
+            home / ".civvis-gene-batch/sources/abc/tools/ops/ladder_watchdog.py"))
+        self.assertFalse(collab.ephemeral_service_source(
+            home / "CIVVIS/tools/ops/ladder_watchdog.py"))
+        self.assertFalse(collab.ephemeral_service_source(
+            home / "civvis-main/tools/ops/ladder_watchdog.py"))
+
+    def test_a_durable_keeper_is_recognised_and_an_ephemeral_one_is_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            durable = Path(tmp) / "durable.plist"
+            durable.write_bytes(collab.macos_ladder_watchdog_plist(
+                Path.home() / "CIVVIS/tools/ops/ladder_watchdog.py"))
+            self.assertTrue(collab.installed_keeper_is_durable(durable))
+
+            ephemeral = Path(tmp) / "ephemeral.plist"
+            ephemeral.write_bytes(collab.macos_ladder_watchdog_plist(
+                Path.home()
+                / ".civvis-gene-batch-joined-20260828/repo/tools/ops/ladder_watchdog.py"))
+            self.assertFalse(collab.installed_keeper_is_durable(ephemeral))
+
+            self.assertFalse(collab.installed_keeper_is_durable(
+                Path(tmp) / "absent.plist"))
+
+    def test_the_keeper_hands_the_operators_own_wrapper_to_the_restart(self):
+        """Without `--supervisor` a recovery restarts the STOCK launcher.
+
+        That is how the configured chain — difficulty, victory lane, mirror
+        bounds, attempts per cycle — was replaced by the tree's defaults on
+        2026-08-19 and stayed replaced.
+        """
+        watchdog = Path.home() / "CIVVIS/tools/ops/ladder_watchdog.py"
+        wrapper = Path.home() / "civvis-verification-launch.command"
+        arguments = plistlib.loads(
+            collab.macos_ladder_watchdog_plist(watchdog, wrapper)
+        )["ProgramArguments"]
+        self.assertEqual(arguments[-2:], ["--supervisor", str(wrapper)])
+        self.assertIn("--stale-hours", arguments)
+
+        without = plistlib.loads(
+            collab.macos_ladder_watchdog_plist(watchdog))["ProgramArguments"]
+        self.assertNotIn("--supervisor", without)
+
+    def test_an_ephemeral_bootstrap_leaves_a_durable_keeper_alone(self):
+        """It may install one where none exists; it may not replace a good one."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            agents = home / "Library" / "LaunchAgents"
+            agents.mkdir(parents=True)
+            path = agents / f"{collab.LADDER_WATCHDOG_LABEL}.plist"
+            durable = home / "CIVVIS" / "tools" / "ops" / "ladder_watchdog.py"
+            durable.parent.mkdir(parents=True)
+            durable.write_text("#\n")
+            path.write_bytes(collab.macos_ladder_watchdog_plist(durable))
+            before = path.read_bytes()
+
+            scratch = (home / ".civvis-gene-batch-joined-20260828" / "repo"
+                       / "tools" / "ops")
+            scratch.mkdir(parents=True)
+            watchdog = scratch / "ladder_watchdog.py"
+            watchdog.write_text("#\n")
+            supervisor = scratch / "civvis-game-supervisor.sh"
+            supervisor.write_text("#\n")
+            (home / "civvis-civ6-runs").mkdir()
+
+            with mock.patch.object(collab.Path, "home", staticmethod(lambda: home)), \
+                    mock.patch.object(collab, "repo_root",
+                                      lambda repo: Path(repo)), \
+                    mock.patch.object(collab, "retire_ladder_keepalive_job",
+                                      lambda: None), \
+                    mock.patch.object(collab.sys, "platform", "darwin"):
+                written = collab.install_ladder_supervisor(
+                    home / ".civvis-gene-batch-joined-20260828" / "repo")
+
+            self.assertEqual(written, [path])
+            self.assertEqual(path.read_bytes(), before,
+                             "an ephemeral bootstrap overwrote the live keeper")
+
 
 
 if __name__ == "__main__":
