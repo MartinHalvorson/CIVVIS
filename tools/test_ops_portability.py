@@ -84,6 +84,38 @@ HOME_SHADOW_DEBT: dict[str, int] = {
 
 HOME_SHADOW = re.compile(r"\$HOME/(civvis-[A-Za-z0-9._-]+\.sh)")
 
+# ⚠ The rule above sees `$HOME/civvis-<name>.sh` — a hand-edited copy of a
+# SIBLING. It cannot see a reference into a whole CHECKOUT, which is the same
+# defect one level up, and `civvis-popup-keeper.sh` carried one for months:
+#
+#     CLEARER=$HOME/CIVVIS/tools/civ6_control/popup_clear.py
+#
+# That is a path that exists on exactly one machine in the fleet, so the keeper
+# was uninstallable anywhere else. On the host that does have it, it is worse
+# than unportable: `~/CIVVIS` is the supervisor's HEAD tree and is
+# `git checkout --detach origin/main`ed every cycle, so the clearer clicking on
+# the screen need not be the revision the game is being played from.
+HOME_CHECKOUT = re.compile(
+    r"\$HOME/[A-Za-z0-9._-]+/((?:tools|src|web|data|mods)/[A-Za-z0-9._/-]+)")
+
+
+def home_checkout_references(path: Path) -> list[str]:
+    """`$HOME/<checkout>/<relpath>` references this repository also tracks.
+
+    Executable lines only, like `home_shadowed_siblings`: the comments here and
+    in the scripts quote the very paths they warn about.
+    """
+    repo = OPS.parent.parent
+    found = []
+    for number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        for relative in HOME_CHECKOUT.findall(line):
+            if (repo / relative).is_file():
+                found.append(f"{path.name}:{number}: $HOME/<checkout>/{relative}")
+    return found
+
+
 
 def home_shadowed_siblings(path: Path) -> list[str]:
     """`$HOME/<name>` references whose `tools/ops/<name>` exists.
@@ -120,6 +152,21 @@ class TheTrackedCopyIsTheOneThatRuns(unittest.TestCase):
                 f"Call the sibling instead — `OPS=${{0:A:h}}` and "
                 f"`$OPS/<name>`, as civvis-keeper.sh does:\n  "
                 + "\n  ".join(found))
+
+    def test_no_script_reaches_into_a_named_checkout_for_a_tracked_file(self):
+        """One level up from the rule above, and it hid there for months.
+
+        A `$HOME/<checkout>/tools/...` path is unportable everywhere and, on the
+        one host that has the checkout, is very likely the supervisor's detached
+        HEAD tree — so the helper and the game it helps can be different
+        revisions. Derive from the script's own tree: `${0:A:h:h}/<relpath>`.
+        """
+        offenders = []
+        for path in self._scripts():
+            offenders.extend(home_checkout_references(path))
+        self.assertEqual(offenders, [], "\n".join(
+            ["an ops script reaches into a named checkout for a file this "
+             "repository tracks:"] + offenders))
 
     def test_a_fixed_script_lowers_its_recorded_number(self):
         for name, allowed in sorted(HOME_SHADOW_DEBT.items()):

@@ -29,6 +29,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import time
 import subprocess
 import sys
 import tempfile
@@ -116,6 +117,59 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         self.assertIn('${VICTORY:+--victory} ${VICTORY:+"$VICTORY"}', source)
         self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.60}",
                       source)
+
+    def test_an_unreachable_github_does_not_stop_the_ladder_outright(self):
+        """⚠ On 2026-08-28 it did, for three hours and zero games.
+
+        github.com became unreachable from the ladder host — ping and DNS fine,
+        example.com answering 200, github.com:443 timing out after 75 s — and
+        every 120 s cycle logged "could not fetch origin/main; refusing to run a
+        stale head batch" while a checkout of origin/main fetched minutes
+        earlier sat in the tree, buildable. Staleness is the age of what we
+        hold, not whether the network answered: inside the grace window the
+        cycle plays and says how old its fetch is, past it the refusal stands.
+        """
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        self.assertIn(
+            "HEAD_FETCH_GRACE_S=${CIVVIS_HEAD_FETCH_GRACE_S:-21600}", source)
+        self.assertIn("playing the origin/main this tree fetched", source)
+        self.assertIn("refusing to run a stale head batch", source)
+        # The post-build recheck must launch what this cycle already verified
+        # rather than discard the build and retry into the same dead network.
+        self.assertIn(
+            "launching the head this cycle already verified", source)
+
+    def test_the_fetch_grace_window_decides_by_the_age_of_the_last_fetch(self):
+        """Run the supervisor's own grace lines under zsh at three ages."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("      ORIGIN_MAIN_REF=$(git rev-parse --git-path")
+        refusal = source.index(
+            "refusing to run a stale head batch; retrying in 120s", start)
+        closer = "      fi\n"
+        end = source.index(closer, refusal) + len(closer)
+        decision = source[start:end]
+        # `continue` and `sleep` only mean something inside the cycle loop; the
+        # branch under test is which message it reaches, so print instead.
+        decision = (decision.replace("say ", "print -r -- ")
+                            .replace("sleep 120\n", "")
+                            .replace("continue\n", ""))
+        for age, expected in ((0, "playing the origin/main"),
+                              (60, "playing the origin/main"),
+                              (100_000, "refusing to run a stale head batch")):
+            with self.subTest(age=age):
+                with tempfile.TemporaryDirectory() as tmp:
+                    ref = Path(tmp) / "main"
+                    ref.write_text("0" * 40)
+                    stamp = int(time.time()) - age
+                    os.utime(ref, (stamp, stamp))
+                    script = ("HEAD_FETCH_GRACE_S=21600\n"
+                              f"git() {{ print -r -- {ref}; }}\n" + decision)
+                    done = subprocess.run(["zsh", "-c", script],
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    self.assertIn(expected, done.stdout)
 
     def test_the_installed_supervisor_freezes_the_fresh_game_revision(self):
         """A game must not hot-swap the decider after its fresh-head build.
