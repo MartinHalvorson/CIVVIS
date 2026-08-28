@@ -199,16 +199,29 @@ def game_pids(timeout_s: float = GAME_PIDS_TIMEOUT_S) -> list[int]:
     own short-lived `osascript` child as a game.  That made a clean restart look
     like a competing live run.  Inspect the executable token instead.
 
-    ⚠⚠⚠ THIS RAN WITH NO TIMEOUT AND IT STOPPED A GAME BEING PLAYED.
+    ⚠⚠⚠ THIS RAN WITH NO TIMEOUT, IN THE LOOP THAT DRIVES THE GAME.
     `watch.follow` calls it on EVERY poll, so an unbounded `ps` is an unbounded
-    hang in the loop that drives Civilization VI. Measured 2026-08-28, run
-    `civvis-20260828T160200Z`: the harness blocked here at turn 8 and never
-    polled again. The wedge watchdog's `sample` of the game (#2698) is what
-    settled it — every Civ 6 thread was IDLE, the main thread parked in
-    `_pthread_cond_wait` for 1638 of 1644 samples, TBB workers in `swtch_pri`.
-    The engine was not stuck; nothing was asking it to do anything. The harness
-    traceback ended in `civ6_env.game_pids` → `subprocess.run` →
-    `communicate` → `selector.select`.
+    hang in that loop. The bound is the point of this function's shape.
+
+    ⚠ WHAT IT DID *NOT* DO, CORRECTING #2700's OWN CLAIM. That commit said this
+    call hung a game at turn 8 (run `civvis-20260828T160200Z`), on the strength
+    of a traceback ending here after the wedge watchdog's SIGINT. That was wrong
+    reasoning and the evidence refuted it the same afternoon: run
+    `civvis-20260828T165926Z` wedged at turn 74 on a build carrying this
+    timeout, its traceback ended HERE AGAIN, and `[env] ps did not answer`
+    appears **zero** times in its log. So `ps` never reached ten seconds; the
+    interrupt simply lands wherever the process happens to be, and a poll loop
+    spends much of its wall time inside `subprocess.run`. A traceback at the
+    moment of SIGINT names a location, not a cause.
+
+    Both wedges were the end-turn deadlock instead: a unit CIVVIS did not
+    mention, kept off explore automation by the guard, with no disposition at
+    all, so Civilization VI would not end the turn (#2702, and #2703 for the
+    civilian half). Turn 74's last orders event reads `guarded=1` and the log
+    ends `blocked -> dismissed -> blocked` on `ENDTURN_BLOCKING_UNITS`.
+
+    The timeout stays, on its own merits: an unbounded subprocess inside the
+    driving loop is a hazard whether or not it has fired yet.
 
     ⚠⚠ A TIMEOUT MUST NOT RETURN THE EMPTY LIST. `watch.follow` reads
     ``if not env.game_pids()`` as **"game exited"** and ends the attempt, so an
