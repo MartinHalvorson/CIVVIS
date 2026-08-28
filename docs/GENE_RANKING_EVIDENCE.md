@@ -185,7 +185,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
-| `capture-go-or-stand-down` | off (unmeasured) | A declared war's objective nobody of ours has been near for `CAPTURE_GO_TURNS` consecutive turns is stood down explicitly and the strategy re-assessed, instead of being held unprosecuted. | 1 \| 1 |
+| `capture-go-or-stand-down` | off (unmeasured) | A declared war's objective nobody of ours has been near for `CAPTURE_GO_TURNS` consecutive turns is stood down explicitly and the strategy re-assessed, instead of being held unprosecuted. | — \| 2 |
+| `capture-go-or-stand-down-2` | off (unmeasured) | Version 2 of `capture_go_or_stand_down`: also stands down a siege whose bodies are at the objective but have not pushed the city to a new low for `CAPTURE_STALL_TURNS` stalled readings. | — \| 2 |
 | `commitment-patience` | off (unmeasured) | A settle or improve target survives a passing threat, and the commitment ledger retires it after `COMMITMENT_PATIENCE` consecutive forgotten turns, parking the site. | 1 \| 1 |
 | `enter-the-prophet-race` | **on** (unmeasured) | Enter the Great Prophet race from an explicit victory lane: Astrology after the opening techs, the empire's first Holy Site at the front of the district order, the Prophet priced as a lane great person, and `pursue_religion` for the prize. | 1 \| 1 |
 | `island-exploration` | off (unmeasured) | Once the Palace landmass has at most two independent city sites left, rebuild a naval eye and favor water that can reveal a known foreign landfall. | 1 \| 1 |

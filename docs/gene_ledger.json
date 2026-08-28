@@ -1374,6 +1374,15 @@
           "campus-adjacency-threshold-2": null
         }
       },
+      "capture-go-or-stand-down": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "capture-go-or-stand-down": null,
+          "capture-go-or-stand-down-2": null
+        }
+      },
       "chain-payback-window": {
         "rule_on": [
           "chain-payback-window-2"
