@@ -24,7 +24,13 @@ class MacOSCaptureTest(unittest.TestCase):
     def test_helper_uses_the_fast_coregraphics_symbol_and_noninteractive_preflight(self) -> None:
         source = macos_capture._SWIFT_SOURCE
         self.assertIn('dlsym(framework, "CGWindowListCreateImage")', source)
+        self.assertIn('dlsym(framework, "CGDisplayCreateImage")', source)
         self.assertNotIn("CGWindowListCreateImage(\n", source)
+        self.assertNotIn("CGDisplayCreateImage(\n", source)
+        self.assertIn("image.cropping(to: crop)", source)
+        self.assertIn("import ScreenCaptureKit", source)
+        self.assertIn("SCScreenshotManager.captureImage(in: rect)", source)
+        self.assertIn("if #available(macOS 15.0, *)", source)
         self.assertIn("CGPreflightScreenCaptureAccess()", source)
         self.assertNotIn("CGRequestScreenCaptureAccess", source)
 

@@ -34,6 +34,7 @@ import CoreGraphics
 import Darwin
 import Foundation
 import ImageIO
+import ScreenCaptureKit
 
 let args = Array(CommandLine.arguments.dropFirst())
 if args == ["--preflight"] {
@@ -65,30 +66,82 @@ let rect = CGRect(
     height: number(3)
 )
 let output = URL(fileURLWithPath: args[4])
-// The macOS 15 SDK marks this CoreGraphics entry point unavailable even though
-// the symbol remains present and is substantially faster than launching
-// `screencapture`. Resolve it dynamically so the source still compiles on the
-// new SDK; hosts where Apple removes it fall back in the Python caller.
-typealias CaptureImage = @convention(c) (
+// The macOS 15 SDK marks both of these CoreGraphics entry points unavailable
+// even though the symbols remain present. Resolve them dynamically so the
+// source still compiles on the new SDK; neither path invokes the interactive
+// permission API.
+typealias WindowCaptureImage = @convention(c) (
     CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption
 ) -> Unmanaged<CGImage>?
+typealias DisplayCaptureImage = @convention(c) (CGDirectDisplayID) -> Unmanaged<CGImage>?
 guard let framework = dlopen(
     "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY
-), let symbol = dlsym(framework, "CGWindowListCreateImage") else {
+) else {
     FileHandle.standardError.write(Data("CoreGraphics capture symbol unavailable".utf8))
     exit(1)
 }
-let capture = unsafeBitCast(symbol, to: CaptureImage.self)
-guard let unmanaged = capture(
-    rect,
-    .optionOnScreenOnly,
-    kCGNullWindowID,
-    [.bestResolution, .boundsIgnoreFraming]
-) else {
-    FileHandle.standardError.write(Data("CoreGraphics capture returned nil".utf8))
+
+func windowListImage() -> CGImage? {
+    guard let symbol = dlsym(framework, "CGWindowListCreateImage") else { return nil }
+    let capture = unsafeBitCast(symbol, to: WindowCaptureImage.self)
+    guard let unmanaged = capture(
+        rect,
+        .optionOnScreenOnly,
+        kCGNullWindowID,
+        [.bestResolution, .boundsIgnoreFraming]
+    ) else { return nil }
+    return unmanaged.takeRetainedValue()
+}
+
+func mainDisplayImage() -> CGImage? {
+    guard let symbol = dlsym(framework, "CGDisplayCreateImage") else { return nil }
+    let capture = unsafeBitCast(symbol, to: DisplayCaptureImage.self)
+    let display = CGMainDisplayID()
+    guard let unmanaged = capture(display) else { return nil }
+    let image = unmanaged.takeRetainedValue()
+    let bounds = CGDisplayBounds(display)
+    guard rect.minX >= bounds.minX, rect.minY >= bounds.minY,
+          rect.maxX <= bounds.maxX, rect.maxY <= bounds.maxY else { return nil }
+    let scaleX = CGFloat(image.width) / bounds.width
+    let scaleY = CGFloat(image.height) / bounds.height
+    let crop = CGRect(
+        x: (rect.minX - bounds.minX) * scaleX,
+        y: (rect.minY - bounds.minY) * scaleY,
+        width: rect.width * scaleX,
+        height: rect.height * scaleY
+    ).integral
+    return image.cropping(to: crop)
+}
+
+func screenCaptureKitImage() -> CGImage? {
+    guard #available(macOS 15.0, *) else { return nil }
+    let semaphore = DispatchSemaphore(value: 0)
+    var captured: CGImage?
+    SCScreenshotManager.captureImage(in: rect) { image, _ in
+        captured = image
+        semaphore.signal()
+    }
+    guard semaphore.wait(timeout: .now() + .milliseconds(3500)) == .success else {
+        return nil
+    }
+    return captured
+}
+
+// Cmd-Shift-5 can block or empty CGWindowListCreateImage while this process is
+// still authorized to capture. ScreenCaptureKit takes a one-frame, exact
+// display-space rectangle without interacting with the recording UI, so it is
+// the current-macOS path. Older systems retain the direct-display and
+// window-list paths without introducing a permission request.
+let image: CGImage?
+if #available(macOS 15.0, *) {
+    image = screenCaptureKitImage()
+} else {
+    image = mainDisplayImage() ?? windowListImage()
+}
+guard let image else {
+    FileHandle.standardError.write(Data("CoreGraphics capture returned no image".utf8))
     exit(1)
 }
-let image = unmanaged.takeRetainedValue()
 guard let destination = CGImageDestinationCreateWithURL(
     output as CFURL,
     "public.png" as CFString,
