@@ -171,6 +171,59 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                     self.assertEqual(done.returncode, 0, done.stderr)
                     self.assertIn(expected, done.stdout)
 
+    def test_a_dirty_head_tree_is_named_rather_than_hidden(self):
+        """⚠ It was hidden, and cost an outage nobody could diagnose from the log.
+
+        On 2026-08-28 another agent was testing an uncommitted harness fix
+        inside the head tree. git refused the detach checkout, and the loop
+        logged only "could not checkout fetched origin/main" every 120 s — the
+        raw git reason lands ABOVE the timestamped line an operator reads. The
+        refusal is right (a head batch must be provably exact origin/main);
+        what was missing was the cause and the remedy, including the pin, which
+        exists precisely so a tree somebody is working in can be played as-is.
+
+        Run the supervisor's OWN branch under zsh against a real dirty repo.
+        """
+        if shutil.which("zsh") is None or shutil.which("git") is None:
+            self.skipTest("zsh and git are needed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("      DIRTY_FILES=$(git status --porcelain")
+        closer = "      fi\n"
+        end = source.index(closer, source.index(
+            "refusing to run a stale head batch; retrying in 120s",
+            start)) + len(closer)
+        branch = source[start:end].replace("say ", "print -r -- ")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "tree"
+            tree.mkdir()
+            for command in (["git", "init", "-q"],
+                            ["git", "config", "user.email", "t@example.com"],
+                            ["git", "config", "user.name", "t"]):
+                subprocess.run(command, cwd=tree, check=True)
+            (tree / "kept.txt").write_text("a")
+            subprocess.run(["git", "add", "kept.txt"], cwd=tree, check=True)
+            subprocess.run(["git", "commit", "-qm", "one"], cwd=tree, check=True)
+
+            clean = subprocess.run(
+                ["zsh", "-c", f'REPO={tree}\nPINFILE=/tmp/pin\n'
+                              f'cd "$REPO"\n' + branch],
+                capture_output=True, text=True)
+            self.assertIn("refusing to run a stale head batch", clean.stdout)
+            self.assertNotIn("IS DIRTY", clean.stdout,
+                             "a clean tree must keep the original message")
+
+            (tree / "in_progress.py").write_text("# another writer's fix")
+            dirty = subprocess.run(
+                ["zsh", "-c", f'REPO={tree}\nPINFILE=/tmp/pin\n'
+                              f'cd "$REPO"\n' + branch],
+                capture_output=True, text=True)
+            self.assertIn("IS DIRTY", dirty.stdout)
+            self.assertIn("in_progress.py", dirty.stdout,
+                          "the operator must be told WHICH path")
+            self.assertIn("/tmp/pin", dirty.stdout,
+                          "and that the pin is a way out")
+
     def test_the_installed_supervisor_freezes_the_fresh_game_revision(self):
         """A game must not hot-swap the decider after its fresh-head build.
 

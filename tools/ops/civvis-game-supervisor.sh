@@ -472,7 +472,28 @@ while true; do
       fi
     fi
     if ! git checkout --quiet --detach origin/main >>"$SUP" 2>&1; then
-      say "could not checkout fetched origin/main; refusing to run a stale head batch; retrying in 120s"
+      # ⚠⚠ NAME THE CAUSE. A dirty head tree is the ordinary way this fails and
+      # the generic message hid it completely: on 2026-08-28 another agent was
+      # testing an uncommitted harness fix inside the head tree, git refused
+      # ("Please commit your changes or stash them before you switch branches"),
+      # and the ladder logged "could not checkout fetched origin/main" every
+      # 120s with no hint of which file or what to do about it. The raw git
+      # output does go to this log, but it lands ABOVE the timestamped line an
+      # operator reads, so the diagnosis was several minutes of `git status`
+      # that the loop could have printed itself.
+      #
+      # Still a refusal: a head batch that cannot be proved exact origin/main
+      # must not be filed as one. What changes is that the message says why and
+      # names the remedy — including the pin, which is the whole point of
+      # `~/.civvis-play-pin` and lets a tree be played AS-IS, dirt included,
+      # while somebody is deliberately testing in it.
+      DIRTY_FILES=$(git status --porcelain 2>/dev/null | awk '{print $NF}' | head -3 | tr '\n' ' ')
+      if [[ -n "$DIRTY_FILES" ]]; then
+        DIRTY_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        say "could not checkout fetched origin/main: THE HEAD TREE $REPO IS DIRTY (${DIRTY_COUNT} uncommitted path(s): ${DIRTY_FILES}), so a head batch cannot be proved exact. Commit or stash them, or put an absolute tree path in $PINFILE to play that tree as-is. Retrying in 120s"
+      else
+        say "could not checkout fetched origin/main; refusing to run a stale head batch; retrying in 120s"
+      fi
       sleep 120
       continue
     fi
