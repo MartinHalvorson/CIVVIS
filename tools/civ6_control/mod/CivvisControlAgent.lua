@@ -14842,6 +14842,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- untouched, and the count is reported separately as `explored` so a run's telemetry
 	-- never presents this as CIVVIS's work.
 	local explored, guarded = 0, 0;
+	local guardedHeld = 0;
 	-- ⚠ NEVER on a combat frame: every unit not named by the frame's answer
 	-- was ordered by the opening board and is exactly where CIVVIS left it.
 	if cfg.ExploreUnassigned ~= false and (awaiting.frame or 0) == 0 then
@@ -14865,8 +14866,34 @@ local function applyOrders(player, pid, turn, rows)
 				return;
 			end
 			-- A held soldier stays held: see `CivvisQueue.contactPlots`.
+			--
+			-- ⚠⚠⚠ HELD IS NOT THE SAME AS UNORDERED, AND THIS RETURNED WITHOUT
+			-- ORDERING ANYTHING. Civilization VI will not end a turn while a
+			-- unit still awaits orders, so a soldier CIVVIS did not mention and
+			-- the guard kept off explore automation had no disposition at all
+			-- and blocked the turn forever.
+			--
+			-- Measured 2026-08-28, run civvis-20260828T161408Z, at turn 105:
+			--   by={"produce_next":2,"sell":1}  explored=2  guarded=5
+			-- then blocked(ENDTURN_BLOCKING_UNITS) -> dismissed(forced) ->
+			-- residual_unblock -> blocked ... repeating until the wedge
+			-- watchdog killed the attempt. The `sample` taken first (#2698)
+			-- showed the Game Core thread parked in `_pthread_cond_wait` for
+			-- 1342 of 1406 samples: the engine was not busy, it was waiting for
+			-- the orders these five units were never given. That game had
+			-- reached turn 105 with seven cities — the best run of the day.
+			--
+			-- Holding is what the guard MEANS, so say it to the engine. Fortify
+			-- first (a unit in contact should dig in and it keeps the defence
+			-- bonus), Alert second (it wakes on an approach), Skip last, which
+			-- always succeeds and is the difference between a held unit and a
+			-- dead turn.
 			if cfg.ExploreGuard ~= false and CivvisQueue.inContact(pid, unit, turn) then
 				guarded = guarded + 1;
+				if firstOperation(unit, { "UNITOPERATION_FORTIFY",
+						"UNITOPERATION_ALERT", "UNITOPERATION_SKIP_TURN" }) then
+					guardedHeld = guardedHeld + 1;
+				end
 				return;
 			end
 			if operate(unit, OP["UNITOPERATION_AUTOMATE_EXPLORE"], {}) then
@@ -14889,6 +14916,10 @@ local function applyOrders(player, pid, turn, rows)
 		-- Unmentioned combat units kept off the explore automation because a
 		-- hostile stood within `ExploreGuardRadius`; see `CivvisQueue.inContact`.
 		explore_guarded = guarded,
+		-- Of those, the ones the engine accepted a holding operation
+		-- for. A gap between these two is a unit that can still block
+		-- the end of the turn.
+		explore_guarded_held = guardedHeld,
 		-- MOVE_TOs sent as this turn's leg of a longer host path, and moves
 		-- refused because the unit could not take even the first step this
 		-- turn. See CivvisBoard.
