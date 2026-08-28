@@ -122,6 +122,11 @@ SYSTEMSTATUSD_SPIN_PERCENT = 85.0
 #: So capture genuinely does not work through a spike; what was wrong was only
 #: how long we waited before looking again.
 SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS = 3.0
+# Setup has no popup worth clearing, but its menu reader and the popup backstop
+# both need the same accessibility service.  Yield that service briefly until
+# the *newest* run records its first turn; once a game is live the ordinary
+# per-popup cadence still applies.
+SETUP_YIELD_SECONDS = 1.0
 
 
 def osa(script):
@@ -160,6 +165,36 @@ def game_in_progress(runs_dir, fresh_seconds=180.0):
         return False
     except OSError:
         return False
+
+
+def newest_run_is_pre_turn(runs_dir):
+    """Whether the current run has not yet recorded a turn.
+
+    The popup keeper is deliberately a post-turn backstop: before then there
+    is no in-game popup it can safely clear, and querying the Civ window races
+    the setup harness for System Events.  Inspect only the newest event stream;
+    a fresh setup must not inherit a previous game's turn as permission to
+    capture or ask accessibility for window geometry.
+    """
+    try:
+        candidates = []
+        for name in os.listdir(runs_dir):
+            events = os.path.join(runs_dir, name, "events.jsonl")
+            try:
+                candidates.append((os.path.getmtime(events), events))
+            except OSError:
+                continue
+        if not candidates:
+            return True
+        _, events = max(candidates)
+        with open(events, "rb") as handle:
+            blob = handle.read()
+        return (b'"kind": "turn"' not in blob
+                and b'"kind":"turn"' not in blob)
+    except OSError:
+        # An event file can be created while its run directory is being made.
+        # Yielding is safe: no recorded turn means no popup needs this helper.
+        return True
 
 
 def frontmost():
@@ -767,6 +802,21 @@ def main():
     warned_cards = False
     last_pause_reason = None
     while True:
+        # Do this before even probing capture or window geometry.  A pre-turn
+        # Create Game screen is setup, not a popup, so it must have exclusive
+        # access to System Events while the recorder's UI is present.
+        if newest_run_is_pre_turn(args.runs):
+            if not warned_setup:
+                log("newest run has no turn yet; yielding popup checks during setup")
+                warned_setup = True
+            if args.once:
+                return
+            time.sleep(max(SETUP_YIELD_SECONDS, args.interval))
+            continue
+        if warned_setup:
+            log("newest run recorded a turn; resuming popup checks")
+            warned_setup = False
+
         # CoreGraphics capture remains non-interactive under an authorized
         # native recording.  A denied grant or a spinning display service is
         # still paused before even grabbing the Civ window.
