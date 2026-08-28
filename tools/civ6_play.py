@@ -3685,6 +3685,14 @@ def _play(args: argparse.Namespace) -> int:
         by_kind = civ6_ladder.orders_by_kind(run_dir / "events.jsonl")
         if by_kind:
             summary["orders"] = by_kind
+        # ⭐ And WHO DROVE THE UNITS. `ExploreUnassigned` hands every unit
+        # CIVVIS gave no order to over to Civilization VI's own explore
+        # automation; the mod counts that separately so it is never mistaken
+        # for CIVVIS's work, and until now the count stopped at events.jsonl.
+        # See `civ6_ladder.seat_autonomy`.
+        autonomy = civ6_ladder.seat_autonomy(run_dir / "events.jsonl")
+        if autonomy:
+            summary["seat_autonomy"] = autonomy
         # The score gap to the best rival is the climb's primary progress
         # metric: our own score doubling means nothing while rival_best
         # holds a four-hundred-point lead at the cap.
