@@ -725,6 +725,45 @@ class Civ6PlayTest(unittest.TestCase):
         ))
         self.assertEqual(click.call_count, 2)
 
+    @needs_pillow
+    def test_leader_picker_retries_an_unreadable_open_frame(self) -> None:
+        """A recording-time capture miss is not evidence that the list stayed closed."""
+        bounds = (756, 33, 756, 480)
+        row = {"text": "Jadwiga", "x": 0.73, "y": 0.29,
+               "width": 0.04, "height": 0.02}
+        selected = {"text": "Jadwiga", "x": 0.73, "y": 0.155,
+                    "width": 0.04, "height": 0.02}
+        captures = iter([True, False, True, True, True, True])
+
+        def screenshot(path: Path) -> bool:
+            captured = next(captures)
+            if captured:
+                path.write_bytes(b"x")
+            return captured
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot", side_effect=screenshot) as shot, \
+             patch.object(civ6_play, "_leader_picker_open",
+                          side_effect=[False, True]) as picker_open, \
+             patch.object(civ6_play, "_setup_current_leader",
+                          return_value=("Random Leader", (1134, 140))), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "_leader_ocr", side_effect=[[row], [selected]]), \
+             patch.object(civ6_play.macos_input, "move"), \
+             patch.object(civ6_play.macos_input, "scroll"), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            found = civ6_play.select_requested_leader(
+                bounds, "LEADER_JADWIGA", Path(temporary)
+            )
+
+        self.assertTrue(found)
+        self.assertEqual(picker_open.call_count, 2)
+        self.assertEqual(shot.call_count, 6)
+        # Two verified field clicks bracket the missing frame; only then does
+        # the selector click the OCR-confirmed Jadwiga row.
+        self.assertEqual(click.call_count, 3)
+
     def test_leader_picker_open_requires_a_visible_roster_name(self) -> None:
         observations = [
             {"text": "Random Leader"},
