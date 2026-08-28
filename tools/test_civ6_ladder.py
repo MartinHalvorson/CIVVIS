@@ -1706,8 +1706,13 @@ class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
     to over to Civilization VI's own `AUTOMATE_EXPLORE`. The mod counts that
     separately so it is never mistaken for CIVVIS's work — and the count
     stopped at `events.jsonl`. Measured on the live Settler run of
-    2026-08-28: 185 unit orders from CIVVIS against 144 unit-turns handed to
-    the engine, a 56 % share, invisible on the row.
+    2026-08-28: 270 unit orders authored by CIVVIS against 144 unit-turns
+    handed to the engine, a 65 % share, invisible on the row.
+
+    ⚠⚠ The first version divided by `by.unit`, which the mod increments only on
+    the APPLIED path — so the share silently answered `applied_pct`'s question
+    and moved with actuation quality. `seen_by.unit` is the authored count
+    (applied plus refused). On that run the two read 0.6522 and 0.5623.
     """
 
     @staticmethod
@@ -1719,22 +1724,42 @@ class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
     def test_the_share_is_civvis_orders_over_every_disposition(self):
         with TemporaryDirectory() as tmp:
             events = self._events(Path(tmp) / "events.jsonl", [
-                {"kind": "orders", "by": {"unit": 3, "produce": 1},
-                 "explored": 1, "explore_guarded": 0},
-                {"kind": "orders", "by": {"unit": 1}, "explored": 3,
-                 "explore_guarded": 2},
+                {"kind": "orders", "seen_by": {"unit": 3, "produce": 1},
+                 "by": {"unit": 3}, "explored": 1, "explore_guarded": 0},
+                {"kind": "orders", "seen_by": {"unit": 1}, "by": {"unit": 1},
+                 "explored": 3, "explore_guarded": 2},
             ])
             got = civ6_ladder.seat_autonomy(events)
             self.assertEqual(got, {
-                "unit_orders": 4, "engine_explored": 4, "explore_guarded": 2,
+                "unit_orders": 4, "unit_orders_applied": 4,
+                "engine_explored": 4, "explore_guarded": 2,
                 "civvis_unit_share": 0.5,
             })
+
+    def test_a_refused_order_is_still_an_order_civvis_authored(self):
+        """⚠ The whole bug: `by` is applied, `seen_by` is applied + refused.
+
+        A share built on `by` falls whenever the host refuses an order, which
+        makes it a second, noisier reading of `applied_pct` instead of a
+        statement about who decided.
+        """
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                # CIVVIS authored 4 unit orders; the host applied 1.
+                {"kind": "orders", "seen_by": {"unit": 4}, "by": {"unit": 1},
+                 "explored": 4},
+            ])
+            got = civ6_ladder.seat_autonomy(events)
+            self.assertEqual(got["unit_orders"], 4)
+            self.assertEqual(got["unit_orders_applied"], 1)
+            self.assertEqual(got["civvis_unit_share"], 0.5)
 
     def test_production_and_research_are_not_unit_dispositions(self):
         """A turn of `by: {produce_next: 1}` and nine idle units is 0 %."""
         with TemporaryDirectory() as tmp:
             events = self._events(Path(tmp) / "events.jsonl", [
-                {"kind": "orders", "by": {"produce_next": 1}, "explored": 7},
+                {"kind": "orders", "seen_by": {"produce_next": 1},
+                 "by": {"produce_next": 1}, "explored": 7},
             ])
             got = civ6_ladder.seat_autonomy(events)
             self.assertEqual(got["unit_orders"], 0)
@@ -1744,7 +1769,7 @@ class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
     def test_a_seat_civvis_drove_entirely_reads_one(self):
         with TemporaryDirectory() as tmp:
             events = self._events(Path(tmp) / "events.jsonl", [
-                {"kind": "orders", "by": {"unit": 5}, "explored": 0},
+                {"kind": "orders", "seen_by": {"unit": 5}, "explored": 0},
             ])
             self.assertEqual(
                 civ6_ladder.seat_autonomy(events)["civvis_unit_share"], 1.0)
@@ -1752,7 +1777,7 @@ class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
     def test_a_turn_where_nothing_moved_is_not_a_hundred_percent(self):
         with TemporaryDirectory() as tmp:
             events = self._events(Path(tmp) / "events.jsonl", [
-                {"kind": "orders", "by": {"research": 1}, "explored": 0},
+                {"kind": "orders", "seen_by": {"research": 1}, "explored": 0},
             ])
             self.assertIsNone(
                 civ6_ladder.seat_autonomy(events)["civvis_unit_share"])
@@ -1771,7 +1796,7 @@ class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "events.jsonl"
             path.write_text(
-                json.dumps({"kind": "orders", "by": {"unit": 2},
+                json.dumps({"kind": "orders", "seen_by": {"unit": 2},
                             "explored": 2}) + "\n{\"kind\": \"ord",
                 encoding="utf-8")
             self.assertEqual(
