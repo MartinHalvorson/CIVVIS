@@ -1154,13 +1154,13 @@ fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
-    assert!(
-        live.wonder_score_tally,
-        "the deployment now enables the independently scored wonder lane"
-    );
     // This test isolates the live-only race's era and queue limits. The
-    // separately default-on tally lane intentionally does not share them.
+    // separately scored tally lane intentionally does not share them, so it
+    // is held off here whatever the deployment selection says about it —
+    // the operator pinned it on (2026-08-27) and then off (2026-08-28), and
+    // neither reading is this test's subject.
     live.disable_wonder_score_tally();
+    assert!(!live.wonder_score_tally);
     let raced = live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
     assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
     // ★★★★ And prices it higher as the tally approaches: ×1 at the start,

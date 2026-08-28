@@ -530,7 +530,7 @@ RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: from the pool (`build_ledger` refuses that). Nothing derives this list; it
 #: is the operator's, by name.
 OPERATOR_DEFAULT_ON = (
-    "amenity-project-preemption",
+    "amenity-project-preemption-2",
     "apostle-promotion-by-role",
     "army-target-weighs-enemy",
     "barbarian-settler-capture",
@@ -542,7 +542,7 @@ OPERATOR_DEFAULT_ON = (
     "camp-tile-buyout",
     "canal-city",
     "chain-payback-window-2",
-    "chokepoint-claim",
+    "chokepoint-siting",
     "civilian-out-of-reach",
     "close-as-a-body",
     "coalition-before-war",
@@ -550,6 +550,7 @@ OPERATOR_DEFAULT_ON = (
     "come-ashore",
     "contested-land-first",
     "conversion-majority-alarm",
+    "culture-floor",
     "deals-at-the-ceiling",
     "defend-where-you-stand",
     "defensible-sites",
@@ -560,7 +561,6 @@ OPERATOR_DEFAULT_ON = (
     "elective-war-yields-to-a-lane",
     "enemy-of-my-enemy",
     "enhancer-for-the-corps",
-    "enter-the-prophet-race",
     "exchange-is-the-engines",
     "expansion-pays-back",
     "expansion-schedule",
@@ -577,11 +577,10 @@ OPERATOR_DEFAULT_ON = (
     "naval-threat-triage",
     "one-launch-pad",
     "one-shot-recovery",
-    "one-war-at-a-time",
     "order-retry",
+    "pass-picket",
     "peace-when-the-war-does-not-pay",
     "peacetime-deterrence",
-    "power-the-laboratory-2",
     "quest-boost",
     "quest-production",
     "quest-trade-route",
@@ -601,13 +600,13 @@ OPERATOR_DEFAULT_ON = (
     "settler-target-hysteresis-2",
     "settler-threat-detour",
     "stranded-settler-discount",
-    "threatened-city-reserve",
     "treasury-at-work",
     "unchosen-war-keeps-the-lane",
     "unit-cost-efficiency",
     "upgrade-the-garrison",
     "whole-turn-backtrack-guard",
-    "wonder-score-tally",
+    "wonder-adjacent-sites-2",
+    "wonder-ring-recon",
 )
 
 #: ⭐ A pin over a gene no batch has priced ships on its name alone. The
@@ -645,13 +644,17 @@ def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
 #: the pool is still cut. Nothing derives this list either; it is the
 #: operator's, by name.
 OPERATOR_DEFAULT_OFF = (
+    "amenity-project-preemption",
     "blind-objective-units",
     "builder-supply-floor",
     "builder-tries-the-next-tile",
     "buy-what-cards-cannot-boost",
     "campaign-pillage",
+    "chokepoint-claim",
     "congress-counter-leader",
     "deals-for-our-gain",
+    "enter-the-prophet-race",
+    "first-research-building-reserve",
     "frontier-massing-alarm",
     "holy-lane-parity",
     "holy-site-where-the-threat-is-2",
@@ -659,11 +662,15 @@ OPERATOR_DEFAULT_OFF = (
     "native-emergency-purchase",
     "naval-recon",
     "never-an-empty-queue",
+    "one-war-at-a-time",
     "pantheon-board",
+    "power-the-laboratory-2",
     "settler-factory-coordination",
     "settler-target-hysteresis",
+    "threatened-city-reserve",
     "unit-objective-memory",
     "wonder-adjacent-sites",
+    "wonder-score-tally",
 )
 
 #: A gene is named by at most one of the two lists — the pair is one selection,
