@@ -610,9 +610,16 @@ def build_config(args: argparse.Namespace) -> dict:
         "OrdersDb": args.orders_db,
         # ★ CIVVIS decides; this mod actuates. With this on, the turn publishes the
         # board and then WAITS for orders on the SQLite channel instead of running
-        # the hand-written heuristics. `OrdersWaitTicks` is the floor: past it the
-        # built-ins run and the turn is recorded `fallback`, so a brain that is slow
-        # or absent costs decision quality rather than progress.
+        # the hand-written heuristics. `OrdersWaitPolls` (40) then
+        # `OrdersFallbackPolls` (120) are the floor: past them the built-ins run
+        # and the turn is recorded `fallback`, so a brain that is slow or answers
+        # badly costs decision quality rather than progress.
+        #
+        # ⚠ This said `OrdersWaitTicks`, which is a key nothing reads — the only
+        # other mention in the tree was the mod comment describing this one.
+        # ⚠⚠ And the floor has never fired in any recorded run; it also CANNOT
+        # fire once the game's Game Core thread parks, because the polls it
+        # counts are driven by that thread. See the mod for the measurement.
         "CivvisDecides": args.civvis_decides,
         # Hand units CIVVIS gave no order to over to the game's own explore
         # automation. A policy, and counted separately as `explored` so it is never
