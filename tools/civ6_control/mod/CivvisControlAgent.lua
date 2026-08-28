@@ -14843,6 +14843,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- never presents this as CIVVIS's work.
 	local explored, guarded = 0, 0;
 	local guardedHeld = 0;
+	local civiliansSkipped = 0;
 	-- ⚠ NEVER on a combat frame: every unit not named by the frame's answer
 	-- was ordered by the opening board and is exactly where CIVVIS left it.
 	if cfg.ExploreUnassigned ~= false and (awaiting.frame or 0) == 0 then
@@ -14858,11 +14859,28 @@ local function applyOrders(player, pid, turn, rows)
 			if CivvisBoard.escortHolds[id] then return; end
 			local name = unitTypeName(unit);
 			-- Civilians cannot explore, and a settler that wanders is a settler that
-			-- never founds — this project has already paid for both.
+			-- never founds — this project has already paid for both. Both remain
+			-- true: nothing below hands a civilian to `AUTOMATE_EXPLORE`.
+			--
+			-- ⚠⚠ BUT NOT EXPLORING IS NOT THE SAME AS HAVING NO ORDERS, and this
+			-- returned bare. Civilization VI will not end a turn while ANY unit
+			-- still awaits orders, civilian included, so an unmentioned Settler
+			-- or Builder blocked the turn exactly as the guarded soldier beside
+			-- it did. Seven of the nineteen `ENDTURN_BLOCKING_UNITS` turns in run
+			-- civvis-20260828T165926Z had an unordered civilian on them.
+			--
+			-- SKIP_TURN and nothing else. Fortify would be wrong for a civilian,
+			-- Alert wrong for a Trader, and Explore is the thing the comment
+			-- above forbids. Skipping changes no gameplay — the unit stays
+			-- exactly where CIVVIS left it and is re-planned next turn — it only
+			-- tells the engine the turn may end.
 			local gp = try(function() return unit:GetGreatPerson(); end);
 			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER"
 					or name == "UNIT_TRADER"
 					or (gp ~= nil and try(function() return gp:IsGreatPerson(); end, false)) then
+				if operate(unit, OP["UNITOPERATION_SKIP_TURN"], {}) then
+					civiliansSkipped = civiliansSkipped + 1;
+				end
 				return;
 			end
 			-- A held soldier stays held: see `CivvisQueue.contactPlots`.
@@ -14920,6 +14938,10 @@ local function applyOrders(player, pid, turn, rows)
 		-- for. A gap between these two is a unit that can still block
 		-- the end of the turn.
 		explore_guarded_held = guardedHeld,
+		-- Unmentioned civilians told to skip so the turn can end. They are
+		-- never explored (see the branch): this is only the difference
+		-- between "idle" and "idle and blocking".
+		civilians_skipped = civiliansSkipped,
 		-- MOVE_TOs sent as this turn's leg of a longer host path, and moves
 		-- refused because the unit could not take even the first step this
 		-- turn. See CivvisBoard.
