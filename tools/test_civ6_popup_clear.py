@@ -367,5 +367,67 @@ class PopupClearTest(unittest.TestCase):
         self.assertFalse(popup_clear.same_scene("leader", (1197, 387), None))
 
 
+class AnAdvisorWithNoSafeTargetIsNotLeftToBlockTheGame(unittest.TestCase):
+    """⚠⚠⚠ "Leaving it alone" meant leaving the game dead.
+
+    Refusing the click is right — on an advisor card the right-hand action is
+    "Tell me more", which opens Civilopedia and leaves the turn blocked. But
+    `click_target`'s comment says such a card is left "for the in-game closer or
+    an operator", and an unattended ladder has no operator.
+
+    Measured 2026-08-28, run civvis-20260828T173743Z, the best King game of the
+    day at turn 100 with six cities:
+
+        18:13:05 advisor has no safe left-side acknowledgement
+        18:13:06 clicked advisor at (1234, 96)
+        18:13:07 advisor has no safe left-side acknowledgement
+        (nothing until the wedge watchdog killed it at 18:18)
+
+    Its wedge sample shows the Game Core thread parked in `__psynch_cvwait` for
+    1433 of 1433 frames — the engine waiting for a response to that card.
+    """
+
+    def test_a_right_hand_only_advisor_still_has_no_click_target(self):
+        """The refusal itself is correct and must not be weakened."""
+        targets = [(900, 96)]           # right half only: "Tell me more"
+        self.assertIsNone(popup_clear.click_target("advisor", targets, 1000))
+
+    def test_a_left_hand_advisor_is_still_clicked(self):
+        targets = [(120, 96), (900, 96)]
+        self.assertEqual(popup_clear.click_target("advisor", targets, 1000),
+                         (120, 96))
+
+    def test_escape_is_escalated_on_the_same_ladder_as_the_leader_branch(self):
+        source = (Path(__file__).resolve().parent / "civ6_control"
+                  / "popup_clear.py").read_text(encoding="utf-8")
+        block = source[source.index("advisor_stuck_passes += 1"):
+                       source.index("leaving it alone (pass")]
+        self.assertIn("advisor_stuck_passes in (3, 6, 12)", block)
+        self.assertIn("esc_budget_used < 3", block)
+        # Never against a window that is not the game, and never in a dry run.
+        self.assertIn('front.startswith("Civ6")', block)
+        self.assertIn("not args.dry_run", block)
+        self.assertIn("playing", block)
+
+    def test_the_counter_resets_when_the_map_comes_back(self):
+        source = (Path(__file__).resolve().parent / "civ6_control"
+                  / "popup_clear.py").read_text(encoding="utf-8")
+        block = source[source.index('if kind == "map":'):]
+        block = block[:block.index("elif")]
+        self.assertIn("advisor_stuck_passes = 0", block)
+
+    def test_escape_never_replaces_a_click_that_was_available(self):
+        """The ESC path is reached only where `click_target` returned None."""
+        source = (Path(__file__).resolve().parent / "civ6_control"
+                  / "popup_clear.py").read_text(encoding="utf-8")
+        guard = source.index(
+            "elif (choice := click_target(kind, targets, window.size[0])) is None:")
+        escalation = source.index("advisor_stuck_passes += 1")
+        following = source.index("elif not front.startswith", guard)
+        self.assertLess(guard, escalation)
+        self.assertLess(escalation, following,
+                        "the ESC must sit inside the no-safe-target branch")
+
+
 if __name__ == "__main__":
     unittest.main()
