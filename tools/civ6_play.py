@@ -901,12 +901,38 @@ OPTIONS = {
 DROPDOWN_RETRY_DELAYS = (0.0, 2.0, 4.0)
 
 
+#: Seconds any single host probe may take before the loop gives up on it.
+#:
+#: ⚠⚠⚠ EVERY ONE OF THESE RUNS ON EVERY POLL OF THE LOOP THAT DRIVES THE GAME,
+#: and they were all unbounded. `watch.follow` calls `each_poll` (which is
+#: `keep_foreground` -> `focus_game` + `place_game`) and `pause_when` (which is
+#: `console_locked` -> `screen_locked`) once per iteration. `game_pids` was the
+#: fourth and #2700 fixed it after it hung a game at turn 8; the stack was
+#: `subprocess.run` -> `communicate` -> `selector.select`, and the wedge sample
+#: showed every Civilization VI thread idle because nothing was driving it.
+#:
+#: These three are the same shape and worse-placed: `osascript` reaching System
+#: Events blocks on the Accessibility subsystem, which is exactly what a busy or
+#: half-wedged foreground app makes slow. Ten seconds is far beyond any healthy
+#: answer — the window query returns in milliseconds — and far inside the five
+#: minutes of no progress the wedge watchdog waits for.
+HOST_PROBE_TIMEOUT_S = 10.0
+
+
 def game_window() -> tuple[int, int, int, int] | None:
     """Position and size of the game window in points, or None."""
     script = ('tell application "System Events" to tell '
               f'process "{GAME_PROCESS}" to '
               'get {position, size} of window 1')
-    out = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    try:
+        out = subprocess.run(["osascript", "-e", script], capture_output=True,
+                             text=True, timeout=HOST_PROBE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        # Every caller already handles None as "the window could not be read".
+        print(f"[window] System Events did not answer in "
+              f"{HOST_PROBE_TIMEOUT_S:g}s; treating the geometry as unknown",
+              flush=True)
+        return None
     parts = [p.strip() for p in out.stdout.split(",") if p.strip()]
     if len(parts) != 4 or not all(p.lstrip("-").isdigit() for p in parts):
         return None
@@ -922,7 +948,17 @@ def screen_locked() -> bool:
             capture_output=True,
             text=True,
             check=False,
+            timeout=HOST_PROBE_TIMEOUT_S,
         )
+    except subprocess.TimeoutExpired:
+        # ⚠ NOT True. `wait_for_unlocked_session` loops while this says locked,
+        # and `watch.follow` pauses the whole driving loop on it, so a probe
+        # that stops answering would park a healthy game forever. "We cannot
+        # tell" must keep the game being played; a genuinely locked screen is
+        # caught by the next poll that does answer.
+        print(f"[session] ioreg did not answer in {HOST_PROBE_TIMEOUT_S:g}s; "
+              "assuming the console is usable and continuing", flush=True)
+        return False
     except OSError:
         return False
     return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
@@ -1055,7 +1091,22 @@ def place_game(side: str = "left", fraction: float = 0.5,
         # Position last or a requested upper quadrant lands at the bottom.
         f'  set position to {{{x}, {y}}}\n'
         'end tell')
-    subprocess.run(["osascript", "-e", script], capture_output=True)
+    _best_effort_osascript(script, "place")
+
+
+def _best_effort_osascript(script: str, what: str) -> None:
+    """Run a fire-and-forget System Events script without risking the loop.
+
+    Placing and focusing are retried on the next poll by construction, so a
+    slow Accessibility subsystem costs one skipped nudge rather than the game.
+    """
+    try:
+        subprocess.run(["osascript", "-e", script], capture_output=True,
+                       timeout=HOST_PROBE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        print(f"[window] System Events did not answer in "
+              f"{HOST_PROBE_TIMEOUT_S:g}s; skipping this {what} and "
+              "retrying next poll", flush=True)
 
 
 def focus_game(side: str = "left", fraction: float = 0.5) -> None:
@@ -1072,7 +1123,7 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
     del side, fraction  # kept for call-site compatibility
     script = ('tell application "System Events" to set frontmost of '
               f'process "{GAME_PROCESS}" to true')
-    subprocess.run(["osascript", "-e", script], capture_output=True)
+    _best_effort_osascript(script, "focus")
 
 
 def click_at(px: int, py: int) -> None:
