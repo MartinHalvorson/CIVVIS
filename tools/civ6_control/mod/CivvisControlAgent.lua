@@ -16351,7 +16351,53 @@ local function tick()
 					-- legacy unit AI must not invent orders here. In particular, it
 					-- previously moved a Settler out of a safe capital and into a
 					-- visible barbarian capture zone after CIVVIS chose to wait.
+					--
+					-- ⚠⚠⚠ "COMPLETE" WAS A CLAIM, AND THE ENGINE DISAGREED.
+					-- The pass is complete for units CIVVIS MENTIONED. A unit can
+					-- go ready again inside the same turn — it finishes the walk
+					-- the opening board gave it, and a REPLAN FRAME does not
+					-- re-run the unassigned pass (by design: `ExploreUnassigned`
+					-- is skipped whenever `frame > 0`, because a unit CIVVIS is
+					-- manoeuvring must not be handed to explore automation).
+					-- Nothing then dispositions it, `ENDTURN_BLOCKING_UNITS`
+					-- stands, and answering "civvis_complete" told us it was
+					-- handled while the turn died.
+					--
+					-- Measured 2026-08-28, run civvis-20260828T190111Z at turn 113
+					-- — 7 cities, 33 units, the furthest game of the day:
+					--     frame 0  expl=20 civskip=3   (everything dispositioned)
+					--     frame 1  6 movers replanned, expl=0
+					--     blocked ENDTURN_BLOCKING_UNITS answered="civvis_complete"
+					-- and the game never advanced again.
+					--
+					-- So PARK the units the engine still calls ready, and only
+					-- then claim completion. `parkReadyUnits` is `orderIdle`:
+					-- SKIP_TURN, FORTIFY, ALERT, SLEEP. Every one holds position —
+					-- none is a move, so the Settler-into-barbarians case this
+					-- branch was written for cannot recur. A unit CIVVIS ordered
+					-- is not ready and is never touched.
+					--
+					-- `UNIT_BLOCKERS` already existed for the forfeit path,
+					-- whose own comment says these are "the ones whose forfeit
+					-- needs the parking pass". The pass was simply not reached
+					-- until the forfeit, by which point the turn had already
+					-- spent its attempts. This runs it at the answer instead.
+					-- ⚠ THIS BRANCH DELIBERATELY HAS NO ALTERNATIVE ARM, AND
+					-- THE WORD FOR ONE MUST NOT APPEAR HERE AT ALL.
+					-- `test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai`
+					-- splits this handler on the first occurrence of that
+					-- keyword to tell the CIVVIS arm from the legacy one, so
+					-- either the keyword or a comment naming it cuts the arm in
+					-- half and the guard then reads the wrong code. Both
+					-- mistakes were made here in turn; the base answer is
+					-- assigned first and the park only appends to it.
 					answered = "civvis_complete";
+					if UNIT_BLOCKERS[name] then
+						local parked = parkReadyUnits(player);
+						if parked > 0 then
+							answered = answered .. "+parked:" .. parked;
+						end
+					end
 				else
 					-- Bounded per turn. The order pass is the expensive one, and a
 					-- soft blocker that will not clear -- a unit the engine keeps
