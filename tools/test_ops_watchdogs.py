@@ -177,6 +177,21 @@ class WatchdogWiringTest(unittest.TestCase):
             source.index("gap=$(( mirror_turn - agent_turn ))"),
         )
 
+    def test_agent_watchdog_never_signals_a_direct_unowned_player(self) -> None:
+        source = (OPS / "civvis-agent-wedge-watchdog.sh").read_text()
+        self.assertIn("owned_climb_and_player()", source)
+        self.assertIn("descends_from", source)
+        self.assertIn("unowned direct civ6_play", source)
+        self.assertIn('restart_attempt "$tag', source)
+        self.assertLess(
+            source.index("ownership=$(owned_climb_and_player || true)"),
+            source.index("blocker_signal=\"\""),
+        )
+        self.assertNotIn(
+            'local play=$(pgrep -f "[c]iv6_play\\.py"',
+            source,
+        )
+
     def test_interactive_host_keeps_the_agent_watchdog_alive(self) -> None:
         source = (OPS / "civvis-interactive-host.sh").read_text()
         self.assertIn("WEDGE_WATCHDOG", source)

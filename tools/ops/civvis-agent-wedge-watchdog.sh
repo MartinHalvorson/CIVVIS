@@ -47,20 +47,90 @@ LOCK=${CIVVIS_WEDGE_LOCK:-$HOME/.civvis-agent-wedge-watchdog.lock}
 
 say() { print -r -- "[wedge] $(date -u +%FT%TZ) $*" >> "$LOG" }
 
+# The watchdog belongs to the unattended climb lane, not to every Python
+# process whose argv happens to mention civ6_play.py.  A protected manual
+# continuation deliberately has no climb parent: it may be loading a saved,
+# viable game while the normal supervisor is held.  The old global pgrep then
+# sent SIGINT after five quiet mirror polls, cutting off an actively computing
+# King continuation at t172.  Prove both Python harnesses and their ancestry
+# before this helper may signal anything.  On uncertainty, leave the game alone.
+is_python_harness() {
+  local pid="$1" marker="$2" command="" executable=""
+  [[ "$pid" == <-> ]] || return 1
+  command=$(ps -p "$pid" -o command= 2>/dev/null)
+  [[ "$command" == *"$marker"* ]] || return 1
+  executable=$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null \
+    | sed -n 's/^n//p' | head -n 1)
+  case "$executable" in
+    */Python|*/python|*/python[0-9]*) return 0 ;;
+  esac
+  return 1
+}
+
+parent_pid() {
+  local pid="$1" parent=""
+  [[ "$pid" == <-> ]] || return 1
+  parent=$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d '[:space:]')
+  [[ "$parent" == <-> ]] || return 1
+  print -r -- "$parent"
+}
+
+descends_from() {
+  local child="$1" ancestor="$2" parent="" hops=0
+  while (( hops < 64 )); do
+    [[ "$child" == "$ancestor" ]] && return 0
+    parent=$(parent_pid "$child" || true)
+    [[ "$parent" == <-> && "$parent" != "$child" ]] || return 1
+    child="$parent"
+    (( hops += 1 ))
+  done
+  return 1
+}
+
+# Print "<climb-pid> <play-pid>" only for the one player the live climb owns.
+# A successful PID lookup alone is deliberately insufficient: the game install
+# is shared, and a manual save continuation must never become this watchdog's
+# recovery target.
+owned_climb_and_player() {
+  local climb="" play=""
+  for climb in ${(f)"$(pgrep -f '[c]iv6_civvis_climb\.py' 2>/dev/null)"}; do
+    is_python_harness "$climb" "civ6_civvis_climb.py" || continue
+    for play in ${(f)"$(pgrep -f '[c]iv6_play\.py' 2>/dev/null)"}; do
+      is_python_harness "$play" "civ6_play.py" || continue
+      descends_from "$play" "$climb" || continue
+      print -r -- "$climb $play"
+      return 0
+    done
+  done
+  return 1
+}
+
+player_uses_tag() {
+  local pid="$1" tag="$2" command=""
+  is_python_harness "$pid" "civ6_play.py" || return 1
+  command=$(ps -p "$pid" -o command= 2>/dev/null)
+  [[ "$command" == *"--tag $tag"* ]]
+}
+
 # The climb owns the game lock. Preserve the documented recovery order so its
 # cleanup runs before the player sees SIGINT; SIGTERM on civ6_play skips atexit
-# and can strand the run tag for the successor game.
+# and can strand the run tag for the successor game.  Both PIDs were proven as
+# one climb-owned pair by owned_climb_and_player before this is called.
 restart_attempt() {
-  local reason="$1"
+  local reason="$1" climb="$2" play="$3" tag="$4"
+  if ! is_python_harness "$climb" "civ6_civvis_climb.py" \
+      || ! player_uses_tag "$play" "$tag"; then
+    say "$tag recovery target is no longer the proven owned pair; leaving it alone"
+    return 0
+  fi
   say "$reason; restarting (TERM climb, then INT civ6_play)"
-  local climb=$(pgrep -f "[c]iv6_civvis_climb\.py" 2>/dev/null | head -1)
-  [[ -n "$climb" ]] && kill -TERM "$climb" 2>/dev/null && say "  TERM climb $climb"
+  kill -TERM "$climb" 2>/dev/null && say "  TERM climb $climb"
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    [[ -n "$climb" ]] && kill -0 "$climb" 2>/dev/null || break
+    kill -0 "$climb" 2>/dev/null || break
     sleep 3
   done
-  local play=$(pgrep -f "[c]iv6_play\.py" 2>/dev/null | head -1)
-  [[ -n "$play" ]] && kill -INT "$play" 2>/dev/null && say "  INT civ6_play $play"
+  player_uses_tag "$play" "$tag" \
+    && kill -INT "$play" 2>/dev/null && say "  INT civ6_play $play"
 }
 
 reset_progress() {
@@ -84,15 +154,39 @@ strikes=0
 progress_strikes=0
 last_progress=""
 last_tag=""
+last_unowned_tag=""
 while true; do
   sleep "$POLL_S"
-  play_pid=$(pgrep -f "[c]iv6_play\.py" 2>/dev/null | head -1)
-  [[ -z "$play_pid" ]] && { strikes=0; reset_progress; continue }
-
   tag=$(ls -t "$RUNS" 2>/dev/null | grep '^civvis-' | head -1)
   [[ -z "$tag" ]] && { strikes=0; reset_progress; continue }
+  ownership=$(owned_climb_and_player || true)
+  if [[ -z "$ownership" ]]; then
+    # A direct player is expected during a protected autosave continuation.
+    # Logging once per run retains diagnosis without turning an unowned game
+    # into a six-minute stream of harmless noise.
+    if [[ "$tag" != "$last_unowned_tag" ]] \
+        && pgrep -f '[c]iv6_play\.py' >/dev/null 2>&1; then
+      say "$tag has an unowned direct civ6_play; watchdog will not signal it"
+      last_unowned_tag="$tag"
+    fi
+    strikes=0
+    reset_progress
+    continue
+  fi
+  read -r climb_pid play_pid <<< "$ownership"
+  if ! player_uses_tag "$play_pid" "$tag"; then
+    say "$tag does not match the proven climb-owned player; leaving it alone"
+    strikes=0
+    reset_progress
+    continue
+  fi
   # A new game resets the count; never carry strikes across runs.
-  [[ "$tag" != "$last_tag" ]] && { strikes=0; reset_progress; last_tag=$tag }
+  [[ "$tag" != "$last_tag" ]] && {
+    strikes=0
+    reset_progress
+    last_tag=$tag
+    last_unowned_tag=""
+  }
 
   # The agent and the game can agree on the same turn forever: a selected unit
   # remains ready, the mod repeatedly emits ENDTURN_BLOCKING_UNITS, and neither
@@ -108,7 +202,8 @@ while true; do
   if [[ "$blocker_turn" =~ '^[0-9]+$' ]] \
       && [[ "$blocker_count" =~ '^[0-9]+$' ]] \
       && (( blocker_count >= BLOCKER_STREAK )); then
-    restart_attempt "$tag repeating unit blocker ${blocker_name} at t${blocker_turn} (${blocker_count} sightings)"
+    restart_attempt "$tag repeating unit blocker ${blocker_name} at t${blocker_turn} (${blocker_count} sightings)" \
+      "$climb_pid" "$play_pid" "$tag"
     strikes=0
     reset_progress
     continue
@@ -143,7 +238,8 @@ PY
       progress_strikes=$(( progress_strikes + 1 ))
       say "$tag no synchronized progress (${progress_signal}) strike ${progress_strikes}/${PROGRESS_CONFIRM}"
       if (( progress_strikes >= PROGRESS_CONFIRM )); then
-        restart_attempt "$tag NO GAME PROGRESS confirmed at t${mirror_turn}"
+        restart_attempt "$tag NO GAME PROGRESS confirmed at t${mirror_turn}" \
+          "$climb_pid" "$play_pid" "$tag"
         strikes=0
         reset_progress
         continue
@@ -162,7 +258,7 @@ PY
     strikes=$(( strikes + 1 ))
     say "$tag agent t${agent_turn} vs game t${mirror_turn} (gap ${gap}) strike ${strikes}/${CONFIRM}"
     if (( strikes >= CONFIRM )); then
-      restart_attempt "$tag DEAD AGENT confirmed"
+      restart_attempt "$tag DEAD AGENT confirmed" "$climb_pid" "$play_pid" "$tag"
       strikes=0
       reset_progress
     fi
