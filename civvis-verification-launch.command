@@ -40,9 +40,25 @@ set -u
 # every "verification" game validated code nobody was shipping.
 export CIVVIS_HEAD_REPO=/Users/martin/CIVVIS
 
-# Settler, per the operator. The ladder policy already targets it; pinning
-# makes it explicit rather than policy-dependent.
-export CIVVIS_DIFFICULTY=DIFFICULTY_SETTLER
+# ⚠⚠ NOT PINNED ANY MORE — THIS PIN WAS GRINDING A SOLVED RUNG.
+#
+# It read `DIFFICULTY_SETTLER` from 2026-08-18 until 2026-08-28, on the note
+# that "the ladder policy already targets it". The policy had long since moved:
+#
+#   Settler    396 attempts  14 wins  EARNED
+#   Chieftain  102 attempts   7 wins  EARNED
+#   Warlord     28 attempts   1 win
+#   Prince      35 attempts   1 win     <- `civ6_ladder_policy.py target`
+#   King        69 attempts   0 wins
+#
+# A pin cannot notice that it has been overtaken, and this one kept the live
+# seat on the easiest rung in the game for ten days after that rung was earned
+# three times over. Operator, 2026-08-28: "we've beat level 4 in the past.
+# please get us operating at higher levels than this" — level 4 is Prince, and
+# Prince is exactly what the policy selects.
+#
+# Leave this UNSET so `civvis-game-supervisor.sh` asks the policy every batch
+# and climbs on its own. Set it only to force one rung for a deliberate arm.
 
 # One game per supervisor cycle, so each game starts from a fresh build of head
 # and a merge reaches the next game immediately.
