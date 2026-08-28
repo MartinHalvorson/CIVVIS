@@ -314,6 +314,75 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
     return ledger["orders_seen"], ledger["orders_applied"]
 
 
+def seat_autonomy(events_path: Path) -> dict | None:
+    """Who actually drove the units: CIVVIS, or Civilization VI's own explore.
+
+    ⭐ THE LADDER HAS NEVER SAID WHAT SHARE OF THE SEAT CIVVIS DROVE, and the
+    project's first premise is that it drives all of it. `ExploreUnassigned`
+    (on by default, `civ6_play.py --no-explore-unassigned`) hands every unit
+    CIVVIS gave no order to over to `UNITOPERATION_AUTOMATE_EXPLORE`. That is a
+    deliberate policy and the mod already counts it separately "so it is never
+    mistaken for CIVVIS's work" — but the count stopped at `events.jsonl`.
+    Nothing carried it to the summary, so every ladder row credited CIVVIS for
+    a game it may only have half-played, and the only way to find out was to
+    hand-parse the events.
+
+    Measured on the live run of 2026-08-28, at turn 61 of a Settler game:
+    159 unit orders from CIVVIS against **115 unit-turns handed to the engine**
+    — a 58% share. Whole turns passed with `by: {produce_next: 1}` and nine
+    units on the board.
+
+    Civilians are never in this number: the mod excludes Settler, Builder,
+    Trader and Great People from the hand-off ("a settler that wanders is a
+    settler that never founds"), and `explored` counts only hand-offs the
+    engine accepted. So this is the ARMY and the scouts, which is exactly the
+    half a victory lane is decided by.
+
+    `explore_guarded` is the opposite sign and belongs beside it: units held
+    back from exploring because they are in contact. `None` when the run's mod
+    emitted no `orders` event at all, which is a different statement from a run
+    whose every unit CIVVIS ordered.
+    """
+    if not events_path.is_file():
+        return None
+    unit_orders = engine_explored = guarded = 0
+    saw_orders = False
+    with events_path.open(encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except (ValueError, TypeError):
+                continue          # a game can die mid-write; skip the tail
+            if not isinstance(event, dict) or event.get("kind") != "orders":
+                continue
+            saw_orders = True
+            by_kind = event.get("by")
+            if isinstance(by_kind, dict):
+                count = by_kind.get("unit")
+                if isinstance(count, int) and not isinstance(count, bool):
+                    unit_orders += max(0, count)
+            for name, target in (("explored", "explored"),
+                                 ("explore_guarded", "guarded")):
+                value = event.get(name)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    if target == "explored":
+                        engine_explored += max(0, value)
+                    else:
+                        guarded += max(0, value)
+    if not saw_orders:
+        return None
+    decided = unit_orders + engine_explored
+    return {
+        "unit_orders": unit_orders,
+        "engine_explored": engine_explored,
+        "explore_guarded": guarded,
+        # The headline: of every unit-turn that got a disposition, how many were
+        # CIVVIS's own. `None` rather than a fake 100% when nothing moved.
+        "civvis_unit_share": (round(unit_orders / decided, 4)
+                              if decided else None),
+    }
+
+
 def combat_totals(events_path: Path) -> dict | None:
     """What the army did, summed from the run's own `combat`, `unit_lost` and
     `city_occupation` events: ``{kills, losses, kills_per_loss, damage_dealt,
@@ -814,6 +883,15 @@ def entry_from(summary: dict) -> dict:
         # loss the ladder chose not to play out, and the record preserves the
         # exact rule and standing that made that choice.
         "abandoned": summary.get("abandoned"),
+        # ⭐ WHO DROVE THE UNITS. `applied_pct` below says how much of what
+        # CIVVIS asked for the engine did; this says how much of the seat
+        # CIVVIS asked about at all. See `seat_autonomy`: units CIVVIS gives no
+        # order to are handed to Civilization VI's own explore automation, and
+        # a row that does not carry the share credits CIVVIS for a game it may
+        # only have half-played.
+        "seat_autonomy": summary.get("seat_autonomy"),
+        "civvis_unit_share": (summary.get("seat_autonomy") or {}).get(
+            "civvis_unit_share"),
         "applied_pct": applied_pct(summary),
         # The return codes' rate beside the verified one; see `orders_ledger`.
         "reported_pct": reported_pct(summary),

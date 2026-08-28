@@ -1117,24 +1117,29 @@ CAPTURE_ACCESS_POLL_SECONDS = 10.0
 def wait_for_safe_screen_capture(poll_s: float = CAPTURE_ACCESS_POLL_SECONDS) -> None:
     """Wait for a non-interactive screen-capture path before touching Civ VI.
 
-    A user-owned Cmd-Shift-5 session and a missing Screen Recording grant are
-    macOS boundaries, not game popups.  Do not click either one or call the
-    utility that would request its permission: defer setup until CoreGraphics'
-    preflight says a capture can proceed without a system modal.
+    A missing Screen Recording grant is a macOS boundary, not a game popup.
+    A user-owned Cmd-Shift-5 session may coexist with an already-authorized
+    CoreGraphics capture, so its process alone is not a reason to hold a game
+    forever.  Do not click either one or call the utility that would request
+    permission: defer only until CoreGraphics' preflight says capture can
+    proceed without a system modal.
     """
     last_reason = None
     while True:
-        if popup_clear.native_recording_ui_active():
-            reason = "a native macOS recording/capture UI is active"
-        else:
-            try:
-                if macos_capture.screen_capture_access_available():
-                    if last_reason is not None:
-                        print("[capture] safe screen capture is available; continuing", flush=True)
-                    return
-                reason = "screen capture access is unavailable"
-            except macos_capture.CaptureUnavailable as error:
-                reason = f"native screen capture is unavailable: {error}"
+        recording_ui = popup_clear.native_recording_ui_active()
+        try:
+            if macos_capture.screen_capture_access_available():
+                if recording_ui:
+                    print("[capture] native macOS recording/capture UI is active; using "
+                          "pre-authorized CoreGraphics capture", flush=True)
+                elif last_reason is not None:
+                    print("[capture] safe screen capture is available; continuing", flush=True)
+                return
+            reason = "screen capture access is unavailable"
+            if recording_ui:
+                reason += " while a native macOS recording/capture UI is active"
+        except macos_capture.CaptureUnavailable as error:
+            reason = f"native screen capture is unavailable: {error}"
         if reason != last_reason:
             print(f"[capture] {reason}; waiting without opening a permission popup", flush=True)
             last_reason = reason
@@ -1164,12 +1169,12 @@ def screenshot(path: Path) -> bool:
     seconds instead of losing a ninety-minute attempt to a load transient,
     and says so in the log when it needs more than one — a lane that reports
     "the host is loaded" is a lane whose NO GAME can be read without guessing.
+
+    A visible Cmd-Shift-5 toolbar alone does not invalidate a setup frame.
+    ``capture_region`` preflights CoreGraphics without requesting permission,
+    so an authorized user recording may continue; a denied grant takes the
+    safe unreadable path below without opening a system modal.
     """
-    if popup_clear.native_recording_ui_active():
-        path.unlink(missing_ok=True)
-        print("[shot] native recording/capture UI is active; treating this poll as unreadable",
-              flush=True)
-        return False
     size = desktop_size()
     if size is None:
         print(f"[shot] display geometry is unreadable for {path.name}; treating this poll as "
@@ -3685,6 +3690,14 @@ def _play(args: argparse.Namespace) -> int:
         by_kind = civ6_ladder.orders_by_kind(run_dir / "events.jsonl")
         if by_kind:
             summary["orders"] = by_kind
+        # ⭐ And WHO DROVE THE UNITS. `ExploreUnassigned` hands every unit
+        # CIVVIS gave no order to over to Civilization VI's own explore
+        # automation; the mod counts that separately so it is never mistaken
+        # for CIVVIS's work, and until now the count stopped at events.jsonl.
+        # See `civ6_ladder.seat_autonomy`.
+        autonomy = civ6_ladder.seat_autonomy(run_dir / "events.jsonl")
+        if autonomy:
+            summary["seat_autonomy"] = autonomy
         # The score gap to the best rival is the climb's primary progress
         # metric: our own score doubling means nothing while rival_best
         # holds a four-hundred-point lead at the cap.

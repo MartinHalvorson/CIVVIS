@@ -1697,3 +1697,91 @@ class PublishRunTests(unittest.TestCase):
             os.environ.update(real_env)
         self.assertEqual((code, code2), (0, 0))
         self.assertEqual(buffer.getvalue().split(), ["published", "already"])
+
+
+class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
+    """⭐ It never did, and the project's first premise is that CIVVIS drives.
+
+    `ExploreUnassigned` (on by default) hands every unit CIVVIS gave no order
+    to over to Civilization VI's own `AUTOMATE_EXPLORE`. The mod counts that
+    separately so it is never mistaken for CIVVIS's work — and the count
+    stopped at `events.jsonl`. Measured on the live Settler run of
+    2026-08-28: 185 unit orders from CIVVIS against 144 unit-turns handed to
+    the engine, a 56 % share, invisible on the row.
+    """
+
+    @staticmethod
+    def _events(path: Path, records: list[dict]) -> Path:
+        path.write_text("".join(json.dumps(r) + "\n" for r in records),
+                        encoding="utf-8")
+        return path
+
+    def test_the_share_is_civvis_orders_over_every_disposition(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "orders", "by": {"unit": 3, "produce": 1},
+                 "explored": 1, "explore_guarded": 0},
+                {"kind": "orders", "by": {"unit": 1}, "explored": 3,
+                 "explore_guarded": 2},
+            ])
+            got = civ6_ladder.seat_autonomy(events)
+            self.assertEqual(got, {
+                "unit_orders": 4, "engine_explored": 4, "explore_guarded": 2,
+                "civvis_unit_share": 0.5,
+            })
+
+    def test_production_and_research_are_not_unit_dispositions(self):
+        """A turn of `by: {produce_next: 1}` and nine idle units is 0 %."""
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "orders", "by": {"produce_next": 1}, "explored": 7},
+            ])
+            got = civ6_ladder.seat_autonomy(events)
+            self.assertEqual(got["unit_orders"], 0)
+            self.assertEqual(got["engine_explored"], 7)
+            self.assertEqual(got["civvis_unit_share"], 0.0)
+
+    def test_a_seat_civvis_drove_entirely_reads_one(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "orders", "by": {"unit": 5}, "explored": 0},
+            ])
+            self.assertEqual(
+                civ6_ladder.seat_autonomy(events)["civvis_unit_share"], 1.0)
+
+    def test_a_turn_where_nothing_moved_is_not_a_hundred_percent(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "orders", "by": {"research": 1}, "explored": 0},
+            ])
+            self.assertIsNone(
+                civ6_ladder.seat_autonomy(events)["civvis_unit_share"])
+
+    def test_a_run_with_no_orders_event_says_nothing_rather_than_zero(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "turn", "turn": 4},
+            ])
+            self.assertIsNone(civ6_ladder.seat_autonomy(events))
+            self.assertIsNone(
+                civ6_ladder.seat_autonomy(Path(tmp) / "absent.jsonl"))
+
+    def test_a_truncated_tail_line_does_not_lose_the_run(self):
+        """A game can die mid-write; the rest of the file still counts."""
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text(
+                json.dumps({"kind": "orders", "by": {"unit": 2},
+                            "explored": 2}) + "\n{\"kind\": \"ord",
+                encoding="utf-8")
+            self.assertEqual(
+                civ6_ladder.seat_autonomy(path)["civvis_unit_share"], 0.5)
+
+    def test_the_row_and_the_summary_both_carry_it(self):
+        ladder = (Path(__file__).resolve().parent / "civ6_ladder.py").read_text(
+            encoding="utf-8")
+        play = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"seat_autonomy": summary.get("seat_autonomy")', ladder)
+        self.assertIn('"civvis_unit_share"', ladder)
+        self.assertIn('summary["seat_autonomy"] = autonomy', play)
