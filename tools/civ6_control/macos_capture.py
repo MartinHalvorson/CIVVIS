@@ -225,7 +225,7 @@ def screen_capture_access_available() -> bool:
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=NATIVE_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise CaptureUnavailable(f"could not preflight native screen capture: {error}") from error
@@ -237,6 +237,35 @@ def screen_capture_access_available() -> bool:
     raise CaptureUnavailable(detail or "could not preflight native screen capture")
 
 
+#: The helper's own ScreenCaptureKit guard, in seconds — keep in step with the
+#: `.milliseconds(3500)` semaphore in the Swift source above.
+NATIVE_GUARD_SECONDS = 3.5
+
+#: What Python allows the helper before killing it. It must be comfortably MORE
+#: than the helper's own guard, or a helper that is giving up correctly is shot
+#: while it unwinds.
+#:
+#: ⚠⚠ IT WAS 5, AND THE 1.5 s OF HEADROOM WAS NOT ENOUGH. Measured 2026-08-28 on
+#: this host: a healthy capture takes 0.06 s, and a capture during a
+#: `systemstatusd` spin returns cleanly at **3.51 s** — the guard doing its job.
+#: That leaves 1.49 s for process start, framework load and exit, and under the
+#: load a spin implies that is not always enough: `popup_clear.log` carries 379
+#: `timed out after 5 seconds` kills in one day, steady at 10-100 per hour.
+#:
+#: The difference is not cosmetic. A helper that returns reports "no image this
+#: pass" and the clearer retries on its next poll; a helper that is KILLED is an
+#: error, and an error blinds the popup backstop for
+#: `SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS` — thirty seconds during which no card
+#: on screen can be seen or cleared. Run civvis-20260828T210457Z wedged at turn
+#: 77 with six cities after five straight minutes of exactly that cycle:
+#: error, pause 30 s, resume, error.
+#:
+#: ⚠ The spin itself is NOT fixed by this and pausing through one is right — a
+#: probe caught a spin live and the capture genuinely failed. This only stops a
+#: correct give-up from being recorded as a crash.
+NATIVE_TIMEOUT_SECONDS = NATIVE_GUARD_SECONDS + 4.0
+
+
 def capture_region(box_points, output: str | Path) -> None:
     """Write one screen-point region to ``output`` as a PNG."""
     x, y, width, height = box_points
@@ -245,7 +274,7 @@ def capture_region(box_points, output: str | Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=NATIVE_TIMEOUT_SECONDS,
     )
     if result.returncode:
         detail = (result.stderr or result.stdout).strip()

@@ -48,7 +48,7 @@ class MacOSCaptureTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=macos_capture.NATIVE_TIMEOUT_SECONDS,
         )
 
     def test_preflight_reports_denial_without_attempting_a_capture(self) -> None:
@@ -67,7 +67,7 @@ class MacOSCaptureTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=macos_capture.NATIVE_TIMEOUT_SECONDS,
         )
 
     def test_capture_maps_permission_denial_to_a_specific_safe_error(self) -> None:
@@ -83,6 +83,45 @@ class MacOSCaptureTest(unittest.TestCase):
                  )):
                 with self.assertRaises(macos_capture.CapturePermissionUnavailable):
                     macos_capture.capture_region((0, 0, 864, 542), output)
+
+
+class TheKillIsLooserThanTheHelpersOwnGuard(unittest.TestCase):
+    """⚠⚠ It was not, and a correct give-up was recorded as a crash.
+
+    The Swift helper guards its ScreenCaptureKit call with a 3500 ms semaphore.
+    Python killed it at 5 s, leaving 1.49 s for process start, framework load
+    and exit.
+
+    Measured 2026-08-28 on this host: a healthy capture takes 0.06 s, and a
+    capture during a `systemstatusd` spin returns cleanly at **3.51 s** — the
+    guard doing exactly its job. Under the load a spin implies, that margin was
+    not always enough: `popup_clear.log` carries 379 `timed out after 5 seconds`
+    kills in one day, steady at 10-100 per hour.
+
+    The difference is not cosmetic. A helper that RETURNS reports "no image this
+    pass" and the clearer retries next poll; a helper that is KILLED is an
+    error, and an error blinds the popup backstop for thirty seconds. Run
+    civvis-20260828T210457Z wedged at turn 77 with six cities after five
+    straight minutes of error, pause, resume, error.
+    """
+
+    def test_the_outer_kill_leaves_the_inner_guard_room_to_report(self):
+        self.assertGreater(macos_capture.NATIVE_TIMEOUT_SECONDS,
+                           macos_capture.NATIVE_GUARD_SECONDS + 2.0,
+                           "a helper giving up at its own guard must be able to "
+                           "start, unwind and exit before Python kills it")
+
+    def test_the_guard_matches_the_swift_semaphore_it_mirrors(self):
+        """The constant is a copy of a number in the embedded Swift source."""
+        source = (Path(macos_capture.__file__)).read_text(encoding="utf-8")
+        self.assertIn(".milliseconds(3500)", source)
+        self.assertEqual(macos_capture.NATIVE_GUARD_SECONDS, 3.5)
+
+    def test_no_call_site_hardcodes_its_own_timeout(self):
+        """Both invocations must move together with the guard."""
+        source = (Path(macos_capture.__file__)).read_text(encoding="utf-8")
+        self.assertNotIn("timeout=5", source)
+        self.assertEqual(source.count("timeout=NATIVE_TIMEOUT_SECONDS"), 2)
 
 
 if __name__ == "__main__":
