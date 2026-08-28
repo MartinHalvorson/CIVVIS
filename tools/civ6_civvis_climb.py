@@ -426,6 +426,47 @@ def retire_popup_clearers(pids: list[int], reason: str) -> None:
         time.sleep(0.25)
 
 
+def retire_stale_wedge_watchdog() -> list[int]:
+    """Stop an inherited wedge watchdog so the host restarts it on this build.
+
+    ⚠⚠ EVERY HELPER IS REFRESHED PER BATCH EXCEPT THE ONE THAT KILLS GAMES.
+    `retire_popup_clearers` and `retire_mirror` both exist so "this batch gets
+    the current build"; the agent wedge watchdog had no equivalent. The
+    interactive host starts it once and then only ever ADOPTS it — "adopted
+    live agent wedge watchdog pid N" — across supervisor restarts, so a zsh
+    script that loads its code at process start keeps running yesterday's copy
+    for as long as the host lives.
+
+    Measured on 2026-08-28, and it cost the diagnosis of three wedged games:
+    #2698 taught the watchdog to `sample` a wedged Civilization VI before
+    killing it, merged at 15:34, and the wedge at 15:58 still captured nothing
+    because the watchdog process had started at 14:04. The tracked file had the
+    fix; the running process could not have it.
+
+    Retiring at batch start is the safe moment by construction: setup takes
+    minutes and no game is playing yet, and the host's own poll restarts the
+    watchdog from its tree within seconds. Nothing here starts one — that is
+    the host's job, and starting a second would be the duplicate this avoids.
+    """
+    pids = matching_pids("civvis-agent-wedge-watchdog.sh")
+    if not pids:
+        return []
+    print(f"[wedge] retiring {len(pids)} inherited watchdog(s) so this "
+          "verification batch gets the current build", flush=True)
+    stopped = []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        except PermissionError as exc:
+            print(f"[wedge] could not stop stale watchdog {pid}: {exc}",
+                  flush=True)
+            continue
+        stopped.append(pid)
+    return stopped
+
+
 def ensure_popup_clear() -> None:
     """Back the mod's autoclose shim with the out-of-game clearer.
 
@@ -1792,6 +1833,8 @@ def main() -> int:
     # real one, and a stuck screen in it costs the whole attempt.
     ensure_mirror()
     ensure_popup_clear()
+    # The host restarts this one; see `retire_stale_wedge_watchdog`.
+    retire_stale_wedge_watchdog()
 
     pinned = None if args.no_pin else code_state()
     if pinned is not None:

@@ -13,6 +13,7 @@ from pathlib import Path
 import collections
 import json
 import re
+import signal
 import sys
 import tempfile
 import time
@@ -1883,3 +1884,68 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         cmd = climb.play_command(self._play_args(), "t",
                                  Path("orders.sqlite"), Path("civvis_orders"))
         self.assertNotIn("--civvis-refresh-seconds", cmd)
+
+
+class TheWedgeWatchdogGetsThisBatchsBuildToo(unittest.TestCase):
+    """⚠⚠ Every helper is refreshed per batch except the one that kills games.
+
+    `retire_popup_clearers` and `retire_mirror` both exist so "this batch gets
+    the current build". The agent wedge watchdog had no equivalent: the
+    interactive host starts it once and thereafter only ADOPTS it across
+    supervisor restarts, so a zsh script that loads its code at process start
+    keeps running yesterday's copy for as long as the host lives.
+
+    Measured on 2026-08-28, and it cost the diagnosis of three wedged games:
+    #2698 taught the watchdog to `sample` a wedged Civilization VI before
+    killing it, merged 15:34, and the 15:58 wedge captured nothing because the
+    watchdog process had started at 14:04.
+    """
+
+    def test_an_inherited_watchdog_is_stopped(self):
+        with mock.patch.object(climb, "matching_pids",
+                               return_value=[4242]) as found, \
+                mock.patch.object(climb.os, "kill") as killed:
+            stopped = climb.retire_stale_wedge_watchdog()
+        self.assertEqual(stopped, [4242])
+        self.assertEqual(found.call_args[0][0],
+                         "civvis-agent-wedge-watchdog.sh")
+        killed.assert_called_once_with(4242, signal.SIGTERM)
+
+    def test_no_watchdog_is_not_an_error(self):
+        with mock.patch.object(climb, "matching_pids",
+                               return_value=[]), \
+                mock.patch.object(climb.os, "kill") as killed:
+            self.assertEqual(climb.retire_stale_wedge_watchdog(), [])
+        killed.assert_not_called()
+
+    def test_a_watchdog_that_died_first_is_not_reported_stopped(self):
+        with mock.patch.object(climb, "matching_pids",
+                               return_value=[1, 2]), \
+                mock.patch.object(climb.os, "kill",
+                                  side_effect=[ProcessLookupError, None]):
+            self.assertEqual(climb.retire_stale_wedge_watchdog(), [2])
+
+    def test_a_refusal_does_not_stop_the_batch(self):
+        """A helper we may not signal is a warning, never a dead batch."""
+        with mock.patch.object(climb, "matching_pids",
+                               return_value=[7]), \
+                mock.patch.object(climb.os, "kill",
+                                  side_effect=PermissionError("denied")):
+            self.assertEqual(climb.retire_stale_wedge_watchdog(), [])
+
+    def test_it_never_starts_one_itself(self):
+        """Starting a second is the duplicate this avoids; the host owns it."""
+        source = (Path(__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        body = source[source.index("def retire_stale_wedge_watchdog"):
+                      source.index("def ensure_popup_clear")]
+        self.assertNotIn("_detach", body)
+        self.assertNotIn("Popen", body)
+
+    def test_the_batch_retires_it_beside_the_other_helpers(self):
+        source = (Path(__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        self.assertIn("ensure_popup_clear()\n"
+                      "    # The host restarts this one; see "
+                      "`retire_stale_wedge_watchdog`.\n"
+                      "    retire_stale_wedge_watchdog()", source)
