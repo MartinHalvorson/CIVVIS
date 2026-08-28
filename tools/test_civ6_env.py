@@ -33,7 +33,7 @@ class InstallResolutionTest(unittest.TestCase):
     """One resolver, and it covers the platform the fleet actually runs on."""
 
     def test_the_candidate_list_covers_macos_and_windows(self):
-        """⚠ `civ6_fidelity.py` shipped four candidates and every one began
+        r"""⚠ `civ6_fidelity.py` shipped four candidates and every one began
         `C:\` or `D:\`, on a fleet that runs entirely on macOS. The audit
         that checks we are modelling Gathering Storm rather than Vanilla
         therefore never found an install and never ran."""
@@ -94,6 +94,63 @@ class InstallResolutionTest(unittest.TestCase):
         # Non-vacuity: the pattern really does match the module that owns it.
         owner = Path(__file__).resolve().parent / "civ6_env.py"
         self.assertTrue(search.search(owner.read_text(encoding="utf-8")))
+
+
+class AStuckProcessListingMustNotLookLikeAnExitedGame(unittest.TestCase):
+    """⚠⚠⚠ `game_pids` ran with no timeout, and it stopped a game being played.
+
+    `watch.follow` calls it on EVERY poll, so an unbounded `ps` is an unbounded
+    hang in the loop that drives Civilization VI. Measured 2026-08-28, run
+    `civvis-20260828T160200Z`: the harness blocked here at turn 8 and never
+    polled again. The wedge sample settled it — every Civ 6 thread was idle,
+    the main thread parked in `_pthread_cond_wait` for 1638 of 1644 samples.
+    The engine was not stuck; nothing was asking it to do anything.
+    """
+
+    LISTING = "  4242 /Steam/common/Sid Meier's Civilization VI/Civ6.app/Contents/MacOS/Civ6_Exe_Child\n"
+
+    def test_a_listing_that_returns_is_read_normally(self):
+        with mock.patch.object(civ6_env.subprocess, "run",
+                               return_value=mock.Mock(stdout=self.LISTING)):
+            self.assertEqual(civ6_env.game_pids(), [4242])
+
+    def test_the_call_is_bounded(self):
+        with mock.patch.object(civ6_env.subprocess, "run",
+                               return_value=mock.Mock(stdout="")) as ran:
+            civ6_env.game_pids()
+        self.assertEqual(ran.call_args.kwargs.get("timeout"),
+                         civ6_env.GAME_PIDS_TIMEOUT_S)
+
+    def test_a_timeout_keeps_the_last_known_pids(self):
+        """The whole point: unknown is not the same as none.
+
+        `watch.follow` reads an empty list as "game exited" and ends the
+        attempt, so answering a question we could not ask with `[]` would trade
+        a hang for a silently discarded game.
+        """
+        with mock.patch.object(civ6_env.subprocess, "run",
+                               return_value=mock.Mock(stdout=self.LISTING)):
+            self.assertEqual(civ6_env.game_pids(), [4242])
+        with mock.patch.object(
+                civ6_env.subprocess, "run",
+                side_effect=civ6_env.subprocess.TimeoutExpired("ps", 10)):
+            self.assertEqual(civ6_env.game_pids(), [4242])
+
+    def test_a_caller_cannot_mutate_the_remembered_listing(self):
+        with mock.patch.object(civ6_env.subprocess, "run",
+                               return_value=mock.Mock(stdout=self.LISTING)):
+            got = civ6_env.game_pids()
+        got.append(999)
+        with mock.patch.object(
+                civ6_env.subprocess, "run",
+                side_effect=civ6_env.subprocess.TimeoutExpired("ps", 10)):
+            self.assertEqual(civ6_env.game_pids(), [4242])
+
+    def test_a_missing_ps_is_a_real_answer_of_none(self):
+        """OSError is "there is no ps here", not "we could not ask"."""
+        with mock.patch.object(civ6_env.subprocess, "run",
+                               side_effect=OSError("no ps")):
+            self.assertEqual(civ6_env.game_pids(), [])
 
 
 if __name__ == "__main__":
