@@ -1077,5 +1077,68 @@ class TheSuiteReadsASandboxNotThisMachine(unittest.TestCase):
                          str(ladder_watchdog.gamelock.LOCK))
 
 
+class ASupervisorThatIsPlayingTurnsIsNotWedged(unittest.TestCase):
+    """⚠⚠ The staleness signal cannot see a game in progress.
+
+    `civ6_ladder.staleness_problem` asks when a game last *finished*. A
+    250-turn game at Online speed takes hours — routinely longer than
+    `--stale-hours` — so a healthy long game is indistinguishable from a wedge
+    by that question alone. On 2026-08-28 the first live game in nine days
+    reached turn 41 while the keeper counted down a two-hour cooldown, and the
+    tick after it expired would have SIGTERMed the supervisor playing it.
+    """
+
+    @staticmethod
+    def _runs(root: Path, quiet_s: float) -> Path:
+        runs = root / "control"
+        (runs / "civvis-20260828T122324Z").mkdir(parents=True)
+        events = runs / "civvis-20260828T122324Z" / "events.jsonl"
+        events.write_text('{"kind":"turn","turn":41}\n')
+        stamp = time.time() - quiet_s
+        os.utime(events, (stamp, stamp))
+        return runs
+
+    def test_a_run_writing_events_reads_as_playing(self):
+        with TemporaryDirectory() as tmp:
+            runs = self._runs(Path(tmp), quiet_s=2)
+            quiet = ladder_watchdog.newest_attempt_activity_s(runs)
+            self.assertIsNotNone(quiet)
+            self.assertLess(quiet, ladder_watchdog.LIVE_EVENT_QUIET_SECONDS)
+
+    def test_a_run_that_has_gone_quiet_does_not_shield_a_wedge(self):
+        with TemporaryDirectory() as tmp:
+            runs = self._runs(Path(tmp), quiet_s=4000)
+            quiet = ladder_watchdog.newest_attempt_activity_s(runs)
+            self.assertGreater(quiet, ladder_watchdog.LIVE_EVENT_QUIET_SECONDS)
+
+    def test_no_runs_at_all_is_not_a_claim_that_one_is_playing(self):
+        with TemporaryDirectory() as tmp:
+            self.assertIsNone(
+                ladder_watchdog.newest_attempt_activity_s(Path(tmp)))
+
+    def test_the_newest_run_is_the_one_that_counts(self):
+        """An old finished run must not make a quiet new one look alive."""
+        with TemporaryDirectory() as tmp:
+            runs = self._runs(Path(tmp), quiet_s=4000)
+            stale = runs / "civvis-20260801T000000Z"
+            stale.mkdir()
+            fresh_events = stale / "events.jsonl"
+            fresh_events.write_text('{"kind":"turn"}\n')
+            recent = time.time() - 5
+            os.utime(fresh_events, (recent, recent))
+            # The most recently written events file wins, whatever its name.
+            self.assertLess(ladder_watchdog.newest_attempt_activity_s(runs), 60)
+
+    def test_the_stale_arm_leaves_a_playing_supervisor_alone(self):
+        """The whole point: a stale ledger plus a live run is not a stop."""
+        source = (Path(__file__).resolve().parent / "ops"
+                  / "ladder_watchdog.py").read_text(encoding="utf-8")
+        self.assertIn("quiet = newest_attempt_activity_s(runs)", source)
+        self.assertIn("is playing, ", source)
+        # The guard must sit BEFORE the stop, not after it.
+        self.assertLess(source.index("quiet = newest_attempt_activity_s(runs)"),
+                        source.index("ok, detail = stop_supervisor(alive)"))
+
+
 if __name__ == "__main__":
     unittest.main()
