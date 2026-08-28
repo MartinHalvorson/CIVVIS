@@ -122,6 +122,40 @@ assert(bucket("research", true) == "after_civvis",
 assert(bucket("research", false) == "unasked",
 	"an answer on a prompt CIVVIS was never asked about IS the leak")
 
+-- ⚠⚠⚠ `civvis_complete` WAS A CLAIM, NOT A CHECK.
+--
+-- Under `CivvisDecides` a soft blocker is answered `civvis_complete` on the
+-- premise that CIVVIS already made its COMPLETE unit-order pass. That premise
+-- holds for units CIVVIS mentioned. A unit can go ready again inside the same
+-- turn — it finishes the walk the opening board gave it — and a REPLAN FRAME
+-- deliberately does not re-run the unassigned pass, so nothing dispositions it.
+--
+-- Measured 2026-08-28, run civvis-20260828T190111Z at turn 113, 7 cities and
+-- 33 units, the furthest game of the day:
+--     frame 0  expl=20 civskip=3    (everything dispositioned)
+--     frame 1  6 movers replanned, expl=0
+--     blocked ENDTURN_BLOCKING_UNITS answered="civvis_complete"
+-- and the game never advanced again.
+--
+-- So the three unit-family blockers must PARK the still-ready units before
+-- claiming completion. `UNIT_BLOCKERS` already existed for the forfeit path and
+-- its own comment calls these "the ones whose forfeit needs the parking pass";
+-- the pass simply was not reached until the forfeit.
+local agentSrc = io.open(here .. "/CivvisControlAgent.lua"):read("*a")
+assert(agentSrc:find("if UNIT_BLOCKERS%[name%] then%s+local parked = parkReadyUnits%(player%)"),
+	"the units blocker must park ready units before answering civvis_complete")
+assert(agentSrc:find('"civvis_complete%+parked:"'),
+	"a parked answer must be distinguishable from a bare civvis_complete")
+-- Parking must never be a MOVE: that is what the branch's own comment forbids,
+-- after the legacy AI walked a Settler into a barbarian capture zone.
+local idle = agentSrc:match("local function orderIdle%(unit%)(.-)\nend")
+assert(idle, "orderIdle not found")
+assert(not idle:find("MOVE_TO"), "orderIdle must not move a unit")
+for _, op in ipairs({ "SKIP_TURN", "FORTIFY", "ALERT", "SLEEP" }) do
+	assert(idle:find(op, 1, true), "orderIdle must offer " .. op)
+end
+print("units blocker: parks ready units before claiming completion, holding orders only")
+
 print("blocker ownership: " ..
 	#(function() local n = {} for _ in pairs(answers) do n[#n + 1] = 1 end return n end)() ..
 	" answered prompts owned, no soft overlap, every order kind real")
