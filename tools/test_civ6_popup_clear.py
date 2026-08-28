@@ -52,6 +52,40 @@ class PopupTimingTest(unittest.TestCase):
         self.assertLessEqual(popup_clear.POST_CLICK_SETTLE_SECONDS, 0.25)
 
 
+class SetupYieldTest(unittest.TestCase):
+    def test_newest_pre_turn_run_does_not_inherit_an_older_game(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            older = Path(root) / "older"
+            older.mkdir()
+            (older / "events.jsonl").write_text('{"kind":"turn","turn":4}\n')
+            current = Path(root) / "current"
+            current.mkdir()
+            events = current / "events.jsonl"
+            events.write_text("")
+            future = time.time() + 1
+            os.utime(events, (future, future))
+
+            self.assertTrue(popup_clear.newest_run_is_pre_turn(root))
+
+            events.write_text('{"kind": "turn", "turn": 1}\n')
+            self.assertFalse(popup_clear.newest_run_is_pre_turn(root))
+
+    def test_no_turn_means_no_capture_or_accessibility_query(self) -> None:
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(popup_clear.macos_capture, "prepare", return_value=True), \
+                mock.patch.object(popup_clear, "newest_run_is_pre_turn", return_value=True), \
+                mock.patch.object(popup_clear, "capture_pause_reason") as pause_reason, \
+                mock.patch.object(popup_clear, "window_box") as window_box, \
+                mock.patch.object(sys, "argv", [
+                    "popup_clear.py", "--once", "--runs", root,
+                    "--log", str(Path(root) / "popup.log"),
+                ]):
+            popup_clear.main()
+
+        pause_reason.assert_not_called()
+        window_box.assert_not_called()
+
+
 class NativeRecordingProtectionTest(unittest.TestCase):
     def test_native_recording_commands_are_distinguished_from_png_fallbacks(self) -> None:
         self.assertTrue(popup_clear.native_recording_command(
