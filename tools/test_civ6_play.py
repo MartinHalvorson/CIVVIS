@@ -2584,3 +2584,49 @@ class FinishedRunsStopKeepingTheirScreenshots(unittest.TestCase):
         self.assertIn("run_dir.mkdir(parents=True, exist_ok=True)\n"
                       "    # Bound the corpus before adding to it.", source)
         self.assertIn("prune_old_run_screenshots()", source)
+
+
+class AnUnreadableMenuLooksForTheBackItRenders(unittest.TestCase):
+    """⚠ The recovery click was itself an unverified coordinate.
+
+    Two lines above it, the same branch prints "refusing a blind menu click".
+    Then, after three wasted attempts, it clicked `(0.723, 0.177)` — where BACK
+    sits on the setup pages — guessed.
+
+    Measured on 2026-08-28, attempts 12-14 of run civvis-20260828T144631Z: the
+    top menu was unreadable because a SELECT MAP modal was covering it, and
+    that modal renders "Back" in the same corner, legibly. The screenshots were
+    3456x2234 with 256 distinct luma values, so nothing was wrong with them —
+    the harness spent three full-Retina Vision passes discovering nothing.
+    """
+
+    def _source(self) -> str:
+        return (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+
+    def test_the_rendered_back_is_tried_before_the_guessed_ratio(self):
+        source = self._source()
+        observed = source.index(
+            'back_point = _observed_label_point(menushot, "Back", bounds)')
+        guessed = source.index('click_at(int(x + w * 0.723), int(y + h * 0.177))')
+        self.assertLess(observed, guessed,
+                        "the read label must be tried before the guess")
+
+    def test_a_read_back_does_not_spend_a_blind_strike(self):
+        """The strike counter exists for a screen nothing can be read on."""
+        source = self._source()
+        block = source[source.index(
+            'back_point = _observed_label_point(menushot, "Back", bounds)'):]
+        block = block[:block.index("blind_strikes += 1")]
+        self.assertIn("blind_strikes = 0", block)
+        self.assertIn("continue", block)
+
+    def test_the_guessed_ratio_survives_as_the_last_resort(self):
+        """A screen where even Back cannot be read must behave as before."""
+        source = self._source()
+        self.assertIn("if blind_strikes >= 3:", source)
+        self.assertIn('click_at(int(x + w * 0.723), int(y + h * 0.177))', source)
+
+    def test_the_reason_names_the_dialog_rather_than_the_ocr(self):
+        """The log said "not readable", which read as an OCR fault. It was not."""
+        self.assertIn("a dialog is covering the menu", self._source())

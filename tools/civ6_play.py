@@ -2487,6 +2487,34 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             print(f"attempt {attempt}: top menu not readable "
                   f"({len(toprows)} rows) -- refusing a blind menu click",
                   file=sys.stderr)
+            # ⚠ THE RECOVERY CLICK WAS ITSELF AN UNVERIFIED COORDINATE, which
+            # is the one thing this file refuses to do anywhere else -- the
+            # branch two lines up says so. `(0.723, 0.177)` is where BACK sits
+            # on the setup pages, guessed and clicked blind after three wasted
+            # attempts.
+            #
+            # There is usually nothing to guess. Measured on 2026-08-28,
+            # attempts 12-14 of run civvis-20260828T144631Z: the top menu was
+            # unreadable because a **SELECT MAP** modal was covering it, and
+            # that modal renders "Back" in the same corner, legibly. The
+            # screenshots were fine -- 3456x2234, 256 distinct luma values --
+            # so this was never an OCR failure, and the harness spent three
+            # full-Retina Vision passes (the OCR helper peaked at 379 % CPU)
+            # discovering nothing before clicking where it would have anyway.
+            #
+            # So look for the label first and click what is actually rendered.
+            # The guessed ratio stays as the last resort for a screen where
+            # even Back cannot be read, which is the case the three-strike
+            # counter was really written for.
+            back_point = _observed_label_point(menushot, "Back", bounds)
+            if back_point is not None:
+                print(f"attempt {attempt}: a dialog is covering the menu; "
+                      f"clicking the Back it renders at {back_point}",
+                      file=sys.stderr)
+                click_at(*back_point)
+                blind_strikes = 0
+                time.sleep(3.0)
+                continue
             blind_strikes += 1
             if blind_strikes >= 3:
                 print("three blind attempts -- assuming a stuck full screen "
