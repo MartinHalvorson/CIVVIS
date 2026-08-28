@@ -1,0 +1,201 @@
+{
+  "abandoned": null,
+  "cities_at_60": null,
+  "city_two_turn": null,
+  "combat": {
+    "cities_lost": 0,
+    "cities_taken": 0,
+    "damage_dealt": 25,
+    "damage_taken": 141,
+    "kills": 1,
+    "kills_per_loss": 0.25,
+    "losses": 4,
+    "lost_when_salvageable": 0,
+    "military_units_gone": 0
+  },
+  "configured": true,
+  "deals": {
+    "closed": 0,
+    "declined": 0,
+    "expired": 0,
+    "peace_accepted": 0,
+    "peace_refused": 1,
+    "sessions_answered": 1,
+    "sessions_opened": 1,
+    "sessions_unanswered": 0,
+    "stood_down": false
+  },
+  "decider_revisions": [
+    "f0cfaff47a7936711d9c7b514c2373a6d06698b2"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-28T03:17:14Z",
+  "forced": [],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 300,
+  "last_turn": 143,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "orders": {
+    "*": {
+      "applied": 34,
+      "refused": {
+        "IMPROVEMENT_TRADING_DOME": 1,
+        "move_no_moves_this_turn": 3,
+        "obsolete_POLICY_URBAN_PLANNING": 1,
+        "queue_prior_refused": 1
+      },
+      "seen": 48
+    },
+    "city_strike": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "levy": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "peace": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "policy_deck": {
+      "applied": 0,
+      "refused": {
+        "obsolete_POLICY_URBAN_PLANNING": 1
+      },
+      "seen": 1
+    },
+    "produce": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "produce_next": {
+      "applied": 3,
+      "refused": {},
+      "seen": 3
+    },
+    "research": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "unit": {
+      "applied": 26,
+      "refused": {
+        "IMPROVEMENT_TRADING_DOME": 1,
+        "move_no_moves_this_turn": 3,
+        "queue_prior_refused": 1
+      },
+      "seen": 31
+    }
+  },
+  "orders_applied": 14,
+  "orders_seen": 16,
+  "outcome": null,
+  "reason": "stalled: no event for 120s",
+  "rival_best": 815,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260828T020050Z-promising-resume142",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260828T020050Z-promising-resume142",
+  "victory_target": "diplomatic",
+  "withheld": []
+}
