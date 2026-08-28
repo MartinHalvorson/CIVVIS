@@ -1515,6 +1515,28 @@ class ScreenshotFailureTests(unittest.TestCase):
         sleep.assert_not_called()
 
 
+class VisualPopupCaptureFailureTests(unittest.TestCase):
+    def test_transient_popup_capture_miss_leaves_the_game_controller_alive(self) -> None:
+        """A blank ScreenCaptureKit frame is not a reason to end a live game."""
+        with patch.object(civ6_play, "game_window", return_value=(0, 0, 864, 542)), \
+             patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play.time, "sleep") as sleep, \
+             patch.object(civ6_play.popup_clear, "capture",
+                          side_effect=civ6_play.macos_capture.CaptureUnavailable(
+                              "CoreGraphics capture returned no image")), \
+             patch.object(civ6_play.popup_clear, "classify") as classify, \
+             patch.object(civ6_play.popup_clear, "held_click") as click:
+            self.assertEqual(
+                civ6_play.dismiss_visually_confirmed_popup(),
+                (False, "popup capture unavailable"),
+            )
+
+        focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
+        sleep.assert_called_once_with(0.25)
+        classify.assert_not_called()
+        click.assert_not_called()
+
+
 class SafeScreenCaptureWaitTests(unittest.TestCase):
     def test_preauthorized_user_capture_ui_does_not_delay_game_setup(self) -> None:
         with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
