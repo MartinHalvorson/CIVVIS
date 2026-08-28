@@ -57,8 +57,10 @@ export CIVVIS_HEAD_REPO=/Users/martin/CIVVIS
 # please get us operating at higher levels than this" — level 4 is Prince, and
 # Prince is exactly what the policy selects.
 #
-# Leave this UNSET so `civvis-game-supervisor.sh` asks the policy every batch
-# and climbs on its own. Set it only to force one rung for a deliberate arm.
+# The current verification objective is Level 5.  Civ VI's fifth ladder rung is
+# King; make the requested operating level explicit rather than allowing the
+# policy's still-unearned Prince rung to select a Level 4 game.
+export CIVVIS_DIFFICULTY=DIFFICULTY_KING
 
 # One game per supervisor cycle, so each game starts from a fresh build of head
 # and a merge reaches the next game immediately.
