@@ -144,7 +144,7 @@ assert(bucket("research", false) == "unasked",
 local agentSrc = io.open(here .. "/CivvisControlAgent.lua"):read("*a")
 assert(agentSrc:find("if UNIT_BLOCKERS%[name%] then%s+local parked = parkReadyUnits%(player%)"),
 	"the units blocker must park ready units before answering civvis_complete")
-assert(agentSrc:find('"civvis_complete%+parked:"'),
+assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+parked:"%s*%.%.%s*parked'),
 	"a parked answer must be distinguishable from a bare civvis_complete")
 -- Parking must never be a MOVE: that is what the branch's own comment forbids,
 -- after the legacy AI walked a Settler into a barbarian capture zone.
