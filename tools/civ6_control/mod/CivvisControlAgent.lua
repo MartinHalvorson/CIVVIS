@@ -9471,9 +9471,31 @@ end
 --
 -- ⚠⚠ THE BRAIN MUST NOT BE ABLE TO WEDGE A TURN. Three regressions in this project
 -- came from handing a mechanism authority with no floor for the case where it is
--- wrong. So: the turn WAITS for orders, but only for `OrdersWaitTicks`; past that
--- the built-in heuristics run and the turn is recorded as `fallback`. A brain that
--- crashes costs quality, never progress.
+-- wrong. So: the turn WAITS for orders, but only for `OrdersWaitPolls` (40) and
+-- then `OrdersFallbackPolls` (120); past those the built-in heuristics run and
+-- the turn is recorded as `fallback`.
+--
+-- ⚠ THAT KNOB WAS NAMED `OrdersWaitTicks` HERE AND IN `civ6_play.py`, AND NO SUCH
+-- KEY EXISTS. It is read nowhere in the tree — the two mentions were both
+-- comments describing each other. Setting it would have done nothing, which is
+-- the sort of thing an operator finds out during an incident.
+--
+-- ⚠⚠ AND THE FLOOR HAS NEVER ONCE HELD. Across the fifteen runs recorded on
+-- 2026-08-27/28 the string `fallback` appears in ZERO events, and every one of
+-- the 100 turns of run civvis-20260828T173743Z reads `orders_source: "civvis"`.
+-- Partly that is good news — the brain answers in ~0.12 s and has never needed
+-- rescuing. But that run then WEDGED at turn 100 with the brain silent, and the
+-- fallback did not fire, because it cannot: every poll above is driven by
+-- `awaiting.ticks`, which advances only when the Game Core thread runs. The
+-- wedge sample (#2698) shows that thread parked in `__psynch_cvwait` for 1433
+-- of 1433 samples while Metal kept rendering. A floor that depends on the tick
+-- it is meant to rescue is not a floor for the case where ticks stop.
+--
+-- So the promise above is true for a brain that is SLOW or answers badly, and
+-- false for a game whose Game Core has parked. The wedge watchdog
+-- (`tools/ops/civvis-agent-wedge-watchdog.sh`) is what actually covers the
+-- second case today, at the cost of the whole attempt. Why the thread parks is
+-- not yet explained and is deliberately not guessed at here.
 local ordersAttached = nil;
 -- ⚠ `awaiting` and `residualAnswers` are declared at the top of the file, not here.
 -- A second `local awaiting` at this point would shadow it for everything below,
