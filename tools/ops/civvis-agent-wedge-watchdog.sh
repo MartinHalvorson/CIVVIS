@@ -23,6 +23,10 @@
 set -u
 
 RUNS=${CIVVIS_RUNS:-$HOME/civvis-civ6-runs/control}
+# Seconds of stack sampling kept from a wedged Civilization VI before it is
+# restarted. Two is enough to name the stuck thread and cheap next to the five
+# minutes of no progress that preceded it; `0` is still a valid sample.
+WEDGE_SAMPLE_SECONDS=${CIVVIS_WEDGE_SAMPLE_SECONDS:-2}
 PORT=${CIVVIS_MIRROR_PORT:-8610}
 LOG=${CIVVIS_WEDGE_LOG:-$HOME/civvis-civ6-runs/agent_wedge_watchdog.log}
 POLL_S=${CIVVIS_WEDGE_POLL_S:-60}
@@ -122,6 +126,35 @@ restart_attempt() {
       || ! player_uses_tag "$play" "$tag"; then
     say "$tag recovery target is no longer the proven owned pair; leaving it alone"
     return 0
+  fi
+  # ⭐⭐ LEAVE EVIDENCE. A wedge that is only restarted teaches nothing, and the
+  # restart destroys the one state that could explain it.
+  #
+  # Two games wedged on 2026-08-28 — a Prince run at t34 and a King run at t44 —
+  # and after both, all that survived was "no synchronized progress" and a dead
+  # process. The events stop mid-turn, `stdout.log` ends on an unremarkable line
+  # (its no-path sentinels are ordinary: a run that never wedged carried 31 of
+  # them), and neither the last events nor the last stdout line were the same
+  # between the two. So there was nothing left to compare, and every theory
+  # about the cause was unfalsifiable.
+  #
+  # `sample` answers the only question that matters — WHERE is the game stuck —
+  # and needs no privileges for a process this user owns. Measured on this host:
+  # a 1-second sample of Civ 6 returns a 1789-line call graph naming the main
+  # thread and its dispatch queue. It runs BEFORE the kill, because afterwards
+  # there is nothing to sample, and its failure never blocks the restart.
+  local game_pid sample_file
+  game_pid=$(pgrep -x Civ6_Exe_Child 2>/dev/null | head -1)
+  sample_file="$RUNS/$tag/wedge-sample.txt"
+  if [[ -n "$game_pid" && -x /usr/bin/sample && -d "$RUNS/$tag" ]]; then
+    if /usr/bin/sample "$game_pid" "${WEDGE_SAMPLE_SECONDS}" \
+        -file "$sample_file" >/dev/null 2>&1; then
+      say "  sampled wedged Civ 6 pid $game_pid to $sample_file"
+    else
+      say "  could not sample Civ 6 pid $game_pid; restarting without it"
+    fi
+  else
+    say "  no Civ 6 process to sample; restarting without it"
   fi
   say "$reason; restarting (TERM climb, then INT civ6_play)"
   kill -TERM "$climb" 2>/dev/null && say "  TERM climb $climb"
