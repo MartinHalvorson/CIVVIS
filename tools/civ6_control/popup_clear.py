@@ -97,7 +97,31 @@ POST_CLICK_SETTLE_SECONDS = 0.20
 # Cmd-Shift-5 itself is not a reason to yield: CoreGraphics' non-interactive
 # preflight in ``capture`` proves whether an authorized recording can coexist.
 SYSTEMSTATUSD_SPIN_PERCENT = 85.0
-SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS = 30.0
+#: How long to wait before ASKING AGAIN whether capture is usable. This is a
+#: re-check interval, not a cooldown: the question it re-asks is
+#: `capture_pause_reason()`, which is a `pgrep` and a `ps` and never touches
+#: ScreenCaptureKit. Only a capture touches SCK, and a capture happens only once
+#: this says yes — so shortening it cannot hammer the daemon it is waiting on.
+#:
+#: ⚠⚠ IT WAS 30 s, AND THE SPIKES IT WAITS OUT LAST SECONDS. Sampled on this
+#: host 2026-08-28 at 20 s intervals:
+#:     0.0%  0.0%  99.2%  0.6%  93.2%  0.0%
+#: `systemstatusd` bursts past the 85% threshold and is back under it within
+#: one sample. A 30 s wait therefore keeps the popup backstop blind for roughly
+#: a half-minute per burst, long after capture would work again — and blind
+#: means no card on screen can be seen or cleared.
+#:
+#: That is not theoretical. Run civvis-20260828T210457Z wedged at turn 77 with
+#: six cities after five straight minutes of `error, pause, resume, error` in
+#: which not one frame was captured.
+#:
+#: ⚠ THE PAUSE ITSELF IS RIGHT AND STAYS. A probe armed against a live spin
+#: attempted a capture during one three times, and every attempt failed at the
+#: helper's own 3.5 s guard:
+#:     SPIN PROBE: systemstatusd at 100.0% -- capture FAILED after 3.51s
+#: So capture genuinely does not work through a spike; what was wrong was only
+#: how long we waited before looking again.
+SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS = 3.0
 
 
 def osa(script):

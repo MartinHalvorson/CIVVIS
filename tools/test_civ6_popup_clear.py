@@ -431,3 +431,48 @@ class AnAdvisorWithNoSafeTargetIsNotLeftToBlockTheGame(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AShortSpikeMustNotBlindTheBackstopForHalfAMinute(unittest.TestCase):
+    """⚠⚠ It did, and the wait was ten times the thing it waited out.
+
+    Sampled on this host 2026-08-28 at 20 s intervals, `systemstatusd` bursts
+    past the 85 % threshold and is back under it within one sample:
+
+        0.0%  0.0%  99.2%  0.6%  93.2%  0.0%
+
+    A 30 s wait therefore kept the popup backstop blind for roughly a
+    half-minute per burst, long after capture would have worked again. Blind
+    means no card on screen can be seen or cleared, and run
+    civvis-20260828T210457Z wedged at turn 77 with six cities after five
+    straight minutes of error, pause, resume, error.
+    """
+
+    def test_the_recheck_is_short_enough_to_catch_a_recovered_spike(self):
+        self.assertLessEqual(
+            popup_clear.SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS, 5.0,
+            "a spike that clears within one 20 s sample must not cost 30 s of "
+            "blindness")
+
+    def test_the_wait_is_a_recheck_and_never_touches_screencapturekit(self):
+        """Shortening it is only safe because the question it re-asks is cheap."""
+        source = (Path(__file__).resolve().parent / "civ6_control"
+                  / "popup_clear.py").read_text(encoding="utf-8")
+        body = source[source.index("def capture_pause_reason"):
+                      source.index("def ", source.index("def capture_pause_reason") + 5)]
+        # It may read the daemon's CPU and the recorded grant; it must not capture.
+        self.assertNotIn("capture_region", body)
+        self.assertIn("systemstatusd_cpu", body)
+
+    def test_the_pause_itself_is_kept(self):
+        """A probe proved capture fails through a spike; only the wait changed."""
+        source = (Path(__file__).resolve().parent / "civ6_control"
+                  / "popup_clear.py").read_text(encoding="utf-8")
+        self.assertIn("time.sleep(SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS)", source)
+        self.assertIn("SYSTEMSTATUSD_SPIN_PERCENT", source)
+
+    def test_a_standing_pause_is_logged_once_not_every_recheck(self):
+        """At 3 s the loop re-checks ten times as often; the log must not spam."""
+        source = (Path(__file__).resolve().parent / "civ6_control"
+                  / "popup_clear.py").read_text(encoding="utf-8")
+        self.assertIn("if pause_reason != last_pause_reason:", source)
