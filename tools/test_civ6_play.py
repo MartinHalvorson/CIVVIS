@@ -1461,15 +1461,21 @@ class ScreenshotFailureTests(unittest.TestCase):
             self.assertEqual(capture.call_count, 1)
             capture.assert_called_once_with((0, 0, 1512, 982), path)
 
-    def test_a_user_capture_ui_makes_the_setup_frame_unreadable_without_capture(self) -> None:
+    def test_a_user_capture_ui_keeps_a_preauthorized_setup_frame(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "shot.png"
             path.write_bytes(b"stale")
+
+            def capture_frame(_region, output):
+                Path(output).write_bytes(b"fresh")
+
             with patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=True), \
-                 patch.object(civ6_play.macos_capture, "capture_region") as capture:
-                self.assertFalse(civ6_play.screenshot(path))
-            capture.assert_not_called()
-            self.assertFalse(path.exists(), "a stale image must not be reused as a fresh frame")
+                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play.macos_capture, "capture_region",
+                              side_effect=capture_frame) as capture:
+                self.assertTrue(civ6_play.screenshot(path))
+            capture.assert_called_once_with((0, 0, 1512, 982), path)
+            self.assertEqual(path.read_bytes(), b"fresh")
 
     def test_permission_denial_does_not_retry_or_request_a_system_popup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
@@ -1485,16 +1491,27 @@ class ScreenshotFailureTests(unittest.TestCase):
 
 
 class SafeScreenCaptureWaitTests(unittest.TestCase):
-    def test_user_owned_capture_ui_is_waited_out_before_game_setup(self) -> None:
+    def test_preauthorized_user_capture_ui_does_not_delay_game_setup(self) -> None:
         with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
-                          side_effect=[True, False]) as recording, \
+                          return_value=True) as recording, \
              patch.object(civ6_play.macos_capture, "screen_capture_access_available",
                           return_value=True) as access, \
              patch.object(civ6_play.time, "sleep") as sleep:
             civ6_play.wait_for_safe_screen_capture(poll_s=0.25)
 
-        self.assertEqual(recording.call_count, 2)
+        recording.assert_called_once_with()
         access.assert_called_once_with()
+        sleep.assert_not_called()
+
+    def test_recording_ui_waits_only_until_noninteractive_preflight_passes(self) -> None:
+        with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
+                          return_value=True), \
+             patch.object(civ6_play.macos_capture, "screen_capture_access_available",
+                          side_effect=[False, True]) as access, \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            civ6_play.wait_for_safe_screen_capture(poll_s=0.25)
+
+        self.assertEqual(access.call_count, 2)
         sleep.assert_called_once_with(0.25)
 
     def test_missing_permission_is_deferred_until_the_noninteractive_preflight_passes(self) -> None:

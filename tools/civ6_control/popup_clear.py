@@ -92,13 +92,12 @@ MIN_POLL_SECONDS = 0.05
 POINTER_SETTLE_SECONDS = 0.05
 POST_CLICK_SETTLE_SECONDS = 0.20
 
-# A native screen recording and this pixel backstop both use macOS's display
-# capture services.  The backstop is never worth starving a user-requested
-# recording: it must yield as soon as Cmd-Shift-5 is up, and it must stop
-# feeding the service while the system status daemon is already wedged.
+# ScreenCaptureKit's status service can spin at a core while an output is being
+# started or torn down.  The clearer must not add captures to that pressure.
+# Cmd-Shift-5 itself is not a reason to yield: CoreGraphics' non-interactive
+# preflight in ``capture`` proves whether an authorized recording can coexist.
 SYSTEMSTATUSD_SPIN_PERCENT = 85.0
 SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS = 30.0
-RECORDING_UI_POLL_SECONDS = 2.0
 
 
 def osa(script):
@@ -246,11 +245,11 @@ def systemstatusd_cpu():
 def capture_pause_reason():
     """Why this optional screenshot loop should yield display capture now."""
     global NATIVE_CAPTURE_DISABLED
-    if native_recording_ui_active():
-        # A user-owned Cmd-Shift-5 session has first claim on the display.  It
-        # may be a recording the operator intends to keep, so do not capture
-        # through it just because CoreGraphics happens to be available.
-        return "native screen recording UI is active"
+    # A visible recording toolbar is not an authorization result.  capture()
+    # does a non-interactive CoreGraphics preflight for every frame; if it
+    # fails, it marks this loop disabled and the recovery probe below waits.
+    # Pausing solely because Cmd-Shift-5 is visible made an authorized user
+    # recording block every popup-clear pass and every verification game.
     if NATIVE_CAPTURE_DISABLED:
         # A denied grant can change while this persistent watcher is alive.
         # Preflight is non-interactive, so it is safe to probe it once per
@@ -743,10 +742,9 @@ def main():
     warned_cards = False
     last_pause_reason = None
     while True:
-        # A separate native recording gets first claim on screen capture.  This
-        # check intentionally happens before even grabbing the Civ window: a
-        # fallback screencapture launched at the wrong instant can make
-        # ScreenCaptureKit's one-second display lookup time out.
+        # CoreGraphics capture remains non-interactive under an authorized
+        # native recording.  A denied grant or a spinning display service is
+        # still paused before even grabbing the Civ window.
         pause_reason = capture_pause_reason()
         if pause_reason:
             if pause_reason != last_pause_reason:
@@ -754,10 +752,7 @@ def main():
             last_pause_reason = pause_reason
             if args.once:
                 return
-            delay = (RECORDING_UI_POLL_SECONDS
-                     if pause_reason == "native screen recording UI is active"
-                     else SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS)
-            time.sleep(delay)
+            time.sleep(SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS)
             continue
         if last_pause_reason is not None:
             log(f"resuming pixel capture after: {last_pause_reason}")
