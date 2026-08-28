@@ -75,6 +75,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 import signal
 import subprocess
 import sys
@@ -130,6 +131,45 @@ def write_state(path: Path, state: dict) -> None:
         os.replace(tmp, path)
     except OSError:
         pass
+
+
+#: How long the newest run may go without writing an event before this tool is
+#: willing to call the supervisor wedged. A live turn writes several events and
+#: an Online-speed turn takes seconds; fifteen minutes is far beyond any healthy
+#: gap and far inside `--stale-hours`.
+LIVE_EVENT_QUIET_SECONDS = 900.0
+
+
+def newest_attempt_activity_s(runs: Path, now: float | None = None) -> float | None:
+    """Seconds since the newest run last wrote an event, or None if unreadable.
+
+    ⚠⚠ THE STALENESS SIGNAL CANNOT SEE A GAME IN PROGRESS, AND THAT ALMOST KILLED
+    ONE. `civ6_ladder.staleness_problem` asks when a game last *finished*. A
+    250-turn game at Online speed takes hours — routinely longer than
+    `--stale-hours` — so a perfectly healthy long game is indistinguishable from
+    a wedge by that question alone. On 2026-08-28 the first live game in nine
+    days reached turn 41 with the keeper counting down a two-hour cooldown, and
+    the tick after it expired would have SIGTERMed the supervisor playing it.
+
+    The header of this module already draws the right distinction — "the loop is
+    alive but not playing" — it just measured it with the only instrument it
+    had. A run that is writing events IS playing, and that is readable directly:
+    the newest run directory's `events.jsonl` mtime.
+    """
+    now = time.time() if now is None else now
+    try:
+        events = [path for path in runs.glob("*/events.jsonl")]
+    except OSError:
+        return None
+    newest = None
+    for path in events:
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            continue
+        if newest is None or stamp > newest:
+            newest = stamp
+    return None if newest is None else max(0.0, now - newest)
 
 
 def hours_since(stamp: str | None, now: datetime) -> float | None:
@@ -328,8 +368,19 @@ def main(argv: list[str] | None = None) -> int:
                       f"cooldown; leaving it alone")
         return 1
 
+    # ⚠ A supervisor that is writing turns is not wedged, whatever the ledger
+    # says about *finished* games. See `newest_attempt_activity_s`.
+    quiet = newest_attempt_activity_s(runs)
+    if quiet is not None and quiet <= LIVE_EVENT_QUIET_SECONDS:
+        log(args.log, f"STALE {problem} — but the newest run wrote an event "
+                      f"{quiet:.0f}s ago, so supervisor pid {alive} is playing, "
+                      f"not wedged; leaving it alone")
+        return 1
+
     log(args.log, f"STALE {problem} — supervisor pid {alive} is alive but not "
-                  f"finishing games")
+                  f"finishing games"
+                  + (f" and its newest run has been quiet for {quiet:.0f}s"
+                     if quiet is not None else ""))
     if args.dry_run:
         log(args.log, f"  DRY RUN — would stop pid {alive}")
         return 1
