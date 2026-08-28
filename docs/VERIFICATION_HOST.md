@@ -115,6 +115,26 @@ civvis-games wins 20    the last twenty live-game wins from the ladder ledger
 the chain when nothing is playing. `off` writes `stopped`, so nothing restarts
 until the operator says `on`.
 
+## The "App Background Activity" alert
+
+Every new LaunchAgent label a Mac registers makes Background Task Management
+post a persistent Notification Center alert — on macOS 26: *"'zsh' can run in
+the background. You can manage background activity in Login Items &
+Extensions."* It sits top-right over the game being recorded, and a click on
+it opens System Settings on that pane in front of everything. It cannot be
+pre-approved without MDM, and a verification host keeps registering labels
+(each new clone that runs `bootstrap` installs its own
+`com.civvis.freshness.<hash>` agent).
+
+`tools/ops/civvis-foreground-guard.sh` dismisses exactly that alert and closes
+exactly that Settings pane, the latter only while a game lane is up. The
+wrapper starts it, because it has to be Terminal-descended — driving
+Notification Center is an Apple Event to System Events, and macOS grants
+Automation to the responsible process, which for the whole chain is Terminal;
+a launchd job holds nothing. `--once` runs a single pass by hand;
+`touch ~/.civvis-foreground-guard-off` stands it down; `CIVVIS_FOREGROUND_GUARD=0`
+in the wrapper's environment skips it. Log: `~/Library/Logs/civvis-foreground-guard.log`.
+
 ## What stayed out of the repository, and why
 
 - **`~/.zprofile` exports** (`CIVVIS_DIFFICULTY`, `CIVVIS_PLAY_ATTEMPTS`,
