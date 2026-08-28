@@ -84,7 +84,7 @@ LEADER_DARK_FRACTION = 0.35   # measured 0.55 leader vs 0.11 map
 SHOT = "/tmp/civ6-popup-clear.png"
 NATIVE_CAPTURE_DISABLED = False
 
-# A covered game window is already a confirmed blocker. Keep the fallback
+# A covered game window is already a confirmed blocker. Keep the capture
 # cadence below one second, and leave enough room for the click plus one fresh
 # frame inside the two-second user-facing budget.
 DIALOGUE_POLL_SECONDS = 0.25
@@ -173,8 +173,34 @@ def native_recording_command(command):
             or any(token.startswith("-") and "v" in token for token in tokens[1:]))
 
 
+def interactive_recording_command(command):
+    """Whether ``command`` is the Cmd-Shift-5 helper rather than a stale shell."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    return (bool(tokens)
+            and os.path.basename(tokens[0]) == "screencapture"
+            and "keyboard.interactive" in tokens)
+
+
+def screen_capture_ui_command(command):
+    """Whether ``command`` belongs to the visible native capture UI."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    return bool(tokens) and os.path.basename(tokens[0]) == "screencaptureui"
+
+
 def native_recording_ui_active():
-    """Return true while a native screenshot/recording toolbar is in use."""
+    """Return true while a native screenshot/recording toolbar is in use.
+
+    The interactive helper may survive after its toolbar vanishes.  Require its
+    UI companion as well, while command-line video capture remains active on
+    its own.  That distinction lets an unattended ladder resume after a stale
+    helper without competing with a real user capture.
+    """
     try:
         result = subprocess.run(
             ["ps", "-axo", "command="],
@@ -185,7 +211,12 @@ def native_recording_ui_active():
         )
     except (OSError, subprocess.SubprocessError):
         return False
-    return any(native_recording_command(line) for line in result.stdout.splitlines())
+    commands = result.stdout.splitlines()
+    if any(native_recording_command(line) and not interactive_recording_command(line)
+           for line in commands):
+        return True
+    return (any(interactive_recording_command(line) for line in commands)
+            and any(screen_capture_ui_command(line) for line in commands))
 
 
 def systemstatusd_cpu():
@@ -214,18 +245,23 @@ def systemstatusd_cpu():
 
 def capture_pause_reason():
     """Why this optional screenshot loop should yield display capture now."""
+    global NATIVE_CAPTURE_DISABLED
     if native_recording_ui_active():
-        # A stale Cmd-Shift-5 helper can survive for hours after its toolbar
-        # has left the screen.  Treating its process alone as an active capture
-        # paused the popup watcher for the whole current King game, even though
-        # CoreGraphics could still read the Civ VI window and the real game was
-        # waiting on a leader dialogue.  The native region helper is independent
-        # of `screencapture`, so it is safe to keep the watcher alive whenever
-        # that helper is available.  If the helper is unavailable, the fallback
-        # invokes `screencapture` itself and must still yield to the recording
-        # UI rather than contend with it.
-        if NATIVE_CAPTURE_DISABLED or not macos_capture.prepare():
-            return "native screen recording UI is active"
+        # A user-owned Cmd-Shift-5 session has first claim on the display.  It
+        # may be a recording the operator intends to keep, so do not capture
+        # through it just because CoreGraphics happens to be available.
+        return "native screen recording UI is active"
+    if NATIVE_CAPTURE_DISABLED:
+        # A denied grant can change while this persistent watcher is alive.
+        # Preflight is non-interactive, so it is safe to probe it once per
+        # recovery pause and resume on its own after the operator changes it.
+        try:
+            if macos_capture.screen_capture_access_available():
+                NATIVE_CAPTURE_DISABLED = False
+            else:
+                return "screen capture access is unavailable"
+        except macos_capture.CaptureUnavailable as error:
+            return f"native screen capture unavailable: {error}"
     cpu = systemstatusd_cpu()
     if cpu is not None and cpu >= SYSTEMSTATUSD_SPIN_PERCENT:
         return f"systemstatusd is spinning at {cpu:.0f}% CPU"
@@ -240,20 +276,16 @@ def capture(box_points):
     we already know in points makes the ratio measurable: `image width / w`.
     """
     Image = _image_library()
-    x, y, w, h = box_points
     global NATIVE_CAPTURE_DISABLED
-    if not NATIVE_CAPTURE_DISABLED:
-        try:
-            macos_capture.capture_region(box_points, SHOT)
-        except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
-            # Keep older hosts usable. Once the native path is known to be
-            # unavailable, do not pay its initialization cost on every poll.
-            NATIVE_CAPTURE_DISABLED = True
-    if NATIVE_CAPTURE_DISABLED:
-        subprocess.run(["screencapture", "-x", "-t", "png", f"-R{x},{y},{w},{h}", SHOT],
-                       check=True, timeout=30)
+    try:
+        macos_capture.capture_region(box_points, SHOT)
+    except macos_capture.CapturePermissionUnavailable:
+        # Do not fall back to the command-line utility.  Its permission sheet
+        # is precisely the system popup that can freeze an unattended game.
+        NATIVE_CAPTURE_DISABLED = True
+        raise
     image = Image.open(SHOT).convert("RGB")
-    return image, image.size[0] / float(w)
+    return image, image.size[0] / float(box_points[2])
 
 
 def red_clusters(rgb, step=2):
@@ -666,6 +698,7 @@ def covered_poll_delay(interval):
 
 
 def main():
+    global NATIVE_CAPTURE_DISABLED
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--interval", type=float, default=0.5)
     ap.add_argument("--once", action="store_true")
@@ -680,7 +713,9 @@ def main():
 
     # Compile the cached helper before the first frame. On a fresh host this is
     # startup work while the game is loading, not latency charged to a dialogue.
-    macos_capture.prepare()
+    # Hosts that cannot build it pause safely; they never fall back to a tool
+    # that can ask a permission question over the game.
+    NATIVE_CAPTURE_DISABLED = not macos_capture.prepare()
 
     def log(message):
         line = f"[popup] {time.strftime('%FT%TZ', time.gmtime())} {message}"
