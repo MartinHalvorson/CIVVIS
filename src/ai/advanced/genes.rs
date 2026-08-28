@@ -1656,6 +1656,12 @@ pub const GENES: &[Gene] = &[
     // turns is stood down explicitly — excluded from the ranking for twenty
     // turns, strategy re-assessed now. See `docs/COMMITMENTS.md`.
     Gene { tag: "capture-go-or-stand-down", field: "capture_go_or_stand_down", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_go_or_stand_down, disable: AdvancedAi::disable_capture_go_or_stand_down },
+    // Version 2 (2026-08-28): the ledger's split of the 182 failed conquest
+    // decisions on eight maps read 137 with bodies at the objective throughout
+    // — the army was there and never took the city. A siege that has not
+    // pushed the city to a new low for six stalled readings is stood down the
+    // same way. One version of the family plays.
+    Gene { tag: "capture-go-or-stand-down-2", field: "capture_go_or_stand_down_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_go_or_stand_down_2, disable: AdvancedAi::disable_capture_go_or_stand_down_2 },
     // `commitment-patience` (operator, 2026-08-27, the follow-up): the ledger
     // read 2,684 civilian-turns frozen with a hostile within two, 1,713
     // Builder-turns holding a pin never walked to, and 150 of 309 settler

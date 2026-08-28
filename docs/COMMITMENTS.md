@@ -100,14 +100,14 @@ it saw the turn before and classifies every decision:
 | `dropped` | the owner is alive and the decision is gone (a target drop, a stand-down) |
 | `settled elsewhere` | the settler vanished and a city of ours that is new this turn stands within 3 of where it stood |
 | `lost` | the owner died or was captured with the decision open |
-| `stood down` | the empire no longer means to take that city |
+| `stood down` | the empire no longer means to take that city — split by whether anyone ever went (`nobody ever went` / `always present` / `went then left`) and, once there, whether the siege ever pushed the city below where it stood when the decision was made (`engaged` / `never scratched it`) |
 
 and, for every decision still open, three per-turn readings:
 
 | reading | definition |
 |---|---|
 | **forgotten** | the owner had movement to spend and did not act (`!acted && moves_left > 0`); for a declared war, no own military unit within 3 hexes of the objective |
-| **stalled** | acted, but no better progress reading (hexes to walk; phase-then-hit-points for a capture) for `STALL_TURNS` = 3 turns — the same limit as `SETTLER_STALL_LIMIT` |
+| **stalled** | acted, but no better progress reading (hexes to walk; phase-then-hit-points for a capture) for `STALL_TURNS` = 3 turns — the same limit as `SETTLER_STALL_LIMIT`. A commitment also carries `stalled_streak` (consecutive stalled readings, reset by a new low or a forgotten turn) and `engaged` (the reading has been below its initial value) |
 | **late** | past the ETA priced when the decision was made: the terrain walk in turns (`settle_sooner_walk_costs` over `step_cost`, at the unit's movement allowance; a hex a turn beyond `WALK_PRICE_RADIUS` = 16), the war plan's own research + production + march estimate, or `CONQUEST_ETA_TURNS` = 20 (`CAMPAIGN_PATIENCE`) for a bare Conquest target. Until 2026-08-27 the walk was priced at two hexes a turn; §5's `late` and ETA figures are on that price |
 
 Every forgotten turn is also filed under the first hold the observer can see
@@ -283,14 +283,54 @@ against 4.1 actual and the improve ETA 1.9 → 2.8 against 3.8, so `late`
 now reads indecision rather than hills: 41% / 36% of open turns before the
 gene, 15% / 27% with it.
 
+### `capture-go-or-stand-down-2` (opt-in, ships off; one version of the family plays)
+
+The capture side, one level deeper. The first ledger split said 137 of 182
+failed conquests had bodies at the objective throughout; the question was
+what those bodies were doing. Every commitment now carries `engaged` — the
+reading has been below its initial value at least once, i.e. the siege
+pushed the city lower than when the decision was made — and
+`stalled_streak`, consecutive stalled readings with the army present. The
+capture endings split on both (2026-08-28, eight maps, gene off):
+
+| how a failed conquest ended | count |
+|---|---:|
+| nobody ever went | 49 |
+| always present, **never scratched it** | **91** |
+| always present, engaged | 11 |
+| went then left, never scratched it | 78 |
+| went then left, engaged | 15 |
+
+**169 of 244 failed conquests never pushed the city below its starting
+strength.** The army arrives and does not dent the city; only 26 sieges
+that failed were ever winning. That is not a commitment defect at the
+boundary — the decision was made, staffed and held — it is the assault
+that never starts: force-group posture (`hold_weak` below
+`LOCAL_SUPERIORITY_FLOOR`) and siege composition (walls without a siege
+unit). The next instrument is a split of "never scratched it" by whether a
+siege-class unit was present and by the group's posture at the objective;
+the arena (`the_storming`) is where the answer gets priced.
+
+Version 2 adds the second trigger the split allows: a siege with bodies at
+the objective that has not pushed the city to a new low for
+`CAPTURE_STALL_TURNS` = 6 consecutive stalled readings (nine turns without
+a new low) is stood down the same way version 1 stands down an objective
+nobody went to — out of the ranking for twenty turns, strategy re-assessed
+now, `commit:capture:stall_stand_downs`. Same eight maps, off → on: captures
+4 → 8, stalled capture-turns 220 → 139, nobody-at-the-objective turns
+624 → 503, failed sieges resolved in 6.5 turns instead of 17; "went then
+left, never scratched it" 78 → 60. "Always present, never scratched it"
+91 → 84 — a stand-down cannot start an assault. Probe on two disjoint
+blocks: win −5.4 / −2.0 pp, share −3.5 / +2.5 — probe noise; the standard
+screen prices it.
+
 ### Still open
 
-- **The capture side is unchanged by either gene**: 311 conquest decisions,
-  11 taken; 137 of the failures had bodies present throughout. That is the
-  siege problem (`docs/DOCTRINE_ARENA.md`, `the_storming`: arrival spread,
-  not walls), not a commitment one — the arena is its instrument.
-- The two genes ship off until the standard screen prices them; the
-  continuous batch re-prices their decisiveness every rotation (§9).
+- **The assault that never starts** (above): 169 of 244 failed conquests
+  never scratched the city. Posture and siege composition at the objective,
+  measured by the arena, not by this ledger.
+- The genes ship off until the standard screen prices them; the continuous
+  batch re-prices their decisiveness every rotation (§9).
 
 ## 9. The standing measurement
 
