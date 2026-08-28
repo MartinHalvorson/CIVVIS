@@ -63,10 +63,9 @@ class NativeRecordingProtectionTest(unittest.TestCase):
         self.assertFalse(popup_clear.native_recording_command(
             "/usr/bin/python3 tools/civ6_control/popup_clear.py"))
 
-    def test_native_recording_ui_yields_only_when_capture_needs_screencapture(self) -> None:
+    def test_native_recording_ui_always_yields_to_the_user_capture(self) -> None:
         with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=True), \
                 mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", False), \
-                mock.patch.object(popup_clear.macos_capture, "prepare", return_value=False), \
                 mock.patch.object(popup_clear, "systemstatusd_cpu") as daemon_cpu:
             self.assertEqual(
                 popup_clear.capture_pause_reason(),
@@ -74,12 +73,52 @@ class NativeRecordingProtectionTest(unittest.TestCase):
             )
         daemon_cpu.assert_not_called()
 
-    def test_native_recording_ui_does_not_pause_a_working_coregraphics_capture(self) -> None:
+    def test_native_recording_ui_yields_even_when_coregraphics_is_available(self) -> None:
         with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=True), \
                 mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", False), \
-                mock.patch.object(popup_clear.macos_capture, "prepare", return_value=True), \
                 mock.patch.object(popup_clear, "systemstatusd_cpu", return_value=12.0):
-            self.assertIsNone(popup_clear.capture_pause_reason())
+            self.assertEqual(
+                popup_clear.capture_pause_reason(),
+                "native screen recording UI is active",
+            )
+
+    def test_a_stale_interactive_helper_does_not_hold_the_ladder_forever(self) -> None:
+        stale = "/usr/sbin/screencapture -pdiU -z keyboard.interactive"
+        with mock.patch.object(popup_clear.subprocess, "run",
+                               return_value=mock.Mock(stdout=stale, returncode=0)):
+            self.assertFalse(popup_clear.native_recording_ui_active())
+
+    def test_the_visible_cmd_shift_5_ui_is_a_user_capture(self) -> None:
+        commands = "\n".join([
+            "/usr/sbin/screencapture -pdiU -z keyboard.interactive",
+            "/System/Library/CoreServices/screencaptureui.app/Contents/MacOS/screencaptureui",
+        ])
+        with mock.patch.object(popup_clear.subprocess, "run",
+                               return_value=mock.Mock(stdout=commands, returncode=0)):
+            self.assertTrue(popup_clear.native_recording_ui_active())
+
+    def test_capture_permission_is_rechecked_without_a_raw_fallback(self) -> None:
+        with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=False), \
+                mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", True), \
+                mock.patch.object(popup_clear.macos_capture,
+                                  "screen_capture_access_available", return_value=False), \
+                mock.patch.object(popup_clear, "systemstatusd_cpu") as daemon_cpu:
+            self.assertEqual(
+                popup_clear.capture_pause_reason(),
+                "screen capture access is unavailable",
+            )
+        daemon_cpu.assert_not_called()
+
+    def test_permission_denial_never_falls_back_to_screencapture(self) -> None:
+        with mock.patch.object(popup_clear, "NATIVE_CAPTURE_DISABLED", False), \
+                mock.patch.object(popup_clear, "_image_library", return_value=mock.Mock()), \
+                mock.patch.object(popup_clear.macos_capture, "capture_region",
+                                  side_effect=popup_clear.macos_capture.CapturePermissionUnavailable(
+                                      "denied")), \
+                mock.patch.object(popup_clear.subprocess, "run") as run:
+            with self.assertRaises(popup_clear.macos_capture.CapturePermissionUnavailable):
+                popup_clear.capture((0, 0, 864, 542))
+        run.assert_not_called()
 
     def test_status_daemon_spin_pauses_pixel_capture(self) -> None:
         with mock.patch.object(popup_clear, "native_recording_ui_active", return_value=False), \

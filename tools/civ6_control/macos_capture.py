@@ -2,8 +2,9 @@
 
 ``screencapture -R`` is convenient but can take several seconds while a game
 window is composited. The popup clearer needs a fresh frame inside its two
-second budget, so use CoreGraphics directly and keep the shell command as a
-compatibility fallback for hosts without Apple's compiler or screen permission.
+second budget, so use CoreGraphics directly.  A denied screen-capture grant is
+reported without asking for one: an unattended game must never cover itself
+with macOS's permission sheet.
 """
 
 from __future__ import annotations
@@ -21,6 +22,13 @@ class CaptureUnavailable(RuntimeError):
     """Raised when the native macOS region capture cannot be initialized."""
 
 
+class CapturePermissionUnavailable(CaptureUnavailable):
+    """Raised when macOS says capture is not currently authorized."""
+
+
+SCREEN_CAPTURE_PERMISSION_DENIED = 77
+
+
 _SWIFT_SOURCE = r'''
 import CoreGraphics
 import Darwin
@@ -28,7 +36,22 @@ import Foundation
 import ImageIO
 
 let args = Array(CommandLine.arguments.dropFirst())
+if args == ["--preflight"] {
+    if CGPreflightScreenCaptureAccess() {
+        exit(0)
+    }
+    FileHandle.standardError.write(Data("screen capture permission unavailable".utf8))
+    exit(77)
+}
 guard args.count == 5 else { exit(64) }
+
+// The interactive request API would open the system permission dialog.  This
+// helper is deliberately preflight-only: the caller can wait and retry later
+// without ever putting a modal over the game.
+guard CGPreflightScreenCaptureAccess() else {
+    FileHandle.standardError.write(Data("screen capture permission unavailable".utf8))
+    exit(77)
+}
 
 func number(_ index: Int) -> Double {
     guard let value = Double(args[index]) else { exit(64) }
@@ -124,12 +147,41 @@ def _native_binary() -> Path:
 
 
 def prepare() -> bool:
-    """Compile/cache the helper before the first game frame is needed."""
+    """Compile/cache the helper before the first game frame is needed.
+
+    This deliberately does not request or verify a macOS privacy grant.  Use
+    :func:`screen_capture_access_available` when a caller needs the latter.
+    """
     try:
         _native_binary()
     except (CaptureUnavailable, OSError, subprocess.SubprocessError):
         return False
     return True
+
+
+def screen_capture_access_available() -> bool:
+    """Return whether the native helper can capture without prompting macOS.
+
+    ``CGPreflightScreenCaptureAccess`` is the non-interactive companion to
+    macOS's permission request API.  A false result is an ordinary deferral,
+    not a reason to run ``screencapture`` and create a dialog over Civ VI.
+    """
+    try:
+        result = subprocess.run(
+            [str(_native_binary()), "--preflight"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise CaptureUnavailable(f"could not preflight native screen capture: {error}") from error
+    if result.returncode == 0:
+        return True
+    detail = (result.stderr or result.stdout).strip()
+    if result.returncode == SCREEN_CAPTURE_PERMISSION_DENIED:
+        return False
+    raise CaptureUnavailable(detail or "could not preflight native screen capture")
 
 
 def capture_region(box_points, output: str | Path) -> None:
@@ -144,6 +196,8 @@ def capture_region(box_points, output: str | Path) -> None:
     )
     if result.returncode:
         detail = (result.stderr or result.stdout).strip()
+        if result.returncode == SCREEN_CAPTURE_PERMISSION_DENIED:
+            raise CapturePermissionUnavailable(detail or "screen capture permission unavailable")
         raise CaptureUnavailable(detail or "native region capture failed")
     path = Path(output)
     if not path.is_file() or path.stat().st_size == 0:
