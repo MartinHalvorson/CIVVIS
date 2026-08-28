@@ -1381,14 +1381,23 @@ def _ocr_remember(key: tuple | None, observations: list[dict]) -> None:
 def recognize_once(path: Path) -> list[dict]:
     """`macos_ocr.recognize`, paid once per distinct capture.
 
-    A missing file is not cached, so its error still surfaces exactly as it
-    did; the copy returned is the caller's to extend.
+    A zero-dimensioned native OCR frame is an ordinary unreadable poll, not a
+    reason to end setup: every caller already treats no observations as a
+    retryable read failure.  Cache that empty read for this exact capture so
+    several setup fields cannot each spend another native OCR pass on the same
+    broken frame.  A missing file is still not cached, so its I/O error
+    surfaces exactly as it did; the copy returned is the caller's to extend.
     """
     key = _shot_key(path)
     hit = _ocr_cached(key)
     if hit is not None:
         return hit
-    observations = macos_ocr.recognize(path)
+    try:
+        observations = macos_ocr.recognize(path)
+    except macos_ocr.OCRUnavailable as error:
+        print(f"[ocr] capture {path.name} is unreadable ({error}); treating this read as empty",
+              flush=True)
+        observations = []
     _ocr_remember(key, observations)
     return [dict(observation) for observation in observations]
 
