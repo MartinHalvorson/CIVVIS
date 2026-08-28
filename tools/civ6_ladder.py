@@ -327,10 +327,20 @@ def seat_autonomy(events_path: Path) -> dict | None:
     a game it may only have half-played, and the only way to find out was to
     hand-parse the events.
 
-    Measured on the live run of 2026-08-28, at turn 61 of a Settler game:
-    159 unit orders from CIVVIS against **115 unit-turns handed to the engine**
-    — a 58% share. Whole turns passed with `by: {produce_next: 1}` and nine
-    units on the board.
+    ⚠⚠ THE NUMERATOR IS `seen_by`, NOT `by`, AND THE FIRST VERSION OF THIS
+    FUNCTION GOT IT WRONG. In `CivvisControlAgent.lua`, `byKind` increments only
+    on the applied path; `seenByKind` increments on the applied path AND in
+    `countRefusal`. So `by.unit` is the orders the host ACTUALLY APPLIED, while
+    `seen_by.unit` is the orders CIVVIS AUTHORED and the host looked at.
+    Dividing the applied count by the dispositions answers a question
+    `applied_pct` already owns, and moves whenever actuation quality moves — so
+    the share stopped measuring authorship the moment any order was refused.
+    On the full Settler run of 2026-08-28 the two read 0.5623 and 0.6522.
+
+    Measured on that run: **270 unit orders authored by CIVVIS against 144
+    unit-turns handed to the engine** — a 65% share, with 185 of the 270
+    applied. Whole turns passed with `by: {produce_next: 1}` and nine units on
+    the board.
 
     Civilians are never in this number: the mod excludes Settler, Builder,
     Trader and Great People from the hand-off ("a settler that wanders is a
@@ -345,7 +355,7 @@ def seat_autonomy(events_path: Path) -> dict | None:
     """
     if not events_path.is_file():
         return None
-    unit_orders = engine_explored = guarded = 0
+    unit_orders = unit_orders_applied = engine_explored = guarded = 0
     saw_orders = False
     with events_path.open(encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -356,11 +366,16 @@ def seat_autonomy(events_path: Path) -> dict | None:
             if not isinstance(event, dict) or event.get("kind") != "orders":
                 continue
             saw_orders = True
-            by_kind = event.get("by")
-            if isinstance(by_kind, dict):
+            for field, bucket in (("seen_by", "authored"), ("by", "applied")):
+                by_kind = event.get(field)
+                if not isinstance(by_kind, dict):
+                    continue
                 count = by_kind.get("unit")
                 if isinstance(count, int) and not isinstance(count, bool):
-                    unit_orders += max(0, count)
+                    if bucket == "authored":
+                        unit_orders += max(0, count)
+                    else:
+                        unit_orders_applied += max(0, count)
             for name, target in (("explored", "explored"),
                                  ("explore_guarded", "guarded")):
                 value = event.get(name)
@@ -373,11 +388,15 @@ def seat_autonomy(events_path: Path) -> dict | None:
         return None
     decided = unit_orders + engine_explored
     return {
+        # Authored by CIVVIS: applied plus refused. This is the numerator.
         "unit_orders": unit_orders,
+        # Of those, the ones the host applied. Kept beside it so the two are
+        # never confused again, and so a run can be read for both at once.
+        "unit_orders_applied": unit_orders_applied,
         "engine_explored": engine_explored,
         "explore_guarded": guarded,
-        # The headline: of every unit-turn that got a disposition, how many were
-        # CIVVIS's own. `None` rather than a fake 100% when nothing moved.
+        # The headline: of every unit-turn that got a disposition, how many did
+        # CIVVIS author. `None` rather than a fake 100% when nothing moved.
         "civvis_unit_share": (round(unit_orders / decided, 4)
                               if decided else None),
     }
