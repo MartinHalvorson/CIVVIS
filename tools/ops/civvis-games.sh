@@ -262,17 +262,24 @@ on)
   say "  services:"
   ensure_job "$LADDER_JOB"
   ensure_job "$SPECTATOR_JOB"
-  relaunch_ladder
-  say "  spectator: KeepAlive brings it back within ~60s"
   # Turning the lane on must never silently resume a tree-pinned or dead-pin
   # batch: the operator asked for games on the latest GitHub CIVVIS, always.
-  pin_now=$(cat "$PINFILE" 2>/dev/null || print -r -- head)
-  if [[ -z $pin_now || $pin_now == head ]]; then
+  # Do this BEFORE opening Terminal.  The verified-head wrapper refuses an
+  # absent or non-head pin, and starting it first would leave `on` reporting
+  # success while its just-opened window immediately exits.
+  pin_now=$(cat "$PINFILE" 2>/dev/null || true)
+  if [[ $pin_now == head ]]; then
     say "  version:   pin already tracks origin/main"
   else
     printf 'head\n' > "$PINFILE"
-    say "  version:   pin was '$pin_now' — reset to head so batches track origin/main"
+    if [[ -n $pin_now ]]; then
+      say "  version:   pin was '$pin_now' — reset to head so batches track origin/main"
+    else
+      say "  version:   pin was absent — wrote head so batches track origin/main"
+    fi
   fi
+  relaunch_ladder
+  say "  spectator: KeepAlive brings it back within ~60s"
   say ""
   say "watch it:  tail -f ~/Library/Logs/civvis-ladder.log"
   say "turn off:  civvis-games off"

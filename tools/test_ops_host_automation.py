@@ -447,6 +447,57 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
         self.assertIn('open -g -j -a Terminal "$(launcher)"', text)
         self.assertNotIn("$HOME/CIVVIS", text, "no named checkout")
 
+    def test_turning_on_writes_a_head_pin_before_starting_terminal(self):
+        """A wrapper refuses anything but `head`, so its launch must see it.
+
+        A missing pin used to be treated as though it were already `head`, and
+        a stale tree pin was only reset after `open` had already handed the
+        wrapper to Terminal.  Both cases made the operator's `on` command look
+        successful while the wrapper immediately refused its launch.
+        """
+        for old_pin in ("/a/stale/tree\n", None):
+            with self.subTest(old_pin=old_pin), TemporaryDirectory() as raw:
+                home = Path(raw) / "home"
+                home.mkdir()
+                agents = home / "Library" / "LaunchAgents"
+                agents.mkdir(parents=True)
+                for label in ("com.civvis.ladder-watchdog", "com.civvis.spectator"):
+                    (agents / f"{label}.plist").write_text("<plist/>")
+                pin = home / ".civvis-play-pin"
+                if old_pin is not None:
+                    pin.write_text(old_pin)
+                wrapper = home / civvis_collab.LADDER_OPERATOR_WRAPPER.name
+                wrapper.write_text("#!/bin/zsh\nexit 0\n")
+                wrapper.chmod(0o755)
+
+                fake_bin = home / "fake-bin"
+                fake_bin.mkdir()
+                for name, source in {
+                    "python3": "#!/bin/zsh\nexit 0\n",
+                    "launchctl": "#!/bin/zsh\nexit 0\n",
+                    "pgrep": "#!/bin/zsh\nexit 1\n",
+                    "open": ("#!/bin/zsh\n"
+                             "cat \"$HOME/.civvis-play-pin\" > \"$OPEN_PIN\"\n"),
+                }.items():
+                    command = fake_bin / name
+                    command.write_text(source)
+                    command.chmod(0o755)
+                open_pin = home / "pin-seen-by-terminal"
+                done = zsh(
+                    SWITCH,
+                    "on",
+                    env=clean_env(
+                        HOME=str(home),
+                        CIVVIS_REPO=str(REPO),
+                        OPEN_PIN=str(open_pin),
+                        PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
+                    ),
+                )
+                self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+                self.assertEqual(pin.read_text(), "head\n")
+                self.assertEqual(open_pin.read_text(), "head\n",
+                                 "Terminal must receive a verifiable head pin")
+
 
 @unittest.skipUnless(HAS_ZSH, "the prune job is zsh; this runner has no zsh")
 class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
