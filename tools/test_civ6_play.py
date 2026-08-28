@@ -1523,7 +1523,7 @@ class VisualPopupCaptureFailureTests(unittest.TestCase):
              patch.object(civ6_play.time, "sleep") as sleep, \
              patch.object(civ6_play.popup_clear, "capture",
                           side_effect=civ6_play.macos_capture.CaptureUnavailable(
-                              "CoreGraphics capture returned no image")), \
+                              "CoreGraphics capture returned no image")) as capture, \
              patch.object(civ6_play.popup_clear, "classify") as classify, \
              patch.object(civ6_play.popup_clear, "held_click") as click:
             self.assertEqual(
@@ -1533,6 +1533,7 @@ class VisualPopupCaptureFailureTests(unittest.TestCase):
 
         focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
         sleep.assert_called_once_with(0.25)
+        capture.assert_called_once_with((0, 0, 864, 542))
         classify.assert_not_called()
         click.assert_not_called()
 
