@@ -16382,13 +16382,21 @@ local function tick()
 					-- needs the parking pass". The pass was simply not reached
 					-- until the forfeit, by which point the turn had already
 					-- spent its attempts. This runs it at the answer instead.
+					-- ⚠ THIS BRANCH DELIBERATELY HAS NO ALTERNATIVE ARM, AND
+					-- THE WORD FOR ONE MUST NOT APPEAR HERE AT ALL.
+					-- `test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai`
+					-- splits this handler on the first occurrence of that
+					-- keyword to tell the CIVVIS arm from the legacy one, so
+					-- either the keyword or a comment naming it cuts the arm in
+					-- half and the guard then reads the wrong code. Both
+					-- mistakes were made here in turn; the base answer is
+					-- assigned first and the park only appends to it.
+					answered = "civvis_complete";
 					if UNIT_BLOCKERS[name] then
 						local parked = parkReadyUnits(player);
-						answered = parked > 0
-							and ("civvis_complete+parked:" .. parked)
-							or "civvis_complete";
-					else
-						answered = "civvis_complete";
+						if parked > 0 then
+							answered = answered .. "+parked:" .. parked;
+						end
 					end
 				else
 					-- Bounded per turn. The order pass is the expensive one, and a
