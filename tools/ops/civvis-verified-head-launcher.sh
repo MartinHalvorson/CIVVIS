@@ -166,4 +166,14 @@ else
 fi
 say "launching from $HEAD_REPO (origin/main, pin=head) with ${summary}(${policy_note})"
 
+# The foreground guard rides the same Terminal-descended tree, which is the
+# only place it can drive Notification Center and System Settings (see its
+# header). Detached, one instance, exits on its own when the lane is gone.
+# CIVVIS_FOREGROUND_GUARD=0 skips it; ~/.civvis-foreground-guard-off stops it.
+GUARD=${CIVVIS_FOREGROUND_GUARD_SCRIPT:-$OPS/civvis-foreground-guard.sh}
+if [[ "${CIVVIS_FOREGROUND_GUARD:-1}" != 0 && -x "$GUARD" ]]; then
+  ( /bin/zsh "$GUARD" >/dev/null 2>&1 & )
+  say "foreground guard started (${GUARD:t})"
+fi
+
 exec /bin/zsh "$LAUNCHER"
