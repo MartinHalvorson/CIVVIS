@@ -15,7 +15,8 @@
 --   6. the turn is held while a queue is pending and released when it drains;
 --   7. the stall cap gives up by name;
 --   8. unmentioned combat units near a hostile are NOT handed to explore
---      automation, and units far from one still are.
+--      automation but ARE given a holding order, and units far from one still
+--      explore. A held unit with no order at all blocks the end of the turn.
 --
 -- Run: lua5.1 tools/civ6_control/mod/order_queue_test.lua
 
@@ -267,15 +268,28 @@ queue.giveUp(7)
 check("give-up empties the queue", queue.pendingCount(), 0)
 check("give-up named queue_stalled", (lastEvent("orders_queue") or ""):find("queue_stalled", 1, true) ~= nil, true)
 
--- 8. Explore hand-off: a soldier beside a hostile stays put; a far one explores.
+-- 8. Explore hand-off: a soldier beside a hostile HOLDS; a far one explores.
+--
+-- ⚠⚠⚠ THIS ONCE ASSERTED THE HELD SOLDIER GOT NOTHING, AND NOTHING IS WHAT
+-- BLOCKED THE TURN. Civilization VI will not end a turn while a unit still
+-- awaits orders, so a soldier CIVVIS did not mention and the guard kept off
+-- explore automation had no disposition at all. Measured 2026-08-28, run
+-- civvis-20260828T161408Z at turn 105 with five such units:
+-- blocked(ENDTURN_BLOCKING_UNITS) -> dismissed(forced) -> residual_unblock ->
+-- blocked, repeating until the wedge watchdog killed a game that had reached
+-- seven cities. Held means HELD, which is an order the engine accepts.
 reset()
 host.units[16] = { id = 16, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }   -- near
 host.units[17] = { id = 17, kind = "UNIT_WARRIOR", x = 30, y = 30, moves = 2 } -- far
 host.contacts = { { id = 900, kind = "UNIT_WARRIOR", x = 7, y = 5, moves = 2 } }
 applyOrders(player, PID, 7, {})
-check("held soldier not explored", ops(16), "")
+check("held soldier not handed to explore automation",
+      ops(16):find("AUTOMATE_EXPLORE", 1, true) ~= nil, false)
+check("held soldier is given a holding order", ops(16), "UNITOPERATION_FORTIFY")
 check("far soldier explored", ops(17), "UNITOPERATION_AUTOMATE_EXPLORE")
 check("orders event counts the guard", field(lastEvent("orders"), "explore_guarded"), 1)
+check("the guard reports the unit HELD, not merely counted",
+      field(lastEvent("orders"), "explore_guarded_held"), 1)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
