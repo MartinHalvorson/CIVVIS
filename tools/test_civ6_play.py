@@ -2323,6 +2323,32 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertEqual(screenshot.call_args_list[-1], call(again))
         self.assertEqual(out["shot"], again)
 
+    def test_a_late_open_dropdown_is_selected_without_closing_it(self) -> None:
+        """A slow UI may process the first proved click after its first read."""
+        reads = iter([
+            ("GAMESPEED_STANDARD", (700, 300)),
+            ("GAMESPEED_ONLINE", (700, 300)),
+        ])
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_setup_current_value",
+                          side_effect=lambda *a: next(reads)), \
+             patch.object(civ6_play, "_observed_label_point",
+                          side_effect=[None, (700, 340)]) as observed, \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            ok = civ6_play.set_dropdown((0, 0, 756, 480), "speed", "GAMESPEED_ONLINE",
+                                        Path(temporary))
+
+        self.assertTrue(ok)
+        # First click opens the list late.  The retry waits, proves Online is
+        # now rendered, and clicks that row rather than toggling Standard again.
+        self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(observed.call_count, 2)
+        self.assertIn(call(2.0), sleep.call_args_list)
+        self.assertEqual(screenshot.call_args_list[-1],
+                         call(Path(temporary) / "dropdown-speed-selected.png"))
+
     def test_the_leader_picker_walks_straight_to_where_it_found_the_leader_last_game(self) -> None:
         bounds = (756, 33, 756, 480)
         row = {"text": "Jadwiga", "x": 0.73, "y": 0.30, "width": 0.04, "height": 0.02}

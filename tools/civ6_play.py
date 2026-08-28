@@ -892,6 +892,14 @@ OPTIONS = {
                  "Terra.lua"],
 }
 
+# A rendered dropdown can still be finishing the previous selection's UI
+# transition.  On a loaded host, the next row then accepts hover (and shows its
+# tooltip) while dropping the first click.  Re-observe before retrying: if that
+# click took late, the requested option is now visible and can be selected;
+# otherwise the same OCR-proved current row is safe to click again.  These are
+# retry delays, not guessed option positions.
+DROPDOWN_RETRY_DELAYS = (0.0, 2.0, 4.0)
+
 
 def game_window() -> tuple[int, int, int, int] | None:
     """Position and size of the game window in points, or None."""
@@ -1530,28 +1538,39 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
         if panel_out is not None:
             panel_out["shot"] = shot
 
-    for attempt in (1, 2):
+    for attempt, retry_delay in enumerate(DROPDOWN_RETRY_DELAYS, 1):
         if attempt == 1 and panel is not None and panel.is_file():
             before = panel
         else:
+            if retry_delay:
+                time.sleep(retry_delay)
             before = shots / f"dropdown-{name}-closed.png"
             screenshot(before)
-        current = _setup_current_value(before, bounds, name)
-        if current is None:
-            print(f"[setup] {name}: current value was not readable (attempt {attempt})",
-                  flush=True)
-            continue
-        current_value, current_point = current
-        if current_value == value:
-            proved_on(before)
-            print(f"[setup] {name}: already verified {_setup_option_label(value)}",
-                  flush=True)
-            return True
+        # A delayed input event can open the list after the prior attempt's
+        # immediate capture.  Looking for the rendered target before clicking
+        # again prevents a second click from closing that valid, late-opened
+        # list; the target remains the only coordinate we will select.
+        target = (
+            _observed_label_point(before, _setup_option_label(value), bounds)
+            if attempt > 1 else None
+        )
+        if target is None:
+            current = _setup_current_value(before, bounds, name)
+            if current is None:
+                print(f"[setup] {name}: current value was not readable (attempt {attempt})",
+                      flush=True)
+                continue
+            current_value, current_point = current
+            if current_value == value:
+                proved_on(before)
+                print(f"[setup] {name}: already verified {_setup_option_label(value)}",
+                      flush=True)
+                return True
 
-        click_at(*current_point)
-        time.sleep(1.2)
-        screenshot(after)
-        target = _observed_label_point(after, _setup_option_label(value), bounds)
+            click_at(*current_point)
+            time.sleep(1.2)
+            screenshot(after)
+            target = _observed_label_point(after, _setup_option_label(value), bounds)
         if target is None:
             print(f"[setup] {name}: requested option was not visible (attempt {attempt})",
                   flush=True)
