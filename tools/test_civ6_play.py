@@ -1594,6 +1594,31 @@ class SafeScreenCaptureWaitTests(unittest.TestCase):
         self.assertIsNone(point)
         recognize.assert_called_once_with(Path("zero-sized-menu.png"))
 
+    def test_zero_dimension_dropdown_read_is_empty_and_cached(self) -> None:
+        """The setup path in the live traceback must retry, not raise.
+
+        Setup fields share one closed-panel capture.  When Vision reports that
+        capture as 0x0, each field must see the same empty result rather than
+        spending another native OCR pass or terminating the whole attempt.
+        """
+        civ6_play._OCR_CACHE.clear()
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "dropdown-difficulty-closed.png"
+            shot.write_bytes(b"not-a-frame")
+            with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play, "_menu_crop_ocr", return_value=[]), \
+                 patch.object(
+                     civ6_play.macos_ocr, "recognize",
+                     side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0"),
+                 ) as recognize:
+                value = civ6_play._setup_current_value(
+                    shot, (756, 33, 756, 480), "difficulty")
+                repeat = civ6_play._setup_current_value(
+                    shot, (756, 33, 756, 480), "difficulty")
+        self.assertIsNone(value)
+        self.assertIsNone(repeat)
+        recognize.assert_called_once_with(shot)
+
     def test_main_menu_visibility_survives_an_unavailable_ocr(self) -> None:
         civ6_play._OCR_CACHE.clear()
         with patch.object(
