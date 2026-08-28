@@ -735,6 +735,7 @@ def main():
     cleared = 0
     last_target, misses = None, 0
     esc_budget_used = 0
+    advisor_stuck_passes = 0
     leader_passes = 0
     no_target_passes = 0
     waiting_since = None
@@ -811,6 +812,8 @@ def main():
                     esc_budget_used = 0
                     leader_passes = 0
                     no_target_passes = 0
+                    # The map is back, so whatever the card was, it is gone.
+                    advisor_stuck_passes = 0
                 elif kind == "card" and not args.cards:
                     # ⚠ OFF BY DEFAULT, ON EVIDENCE. With the counter fixed, the
                     # mod closes completion cards from Lua and says so:
@@ -836,7 +839,46 @@ def main():
                     else:
                         no_target_passes = 0
                 elif (choice := click_target(kind, targets, window.size[0])) is None:
-                    log("advisor has no safe left-side acknowledgement; leaving it alone")
+                    # ⚠⚠⚠ "LEAVING IT ALONE" MEANT LEAVING THE GAME DEAD.
+                    #
+                    # Refusing the click is right: on an advisor card the
+                    # right-hand action is "Tell me more", which opens
+                    # Civilopedia and leaves the turn blocked. But the comment on
+                    # `click_target` says such a card is left "for the in-game
+                    # closer or an operator", and on an unattended ladder there
+                    # is no operator — so nothing came.
+                    #
+                    # Measured 2026-08-28, run civvis-20260828T173743Z, the best
+                    # King game of the day at turn 100 with six cities:
+                    #   18:13:05 advisor has no safe left-side acknowledgement
+                    #   18:13:06 clicked advisor at (1234, 96)
+                    #   18:13:07 advisor has no safe left-side acknowledgement
+                    # and then nothing until the wedge watchdog killed it at
+                    # 18:18. Its sample shows the Game Core thread parked in
+                    # `__psynch_cvwait` for 1433 of 1433 frames: the engine was
+                    # waiting for a response to that card.
+                    #
+                    # ESC is the safe answer, and this file already trusts it —
+                    # the leader branch below spends the same three-per-episode
+                    # budget. ESC dismisses rather than activates, so unlike a
+                    # right-side click it cannot open Civilopedia; a scene that
+                    # ignores ESC by design is simply unchanged, which is where
+                    # we already are. Escalate on the same 3/6/12 ladder so a
+                    # card that clears itself never sees one.
+                    advisor_stuck_passes += 1
+                    if (advisor_stuck_passes in (3, 6, 12)
+                            and esc_budget_used < 3
+                            and playing
+                            and front.startswith("Civ6")
+                            and not args.dry_run):
+                        macos_input.press_key("escape", check=True)
+                        esc_budget_used += 1
+                        log(f"advisor has had no safe acknowledgement for "
+                            f"{advisor_stuck_passes} passes; sent ESC "
+                            f"({esc_budget_used}/3)")
+                    else:
+                        log("advisor has no safe left-side acknowledgement; "
+                            f"leaving it alone (pass {advisor_stuck_passes})")
                 elif not front.startswith("Civ6"):
                     log(f"{kind} on screen but {front!r} is frontmost; not clicking")
                 elif args.dry_run:
