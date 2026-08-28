@@ -182,21 +182,60 @@ def _game_pids_from_ps(text: str) -> list[int]:
     return pids
 
 
-def game_pids() -> list[int]:
+#: Seconds a `ps` may take before the answer is treated as unknown. A process
+#: listing that has not returned in ten seconds is not slow, it is stuck.
+GAME_PIDS_TIMEOUT_S = 10.0
+
+#: The last listing that did return, so a stuck `ps` cannot be read as "no
+#: game". See `game_pids`.
+_LAST_GAME_PIDS: list[int] = []
+
+
+def game_pids(timeout_s: float = GAME_PIDS_TIMEOUT_S) -> list[int]:
     """PIDs of the running game (never Steam, a launcher shim, or a query helper).
 
     `pgrep -f Civ6_Exe` is unsafe here: the popup watchdog periodically asks
     System Events about process ``Civ6_Exe_Child``, and `pgrep` therefore saw its
     own short-lived `osascript` child as a game.  That made a clean restart look
     like a competing live run.  Inspect the executable token instead.
+
+    ⚠⚠⚠ THIS RAN WITH NO TIMEOUT AND IT STOPPED A GAME BEING PLAYED.
+    `watch.follow` calls it on EVERY poll, so an unbounded `ps` is an unbounded
+    hang in the loop that drives Civilization VI. Measured 2026-08-28, run
+    `civvis-20260828T160200Z`: the harness blocked here at turn 8 and never
+    polled again. The wedge watchdog's `sample` of the game (#2698) is what
+    settled it — every Civ 6 thread was IDLE, the main thread parked in
+    `_pthread_cond_wait` for 1638 of 1644 samples, TBB workers in `swtch_pri`.
+    The engine was not stuck; nothing was asking it to do anything. The harness
+    traceback ended in `civ6_env.game_pids` → `subprocess.run` →
+    `communicate` → `selector.select`.
+
+    ⚠⚠ A TIMEOUT MUST NOT RETURN THE EMPTY LIST. `watch.follow` reads
+    ``if not env.game_pids()`` as **"game exited"** and ends the attempt, so an
+    empty answer to a question we could not ask would throw away a live game —
+    trading a hang for a silent loss, which is worse. A timed-out probe is
+    UNKNOWN, and the honest answer to unknown is the last listing that did
+    return; a game that really has gone is still caught by the next successful
+    poll, by the stall timer, and by the wedge watchdog.
+
+    `OSError` keeps returning ``[]``: no `ps` on this host is a real answer,
+    not an unanswered question.
     """
+    global _LAST_GAME_PIDS
     try:
         out = subprocess.run(
-            ["ps", "-axo", "pid=,command="], capture_output=True, text=True
+            ["ps", "-axo", "pid=,command="], capture_output=True, text=True,
+            timeout=timeout_s,
         ).stdout
+    except subprocess.TimeoutExpired:
+        print(f"[env] ps did not answer in {timeout_s:g}s; keeping the last "
+              f"known game pids {_LAST_GAME_PIDS} rather than reporting none",
+              flush=True)
+        return list(_LAST_GAME_PIDS)
     except OSError:
         return []
-    return _game_pids_from_ps(out)
+    _LAST_GAME_PIDS = _game_pids_from_ps(out)
+    return list(_LAST_GAME_PIDS)
 
 
 def quit_game(timeout_s: float = 20.0) -> bool:
