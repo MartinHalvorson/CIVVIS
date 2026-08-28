@@ -521,110 +521,21 @@ DEPLOYMENT_POLICY = "batch-rule+operator-pins"
 #: rotation retain the already selected genome; the batch rows remain evidence
 #: but cannot silently flip treatments while a historical batch is published.
 RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
-#: ⭐ THE OPERATOR'S PINS — genes that default **on** whatever their batch
-#: columns read. The 2026-08-27 selected defaults extend this list.
-#: For the versioned `settler-target-hysteresis` family the operator moved the
-#: ship from v1 to v2 (2026-08-26): `settler-target-hysteresis-2` is pinned on
-#: here and v1 is held off below, so the family still ships exactly one
-#: version. A pin moves a default only: it cannot keep a gene the rule removes
-#: from the pool (`build_ledger` refuses that). Nothing derives this list; it
-#: is the operator's, by name.
-OPERATOR_DEFAULT_ON = (
-    "amenity-project-preemption-2",
-    "apostle-promotion-by-role",
-    "army-target-weighs-enemy",
-    "barbarian-settler-capture",
-    "blind-objective-strength",
-    "boost-wait-research",
-    "bounded-recovery",
-    "buildings-before-projects",
-    "camp-party",
-    "camp-tile-buyout",
-    "canal-city",
-    "chain-payback-window-2",
-    "chokepoint-siting",
-    "civilian-out-of-reach",
-    "close-as-a-body",
-    "coalition-before-war",
-    "coastal-city-sites",
-    "come-ashore",
-    "contested-land-first",
-    "conversion-majority-alarm",
-    "culture-floor",
-    "deals-at-the-ceiling",
-    "defend-where-you-stand",
-    "defensible-sites",
-    "district-coverage",
-    "district-planning",
-    "early-archers",
-    "early-contact-window",
-    "elective-war-yields-to-a-lane",
-    "enemy-of-my-enemy",
-    "enhancer-for-the-corps",
-    "exchange-is-the-engines",
-    "expansion-pays-back",
-    "expansion-schedule",
-    "founder-temple",
-    "garrison-under-fire",
-    "gold-for-the-young-city",
-    "gold-income-floor",
-    "guru-heals-the-corps-2",
-    "holy-site-where-the-threat-is",
-    "idle-faith-patronage",
-    "lane-great-people",
-    "loyalty-rate-alarm",
-    "missionary-evades-raiders",
-    "naval-threat-triage",
-    "one-launch-pad",
-    "one-shot-recovery",
-    "order-retry",
-    "pass-picket",
-    "peace-when-the-war-does-not-pay",
-    "peacetime-deterrence",
-    "quest-boost",
-    "quest-production",
-    "quest-trade-route",
-    "raid-pillage-prizes",
-    "recon-replacement",
-    "relief-column-marches",
-    "relief-targets-the-siege",
-    "religion-race-is-closed",
-    "religious-units-heal-first",
-    "research-tier-premium",
-    "rival-suzerainty-alarm",
-    "science-chain-alarm",
-    "science-multiplier-payoff",
-    "score-horizon",
-    "settler-never-idles",
-    "settler-screen",
-    "settler-target-hysteresis-2",
-    "settler-threat-detour",
-    "stranded-settler-discount",
-    "treasury-at-work",
-    "unchosen-war-keeps-the-lane",
-    "unit-cost-efficiency",
-    "upgrade-the-garrison",
-    "whole-turn-backtrack-guard",
-    "wonder-adjacent-sites-2",
-    "wonder-ring-recon",
+#: The operator's explicit selection rule for the retained 2026-08-28 genome.
+#: It is checked from the recorded reports in `tools/test_genes.py`, while the
+#: retained policy keeps later evidence rotations from silently reselecting it.
+RETAINED_SELECTION_RULE = (
+    "each selected gene beat its baseline (`win_delta_pp > 0`) in each of the "
+    "three latest reporting batches and has a positive displayed pooled Diff; "
+    "every other screenable gene is off"
 )
+#: ⭐ THE OPERATOR'S PINS. The explicit 2026-08-28 selection contains no
+#: exceptions: every deployed gene must earn its place from the three latest
+#: batches, so this list stays empty.
+OPERATOR_DEFAULT_ON = ()
 
-#: ⭐ A pin over a gene no batch has priced ships on its name alone. The
-#: operator may well mean exactly that, and on 2026-08-26 did:
-#: `barbarian-settler-capture` was asked for by name after the live seat
-#: fortified beside a free settler for twenty turns (civvis-20260826T194422Z),
-#: before any reporting batch had run. Such a pin is marked *(unmeasured)* in
-#: the ranking's *Awaiting measurement* section until a batch prices it.
-#:
-#: ⚠⚠ THIS WAS A HAND-WRITTEN TUPLE AND IT DEADLOCKED ITS OWN FIRST
-#: PUBLICATION. The rule was "its row leaves the day a batch column exists" —
-#: but the only thing that creates that column is a reporting batch, and the
-#: scheduler publishes a batch by regenerating the four generated artifacts and
-#: nothing else. It cannot edit this file. So on 2026-08-26 the 2,064-game
-#: batch priced `barbarian-settler-capture` at +23, and the publication of that
-#: very batch failed its own regression gate, naming the tag, with no
-#: automated way to clear it. Derived from the ledger, the set empties itself
-#: the moment the column it is waiting for exists.
+#: A pin over a gene no batch has priced is still represented for historical
+#: ledgers. The current selection deliberately has no such override.
 def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
     """The operator's pins that no reporting batch has priced yet, sorted.
 
@@ -636,42 +547,10 @@ def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
     return tuple(sorted(tag for tag in (rules.get("operator_default_on") or ())
                         if tag not in columns))
 
-#: ⭐ THE OPERATOR'S HOLDS — genes that default **off** whatever their batch
-#: columns read (operator, 2026-08-27). The mirror of `OPERATOR_DEFAULT_ON`,
-#: and the only thing that can take a gene out of a retained selection. Like a
-#: pin it decides a default and nothing else: the rule's own answer stays
-#: published under `rules.batch_decisions`, and a gene the rule removes from
-#: the pool is still cut. Nothing derives this list either; it is the
-#: operator's, by name.
-OPERATOR_DEFAULT_OFF = (
-    "amenity-project-preemption",
-    "blind-objective-units",
-    "builder-supply-floor",
-    "builder-tries-the-next-tile",
-    "buy-what-cards-cannot-boost",
-    "campaign-pillage",
-    "chokepoint-claim",
-    "congress-counter-leader",
-    "deals-for-our-gain",
-    "enter-the-prophet-race",
-    "first-research-building-reserve",
-    "frontier-massing-alarm",
-    "holy-lane-parity",
-    "holy-site-where-the-threat-is-2",
-    "lane-space-race",
-    "native-emergency-purchase",
-    "naval-recon",
-    "never-an-empty-queue",
-    "one-war-at-a-time",
-    "pantheon-board",
-    "power-the-laboratory-2",
-    "settler-factory-coordination",
-    "settler-target-hysteresis",
-    "threatened-city-reserve",
-    "unit-objective-memory",
-    "wonder-adjacent-sites",
-    "wonder-score-tally",
-)
+#: ⭐ THE OPERATOR'S HOLDS. The mirror of `OPERATOR_DEFAULT_ON` is empty for
+#: the same reason: a gene that does not meet the explicit evidence rule is
+#: already off, without a named exception.
+OPERATOR_DEFAULT_OFF = ()
 
 #: A gene is named by at most one of the two lists — the pair is one selection,
 #: not a precedence puzzle, so an overlap is a mistake rather than a rule to
@@ -2006,10 +1885,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 "operator_default_on and minus operator_default_off, families collapsed to "
                 "the version that ships; every other screenable tag is off"
                 if deployment_policy == DEPLOYMENT_POLICY else
-                "operator-retained-selection: exactly the tags in deployment_genome are on; "
-                "a reporting-only batch refresh retains that selected set, less the tags in "
-                "operator_default_off and plus the tags in operator_default_on, while its "
-                "batch columns remain published evidence"
+                "operator-retained-selection: " + RETAINED_SELECTION_RULE + "; exactly "
+                "the tags in deployment_genome are on, and a reporting-only batch refresh "
+                "retains that selected set while its batch columns remain published evidence"
             ),
             "batch_rule": "read over the reporting batches that priced the gene, newest first, "
                           "at most batch_rule_window of them, each reading the ranking's wins "
@@ -2032,7 +1910,8 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and "
                 "OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained "
                 "deployment_genome and the held ones are out of it, while batch_decisions "
-                "records what the batch rule would say as evidence"
+                "records what the batch rule would say as evidence; the current selection "
+                "has no manual pins or holds"
                 if deployment_policy == RETAINED_DEPLOYMENT_POLICY else
                 "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and "
                 "OPERATOR_DEFAULT_OFF, 2026-08-26); a pinned gene is in deployment_genome "
@@ -2070,9 +1949,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 "every unpinned default when a reporting batch enters, and `check` fails "
                 "while removals_due names a gene still in the registry"
                 if deployment_policy == DEPLOYMENT_POLICY else
-                "a reporting-only table refresh retains the preceding deployment_genome, "
-                "less operator_default_off and plus operator_default_on; the new batch "
-                "columns are evidence and cannot change a default"
+                ("a reporting-only table refresh retains the preceding deployment_genome; "
+                 + RETAINED_SELECTION_RULE + ". The new batch columns are evidence and "
+                 "cannot change a default")
             ),
         },
         "sources": recorded,
@@ -2129,7 +2008,8 @@ def render_rust(ledger: dict) -> str:
     provenance = (
         [
             "// together; this reporting-only publication retains `DEPLOYMENT_GENOME`.",
-            "// `BATCH_COLUMNS` remain published evidence and do not decide defaults.",
+            "// Every selected tag beat its baseline in all three latest batches and has a",
+            "// positive displayed Diff; `BATCH_COLUMNS` remain published evidence thereafter.",
         ]
         if retained else
         [
@@ -2140,8 +2020,9 @@ def render_rust(ledger: dict) -> str:
     )
     genome_description = (
         [
-            "/// The screenable genes retained from the selected deployment genome,",
-            "/// one version per family.",
+            "/// The screenable genes whose on arm beat its baseline in each of the",
+            "/// three latest batches and whose displayed pooled Diff is positive; every",
+            "/// other screenable gene is off. One version ships per family.",
         ]
         if retained else
         [
@@ -2152,8 +2033,8 @@ def render_rust(ledger: dict) -> str:
     )
     pin_description = (
         [
-            "/// ⭐ The genes the operator named on by hand. They remain in the",
-            "/// retained `DEPLOYMENT_GENOME`; their batch-rule readings remain evidence.",
+            "/// No manual on overrides: every deployed gene meets the published",
+            "/// three-positive-baseline-batches and positive-Diff criterion.",
         ]
         if retained else
         [
@@ -2164,9 +2045,8 @@ def render_rust(ledger: dict) -> str:
     )
     hold_description = (
         [
-            "/// ⭐ The genes the operator named OFF by hand — the mirror of",
-            "/// `OPERATOR_DEFAULT_ON`. Each is out of the retained `DEPLOYMENT_GENOME`;",
-            "/// their batch-rule readings remain evidence.",
+            "/// No manual off overrides: every gene outside `DEPLOYMENT_GENOME` is off",
+            "/// because it did not meet the explicit selection criterion.",
         ]
         if retained else
         [
@@ -2931,11 +2811,11 @@ def evidence_sections(ledger: dict, measured: dict[str, list[dict]],
     heading = ("## Evidence beside the retained deployment selection" if retained
                else "## Evidence beside the batch rule")
     policy_explanation = (
-        "This is a reporting-only publication: the selected deployment genome is retained "
-        "while the completed batch refreshes the table. Its three batch columns, win columns, "
-        "pooled *Diff*, posterior, and score-share readings are published evidence only; none "
-        "of them changes a default. A later explicit selection decision can use the same "
-        "evidence without a table rotation silently rewriting the live genome."
+        "This is a reporting-only publication: the selected deployment genome contains exactly "
+        "the genes that beat their baseline (`win_delta_pp > 0`) in each of the three latest "
+        "reporting batches and have a positive displayed pooled *Diff*; every other screenable "
+        "gene is off. Later table rotations retain that explicit selection while refreshing "
+        "evidence, so a historical batch cannot silently rewrite the live genome."
         if retained else
         "The deployment genome follows the batch rule (operator, 2026-08-25): a gene's three "
         "batch columns in `GENE_HEURISTIC_RANKING.md` decide its default — all three positive, "
@@ -3205,16 +3085,16 @@ def render_parts(ledger: dict) -> tuple[str, str]:
 
     if retained:
         default_authority = (
-            "the retained deployment selection (`docs/gene_ledger.json`, "
-            "`rules.deployment_genome`): the selected genome decides, and every batch "
-            "column remains evidence."
+            "the explicit retained selection (`docs/gene_ledger.json`, "
+            "`rules.deployment_genome`): a gene is on only when its on arm beat the "
+            "baseline in each of the three latest reporting batches and its displayed "
+            "pooled *Diff* is positive; every other screenable gene is off."
         )
         pins_reference = (
-            "**Selected defaults.** This reporting-only publication keeps the prior "
-            "on/off selection, including the operator-named genes: "
-            + ", ".join(f"`{tag}`" for tag in ledger["rules"]["operator_default_on"])
-            + ". The batch rule's readings remain visible in `rules.batch_decisions`, "
-              "but do not change a default during table rotation."
+            "**Selected defaults.** No named overrides remain: the deployed set is exactly "
+            "the three-positive-baseline-batches plus positive-*Diff* selection. The legacy "
+            "batch-rule readings remain visible in `rules.batch_decisions`, but do not "
+            "change a default during table rotation."
         )
         versioned_reference = (
             "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
@@ -3238,8 +3118,9 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             "**Batch provenance.** The newest displayed batch is the completed current-standard "
             "6-major Continents screen (74×46, nine city-states, Online speed through turn 250, "
             "all six victory lanes, shuffled civilizations and best-genome baseline). Its "
-            "completed seats are the newest displayed evidence column. Older displayed batches "
-            "remain visible for comparison; none changes the retained defaults."
+            "completed seats are the newest displayed evidence column. The explicit selection "
+            "reads this and the prior two batches' direct on-versus-baseline win differences; "
+            "later reporting-only rotations preserve the resulting defaults."
         )
         posterior_authority = "the retained deployment selection does."
         footer_authority = (
