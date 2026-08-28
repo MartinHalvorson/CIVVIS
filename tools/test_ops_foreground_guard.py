@@ -192,6 +192,47 @@ class TheGuardRunsWhereItShould(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertIn("no game lane for", (Path(raw) / "guard.log").read_text())
 
+    def test_a_pass_that_does_not_answer_is_killed_and_logged(self):
+        """28 stray guards once parked an osascript each on System Events and
+        every pass on the host hung; a pass is bounded now."""
+        with TemporaryDirectory() as raw:
+            home = Path(raw)
+            # Not `osascript`: _env writes the fast stub under that name.
+            slow = home / "slow-osascript"
+            slow.write_text("#!/bin/zsh\ncat > /dev/null\nsleep 30\nprint -r -- 'alerts=0 closed=0 settings=0'\n")
+            slow.chmod(0o755)
+            env = self._env(raw, CIVVIS_FOREGROUND_GUARD_LANE="1",
+                            CIVVIS_FOREGROUND_GUARD_PASS_TIMEOUT="1",
+                            CIVVIS_FOREGROUND_GUARD_OSASCRIPT=str(slow))
+            started = time.monotonic()
+            done = zsh(GUARD, "--once", env=env, timeout=30)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertLess(time.monotonic() - started, 10, "the pass must be bounded")
+            self.assertEqual(done.stdout.strip(), "timeout")
+            self.assertEqual(subprocess.run(["pgrep", "-f", f"[s]leep 30"],
+                                            capture_output=True, text=True).stdout, "",
+                             "the slow osascript must not be left running")
+
+    def test_a_guard_whose_lock_is_gone_exits(self):
+        """A test's temporary HOME, a reaped directory: the guard's lock lives
+        there, and a guard without its lock has nothing to guard for."""
+        with TemporaryDirectory() as raw:
+            env = self._env(raw, CIVVIS_FOREGROUND_GUARD_LANE="1")
+            proc = subprocess.Popen(["zsh", str(GUARD)], env=env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline and not (Path(raw) / "lock" / "pid").exists():
+                    time.sleep(0.1)
+                self.assertTrue((Path(raw) / "lock" / "pid").exists())
+                shutil.rmtree(Path(raw) / "lock")
+                proc.wait(timeout=10)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+            self.assertEqual(proc.returncode, 0)
+            self.assertIn("lost the lock", (Path(raw) / "guard.log").read_text())
+
     def test_the_wrapper_starts_the_guard_it_is_pointed_at(self):
         with TemporaryDirectory() as raw:
             home = Path(raw)
