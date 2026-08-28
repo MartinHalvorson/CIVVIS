@@ -2630,3 +2630,79 @@ class AnUnreadableMenuLooksForTheBackItRenders(unittest.TestCase):
     def test_the_reason_names_the_dialog_rather_than_the_ocr(self):
         """The log said "not readable", which read as an OCR fault. It was not."""
         self.assertIn("a dialog is covering the menu", self._source())
+
+
+class EveryPerPollHostProbeIsBounded(unittest.TestCase):
+    """⚠⚠⚠ All of them ran unbounded in the loop that drives the game.
+
+    `watch.follow` calls `each_poll` (`keep_foreground` → `focus_game` +
+    `place_game`) and `pause_when` (`console_locked` → `screen_locked`) once
+    per iteration. `game_pids` was the fourth of these and #2700 fixed it after
+    it hung a game at turn 8 — the wedge sample showed every Civilization VI
+    thread idle because nothing was driving it.
+
+    These reach System Events, which blocks on the Accessibility subsystem —
+    exactly what a busy or half-wedged foreground app makes slow.
+    """
+
+    def test_the_window_query_is_bounded_and_unknown_means_none(self):
+        with mock.patch.object(civ6_play.subprocess, "run") as ran:
+            ran.return_value = mock.Mock(stdout="10, 20, 800, 600")
+            self.assertEqual(civ6_play.game_window(), (10, 20, 800, 600))
+            self.assertEqual(ran.call_args.kwargs.get("timeout"),
+                             civ6_play.HOST_PROBE_TIMEOUT_S)
+        with mock.patch.object(
+                civ6_play.subprocess, "run",
+                side_effect=civ6_play.subprocess.TimeoutExpired("osascript", 10)):
+            self.assertIsNone(civ6_play.game_window())
+
+    def test_an_unanswerable_lock_probe_keeps_the_game_playing(self):
+        """⚠ NOT True.
+
+        `wait_for_unlocked_session` loops while this says locked and
+        `watch.follow` pauses the driving loop on it, so a probe that stops
+        answering would park a healthy game forever.
+        """
+        with mock.patch.object(
+                civ6_play.subprocess, "run",
+                side_effect=civ6_play.subprocess.TimeoutExpired("ioreg", 10)):
+            self.assertFalse(civ6_play.screen_locked())
+
+    def test_a_locked_screen_is_still_reported_when_the_probe_answers(self):
+        with mock.patch.object(civ6_play.subprocess, "run") as ran:
+            ran.return_value = mock.Mock(
+                stdout='  "CGSSessionScreenIsLocked"=Yes')
+            self.assertTrue(civ6_play.screen_locked())
+            self.assertEqual(ran.call_args.kwargs.get("timeout"),
+                             civ6_play.HOST_PROBE_TIMEOUT_S)
+
+    def test_placing_and_focusing_survive_a_stuck_system_events(self):
+        """Both are retried next poll; neither may raise into the loop."""
+        with mock.patch.object(
+                civ6_play.subprocess, "run",
+                side_effect=civ6_play.subprocess.TimeoutExpired("osascript", 10)):
+            civ6_play.focus_game()          # must not raise
+            civ6_play.place_game("left", 0.5)
+
+    def test_no_host_probe_in_the_driving_path_is_left_unbounded(self):
+        """The sweep that found these three, kept as a guard."""
+        import ast as _ast
+
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        tree = _ast.parse(source)
+        unbounded = []
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Call):
+                continue
+            if getattr(node.func, "attr", None) not in (
+                    "run", "check_output", "call", "check_call"):
+                continue
+            owner = getattr(getattr(node.func, "value", None), "id", None)
+            if owner != "subprocess":
+                continue
+            if "timeout" not in {kw.arg for kw in node.keywords}:
+                unbounded.append(node.lineno)
+        self.assertEqual(unbounded, [], "civ6_play.py line(s) "
+                         f"{unbounded} shell out with no timeout; every call "
+                         "here can land in the per-poll driving path")
