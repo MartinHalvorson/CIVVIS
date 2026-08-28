@@ -1109,8 +1109,11 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
 
 #: Waits between the setup screenshot's attempts. Escalating, because the
 #: failure it covers is a load spike: the flat 1.0 s retry it replaces sampled
-#: the same spike twice and lost two ladder attempts on 2026-08-19.
-SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0)
+#: the same spike twice and lost two ladder attempts on 2026-08-19.  A live
+#: pre-authorized recording can also leave CoreGraphics empty through the
+#: original four captures; the fifth capture at nine seconds gives that safe,
+#: bounded recovery path one more chance before setup refuses to click blind.
+SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0, 4.0)
 CAPTURE_ACCESS_POLL_SECONDS = 10.0
 
 
@@ -1165,7 +1168,7 @@ def screenshot(path: Path) -> bool:
     same `OCRUnavailable`, inside the window where a 2252-test
     `cargo test --lib` run saturated this host; `...T054901Z`, started after
     the load fell away, set up normally. Two captures a second apart sample
-    one spike twice. The backoff below spreads four captures over five
+    one spike twice. The backoff below spreads five captures over nine
     seconds instead of losing a ninety-minute attempt to a load transient,
     and says so in the log when it needs more than one — a lane that reports
     "the host is loaded" is a lane whose NO GAME can be read without guessing.

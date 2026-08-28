@@ -1439,6 +1439,31 @@ class ScreenshotFailureTests(unittest.TestCase):
                                 "the shot that lands late still counts")
         self.assertEqual(len(attempts), 3)
 
+    def test_a_recording_frame_can_recover_on_the_fifth_capture(self) -> None:
+        """Keep the bounded extra chance that a live recording needs.
+
+        CoreGraphics can return no frame across the original four captures
+        while a pre-authorized Cmd-Shift-5 session remains active.  It is safe
+        to wait for one more verified frame; it is not safe to guess a setup
+        coordinate while the frame is unreadable.
+        """
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=True), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.time, "sleep"):
+            path = Path(temporary) / "recording-late.png"
+            attempts = []
+
+            def late_recording_frame(_region, output):
+                attempts.append(1)
+                if len(attempts) == 5:
+                    Path(output).write_bytes(b"fresh")
+
+            with patch.object(civ6_play.macos_capture, "capture_region",
+                              side_effect=late_recording_frame):
+                self.assertTrue(civ6_play.screenshot(path))
+        self.assertEqual(len(attempts), 5)
+
     def test_the_backoff_escalates_and_is_bounded(self) -> None:
         """Escalating, because a flat retry samples one spike twice; bounded,
         because a poll that sleeps forever is worse than an unreadable one."""
