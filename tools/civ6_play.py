@@ -1105,6 +1105,21 @@ def click_at(px: int, py: int) -> None:
     macos_input.click(px, py, hold_s=0.12)
 
 
+def park_setup_pointer(bounds: tuple[int, int, int, int]) -> None:
+    """Move the recorded pointer to inert artwork before setup OCR.
+
+    CoreGraphics records the macOS pointer in every setup screenshot.  On the
+    half-window Level-5 attempt at 2026-08-28T14:48Z, its arrow rested on the
+    first open speed choice and Vision read the plainly visible ``Online`` as
+    only ``On``.  That is not a reason to weaken label proof: move, without a
+    click, to the left-side artwork inside the known game window before reading
+    the menu.  The point is deliberately outside the narrow central setup
+    column and below its controls, so it cannot hover another setup action.
+    """
+    x, y, w, h = bounds
+    macos_input.move(int(x + w * 0.15), int(y + h * 0.85))
+
+
 def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
     x, y, w, h = bounds
     fx, fy = MENU[item]
@@ -1568,6 +1583,7 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                 return True
 
             click_at(*current_point)
+            park_setup_pointer(bounds)
             time.sleep(1.2)
             screenshot(after)
             target = _observed_label_point(after, _setup_option_label(value), bounds)
@@ -1577,6 +1593,7 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
             continue
 
         click_at(*target)
+        park_setup_pointer(bounds)
         time.sleep(1.2)
         screenshot(verified)
         selected = _setup_current_value(verified, bounds, name)

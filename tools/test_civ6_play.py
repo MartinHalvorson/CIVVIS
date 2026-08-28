@@ -2312,6 +2312,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
              patch.object(civ6_play, "_setup_current_value", side_effect=lambda *a: next(reads)), \
              patch.object(civ6_play, "_observed_label_point", return_value=(700, 340)), \
              patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.macos_input, "move") as move, \
              patch.object(civ6_play.time, "sleep"):
             ok = civ6_play.set_dropdown((0, 0, 756, 480), "speed", "GAMESPEED_ONLINE",
                                         Path(temporary), panel_out=out)
@@ -2320,6 +2321,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertTrue(ok)
         # One click on the closed row, one on the option -- the list was NOT reopened.
         self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(move.call_args_list, [call(113, 408), call(113, 408)])
         self.assertEqual(screenshot.call_args_list[-1], call(again))
         self.assertEqual(out["shot"], again)
 
@@ -2336,6 +2338,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
              patch.object(civ6_play, "_observed_label_point",
                           side_effect=[None, (700, 340)]) as observed, \
              patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.macos_input, "move") as move, \
              patch.object(civ6_play.time, "sleep") as sleep:
             ok = civ6_play.set_dropdown((0, 0, 756, 480), "speed", "GAMESPEED_ONLINE",
                                         Path(temporary))
@@ -2344,6 +2347,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         # First click opens the list late.  The retry waits, proves Online is
         # now rendered, and clicks that row rather than toggling Standard again.
         self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(move.call_args_list, [call(113, 408), call(113, 408)])
         self.assertEqual(observed.call_count, 2)
         self.assertIn(call(2.0), sleep.call_args_list)
         self.assertEqual(screenshot.call_args_list[-1],
