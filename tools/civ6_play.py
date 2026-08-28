@@ -36,8 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import (gamelock, launcher, macos_input, macos_ocr,
-                          popup_clear, vision, watch)  # noqa: E402
+from civ6_control import (gamelock, launcher, macos_capture, macos_input,
+                          macos_ocr, popup_clear, vision, watch)  # noqa: E402
 from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
@@ -46,6 +46,7 @@ from civ6_ladder import UNREADABLE  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 REPO_ROOT = Path(__file__).resolve().parent.parent
+GAME_PROCESS = popup_clear.GAME_PROCESS
 # ★★★★★ THE LADDER'S OBJECTIVE, AND THE ONE PLACE IT IS STATED. Three
 # launchers forward `--victory` down one chain and each of them used to declare
 # its own default; `civ6_civvis_climb.py` and `civ6_brain.py` now import this
@@ -85,7 +86,17 @@ OPENING_TEMPO_TURN = 60
 
 # ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
 # policy: play verification games out in full, except at or after turn 150
-# when our score is under 40 % of the leader's score (more than 60 % behind).
+# when our score is under 60 % of the leader's score.
+#
+# ⚠ THE NUMBER HERE WAS 0.40 AND EVERY PROSE STATEMENT OF THE POLICY SAID 60 %.
+# `docs/CIV6_COMPUTER_CONTROL.md` ("under 60 % of the leader after turn 150 is
+# the one exception", `--restart-below-leader-ratio 0.60`) and `civ6_ladder.py`'s
+# row comment both described the rule the operator restated on 2026-08-27:
+# "only call games early at turn 150 or later if we are at less than 60 % score
+# of the leader". The constant, the climb's help, the supervisor's default and
+# their tests all carried 0.40 instead, so every game between 40 % and 60 % of
+# the leader was played to turn 250 against policy. The prose was right and the
+# code was wrong; this makes them agree at 0.60.
 #
 # Until then the harness carried four early stops, and on King they ended 73
 # of 81 games before the game could: the three-cities-by-turn-32 and
@@ -95,9 +106,9 @@ OPENING_TEMPO_TURN = 60
 # the measured win-rate table behind the old abandon floor (#2174; off). All
 # four are gone. What remains is the operator's one rule, and it is a default
 # of the harness itself, not of a launcher: at or after turn 150, a readable
-# score under 40 % of the leader's immediately abandons the game. This leaves
-# a trailing but developing empire — such as a seven-city seat that is 48 %
-# behind on score — in play to finish its game.
+# score under 60 % of the leader's immediately abandons the game. A seat still
+# within reach of the field — two thirds of the leader's score at turn 150 —
+# stays in play to finish its game.
 #
 # "The leader" is the best-scoring rival the seat has met — `rival_best` in
 # the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
@@ -108,7 +119,7 @@ OPENING_TEMPO_TURN = 60
 # An abandoned game is filed as its own ending (`reason: "abandoned"` with the
 # verdict), never as a stall, a wedge or a defeat.
 LEADER_SCORE_MIN_TURN = 150
-DEFAULT_LEADER_SCORE_RATIO = 0.40
+DEFAULT_LEADER_SCORE_RATIO = 0.60
 
 
 def _nonnegative_metric(value: object) -> float | int | None:
@@ -829,7 +840,7 @@ OPTIONS = {
 def game_window() -> tuple[int, int, int, int] | None:
     """Position and size of the game window in points, or None."""
     script = ('tell application "System Events" to tell '
-              '(first process whose name contains "Civ6") to '
+              f'process "{GAME_PROCESS}" to '
               'get {position, size} of window 1')
     out = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     parts = [p.strip() for p in out.stdout.split(",") if p.strip()]
@@ -974,7 +985,7 @@ def place_game(side: str = "left", fraction: float = 0.5,
         return
     script = (
         'tell application "System Events" to tell '
-        '(first process whose name contains "Civ6") to tell window 1\n'
+        f'process "{GAME_PROCESS}" to tell window 1\n'
         f'  set size to {{{width}, {height}}}\n'
         # Aspyr constrains the existing origin while applying the smaller size.
         # Position last or a requested upper quadrant lands at the bottom.
@@ -996,7 +1007,7 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
     """
     del side, fraction  # kept for call-site compatibility
     script = ('tell application "System Events" to set frontmost of '
-              '(first process whose name contains "Civ6") to true')
+              f'process "{GAME_PROCESS}" to true')
     subprocess.run(["osascript", "-e", script], capture_output=True)
 
 
@@ -1044,13 +1055,41 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
 #: failure it covers is a load spike: the flat 1.0 s retry it replaces sampled
 #: the same spike twice and lost two ladder attempts on 2026-08-19.
 SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0)
+CAPTURE_ACCESS_POLL_SECONDS = 10.0
+
+
+def wait_for_safe_screen_capture(poll_s: float = CAPTURE_ACCESS_POLL_SECONDS) -> None:
+    """Wait for a non-interactive screen-capture path before touching Civ VI.
+
+    A user-owned Cmd-Shift-5 session and a missing Screen Recording grant are
+    macOS boundaries, not game popups.  Do not click either one or call the
+    utility that would request its permission: defer setup until CoreGraphics'
+    preflight says a capture can proceed without a system modal.
+    """
+    last_reason = None
+    while True:
+        if popup_clear.native_recording_ui_active():
+            reason = "a native macOS recording/capture UI is active"
+        else:
+            try:
+                if macos_capture.screen_capture_access_available():
+                    if last_reason is not None:
+                        print("[capture] safe screen capture is available; continuing", flush=True)
+                    return
+                reason = "screen capture access is unavailable"
+            except macos_capture.CaptureUnavailable as error:
+                reason = f"native screen capture is unavailable: {error}"
+        if reason != last_reason:
+            print(f"[capture] {reason}; waiting without opening a permission popup", flush=True)
+            last_reason = reason
+        time.sleep(poll_s)
 
 
 def screenshot(path: Path) -> bool:
     """Keep a picture of the screen. A misclick is a visual failure and the
     log cannot describe it; the shot is what says which row was hit.
 
-    ⚠ `screencapture` can fail SILENTLY under machine load and write nothing —
+    ⚠ Screen capture can fail SILENTLY under machine load and write nothing —
     three consecutive ladder attempts died on 2026-08-17 (17:46–18:29Z, a
     window of heavy concurrent `cargo test` runs) because a missing shot
     cascaded through a PIL `FileNotFoundError` into the native-OCR fallback,
@@ -1070,20 +1109,37 @@ def screenshot(path: Path) -> bool:
     and says so in the log when it needs more than one — a lane that reports
     "the host is loaded" is a lane whose NO GAME can be read without guessing.
     """
+    if popup_clear.native_recording_ui_active():
+        path.unlink(missing_ok=True)
+        print("[shot] native recording/capture UI is active; treating this poll as unreadable",
+              flush=True)
+        return False
+    size = desktop_size()
+    if size is None:
+        print(f"[shot] display geometry is unreadable for {path.name}; treating this poll as "
+              "unreadable", flush=True)
+        return False
     for attempt in range(1, len(SHOT_BACKOFF_SECONDS) + 2):
-        subprocess.run(["screencapture", "-x", "-t", "png", str(path)],
-                       capture_output=True)
+        path.unlink(missing_ok=True)
+        try:
+            macos_capture.capture_region((0, 0, *size), path)
+        except macos_capture.CapturePermissionUnavailable:
+            print(f"[shot] screen capture access is unavailable for {path.name}; refusing to "
+                  "open a permission popup", flush=True)
+            return False
+        except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
+            pass
         try:
             if path.stat().st_size > 0:
                 if attempt > 1:
-                    print(f"[shot] screencapture needed {attempt} attempts for "
+                    print(f"[shot] native capture needed {attempt} attempts for "
                           f"{path.name}; the host is loaded", flush=True)
                 return True
         except OSError:
             pass
         if attempt <= len(SHOT_BACKOFF_SECONDS):
             time.sleep(SHOT_BACKOFF_SECONDS[attempt - 1])
-    print(f"[shot] screencapture wrote nothing for {path.name} after "
+    print(f"[shot] native capture wrote nothing for {path.name} after "
           f"{len(SHOT_BACKOFF_SECONDS) + 1} attempts; treating this poll as "
           "unreadable", flush=True)
     return False
@@ -2849,6 +2905,7 @@ def play(args: argparse.Namespace) -> int:
         return 2
     hold_macos_awake()
     wait_for_unlocked_session()
+    wait_for_safe_screen_capture()
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",
@@ -3714,8 +3771,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="immediately abandon on a readable turn at or after "
                          "LEADER_SCORE_MIN_TURN when our score is under this "
                          "share of the leader's (best met rival); 0 plays every "
-                         "game out. Current operator policy: 0.40 (more than "
-                         "60% behind), and no "
+                         "game out. Current operator policy: 0.60 (less than "
+                         "60%% of the leader's score), and no "
                          "other early stop")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")

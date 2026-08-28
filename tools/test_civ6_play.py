@@ -503,6 +503,7 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertLess(script.index("set size"), script.index("set position"))
         self.assertIn("set size to {756, 480}", script)
         self.assertIn("set position to {756, 33}", script)
+        self.assertIn(f'process "{civ6_play.GAME_PROCESS}"', script)
 
     def test_place_game_does_not_rewrite_an_unchanged_frame(self) -> None:
         with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
@@ -511,6 +512,21 @@ class Civ6PlayTest(unittest.TestCase):
             civ6_play.place_game("right", 0.5, 0.5)
 
         run.assert_not_called()
+
+    def test_focus_and_window_queries_target_the_actual_civ6_process(self) -> None:
+        with patch.object(
+            civ6_play.subprocess,
+            "run",
+            return_value=SimpleNamespace(stdout="756, 33, 756, 480", returncode=0),
+        ) as run:
+            self.assertEqual(civ6_play.game_window(), (756, 33, 756, 480))
+            civ6_play.focus_game()
+
+        scripts = [call.args[0][-1] for call in run.call_args_list]
+        self.assertTrue(all(f'process "{civ6_play.GAME_PROCESS}"' in script
+                            for script in scripts))
+        self.assertTrue(all("first process whose name contains" not in script
+                            for script in scripts))
 
     def test_screen_locked_reads_console_session_state(self) -> None:
         with patch.object(
@@ -536,6 +552,7 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "hold_macos_awake") as hold_awake, \
              patch.object(civ6_play, "screen_locked",
                           side_effect=[True, True, False]), \
+             patch.object(civ6_play, "wait_for_safe_screen_capture") as wait_capture, \
              patch.object(civ6_play.time, "sleep") as sleep, \
              patch.object(civ6_play.gamelock, "acquire", return_value=True) as acquire, \
              patch.object(civ6_play.gamelock, "release") as release, \
@@ -545,6 +562,7 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertEqual(result, 0)
         hold_awake.assert_called_once_with()
+        wait_capture.assert_called_once_with()
         sleep.assert_called_once_with(2.0)
         acquire.assert_called_once_with("unlock-test", wait_s=0.0)
         run.assert_called_once()
@@ -1381,17 +1399,19 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
 
 
 class ScreenshotFailureTests(unittest.TestCase):
-    """A silently failed `screencapture` must become a retried, unreadable
+    """A silently failed native capture must become a retried, unreadable
     poll — three consecutive ladder attempts died on 2026-08-17 when a missing
     shot cascaded into an uncaught `OCRUnavailable`."""
 
     def test_a_capture_that_writes_nothing_is_retried_then_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play.subprocess, "run") as run, \
+             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_capture, "capture_region") as capture, \
              patch.object(civ6_play.time, "sleep") as sleep:
             landed = civ6_play.screenshot(Path(temporary) / "missing.png")
         self.assertFalse(landed)
-        self.assertEqual(run.call_count, len(civ6_play.SHOT_BACKOFF_SECONDS) + 1,
+        self.assertEqual(capture.call_count, len(civ6_play.SHOT_BACKOFF_SECONDS) + 1,
                          "every backoff step is spent before giving up")
         self.assertEqual([call.args[0] for call in sleep.call_args_list],
                          list(civ6_play.SHOT_BACKOFF_SECONDS),
@@ -1402,16 +1422,18 @@ class ScreenshotFailureTests(unittest.TestCase):
         twice, and the launch dies. A shot that lands on the third attempt is
         the whole point of the backoff."""
         with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
              patch.object(civ6_play.time, "sleep"):
             path = Path(temporary) / "late.png"
             attempts = []
 
-            def spike(cmd, **_):
+            def spike(_region, output):
                 attempts.append(1)
                 if len(attempts) >= 3:
-                    path.write_bytes(b"x")
+                    Path(output).write_bytes(b"x")
 
-            with patch.object(civ6_play.subprocess, "run", side_effect=spike):
+            with patch.object(civ6_play.macos_capture, "capture_region", side_effect=spike):
                 self.assertTrue(civ6_play.screenshot(path),
                                 "the shot that lands late still counts")
         self.assertEqual(len(attempts), 3)
@@ -1427,13 +1449,63 @@ class ScreenshotFailureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "shot.png"
 
-            def fake_capture(cmd, **_):
-                path.write_bytes(b"x")
+            def fake_capture(_region, output):
+                Path(output).write_bytes(b"x")
 
-            with patch.object(civ6_play.subprocess, "run",
-                              side_effect=fake_capture) as run:
+            with patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
+                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play.macos_capture, "capture_region",
+                              side_effect=fake_capture) as capture:
                 self.assertTrue(civ6_play.screenshot(path))
-            self.assertEqual(run.call_count, 1)
+            self.assertEqual(capture.call_count, 1)
+            capture.assert_called_once_with((0, 0, 1512, 982), path)
+
+    def test_a_user_capture_ui_makes_the_setup_frame_unreadable_without_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "shot.png"
+            path.write_bytes(b"stale")
+            with patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=True), \
+                 patch.object(civ6_play.macos_capture, "capture_region") as capture:
+                self.assertFalse(civ6_play.screenshot(path))
+            capture.assert_not_called()
+            self.assertFalse(path.exists(), "a stale image must not be reused as a fresh frame")
+
+    def test_permission_denial_does_not_retry_or_request_a_system_popup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_capture, "capture_region",
+                          side_effect=civ6_play.macos_capture.CapturePermissionUnavailable(
+                              "denied")) as capture, \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            self.assertFalse(civ6_play.screenshot(Path(temporary) / "shot.png"))
+        capture.assert_called_once()
+        sleep.assert_not_called()
+
+
+class SafeScreenCaptureWaitTests(unittest.TestCase):
+    def test_user_owned_capture_ui_is_waited_out_before_game_setup(self) -> None:
+        with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
+                          side_effect=[True, False]) as recording, \
+             patch.object(civ6_play.macos_capture, "screen_capture_access_available",
+                          return_value=True) as access, \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            civ6_play.wait_for_safe_screen_capture(poll_s=0.25)
+
+        self.assertEqual(recording.call_count, 2)
+        access.assert_called_once_with()
+        sleep.assert_called_once_with(0.25)
+
+    def test_missing_permission_is_deferred_until_the_noninteractive_preflight_passes(self) -> None:
+        with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
+                          return_value=False), \
+             patch.object(civ6_play.macos_capture, "screen_capture_access_available",
+                          side_effect=[False, True]) as access, \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            civ6_play.wait_for_safe_screen_capture(poll_s=0.25)
+
+        self.assertEqual(access.call_count, 2)
+        sleep.assert_called_once_with(0.25)
 
     def test_a_missing_shot_reads_as_nothing_not_a_crash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
@@ -1878,7 +1950,7 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
-    """The sole current early stop is below 40 % of the leader after turn 150.
+    """The sole current early stop is below 60 % of the leader after turn 150.
 
     The first qualifying reading ends the game and is filed as its own reason.
     """
@@ -1888,18 +1960,20 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         return {"kind": kind, "ctx": ctx, "turn": turn, "score": score,
                 "rival_best": rival}
 
-    def test_the_line_is_forty_percent_from_turn_150(self):
-        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.40)
+    def test_the_line_is_sixty_percent_from_turn_150(self):
+        # ⚠ 0.40 shipped here while docs/CIV6_COMPUTER_CONTROL.md, the ladder's
+        # row comment and the operator all said 60 %. The prose was the policy.
+        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.60)
         self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 150)
 
     def test_one_reading_under_the_line_immediately_abandons_with_the_standing(self):
         state = {}
         verdict = civ6_play.below_leader_score_reading(
-            state, self._turn(150, 39, 100), 0.40)
+            state, self._turn(150, 59, 100), 0.60)
         self.assertEqual(verdict, {
-            "rule": "below_leader_score", "turn": 150, "score": 39,
-            "rival_best": 100, "score_ratio": 0.39,
-            "score_ratio_ceiling": 0.40, "min_turn": 150,
+            "rule": "below_leader_score", "turn": 150, "score": 59,
+            "rival_best": 100, "score_ratio": 0.59,
+            "score_ratio_ceiling": 0.60, "min_turn": 150,
         })
         self.assertEqual(state, {})
 
@@ -1907,31 +1981,37 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         state = {}
         for turn in range(1, 150):
             self.assertIsNone(civ6_play.below_leader_score_reading(
-                state, self._turn(turn, 10, 500), 0.40))
+                state, self._turn(turn, 10, 500), 0.60))
         self.assertEqual(state, {})
 
     def test_at_the_line_is_not_under_it_but_the_next_low_reading_ends_it(self):
         state = {}
-        # Exactly 40 % is not under the line.
+        # Exactly 60 % is not under the line.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(150, 200, 500), 0.40))
+            state, self._turn(150, 300, 500), 0.60))
         self.assertEqual(civ6_play.below_leader_score_reading(
-            state, self._turn(151, 199, 500), 0.40)["turn"], 151)
+            state, self._turn(151, 299, 500), 0.60)["turn"], 151)
 
     def test_only_a_readable_agent_turn_is_a_termination_reading(self):
         state = {}
         # No standing is not a decision to abandon.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(171, 300, None), 0.40))
+            state, self._turn(171, 300, None), 0.60))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(172, 300, 0), 0.40))
+            state, self._turn(172, 300, 0), 0.60))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(173, None, 500), 0.40))
+            state, self._turn(173, None, 500), 0.60))
         # Other contexts and event kinds are not termination readings either.
+        # ⚠ These two used to read 300/500 against a 0.40 line — 60 % is not
+        # under 40 %, so they returned None whatever `ctx` and `kind` said and
+        # proved nothing. 100/500 is 20 %: it fires on an agent `turn` event and
+        # must stay silent on every other one.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(174, 300, 500, ctx="spectator"), 0.40))
+            state, self._turn(174, 100, 500, ctx="spectator"), 0.60))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(174, 300, 500, kind="state"), 0.40))
+            state, self._turn(174, 100, 500, kind="state"), 0.60))
+        self.assertEqual(civ6_play.below_leader_score_reading(
+            state, self._turn(174, 100, 500), 0.60)["turn"], 174)
         self.assertEqual(state, {})
 
     def test_zero_or_an_invalid_line_plays_every_game_out(self):
@@ -1948,7 +2028,7 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         own stop takes it; a game that exited or stalled in the same poll keeps
         that ending; a refusal still outranks everything."""
         abandoned = {"rule": "below_leader_score", "turn": 150,
-                     "score_ratio": 0.4, "score_ratio_ceiling": 0.40}
+                     "score_ratio": 0.59, "score_ratio_ceiling": 0.60}
         state = {"abandoned": abandoned, "seat": {"x": 1}, "configured": True,
                  "ruleset_match": True, "mode_mismatch": False}
         self.assertEqual(civ6_play.summary_reason(state, "stopped"), "abandoned")
@@ -2247,3 +2327,86 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
             self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
             civ6_play.write_leader_hint(Path(temporary), "LEADER_TRAJAN", 99)  # out of range
             self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
+
+
+class EveryArgparseHelpStringCanActuallyBeRendered(unittest.TestCase):
+    """`--help` must not traceback, and for two harness CLIs it did.
+
+    ⚠ `civ6_play.py --help` and `civ6_civvis_climb.py --help` both died with a
+    traceback on EVERY interpreter on this host, because argparse formats each
+    help string as `help % params` and both said "60% of the leader's score".
+    Python 3.9 (the production `/usr/bin/python3`) raised
+    `TypeError: %o format: an integer is required, not dict` from `_expand_help`
+    at print time; Python 3.14 raises `ValueError: badly formed help string`
+    eagerly from `add_argument`, which took the climb's whole parser down and
+    turned 24 of its unit tests into errors. A literal percent in an argparse
+    help string must be written `%%`.
+
+    Scanned by AST rather than by importing each tool, because most of them
+    reach the screen, the Steam install or the network at import time.
+    """
+
+    #: argparse substitutes `%(name)s`-style mapping keys; everything else that
+    #: follows a `%` has to be an escaped `%%` or the format blows up.
+    _SPEC = re.compile(
+        r"%(?:%|\((?P<name>\w+)\)[-#0 +]*\d*(?:\.\d+)*[hlL]?"
+        r"[diouxXeEfFgGcrsa])")
+
+    @classmethod
+    def _unformattable_offsets(cls, text: str) -> list[int]:
+        offsets, index = [], 0
+        while True:
+            found = text.find("%", index)
+            if found < 0:
+                return offsets
+            matched = cls._SPEC.match(text, found)
+            if matched:
+                index = matched.end()
+            else:
+                offsets.append(found)
+                index = found + 1
+
+    def test_no_tool_hides_a_bare_percent_in_an_argparse_help_string(self):
+        import ast
+
+        tools = Path(__file__).resolve().parent
+        offenders = []
+        for source_file in sorted(tools.rglob("*.py")):
+            if "__pycache__" in source_file.parts:
+                continue
+            try:
+                tree = ast.parse(source_file.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover - a parse failure is its own test
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = getattr(node.func, "attr", None) or getattr(
+                    node.func, "id", None)
+                if name != "add_argument":
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg != "help":
+                        continue
+                    try:
+                        value = ast.literal_eval(keyword.value)
+                    except Exception:
+                        continue
+                    if isinstance(value, str) and self._unformattable_offsets(value):
+                        offenders.append(
+                            f"{source_file.name}:{node.lineno}: {value}")
+        self.assertEqual(offenders, [], "write a literal percent as %%:\n"
+                         + "\n".join(offenders))
+
+    def test_the_two_harness_entry_points_render_their_own_help(self):
+        """The regression itself: both CLIs must print help and exit 0."""
+        import subprocess
+
+        tools = Path(__file__).resolve().parent
+        for script in ("civ6_play.py", "civ6_civvis_climb.py"):
+            with self.subTest(script=script):
+                done = subprocess.run(
+                    [sys.executable, str(tools / script), "--help"],
+                    capture_output=True, text=True, timeout=120)
+                self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+                self.assertIn("--restart-below-leader-ratio", done.stdout)
