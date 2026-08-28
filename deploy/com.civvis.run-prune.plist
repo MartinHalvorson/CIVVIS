@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.civvis.run-prune — daily retention for ~/civvis-civ6-runs/control.
+  Runs tools/ops/civvis-run-prune.sh at 03:17: run directories older than 48 h
+  are removed (operator rule, 2026-08-27), never the ledgers beside them, never
+  a run a process has open, never the newest run. Read the script's header
+  before installing it on a host that keeps event streams for analysis.
+
+  This is a TEMPLATE. tools/ops/civvis-install-host-automation.sh renders the
+  two placeholders (__HOME__, __OPS__ = the tracked tools/ops directory) and
+  loads the result into ~/Library/LaunchAgents; do not copy it by hand.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.civvis.run-prune</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<string>__OPS__/civvis-run-prune.sh</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>PATH</key>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>3</integer>
+		<key>Minute</key>
+		<integer>17</integer>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/civvis-run-prune-agent.log</string>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/civvis-run-prune-agent.log</string>
+</dict>
+</plist>
