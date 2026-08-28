@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -2410,3 +2411,79 @@ class EveryArgparseHelpStringCanActuallyBeRendered(unittest.TestCase):
                     capture_output=True, text=True, timeout=120)
                 self.assertEqual(done.returncode, 0, done.stderr[-2000:])
                 self.assertIn("--restart-below-leader-ratio", done.stdout)
+
+
+class FinishedRunsStopKeepingTheirScreenshots(unittest.TestCase):
+    """⚠ There was no retention at all, and it filled 179 GB.
+
+    `~/civvis-civ6-runs` held 852 runs on 2026-08-28. 97 % of a run is PNG: the
+    setup polls photograph the whole Retina desktop at ~10 MB a frame, and one
+    run that struggled through its leader intro left 360 of them — 2 GB for a
+    single game. Nothing read those images after the day they were taken and
+    nothing deleted them, so "run games indefinitely" was also "fill the disk".
+
+    Every `events.jsonl` is kept forever: that is what the censuses read.
+    """
+
+    @staticmethod
+    def _run(root: Path, name: str, age_days: float, shots: int = 3) -> Path:
+        run = root / name
+        run.mkdir(parents=True)
+        for index in range(shots):
+            (run / f"setup-{index}.png").write_bytes(b"\x89PNG" + b"0" * 1000)
+        (run / "events.jsonl").write_text('{"kind":"turn"}\n')
+        (run / "why.log").write_text("because\n")
+        stamp = time.time() - age_days * 86400
+        os.utime(run, (stamp, stamp))
+        return run
+
+    def test_old_runs_lose_their_pngs_and_keep_every_other_artefact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = self._run(root, "civvis-old", age_days=30)
+            fresh = self._run(root, "civvis-fresh", age_days=1)
+
+            runs, freed = civ6_play.prune_old_run_screenshots(root, days=7)
+
+            self.assertEqual(runs, 1)
+            self.assertGreater(freed, 3000)
+            self.assertEqual(list(old.glob("*.png")), [])
+            self.assertTrue((old / "events.jsonl").is_file(),
+                            "the census evidence must survive")
+            self.assertTrue((old / "why.log").is_file())
+            self.assertEqual(len(list(fresh.glob("*.png"))), 3,
+                             "a run inside the window keeps its screenshots")
+
+    def test_a_zero_window_keeps_everything(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = self._run(root, "civvis-old", age_days=400)
+            self.assertEqual(civ6_play.prune_old_run_screenshots(root, days=0),
+                             (0, 0))
+            self.assertEqual(len(list(old.glob("*.png"))), 3)
+
+    def test_a_missing_root_is_not_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                civ6_play.prune_old_run_screenshots(Path(tmp) / "absent", days=7),
+                (0, 0))
+
+    def test_the_window_comes_from_the_environment_when_asked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = self._run(root, "civvis-old", age_days=3)
+            with mock.patch.dict(os.environ, {"CIVVIS_RUN_SHOT_DAYS": "1"}):
+                runs, _ = civ6_play.prune_old_run_screenshots(root)
+            self.assertEqual(runs, 1)
+            self.assertEqual(list(old.glob("*.png")), [])
+            # A value that is not a number must not take the harness down.
+            with mock.patch.dict(os.environ, {"CIVVIS_RUN_SHOT_DAYS": "soon"}):
+                self.assertEqual(
+                    civ6_play.prune_old_run_screenshots(root), (0, 0))
+
+    def test_a_new_run_prunes_before_it_starts_writing(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn("run_dir.mkdir(parents=True, exist_ok=True)\n"
+                      "    # Bound the corpus before adding to it.", source)
+        self.assertIn("prune_old_run_screenshots()", source)

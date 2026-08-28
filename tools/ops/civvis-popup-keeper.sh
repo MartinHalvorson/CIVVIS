@@ -14,7 +14,14 @@ set -u
 # live lane kept paying it. tools/test_ops_background_priority.py holds the line.
 unsetopt BG_NICE
 
-CLEARER=$HOME/CIVVIS/tools/civ6_control/popup_clear.py
+# ⚠ This named `$HOME/CIVVIS` outright, which is a path that exists on exactly
+# one machine in the fleet — the same liability `civvis-spectator-runner.sh`
+# was written to retire. Worse on the host that does have it: `~/CIVVIS` is the
+# supervisor's HEAD tree and gets `git checkout --detach origin/main`ed every
+# cycle, so the clearer clicking on the screen could be a different revision
+# from the game being played. Derive from this script's own tree, as every
+# other tracked helper does, and let the host override it.
+CLEARER=${CIVVIS_POPUP_CLEARER:-${0:A:h:h}/civ6_control/popup_clear.py}
 RUNS=$HOME/civvis-civ6-runs/control
 ACTIVITY_LOG=$HOME/civvis-civ6-runs/popup_clear.log
 KEEPER_LOG=$HOME/civvis-civ6-runs/popup_clear.keeper.log

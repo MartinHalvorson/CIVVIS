@@ -708,7 +708,14 @@ def main():
     ap.add_argument("--cards", action="store_true",
                     help="also click completion cards (off: the mod closes those, "
                          "and a false positive here clicks the live map)")
-    ap.add_argument("--log", default="/Users/martin/civvis-civ6-mirror/popup-clear.log")
+    ap.add_argument("--log",
+                    default=str(Path.home() / "civvis-civ6-runs"
+                                / "popup_clear.log"),
+                    help="activity ledger; the keeper passes this "
+                         "explicitly. ⚠ The default named one "
+                         "operator's home directory, so on every "
+                         "other host a hand-run clearer logged into "
+                         "a path that did not exist")
     args = ap.parse_args()
 
     # Compile the cached helper before the first frame. On a fresh host this is

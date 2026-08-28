@@ -27,6 +27,12 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # killing a game in progress. Contents: an absolute path to the tree to play
 # from, or "head" to track origin/main in $HEAD_REPO below.
 PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
+# How old a fetched `origin/main` may be and still be worth playing when GitHub
+# is unreachable. See the refusal this guards, below. Six hours keeps an
+# unattended overnight host producing games through a network blip without ever
+# letting it report a night of results for a program main has moved past; `0`
+# restores the old behaviour of refusing on any fetch failure.
+HEAD_FETCH_GRACE_S=${CIVVIS_HEAD_FETCH_GRACE_S:-21600}
 # ⚠⚠ THE TREE THIS SUPERVISOR PLAYS FROM IS DERIVED, NOT TYPED. It used to read
 # `REPO=/Users/martin/CIVVIS`, which is a path that exists on exactly one
 # machine in the fleet. Everywhere else the supervisor reached `cd "$REPO"`,
@@ -439,9 +445,31 @@ while true; do
     # keeps replaying an old decider.  Fetch and detach-checkout explicitly,
     # then refuse the cycle unless the checkout reads back as exact main.
     if ! git -c gc.auto=0 fetch --quiet origin main >>"$SUP" 2>&1; then
-      say "could not fetch origin/main; refusing to run a stale head batch; retrying in 120s"
-      sleep 120
-      continue
+      # ⚠⚠ A REFUSAL HERE USED TO BE UNCONDITIONAL, AND ON 2026-08-28 THAT COST
+      # THREE HOURS OF ZERO GAMES. github.com became unreachable from this host
+      # (ping and DNS fine, example.com 200, github.com:443 timing out after
+      # 75 s) and every 120 s cycle logged "could not fetch origin/main" and
+      # played nothing -- while a checkout of origin/main fetched minutes
+      # earlier sat right there, buildable.
+      #
+      # "Stale" is about the AGE of what we hold, not about whether the network
+      # answered. A fetch we made within the grace window below is still the
+      # program the operator is verifying; refusing to play it trades a small,
+      # bounded staleness for a total outage, which is the worse of the two.
+      # Past the window, refuse exactly as before: an unattended host must not
+      # spend a night reporting results for a program main has moved past.
+      ORIGIN_MAIN_REF=$(git rev-parse --git-path refs/remotes/origin/main 2>/dev/null || true)
+      FETCH_AGE_S=""
+      if [[ -n "$ORIGIN_MAIN_REF" && -f "$ORIGIN_MAIN_REF" ]]; then
+        FETCH_AGE_S=$(( $(date +%s) - $(stat -f %m "$ORIGIN_MAIN_REF") ))
+      fi
+      if [[ -n "$FETCH_AGE_S" ]] && (( FETCH_AGE_S <= HEAD_FETCH_GRACE_S )); then
+        say "could not fetch origin/main; playing the origin/main this tree fetched ${FETCH_AGE_S}s ago (grace ${HEAD_FETCH_GRACE_S}s)"
+      else
+        say "could not fetch origin/main and the last fetch is ${FETCH_AGE_S:-unknown}s old (grace ${HEAD_FETCH_GRACE_S}s); refusing to run a stale head batch; retrying in 120s"
+        sleep 120
+        continue
+      fi
     fi
     if ! git checkout --quiet --detach origin/main >>"$SUP" 2>&1; then
       say "could not checkout fetched origin/main; refusing to run a stale head batch; retrying in 120s"
@@ -485,11 +513,15 @@ while true; do
   # leave this built-but-stale binary unused and rebuild the new exact head.
   if [[ "$PIN" == "head" ]]; then
     if ! git -c gc.auto=0 fetch --quiet origin main >>"$SUP" 2>&1; then
-      say "could not recheck origin/main after fresh build; refusing to launch a stale head batch; retrying in 120s"
-      sleep 120
-      continue
+      # The build we are about to launch was cut from a checkout this cycle
+      # already accepted above, so a network that dropped DURING the build is
+      # not a reason to throw that build away and try again into the same dead
+      # network. Launch it and say the recheck did not happen.
+      say "could not recheck origin/main after fresh build; launching the head this cycle already verified (${HEAD_REVISION:0:7})"
+      ORIGIN_MAIN_AFTER_BUILD=$HEAD_REVISION
+    else
+      ORIGIN_MAIN_AFTER_BUILD=$(git rev-parse origin/main 2>/dev/null || true)
     fi
-    ORIGIN_MAIN_AFTER_BUILD=$(git rev-parse origin/main 2>/dev/null || true)
     if [[ ! "$ORIGIN_MAIN_AFTER_BUILD" =~ ^[0-9a-f]{40}$ ]]; then
       say "could not resolve origin/main after fresh build; refusing to launch an unverified batch; retrying in 120s"
       sleep 120

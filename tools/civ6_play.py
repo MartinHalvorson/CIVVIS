@@ -45,6 +45,62 @@ from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 from civ6_ladder import UNREADABLE  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+
+#: How long a finished run keeps its screenshots. Its `events.jsonl`, `why.log`
+#: and `brain.log` are kept forever — they are what every census reads.
+#:
+#: ⚠⚠ THERE WAS NO RETENTION AT ALL, and on 2026-08-28 `~/civvis-civ6-runs`
+#: held 179 GB across 852 runs. 97 % of a run is PNG: the setup polls
+#: photograph the whole Retina desktop at ~10 MB a frame, and one run that
+#: struggled through its leader intro left 360 of them — 2 GB for a single
+#: game. Nothing read those images after the day they were taken, and nothing
+#: deleted them either, so an "indefinite games" instruction was also an
+#: instruction to fill the disk. Set `CIVVIS_RUN_SHOT_DAYS=0` to keep every
+#: screenshot forever.
+RUN_SHOT_RETENTION_DAYS = 7
+
+
+def prune_old_run_screenshots(root: Path = RUN_ROOT, *, days: int | None = None,
+                              now: float | None = None) -> tuple[int, int]:
+    """Drop screenshots from runs older than `days`; return (runs, bytes).
+
+    Deliberately narrow. It removes `*.png` and nothing else, only from
+    directories whose own mtime is past the window, and it never touches the
+    run being written — that one is younger than any window. A failure to
+    delete one file is not a reason to fail a game, so every error is skipped.
+    """
+    if days is None:
+        try:
+            days = int(os.environ.get("CIVVIS_RUN_SHOT_DAYS",
+                                      RUN_SHOT_RETENTION_DAYS))
+        except ValueError:
+            days = RUN_SHOT_RETENTION_DAYS
+    if days <= 0 or not root.is_dir():
+        return (0, 0)
+    cutoff = (time.time() if now is None else now) - days * 86400
+    runs = freed = 0
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return (0, 0)
+    for entry in entries:
+        try:
+            if not entry.is_dir() or entry.stat().st_mtime >= cutoff:
+                continue
+            pruned = 0
+            for shot in entry.glob("*.png"):
+                try:
+                    size = shot.stat().st_size
+                    shot.unlink()
+                except OSError:
+                    continue
+                pruned += 1
+                freed += size
+            if pruned:
+                runs += 1
+        except OSError:
+            continue
+    return (runs, freed)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GAME_PROCESS = popup_clear.GAME_PROCESS
 # ★★★★★ THE LADDER'S OBJECTIVE, AND THE ONE PLACE IT IS STATED. Three
@@ -3021,6 +3077,13 @@ def summary_reason(state: dict, reason: str) -> str:
 def _play(args: argparse.Namespace) -> int:
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
+    # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
+    pruned_runs, freed_bytes = prune_old_run_screenshots()
+    if pruned_runs:
+        print(f"[runs] pruned screenshots from {pruned_runs} run(s) older than "
+              f"{RUN_SHOT_RETENTION_DAYS}d, freeing "
+              f"{freed_bytes / 1_073_741_824:.1f} GB; every events.jsonl kept",
+              flush=True)
     if args.load_save and not Path(args.load_save).is_file():
         print(f"saved game does not exist: {args.load_save}", file=sys.stderr)
         return 8
