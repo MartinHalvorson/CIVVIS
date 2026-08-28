@@ -7232,30 +7232,32 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
-        // A live gene the operator currently holds off; pick another from
-        // `ledger_held_live_treatments()` if the deployment selection changes.
-        let forced = super::forced_live_treatments(&[
-            "blind-objective-units".to_string(),
-            "blind-objective-units".to_string(),
-        ])
-        .expect("a named ledger-held gene is a valid live arm");
-        assert_eq!(
-            forced,
-            vec!["blind-objective-units"],
-            "the arm is deduplicated"
-        );
+        // The exact held live genes move with the deployment selection.
+        let held_live = civvis::ai::gene_ledger::ledger_held_live_treatments()
+            .first()
+            .copied()
+            .expect("the explicit genome leaves live treatments off");
+        let forced = super::forced_live_treatments(&[held_live.to_string(), held_live.to_string()])
+            .expect("a named ledger-held gene is a valid live arm");
+        assert_eq!(forced, vec![held_live], "the arm is deduplicated");
+
+        let other_held_live = civvis::ai::gene_ledger::ledger_held_live_treatments()
+            .iter()
+            .copied()
+            .find(|tag| *tag != held_live)
+            .expect("the explicit genome leaves more than one live treatment off");
 
         let mut ai = civvis::ai::AdvancedAi::new();
         super::configure_live_bridge(&mut ai, &forced, &[])
             .expect("the validated arm configures the live controller");
         assert!(
             civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
-                .contains(&"blind-objective-units"),
+                .contains(&held_live),
             "the requested gene is restored in the arm's genome"
         );
         assert!(
             !civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
-                .contains(&"naval-recon"),
+                .contains(&other_held_live),
             "another held gene stays off until the experiment names it"
         );
 
@@ -7290,7 +7292,7 @@ mod tests {
         );
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
-        assert!(unknown.contains("blind-objective-units"), "{unknown}");
+        assert!(unknown.contains(held_live), "{unknown}");
     }
 
     use super::*;
