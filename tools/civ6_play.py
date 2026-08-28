@@ -3014,8 +3014,12 @@ def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
     try:
         window, scale = popup_clear.capture(rect)
         surface, targets, _dark = popup_clear.classify(window)
-    except (OSError, subprocess.SubprocessError):
-        return False, "popup classification failed"
+    except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
+        # A pre-authorized ScreenCaptureKit request can still yield no image while
+        # macOS's status service is busy.  This visual rescue is optional: leave
+        # the modal for the next verified poll instead of letting one unreadable
+        # frame end the entire game controller.
+        return False, "popup capture unavailable"
     if surface not in ("leader", "notice"):
         return False, f"no safe visible dialogue ({surface})"
     target = popup_clear.click_target(surface, targets, window.size[0])
