@@ -45,6 +45,13 @@ LOCK=${CIVVIS_FOREGROUND_GUARD_LOCK:-$HOME/.civvis-foreground-guard.lock}
 OFF=${CIVVIS_FOREGROUND_GUARD_OFF:-$HOME/.civvis-foreground-guard-off}
 INTERVAL=${CIVVIS_FOREGROUND_GUARD_INTERVAL:-10}
 GRACE=${CIVVIS_FOREGROUND_GUARD_GRACE:-180}
+# ⚠ Every pass is bounded. System Events answers Apple Events one at a time,
+# and on 2026-08-28 twenty-eight stray guards (started by a test suite that
+# never set CIVVIS_FOREGROUND_GUARD=0) each parked an osascript on it until
+# every pass on the host — this guard's included — hung for minutes. A pass
+# that has not answered in this many seconds is killed and logged, and the
+# next one starts on schedule.
+PASS_TIMEOUT=${CIVVIS_FOREGROUND_GUARD_PASS_TIMEOUT:-20}
 # Tests stub these; a host never needs to.
 OSASCRIPT=${CIVVIS_FOREGROUND_GUARD_OSASCRIPT:-/usr/bin/osascript}
 LANE_OVERRIDE=${CIVVIS_FOREGROUND_GUARD_LANE:-}
@@ -68,11 +75,38 @@ lane_active() {
   return 1
 }
 
-# One pass. Prints `alerts=<seen> closed=<dismissed> settings=<closed>`.
+# One pass. Prints `alerts=<seen> closed=<dismissed> settings=<closed>`, or
+# `timeout` when osascript did not answer within PASS_TIMEOUT.
 # The argument says whether a Settings window on the pane may be closed.
 pass() {
+  local settings_mode=$1 out waited=0 child
+  out=$(mktemp "${TMPDIR:-/tmp}/civvis-foreground-guard.XXXXXX") || return 1
+  applescript "$settings_mode" > "$out" 2>&1 &
+  child=$!
+  while kill -0 "$child" 2>/dev/null; do
+    if (( waited >= PASS_TIMEOUT )); then
+      # osascript is the grandchild; kill the whole pass by process group is
+      # not available here, so name both.
+      pkill -TERM -P "$child" 2>/dev/null
+      kill -TERM "$child" 2>/dev/null
+      sleep 1
+      pkill -KILL -P "$child" 2>/dev/null
+      kill -KILL "$child" 2>/dev/null
+      rm -f -- "$out"
+      print -r -- "timeout"
+      return 0
+    fi
+    sleep 1
+    (( waited += 1 ))
+  done
+  wait "$child" 2>/dev/null
+  cat -- "$out"
+  rm -f -- "$out"
+}
+
+applescript() {
   local settings_mode=$1
-  "$OSASCRIPT" - "$settings_mode" <<'APPLESCRIPT' 2>&1
+  exec "$OSASCRIPT" - "$settings_mode" <<'APPLESCRIPT' 2>&1
 on run argv
   set settingsMode to item 1 of argv
   set seen to 0
@@ -160,6 +194,13 @@ while true; do
     say "off marker $OFF present; standing down"
     break
   fi
+  # A guard whose lock is gone has lost its home (a test's temporary HOME,
+  # a reaped directory) or been taken over; it has nothing to guard for.
+  if [[ ! -d "$LOCK" || "$(cat "$LOCK/pid" 2>/dev/null || true)" != "$$" ]]; then
+    say "lost the lock $LOCK; exiting"
+    trap - HUP INT TERM EXIT
+    break
+  fi
   if lane_active; then
     gone_for=0
     result=$(pass close)
@@ -173,6 +214,10 @@ while true; do
     # get closed under an operator who opened it.
     result=$(pass keep)
   fi
-  [[ "$result" == "alerts="*" closed=0 settings=0" ]] || say "$result"
+  if [[ "$result" == timeout ]]; then
+    say "pass timed out after ${PASS_TIMEOUT}s (System Events busy?); next pass in ${INTERVAL}s"
+  elif [[ "$result" != "alerts="*" closed=0 settings=0" ]]; then
+    say "$result"
+  fi
   sleep "$INTERVAL"
 done

@@ -144,10 +144,15 @@ class _Host:
         self.stub.chmod(0o755)
 
     def env(self, **extra: str) -> dict:
+        # ⚠ CIVVIS_FOREGROUND_GUARD=0, always. The wrapper starts the real
+        # foreground guard detached; without this, every wrapper run here left
+        # one behind in a HOME that was deleted a moment later — 28 of them on
+        # 2026-08-28, each hammering System Events until nothing answered.
         env = clean_env(HOME=str(self.home), CIVVIS_PINFILE=str(self.pin),
                         CIVVIS_VERIFICATION_POLICY=str(self.policy),
                         CIVVIS_LADDER_LOG=str(self.log),
                         CIVVIS_LADDER_LAUNCHER=str(self.stub),
+                        CIVVIS_FOREGROUND_GUARD="0",
                         STUB_OUT=str(self.out))
         env.update(extra)
         return env
@@ -295,6 +300,18 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
             host.write_policy()
             done = zsh(WRAPPER, env=host.env(CIVVIS_LADDER_LAUNCHER=str(host.home / "absent")))
             self.assertEqual(done.returncode, 66, done.stderr)
+
+    def test_no_wrapper_run_here_starts_a_real_guard(self):
+        """The wrapper starts the foreground guard detached; a test that lets it
+        would leave a real guard running in a HOME that is deleted a moment
+        later. Every _Host environment must say no."""
+        with TemporaryDirectory() as raw:
+            host = _Host(raw)
+            host.write_policy()
+            done = zsh(WRAPPER, env=host.env())
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertNotIn("foreground guard started", host.logged())
+            self.assertEqual(host.env()["CIVVIS_FOREGROUND_GUARD"], "0")
 
     def test_it_hands_over_to_the_sibling_launcher_by_default(self):
         text = WRAPPER.read_text()
