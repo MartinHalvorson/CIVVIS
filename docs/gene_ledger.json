@@ -1189,7 +1189,7 @@
     },
     "removals_due": [],
     "operator_default_on": [
-      "amenity-project-preemption",
+      "amenity-project-preemption-2",
       "apostle-promotion-by-role",
       "army-target-weighs-enemy",
       "barbarian-settler-capture",
@@ -1201,7 +1201,7 @@
       "camp-tile-buyout",
       "canal-city",
       "chain-payback-window-2",
-      "chokepoint-claim",
+      "chokepoint-siting",
       "civilian-out-of-reach",
       "close-as-a-body",
       "coalition-before-war",
@@ -1209,6 +1209,7 @@
       "come-ashore",
       "contested-land-first",
       "conversion-majority-alarm",
+      "culture-floor",
       "deals-at-the-ceiling",
       "defend-where-you-stand",
       "defensible-sites",
@@ -1219,7 +1220,6 @@
       "elective-war-yields-to-a-lane",
       "enemy-of-my-enemy",
       "enhancer-for-the-corps",
-      "enter-the-prophet-race",
       "exchange-is-the-engines",
       "expansion-pays-back",
       "expansion-schedule",
@@ -1236,11 +1236,10 @@
       "naval-threat-triage",
       "one-launch-pad",
       "one-shot-recovery",
-      "one-war-at-a-time",
       "order-retry",
+      "pass-picket",
       "peace-when-the-war-does-not-pay",
       "peacetime-deterrence",
-      "power-the-laboratory-2",
       "quest-boost",
       "quest-production",
       "quest-trade-route",
@@ -1260,22 +1259,26 @@
       "settler-target-hysteresis-2",
       "settler-threat-detour",
       "stranded-settler-discount",
-      "threatened-city-reserve",
       "treasury-at-work",
       "unchosen-war-keeps-the-lane",
       "unit-cost-efficiency",
       "upgrade-the-garrison",
       "whole-turn-backtrack-guard",
-      "wonder-score-tally"
+      "wonder-adjacent-sites-2",
+      "wonder-ring-recon"
     ],
     "operator_default_off": [
+      "amenity-project-preemption",
       "blind-objective-units",
       "builder-supply-floor",
       "builder-tries-the-next-tile",
       "buy-what-cards-cannot-boost",
       "campaign-pillage",
+      "chokepoint-claim",
       "congress-counter-leader",
       "deals-for-our-gain",
+      "enter-the-prophet-race",
+      "first-research-building-reserve",
       "frontier-massing-alarm",
       "holy-lane-parity",
       "holy-site-where-the-threat-is-2",
@@ -1283,18 +1286,22 @@
       "native-emergency-purchase",
       "naval-recon",
       "never-an-empty-queue",
+      "one-war-at-a-time",
       "pantheon-board",
+      "power-the-laboratory-2",
       "settler-factory-coordination",
       "settler-target-hysteresis",
+      "threatened-city-reserve",
       "unit-objective-memory",
-      "wonder-adjacent-sites"
+      "wonder-adjacent-sites",
+      "wonder-score-tally"
     ],
     "operator_pins": "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained deployment_genome and the held ones are out of it, while batch_decisions records what the batch rule would say as evidence",
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
     "deployment_policy": "operator-retained-selection",
     "deployment_genome": [
       "air-surge",
-      "amenity-project-preemption",
+      "amenity-project-preemption-2",
       "apostle-promotion-by-role",
       "army-target-weighs-enemy",
       "barbarian-bargain",
@@ -1309,7 +1316,7 @@
       "camp-tile-buyout",
       "canal-city",
       "chain-payback-window-2",
-      "chokepoint-claim",
+      "chokepoint-siting",
       "civilian-out-of-reach",
       "close-as-a-body",
       "coalition-before-war",
@@ -1319,6 +1326,7 @@
       "contested-land-first",
       "conversion-majority-alarm",
       "culture-building-debt",
+      "culture-floor",
       "deals-at-the-ceiling",
       "defend-where-you-stand",
       "defensible-sites",
@@ -1331,7 +1339,6 @@
       "enemy-of-my-enemy",
       "engine-faith-price",
       "enhancer-for-the-corps",
-      "enter-the-prophet-race",
       "escort-unstick",
       "exchange-is-the-engines",
       "expansion-pays-back",
@@ -1354,12 +1361,11 @@
       "no-free-passage",
       "one-launch-pad",
       "one-shot-recovery",
-      "one-war-at-a-time",
       "opportunistic-war",
       "order-retry",
+      "pass-picket",
       "peace-when-the-war-does-not-pay",
       "peacetime-deterrence",
-      "power-the-laboratory-2",
       "price-the-suzerainty",
       "promote-when-wounded",
       "quest-boost",
@@ -1390,7 +1396,6 @@
       "solvency-first-trade-slot",
       "stranded-settler-discount",
       "strike-opening",
-      "threatened-city-reserve",
       "treasury-at-work",
       "unchosen-war-keeps-the-lane",
       "unit-cost-efficiency",
@@ -1398,16 +1403,17 @@
       "war-reinforcement",
       "whole-turn-backtrack-guard",
       "wide-map-capacity",
-      "wonder-score-tally"
+      "wonder-adjacent-sites-2",
+      "wonder-ring-recon"
     ],
     "versions": "every version's batch-rule reading remains recorded on its own row; this reporting-only rotation retains the already selected version, one per family, while a family still holds at most 3 versions and a fourth requires a cull of the third-best",
     "family_heads": {
       "amenity-project-preemption": {
         "rule_on": [
-          "amenity-project-preemption"
+          "amenity-project-preemption-2"
         ],
         "head": "amenity-project-preemption",
-        "ships": "amenity-project-preemption",
+        "ships": "amenity-project-preemption-2",
         "versions": {
           "amenity-project-preemption": -0.037946,
           "amenity-project-preemption-2": null
@@ -1494,11 +1500,9 @@
         }
       },
       "power-the-laboratory": {
-        "rule_on": [
-          "power-the-laboratory-2"
-        ],
+        "rule_on": [],
         "head": "power-the-laboratory",
-        "ships": "power-the-laboratory-2",
+        "ships": null,
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
@@ -1549,9 +1553,11 @@
         }
       },
       "wonder-adjacent-sites": {
-        "rule_on": [],
+        "rule_on": [
+          "wonder-adjacent-sites-2"
+        ],
         "head": null,
-        "ships": null,
+        "ships": "wonder-adjacent-sites-2",
         "versions": {
           "wonder-adjacent-sites": null,
           "wonder-adjacent-sites-2": null
@@ -1934,7 +1940,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 106
+    "default_on": 105
   },
   "genes": [
     {
@@ -2030,7 +2036,7 @@
     {
       "tag": "amenity-project-preemption",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 26,
       "wins_prior_10k": -34,
       "wins_third_10k": -14,

@@ -534,7 +534,7 @@ class TheOperatorPins(unittest.TestCase):
         rules = ledger["rules"]
         pins = rules["operator_default_on"]
         expected_pins = {
-            "amenity-project-preemption",
+            "amenity-project-preemption-2",
             "apostle-promotion-by-role",
             "army-target-weighs-enemy",
             "barbarian-settler-capture",
@@ -546,7 +546,7 @@ class TheOperatorPins(unittest.TestCase):
             "camp-tile-buyout",
             "canal-city",
             "chain-payback-window-2",
-            "chokepoint-claim",
+            "chokepoint-siting",
             "civilian-out-of-reach",
             "close-as-a-body",
             "coalition-before-war",
@@ -554,6 +554,7 @@ class TheOperatorPins(unittest.TestCase):
             "come-ashore",
             "contested-land-first",
             "conversion-majority-alarm",
+            "culture-floor",
             "deals-at-the-ceiling",
             "defend-where-you-stand",
             "defensible-sites",
@@ -580,18 +581,16 @@ class TheOperatorPins(unittest.TestCase):
             "naval-threat-triage",
             "one-launch-pad",
             "one-shot-recovery",
-            "one-war-at-a-time",
             "order-retry",
+            "pass-picket",
             "peace-when-the-war-does-not-pay",
             "peacetime-deterrence",
-            "power-the-laboratory-2",
             "quest-boost",
             "quest-production",
             "quest-trade-route",
             "raid-pillage-prizes",
             "recon-replacement",
             "relief-column-marches",
-            "enter-the-prophet-race",
             "relief-targets-the-siege",
             "religion-race-is-closed",
             "religious-units-heal-first",
@@ -605,17 +604,17 @@ class TheOperatorPins(unittest.TestCase):
             "settler-target-hysteresis-2",
             "settler-threat-detour",
             "stranded-settler-discount",
-            "threatened-city-reserve",
             "treasury-at-work",
             "unchosen-war-keeps-the-lane",
             "unit-cost-efficiency",
             "upgrade-the-garrison",
             "whole-turn-backtrack-guard",
-            "wonder-score-tally",
+            "wonder-adjacent-sites-2",
+            "wonder-ring-recon",
         }
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 78)
+        self.assertEqual(len(pins), 77)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         # ⭐ The versioned family the operator moved on 2026-08-26: the ship
@@ -716,13 +715,17 @@ class TheOperatorHolds(unittest.TestCase):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         expected_holds = {
+            "amenity-project-preemption",
             "blind-objective-units",
             "builder-supply-floor",
             "builder-tries-the-next-tile",
             "buy-what-cards-cannot-boost",
             "campaign-pillage",
+            "chokepoint-claim",
             "congress-counter-leader",
             "deals-for-our-gain",
+            "enter-the-prophet-race",
+            "first-research-building-reserve",
             "frontier-massing-alarm",
             "holy-lane-parity",
             "holy-site-where-the-threat-is-2",
@@ -730,11 +733,15 @@ class TheOperatorHolds(unittest.TestCase):
             "native-emergency-purchase",
             "naval-recon",
             "never-an-empty-queue",
+            "one-war-at-a-time",
             "pantheon-board",
+            "power-the-laboratory-2",
             "settler-factory-coordination",
             "settler-target-hysteresis",
+            "threatened-city-reserve",
             "unit-objective-memory",
             "wonder-adjacent-sites",
+            "wonder-score-tally",
         }
         self.assertEqual(tuple(sorted(expected_holds)), gene_ledger.OPERATOR_DEFAULT_OFF)
         self.assertEqual(rules["operator_default_off"], sorted(expected_holds))
