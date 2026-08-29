@@ -4055,6 +4055,10 @@ def _play(args: argparse.Namespace) -> int:
             run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
+        binaries = civ6_ladder.decider_binaries(
+            run_dir / "runtime_updates.jsonl")
+        if binaries:
+            summary["decider_binaries"] = binaries
         # And which GENOME decided it. `--civvis-strategy` is forwarded to
         # `civvis_orders --strategy` by name. New deciders accept an unambiguous
         # league display label as well as the immutable internal name, but old
