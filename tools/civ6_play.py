@@ -37,7 +37,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import (gamelock, launcher, macos_capture, macos_input,
-                          macos_ocr, popup_clear, vision, watch)  # noqa: E402
+                          macos_ocr, operator_retire, popup_clear, vision,
+                          watch)  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
                                  reset_orders_db)
 # The mod's sentinel for a readback it could not resolve, imported rather than
@@ -3068,6 +3069,10 @@ def press_escape(times: int = 2) -> bool:
     return ok
 
 
+OPERATOR_RETIRE_RETRY_S = 15.0
+OPERATOR_RETIRE_SETTLE_S = 0.8
+
+
 def dismiss_world_congress_between_turns() -> bool:
     """Click the shipped close control on the between-turns Congress screen."""
     focus_game(GAME_SIDE, GAME_FRACTION)
@@ -3229,6 +3234,13 @@ def summary_reason(state: dict, reason: str) -> str:
     place that turns "the game disagreed" into a refusal is a place a test can
     call. `is False` and not truthiness: `None` is the readback failing.
     """
+    # An operator retirement is a deliberate, in-game ending.  The control mod
+    # emits `retired` only after it has issued Civilization VI's own
+    # ACTION_RETIRE, so preserve that event even if a diagnostic readback was
+    # incomplete in the same poll; otherwise the ledger loses the operator's
+    # actual reason.
+    if state.get("operator_retire_event"):
+        return "operator_retired"
     if state.get("ruleset_match") is False:
         return "wrong_ruleset"
     if state.get("mode_mismatch"):
@@ -3364,6 +3376,12 @@ def _play(args: argparse.Namespace) -> int:
         "modes": None, "mode_mismatch": False,
         # Three-way: True agreed, False disagreed, None never read back.
         "ruleset": None, "ruleset_match": None,
+        # The host-side `civvis-games retire` request and the control mod's
+        # acknowledgement are distinct: writing the out-of-band order is not a
+        # result until the game emits `retired` after ACTION_RETIRE.
+        "operator_retire_request": None,
+        "operator_retire_event": None,
+        "operator_retired": None,
         # ★★★ THE OPENING TEMPO, which is the strongest correlate the live
         # ladder has ever shown. Measured over the 35 completed runs of
         # 2026-08-16/17: cities held at turn 60 correlates r=+0.69 with final
@@ -3524,6 +3542,30 @@ def _play(args: argparse.Namespace) -> int:
             result = "sent" if ok else "skipped safely" if safe_skip else "FAILED"
             print(f"[{kind}] {how} {result} for {screen}",
                   file=sys.stderr if not ok and not safe_skip else sys.stdout)
+        elif kind == "retired":
+            request = state.get("operator_retire_request")
+            if request is None:
+                # A policy-triggered abandon also uses the native action.  It
+                # remains `abandoned` rather than impersonating an operator
+                # request, but the event is still useful in the run log.
+                print(f"[retired] {json.dumps(event, sort_keys=True)}")
+            else:
+                state["operator_retire_event"] = dict(event)
+                detail = ("the control mod acknowledged Civilization VI "
+                          "ACTION_RETIRE")
+                try:
+                    state["operator_retired"] = operator_retire.record_retired(
+                        run_dir, request, detail)
+                except OSError as error:
+                    # The native action is still an honest ending even if the
+                    # audit sidecar cannot be flushed; the run summary carries
+                    # the mod event and the logger reports the recovery need.
+                    print(f"[retire] could not record native acknowledgement: {error}",
+                          file=sys.stderr, flush=True)
+                print(f"[retire] {detail}; recording operator_retired", flush=True)
+        elif kind == "retire_failed" and state.get("operator_retire_request"):
+            print(f"[retire] game could not issue ACTION_RETIRE: "
+                  f"{event.get('why') or 'unknown reason'}", file=sys.stderr, flush=True)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
             if kind in ("victory", "defeat"):
@@ -3548,6 +3590,10 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
+        if kind == "retired" and state.get("operator_retire_event"):
+            # This is the exact control-mod acknowledgement for the durable
+            # host request, not an inferred game exit or a generic stop.
+            return True
         # And OUR decision that the game is lost — the operator's one rule:
         # under 40 % of the leader's score on a readable turn at or after 150.
         # See `below_leader_score_reading`.
@@ -3611,6 +3657,10 @@ def _play(args: argparse.Namespace) -> int:
     # without a single log line saying why.
     last_focus = [0.0]
     session_was_locked = [False]
+    retire_flow = {
+        "request": None,
+        "last_attempt": 0.0,
+    }
 
     def console_locked() -> bool:
         locked = screen_locked()
@@ -3624,7 +3674,45 @@ def _play(args: argparse.Namespace) -> int:
         session_was_locked[0] = locked
         return locked
 
+    def process_operator_retirement() -> None:
+        """Turn one durable host request into the control mod's native action."""
+        request = operator_retire.read_pending_request(run_dir, args.tag)
+        if request is None:
+            return
+        state["operator_retire_request"] = request
+        identity = (request.get("tag"), request.get("requested_utc"))
+        if retire_flow["request"] != identity:
+            retire_flow.update({
+                "request": identity,
+                "last_attempt": 0.0,
+            })
+        now = time.monotonic()
+        if now - float(retire_flow["last_attempt"]) < OPERATOR_RETIRE_RETRY_S:
+            return
+        retire_flow["last_attempt"] = now
+        turn = state.get("turn")
+        if not isinstance(turn, int) or turn < 0:
+            sent = False
+            detail = "no in-run turn is available for the native retire request"
+        else:
+            sent = request_retire(
+                orders_db_path(run_dir, args.orders_db), args.tag, turn,
+                str(request.get("reason") or "operator"),
+            )
+            detail = ("wrote native retire order; awaiting control-mod acknowledgement"
+                      if sent else "could not write the native retire order")
+        try:
+            operator_retire.record_attempt(run_dir, request, detail)
+        except OSError as error:
+            # The retirement request remains present, so a transient full disk
+            # or filesystem failure can be retried without falsely claiming an
+            # outcome. Never let reporting itself take a healthy game down.
+            print(f"[retire] could not record retirement state: {error}",
+                  file=sys.stderr, flush=True)
+        print(f"[retire] {'requested' if sent else 'waiting'}: {detail}", flush=True)
+
     def keep_foreground() -> None:
+        process_operator_retirement()
         now = time.monotonic()
         if now - last_focus[0] < args.focus_every:
             return
@@ -3744,6 +3832,13 @@ def _play(args: argparse.Namespace) -> int:
         print(f"holding the final screen for {args.end_game_seconds:.0f}s",
               flush=True)
         time.sleep(args.end_game_seconds)
+    elif state.get("operator_retire_event"):
+        # ``UI.RequestAction`` crosses from the control mod into the game core
+        # asynchronously.  Leave it a small frame window to commit the native
+        # retirement before ordinary harness cleanup closes Civilization VI.
+        print(f"holding the native retire action for {OPERATOR_RETIRE_SETTLE_S:.1f}s",
+              flush=True)
+        time.sleep(OPERATOR_RETIRE_SETTLE_S)
     game_stopped = launcher.stop()
     stop_brain()
     if not game_stopped:
@@ -3790,6 +3885,12 @@ def _play(args: argparse.Namespace) -> int:
         "seat": state["seat"],
         "outcome": outcome or None,
         "game_stopped": game_stopped,
+        # This is a native in-game acknowledgement, not an inferred loss:
+        # ``operator-retire.json`` is written after the control mod reports
+        # that it issued Civilization VI's own ACTION_RETIRE request. Preserve
+        # the event in the summary too if flushing that sidecar ever fails.
+        "operator_retire": (state.get("operator_retired")
+                            or state.get("operator_retire_event")),
         # ★★★★★ WHICH VICTORY THIS RUN WAS PLAYING FOR.
         #
         # The summary is the artefact the ladder is built from, and until now it

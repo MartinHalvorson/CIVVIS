@@ -2769,6 +2769,35 @@ class AnUnreadableMenuLooksForTheBackItRenders(unittest.TestCase):
         self.assertIn("a dialog is covering the menu", self._source())
 
 
+class OperatorRetireNativeTest(unittest.TestCase):
+    """A host retirement must stay inside Civ VI's native action channel."""
+
+    @staticmethod
+    def _source() -> str:
+        return Path(civ6_play.__file__).read_text()
+
+    def test_the_host_writes_a_native_order_and_waits_for_the_mod_ack(self):
+        source = self._source()
+        self.assertIn("request_retire(\n                orders_db_path", source)
+        self.assertIn("operator_retire.record_retired(", source)
+        self.assertIn('elif kind == "retired":', source)
+        self.assertIn("OPERATOR_RETIRE_SETTLE_S", source)
+
+    def test_no_pause_menu_or_screen_click_path_remains(self):
+        source = self._source()
+        self.assertNotIn("retire_from_game_menu", source)
+        self.assertNotIn("operator-retire-menu.png", source)
+
+    def test_a_native_acknowledgement_cannot_be_reclassified_as_setup_failure(self):
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"operator_retire_event": {"kind": "retired"},
+                 "ruleset_match": False, "mode_mismatch": True,
+                 "seat": {"difficulty": "DIFFICULTY_PRINCE"}, "configured": False},
+                "stopped"),
+            "operator_retired")
+
+
 class EveryPerPollHostProbeIsBounded(unittest.TestCase):
     """⚠⚠⚠ All of them ran unbounded in the loop that drives the game.
 
