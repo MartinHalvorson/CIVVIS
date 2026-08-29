@@ -20582,8 +20582,7 @@ impl AdvancedAi {
         if city_count + counts.settlers >= desired {
             return;
         }
-        let allowance =
-            self.settler_pipeline_width(g, pid, desired, city_count, counts.settlers);
+        let allowance = self.settler_pipeline_width(g, pid, desired, city_count, counts.settlers);
         let open_seats = allowance.saturating_sub(counts.settlers);
         if open_seats == 0 {
             return;
