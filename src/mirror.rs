@@ -13445,17 +13445,34 @@ impl LiveMirror {
                     continue;
                 };
                 let pos = crate::hex::offset_to_axial(unit.x, unit.y);
-                if self.game.map.get(pos).is_some()
-                    && !self.game.units.values().any(|live| live.pos == pos)
-                {
-                    let uid = self.game.spawn_unit(&name, owner, pos);
-                    let progress =
-                        observed_unit_progress(&self.game.rules, unit, &mut self.unmapped);
-                    if let Some(live) = self.game.units.get_mut(&uid) {
-                        apply_unit_observation(live, unit, progress);
-                        self.rival_units.push(uid);
-                        self.foreign_uid_of.insert(unit.id, uid);
-                    }
+                if self.game.map.get(pos).is_none() {
+                    continue;
+                }
+                // ★★★★ A CITY-STATE'S UNIT IS PLANTED LIKE A RIVAL'S, ON AN
+                // OCCUPIED PLOT TOO.
+                //
+                // This loop used to carry `&& !self.game.units.values().any(|live|
+                // live.pos == pos)`, so a minor's unit sharing a plot with anything
+                // already planted was silently DROPPED — not counted in
+                // `dropped_units`, not named in `unmapped`, simply absent. The
+                // hostiles above are planted first (with their own guard) and the
+                // rivals second with NO guard, so the board could see a major's
+                // Trader stacked on a barbarian and never the city-state's.
+                //
+                // A unit the mirror cannot see is a unit no veto can refuse to
+                // shoot. Measured 2026-08-29: `civvis-20260827T145140Z` t52 struck
+                // the plot Bologna's TRADER stood on and `civvis-20260829T022207Z`
+                // t66 the plot Kumasi's did — both invisible on our own board, both
+                // a surprise war on the host. `rebuild_from_state` has always
+                // planted minors through the same `plant_unit` as rivals, with no
+                // such guard; `sync` was the odd one out. See
+                // `Game::peaceful_foreign_unit_at`.
+                let uid = self.game.spawn_unit(&name, owner, pos);
+                let progress = observed_unit_progress(&self.game.rules, unit, &mut self.unmapped);
+                if let Some(live) = self.game.units.get_mut(&uid) {
+                    apply_unit_observation(live, unit, progress);
+                    self.rival_units.push(uid);
+                    self.foreign_uid_of.insert(unit.id, uid);
                 }
             }
         }
