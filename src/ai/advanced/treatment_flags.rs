@@ -3158,6 +3158,18 @@ impl AdvancedAi {
         self.connect_the_luxury = false;
     }
 
+    /// One to four era points short of a Normal Age, patronize any Great
+    /// Person the bank can carry for its Historic Moment. See
+    /// `AdvancedAi::era_points_short`.
+    pub fn enable_age_closer(&mut self) {
+        self.age_closer = true;
+    }
+
+    /// The twin of `enable_age_closer`.
+    pub fn disable_age_closer(&mut self) {
+        self.age_closer = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

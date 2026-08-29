@@ -185,6 +185,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `age-closer` | off (unmeasured) | One to four era points short of a Normal Age, patronize any Great Person the bank can carry for its Historic Moment. | 1 \| 1 |
 | `capture-go-or-stand-down-2` | off (unmeasured) | Version 2 of `capture_go_or_stand_down`: also stands down a siege whose bodies are at the objective but have not pushed the city to a new low for `CAPTURE_STALL_TURNS` stalled readings. | 1 \| 2 |
 | `connect-the-luxury` | off (unmeasured) | Research the cheapest technology that connects an owned, unimproved luxury (Irrigation, Sailing) ahead of the lane's beeline, once the opening techs are in. | 1 \| 1 |
 | `exhaustion-loyalty-guard` | off (unmeasured) | A stranded Settler's exhaustion search sets aside a site beside an unresolved rival border — the one fog guess the preferred search made that names a city the forecast cannot see — and its nearest-legal tier runs the same concrete-revolt forecast the ranked tier does. | 1 \| 1 |

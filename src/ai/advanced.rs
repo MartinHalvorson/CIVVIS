@@ -330,6 +330,15 @@ const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 /// catches that unresolved fifth-ring attribution without rejecting ordinary
 /// known-city sites. See `frontier_loyalty` and `Game::unseen_major_borders`.
 const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
+
+/// `age-closer`: the era-point shortfall from a Normal Age at which the seat
+/// spends its bank on a guaranteed Historic Moment. Nine live King games
+/// fell into 15 Dark Ages; ten of the fifteen shortfalls were five points or
+/// fewer (Ancient 4, 4, 2; Classical 3, 1; Medieval 3; Industrial 2, 7, 2, 5),
+/// and a recruited Great Person is one point (three when Faith pays more
+/// than half). A Dark Age halves the seat's own Loyalty pressure and costs
+/// the Golden Age's dedication.
+const AGE_CLOSER_MARGIN: i64 = 4;
 /// Preferred new-target picks re-asked after a doomed forecast. If they all
 /// fail, the live controller probes one nearby alternative with the same
 /// safety guards; remaining exhaustion holds rather than routing the Settler
@@ -4438,6 +4447,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `age-closer`: a seat one to `AGE_CLOSER_MARGIN` era points short of a
+    /// Normal Age lets any affordable Great Person be patronized for its
+    /// moment. See `era_points_short` and `advanced_great_people`.
+    age_closer: bool,
     /// `commitment-patience`: a Builder's retired tile and the turn the
     /// parking expires; the tile joins `reserved` in the job sweep until then.
     builder_avoid: BTreeMap<u32, (Pos, u32)>,
@@ -6638,6 +6651,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            age_closer: false,
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
             boost_wait_research: false,
@@ -12783,6 +12797,31 @@ impl AdvancedAi {
         best.map(|(_, tech)| tech.as_str())
     }
 
+    /// `age-closer`: how many era points the seat is short of a Normal Age,
+    /// when that is one to `AGE_CLOSER_MARGIN`. `None` with the gene off,
+    /// at or past the bar, or further from it than a moment can reach.
+    fn era_points_short(&self, g: &Game, pid: usize) -> Option<i64> {
+        if !self.age_closer {
+            return None;
+        }
+        let player = &g.players[pid];
+        let short = player.normal_age_threshold - player.era_score;
+        (1..=AGE_CLOSER_MARGIN).contains(&short).then_some(short)
+    }
+
+    /// How close to earned a Great Person must be before the ordinary buyer
+    /// patronizes it: the whole price on the tally seat, two fifths for a
+    /// lane class, three twentieths otherwise.
+    fn patronage_close_limit(&self, affinity: f64) -> f64 {
+        if self.tally_great_people {
+            1.0
+        } else if affinity >= 500.0 {
+            0.40
+        } else {
+            0.15
+        }
+    }
+
     fn prophet_race_open_for(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -16759,6 +16798,17 @@ impl AdvancedAi {
         let idle_faith = self.idle_faith_patronage
             && g.players[pid].religion.is_none()
             && g.players[pid].faith >= 600.0;
+        // `age-closer`: a few era points short of a Normal Age, every Great
+        // Person the bank can carry is worth its moment; the closeness limit
+        // below is lifted for both currencies. The reserves stand.
+        let age_closing = self.era_points_short(g, pid);
+        if let Some(short) = age_closing {
+            think!(self.journal(), Economy, Detail,
+                   "Era score {} short of a Normal Age", short;
+                   "{} against {}; a recruited Great Person is the moment that closes it, so any \
+                    affordable one is worth buying now",
+                   g.players[pid].era_score, g.players[pid].normal_age_threshold);
+        }
         let faith_reserve = match strategy {
             GrandStrategy::Religion => 250.0,
             GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => {
@@ -16841,13 +16891,7 @@ impl AdvancedAi {
             // See `tally_great_people`: on the tally seat any Great Person the
             // bank can carry is worth its five points; the price still rises
             // with the missing points, so a near recruit stays the better buy.
-            let limit = if self.tally_great_people {
-                1.0
-            } else if affinity >= 500.0 {
-                0.40
-            } else {
-                0.15
-            };
+            let limit = self.patronage_close_limit(affinity);
             if affinity < 0.0 {
                 continue;
             }
@@ -16858,7 +16902,8 @@ impl AdvancedAi {
             ] {
                 // See `idle_faith_patronage`: Faith a religion-less seat
                 // cannot otherwise spend buys the person outright.
-                let currency_limit = if currency == "faith" && idle_faith {
+                let currency_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
+                {
                     1.0
                 } else {
                     limit

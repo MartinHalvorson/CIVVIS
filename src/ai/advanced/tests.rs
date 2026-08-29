@@ -911,6 +911,35 @@ fn an_unconnected_luxury_names_its_tech_and_the_research_step_takes_it() {
     assert!(!ai.connect_the_luxury);
 }
 
+/// `age-closer`: three points short of a Normal Age names the shortfall;
+/// at the bar, eight short, or off, nothing; and the ordinary closeness
+/// limit stands for the buyer to lift.
+#[test]
+fn a_seat_a_few_era_points_short_names_the_shortfall() {
+    let (mut game, _city, _) = empire_with_a_capital(71_119);
+    game.players[0].era_score = 10;
+    game.players[0].normal_age_threshold = 13;
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.age_closer, "the gene ships off");
+    assert!(!AdvancedAi::legacy().age_closer);
+    assert_eq!(ai.era_points_short(&game, 0), None, "off, nothing");
+    ai.enable_age_closer();
+    assert!(ai.age_closer);
+    assert_eq!(ai.era_points_short(&game, 0), Some(3), "three points short");
+    game.players[0].era_score = 13;
+    assert_eq!(ai.era_points_short(&game, 0), None, "at the bar");
+    game.players[0].era_score = 5;
+    assert_eq!(
+        ai.era_points_short(&game, 0),
+        None,
+        "eight short is past a moment's reach"
+    );
+    assert_eq!(ai.patronage_close_limit(100.0), 0.15);
+    assert_eq!(ai.patronage_close_limit(500.0), 0.40);
+    ai.disable_age_closer();
+    assert!(!ai.age_closer);
+}
+
 #[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
