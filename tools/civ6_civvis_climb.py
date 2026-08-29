@@ -511,6 +511,31 @@ def ensure_popup_clear() -> None:
         stale = [pid for pid in popup_clearer_pids() if pid not in owned]
         retire_popup_clearers(stale, "unowned popup clearer(s); the interactive "
                               "keeper already owns this seat")
+        # ⚠⚠⚠ AND RETIRE THE OWNED ONE TOO, WHICH THIS BRANCH USED NOT TO DO.
+        #
+        # The hazard the paragraph above describes — "killing its child causes
+        # the host to revive it WHILE THIS BATCH STARTS ANOTHER, leaving two
+        # clearers" — belonged to a path that started one. This branch returns
+        # without starting any, so killing the keeper's child leaves exactly
+        # one clearer: the keeper's own revival, three seconds later, exec'd
+        # from the tracked file. Fresh, and still singular.
+        #
+        # Until now it was never retired at all, so it ran whatever code it
+        # started with for the life of the host. Measured 2026-08-28: the
+        # clearer had started at 09:03 and `popup_clear.py` was last written at
+        # 17:13, so it was eight hours stale and #2711's three-second capture
+        # re-check — written that afternoon precisely to stop the popup
+        # backstop going blind — was not in effect at all. Across the recent
+        # climb logs, "retiring ... inherited clearer" appears ZERO times,
+        # because on this host the keeper always owns the seat and this branch
+        # always returned first.
+        #
+        # Same defect as #2699 for the wedge watchdog: a long-lived helper that
+        # nothing refreshes silently keeps yesterday's build. Batch start is the
+        # safe moment for it — setup takes minutes and no game is playing.
+        retire_popup_clearers(sorted(owned), "the keeper's own clearer so this "
+                              "batch gets the current build; the keeper revives "
+                              "it from the tracked file")
         print(f"[popups] interactive popup keeper pid {keeper_pid} owns this "
               "batch; not starting a duplicate", flush=True)
         return
