@@ -846,6 +846,13 @@ LEADER_SCROLL_AMOUNT = -2
 # costs three looks, not a lost game.
 LEADER_HINT_FILE = "leader-picker-hint.json"
 LEADER_HINT_WINDOW = 3
+# ScreenCaptureKit can yield an empty frame while macOS's recording-status
+# service is busy, even though the same setup panel is still present.  A
+# readable dropdown is a precondition for every click below, so treat a missed
+# picker frame as an unreadable poll rather than as proof that the click failed.
+# Four bounded looks give a recording host time to recover without turning a
+# transient capture miss into a whole failed game launch.
+LEADER_PICKER_OPEN_ATTEMPTS = 4
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
@@ -2136,12 +2143,22 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
     closed_shot = run_dir / "leader-picker-closed.png"
     open_shot = run_dir / "leader-picker-open.png"
 
-    for attempt in (1, 2):
+    for attempt in range(1, LEADER_PICKER_OPEN_ATTEMPTS + 1):
         if attempt == 1 and panel is not None and panel.is_file():
             closed = panel
         else:
             closed = closed_shot
-            screenshot(closed)
+            if not screenshot(closed):
+                print(f"[setup] leader picker frame was unreadable (attempt {attempt}); "
+                      "retrying without guessing", flush=True)
+                continue
+        # If the preceding click took a little longer than its screenshot,
+        # reusing a newly readable open list is safer than clicking the field
+        # again and potentially toggling it closed.
+        if attempt > 1 and _leader_picker_open(closed, bounds):
+            print(f"[setup] leader list opened after an unreadable frame "
+                  f"(attempt {attempt})", flush=True)
+            break
         current = _setup_current_leader(closed, bounds)
         if current is None:
             print(f"[setup] leader value was not readable (attempt {attempt})",
@@ -2155,7 +2172,10 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
             return True
         click_at(*current_point)
         time.sleep(1.2)
-        screenshot(open_shot)
+        if not screenshot(open_shot):
+            print(f"[setup] leader picker frame was unreadable after its click "
+                  f"(attempt {attempt}); retrying without guessing", flush=True)
+            continue
         if _leader_picker_open(open_shot, bounds):
             break
         print(f"[setup] leader list did not open (attempt {attempt})", flush=True)
@@ -3014,8 +3034,12 @@ def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
     try:
         window, scale = popup_clear.capture(rect)
         surface, targets, _dark = popup_clear.classify(window)
-    except (OSError, subprocess.SubprocessError):
-        return False, "popup classification failed"
+    except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
+        # A pre-authorized ScreenCaptureKit request can still yield no image while
+        # macOS's status service is busy.  This visual rescue is optional: leave
+        # the modal for the next verified poll instead of letting one unreadable
+        # frame end the entire game controller.
+        return False, "popup capture unavailable"
     if surface not in ("leader", "notice"):
         return False, f"no safe visible dialogue ({surface})"
     target = popup_clear.click_target(surface, targets, window.size[0])

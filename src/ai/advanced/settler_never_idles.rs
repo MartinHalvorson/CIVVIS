@@ -40,12 +40,12 @@
 //! 1. **Exhaustion never holds.** When the preferred search (every filter,
 //!    the Loyalty verdict included) returns nothing, the Settler asks two
 //!    wider questions before it stands still: the advanced ranking with the
-//!    fog guesses and the thirty-turn retirements set aside and only a
-//!    *concrete* revolt inside [`STRANDED_SITE_MIN_HOLD_TURNS`] (twenty) refused
-//!    (`settler_exhaustion_target`, tier 2); then any legal reachable site
-//!    at all, nearest first (tier 3). Failing both it founds where it stands
-//!    if the engine allows, and otherwise says so in the journal — a Settler
-//!    that holds is never silent.
+//!    same retired-site, threat-deferral and peer-reservation guards, refusing
+//!    only a *concrete* revolt inside [`STRANDED_SITE_MIN_HOLD_TURNS`] (twenty)
+//!    (`settler_exhaustion_target`, tier 2); then any legal reachable site at
+//!    all, nearest first (tier 3). Failing both it founds where it stands if
+//!    the engine allows, and otherwise says so in the journal — a Settler that
+//!    holds is never silent.
 //! 2. **A watchdog bounds every other hold.** A Settler that has stood on
 //!    the same tile for [`SETTLER_IDLE_PATIENCE`] turns stops trusting the
 //!    branch that held it and marches on one rule only: never end the turn
@@ -174,7 +174,13 @@ impl AdvancedAi {
                 Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
             )
             .into_iter()
-            .filter(|(pos, _)| !g.blocked_city_sites.contains(pos))
+            .filter(|(pos, _)| {
+                !g.blocked_city_sites.contains(pos)
+                    && !self.settler_site_is_dead(uid, *pos)
+                    && (!self.settler_threat_detour
+                        || !self.settler_threat_deferrals.contains_key(pos))
+                    && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
+            })
             .collect();
         for _ in 0..=STRANDED_FORECAST_RETRIES {
             let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, &ranked) else {
@@ -207,7 +213,12 @@ impl AdvancedAi {
             .wdisk(from, radius)
             .into_iter()
             .filter(|pos| {
-                self.base.valid_settle_site(g, pid, *pos) && !g.blocked_city_sites.contains(pos)
+                self.base.valid_settle_site(g, pid, *pos)
+                    && !g.blocked_city_sites.contains(pos)
+                    && !self.settler_site_is_dead(uid, *pos)
+                    && (!self.settler_threat_detour
+                        || !self.settler_threat_deferrals.contains_key(pos))
+                    && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
             .map(|pos| (pos, -(g.wdist(from, pos) as f64)))
             .collect();
@@ -293,11 +304,15 @@ impl AdvancedAi {
             return false;
         }
         let cached = self.settler_targets.get(&uid).copied().filter(|target| {
-            (*target == current && g.can_found_city(uid))
-                || (*target != current
-                    && self.base.valid_settle_site(g, pid, *target)
-                    && !g.blocked_city_sites.contains(target)
-                    && g.route_step(uid, *target, 0).is_some())
+            !self.settler_site_is_dead(uid, *target)
+                && (!self.settler_threat_detour
+                    || !self.settler_threat_deferrals.contains_key(target))
+                && !self.settler_target_reserved_by_other(g, pid, uid, *target)
+                && ((*target == current && g.can_found_city(uid))
+                    || (*target != current
+                        && self.base.valid_settle_site(g, pid, *target)
+                        && !g.blocked_city_sites.contains(target)
+                        && g.route_step(uid, *target, 0).is_some()))
         });
         let target = match cached {
             Some(target) => target,
@@ -422,8 +437,9 @@ mod tests {
         );
     }
 
-    /// The whole point: on a board where every site fails the preferred
-    /// filters, the shipped code holds and the gene walks.
+    /// On a board where every site is explicitly retired, neither controller
+    /// resurrects one. The live safety gene still names the stranded hold
+    /// instead of wandering back through the same rejected corridor.
     ///
     /// The board: one city, one Settler standing in it, every plot within
     /// three tiles of the city legal-but-excluded by spacing, the rest of the
@@ -464,18 +480,84 @@ mod tests {
             let before = g.units[&settler].pos;
             let acted = ai.advanced_settler_step(&mut g, 0, settler);
             let after = g.units[&settler].pos;
+            assert!(!acted, "all explicitly retired sites remain retired");
+            assert_eq!(after, before, "the settler does not wander to a dead site");
+            assert!(
+                !ai.settler_targets.contains_key(&settler),
+                "the stranded settler carries no resurrected target"
+            );
             if gene {
-                assert!(acted, "the gene finds a site and steps");
-                assert_ne!(after, before, "the settler left the city");
                 assert!(
-                    ai.settler_targets.contains_key(&settler),
-                    "the settler carries a target"
+                    ai.settler_stranded_at.contains_key(&settler),
+                    "the safety gene records the stranded hold"
                 );
-            } else {
-                assert!(!acted, "the shipped code holds");
-                assert_eq!(after, before);
             }
         }
+    }
+
+    /// Exhaustion is a relaxed search, not permission to resurrect a target
+    /// another branch deliberately retired.  This is the live parallel-settler
+    /// failure: a hysteresis retirement was recorded for a peer, then the
+    /// never-idles fallback ignored it and sent both Settlers back to the same
+    /// site.
+    #[test]
+    fn exhaustion_skips_retired_and_peer_reserved_sites() {
+        let mut g = Game::new_full(1, 20, 12, 91_306, 120, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .expect("a starting settler");
+        let home = g.units[&settler].pos;
+        let peer = g.spawn_test_unit("settler", 0, home);
+        // Give the fixture's probe Settlers enough movement to make the
+        // one-turn reachability test independent of the random starting ring.
+        g.units.get_mut(&settler).expect("settler").moves_left = 20.0;
+        g.units.get_mut(&peer).expect("peer").moves_left = 20.0;
+        // The production scan intentionally refuses unobserved opening
+        // footprints. This regression is about retirement/reservation, so
+        // make the fixture's map fully observed first.
+        let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        g.players[0].explored.extend(explored);
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_engine_repairs();
+        ai.enable_settler_never_idles();
+        let reachable: Vec<Pos> = ai
+            .settle_sites_with_limit(&g, 0, home, 14, Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT))
+            .into_iter()
+            .map(|(pos, _)| pos)
+            .filter(|pos| g.path_to(settler, *pos).is_some())
+            .take(3)
+            .collect();
+        let direct_valid = g
+            .wdisk(home, 14)
+            .into_iter()
+            .filter(|pos| ai.base.valid_settle_site(&g, 0, *pos))
+            .count();
+        assert!(
+            reachable.len() >= 2,
+            "fixture needs two reachable city sites, got {reachable:?} (direct valid={direct_valid})"
+        );
+        let retired = reachable[0];
+        let reserved = reachable[1];
+        ai.settler_dead_sites
+            .entry(settler)
+            .or_default()
+            .insert(retired, g.turn + 1000);
+        ai.settler_targets.insert(peer, reserved);
+
+        let picked = ai.settler_exhaustion_target(&g, 0, settler);
+        assert_ne!(
+            picked,
+            Some(retired),
+            "the fallback resurrected a dead site"
+        );
+        assert_ne!(
+            picked,
+            Some(reserved),
+            "the fallback duplicated a peer target"
+        );
     }
 
     /// The watchdog respects the one rule it keeps: a tile a visible raider

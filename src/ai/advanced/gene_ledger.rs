@@ -17,40 +17,17 @@
 //! screens are marked `legacy` in `docs/gene_ledger.json`: history retained
 //! as evidence beside the batch rule's answer.
 //!
-//! ★★★★ THE DEFAULT FOLLOWS THE BATCH RULE (operator, 2026-08-25). Every
-//! screenable gene's default is decided by its three batch columns in
-//! `GENE_HEURISTIC_RANKING.md` — *Last Batch*, *Prior Batch*, *Third Batch*,
-//! the ± wins per 10,000 total seats each fixed reporting batch read for the
-//! gene, newest first — through `batch_rule` below, the operator's words as a
-//! function, and by nothing else:
+//! ★★★★ THE CURRENT DEPLOYMENT SELECTION (operator, 2026-08-28). A screenable
+//! gene is on exactly when its on arm beat the baseline (`win_delta_pp > 0`) in
+//! **each** of the three latest reporting batches and its displayed pooled
+//! *Diff* is positive; every other screenable gene is off. The chosen tags are
+//! written as `DEPLOYMENT_GENOME`, one version per family.
 //!
-//! 1. three batches all below −10 → the gene is REMOVED from the gene pool;
-//! 2. two or three batches negative → off;
-//! 3. three batches all positive → on;
-//! 4. three batches, exactly two positive, and their mean > 7 → on;
-//! 5. one or two batches, exactly one positive, and their mean > 7 → on;
-//! 6. two batches, both positive → on (all of its batches are positive);
-//! 7. otherwise off — a gene no batch has priced is off, and a reading of
-//!    exactly zero is neither positive nor negative.
-//!
-//! `tools/genes.py write` re-decides every default when a reporting batch
-//! enters and writes the answer as `DEPLOYMENT_GENOME`, with the columns it
-//! read as `BATCH_COLUMNS`; `the_default_follows_the_batch_rule` re-derives
-//! the one from the other here, so the two languages cannot disagree about
-//! what ships. A gene the rule removes fails `genes.py check` (and
-//! `no_gene_is_due_for_removal` here) until its code is cut.
-//!
-//! ⭐ ABOVE THE RULE, THE OPERATOR'S TWO LISTS (operator, 2026-08-26): the
-//! genes named in `tools/genes.py::OPERATOR_DEFAULT_ON`, generated here as
-//! `OPERATOR_DEFAULT_ON` (read by `operator_pins`), ship **on** whatever
-//! their batch columns read; the genes named in `OPERATOR_DEFAULT_OFF`
-//! (read by `operator_holds`) ship **off** the same way. `batch_rule` still
-//! answers for both — the ledger's `rules.batch_decisions` records what the
-//! columns alone would have given — so the operator's selection is visible as
-//! an override rather than dissolved into the genome. A pin or a hold moves a
-//! default only: neither can keep a gene the rule removes from the pool, and
-//! no gene is named by both lists. Every default that is neither pinned nor
-//! held changes by playing more games.
+//! The three displayed batch columns and the historical `batch_rule` remain
+//! recorded as evidence. The selected genome uses
+//! `operator-retained-selection`, so later report-only table rotations refresh
+//! that evidence without silently changing live behavior. There are no manual
+//! on or off overrides in this selection.
 //!
 //! ⭐ WITHIN A FAMILY (operator, 2026-08-23, restated 2026-08-25): every
 //! version (`<base>-<n>`) is judged by the rule on its own row, and a family
@@ -75,9 +52,9 @@
 //! not a deployment rule; `GENE_HEURISTIC_RANKING.md` prints them beside
 //! the rule's answer.
 //!
-//! Verdicts still say what screens proved, but neither verdicts, the sources'
-//! win columns, pooled *Diff*, nor posterior values decide what ships: the
-//! three batch columns do.
+//! Verdicts still say what screens proved; the three current direct
+//! on-versus-baseline readings plus displayed *Diff* decide this explicit
+//! selection.
 //!
 //! The verdict block at the end of `genes.rs` is **generated** by
 //! `tools/genes.py` from `gene_screen --analyze --json` outputs and
@@ -269,8 +246,8 @@ pub fn deployment_policy() -> &'static str {
     table::DEPLOYMENT_POLICY
 }
 
-/// Whether a tag is in the deployment genome the batch rule and the
-/// operator's two lists decided.
+/// Whether a tag is in the explicit deployment genome: each selected tag beat
+/// its baseline in all three latest batches and has a positive displayed Diff.
 pub fn deployment_default_on(tag: &str) -> bool {
     table::DEPLOYMENT_GENOME.contains(&tag)
 }
@@ -310,10 +287,8 @@ pub fn screenable(tag: &str) -> bool {
     super::gene(tag).is_some_and(|gene| gene.screenable())
 }
 
-/// Whether a gene is on in the deployment genome the batch rule and the
-/// operator's two lists decided. A screenable tag the operator holds off, or
-/// that neither the rule turns on nor the operator pins on, is off, whether
-/// or not a batch has priced it. `None` for
+/// Whether a gene is on in the explicit deployment genome. A screenable tag
+/// outside that selection is off. `None` for
 /// a gene the screen cannot price (the Firaxis-only flags), which the bundle
 /// leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
@@ -993,11 +968,14 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
-        // A live (repair) gene the operator currently holds off. Pick another
-        // held live gene if the deployment selection changes
-        // (`ledger_held_live_treatments()` lists them).
-        let forced = ["blind-objective-units"];
-        assert!(ledger_held_live_treatment("blind-objective-units"));
+        // The exact held live genes move with the deployment selection. Read
+        // the generated ledger rather than leaving this test pinned to one.
+        let held_live = ledger_held_live_treatments()
+            .first()
+            .copied()
+            .expect("the explicit genome leaves live treatments off");
+        let forced = [held_live];
+        assert!(ledger_held_live_treatment(held_live));
         assert!(
             !ledger_held_live_treatment("parallel-settlers"),
             "host-only treatments already follow their live-universe default"
@@ -1016,9 +994,8 @@ mod tests {
             .copied()
             .expect("the registry holds opt-ins the ledger has not turned on");
         assert!(!ledger_held_live_treatment(held_opt_in));
-        assert!(!ledger_held_opt_in("blind-objective-units"));
         let forceable = forceable_treatments();
-        assert!(forceable.contains(&"blind-objective-units"));
+        assert!(forceable.contains(&held_live));
         assert!(forceable.contains(&held_opt_in));
         let seated = deployment_treatments_with_forced_live(&[held_opt_in]);
         assert!(
@@ -1029,16 +1006,16 @@ mod tests {
         seat.enable_live_bridge_universe();
         let applied = seat.apply_gene_ledger_with_forced_live(&[held_opt_in]);
         assert!(applied.forced.contains(&held_opt_in));
-        assert!(ledger_held_live_treatments().contains(&"blind-objective-units"));
+        assert!(ledger_held_live_treatments().contains(&held_live));
 
         let deployed = deployment_treatments();
         let forced_deployment = deployment_treatments_with_forced_live(&forced);
         assert!(
-            !deployed.contains(&"blind-objective-units"),
+            !deployed.contains(&held_live),
             "the verification override must not change deployment"
         );
         assert!(
-            forced_deployment.contains(&"blind-objective-units"),
+            forced_deployment.contains(&held_live),
             "the genome event must name the treatment the arm actually restored"
         );
         assert_eq!(
@@ -1050,14 +1027,9 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
-        assert!(ai.blind_objective_units, "the named live treatment stands");
+        assert_eq!(applied.forced, vec![held_live]);
         assert!(
-            !ai.base.naval_recon,
-            "another ledger-held treatment stays off unless named too"
-        );
-        assert_eq!(applied.forced, vec!["blind-objective-units"]);
-        assert!(
-            !applied.withheld.contains(&"blind-objective-units"),
+            !applied.withheld.contains(&held_live),
             "an explicit arm cannot report its restored gene as withheld"
         );
     }

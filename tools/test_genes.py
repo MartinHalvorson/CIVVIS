@@ -533,96 +533,13 @@ class TheOperatorPins(unittest.TestCase):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         pins = rules["operator_default_on"]
-        expected_pins = {
-            "amenity-project-preemption-2",
-            "apostle-promotion-by-role",
-            "army-target-weighs-enemy",
-            "barbarian-settler-capture",
-            "blind-objective-strength",
-            "boost-wait-research",
-            "bounded-recovery",
-            "buildings-before-projects",
-            "camp-party",
-            "camp-tile-buyout",
-            "canal-city",
-            "chain-payback-window-2",
-            "chokepoint-siting",
-            "civilian-out-of-reach",
-            "close-as-a-body",
-            "coalition-before-war",
-            "coastal-city-sites",
-            "come-ashore",
-            "contested-land-first",
-            "conversion-majority-alarm",
-            "culture-floor",
-            "deals-at-the-ceiling",
-            "defend-where-you-stand",
-            "defensible-sites",
-            "district-coverage",
-            "district-planning",
-            "early-archers",
-            "early-contact-window",
-            "elective-war-yields-to-a-lane",
-            "enemy-of-my-enemy",
-            "enhancer-for-the-corps",
-            "exchange-is-the-engines",
-            "expansion-pays-back",
-            "expansion-schedule",
-            "founder-temple",
-            "garrison-under-fire",
-            "gold-for-the-young-city",
-            "gold-income-floor",
-            "guru-heals-the-corps-2",
-            "holy-site-where-the-threat-is",
-            "idle-faith-patronage",
-            "lane-great-people",
-            "loyalty-rate-alarm",
-            "missionary-evades-raiders",
-            "naval-threat-triage",
-            "one-launch-pad",
-            "one-shot-recovery",
-            "order-retry",
-            "pass-picket",
-            "peace-when-the-war-does-not-pay",
-            "peacetime-deterrence",
-            "quest-boost",
-            "quest-production",
-            "quest-trade-route",
-            "raid-pillage-prizes",
-            "recon-replacement",
-            "relief-column-marches",
-            "relief-targets-the-siege",
-            "religion-race-is-closed",
-            "religious-units-heal-first",
-            "research-tier-premium",
-            "rival-suzerainty-alarm",
-            "science-chain-alarm",
-            "science-multiplier-payoff",
-            "score-horizon",
-            "settler-never-idles",
-            "settler-screen",
-            "settler-target-hysteresis-2",
-            "settler-threat-detour",
-            "stranded-settler-discount",
-            "treasury-at-work",
-            "unchosen-war-keeps-the-lane",
-            "unit-cost-efficiency",
-            "upgrade-the-garrison",
-            "whole-turn-backtrack-guard",
-            "wonder-adjacent-sites-2",
-            "wonder-ring-recon",
-        }
+        expected_pins = set()
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 77)
+        self.assertEqual(len(pins), 0)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
-        # ⭐ The versioned family the operator moved on 2026-08-26: the ship
-        # goes to v2 by a pin while v1 is held off below, so the family still
-        # ships exactly one version.
-        self.assertIn("settler-target-hysteresis-2", genome)
-        self.assertNotIn("settler-target-hysteresis", genome)
-        self.assertIn("raid-pillage-prizes", genome)
+        self.assertTrue(genome)
         retained = rules["deployment_policy"] == gene_ledger.RETAINED_DEPLOYMENT_POLICY
         for tag in pins:
             self.assertIn(tag, screenable, tag)
@@ -714,35 +631,7 @@ class TheOperatorHolds(unittest.TestCase):
     def test_the_checked_in_holds_follow_the_operator_default_policy(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
-        expected_holds = {
-            "amenity-project-preemption",
-            "blind-objective-units",
-            "builder-supply-floor",
-            "builder-tries-the-next-tile",
-            "buy-what-cards-cannot-boost",
-            "campaign-pillage",
-            "chokepoint-claim",
-            "congress-counter-leader",
-            "deals-for-our-gain",
-            "enter-the-prophet-race",
-            "first-research-building-reserve",
-            "frontier-massing-alarm",
-            "holy-lane-parity",
-            "holy-site-where-the-threat-is-2",
-            "lane-space-race",
-            "native-emergency-purchase",
-            "naval-recon",
-            "never-an-empty-queue",
-            "one-war-at-a-time",
-            "pantheon-board",
-            "power-the-laboratory-2",
-            "settler-factory-coordination",
-            "settler-target-hysteresis",
-            "threatened-city-reserve",
-            "unit-objective-memory",
-            "wonder-adjacent-sites",
-            "wonder-score-tally",
-        }
+        expected_holds = set()
         self.assertEqual(tuple(sorted(expected_holds)), gene_ledger.OPERATOR_DEFAULT_OFF)
         self.assertEqual(rules["operator_default_off"], sorted(expected_holds))
         screenable = set(gene_ledger.screenable_tags())
@@ -751,23 +640,9 @@ class TheOperatorHolds(unittest.TestCase):
             self.assertIn(tag, screenable, tag)
             self.assertNotIn(tag, genome, f"{tag} is held off but ships anyway")
             self.assertNotIn(tag, rules["operator_default_on"], tag)
-        # ⭐ WHY A HOLD WAS NEEDED AT ALL. Under `operator-retained-selection`
-        # a rotation carries the recorded genome forward, so a hold explicitly
-        # takes a named gene out while its batch-rule reading stays evidence.
+        # The explicit selection carries no manual off overrides.
         self.assertEqual(rules["deployment_policy"],
                          gene_ledger.RETAINED_DEPLOYMENT_POLICY)
-        # ⭐ AND `remove` IS A THIRD ROUTE, added 2026-08-27. A hold may sit on
-        # a gene the rule wants cut from the pool, and `holy-lane-parity`
-        # (−21/−38/−11) is the first: a hold is strictly weaker than a removal
-        # — it stops the gene being played while its code stays screenable, so
-        # a later batch can still redeem it — and it is what the operator chose
-        # over cutting the code. Only a PIN may not sit on a `remove`, which
-        # `TheOperatorPins` asserts separately; that is the contradiction worth
-        # refusing, because a pin would keep playing a gene three straight
-        # batches call badly negative.
-        for tag in expected_holds:
-            self.assertIn(
-                rules["batch_decisions"].get(tag), {"on", "off", "remove"}, tag)
 
 
 class RetainedReportingDefaults(unittest.TestCase):
@@ -1034,11 +909,33 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
 class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
     """The checked-in ledger's selection follows its recorded policy.
 
-    A normal publication derives defaults from its recorded batch columns;
-    a reporting-only rotation deliberately retains the already selected
-    genome.  Both records must preserve the same one-version-per-family
-    invariant and expose the batch-rule reading as evidence.
+    The current reporting-only selection keeps exactly the genes whose on arm
+    beat baseline in each of the latest three batches and whose displayed Diff
+    is positive. Both policy forms preserve the one-version-per-family
+    invariant and expose the legacy batch-rule reading as evidence.
     """
+
+    def test_the_current_selection_is_exactly_three_positive_baseline_batches_and_diff(self):
+        ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        rules = ledger["rules"]
+        self.assertEqual(rules["deployment_policy"], gene_ledger.RETAINED_DEPLOYMENT_POLICY)
+        self.assertEqual(rules["operator_default_on"], [])
+        self.assertEqual(rules["operator_default_off"], [])
+        batches = ranking.load_reporting_batches(ledger)
+        self.assertEqual(len(batches), 3)
+        displayed, _ = ranking.load_display_sources(ledger)
+        eligible = {
+            tag
+            for tag in gene_ledger.screenable_tags()
+            if tag in displayed
+            and all(
+                tag in batch["rows"] and batch["rows"][tag]["win_delta_pp"] > 0
+                for batch in batches
+            )
+            and ranking.pooled_win_diff_pp(displayed[tag]) > 0
+        }
+        self.assertEqual(set(rules["deployment_genome"]), eligible)
+        self.assertEqual(len(eligible), 34)
 
     def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())

@@ -561,9 +561,10 @@ fn a_barbarian_scout_is_not_a_threat_the_settler_prices() {
     withheld.disable_barbarian_scouts_are_scouts();
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    live.enable_barbarian_scouts_are_scouts();
     assert!(
         live.barbarian_scouts_are_scouts,
-        "the live seat carries the treatment"
+        "the focused arm carries the treatment"
     );
     let visible = game.player_vision_now(0);
     let stock_risk = stock.settlement_tile_risk(&game, 0, Some(settler), post, &visible);
@@ -3057,8 +3058,8 @@ fn production_advanced_omits_measured_null_arms() {
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        live_bridge.bounded_recovery,
-        "the live bridge applies the 2026-08-27 operator default"
+        !live_bridge.bounded_recovery,
+        "the explicit three-batch selection withholds this unqualified arm"
     );
 }
 
@@ -18719,9 +18720,10 @@ fn a_default_live_escort_replaces_guards_that_cannot_hold() {
 
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge();
+        ai.enable_settler_guard_holds();
         assert!(
             ai.settler_guard_holds && ai.live_formationless_settler_shadow,
-            "the deployed live seat carries the stack discipline"
+            "the focused arm carries the stack discipline"
         );
         let visible = ai.battlefront_visibility(&game, 0);
         assert!(game.unit_visible_to(raider, 0) && game.sees(&visible, raider_at));
@@ -18823,6 +18825,7 @@ fn a_default_live_emergency_guard_rejects_an_outmatched_guard() {
 
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge();
+    ai.enable_settler_guard_holds();
     let visible = ai.battlefront_visibility(&game, 0);
     assert!(game.unit_visible_to(raider, 0) && game.sees(&visible, raider_at));
     let unsafe_outmatched =
@@ -20023,14 +20026,14 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
 }
 
 #[test]
-fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
+fn settler_threat_detour_is_a_native_opt_in_withheld_by_the_ledger() {
     assert!(!AdvancedAi::new().settler_threat_detour);
     assert!(!AdvancedAi::legacy().settler_threat_detour);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        deployed.settler_threat_detour,
-        "pinned on by the 2026-08-26 operator directive; the ledger turns it on"
+        !deployed.settler_threat_detour,
+        "the explicit three-batch selection leaves this arm off"
     );
     let enable = GENES
         .iter()
@@ -20063,18 +20066,18 @@ fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!ai.base.one_shot_recovery);
 }
 
-/// `settle_sooner` is a native opt-in: off in both bare controllers, enabled
-/// in the deployment genome by its sole +41 win column, and flippable by name
-/// through `PRODUCTION_OPT_INS`.
+/// `settle_sooner` is a native opt-in: off in both bare controllers and in
+/// the current deployment genome, yet flippable by name through
+/// `PRODUCTION_OPT_INS`.
 #[test]
-fn settle_sooner_is_a_native_opt_in_deployed_by_the_ledger() {
+fn settle_sooner_is_a_native_opt_in_withheld_by_the_ledger() {
     assert!(!AdvancedAi::new().settle_sooner);
     assert!(!AdvancedAi::legacy().settle_sooner);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        deployed.settle_sooner,
-        "its sole +41 win column clears the provisional deployment bar"
+        !deployed.settle_sooner,
+        "the explicit three-batch selection leaves this arm off"
     );
     let enable = GENES
         .iter()
@@ -23004,11 +23007,11 @@ fn campaign_city_score_uses_the_last_seen_city_combat_state() {
     );
 }
 
-/// The barbarian-scout exemption ships natively: Firaxis' barbarian scouts
+/// The barbarian-scout exemption is a native arm: Firaxis' barbarian scouts
 /// neither attack nor capture, and the native seat's provably cannot (the
 /// minor-seat gate freezes its military units; the engine scout phase moves
-/// by `relocate`, which has no capture hook). The frozen controllers keep
-/// their history, and the withhold arm prices the promotion.
+/// by `relocate`, which has no capture hook). The explicit selection withholds
+/// it, while a focused arm can still price the promotion.
 #[test]
 fn the_barbarian_scout_exemption_is_native() {
     assert!(AdvancedAi::new().barbarian_scouts_are_scouts);
@@ -23018,6 +23021,11 @@ fn the_barbarian_scout_exemption_is_native() {
     assert!(!withheld.barbarian_scouts_are_scouts);
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    assert!(
+        !live.barbarian_scouts_are_scouts,
+        "the explicit selection withholds this screenable repair"
+    );
+    live.enable_barbarian_scouts_are_scouts();
     assert!(live.barbarian_scouts_are_scouts);
 }
 
@@ -34685,10 +34693,9 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() 
         "the deployed seat uses the live shadow"
     );
     assert!(
-        ai.civilian_out_of_reach,
-        "the deployment enables the broader civilian-safety policy"
+        !ai.civilian_out_of_reach,
+        "the explicit selection withholds the broader civilian-safety opt-in"
     );
-    ai.disable_civilian_out_of_reach();
     let reach = ai.barbarian_reach(&game, 0, start, 10);
     assert!(
         reach.covers(&game, start),
@@ -34762,6 +34769,8 @@ fn a_wounded_stacked_guard_does_not_cancel_the_settlers_barbarian_escape() {
     let _raider = game.spawn_test_unit("warrior", 1, raider_at);
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge();
+    ai.enable_settler_guard_holds();
+    ai.enable_civilian_out_of_reach();
     assert!(ai.settler_guard_holds && ai.civilian_out_of_reach);
     ai.settler_guards.insert(settler, guard);
     let reach = ai.barbarian_reach(&game, 0, start, 10);

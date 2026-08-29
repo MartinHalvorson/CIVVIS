@@ -292,6 +292,17 @@ end
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
 local function endScreen(attempt)
+	-- WonderBuiltPopup is a readable completion announcement, not a choice.
+	-- Keep its own Firaxis close path explicit: the shipped context defines
+	-- OnClose as a wrapper around Close(), and Close() also drains a queued
+	-- second wonder before releasing the exclusive popup lock.  This branch is
+	-- intentionally before the generic handlers so a future context adds no
+	-- ambiguity about which completion screen is being closed.
+	if NAME == "WonderBuiltPopup" then
+		if type(OnClose) == "function" then OnClose(); return true; end
+		if type(Close) == "function" then Close(); return true; end
+		return false;
+	end
 	if NAME == "InGamePopup" then
 		-- The shipped Escape path rather than a bare close, so the single
 		-- button's own callback runs. Escape tries CANCEL, then DEFAULT, then
