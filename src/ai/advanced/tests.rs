@@ -911,6 +911,113 @@ fn an_unconnected_luxury_names_its_tech_and_the_research_step_takes_it() {
     assert!(!ai.connect_the_luxury);
 }
 
+/// `border-parity`: a met major's city six tiles from our capital, fielding
+/// six Warriors against our none, makes the seat buy its capital a defender
+/// with Gold above the reserve; at parity, or off, or with the treasury at
+/// the reserve, it buys nothing.
+#[test]
+fn a_weak_seat_beside_a_strong_neighbour_buys_the_contact_citys_defender() {
+    let mut game = Game::new_full(2, 40, 24, 91_776, 250, 0, false);
+    game.current = 0;
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("a starting settler");
+        let pos = game.units[&settler].pos;
+        game.remove_unit(settler);
+        game.found_city_for(pid, pos, None);
+    }
+    for pid in 0..2 {
+        for unit in game.player_unit_ids(pid) {
+            game.remove_unit(unit);
+        }
+    }
+    let ours = game.player_city_ids(0)[0];
+    let home = game.cities[&ours].pos;
+    let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    for position in &positions {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(*position);
+    }
+    // A second rival city six tiles from our capital, with a Warrior stack.
+    let mut ring: Vec<Pos> = positions
+        .iter()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) == 6)
+        .collect();
+    ring.sort_unstable();
+    let border = ring[0];
+    game.found_city_for(1, border, None);
+    for _ in 0..6 {
+        game.spawn_test_unit("warrior", 1, border);
+    }
+    game.record_contact(0, 1);
+    game.players[0].gold = 1_000.0;
+    assert!(
+        game.military_power(0) < BORDER_PARITY_RATIO * game.military_power(1),
+        "fixture: the seat is below parity"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let _ = &plan;
+    let units_before = game.player_unit_ids(0).len();
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.border_parity, "the gene ships off");
+    assert!(!AdvancedAi::legacy().border_parity);
+    let mut untouched = game.clone();
+    assert!(
+        !ai.border_parity_purchase(&mut untouched, 0),
+        "off, nothing is bought"
+    );
+    ai.enable_border_parity();
+    assert!(ai.border_parity);
+    let gold_before = game.players[0].gold;
+    assert!(
+        ai.border_parity_purchase(&mut game, 0),
+        "below parity beside a strong neighbour, the contact city buys a defender"
+    );
+    assert_eq!(game.player_unit_ids(0).len(), units_before + 1);
+    assert!(game.players[0].gold < gold_before);
+    // At the reserve, nothing.
+    let mut poor = untouched.clone();
+    poor.players[0].gold = BORDER_PARITY_RESERVE;
+    assert!(
+        !ai.border_parity_purchase(&mut poor, 0),
+        "the reserve is kept"
+    );
+    // At parity, nothing.
+    let mut armed = untouched.clone();
+    for _ in 0..8 {
+        armed.spawn_test_unit("warrior", 0, home);
+    }
+    assert!(
+        armed.military_power(0) >= BORDER_PARITY_RATIO * armed.military_power(1),
+        "fixture: eight Warriors reach parity"
+    );
+    assert!(
+        !ai.border_parity_purchase(&mut armed, 0),
+        "at parity, nothing is bought"
+    );
+    ai.disable_border_parity();
+    assert!(!ai.border_parity);
+}
+
 #[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and

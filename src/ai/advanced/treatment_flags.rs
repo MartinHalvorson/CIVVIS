@@ -3158,6 +3158,19 @@ impl AdvancedAi {
         self.connect_the_luxury = false;
     }
 
+    /// In peacetime, keep the seat's military power at four fifths of the
+    /// strongest bordering major's by buying the contact city's ranged
+    /// defender with Gold above a reserve. See
+    /// `AdvancedAi::border_parity_purchase`.
+    pub fn enable_border_parity(&mut self) {
+        self.border_parity = true;
+    }
+
+    /// The twin of `enable_border_parity`.
+    pub fn disable_border_parity(&mut self) {
+        self.border_parity = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
