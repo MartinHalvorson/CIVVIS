@@ -39,6 +39,57 @@
 //! widen it, `land_grab` and `parallel_settlers`, are both `Kind::HostOnly`:
 //! they are inert on a native board and cannot be screened at all.
 //!
+//! ## ⚠⚠⚠ What the live seat shows, and where the claim above is wrong
+//!
+//! The paragraph above says a Settler "is not blocked by losing a ranking; it
+//! is blocked before the ranking is consulted". **On the live Civilization VI
+//! seat that is measurably false**, and the difference decides the game.
+//!
+//! Run `civvis-20260829T084031Z`, King, 6p, this gene FORCED ON via
+//! `~/.civvis-live-force-on`, capital trace (`producing` sampled every 6 turns,
+//! with whether a Settler was in `buildable` that same turn):
+//!
+//! | turn | pop | producing | Settler buildable |
+//! |---:|---:|---|---|
+//! | 6 | 1 | — | no — the population floor, legitimately |
+//! | 12 | 2 | `UNIT_SETTLER` | yes |
+//! | 24 | 2 | `UNIT_ARCHER` | yes |
+//! | 30 | 4 | `DISTRICT_CAMPUS` | yes |
+//! | 36 | 4 | `BUILDING_WALLS` | yes |
+//! | 42 | 5 | `UNIT_ARCHER` | yes |
+//!
+//! The pop drop at t24 is the first Settler completing. It then walked until
+//! **t46** before founding, and across those 28 turns the capital had a Settler
+//! buildable on every sampled turn and built Archer, Campus, Walls, Archer.
+//! Opening production (t1–46) went **22% Settler, 78% other**, at one city,
+//! while the corpus above says every recorded win came from 4–6 by turn 60.
+//!
+//! ⚠ At t30 the pipeline was NOT the blocker. Pace is 3, the empire held one
+//! city and one walker, so [`AdvancedAi::expansion_pace_shortfall`] is 1 and
+//! [`AdvancedAi::expansion_schedule_pipeline`] returns `Some(2)`: a second
+//! Settler was allowed and the Campus won the ranking anyway. Widening the
+//! pipeline cannot fix a city that does not want the Settler it may now build.
+//!
+//! ⚠ A second, narrower effect at t24: the shortfall counts a walker as a city
+//! (`pace - (city_count + settlers)` = 2 - 2 = 0), so the gene declines to widen
+//! while a Settler is in flight. That is deliberate — the doc below says
+//! "counting the walkers already on their way" — but it assumes the walk
+//! converts promptly, and this one took 28 turns. A slow or held walker credits
+//! the empire with a city it does not have for as long as it walks.
+//!
+//! What it cost: 2 cities at turn 60, **55% of the leader by turn 53**, then a
+//! flat ~3 score/turn against the leader's ~6, ending at 51.1% and abandoned at
+//! turn 150 under the operator's rule — with **10 cities and zero settler
+//! captures**, so neither expansion loss nor barbarians explain it. Three
+//! completed games with the gene forced on gave cities-at-60 of 5, 2 and 2.
+//!
+//! ⚠ This is a MEASUREMENT, not a licence to re-price. `gene_census --gene
+//! p_settler --games 96` left 97% of games outcome-identical at four times the
+//! shipped Settler value, and the standing finding is that actuation repairs pay
+//! where valuation tunes do not. Both results cannot be right about the same
+//! seat: the census is headless and this is live, and headless and live are
+//! different regimes. Resolving that needs a screen, not an edit.
+//!
 //! ## What the gene does
 //!
 //! It gives the opening a **pace** and lets the pipeline answer to it. The
