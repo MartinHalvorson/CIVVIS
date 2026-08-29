@@ -716,6 +716,37 @@ class ProtectedInstallTest(unittest.TestCase):
         # main chunk sits at Civ 6's 200-register ceiling.
         self.assertNotIn("local retireAsked", shim)
 
+    def test_the_ui_context_says_it_is_alive_once_a_minute(self) -> None:
+        # ⚠⚠ The dominant way a run dies now is a PARKED GAME CORE: the agent
+        # reports one blocker, `GameCoreEventPublishComplete` stops firing, and
+        # the agent — driven only by that event — never ticks again. In the
+        # sample from run civvis-20260829T163259Z, 34 of 35 threads sat in an
+        # idle wait and the one exception was a single Metal frame: the game was
+        # computing nothing and waiting for input only the controller can give.
+        # It ended a game holding 15 cities at 76% of the leader on turn 179.
+        #
+        # Whether that is recoverable turns on whether the UI thread is still
+        # running, and nothing in the log could answer it — this context only
+        # ever spoke when a screen was up, so its silence meant nothing either
+        # way. `ContextPtr:SetUpdate` runs every frame even while the screen is
+        # hidden (which is why `isUp()` is the first thing the tick checks), so
+        # a heartbeat here reports for the whole UI context.
+        #
+        # ⚠ The agent cannot do this itself: a per-frame `SetUpdate` was tried
+        # there and does not run in a script-only in-game context.
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("ui_heartbeat", shim)
+        self.assertIn("local HEARTBEAT_SECONDS = 60.0;", shim)
+        # It must sit BEFORE the not-up early return, or it would only ever
+        # report while a popup happened to be showing — exactly the blind spot.
+        tick = shim.split("local function tick(fDTime)", 1)[1]
+        beat = tick.index("ui_heartbeat")
+        notup = tick.index("if not isUp() then")
+        self.assertLess(beat, notup,
+                        "the heartbeat must run whether or not the screen is up")
+        # Accumulated from the frame delta, not a wall clock the sandbox lacks.
+        self.assertIn("heartbeat = (heartbeat or 0) + (tonumber(fDTime) or 0);", shim)
+
     def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
         # Seven diplomatic losses in a day and no record of what each session
         # resolved: the mod now emits `wc_outcome` from the shipped review data
