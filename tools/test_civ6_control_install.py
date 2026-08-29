@@ -775,6 +775,24 @@ class ProtectedInstallTest(unittest.TestCase):
         # `unit_lost` stays: the capture event is a second witness, not a replacement.
         self.assertIn('emit("unit_lost", {', source)
 
+    def test_settler_combat_hold_checks_the_hostile_units_full_capture_reach(self) -> None:
+        """A combat unit's capture reach is wider than destination adjacency."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        hold = source.split(
+            "CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function", 1
+        )[1].split("CivvisBoard.holdVisibleScoutCaptureLegs", 1)[0]
+
+        self.assertIn("unit = unit,", hold)
+        self.assertIn("local function threatReaches(threat, x, y)", hold)
+        self.assertIn(
+            "UnitManager.GetMoveToPathEx(threat.unit, destination)", hold
+        )
+        self.assertIn("local definition = GameInfo.Units[threat.unit:GetUnitType()]", hold)
+        self.assertIn("definition.BaseMoves", hold)
+        self.assertIn("if distance >= 0 and distance <= baseMoves then", hold)
+        self.assertIn("hostile_reach = reachKind", hold)
+        self.assertNotIn("distance == 1", hold)
+
     def test_the_seat_event_names_the_hosts_victory_table(self) -> None:
         # The TeamVictory event reports a raw integer and docs/CIV6_LADDER.md
         # rightly refuses guessed names for it. The seat event now carries the

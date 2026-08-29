@@ -14342,12 +14342,18 @@ end;
 -- same tile, and `escort_cap_synced` recorded that the host sent both there;
 -- the bridge must therefore not treat one shared guard as an exemption here.
 --
--- Hold only a leg whose *actual host destination* is adjacent to a visible
--- non-scout barbarian combat unit.  That is the observed capture geometry,
--- uses only the local player's ordinary visibility, and applies while the
--- settler is travelling as well as on its first city departure.  Its matching
--- escort row is held too, so refusing the civilian cannot leave the soldier
--- walking into the threat or being handed to explore automation.
+-- Hold a leg whose *actual host destination* a visible non-scout barbarian
+-- combat unit can reach on its next turn.  The first version only checked for
+-- adjacency to the destination.  That was too narrow: a horse archer two
+-- plots away (the host's staggered-hex coordinates made its one-turn leg read
+-- as distance two) moved onto the newly exposed tile and captured the
+-- Settler before the next export.  Use the host pathfinder when it can answer
+-- the question, then a conservative base-move distance fallback when the
+-- enemy's current turn has already spent its movement.  This uses only the
+-- local player's ordinary visibility and applies while the Settler is
+-- travelling as well as on its first city departure.  Its matching escort row
+-- is held too, so refusing the civilian cannot leave the soldier walking into
+-- the threat or being handed to explore automation.
 CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 	local player = try(function() return Players[pid]; end, nil);
 	if player == nil then return; end
@@ -14370,6 +14376,7 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 						if x ~= nil and y ~= nil and visible(x, y) then
 							threats[#threats + 1] = {
 								id = tonumber(try(function() return unit:GetID(); end, nil)),
+								unit = unit,
 								name = name, x = x, y = y,
 							};
 						end
@@ -14379,6 +14386,40 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 		end
 	end);
 	if #threats == 0 then return; end
+
+	-- Hostile units are observed after their own turn, so GetMovesRemaining()
+	-- may be zero even though they receive a fresh allowance before the next
+	-- capture attempt.  Prefer the host path's turn count (which includes that
+	-- next-turn allowance); if the path is unavailable or refuses a route to a
+	-- civilian-occupied plot, fall back to the unit definition's BaseMoves and
+	-- the real hex distance.  The fallback is deliberately conservative: a
+	-- false positive holds a Settler for one turn, while a false negative loses
+	-- it before the next export.
+	local function threatReaches(threat, x, y)
+		local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
+		local path = try(function()
+			return UnitManager.GetMoveToPathEx(threat.unit, destination);
+		end, nil);
+		if destination ~= nil and path ~= nil and path.plots ~= nil and path.turns ~= nil then
+			local n = 0;
+			for _ in pairs(path.plots) do n = n + 1; end
+			local last = tonumber(path.turns[n]);
+			if n > 0 and path.plots[n] == destination and last ~= nil and last <= 1 then
+				return true, "path";
+			end
+		end
+		local baseMoves = tonumber(try(function()
+			local definition = GameInfo.Units[threat.unit:GetUnitType()];
+			return definition ~= nil and definition.BaseMoves;
+		end, nil)) or 2;
+		local distance = tonumber(try(function()
+			return Map.GetPlotDistance(x, y, threat.x, threat.y);
+		end, -1)) or -1;
+		if distance >= 0 and distance <= baseMoves then
+			return true, "base_moves";
+		end
+		return false, nil;
+	end;
 
 	local held = {};
 	for _, row in ipairs(rows) do
@@ -14397,14 +14438,13 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 					if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
 					if CivvisBoard.reachesThisTurn(settler, sentX, sentY) then
 						for _, threat in ipairs(threats) do
-							local distance = tonumber(try(function()
-								return Map.GetPlotDistance(sentX, sentY, threat.x, threat.y);
-							end, -1)) or -1;
-							if distance == 1 then
+							local reaches, reachKind = threatReaches(threat, sentX, sentY);
+							if reaches then
 								held[settlerId] = {
 									settler = settlerId, fromX = fromX, fromY = fromY,
 									wantX = wantX, wantY = wantY,
 									sentX = sentX, sentY = sentY, threat = threat,
+									reachKind = reachKind,
 									row = row,
 								};
 								CivvisBoard.stats.settler_barbarian_combat_capture_held =
@@ -14413,7 +14453,7 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 									turn = turn, settler = settlerId,
 									from = { fromX, fromY }, want = { wantX, wantY }, sent = { sentX, sentY },
 									hostile = threat.id, hostile_type = threat.name,
-									hostile_pos = { threat.x, threat.y },
+									hostile_pos = { threat.x, threat.y }, hostile_reach = reachKind,
 								});
 								break;
 							end
