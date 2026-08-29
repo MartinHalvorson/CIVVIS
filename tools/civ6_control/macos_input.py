@@ -78,12 +78,28 @@ case "click":
     Thread.sleep(forTimeInterval: Double(max(0, integer(3))) / 1000.0)
     postMouse(.leftMouseUp, point)
 case "key":
-    guard args.count == 2 else { invalidArguments() }
+    // An optional third argument is a modifier held for the keystroke. The flag
+    // must be set on BOTH the down and the up event: Civilization VI reads the
+    // modifier off the event it receives, and a bare key-up leaves the shift
+    // state ambiguous for whatever the game does next.
+    guard args.count == 2 || args.count == 3 else { invalidArguments() }
     let code = CGKeyCode(integer(1))
-    CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true)?
-        .post(tap: .cghidEventTap)
-    CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)?
-        .post(tap: .cghidEventTap)
+    var flags: CGEventFlags = []
+    if args.count == 3 {
+        switch args[2] {
+        case "shift": flags.insert(.maskShift)
+        case "control": flags.insert(.maskControl)
+        case "option": flags.insert(.maskAlternate)
+        case "command": flags.insert(.maskCommand)
+        default: invalidArguments()
+        }
+    }
+    let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true)
+    down?.flags = flags
+    down?.post(tap: .cghidEventTap)
+    let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
+    up?.flags = flags
+    up?.post(tap: .cghidEventTap)
 case "scroll":
     // ⚠⚠⚠ PIXELS, NOT LINES — Civilization VI IGNORES LINE-UNIT SCROLL ENTIRELY.
     //
@@ -226,15 +242,49 @@ def click(x: int, y: int, *, hold_s: float = 0.0, check: bool = False):
     return _run_native(["click", str(x), str(y), str(hold_ms)], check=check)
 
 
-def press_key(name: str, *, check: bool = False):
-    """Press a named key supported by both the native and cliclick backends."""
-    key_codes = {"escape": 53}
+#: Virtual key codes for the keys this controller sends, and the name cliclick
+#: knows each by.  Kept together so the two backends cannot drift.
+KEY_CODES = {"escape": (53, "esc"), "return": (36, "return")}
+
+#: Modifiers, canonical name -> the name cliclick knows it by.
+#:
+#: ⚠ THE TWO VOCABULARIES DIFFER AND ONLY `shift` OVERLAPS.  cliclick takes
+#: `alt`, `cmd`, `ctrl`, `fn`, `shift` (its own `kd:` help lists them), while
+#: the native helper switches on the Cocoa-ish spellings that name the
+#: `CGEventFlags`.  Passing the canonical name straight through silently
+#: refused three of the four.
+MODIFIERS = {"shift": "shift", "control": "ctrl",
+             "option": "alt", "command": "cmd"}
+
+
+def press_key(name: str, *, modifier: str | None = None, check: bool = False):
+    """Press a named key, optionally with one modifier held.
+
+    ⚠ SHIFT+RETURN is Civilization VI's forced end turn — the same request the
+    shipped UI sends, and the one form the engine does not refuse while a
+    blocker stands.  It exists here so a turn that has parked can be nudged from
+    OUTSIDE the game, where this harness still has its input grants even when
+    the mod has stopped ticking.
+    """
     normalized = name.lower()
-    if normalized not in key_codes:
+    if normalized not in KEY_CODES:
         raise ValueError(f"unsupported key: {name}")
+    if modifier is not None and modifier not in MODIFIERS:
+        raise ValueError(f"unsupported modifier: {modifier}")
+    code, cli_name = KEY_CODES[normalized]
     if _cliclick():
-        return _run_cliclick([f"kp:{'esc' if normalized == 'escape' else normalized}"], check=check)
-    return _run_native(["key", str(key_codes[normalized])], check=check)
+        if modifier is None:
+            return _run_cliclick([f"kp:{cli_name}"], check=check)
+        # One invocation, so the modifier cannot be left held by a crash between
+        # two of them.
+        held = MODIFIERS[modifier]
+        return _run_cliclick(
+            [f"kd:{held}", f"kp:{cli_name}", f"ku:{held}"], check=check
+        )
+    arguments = ["key", str(code)]
+    if modifier is not None:
+        arguments.append(modifier)
+    return _run_native(arguments, check=check)
 
 
 # One wheel notch, in pixels. Small on purpose: Civilization VI ignores a single
