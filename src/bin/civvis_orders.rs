@@ -1587,6 +1587,120 @@ fn append_border_buy_order(
     None
 }
 
+// ★★★★★ THE LUXURY THE SEAT LACKS, BOUGHT FOR GOLD. The live seat runs
+// Displeased on 48% of its city-turns — Firaxis takes 10% off every non-food
+// yield there, ≈1,150 yield points over a game — and luxuries are 60% of the
+// amenities it does have. Rivals visibly hold 2–8 improved luxuries the seat
+// holds none of, the host sells a copy as an ordinary deal, and in the nine
+// recorded sales the AI asked 2–14 Gold a turn per copy; one copy is +1
+// Amenity in four cities. `Game::quick_deals` does quote a luxury PURCHASE,
+// but the mirror carries no rival's tradeable stock and `border_buy_ceiling`
+// rightly refuses the shape, so — like the favor sale and the passage
+// purchase — the order is composed here from the export's own facts: the
+// amenity ledger the host reports per city, the net income, the treasury,
+// the rivals' war state and gold. The Lua arm reads the RIVAL's own
+// tradeable list, takes the first luxury the host says the seat holds none
+// of, asks the rival's own price with EQUALIZE and closes only at or under
+// the ceiling carried in `x`.
+//
+// Cadence-gated like its neighbours (phase 4, the last free slot of the
+// six-turn deal week), aimed at the richest met major at peace with no deal
+// already heading its way this turn; the mod's own cooldowns
+// (`TradeRetryTurns`) meter re-asks after a `buy_no_luxury`. The ceiling is
+// what a copy is worth to the empire — a base and a share per city, since
+// the four cities it reaches each recover the 10% — bounded by what the
+// income carries at the 25× book with `LUXURY_BUY_INCOME_FLOOR` Gold a turn
+// kept clear (every recorded ask was per-turn), and by the cap. A ceiling
+// under `LUXURY_BUY_CEILING_MIN` — two Gold a turn, the cheapest ask on
+// record — is not worth a deal window.
+const LUXURY_BUY_MIN_DEFICIT: f64 = 2.0;
+const LUXURY_BUY_GOLD_RESERVE: i64 = 60;
+const LUXURY_BUY_INCOME_FLOOR: f64 = 4.0;
+const LUXURY_BUY_CEILING_BASE: i32 = 135;
+const LUXURY_BUY_CEILING_PER_CITY: i32 = 10;
+const LUXURY_BUY_CEILING_MIN: i32 = 50;
+const LUXURY_BUY_CEILING_MAX: i32 = 300;
+const LUXURY_BUY_CADENCE: u32 = 6;
+const LUXURY_BUY_PHASE: u32 = 4;
+
+/// How many amenities the empire is short by the host's own ledger: the sum
+/// over cities of `needed − have` where positive. A city whose ledger the
+/// host did not report (`NaN` or `-1`, see `StateCity::amenities`) is left
+/// out rather than read as content or as starving.
+fn amenity_deficit(state: &civvis::mirror::StateSnapshot) -> f64 {
+    state
+        .cities
+        .iter()
+        .filter(|city| city.amenities >= 0.0 && city.amenities_needed >= 0.0)
+        .map(|city| (city.amenities_needed - city.amenities).max(0.0))
+        .sum()
+}
+
+/// Why no luxury-purchase order was appended this turn, for the note; `None`
+/// when one was.
+fn append_luxury_buy_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    if amenity_deficit(state) < LUXURY_BUY_MIN_DEFICIT {
+        return Some("luxury_buy_hold:content");
+    }
+    if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
+        return Some("luxury_buy_hold:cadence");
+    }
+    let Some(income) = state.gold_per_turn.filter(|income| income.is_finite()) else {
+        return Some("luxury_buy_hold:income_unknown");
+    };
+    let carried = (25.0 * (income - LUXURY_BUY_INCOME_FLOOR))
+        .floor()
+        .clamp(0.0, LUXURY_BUY_CEILING_MAX as f64) as i32;
+    let worth = LUXURY_BUY_CEILING_BASE
+        + LUXURY_BUY_CEILING_PER_CITY * state.cities.len().min(i32::MAX as usize) as i32;
+    let ceiling = worth.min(LUXURY_BUY_CEILING_MAX).min(carried);
+    if ceiling < LUXURY_BUY_CEILING_MIN {
+        return Some("luxury_buy_hold:income");
+    }
+    if state.gold < LUXURY_BUY_GOLD_RESERVE {
+        return Some("luxury_buy_hold:treasury");
+    }
+    // One working deal per rival at a time is the mod's rule; a rival with a
+    // sale or purchase already heading its way this turn is passed over for
+    // the next-richest, not held against.
+    let seller = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .filter(|rival| {
+            !orders.iter().any(|order| {
+                (order.kind == "sell" || order.kind == "buy")
+                    && order.subject == Some(rival.player as i64)
+            })
+        })
+        .max_by(|left, right| {
+            let gold = |rival: &civvis::mirror::StateRival| {
+                if rival.gold.is_finite() {
+                    rival.gold
+                } else {
+                    0.0
+                }
+            };
+            gold(left)
+                .partial_cmp(&gold(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.player.cmp(&left.player))
+        });
+    let Some(seller) = seller else {
+        return Some("luxury_buy_hold:no_seller");
+    };
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(seller.player as i64),
+        verb: Some("LUXURY_ANY".to_string()),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
 // ★★★★★ THE FAVOR BANK, SPENT ON THE PLAN THAT IS ACTUALLY RUNNING. Diplomatic
 // favor is votes at the World Congress and nothing else; on the live seat the
 // bank has read 200–420 at the end of every game measured, and the 2026-08-18
@@ -3301,6 +3415,20 @@ fn decide(
             // seal standing while the treasury cannot meet the minimum ask,
             // or while another deal holds the same rival's working deal.
             if why == "border_buy_hold:treasury" || why == "border_buy_hold:deal_in_flight" {
+                note_bits.push(why.to_string());
+            }
+        }
+    }
+    match append_luxury_buy_order(state, &mut orders) {
+        None => note_bits.push("luxury_buy=1".to_string()),
+        Some(why) => {
+            // The holds worth a glance: an amenity deficit standing on the
+            // lane's own turn while the income or the treasury cannot carry
+            // a copy, or with nobody at peace to buy one from.
+            if why == "luxury_buy_hold:income"
+                || why == "luxury_buy_hold:treasury"
+                || why == "luxury_buy_hold:no_seller"
+            {
                 note_bits.push(why.to_string());
             }
         }
@@ -11518,6 +11646,152 @@ mod tests {
             Some("border_buy_hold:deal_in_flight")
         );
         assert_eq!(in_flight.len(), 1);
+    }
+
+    #[test]
+    fn luxury_buys_fill_the_amenity_gap() {
+        // Two cities one Amenity short and one with a surplus: a deficit of
+        // two by the host's own ledger, on the lane's turn, with income to
+        // carry a copy and three majors met — one at war, one broke.
+        let short = |needed: f64, have: f64| StateCity {
+            amenities: have,
+            amenities_needed: needed,
+            ..StateCity::default()
+        };
+        let state = StateSnapshot {
+            turn: 94, // 94 % 6 == 4, the lane's phase
+            gold: 200,
+            gold_per_turn: Some(12.0),
+            cities: vec![short(5.0, 4.0), short(6.0, 5.0), short(3.0, 4.0)],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    gold: 300.0,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    gold: 500.0,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 5,
+                    gold: 900.0,
+                    at_war: true,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 6,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        assert_eq!(amenity_deficit(&state), 2.0);
+
+        let mut orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&state, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        // The richest major at peace; seat 5 is richer and at war, seat 6's
+        // treasury is unknown and reads as nothing.
+        assert_eq!(orders[0].subject, Some(4));
+        assert_eq!(orders[0].verb.as_deref(), Some("LUXURY_ANY"));
+        // 135 + 10·3 = 165, under what 12 a turn carries (25·(12−4) = 200)
+        // and the cap.
+        assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // The income binds: 8 a turn carries 100 at the 25× book with 4 kept
+        // clear; the cap binds a wide empire on a fat income.
+        let mut lean = state.clone();
+        lean.gold_per_turn = Some(8.0);
+        let mut lean_orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&lean, &mut lean_orders), None);
+        assert_eq!(lean_orders[0].pos, Some((100, 0)));
+        let mut wide = state.clone();
+        wide.gold_per_turn = Some(40.0);
+        wide.cities = (0..20).map(|_| short(6.0, 5.0)).collect();
+        let mut wide_orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&wide, &mut wide_orders), None);
+        assert_eq!(wide_orders[0].pos, Some((300, 0)));
+
+        // Content, or with only a ledger the host never sent: no ask.
+        let mut held = Vec::new();
+        let mut content = state.clone();
+        content.cities = vec![short(5.0, 4.0), short(3.0, 4.0)];
+        assert_eq!(
+            append_luxury_buy_order(&content, &mut held),
+            Some("luxury_buy_hold:content")
+        );
+        let mut unknown = state.clone();
+        unknown.cities = vec![short(f64::NAN, f64::NAN), short(-1.0, -1.0), short(9.0, 4.0)];
+        assert_eq!(amenity_deficit(&unknown), 5.0);
+        unknown.cities.pop();
+        assert_eq!(
+            append_luxury_buy_order(&unknown, &mut held),
+            Some("luxury_buy_hold:content")
+        );
+
+        // Off the cadence, income unknown, income too thin for the cheapest
+        // ask on record, or the treasury under the reserve: held.
+        let mut off_cadence = state.clone();
+        off_cadence.turn = 95;
+        assert_eq!(
+            append_luxury_buy_order(&off_cadence, &mut held),
+            Some("luxury_buy_hold:cadence")
+        );
+        let mut blind = state.clone();
+        blind.gold_per_turn = None;
+        assert_eq!(
+            append_luxury_buy_order(&blind, &mut held),
+            Some("luxury_buy_hold:income_unknown")
+        );
+        let mut thin = state.clone();
+        thin.gold_per_turn = Some(5.0); // 25·(5−4) = 25, under the 50 minimum
+        assert_eq!(
+            append_luxury_buy_order(&thin, &mut held),
+            Some("luxury_buy_hold:income")
+        );
+        let mut poor = state.clone();
+        poor.gold = 59;
+        assert_eq!(
+            append_luxury_buy_order(&poor, &mut held),
+            Some("luxury_buy_hold:treasury")
+        );
+        assert!(held.is_empty());
+
+        // A deal already heading to the richest seat this turn passes the
+        // ask to the next-richest; with every peaceful seat busy, or nobody
+        // met, there is nobody to buy from.
+        let mut in_flight = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(append_luxury_buy_order(&state, &mut in_flight), None);
+        assert_eq!(in_flight.len(), 2);
+        assert_eq!(in_flight[1].subject, Some(2));
+        let mut all_busy: Vec<Order> = [2, 4, 6]
+            .into_iter()
+            .map(|seat| Order {
+                kind: "buy",
+                subject: Some(seat),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((40, 0)),
+            })
+            .collect();
+        assert_eq!(
+            append_luxury_buy_order(&state, &mut all_busy),
+            Some("luxury_buy_hold:no_seller")
+        );
+        assert_eq!(all_busy.len(), 3);
+        let mut alone = state.clone();
+        alone.rivals.clear();
+        assert_eq!(
+            append_luxury_buy_order(&alone, &mut held),
+            Some("luxury_buy_hold:no_seller")
+        );
     }
 
     #[test]
