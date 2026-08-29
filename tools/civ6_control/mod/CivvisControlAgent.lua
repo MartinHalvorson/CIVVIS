@@ -10292,6 +10292,29 @@ CivvisLedger.onUnitRemoved = function(player, unitId)
 	});
 end;
 
+-- One of OUR units was TAKEN, not killed: the game's own word for it. Modelled
+-- on `Base/Assets/UI/Popups/UnitCaptured.lua:8`
+-- (`function OnUnitCaptured( currentUnitOwner, unit, owningPlayer, capturingPlayer )`),
+-- registered there at `:49` (`Events.UnitCaptured.Add(OnUnitCaptured);`) and
+-- filtered at `:11` on `localPlayer == currentUnitOwner`. `unit_lost` above
+-- still fires for the same removal, and it reads exactly like a settler
+-- founding a city — 24 settlers went to the barbarians in ten runs on
+-- 2026-08-28 and no ledger column could tell. This line names the captor.
+CivvisLedger.onUnitCaptured = function(currentUnitOwner, unitId, owningPlayer, capturingPlayer)
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	if tonumber(currentUnitOwner) ~= pid then return; end
+	local captor = tonumber(capturingPlayer);
+	local barbarian = captor ~= nil and try(function()
+		return Players[captor]:IsBarbarian() == true;
+	end, false) == true;
+	emit("unit_captured", {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[tostring(unitId)],
+		owner = tonumber(currentUnitOwner), original_owner = tonumber(owningPlayer),
+		captor = captor, captor_is_barbarian = barbarian,
+	});
+end;
+
 CivvisLedger.onCityOccupationChanged = function(player, cityId)
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	local city = try(function() return CityManager.GetCity(player, cityId); end);
@@ -17038,6 +17061,7 @@ function Initialize()
 		CombatVisEnd = CivvisLedger.onCombatVisEnd,
 		UnitDamageChanged = CivvisLedger.onUnitDamageChanged,
 		UnitRemovedFromMap = CivvisLedger.onUnitRemoved,
+		UnitCaptured = CivvisLedger.onUnitCaptured,
 		CityOccupationChanged = CivvisLedger.onCityOccupationChanged,
 	}) do
 		pcall(function() Events[name].Add(handler); end);
