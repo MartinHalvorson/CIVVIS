@@ -139,6 +139,7 @@ fn quote(text: &str) -> String {
 /// a refusal rather than acted on.
 fn civ6_unit_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
+        "bireme" => "PHOENICIA_BIREME",
         "tagma" => "BYZANTINE_TAGMA",
         "legion" => "ROMAN_LEGION",
         "nau" => "PORTUGUESE_NAU",

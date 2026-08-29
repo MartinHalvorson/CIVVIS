@@ -5787,6 +5787,7 @@ fn civvis_node_name<T>(
     // `civvis_orders` pins the round trip for every orderable name.
     if prefix == "UNIT_" {
         let alias = match base.as_str() {
+            "phoenicia_bireme" => Some("bireme"),
             "byzantine_tagma" => Some("tagma"),
             "roman_legion" => Some("legion"),
             "portuguese_nau" => Some("nau"),
