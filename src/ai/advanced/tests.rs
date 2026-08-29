@@ -4695,6 +4695,30 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     );
     assert!(project_value > 0.0, "the project stays a positive fallback");
 
+    // A directly targeted Science controller gets the same guard even when
+    // the deployment genome has not enabled the separately screenable
+    // `buildings-before-projects` treatment. This is the live failure mode:
+    // the objective is Science, but a Commercial Hub Investment must not
+    // consume a city's only chance to build its Library.
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut targeted = AdvancedAi::targeting(VictoryTarget::Science);
+    targeted.refresh_research_weight(&game);
+    let targeted_value =
+        targeted.district_project_value(&game, 0, city, "commercial_hub_investment", &science_plan);
+    assert!(
+        targeted_value <= PROJECT_BEHIND_BUILDINGS_CAP,
+        "the Science target must cap the repeatable project without a genome override: \
+         {targeted_value}"
+    );
+
     // Library built, University not yet reachable: nothing owed, the race
     // is priced as before.
     game.cities
