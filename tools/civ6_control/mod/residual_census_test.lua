@@ -179,13 +179,29 @@ print("policy slot: fills the open slot before claiming completion")
 --- Run civvis-20260829T032446Z shows both halves: t88 dismissed UNITS with
 --- `parked=0`, forced, and advanced; t94 dismissed GIVE_INFLUENCE_TOKEN unforced
 --- and never played another turn.
-local forfeitArm = agentSrc:match("forced = true %}%);(.-)elseif not residual_taken")
+local forfeitArm = agentSrc:match("forced = not holdForVote %}%);(.-)elseif not residual_taken")
 assert(forfeitArm, "the forfeit dismissal arm was not found")
 assert(forfeitArm:find('REASON = "UserForced"', 1, true),
 	"a forfeited blocker must force the end turn")
 assert(not forfeitArm:find("UNIT_BLOCKERS", 1, true),
 	"the forced end turn must not be gated on UNIT_BLOCKERS")
 print("forfeit: every dismissed blocker forces the end turn")
+
+--- ⚠⚠⚠ EXCEPT THE CONGRESS SESSION, WHICH DEFERS ITS BALLOT ONE CYCLE.
+--- Forfeit 1 waits for the stage-1/popup ballot; only forfeit 2 falls back to
+--- vote-and-submit. Forcing the turn at forfeit 1 ends it before either can
+--- happen, so the session is dismissed unvoted every time -- and this seat plays
+--- for a DIPLOMATIC victory, where those votes are the win condition. The hold
+--- lifts as soon as the ballot is cast for the turn.
+assert(forfeitArm:find("holdForVote", 1, true),
+	"the forced end turn must be held while a congress ballot is still owed")
+local hold = agentSrc:match("local holdForVote = (.-);\n")
+assert(hold, "holdForVote is not defined")
+assert(hold:find("ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION", 1, true),
+	"the hold must name the congress session")
+assert(hold:find("voted_turn", 1, true),
+	"the hold must lift once the ballot is cast for this turn")
+print("forfeit: the congress session is not forced before its ballot")
 
 print("blocker ownership: " ..
 	#(function() local n = {} for _ in pairs(answers) do n[#n + 1] = 1 end return n end)() ..
