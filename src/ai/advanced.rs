@@ -33479,11 +33479,11 @@ impl AdvancedAi {
             // attack into that domain"), all of them scored in full first.
             //
             // ⚠ These are the engine's own predicates, not re-derivations of
-            // them. `unit_has_line_of_sight` is deliberately not the public
-            // `line_of_sight_from`: the tile version cannot know about the
-            // firing unit's `see_through_woods`, so gating with it would
-            // withhold a shot the engine would have allowed. Re-deriving any
-            // of the four here would be the same bug in a new place.
+            // them. `ranged_order_is_legal` is deliberately passed the
+            // hoisted frames: rebuilding them per tile made the first version
+            // of this guard slower. Its line-of-sight check also knows about
+            // the firing unit's `see_through_woods`, so re-deriving any part
+            // of the legality rule here would be the same bug in a new place.
             //
             // ⚠ This is a CORRECTNESS change and nothing else. Measured on
             // `tools/speed_ab.py`, 8 paired games at the deployment shape, it
@@ -33500,12 +33500,7 @@ impl AdvancedAi {
             // hoisted below for that reason. Do not inline them back.
             let frames = vision_frames
                 .get_or_insert_with(|| (g.player_vision_frame(pid), g.visibility_viewers(pid)));
-            if spec.has_ranged_attack()
-                && !g.is_embarked(&unit)
-                && distance <= g.unit_attack_range(uid)
-                && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
-                && g.unit_has_line_of_sight(uid, pos)
-            {
+            if g.ranged_order_is_legal(pid, uid, pos, &frames.0, &frames.1) {
                 actions.push(Action::Ranged {
                     unit: uid,
                     target: pos,

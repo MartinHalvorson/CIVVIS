@@ -14966,6 +14966,74 @@ fn advanced_tactical_picker_skips_embarked_ranged_attacks() {
 }
 
 #[test]
+fn advanced_tactical_picker_skips_ranged_units_without_attacks() {
+    let mut game = Game::new_full(2, 24, 16, 71_022, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("seat starts with a Settler");
+    let capital = game.units[&settler].pos;
+    game.found_city_for(0, capital, None);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.at_war.insert((0, 1));
+    let target = game
+        .wdisk(capital, 2)
+        .into_iter()
+        .find(|position| game.wdist(capital, *position) == 2 && game.city_at(*position).is_none())
+        .expect("capital needs an unoccupied range-two target");
+    for position in game.wdisk(capital, 2) {
+        if let Some(tile) = game.map.tiles.get_mut(&position) {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+
+    let archer = game.spawn_test_unit("archer", 0, capital);
+    let defender = game.spawn_test_unit("warrior", 1, target);
+    game.units.get_mut(&archer).unwrap().attacks_left = 0;
+    game.units.get_mut(&defender).unwrap().hp = 1;
+    let frames = (game.player_vision_frame(0), game.visibility_viewers(0));
+    assert!(
+        game.combat_target_visible_at(0, target, &frames.0, &frames.1),
+        "the fixture must expose the hostile target"
+    );
+    assert!(game.unit_has_line_of_sight(archer, target));
+    assert!(
+        !game.ranged_order_is_legal(0, archer, target, &frames.0, &frames.1),
+        "the engine must reject a ranged unit with no attacks left"
+    );
+
+    let refused_before = AdvancedAi::illegal_attack_census()
+        .into_iter()
+        .find_map(|(reason, count)| (reason == "no moves left").then_some(count))
+        .unwrap_or(0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    let _ = ai.advanced_military_step(&mut game, 0, archer, &plan);
+    let refused_after = AdvancedAi::illegal_attack_census()
+        .into_iter()
+        .find_map(|(reason, count)| (reason == "no moves left").then_some(count))
+        .unwrap_or(0);
+    assert_eq!(
+        refused_after, refused_before,
+        "a spent ranged unit must not enter the tactical attack scorer"
+    );
+}
+
+#[test]
 fn army_declines_a_captured_settler_when_no_city_site_remains() {
     let mut game = Game::new_full(2, 20, 14, 71_019, 120, 0, false);
     for pid in 0..2 {
