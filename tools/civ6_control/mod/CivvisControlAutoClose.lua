@@ -159,6 +159,11 @@ end
 local CHAINED = {
 	NaturalDisasterPopup = "NaturalDisasterPopup_GranColombia_Maya",
 	DiplomacyActionView = "DiplomacyActionView_Expansion2",
+	-- Sukritact's Simple UI Adjustments is a later replacement in the stock
+	-- install. It includes the Firaxis popup and only changes the wonder audio;
+	-- retaining it here prevents the high-load-order closer from regressing that
+	-- user-visible behavior while still adding the native close timer.
+	WonderBuiltPopup = "Suk_WonderBuiltPopup",
 };
 
 -- Whether a screen is in there at all. An include that finds no file fails
