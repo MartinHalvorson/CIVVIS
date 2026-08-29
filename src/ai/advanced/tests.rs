@@ -1255,6 +1255,57 @@ fn the_land_grab_wants_the_land_not_a_rung() {
     assert!(!AdvancedAi::legacy().base.land_grab);
 }
 
+/// `settler-backlog-brake`: with three cities and a Settler parked six turns
+/// the pipeline is closed; off, the land grab's three walkers stand. Below
+/// three cities the brake never speaks.
+#[test]
+fn a_parked_settler_closes_the_pipeline_under_the_brake() {
+    let mut game = Game::new(2, 24, 16, 71, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("a starting settler");
+    let mut ai = AdvancedAi::new();
+    ai.enable_land_grab();
+    assert!(!ai.settler_backlog_brake && !ai.base.settler_backlog_brake);
+    ai.enable_settler_backlog_brake();
+    assert!(ai.settler_backlog_brake && ai.base.settler_backlog_brake);
+    for turn in 1..=BasicAi::SETTLER_BACKLOG_IDLE_TURNS + 1 {
+        game.turn = turn;
+        ai.base.refresh_settler_idle(&game, 0);
+    }
+    assert_eq!(
+        ai.base
+            .parked_settlers(&game, 0, BasicAi::SETTLER_BACKLOG_IDLE_TURNS),
+        1,
+        "fixture: the starting settler never moved"
+    );
+    let _ = settler;
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 3, 1),
+        0,
+        "three cities and a parked settler: the pipeline is closed"
+    );
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 2, 1),
+        2,
+        "the opening is untouched"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 16, 3, 1),
+        3,
+        "the ungated width is the land grab's three walkers"
+    );
+    ai.disable_settler_backlog_brake();
+    assert!(!ai.settler_backlog_brake && !ai.base.settler_backlog_brake);
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 3, 1),
+        3,
+        "off, the land grab's three walkers stand"
+    );
+}
+
 /// The land grab's pipeline: two walkers from the first city, one more per
 /// three cities, never more than the seats still short. Every default
 /// constructor and the frozen anchor keep the one-at-a-time gate.
