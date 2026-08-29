@@ -193,8 +193,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `cheapest-wonder-first` | off (unmeasured) | A wonder within twelve turns of done in one of the empire's strongest cities opens the live wonder race without the three-city and three-building guards, with a bonus that scales with how quickly it finishes; a wonder further than twenty-five turns from done never opens the ordinary race. | 1 \| 1 |
 | `connect-the-luxury` | off (unmeasured) | Research the cheapest technology that connects an owned, unimproved luxury (Irrigation, Sailing) ahead of the lane's beeline, once the opening techs are in. | 1 \| 1 |
 | `exhaustion-loyalty-guard` | off (unmeasured) | A stranded Settler's exhaustion search sets aside a site beside an unresolved rival border — the one fog guess the preferred search made that names a city the forecast cannot see — and its nearest-legal tier runs the same concrete-revolt forecast the ranked tier does. | 1 \| 1 |
+| `first-district-first` | off (unmeasured) | `first-district-first`: a city's FIRST specialty district outranks the queue filler. | 1 \| 1 |
 | `first-granary-reserve` | off (unmeasured) | A city grown to its housing (pop + 1 ≥ housing) with no Granary starts one ahead of the argmax. | 1 \| 1 |
 | `settler-backlog-brake` | off (unmeasured) | Once the empire holds three cities, no Settler starts while an owned Settler has stood on one tile six turns; the same brake on the `BasicAi` pipeline. | 1 \| 1 |
+| `walls-after-districts` | off (unmeasured) | `walls-after-districts`: the barbarian pre-emption's WALL answer waits until the city holds a district; its unit answer is untouched. | 1 \| 1 |
 
 ## Removed from the code
 
