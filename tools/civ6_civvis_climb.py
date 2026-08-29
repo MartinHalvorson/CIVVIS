@@ -69,6 +69,9 @@ from civ6_control import gamelock, install, launcher  # noqa: E402
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
 from civ6_play import VICTORY_LANES  # noqa: E402
+# The settler-capture detector: one module, imported here so the ladder row
+# and the per-run dossier count the same captures the CLI does.
+import civ6_settler_captures  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
 # is a Steam client that is coming back up on its own; the last is long because if
@@ -508,6 +511,31 @@ def ensure_popup_clear() -> None:
         stale = [pid for pid in popup_clearer_pids() if pid not in owned]
         retire_popup_clearers(stale, "unowned popup clearer(s); the interactive "
                               "keeper already owns this seat")
+        # ⚠⚠⚠ AND RETIRE THE OWNED ONE TOO, WHICH THIS BRANCH USED NOT TO DO.
+        #
+        # The hazard the paragraph above describes — "killing its child causes
+        # the host to revive it WHILE THIS BATCH STARTS ANOTHER, leaving two
+        # clearers" — belonged to a path that started one. This branch returns
+        # without starting any, so killing the keeper's child leaves exactly
+        # one clearer: the keeper's own revival, three seconds later, exec'd
+        # from the tracked file. Fresh, and still singular.
+        #
+        # Until now it was never retired at all, so it ran whatever code it
+        # started with for the life of the host. Measured 2026-08-28: the
+        # clearer had started at 09:03 and `popup_clear.py` was last written at
+        # 17:13, so it was eight hours stale and #2711's three-second capture
+        # re-check — written that afternoon precisely to stop the popup
+        # backstop going blind — was not in effect at all. Across the recent
+        # climb logs, "retiring ... inherited clearer" appears ZERO times,
+        # because on this host the keeper always owns the seat and this branch
+        # always returned first.
+        #
+        # Same defect as #2699 for the wedge watchdog: a long-lived helper that
+        # nothing refreshes silently keeps yesterday's build. Batch start is the
+        # safe moment for it — setup takes minutes and no game is playing.
+        retire_popup_clearers(sorted(owned), "the keeper's own clearer so this "
+                              "batch gets the current build; the keeper revives "
+                              "it from the tracked file")
         print(f"[popups] interactive popup keeper pid {keeper_pid} owns this "
               "batch; not starting a duplicate", flush=True)
         return
@@ -936,6 +964,54 @@ def longest_idle_settler(events: Path) -> int:
     return best
 
 
+def settler_captures_of(run_dir: Path) -> tuple[int | None, list[dict] | None]:
+    """How many settlers the run lost to capture, and the turn and mechanism of each.
+
+    ★★★★★ 24 SETTLERS IN TEN RUNS ON 2026-08-28 AND NO COLUMN SHOWED ONE. The
+    mod's `unit_lost` fires for a settler that founds a city and for one the
+    barbarians take, and the two are byte-identical. The operator's standing
+    rule is that every capture is analysed and fixed; a ledger that cannot see
+    them cannot enforce it. `civ6_settler_captures` subtracts the `found`
+    events (and prefers the mod's `unit_captured` where a run has it), so this
+    is the same count the CLI's `--all` census prints.
+
+    Exception-safe: a detector failure must never cost the row.
+    """
+    if not (run_dir / "events.jsonl").is_file():
+        return None, None
+    try:
+        captures = civ6_settler_captures.detect_captures(run_dir)
+    except Exception as exc:  # noqa: BLE001 — the row is worth more than the column
+        print(f"  ⚠ settler-capture detector failed on {run_dir.name}: {exc}", flush=True)
+        return None, None
+    return len(captures), [{"turn": c["turn"], "mechanism": c["mechanism"]} for c in captures]
+
+
+def write_settler_capture_dossiers(tag: str) -> Path | None:
+    """Write `settler_captures.md` beside a finished run when it lost a settler.
+
+    The operator's rule is "deeply analyze what happened" — every time. The
+    dossier is the analysis the detector can do on its own: the settler's last
+    three frames, the hostiles and guard around it, its orders, the journal
+    lines, and the mechanism. Returns the path written, or None when there was
+    nothing to write. Never raises: a dossier failure must not break the loop.
+    """
+    run_dir = RUN_ROOT / tag
+    try:
+        if not (run_dir / "events.jsonl").is_file():
+            return None
+        captures = civ6_settler_captures.detect_captures(run_dir)
+        if not captures:
+            return None
+        path = run_dir / "settler_captures.md"
+        path.write_text(civ6_settler_captures.render_markdown(tag, captures))
+        print(f"  ⚠ {len(captures)} settler(s) captured — dossiers in {path}", flush=True)
+        return path
+    except Exception as exc:  # noqa: BLE001 — reporting must never end the ladder
+        print(f"  ⚠ settler-capture dossier failed on {tag}: {exc}", flush=True)
+        return None
+
+
 def outcome_of(tag: str) -> dict:
     """The run's own summary, MERGED with what its event stream says.
 
@@ -1016,6 +1092,7 @@ def outcome_of(tag: str) -> dict:
             # an `elif` chain, so setting it here as well would be unreachable.
             elif kind == "autoclose" and event.get("screen") == "EndGameMenu":
                 ended_on_screen = event
+    settlers_captured, settler_captures = settler_captures_of(run_dir)
     from_events = {
         "tag": tag,
         "last_turn": (last_turn or {}).get("turn"),
@@ -1029,6 +1106,11 @@ def outcome_of(tag: str) -> dict:
         # A settler nobody ordered. See `longest_idle_settler` — 38% of runs
         # park one, and no other column in this row can show it.
         "idle_settler_turns": longest_idle_settler(events) or None,
+        # A settler the barbarians TOOK, counted and named by mechanism. See
+        # `settler_captures_of`: `unit_lost` alone cannot tell a capture from a
+        # city founded, and the operator's rule is that every one is analysed.
+        "settlers_captured": settlers_captured,
+        "settler_captures": settler_captures,
         # ⚠ The civ is the largest single covariate on a row and it was only ever
         # reachable by digging into the nested `seat` blob, so no ledger query ever
         # grouped by it. Promote both to columns: `civ`/`leader` are what Civ 6
@@ -1963,6 +2045,9 @@ def main() -> int:
                 play_log.close()
                 teardown(run_tag)
                 torn_down = True
+                # The run is over: write up every settler it lost to capture,
+                # beside its events, before the row is read.
+                write_settler_capture_dossiers(run_tag)
                 # Read once per run: this is the attempt's row unless it resumes.
                 record = outcome_of(run_tag)
                 save = resume_from_autosave(record, why, len(resumes), args,

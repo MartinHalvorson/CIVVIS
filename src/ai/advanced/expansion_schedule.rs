@@ -67,9 +67,26 @@
 use super::AdvancedAi;
 use crate::game::Game;
 
-/// The floor of the band every recorded win came from: four cities by the
-/// band turn.
-pub const EXPANSION_BAND_FLOOR: usize = 4;
+/// Where in the winning band the schedule aims by the band turn.
+///
+/// ⚠ THIS WAS 4 — THE FLOOR OF THE BAND — SO THE PACE AIMED AT THE WORST
+/// OUTCOME THAT STILL WINS. Every recorded win came from FOUR TO SIX cities by
+/// the band turn (9/9 inside, 0/128 outside, Fisher p=2.6e-4), and a target of
+/// four asks the seat to arrive exactly on the bottom edge of that band. Any
+/// slippage at all — one settler lost, one site denied, one war — lands it
+/// outside, and the live cadence shows precisely that: the documented founding
+/// turns for cities 2/3/4/5/6 are 37.0/71.0/89.5/118.7/150.2, so four cities
+/// arrive around turn 90, not turn 60.
+///
+/// Five aims at the middle of the same measured band, so an ordinary setback
+/// still lands inside it. It does not widen the band, invent a target outside
+/// it, or touch `desired_cities`, which remains the hard cap on every branch
+/// below.
+///
+/// The pace this feeds is `1 + (FLOOR - 1) * turn / band`, so raising it moves
+/// the whole early curve rather than only the endpoint: at turns
+/// 0/15/20/40/45/60 the pace goes 1/1/2/3/3/4 to 1/2/2/3/4/5.
+pub const EXPANSION_BAND_FLOOR: usize = 5;
 
 /// Where the band sits on the clock — turn 60 of the ladder's 250-turn Online
 /// game, as a share, so a different turn limit scales with it.
@@ -181,7 +198,10 @@ mod tests {
                 AdvancedAi::expansion_pace(&g)
             })
             .collect();
-        assert_eq!(seen, vec![1, 1, 2, 3, 3, 4, 4], "{seen:?}");
+        // Floor 5: the pace reaches two by t15 and five by the band turn.
+        // With the old floor of four this read [1, 1, 2, 3, 3, 4, 4] — the
+        // seat was asked for one city until t20 and four at the band.
+        assert_eq!(seen, vec![1, 2, 2, 3, 4, 5, 5], "{seen:?}");
     }
 
     #[test]
@@ -229,9 +249,11 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_expansion_schedule();
         g.turn = 60;
+        // Four short of the band-turn pace of five; this read 3 while the
+        // schedule aimed at the band's floor rather than its middle.
         assert_eq!(
             ai.expansion_pace_shortfall(&g, 1, 0),
-            3,
+            4,
             "the band turn still counts"
         );
         g.turn = 61;

@@ -188,7 +188,22 @@ class PopupClearOwnershipTests(unittest.TestCase):
                  mock.patch.object(climb, "run", return_value="/bin/zsh /tmp/other.sh\n"):
                 self.assertIsNone(climb.interactive_popup_keeper_pid())
 
-    def test_interactive_keeper_preserves_its_child_and_retires_the_batch_copy(self):
+    def test_interactive_keeper_retires_both_copies_and_starts_neither(self):
+        """⚠ This asserted the keeper's child was PRESERVED, and preserving it
+        meant it ran the code it started with for the life of the host.
+
+        Measured 2026-08-28: the clearer had started at 09:03 while
+        `popup_clear.py` was last written at 17:13 — eight hours stale, so
+        #2711's capture re-check was not in effect. `retiring ... inherited
+        clearer` appears ZERO times in the recent climb logs, because on this
+        host the keeper always owns the seat and this branch always returned
+        first.
+
+        The hazard the old contract guarded — two clearers clicking one UI —
+        does not arise: this branch starts none, so the keeper's own revival
+        three seconds later is the only one, and it execs the tracked file.
+        `detach.assert_not_called()` below is what keeps that true.
+        """
         with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
              mock.patch.object(climb, "popup_clearer_children", return_value={402}), \
              mock.patch.object(climb, "popup_clearer_pids", return_value=[402, 403]), \
@@ -197,7 +212,10 @@ class PopupClearOwnershipTests(unittest.TestCase):
              mock.patch.object(climb, "_detach") as detach:
             climb.ensure_popup_clear()
 
-        kill.assert_called_once_with(403, climb.signal.SIGTERM)
+        self.assertEqual(sorted(call.args[0] for call in kill.call_args_list),
+                         [402, 403])
+        for call in kill.call_args_list:
+            self.assertEqual(call.args[1], climb.signal.SIGTERM)
         detach.assert_not_called()
 
     def test_interactive_keeper_prevents_a_new_batch_clearer_when_no_child_is_ready(self):
@@ -1949,3 +1967,56 @@ class TheWedgeWatchdogGetsThisBatchsBuildToo(unittest.TestCase):
                       "    # The host restarts this one; see "
                       "`retire_stale_wedge_watchdog`.\n"
                       "    retire_stale_wedge_watchdog()", source)
+
+
+class TheKeepersOwnClearerGetsThisBatchsBuildToo(unittest.TestCase):
+    """⚠⚠ It never did, and it silently ran yesterday's code for a whole day.
+
+    `ensure_popup_clear` retired only UNOWNED clearers when the interactive
+    keeper owned the seat, then returned. On this host the keeper always owns
+    it, so `retiring ... inherited clearer` appears ZERO times in the recent
+    climb logs and the keeper's child kept whatever code it started with.
+
+    Measured 2026-08-28: the clearer had started at 09:03 and
+    `popup_clear.py` was last written at 17:13 — eight hours stale, so #2711's
+    three-second capture re-check, written that afternoon precisely to stop the
+    popup backstop going blind, was not in effect at all.
+
+    Same defect as #2699 for the wedge watchdog.
+    """
+
+    def test_the_owned_clearer_is_retired_as_well_as_the_unowned_ones(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid",
+                               return_value=4242), \
+                mock.patch.object(climb, "popup_clearer_children",
+                                  return_value={7001}), \
+                mock.patch.object(climb, "popup_clearer_pids",
+                                  return_value=[7001, 9002]), \
+                mock.patch.object(climb, "retire_popup_clearers") as retired:
+            climb.ensure_popup_clear()
+        retired_sets = [call.args[0] for call in retired.call_args_list]
+        self.assertIn([9002], retired_sets, "unowned leftovers must still go")
+        self.assertIn([7001], retired_sets,
+                      "the keeper's own clearer must be retired so the keeper "
+                      "revives it on the current build")
+
+    def test_it_still_starts_no_clearer_of_its_own(self):
+        """Exactly one clearer: the keeper's revival, never a second."""
+        with mock.patch.object(climb, "interactive_popup_keeper_pid",
+                               return_value=4242), \
+                mock.patch.object(climb, "popup_clearer_children",
+                                  return_value=set()), \
+                mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+                mock.patch.object(climb, "retire_popup_clearers"), \
+                mock.patch.object(climb, "_detach") as detached:
+            climb.ensure_popup_clear()
+        detached.assert_not_called()
+
+    def test_the_retire_happens_before_the_branch_returns(self):
+        source = (Path(__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        branch = source[source.index("keeper_pid = interactive_popup_keeper_pid()"):]
+        branch = branch[:branch.index("\n    retire_popup_clearers(popup_clearer_pids()")]
+        self.assertIn("the keeper's own clearer so this", branch)
+        self.assertLess(branch.index("the keeper's own clearer so this"),
+                        branch.index("        return"))
