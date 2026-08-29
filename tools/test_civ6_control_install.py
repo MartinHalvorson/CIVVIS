@@ -378,6 +378,8 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('report("autoclose_wait_animation"', closer)
         self.assertIn('"animation_ready"', closer)
         self.assertIn('"animation_timeout"', closer)
+        self.assertIn("if shown < WONDER_ANIMATION_TIMEOUT_SECONDS then", closer)
+        self.assertIn("remaining = DIALOGUE_READY_RETRY_SECONDS;", closer)
 
         wait_at = closer.index("local wonderAnimationReadyAtClose = true;")
         close_at = closer.index("local upFor = shown;", wait_at)
