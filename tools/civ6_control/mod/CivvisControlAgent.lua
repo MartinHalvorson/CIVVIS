@@ -16420,6 +16420,50 @@ local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
 	local ok, err = pcall(function()
+		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
+		--
+		-- Killing the harness leaves the game unfinished: no `TeamVictory`, no
+		-- defeat, and nothing for `tools/civ6_ladder.py` to record — an attempt
+		-- that was genuinely lost reads exactly like one that crashed. The
+		-- operator asked for the shipped Retire instead, and it is one call: the
+		-- stock `InGameTopOptionsMenu.lua` `OnReallyRetire` does exactly
+		-- `UI.RequestAction(ActionTypes.ACTION_RETIRE)`, and everything else in
+		-- that function closes its own menu and plays a sound. No pause menu and
+		-- no confirm dialog — which matters, because that dialog is a `PopupDialog`
+		-- this controller would then have to find and click blind.
+		--
+		-- ⚠ Polled here rather than handled in `applyOrder`. That only ever sees
+		-- the rows for the turn and frame the tick is fetching, so a request made
+		-- at a moment nobody scheduled would sit unread until a frame happened to
+		-- match. Matching on the run alone means one row anywhere is enough.
+		--
+		-- ⚠ Asked ONCE, latched on `CivvisBoard` rather than a new file-scope
+		-- local: this main chunk is at Civ 6's 200-register ceiling and three more
+		-- locals here stop the whole mod compiling. `RequestAction` is also
+		-- asynchronous, so the tick keeps running for a few frames afterwards and
+		-- re-asking would queue a pile of retires behind the first.
+		if not CivvisBoard.retireAsked and attachOrders() then
+			local wanted = false;
+			pcall(function()
+				local rows = DB.Query(string.format(
+					"SELECT count(*) AS n FROM civvis.orders WHERE run = '%s' " ..
+					"AND kind = 'retire'", sqlSafe(cfg.RunTag)));
+				for _, row in ipairs(rows) do wanted = (tonumber(row.n) or 0) > 0; end
+			end);
+			if wanted then
+				CivvisBoard.retireAsked = true;
+				local action = try(function() return ActionTypes.ACTION_RETIRE; end);
+				if action == nil then
+					emit("retire_failed", { why = "no_action_type" });
+				else
+					local asked = pcall(function() UI.RequestAction(action); end);
+					emit(asked and "retired" or "retire_failed",
+					     { why = asked and "requested" or "refused" });
+				end
+				return;
+			end
+		end
+
 		-- ★★★★★ THE SEAT FORFEITED EVERY WORLD CONGRESS SESSION. The session is a
 		-- SOFT blocker, so the ladder below dismissed it: run
 		-- civvis-20260816T021044Z logged `dismissed … "forfeit": 1` for all

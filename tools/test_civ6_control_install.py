@@ -668,6 +668,30 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("ms_ActiveSessionID", shim)
         self.assertIn("Controls.BlackFadeAnim:IsStopped()", shim)
 
+    def test_the_mod_answers_a_retire_row_with_the_shipped_action(self) -> None:
+        # ⚠⚠ A killed game is UNFINISHED, not lost: Civilization VI files no
+        # defeat, so `tools/civ6_ladder.py` records nothing and an attempt the
+        # operator called on the score rule reads exactly like a crash.
+        #
+        # The retire itself is one call. The stock
+        # `Base/Assets/UI/Menus/InGameTopOptionsMenu.lua` `OnReallyRetire` does
+        # `UI.RequestAction(ActionTypes.ACTION_RETIRE)` and nothing else that
+        # matters, so there is no pause menu to open and no confirm dialog to
+        # find and click blind.
+        shim = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("ActionTypes.ACTION_RETIRE", shim)
+        self.assertIn("kind = 'retire'", shim)
+        # Matched on the RUN alone. The ordinary fetch filters on the exact turn
+        # and frame it is reading, so a request made at an unscheduled moment
+        # would sit unread until a frame happened to match.
+        self.assertNotIn("AND turn = %d\" ..\n\t\t\t\"AND kind = 'retire'", shim)
+        # Asked once: `RequestAction` is asynchronous and the tick keeps running.
+        self.assertIn("CivvisBoard.retireAsked = true;", shim)
+        self.assertIn("if not CivvisBoard.retireAsked", shim)
+        # Latched on an existing table rather than a new file-scope local: this
+        # main chunk sits at Civ 6's 200-register ceiling.
+        self.assertNotIn("local retireAsked", shim)
+
     def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
         # Seven diplomatic losses in a day and no record of what each session
         # resolved: the mod now emits `wc_outcome` from the shipped review data
