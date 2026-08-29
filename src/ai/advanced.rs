@@ -338,6 +338,22 @@ const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
 /// of them prerequisite-met and within two turns — 72 beakers for 2.7 techs
 /// against a lane beeline that never looks sideways.
 const BOOSTED_BARGAIN_TURNS: f64 = 2.0;
+/// `cheapest-wonder-first`: a wonder within this many turns of done, in a
+/// city producing at least `CHEAPEST_WONDER_CITY_SHARE` of the empire's
+/// best, is a bargain the race opens for. Eight live King games ignored 17
+/// legal starts of twelve turns or fewer (Etemenanki, Oracle, Temple of
+/// Artemis, Apadana, Petra, Pyramids…), each legal for 19–115 more turns,
+/// while the best city built Settlers and Heavy Chariots; the seat's first
+/// wonder start came at t62–t109 in seven of the eight, and every one of
+/// the eight races it lost by t150 had been started at 14–45 turns.
+const CHEAPEST_WONDER_TURNS: f64 = 12.0;
+/// The share of the empire's best city production a city must reach to
+/// hold a wonder lane under `cheapest-wonder-first`: Cumae took the only
+/// lane for 67 turns at 5 production while Rome built units.
+const CHEAPEST_WONDER_CITY_SHARE: f64 = 0.8;
+/// Under `cheapest-wonder-first`, the ordinary live race never opens for a
+/// wonder further from done than this.
+const CHEAPEST_WONDER_LANE_MAX_TURNS: f64 = 25.0;
 
 /// `border-parity`: a met major's visible city within this many tiles of one
 /// of ours is a border contact. Eleven of the thirteen pre-turn-100 wars
@@ -4549,6 +4565,13 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `cheapest-wonder-first`: a wonder this city can finish within
+    /// `CHEAPEST_WONDER_TURNS` turns, in one of the empire's strongest
+    /// cities, opens the live wonder race without the three-city and
+    /// three-building guards, and its race bonus scales with how quickly it
+    /// finishes; a slow city can no longer hold the lane. See the
+    /// `Item::Wonder` arm of `production_value`.
+    cheapest_wonder_first: bool,
     /// `connect-the-luxury`: research the technology that connects an owned,
     /// unimproved luxury before the lane's beeline resumes. See
     /// `unconnected_luxury_tech`.
@@ -6695,6 +6718,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            cheapest_wonder_first: false,
             connect_the_luxury: false,
             commitment_patience: false,
             capture_go_or_stand_down: false,
@@ -10939,6 +10963,19 @@ impl AdvancedAi {
 
     /// How many wonders the live race keeps in production at once: one, plus
     /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
+    /// `cheapest-wonder-first`: whether `cid` produces at least
+    /// `CHEAPEST_WONDER_CITY_SHARE` of the empire's best city, so a weak city
+    /// never holds a wonder lane the capital could finish in a third of the
+    /// time.
+    fn wonder_bargain_city(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let best = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|other| g.city_yields(other).production)
+            .fold(0.0_f64, f64::max);
+        g.city_yields(cid).production >= CHEAPEST_WONDER_CITY_SHARE * best
+    }
+
     fn live_wonder_race_lanes(city_count: usize) -> usize {
         1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
     }
@@ -24202,13 +24239,29 @@ impl AdvancedAi {
                             && matches!(other.queue.first(), Some(Item::Wonder { .. }))
                     })
                     .count();
-                let live_race_opens = self.live_wonder_race
+                // `cheapest-wonder-first`: a wonder twelve turns from done
+                // in one of the empire's strongest cities is the densest
+                // score production buys — fifteen points and an era-score
+                // moment — and the guards below were written for the
+                // ordinary race, not for a bargain.
+                let bargain_race = self.cheapest_wonder_first
+                    && self.live_wonder_race
                     && !lane_opens
                     && plan.strategy != GrandStrategy::Recovery
-                    && city_count >= 3
-                    && city.buildings.len() >= 3
+                    && turns <= CHEAPEST_WONDER_TURNS
                     && wonder_era + 2 >= g.world_era
-                    && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
+                    && wonders_in_flight < Self::live_wonder_race_lanes(city_count).max(1)
+                    && self.wonder_bargain_city(g, pid, cid);
+                let live_race_opens = bargain_race
+                    || (self.live_wonder_race
+                        && !lane_opens
+                        && plan.strategy != GrandStrategy::Recovery
+                        && city_count >= 3
+                        && city.buildings.len() >= 3
+                        && wonder_era + 2 >= g.world_era
+                        && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
+                        && (!self.cheapest_wonder_first
+                            || turns <= CHEAPEST_WONDER_LANE_MAX_TURNS));
                 // See `strategic_wonder_value`. The lane the agent is actually
                 // trying to win is its target when it has one, and its plan's
                 // strategy when it does not — a targeted agent whose plan has
@@ -24317,6 +24370,11 @@ impl AdvancedAi {
                             // most of what is left) still refuse.
                             LIVE_WONDER_RACE_BONUS
                                 * Self::live_wonder_race_scale(g)
+                                * if bargain_race {
+                                    (CHEAPEST_WONDER_TURNS / turns.max(1.0)).min(4.0)
+                                } else {
+                                    1.0
+                                }
                         } else if tally_opens {
                             // The fifteen points, and nothing else. No lane
                             // ramp and no flat sweetener: the density bar in

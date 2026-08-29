@@ -3195,6 +3195,20 @@ impl AdvancedAi {
         self.boosted_bargain_first = false;
     }
 
+    /// A wonder within twelve turns of done in one of the empire's strongest
+    /// cities opens the live wonder race without the three-city and
+    /// three-building guards, with a bonus that scales with how quickly it
+    /// finishes; a wonder further than twenty-five turns from done never
+    /// opens the ordinary race. See `AdvancedAi::wonder_bargain_city`.
+    pub fn enable_cheapest_wonder_first(&mut self) {
+        self.cheapest_wonder_first = true;
+    }
+
+    /// The twin of `enable_cheapest_wonder_first`.
+    pub fn disable_cheapest_wonder_first(&mut self) {
+        self.cheapest_wonder_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
