@@ -808,11 +808,17 @@ fn a_housing_bound_city_reserves_its_granary() {
     game.players[0].techs.extend([crate::name!("pottery")]);
     let housing = game.city_housing(&game.cities[&city]);
     game.cities.get_mut(&city).expect("capital").pop = housing.floor().max(1.0) as i32;
-    assert!(game.cities[&city].queue.is_empty(), "fixture: an idle queue");
+    assert!(
+        game.cities[&city].queue.is_empty(),
+        "fixture: an idle queue"
+    );
     let granary = Item::Building {
         building: crate::name!("granary"),
     };
-    assert!(game.can_produce(0, city, &granary), "fixture: the Granary is legal");
+    assert!(
+        game.can_produce(0, city, &granary),
+        "fixture: the Granary is legal"
+    );
     let plan = StrategicPlan {
         strategy: GrandStrategy::Science,
         target_player: None,
