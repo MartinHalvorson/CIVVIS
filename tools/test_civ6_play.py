@@ -673,6 +673,34 @@ class Civ6PlayTest(unittest.TestCase):
         focus.assert_not_called()
         click.assert_not_called()
 
+    def test_setup_reuses_last_verified_frame_when_final_capture_is_unreadable(self) -> None:
+        """A transient ScreenCaptureKit miss must not discard a verified setup."""
+        with tempfile.TemporaryDirectory() as temporary:
+            fallback = Path(temporary) / "leader-selected.png"
+            fallback.write_bytes(b"verified setup frame")
+
+            def select_leader(*_args, panel_out=None, **_kwargs):
+                panel_out["shot"] = fallback
+                return True
+
+            with patch.object(civ6_play, "set_dropdown", return_value=True), \
+                 patch.object(civ6_play, "select_requested_leader",
+                              side_effect=select_leader), \
+                 patch.object(civ6_play, "screenshot", return_value=False), \
+                 patch.object(civ6_play, "_observed_label_point",
+                              side_effect=[(321, 432)]), \
+                 patch.object(civ6_play, "focus_game") as focus, \
+                 patch.object(civ6_play, "click_at") as click:
+                started = civ6_play.configure_and_start(
+                    (100, 33, 756, 480), args(), Path(temporary)
+                )
+
+            setup = Path(temporary) / "setup.png"
+            self.assertTrue(started)
+            self.assertEqual(setup.read_bytes(), fallback.read_bytes())
+            focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
+            click.assert_called_once_with(321, 432)
+
     def test_setup_refuses_to_start_when_requested_leader_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True), \
