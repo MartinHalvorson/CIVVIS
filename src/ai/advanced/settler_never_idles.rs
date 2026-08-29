@@ -149,6 +149,43 @@ impl AdvancedAi {
             })
     }
 
+    /// Why the exhaustion search may not take `site` under
+    /// `exhaustion-loyalty-guard`. The preferred search refuses a site within
+    /// five tiles of a met major's border whose city it has not seen
+    /// (`beside_unresolved_major_border`), because the forecast sums the
+    /// cities on the board and that one is not on it. The exhaustion search
+    /// set that refusal aside as a fog guess; on the live board it is the one
+    /// guess that is right. Of the 25 exhaustion foundings in the King runs
+    /// of 2026-08-27..29, six revolted (24%, against 2 of 387 preferred
+    /// foundings), three of them at −22 Loyalty a turn from their first
+    /// reading — the settler handed a city to the rival that pressed it.
+    /// `None` with the gene off, with `frontier-loyalty` off, or when no
+    /// border hides a city.
+    pub(super) fn exhaustion_site_unpriceable(&self, g: &Game, site: Pos) -> Option<&'static str> {
+        (self.exhaustion_loyalty_guard
+            && self.frontier_loyalty
+            && Self::beside_unresolved_major_border(g, site))
+        .then_some("a rival border within five tiles may hide the city that would press it")
+    }
+
+    /// Drop the sites `exhaustion_site_unpriceable` refuses from a candidate
+    /// list, saying so once. Nothing is dropped with the gene off.
+    fn set_aside_unpriceable_sites(&self, g: &Game, candidates: &mut Vec<(Pos, f64)>) {
+        if !(self.exhaustion_loyalty_guard && self.frontier_loyalty) {
+            return;
+        }
+        let before = candidates.len();
+        candidates.retain(|(pos, _)| self.exhaustion_site_unpriceable(g, *pos).is_none());
+        let set_aside = before - candidates.len();
+        if set_aside > 0 {
+            think!(self.journal(), Expansion, Detail,
+                   "Stranded Settler sets aside {set_aside} unpriceable site(s)";
+                   "each lies within five tiles of a rival border whose city may be hidden; \
+                    the forecast cannot price that Loyalty pressure, and the exhaustion \
+                    search will not guess at a city it would hand to that rival");
+        }
+    }
+
     /// The wider questions asked when the preferred search returns nothing.
     ///
     /// Tier 2: the advanced ranking over a stranded radius, with this
@@ -182,6 +219,7 @@ impl AdvancedAi {
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
             .collect();
+        self.set_aside_unpriceable_sites(g, &mut ranked);
         for _ in 0..=STRANDED_FORECAST_RETRIES {
             let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, &ranked) else {
                 break;
@@ -223,6 +261,40 @@ impl AdvancedAi {
             .map(|pos| (pos, -(g.wdist(from, pos) as f64)))
             .collect();
         legal.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        self.set_aside_unpriceable_sites(g, &mut legal);
+        if self.exhaustion_loyalty_guard {
+            // This tier ran no forecast at all: of the sixteen nearest-legal
+            // foundings in the King runs of 2026-08-27..29, six read a
+            // negative Loyalty rate at their first reading and three
+            // revolted. Under the gene it pays the same concrete-revolt check
+            // as the ranked tier, retries included; a Settler that then holds
+            // is named by `settler_stranded`.
+            for _ in 0..=STRANDED_FORECAST_RETRIES {
+                let Some((site, _)) = BasicAi::first_reachable_settle_site(g, uid, &legal) else {
+                    return None;
+                };
+                match Self::settle_site_forecast_revolt(g, pid, site) {
+                    Some((per_turn, turns)) if turns < STRANDED_SITE_MIN_HOLD_TURNS => {
+                        think!(self.journal(), Expansion, Detail,
+                               "Settler skips a doomed nearest site at {site:?}";
+                               "no ranked site is reachable and the nearest legal one would be \
+                                taken — but this one loses {:.1} Loyalty a turn and revolts in \
+                                about {turns:.0}", -per_turn;
+                               site);
+                        legal.retain(|(pos, _)| *pos != site);
+                    }
+                    _ => {
+                        think!(self.journal(), Expansion, Detail,
+                               "Settler takes the nearest legal site at {site:?}";
+                               "no ranked site is reachable; a city {} tiles away beats a \
+                                Settler standing still, and the forecast says it holds",
+                               g.wdist(from, site); site);
+                        return Some(site);
+                    }
+                }
+            }
+            return None;
+        }
         let site = BasicAi::first_reachable_settle_site(g, uid, &legal).map(|(pos, _)| pos)?;
         think!(self.journal(), Expansion, Detail,
                "Settler takes the nearest legal site at {site:?}";
@@ -239,6 +311,7 @@ impl AdvancedAi {
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
         if g.can_found_city(uid)
+            && self.exhaustion_site_unpriceable(g, here).is_none()
             && !Self::settle_site_forecast_revolt(g, pid, here)
                 .is_some_and(|(_, turns)| turns < STRANDED_SITE_MIN_HOLD_TURNS)
         {
@@ -398,6 +471,177 @@ mod tests {
         assert!(opted.settler_never_idles);
         opted.disable_settler_never_idles();
         assert!(!opted.settler_never_idles);
+    }
+
+    /// The guard ships off in both stock controllers; the toggles are twins.
+    #[test]
+    fn the_guard_is_off_in_both_controllers_and_the_toggles_are_twins() {
+        let fresh = AdvancedAi::new();
+        let legacy = AdvancedAi::legacy();
+        assert!(!fresh.exhaustion_loyalty_guard);
+        assert!(!legacy.exhaustion_loyalty_guard);
+        let mut opted = AdvancedAi::new();
+        opted.enable_exhaustion_loyalty_guard();
+        assert!(opted.exhaustion_loyalty_guard);
+        opted.disable_exhaustion_loyalty_guard();
+        assert!(!opted.exhaustion_loyalty_guard);
+    }
+
+    /// The live failure of `civvis-20260829T030044Z` t70: every preferred
+    /// site was refused "within five tiles of a rival border whose city may
+    /// be hidden", the exhaustion search took (15, 14) anyway, and the city
+    /// read −22 Loyalty a turn from its first turn and revolted seven turns
+    /// later. Under the guard the same board yields no exhaustion target and
+    /// the Settler is named stranded rather than founding; off, the search
+    /// still takes a site.
+    #[test]
+    fn exhaustion_sets_aside_sites_beside_an_unresolved_rival_border() {
+        for guard in [false, true] {
+            let mut g = Game::new_full(1, 20, 12, 91_306, 120, 0, false);
+            let settler = g
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .expect("a starting settler");
+            g.units.get_mut(&settler).expect("settler").moves_left = 20.0;
+            let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+            g.players[0].explored.extend(explored.iter().copied());
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs();
+            ai.enable_settler_never_idles();
+            ai.enable_frontier_loyalty();
+            if guard {
+                ai.enable_exhaustion_loyalty_guard();
+            } else {
+                ai.disable_exhaustion_loyalty_guard();
+            }
+            ai.attach_journal(Journal::recording());
+            assert!(
+                ai.settler_exhaustion_target(&g, 0, settler).is_some(),
+                "fixture: the open board offers an exhaustion site"
+            );
+            // A met major's border the mirror could not attribute to a seen
+            // city, on every plot: the whole board is five tiles from one.
+            g.unseen_major_borders.extend(explored.iter().copied());
+            let picked = ai.settler_exhaustion_target(&g, 0, settler);
+            if guard {
+                assert_eq!(picked, None, "every site lies beside an unresolved border");
+                assert!(
+                    !ai.settler_stranded(&mut g, 0, settler),
+                    "the stranded Settler does not found on unpriceable ground"
+                );
+                assert!(g.cities.is_empty(), "no city was founded");
+                assert!(
+                    ai.settler_stranded_at.contains_key(&settler),
+                    "the hold is named, not silent"
+                );
+            } else {
+                assert!(
+                    picked.is_some(),
+                    "off, the search is unchanged and still takes a site"
+                );
+            }
+        }
+    }
+
+    /// The nearest-legal tier founded with no forecast at all. The board of
+    /// `research_probe`'s doomed-target tests: a pop-12 rival capital and a
+    /// plot four tiles from it where a new city loses twenty Loyalty a turn.
+    /// Every other plot is retired for this Settler, so the ranked tier has
+    /// nothing and the nearest tier answers. Off, it takes the doomed plot;
+    /// under the guard it forecasts, refuses, and returns nothing.
+    #[test]
+    fn the_nearest_legal_tier_forecasts_under_the_guard() {
+        for guard in [false, true] {
+            let mut g = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+            g.current = 0;
+            for pid in 0..2 {
+                let settler = g
+                    .player_unit_ids(pid)
+                    .into_iter()
+                    .find(|unit| g.units[unit].kind == "settler")
+                    .expect("a starting settler");
+                let pos = g.units[&settler].pos;
+                g.remove_unit(settler);
+                g.found_city_for(pid, pos, None);
+            }
+            for unit in g.player_unit_ids(0) {
+                g.remove_unit(unit);
+            }
+            let ours = g.player_city_ids(0)[0];
+            let theirs = g.player_city_ids(1)[0];
+            let home = g.cities[&ours].pos;
+            let rival = g.cities[&theirs].pos;
+            assert!(g.wdist(home, rival) >= 12, "fixture needs a distant rival");
+            let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+            for position in &positions {
+                let tile = g.map.tiles.get_mut(position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.feature = None;
+                tile.hills = false;
+                tile.resource = None;
+                tile.improvement = None;
+                tile.district = None;
+                tile.wonder = None;
+                g.players[0].explored.insert(*position);
+            }
+            g.cities.get_mut(&theirs).unwrap().pop = 12;
+            g.cities.get_mut(&ours).unwrap().pop = 6;
+            let mut beside_rival: Vec<Pos> = positions
+                .iter()
+                .copied()
+                .filter(|pos| g.wdist(*pos, rival) == 4 && g.wdist(*pos, home) >= 4)
+                .collect();
+            beside_rival.sort_unstable();
+            let doomed = beside_rival[0];
+            let start = g
+                .nbrs(doomed)
+                .into_iter()
+                .find(|pos| g.map.tiles.contains_key(pos) && g.wdist(*pos, rival) >= 4)
+                .expect("a neighbour to stand on");
+            let settler = g.spawn_test_unit("settler", 0, start);
+            g.units.get_mut(&settler).expect("settler").moves_left = 20.0;
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs();
+            ai.enable_settler_never_idles();
+            if guard {
+                ai.enable_exhaustion_loyalty_guard();
+            } else {
+                ai.disable_exhaustion_loyalty_guard();
+            }
+            ai.attach_journal(Journal::recording());
+            assert!(
+                ai.base.valid_settle_site(&g, 0, doomed),
+                "fixture: the doomed plot is a legal site"
+            );
+            let (per_turn, turns) = AdvancedAi::settle_site_forecast_revolt(&g, 0, doomed)
+                .expect("fixture: the forecast dooms the plot");
+            assert!(
+                turns < STRANDED_SITE_MIN_HOLD_TURNS,
+                "fixture: revolt in {turns:.0} turns at {per_turn:.1} a turn"
+            );
+            // Retire every other plot for this Settler, so only the nearest
+            // tier can answer.
+            let retired = ai.settler_dead_sites.entry(settler).or_default();
+            for pos in &positions {
+                if *pos != doomed {
+                    retired.insert(*pos, g.turn + 1000);
+                }
+            }
+            let picked = ai.settler_exhaustion_target(&g, 0, settler);
+            if guard {
+                assert_eq!(
+                    picked, None,
+                    "the guard forecasts the nearest legal site and refuses the revolt"
+                );
+            } else {
+                assert_eq!(
+                    picked,
+                    Some(doomed),
+                    "off, the nearest tier takes the doomed plot unasked"
+                );
+            }
+        }
     }
 
     /// A Settler that never moves counts up; one that moves resets; a
