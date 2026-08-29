@@ -843,6 +843,74 @@ fn a_housing_bound_city_reserves_its_granary() {
     assert!(!ai.first_granary_reserve);
 }
 
+/// `connect-the-luxury`: an owned, unimproved Plantation luxury with
+/// Irrigation unknown names Irrigation; once Irrigation is in, nothing; and
+/// the research step takes it ahead of the lane's beeline. Off, nothing.
+#[test]
+fn an_unconnected_luxury_names_its_tech_and_the_research_step_takes_it() {
+    let (mut game, city, _) = empire_with_a_capital(71_118);
+    let home = game.cities[&city].pos;
+    let plot = game
+        .nbrs(home)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| tile.owner_city == Some(city) && !game.rules.is_water(tile))
+        })
+        .expect("fixture: an owned land plot beside the capital");
+    {
+        let tile = game.map.tiles.get_mut(&plot).expect("plot");
+        tile.resource = Some(crate::name!("silk"));
+        tile.improvement = None;
+    }
+    assert_eq!(
+        game.rules.resources[&crate::name!("silk")].class,
+        "luxury",
+        "fixture: silk is a luxury"
+    );
+    game.players[0]
+        .techs
+        .retain(|tech| tech != &crate::name!("irrigation"));
+    game.players[0]
+        .techs
+        .extend([crate::name!("pottery"), crate::name!("mining")]);
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.connect_the_luxury, "the gene ships off");
+    assert!(!AdvancedAi::legacy().connect_the_luxury);
+    assert_eq!(ai.unconnected_luxury_tech(&game, 0), None, "off, nothing");
+    ai.enable_connect_the_luxury();
+    assert_eq!(
+        ai.unconnected_luxury_tech(&game, 0),
+        Some("irrigation"),
+        "silk wants a Plantation, and a Plantation wants Irrigation"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    game.players[0].research = None;
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("irrigation"),
+        "the research step takes the connecting tech ahead of the lane's beeline"
+    );
+    game.players[0].techs.insert(crate::name!("irrigation"));
+    assert_eq!(
+        ai.unconnected_luxury_tech(&game, 0),
+        None,
+        "with Irrigation in, the Plantation can take it"
+    );
+    ai.disable_connect_the_luxury();
+    assert!(!ai.connect_the_luxury);
+}
+
 #[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and

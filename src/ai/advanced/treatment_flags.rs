@@ -3146,6 +3146,18 @@ impl AdvancedAi {
         self.first_granary_reserve = false;
     }
 
+    /// Research the cheapest technology that connects an owned, unimproved
+    /// luxury (Irrigation, Sailing) ahead of the lane's beeline, once the
+    /// opening techs are in. See `AdvancedAi::unconnected_luxury_tech`.
+    pub fn enable_connect_the_luxury(&mut self) {
+        self.connect_the_luxury = true;
+    }
+
+    /// The twin of `enable_connect_the_luxury`.
+    pub fn disable_connect_the_luxury(&mut self) {
+        self.connect_the_luxury = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
