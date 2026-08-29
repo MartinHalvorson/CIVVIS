@@ -1,0 +1,321 @@
+{
+  "abandoned": {
+    "min_turn": 150,
+    "rival_best": 763,
+    "rule": "below_leader_score",
+    "score": 407,
+    "score_ratio": 0.5334,
+    "score_ratio_ceiling": 0.6,
+    "turn": 150
+  },
+  "cities_at_60": 5,
+  "city_two_turn": 17,
+  "combat": {
+    "cities_lost": 0,
+    "cities_taken": 0,
+    "damage_dealt": 3460,
+    "damage_taken": 3381,
+    "kills": 47,
+    "kills_per_loss": 0.68,
+    "losses": 69,
+    "lost_when_salvageable": 0,
+    "military_units_gone": 0
+  },
+  "configured": true,
+  "deals": {
+    "closed": 8,
+    "declined": 9,
+    "expired": 0,
+    "peace_accepted": 4,
+    "peace_refused": 0,
+    "sessions_answered": 21,
+    "sessions_opened": 21,
+    "sessions_unanswered": 0,
+    "stood_down": false
+  },
+  "decider_revisions": [
+    "a28e5034a3c0ea700bffd732367e951e997579c9"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-29T05:00:50Z",
+  "forced": [],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 407,
+  "last_turn": 150,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "orders": {
+    "*": {
+      "applied": 1474,
+      "refused": {
+        "ATTACK": 2,
+        "IMPROVEMENT_MOUND": 1,
+        "IMPROVEMENT_ROMAN_FORT": 1,
+        "MOVE_TO": 19,
+        "RANGE_ATTACK": 6,
+        "buy_cooldown": 4,
+        "cannot_FORTIFY": 2,
+        "cannot_promote_PROMOTION_BATTLECRY": 1,
+        "cannot_promote_PROMOTION_GARRISON": 1,
+        "cannot_promote_PROMOTION_TORTOISE": 1,
+        "cannot_promote_PROMOTION_VOLLEY": 1,
+        "delegation_cooldown": 27,
+        "found_off_site": 2,
+        "governor_neutralized": 12,
+        "move_no_moves_this_turn": 58,
+        "nothing_tradeable": 3,
+        "obsolete_POLICY_URBAN_PLANNING": 1,
+        "opening_settler_in_progress": 2,
+        "policy_deck_too_large": 1,
+        "queue_prior_refused": 27,
+        "sell_cooldown": 23,
+        "settler_barbarian_combat_capture_hold": 20,
+        "settler_scout_capture_hold": 5,
+        "taken_BELIEF_RELIGIOUS_SETTLEMENTS": 1,
+        "unit_gone:3342343": 1,
+        "unit_gone:65536": 1
+      },
+      "seen": 1823
+    },
+    "buy": {
+      "applied": 3,
+      "refused": {
+        "buy_cooldown": 4
+      },
+      "seen": 7
+    },
+    "city_strike": {
+      "applied": 36,
+      "refused": {},
+      "seen": 36
+    },
+    "civic": {
+      "applied": 22,
+      "refused": {},
+      "seen": 22
+    },
+    "delegation": {
+      "applied": 15,
+      "refused": {
+        "delegation_cooldown": 27
+      },
+      "seen": 42
+    },
+    "envoy": {
+      "applied": 18,
+      "refused": {},
+      "seen": 18
+    },
+    "government": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "governor_appoint": {
+      "applied": 3,
+      "refused": {},
+      "seen": 3
+    },
+    "governor_assign": {
+      "applied": 4,
+      "refused": {
+        "governor_neutralized": 12
+      },
+      "seen": 16
+    },
+    "governor_promote": {
+      "applied": 7,
+      "refused": {},
+      "seen": 7
+    },
+    "levy": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "pantheon": {
+      "applied": 1,
+      "refused": {
+        "taken_BELIEF_RELIGIOUS_SETTLEMENTS": 1
+      },
+      "seen": 2
+    },
+    "peace": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "policy_deck": {
+      "applied": 49,
+      "refused": {
+        "obsolete_POLICY_URBAN_PLANNING": 1,
+        "policy_deck_too_large": 1
+      },
+      "seen": 51
+    },
+    "produce": {
+      "applied": 132,
+      "refused": {
+        "opening_settler_in_progress": 2
+      },
+      "seen": 134
+    },
+    "produce_next": {
+      "applied": 292,
+      "refused": {},
+      "seen": 292
+    },
+    "purchase": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "research": {
+      "applied": 31,
+      "refused": {},
+      "seen": 31
+    },
+    "sell": {
+      "applied": 14,
+      "refused": {
+        "nothing_tradeable": 3,
+        "sell_cooldown": 23
+      },
+      "seen": 40
+    },
+    "unit": {
+      "applied": 1128,
+      "refused": {
+        "ATTACK": 2,
+        "IMPROVEMENT_MOUND": 1,
+        "IMPROVEMENT_ROMAN_FORT": 1,
+        "MOVE_TO": 19,
+        "RANGE_ATTACK": 6,
+        "cannot_FORTIFY": 2,
+        "cannot_promote_PROMOTION_BATTLECRY": 1,
+        "cannot_promote_PROMOTION_GARRISON": 1,
+        "cannot_promote_PROMOTION_TORTOISE": 1,
+        "cannot_promote_PROMOTION_VOLLEY": 1,
+        "found_off_site": 2,
+        "move_no_moves_this_turn": 58,
+        "queue_prior_refused": 27,
+        "settler_barbarian_combat_capture_hold": 20,
+        "settler_scout_capture_hold": 5,
+        "unit_gone:3342343": 1,
+        "unit_gone:65536": 1
+      },
+      "seen": 1277
+    }
+  },
+  "orders_applied": 1188,
+  "orders_seen": 429,
+  "outcome": null,
+  "reason": "abandoned",
+  "rival_best": 763,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260829T040648Z",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seat_autonomy": {
+    "civvis_unit_share": 0.6398,
+    "engine_explored": 719,
+    "explore_guarded": 330,
+    "unit_orders": 1277,
+    "unit_orders_applied": 1128
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260829T040648Z",
+  "victory_target": "diplomatic",
+  "withheld": []
+}
