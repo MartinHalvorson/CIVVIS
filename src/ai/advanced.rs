@@ -25868,6 +25868,7 @@ impl AdvancedAi {
                     && !self.settler_site_is_dead(uid, *position)
                     && (!self.settler_threat_detour
                         || !self.settler_threat_deferrals.contains_key(position))
+                    && !self.settler_target_reserved_by_other(g, pid, uid, *position)
             })
             .collect::<Vec<_>>();
         // See `settle_sooner`: the walk is priced in TURNS as well as tiles,
@@ -26628,6 +26629,20 @@ impl AdvancedAi {
             .is_some_and(|sites| sites.contains_key(&pos))
     }
 
+    /// Whether another live Settler already owns this site for the current
+    /// empire.  Normal target selection is sequential, but the live bridge can
+    /// have several Settlers in flight at once; without this check each one can
+    /// independently choose the same fallback after a target is retired.
+    fn settler_target_reserved_by_other(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
+        self.settler_targets.iter().any(|(other, target)| {
+            *other != uid
+                && *target == pos
+                && g.units
+                    .get(other)
+                    .is_some_and(|unit| unit.owner == pid && unit.kind == "settler")
+        })
+    }
+
     /// The Settler's turn: the decision routine below and — under
     /// `settler-never-idles` — a watchdog that marches a Settler the routine
     /// has held for `SETTLER_IDLE_PATIENCE` turns. See
@@ -27025,6 +27040,9 @@ impl AdvancedAi {
             }
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
+            }
+            if self.settler_target_reserved_by_other(g, pid, uid, target) {
+                return Some("another settler already owns the site");
             }
             // `commitment_patience`: a threat is a hold, not a drop — the
             // ledger retires the site if the hold outlasts its patience.
