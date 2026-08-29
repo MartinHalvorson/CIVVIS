@@ -37065,3 +37065,263 @@ mod forcing_reply_lazy_key_tests {
         );
     }
 }
+
+// ═══ What twenty-four live captures taught (2026-08-28) ═══
+//
+// Two host-only treatments, `live-barbarian-scouts-capture` and
+// `live-settler-capture-lessons`; see `advanced/civilian_safety.rs`. Each
+// fixture below is one of the day's mechanisms, on `barbarian_field`'s flat
+// board.
+
+/// Run civvis-20260828T122324Z: a barbarian scout two tiles from an unguarded
+/// settler took it, and three more after it. Native boards' recon cannot
+/// capture and stays out of the reach; the live seat's counts.
+#[test]
+fn a_barbarian_scout_is_a_capture_threat_on_the_live_seat() {
+    let (mut game, _city, home) = barbarian_field(71_301);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let scout_at = game
+        .wdisk(start, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 2 && game.wdist(*pos, home) == 2 && open_land(&game, *pos)
+        })
+        .expect("a post two tiles from the settler, in the capital's sight");
+    let _settler = game.spawn_test_unit("settler", 0, start);
+    let _scout = game.spawn_test_unit("scout", 1, scout_at);
+
+    let mut native = AdvancedAi::new();
+    native.enable_civilian_out_of_reach();
+    assert!(
+        !native.live_barbarian_scouts_capture,
+        "off for every native board"
+    );
+    assert!(
+        native.barbarian_reach(&game, 0, start, 10).is_empty(),
+        "a native barbarian scout is not a raider"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.live_barbarian_scouts_capture && live.live_settler_capture_lessons,
+        "the live universe carries both treatments"
+    );
+    let reach = live.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "on the live seat the scout's three moves cover the settler's tile"
+    );
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_live_barbarian_scouts_capture();
+    assert!(
+        withheld.barbarian_reach(&game, 0, start, 10).is_empty(),
+        "the withholding twin restores the exemption"
+    );
+}
+
+/// Run civvis-20260829T022749Z, t78: boxed between a skirmisher and a warrior
+/// with the sea behind it, the settler "held inside a barbarian's reach"
+/// beside the skirmisher — two tiles from a full-health archer it could have
+/// stood with. Under the lessons a tile one of our units holds beats every
+/// bare tile, and the unit becomes the settler's guard.
+#[test]
+fn a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons() {
+    let (mut game, _city, home) = barbarian_field(71_302);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let raider_at = game
+        .wdisk(start, 1)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 1 && game.wdist(*pos, home) == 2 && open_land(&game, *pos)
+        })
+        .expect("a raider beside the settler, in the capital's sight");
+    let cover_at = game
+        .wdisk(start, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 2
+                && game.wdist(*pos, raider_at) == 3
+                && game.wdist(*pos, home) <= 3
+                && open_land(&game, *pos)
+        })
+        .expect("ground two tiles from the settler on the far side of the raider");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let _horseman = game.spawn_test_unit("horseman", 1, raider_at);
+    let warrior = game.spawn_test_unit("warrior", 0, cover_at);
+    // The warrior has already moved this turn: it cannot be summoned onto
+    // the settler's tile, so the settler must go to it.
+    game.units.get_mut(&warrior).expect("spawned").moves_left = 0.0;
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let reach = live.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the settler stands inside the horseman's reach"
+    );
+    assert!(
+        reach.covers(&game, cover_at),
+        "the fixture leaves no safe tile: four moves on flat ground cover everything \
+         the settler can reach"
+    );
+    assert_eq!(
+        live.civilian_flee_step(&mut game, 0, settler),
+        Some(true),
+        "the flee decides the settler's turn"
+    );
+    assert_eq!(
+        game.units[&settler].pos, cover_at,
+        "it stands with the warrior rather than on the least exposed bare tile"
+    );
+    assert_eq!(
+        live.settler_guards.get(&settler),
+        Some(&warrior),
+        "and binds the warrior as its guard, so the guard's own turn keeps it there"
+    );
+}
+
+/// Run civvis-20260829T000643Z fed six settlers to the two plots beside one
+/// nest over ninety turns, each retiring the site for itself alone. Under the
+/// lessons a settler that leaves the board without a city near where it stood
+/// retires every site within three tiles for every settler; a settler that
+/// founded is not a loss; the scar expires; and it survives the live bridge's
+/// unit-id remap because it is ground memory, not unit memory.
+#[test]
+fn a_lost_settler_retires_the_ground_around_it_for_every_settler() {
+    let (mut game, _city, home) = barbarian_field(71_303);
+    let far = game
+        .wdisk(home, 6)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 6 && open_land(&game, *pos))
+        .expect("open ground six tiles from home");
+    let taken = game.spawn_test_unit("settler", 0, far);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    // What `advanced_settler_step_inner` records each time it steps the unit.
+    live.settler_last_seen.insert(taken, far);
+
+    // The rebuilt board no longer carries the settler: nothing maps to it.
+    game.remove_unit(taken);
+    live.remap_unit_memory(&BTreeMap::new());
+    assert_eq!(
+        live.settler_vanished,
+        vec![far],
+        "its last position waits for the turn"
+    );
+    assert!(live.settler_last_seen.is_empty());
+
+    let taken_turn = game.turn;
+    live.resolve_vanished_settlers(&game, 0);
+    let fresh = game.spawn_test_unit("settler", 0, home);
+    assert!(
+        live.settler_site_is_dead(fresh, far),
+        "the ground that took it is dead"
+    );
+    let inside = game
+        .wdisk(far, 3)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, far) == 3)
+        .expect("a tile three out");
+    let beyond = game
+        .wdisk(far, 4)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, far) == 4)
+        .expect("a tile four out");
+    assert!(
+        live.settler_site_is_dead(fresh, inside),
+        "and three tiles around it"
+    );
+    assert!(!live.settler_site_is_dead(fresh, beyond), "but not four");
+    assert!(live.settler_vanished.is_empty(), "resolved once");
+
+    // The scar outlives a remap and expires with the avoid window.
+    live.remap_unit_memory(&BTreeMap::from([(fresh, fresh + 1000)]));
+    assert!(live.settler_site_is_dead(fresh + 1000, far));
+    game.turn = taken_turn + game.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS) + 1;
+    live.resolve_vanished_settlers(&game, 0);
+    assert!(
+        !live.settler_site_is_dead(fresh + 1000, far),
+        "thirty standard turns later it is ground again"
+    );
+
+    // A settler that founded where it stood is not a loss.
+    let founder = game.spawn_test_unit("settler", 0, far);
+    live.settler_last_seen.insert(founder, far);
+    game.apply(0, &Action::FoundCity { unit: founder })
+        .expect("the site is legal");
+    live.resolve_vanished_settlers(&game, 0);
+    assert!(
+        !live.settler_capture_scars.contains_key(&far),
+        "a founding leaves a city where the settler stood, not a scar"
+    );
+
+    // Off, nothing is recorded and nothing is retired.
+    let mut native = AdvancedAi::new();
+    native.enable_civilian_out_of_reach();
+    native.settler_last_seen.insert(taken, far);
+    native.resolve_vanished_settlers(&game, 0);
+    assert!(native.settler_capture_scars.is_empty());
+}
+
+/// Run civvis-20260829T022749Z bound a 15-strength archer over a warrior and
+/// lost it, then the settler, to a skirmisher. Every candidate reaches the
+/// settler this turn; under the lessons the strongest is the guard.
+#[test]
+fn the_strongest_guard_that_can_reach_the_settler_is_summoned_under_the_lessons() {
+    let (mut game, _city, home) = barbarian_field(71_304);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let near = game
+        .wdisk(start, 1)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, start) == 1 && open_land(&game, *pos))
+        .expect("a tile beside the settler");
+    let farther = game
+        .wdisk(start, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 2 && game.wdist(*pos, near) == 3 && open_land(&game, *pos)
+        })
+        .expect("a tile two from the settler");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let archer = game.spawn_test_unit("archer", 0, near);
+    let warrior = game.spawn_test_unit("warrior", 0, farther);
+    assert!(
+        game.unit_strength(&game.units[&warrior], false)
+            > game.unit_strength(&game.units[&archer], false),
+        "the fixture's warrior is the stronger body"
+    );
+
+    let pristine = game.clone();
+    let mut native = AdvancedAi::new();
+    native.enable_civilian_out_of_reach();
+    assert!(native.summon_guard_to(&mut game, 0, settler, start));
+    assert_eq!(
+        native.settler_guards.get(&settler),
+        Some(&archer),
+        "native: the nearest"
+    );
+
+    let mut fresh = pristine;
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.summon_guard_to(&mut fresh, 0, settler, start));
+    assert_eq!(
+        live.settler_guards.get(&settler),
+        Some(&warrior),
+        "live: the strongest"
+    );
+}

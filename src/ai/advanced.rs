@@ -279,6 +279,12 @@ const REGIONAL_AMENITY_REACH_DISCOUNT: f64 = 0.8;
 /// Standard turns a settler avoids a site it stood on and could not found. See
 /// `advanced_settler_step`.
 const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
+/// A settler taken at a tile retires every site within this many tiles for
+/// EVERY settler, for `SETTLER_DEAD_SITE_AVOID_TURNS`: the ground that took
+/// one settler takes the next. Run civvis-20260829T000643Z fed six settlers
+/// to the two plots beside one nest over ninety turns while each retired
+/// them for itself alone. See `live_settler_capture_lessons`.
+const SETTLER_CAPTURE_SCAR_RADIUS: i32 = 3;
 /// Retreats a settler may make while committed to one target before that
 /// target is retired. See `advanced_settler_step`.
 const SETTLER_RETREAT_LIMIT: u32 = 3;
@@ -3320,6 +3326,16 @@ pub struct AdvancedAi {
     /// path shows they cannot, so production Advanced now carries the
     /// exemption natively (`advanced_without_barbarian_scouts_are_scouts`
     /// prices the withhold). Off for the frozen controllers.
+    ///
+    /// ⚠ CORRECTED 2026-08-29: the claim that Firaxis' barbarian scouts never
+    /// capture is FALSE. Run civvis-20260828T122324Z shows one barbarian
+    /// scout standing on our captured settler at (46,25) on t22 and taking
+    /// three more by t35; six of the day's twenty-four captures were scouts.
+    /// The native barbarian seat's recon still cannot capture, so this
+    /// graded risk model keeps the exemption (the fourteen-turn freeze above
+    /// is what it prevents); the EXACT capture-reach models count a
+    /// barbarian recon unit on the live seat under
+    /// `live_barbarian_scouts_capture`.
     pub barbarian_scouts_are_scouts: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
@@ -4957,6 +4973,19 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// The host's barbarian scouts capture civilians — run
+    /// civvis-20260828T122324Z lost four settlers to ONE scout that every
+    /// capture model exempted — so on the live seat a barbarian recon unit
+    /// counts in every capture-reach model. Host-only treatment
+    /// `live-barbarian-scouts-capture`; see `advanced/civilian_safety.rs`.
+    live_barbarian_scouts_capture: bool,
+    /// What twenty-four live captures taught (2026-08-28), as one host-only
+    /// treatment `live-settler-capture-lessons`: a lost settler retires the
+    /// ground around it for every settler, a flee prefers any friendly stack
+    /// to standing beside a raider, the strongest guard is summoned first,
+    /// and a guard is not released beside a known camp. See
+    /// `advanced/civilian_safety.rs`.
+    live_settler_capture_lessons: bool,
     /// Let a religionless empire under conversion reach for the one governor
     /// that can stop it.
     ///
@@ -5232,6 +5261,17 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// Where each settler stood when it was last stepped, so a settler that
+    /// leaves the board can be told from one that founded. Recorded only
+    /// under `live_settler_capture_lessons`.
+    settler_last_seen: BTreeMap<u32, Pos>,
+    /// Last positions of settlers that left the board since the last turn,
+    /// awaiting `resolve_vanished_settlers`.
+    settler_vanished: Vec<Pos>,
+    /// Every tile within `SETTLER_CAPTURE_SCAR_RADIUS` of ground that took a
+    /// settler, and the turn its retirement expires: dead for EVERY settler
+    /// until then. Empire memory, not unit memory — it survives a remap.
+    settler_capture_scars: BTreeMap<Pos, u32>,
     /// A Settler always has somewhere to go: exhaustion asks wider questions
     /// instead of holding, and a watchdog bounds every other hold. Opt-in
     /// gene `settler-never-idles`; see `advanced/settler_never_idles.rs`.
@@ -6241,6 +6281,8 @@ impl AdvancedAi {
         self.settler_avoid.clear();
         self.settler_threat_deferrals.clear();
         self.settler_dead_sites.clear();
+        self.settler_last_seen.clear();
+        self.settler_vanished.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
@@ -6266,6 +6308,16 @@ impl AdvancedAi {
                 .collect()
         };
         self.settler_targets = remap(&self.settler_targets);
+        // A settler the rebuilt board no longer carries has founded or been
+        // taken; its last position is kept for `resolve_vanished_settlers`,
+        // which tells the two apart once it can see the cities.
+        self.settler_vanished.extend(
+            self.settler_last_seen
+                .iter()
+                .filter(|(uid, _)| !map.contains_key(*uid))
+                .map(|(_, pos)| *pos),
+        );
+        self.settler_last_seen = remap(&self.settler_last_seen);
         self.builder_targets = remap(&self.builder_targets);
         self.builder_avoid = self
             .builder_avoid
@@ -6648,6 +6700,8 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            live_barbarian_scouts_capture: false,
+            live_settler_capture_lessons: false,
             moksha_defends_the_faithless: false,
             overseas_settlement: false,
             lane_votes_its_favor: false,
@@ -6676,6 +6730,9 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_last_seen: BTreeMap::new(),
+            settler_vanished: Vec::new(),
+            settler_capture_scars: BTreeMap::new(),
             settler_never_idles: false,
             swap_rotation: false,
             screen_the_shooters: false,
@@ -6751,6 +6808,7 @@ impl AdvancedAi {
                 continue;
             }
             if self.barbarian_scouts_are_scouts
+                && !self.live_barbarian_scouts_capture
                 && g.players[unit.owner].is_barbarian
                 && spec.promotion_class == "recon"
             {
@@ -26231,6 +26289,7 @@ impl AdvancedAi {
                 return false;
             }
             if self.barbarian_scouts_are_scouts
+                && !self.live_barbarian_scouts_capture
                 && g.players[unit.owner].is_barbarian
                 && spec.promotion_class == "recon"
             {
@@ -26291,12 +26350,24 @@ impl AdvancedAi {
                     && g.rules.units[unit.kind].class == "military"
                     && g.rules.units[unit.kind].domain.as_deref() != Some("air")
                     && !(self.barbarian_scouts_are_scouts
+                        && !self.live_barbarian_scouts_capture
                         && g.players[unit.owner].is_barbarian
                         && g.rules.units[unit.kind].promotion_class == "recon")
                     && g.wdist(unit.pos, position) <= SETTLER_ESCORT_THREAT_RADIUS
             })
         };
-        if !threatened {
+        // See `live_settler_capture_lessons`: a known camp is a raider that
+        // has not stepped out of the fog yet. Six of the twenty-four captures
+        // of 2026-08-28 followed "no visible hostile within 8 tiles" by one
+        // turn, and the nest that took six settlers in run
+        // civvis-20260829T000643Z was a camp the board knew about.
+        let camp_near = self.live_settler_capture_lessons && {
+            let position = g.units[&uid].pos;
+            g.barb_camps
+                .keys()
+                .any(|camp| g.wdist(*camp, position) <= SETTLER_ESCORT_THREAT_RADIUS)
+        };
+        if !threatened && !camp_near {
             if self.settler_guards.remove(&uid).is_some() {
                 self.guard_wait.remove(&uid);
                 think!(self.journal(), Expansion, Detail, "The settler's guard stands down";
@@ -26633,6 +26704,7 @@ impl AdvancedAi {
         self.settler_dead_sites
             .get(&uid)
             .is_some_and(|sites| sites.contains_key(&pos))
+            || self.settler_capture_scars.contains_key(&pos)
     }
 
     /// Whether another live Settler already owns this site for the current
@@ -26684,6 +26756,9 @@ impl AdvancedAi {
 
     fn advanced_settler_step_inner(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
+        if self.live_settler_capture_lessons {
+            self.settler_last_seen.insert(uid, current);
+        }
         if self.settler_never_idles {
             self.note_settler_idle(g, uid);
         }
@@ -27060,6 +27135,9 @@ impl AdvancedAi {
             // case at the top of this function for the measured cost).
             if g.blocked_city_sites.contains(&target) {
                 return Some("the host blocked the plot");
+            }
+            if self.settler_capture_scars.contains_key(&target) {
+                return Some("a settler was lost within three tiles");
             }
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
@@ -27961,8 +28039,9 @@ impl AdvancedAi {
                 if spec.class != "military"
                     || domain == Some("air")
                     // Barbarian recon units are engine-managed scouts, not
-                    // raiders; see `barbarian_scouts_are_scouts`.
-                    || spec.promotion_class == "recon"
+                    // raiders; see `barbarian_scouts_are_scouts` — and the
+                    // host's DO capture; see `live_barbarian_scouts_capture`.
+                    || (spec.promotion_class == "recon" && !self.live_barbarian_scouts_capture)
                 {
                     return None;
                 }
@@ -34459,6 +34538,7 @@ impl AdvancedAi {
         // production ordering, the citizen governor, and the search evaluator.
         self.refresh_research_weight(g);
         self.refresh_campus_multiplier_constants(g);
+        self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);

@@ -3070,6 +3070,43 @@ impl AdvancedAi {
         self.base.enter_prophet_race = false;
     }
 
+    /// The host's barbarian scouts capture civilians, so a barbarian recon unit counts in every capture-reach model.
+    ///
+    /// Host-only `live-barbarian-scouts-capture`. Run civvis-20260828T122324Z
+    /// lost four settlers to one scout that `barbarian_scouts_are_scouts`
+    /// exempted from every capture model; the native barbarian seat's recon
+    /// really cannot capture, so the treatment is inert on a native board.
+    /// See `advanced/civilian_safety.rs`.
+    pub fn enable_live_barbarian_scouts_capture(&mut self) {
+        self.live_barbarian_scouts_capture = true;
+    }
+
+    /// Withholding twin for `enable_live_barbarian_scouts_capture`.
+    pub fn disable_live_barbarian_scouts_capture(&mut self) {
+        self.live_barbarian_scouts_capture = false;
+    }
+
+    /// A lost settler retires its ground for every settler; fleeing prefers a friendly stack; guards stay near known camps.
+    ///
+    /// Host-only `live-settler-capture-lessons`: what twenty-four live captures
+    /// on 2026-08-28 taught. A settler that leaves the board with no city
+    /// within two tiles of where it stood was taken, and every site within
+    /// three tiles of that ground is dead for every settler for thirty
+    /// standard turns; a civilian fleeing with no safe tile prefers a tile one
+    /// of our units holds to the least exposed bare one and never holds beside
+    /// a raider while a farther tile exists; the strongest guard that can reach
+    /// the settler this turn is summoned, not the nearest; a guard is not
+    /// released while a known barbarian camp is within eight tiles. See
+    /// `advanced/civilian_safety.rs`.
+    pub fn enable_live_settler_capture_lessons(&mut self) {
+        self.live_settler_capture_lessons = true;
+    }
+
+    /// Withholding twin for `enable_live_settler_capture_lessons`.
+    pub fn disable_live_settler_capture_lessons(&mut self) {
+        self.live_settler_capture_lessons = false;
+    }
+
     /// A stranded Settler's exhaustion search sets aside a site beside an
     /// unresolved rival border — the one fog guess the preferred search made
     /// that names a city the forecast cannot see — and its nearest-legal
@@ -3088,6 +3125,7 @@ impl AdvancedAi {
     // ---- append: c-d ------------------------------------------------
 
     // ---- append: e-f ------------------------------------------------
+
     // ---- append: g-k ------------------------------------------------
 
     // ---- append: l-o ------------------------------------------------

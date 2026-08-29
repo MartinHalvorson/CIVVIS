@@ -156,6 +156,20 @@ for _, op in ipairs({ "SKIP_TURN", "FORTIFY", "ALERT", "SLEEP" }) do
 end
 print("units blocker: parks ready units before claiming completion, holding orders only")
 
+--- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, MEASURED AGAIN ON THE POLICY SLOT.
+--- Run civvis-20260829T022749Z wedged at turn 114 holding 8 cities:
+---     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"   1
+---     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"  25
+---     dismissed FILL_CIVIC_SLOT                              40
+--- repeating unchanged until the watchdog killed the game. Dismissing the
+--- notification cannot clear a slot end-turn still requires, so the answer
+--- has to actually fill it -- exactly as the units blocker parks its units.
+assert(agentSrc:find('if name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then%s+local filled = fillPolicies%(player%)'),
+	"the policy-slot blocker must fill the slot before answering civvis_complete")
+assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+"%s*%.%.%s*tostring%(filled%)'),
+	"a filled answer must be distinguishable from a bare civvis_complete")
+print("policy slot: fills the open slot before claiming completion")
+
 print("blocker ownership: " ..
 	#(function() local n = {} for _ in pairs(answers) do n[#n + 1] = 1 end return n end)() ..
 	" answered prompts owned, no soft overlap, every order kind real")
