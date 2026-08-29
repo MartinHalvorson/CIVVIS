@@ -160,8 +160,8 @@
   },
   "tagma": {
     "class": "military",
-    "cost": 180,
-    "maintenance": 3,
+    "cost": 220,
+    "maintenance": 4,
     "moves": 4,
     "strength": 50,
     "civic": "divine_right",
@@ -172,7 +172,7 @@
     "cavalry": true,
     "promotion_class": "heavy_cavalry",
     "zone_of_control": true,
-    "upgrade_to": "tank",
+    "upgrade_to": "cuirassier",
     "obsolete_tech": "composites",
     "effects": {
       "adjacent_combat_strength": 4,
@@ -732,7 +732,7 @@
     "obsolete_tech": "guidance_systems"
   },
   "pike_and_shot": {
-    "class": "military", "cost": 250, "maintenance": 3, "moves": 2, "strength": 55,
+    "class": "military", "cost": 250, "maintenance": 4, "moves": 2, "strength": 55,
     "tech": "metal_casting", "promotion_class": "anti_cavalry", "zone_of_control": true,
     "upgrade_to": "at_crew",
     "obsolete_tech": "combined_arms"

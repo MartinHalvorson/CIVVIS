@@ -758,7 +758,7 @@
     "appeal": 2,
     "adjacent_yields": {
       "culture": 1,
-      "food": 2
+      "food": 1
     },
     "natural_wonder": true,
     "volcano": true,
