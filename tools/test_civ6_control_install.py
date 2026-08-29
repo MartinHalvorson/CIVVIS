@@ -359,6 +359,30 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('type(Close) == "function"', wonder)
         self.assertIn("Close();", wonder)
 
+    def test_wonder_completion_waits_for_animation_before_minimizing(self) -> None:
+        """A short generic clock must not cut off the stock wonder reveal."""
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn("local WONDER_MIN_SECONDS = 1.0;", closer)
+        self.assertIn(
+            "local WONDER_ANIMATION_TIMEOUT_SECONDS = 8.0;",
+            closer,
+        )
+        self.assertIn(
+            'if NAME == "WonderBuiltPopup" then\n\tSECONDS = math.max(SECONDS, WONDER_MIN_SECONDS);\nend',
+            closer,
+        )
+        for control in ("HeaderAlpha", "HeaderSlide", "QuoteAlpha", "QuoteSlide"):
+            self.assertIn(f"Controls.{control}", closer)
+        self.assertIn("animation:IsStopped()", closer)
+        self.assertIn('report("autoclose_wait_animation"', closer)
+        self.assertIn('"animation_ready"', closer)
+        self.assertIn('"animation_timeout"', closer)
+
+        wait_at = closer.index("local wonderAnimationReadyAtClose = true;")
+        close_at = closer.index("local upFor = shown;", wait_at)
+        self.assertLess(wait_at, close_at)
+
     def test_between_turns_congress_uses_the_complete_firaxis_hide_path(self) -> None:
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
         congress = closer.split('NAME == "WorldCongressBetweenTurns"', 1)[1].split(
