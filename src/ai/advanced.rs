@@ -20484,7 +20484,7 @@ impl AdvancedAi {
         let desired = self.settlement_target(plan);
         if city_count + counts.settlers >= desired
             || counts.settlers
-                >= self.settler_in_flight_allowed(g, pid, desired, city_count, counts.settlers)
+                >= self.settler_pipeline_width(g, pid, desired, city_count, counts.settlers)
         {
             return;
         }
@@ -20583,7 +20583,7 @@ impl AdvancedAi {
             return;
         }
         let allowance =
-            self.settler_in_flight_allowed(g, pid, desired, city_count, counts.settlers);
+            self.settler_pipeline_width(g, pid, desired, city_count, counts.settlers);
         let open_seats = allowance.saturating_sub(counts.settlers);
         if open_seats == 0 {
             return;
@@ -22263,7 +22263,12 @@ impl AdvancedAi {
         }
     }
 
-    fn settler_in_flight_allowed(
+    /// `settler_in_flight_allowed` under `settler-backlog-brake`: a Settler
+    /// that has stood on one tile for `SETTLER_BACKLOG_IDLE_TURNS` turns
+    /// closes the pipeline until it moves or founds — every width the search
+    /// below grants is what a walker earns, and a parked Settler is not
+    /// walking. The opening is untouched. Every production caller asks here.
+    fn settler_pipeline_width(
         &self,
         g: &Game,
         pid: usize,
@@ -22271,10 +22276,6 @@ impl AdvancedAi {
         city_count: usize,
         settlers: usize,
     ) -> usize {
-        // `settler-backlog-brake`: a Settler that has stood on one tile for
-        // `SETTLER_BACKLOG_IDLE_TURNS` turns closes the pipeline until it
-        // moves or founds — every other width below is what a walker earns,
-        // and a parked Settler is not walking. The opening is untouched.
         if self.settler_backlog_brake
             && city_count >= BasicAi::SETTLER_BACKLOG_MIN_CITIES
             && self
@@ -22284,6 +22285,16 @@ impl AdvancedAi {
         {
             return 0;
         }
+        self.settler_in_flight_allowed(g, desired_cities, city_count, settlers)
+    }
+
+    fn settler_in_flight_allowed(
+        &self,
+        g: &Game,
+        desired_cities: usize,
+        city_count: usize,
+        settlers: usize,
+    ) -> usize {
         // `expansion_schedule`: the opening's own pace answers first, and
         // only while the empire is behind it. See
         // `advanced/expansion_schedule.rs`.
@@ -22357,7 +22368,7 @@ impl AdvancedAi {
         }
         let city_count = g.player_city_ids(pid).len();
         let desired = self.settlement_target(plan);
-        let allowed = self.settler_in_flight_allowed(g, pid, desired, city_count, counts.settlers);
+        let allowed = self.settler_pipeline_width(g, pid, desired, city_count, counts.settlers);
         let open_slots = allowed.saturating_sub(counts.settlers);
         if open_slots == 0 {
             return false;
@@ -22738,7 +22749,7 @@ impl AdvancedAi {
             }
             Item::Unit { unit } if unit == "settler" => {
                 let settlement_target = self.settlement_target(plan);
-                let in_flight_allowed = self.settler_in_flight_allowed(
+                let in_flight_allowed = self.settler_pipeline_width(
                     g,
                     pid,
                     settlement_target,
