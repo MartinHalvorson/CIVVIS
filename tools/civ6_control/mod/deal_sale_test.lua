@@ -86,10 +86,16 @@ DealProposalAction = {
 	PENDING = "pending", PROPOSED = "proposed", ACCEPTED = "accepted", REJECTED = "rejected",
 	ADJUSTED = "adjusted", EQUALIZE = "equalize", EQUALIZE_FAILED = "equalize_failed",
 }
+-- `ResourceClassType` is optional: the sale arm's sole-copy guard and the
+-- luxury purchase both read it, and a row without one is not a luxury.
 local resourceRows = {
 	RESOURCE_DYES = { ResourceType = "RESOURCE_DYES", Index = 12 },
 	RESOURCE_IRON = { ResourceType = "RESOURCE_IRON", Index = 44 },
 	RESOURCE_SILK = { ResourceType = "RESOURCE_SILK", Index = 30 },
+	RESOURCE_AMBER = { ResourceType = "RESOURCE_AMBER", Index = 3,
+		ResourceClassType = "RESOURCECLASS_LUXURY" },
+	RESOURCE_JADE = { ResourceType = "RESOURCE_JADE", Index = 18,
+		ResourceClassType = "RESOURCECLASS_LUXURY" },
 }
 GameInfo = {
 	Resources = setmetatable({}, { __index = function(_, key)
@@ -120,8 +126,11 @@ DiplomacyManager = {
 }
 
 -- One fixture = one rival's deal manager. `opts.possible` lists what the
--- engine says we can trade (by resource name -> MaxAmount); `opts.incoming`
--- is the rival's answer, a list of {kind, from, duration, amount, valueType}.
+-- engine says we can trade (by resource name -> MaxAmount) and
+-- `opts.theirPossible` what the RIVAL can (the owner argument decides which
+-- list answers); `opts.own` is the host's own count of what we hold (by
+-- resource name, default 0); `opts.incoming` is the rival's answer, a list
+-- of {kind, from, duration, amount, valueType}.
 local function fixture(opts)
 	opts = opts or {}
 	local state = { calls = {}, items = {} }
@@ -198,8 +207,9 @@ local function fixture(opts)
 			if direction == DealDirection.INCOMING then return incoming end
 			return outgoing
 		end,
-		GetPossibleDealItems = function(pid, subject, kind, deal)
+		GetPossibleDealItems = function(owner, other, kind, deal)
 			call("possible")
+			state.possibleArgs = { owner, other }
 			local out = {}
 			if kind == DealItemTypes.GREATWORK then
 				-- `opts.possibleWorks` is a list of {ForType = instance,
@@ -211,7 +221,8 @@ local function fixture(opts)
 				end
 				return out
 			end
-			for name, max in pairs(opts.possible or {}) do
+			local list = owner == 7 and (opts.possible or {}) or (opts.theirPossible or {})
+			for name, max in pairs(list) do
 				out[#out + 1] = { ForType = resourceRows[name].Index, MaxAmount = max, IsValid = true }
 			end
 			return out
@@ -247,6 +258,14 @@ local function fixture(opts)
 				IsAtWarWith = function(_, subject) return opts.atWar == true end,
 				HasOpenBordersFrom = function(_, subject) return opts.alreadyOpen == true end,
 			}
+		end,
+		GetResources = function()
+			return { GetResourceAmount = function(_, index)
+				for name, row in pairs(resourceRows) do
+					if row.Index == index then return (opts.own or {})[name] or 0 end
+				end
+				return 0
+			end }
 		end,
 	}
 	return state, player
@@ -727,6 +746,192 @@ check("an invalid buy package is refused", why, "invalid_deal")
 check("an invalid buy starts the cooldown", trade.asked[4], 126)
 check("no buy guard opened a session", rawget(_G, "SESSION_OPENED"), nil)
 
+-- ─── the luxury purchase ────────────────────────────────────────────────────
+-- The same arm, the other item: the rival's own tradeable list (owner first)
+-- is read for a luxury the host says we hold none of, and ONE copy of it goes
+-- in as THEIR resource item for thirty turns with nothing on our side.
+-- EQUALIZE as before; the handler closes only when their side is exactly
+-- that copy against our gold at or under the ceiling.
+local function luxuryOrder(pid, subject, player, turn, ceiling, verb)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject), verb = verb or "LUXURY_ANY", x = ceiling, y = 0,
+	}, turn)
+end
+
+reset()
+local lasks, lasksPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+ok, why = luxuryOrder(7, 3, lasksPlayer, 130, 200)
+check("luxury ask is submitted", ok, true)
+check("luxury ask says asked", why, "buy_asked")
+check("the rival's table is read, owner first", lasks.possibleArgs[1] .. ":" .. lasks.possibleArgs[2], "3:7")
+local copy = itemOfKind(lasks, DealItemTypes.RESOURCES)
+check("the copy is THEIRS to give", copy and copy.owner, 3)
+check("the copy carries the engine's type", copy and copy.valueType, 3)
+check("the copy is one copy", copy and copy.amount, 1)
+check("the copy runs thirty turns", copy and copy.duration, 30)
+check("nothing of ours goes on the table", #lasks.items, 1)
+check("luxury ask validates before it is sent", callAt(lasks, "validate") < callAt(lasks, "send_equalize"), true)
+check("the luxury ask is EQUALIZE", lasks.sends[1][1], "equalize")
+check("no PROPOSED goes out on the luxury ask", callAt(lasks, "send_proposed"), nil)
+check("no session opens on the luxury ask", rawget(_G, "SESSION_OPENED"), nil)
+check("the luxury ask is pending", trade.pending[3] ~= nil, true)
+check("the pending luxury ask keeps the ceiling", trade.pending[3].ceiling, 200)
+check("the pending luxury ask knows its direction", trade.pending[3].direction, "buy")
+check("the pending luxury ask knows what it wants", trade.pending[3].want, "RESOURCES:3")
+check("the pending luxury ask names the copy", trade.pending[3].verb, "RESOURCE_AMBER")
+check("the luxury offer is in the ledger", eventField(lastEvent("deal_offer"), "want"), "RESOURCE_AMBER")
+check("the luxury offer keeps its direction", eventField(lastEvent("deal_offer"), "direction"), "buy")
+
+-- A copy we already hold is skipped; the one we lack is asked for.
+reset()
+local skip, skipPlayer = fixture({
+	theirPossible = { RESOURCE_AMBER = 1, RESOURCE_JADE = 1 }, own = { RESOURCE_AMBER = 1 },
+})
+ok, why = luxuryOrder(7, 3, skipPlayer, 136, 200)
+check("an owned luxury is skipped", ok, true)
+local lacking = itemOfKind(skip, DealItemTypes.RESOURCES)
+check("the luxury we lack is the one asked for", lacking and lacking.valueType, 18)
+check("the skipped copy is not on the table", #skip.items, 1)
+
+-- A named luxury is bought by name; a name the rival lacks is a refusal.
+reset()
+local named, namedPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1, RESOURCE_JADE = 1 } })
+ok, why = luxuryOrder(7, 3, namedPlayer, 142, 200, "RESOURCE_JADE")
+check("a named luxury is bought", ok, true)
+local jade = itemOfKind(named, DealItemTypes.RESOURCES)
+check("the named luxury is the one asked for", jade and jade.valueType, 18)
+check("the named ask knows what it wants", trade.pending[3].want, "RESOURCES:18")
+reset()
+local unheld, unheldPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+ok, why = luxuryOrder(7, 3, unheldPlayer, 142, 200, "RESOURCE_JADE")
+check("a named luxury the rival lacks is refused", why, "buy_no_luxury")
+ok, why = luxuryOrder(7, 4, unheldPlayer, 142, 200, "RESOURCE_BOGUS")
+check("a name the ruleset lacks is unknown", why, "buy_unknown_item")
+
+-- A strategic on their table is not a luxury; nothing lacking is a named
+-- refusal that starts the cooldown and leaves nothing in flight.
+reset()
+local strat, stratPlayer = fixture({ theirPossible = { RESOURCE_IRON = 5 } })
+ok, why = luxuryOrder(7, 3, stratPlayer, 148, 200)
+check("a strategic is not a luxury purchase", why, "buy_no_luxury")
+reset()
+local none, nonePlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 }, own = { RESOURCE_AMBER = 2 } })
+ok, why = luxuryOrder(7, 3, nonePlayer, 148, 200)
+check("nothing lacking, nothing bought", ok, false)
+check("nothing lacking says why", why, "buy_no_luxury")
+check("nothing lacking starts the cooldown", trade.asked[3], 148)
+check("nothing lacking leaves no pending ask", trade.pending[3], nil)
+check("nothing lacking sends nothing", none.sends, nil)
+check("nothing lacking clears the working deal", none.clearArgs and none.clearArgs[1], "outgoing")
+check("nothing lacking is in the ledger", eventField(lastEvent("deal_offer"), "reason"), "buy_no_luxury")
+
+-- A copy this lane is selling to anyone is not bought back.
+reset()
+trade.pending[5] = { turn = 154, floor = 10, gave = { ["RESOURCES:3"] = 1 }, verb = "RESOURCE_AMBER=1x30" }
+local busy, busyPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+ok, why = luxuryOrder(7, 3, busyPlayer, 154, 200)
+check("a copy on sale elsewhere is not bought", why, "buy_no_luxury")
+
+-- The rival prices the copy at 6 a turn: 150 by the 25× book, under the
+-- ceiling, closed — and the ledger says which way the gold went.
+reset()
+local fairAsk, fairAskPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+luxuryOrder(7, 3, fairAskPlayer, 160, 200)
+local fair = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 3 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 6 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a fair copy price is copied over the outgoing deal", fair.copied and fair.copied[2], 3)
+check("a fair copy price is accepted", fair.sends and fair.sends[1][1], "accepted")
+check("the answer settles the luxury buy", trade.pending[3], nil)
+check("the luxury close is in the ledger", eventField(lastEvent("deal_closed"), "pay"), "150")
+check("the luxury close knows its direction", eventField(lastEvent("deal_closed"), "direction"), "buy")
+check("the luxury close names the copy", eventField(lastEvent("deal_closed"), "want"), "RESOURCES:3")
+check("the luxury close names the resource", eventField(lastEvent("deal_closed"), "gave"), "RESOURCE_AMBER")
+check("the response records their side", eventField(lastEvent("deal_response"), "theirs"), "RESOURCES:3=1x30")
+
+-- Above the ceiling: declined, cleared, settled.
+reset()
+local dearAsk, dearAskPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+luxuryOrder(7, 3, dearAskPlayer, 166, 100)
+local dear = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 3 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 6 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a copy above the ceiling is declined", dear.sends, nil)
+check("the dear decline clears the outgoing deal", dear.clearArgs and dear.clearArgs[1], "outgoing")
+check("the dear decline settles the buy", trade.pending[3], nil)
+check("the dear ask is in the ledger", eventField(lastEvent("deal_declined"), "pay"), "150")
+check("the dear ask still matched", eventField(lastEvent("deal_declined"), "matches"), "true")
+
+-- An answer that takes OUR luxury is walked away from.
+reset()
+local swapAsk, swapAskPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+luxuryOrder(7, 3, swapAskPlayer, 172, 200)
+local swap = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 3 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 20 },
+	{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 30 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("an answer that takes our luxury is declined", swap.sends, nil)
+check("our luxury on the table is a mismatch", eventField(lastEvent("deal_declined"), "matches"), "false")
+
+-- A different copy than the one asked for, or two of them, is not the deal.
+reset()
+local otherAsk, otherAskPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+luxuryOrder(7, 3, otherAskPlayer, 178, 200)
+local other = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 18 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 2 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a different copy is declined", other.sends, nil)
+reset()
+local twoAsk, twoAskPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+luxuryOrder(7, 3, twoAskPlayer, 184, 200)
+local two = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 2, valueType = 3 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 4 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("two copies are declined", two.sends, nil)
+
+-- Their gold inside a luxury answer is foreign, as on the passage buy.
+reset()
+local oddLuxAsk, oddLuxAskPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+luxuryOrder(7, 3, oddLuxAskPlayer, 190, 200)
+local oddLux = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 3 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 10 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 20 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("their gold in a luxury answer is foreign", oddLux.sends, nil)
+check("the foreign gold is counted on the luxury buy", eventField(lastEvent("deal_declined"), "foreign"), "1")
+
+-- The luxury buy shares the passage buy's guards; open borders already held
+-- do not bar it.
+reset()
+local lopen, lopenPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 }, alreadyOpen = true })
+ok, why = luxuryOrder(7, 3, lopenPlayer, 196, 200)
+check("open borders in hand do not bar a luxury buy", why, "buy_asked")
+reset()
+local lwar, lwarPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 }, atWar = true })
+ok, why = luxuryOrder(7, 3, lwarPlayer, 196, 200)
+check("a rival at war sells no luxury", why, "buy_at_war")
+local lminor, lminorPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 }, major = false })
+ok, why = luxuryOrder(7, 3, lminorPlayer, 196, 200)
+check("a city-state's luxury is not a deal", why, "buy_not_major")
+local linvalid, linvalidPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 }, itemValid = false })
+ok, why = luxuryOrder(7, 4, linvalidPlayer, 196, 200)
+check("an invalid copy item is refused", why, "resource_invalid")
+check("an invalid copy item is removed", linvalid.removed and #linvalid.removed, 1)
+check("an invalid copy item starts the cooldown", trade.asked[4], 196)
+check("no luxury guard opened a session", rawget(_G, "SESSION_OPENED"), nil)
+
 -- ─── wiring ─────────────────────────────────────────────────────────────────
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
 local sellAt = assert(src:find('if kind == "sell" then', 1, true))
@@ -748,6 +953,13 @@ check("the handler accepts with ACCEPTED",
 	src:find("DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, fromPlayer);", 1, true) ~= nil, true)
 local buyAt = assert(src:find('if kind == "buy" then', 1, true))
 check("the buy arm sits with the deal lanes", buyAt > sellAt and buyAt < envoyAt, true)
+local buyArm = src:sub(buyAt, envoyAt - 1)
+check("the buy arm reads the RIVAL's table for a luxury",
+	buyArm:find("DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.RESOURCES, deal);", 1, true) ~= nil, true)
+check("the buy arm asks the luxury with EQUALIZE",
+	buyArm:find('CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);', 1, true) ~= nil, true)
+check("the buy arm never proposes blind",
+	buyArm:find("DealProposalAction.PROPOSED", 1, true) == nil, true)
 check("the export carries the received-borders fact",
 	src:find("diplomacy:HasOpenBordersFrom(otherId);", 1, true) ~= nil, true)
 
