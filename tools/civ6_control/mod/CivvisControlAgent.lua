@@ -4025,8 +4025,27 @@ local function chooseDedication(player, pid)
 	end
 	if #names == 0 then return nil; end
 
+	-- ★ OUTSIDE A GOLDEN AGE THE DEDICATION IS ITS QUEST. The `GA_` grants above
+	-- apply only in a Golden Age; in a Normal or Dark age the choice grants an
+	-- era-score quest instead, and the quest the seat can actually score is
+	-- SCIENTIFIC's (Free Inquiry: +1 era score per Eureka). Measured on nine
+	-- live King runs: the seat earned 3–12 Eurekas per Classical era against
+	-- 1–4 specialty districts, took INFRASTRUCTURE every time, and fell into 15
+	-- Dark Ages, ten of them by five points or fewer. In a Golden Age the
+	-- expansion grants are real and the order above stands.
+	local golden = try(function()
+		return Game.GetEras():HasGoldenAge(pid) or Game.GetEras():HasHeroicGoldenAge(pid);
+	end, false);
+	local order = DEDICATION_ORDER;
+	if not golden then
+		order = { "COMMEMORATION_SCIENTIFIC" };
+		for _, name in ipairs(DEDICATION_ORDER) do
+			if name ~= "COMMEMORATION_SCIENTIFIC" then order[#order + 1] = name; end
+		end
+	end
+
 	local taken = 0;
-	for _, preferred in ipairs(DEDICATION_ORDER) do
+	for _, preferred in ipairs(order) do
 		if taken >= allowed then break; end
 		local choice = offered[preferred];
 		if choice ~= nil then
