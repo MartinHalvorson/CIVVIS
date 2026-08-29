@@ -599,7 +599,7 @@ else
 	-- BACK-OFF, never a stop -- see the end of `tick` for why nothing here may
 	-- be permanent.
 	local reported = false;
-	local desktopReported = false;
+	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
 
 	-- ★★★★★ A DEAL SESSION CIVVIS OPENED IS NOT A SCREEN TO REFUSE. The
 	-- agent's sale, passage and peace arms now ask inside a `MAKE_DEAL`
@@ -690,7 +690,7 @@ else
 			showing = false;
 			closes = 0;
 			reported = false;
-			desktopReported = false;
+			desktopReportedAt = -1;
 			wonderAnimationWaitReported = false;
 			return;
 		end
@@ -849,10 +849,34 @@ else
 		if gone then
 			closes = 0;
 			reported = false;
-			desktopReported = false;
+			desktopReportedAt = -1;
 		end
-		if closes >= DESKTOP_AFTER and not desktopReported then
-			desktopReported = true;
+		-- ⚠⚠⚠ THE ASK WAS LATCHED, AND THE LATCH ONLY CLEARS WHEN THE SCREEN
+		-- GOES AWAY -- which is exactly what it does not do when help is needed.
+		-- The declaration above already states the rule this broke: "Giving up is
+		-- a BACK-OFF, never a stop", and the give-up arm below spells out why a
+		-- latched flag is no good, because "the only code that could clear it is
+		-- the `not isUp()` branch, and that branch does not run". `desktopReported`
+		-- was such a flag.
+		--
+		-- A leader conversation cannot be dismissed blind: Escape does nothing on
+		-- it (verified by hand) and Escape with nothing to close opens the pause
+		-- menu, so the desktop side must SEE the screen to choose an option. That
+		-- capture can fail transiently -- macOS returns no image while its status
+		-- service is busy -- and one such failure used to end the run, because the
+		-- ask never came again.
+		--
+		-- Measured 2026-08-29, run civvis-20260829T093602Z: one
+		-- `autoclose_desktop` for DiplomacyDealView at 4 attempts, the desktop
+		-- side answered "popup capture unavailable", and the game sat on John
+		-- Curtin's leader screen until the watchdog killed it at turn 40. The
+		-- photograph shows the diplomacy action list still up.
+		--
+		-- So ask again every DESKTOP_AFTER attempts while the screen is still
+		-- there. The close attempts are already backed off by RETRY_SECONDS below,
+		-- so this is a slow retry, not a spin.
+		if closes >= DESKTOP_AFTER and closes - desktopReportedAt >= DESKTOP_AFTER then
+			desktopReportedAt = closes;
 			report("autoclose_desktop", string.format(',"attempts":%d', closes));
 		end
 		if closes >= GIVE_UP_AFTER then
