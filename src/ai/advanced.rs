@@ -27713,8 +27713,14 @@ impl AdvancedAi {
         if self.formationless_settler_escort() && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
             // with any of our own military units (the assigned guard or not).
+            // `settler_guard_holds_on` also includes the live capture-lessons
+            // bridge.  The production ledger may withhold the screenable
+            // `settler-guard-holds` arm while that HostOnly repair is still
+            // active; computing visibility from the raw field here leaves
+            // `guard_outmatched_at` with `None` and panics exactly when a
+            // wounded escort has to be rejected.
             let visible_now = self
-                .settler_guard_holds
+                .settler_guard_holds_on()
                 .then(|| self.battlefront_visibility(g, pid));
             let guarded_here = g.city_at(current).is_some()
                 || g.unit_ids_at(current).iter().any(|other| {
