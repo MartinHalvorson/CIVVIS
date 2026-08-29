@@ -1811,7 +1811,8 @@ pub struct StateCity {
     /// Production already invested in `producing`.
     #[serde(default = "unknown_metric")]
     pub production_progress: f64,
-    /// ⚠⚠ THE CITY'S PRODUCTION YIELD PER TURN, AND IT WAS BEING THROWN AWAY.
+    /// ⚠⚠ THE PRODUCTION AVAILABLE TO THE CITY'S BUILD QUEUE, AND IT WAS BEING
+    /// THROWN AWAY.
     ///
     /// PR #845 added `production`, `production_cost` and `production_turns` to the
     /// export precisely because they are a DECISION input and not only a diagnostic,
@@ -1823,6 +1824,10 @@ pub struct StateCity {
     ///
     /// Live on run `civvis-20260802T083838Z`: `production: 11`, `production_cost: 60`,
     /// `production_turns: 3` for a Quadrireme at `production_progress: 27`.
+    /// This is the queue's whole-number production reading, not the exact
+    /// per-city yield used by `City:GetYield(YieldTypes.PRODUCTION)`. The latter
+    /// crosses in `yields.production` (and in `public_stats.production` for the
+    /// empire total) and is the value an economy comparison must use.
     ///
     /// ⚠ This matters far more since #867, which stopped CIVVIS deferring to the
     /// mod's ladder and made it choose production for every city every turn. Choosing
@@ -7498,20 +7503,30 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     }
     // ★★★★ PRODUCTION BELONGS ON THIS LINE NOW, AND COULD NOT BEFORE.
     //
-    // Science and culture arrive as seat totals; production only ever existed
-    // per-city, and `StateCity` was not reading it (see the field). Summing the
-    // export's own per-city figure gives the same civ6-versus-CIVVIS comparison for
-    // the yield that decides what every city builds.
-    //
-    // ⚠ Only cities the export actually reported a figure for are summed, so an
-    // older mod reads as unknown rather than as zero — the same rule the seat totals
-    // follow. `unknown_metric` is negative, which is why the filter is `>= 0`.
-    let host_production: f64 = state
-        .cities
-        .iter()
-        .map(|city| city.production)
-        .filter(|value| *value >= 0.0)
-        .sum();
+    // Use the exact empire total first. `StateCity.production` is the
+    // BuildQueue's whole-number `GetProductionYield()` reading, not the city's
+    // exact `City:GetYield(YieldTypes.PRODUCTION)` value; summing it manufactured
+    // a recurring +3% drift on the live Science run even while the exact city
+    // yields and `public_stats.production` agreed. Fall back to exact per-city
+    // yields for exports that predate `public_stats`, but only when every city is
+    // present and has a finite reading so a partial export cannot look complete.
+    let host_production = state
+        .public_stats
+        .production
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .or_else(|| {
+            let values: Vec<f64> = state
+                .cities
+                .iter()
+                .filter_map(|city| city.yields.map(|yields| yields.production))
+                .collect();
+            (!values.is_empty()
+                && values.len() == state.cities.len()
+                && values
+                    .iter()
+                    .all(|value| value.is_finite() && *value >= 0.0))
+            .then(|| values.into_iter().sum())
+        });
     let pct = |ours: f64, theirs: f64| {
         if theirs.abs() < 1e-6 {
             return "n/a".to_string();
@@ -7562,14 +7577,14 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     };
     // Omitted rather than printed as 0.0/x when no city reported a figure, so an
     // older mod is silent here instead of claiming a 100% drift.
-    let production_part = match host_production > 0.0 {
-        true => format!(
+    let production_part = match host_production.filter(|value| *value > 0.0) {
+        Some(host_production) => format!(
             " production {:.1}/{:.1} {}",
             host_production,
             production,
             pct(production, host_production)
         ),
-        false => String::new(),
+        None => String::new(),
     };
     Some(format!(
         "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}{}",
