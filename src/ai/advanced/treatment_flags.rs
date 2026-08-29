@@ -3070,10 +3070,6 @@ impl AdvancedAi {
         self.base.enter_prophet_race = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
-
-    // ---- append: e-f ------------------------------------------------
     /// A stranded Settler's exhaustion search sets aside a site beside an
     /// unresolved rival border — the one fog guess the preferred search made
     /// that names a city the forecast cannot see — and its nearest-legal
@@ -3088,6 +3084,10 @@ impl AdvancedAi {
         self.exhaustion_loyalty_guard = false;
     }
 
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
 
     // ---- append: l-o ------------------------------------------------

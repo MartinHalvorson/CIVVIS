@@ -270,9 +270,7 @@ impl AdvancedAi {
             // as the ranked tier, retries included; a Settler that then holds
             // is named by `settler_stranded`.
             for _ in 0..=STRANDED_FORECAST_RETRIES {
-                let Some((site, _)) = BasicAi::first_reachable_settle_site(g, uid, &legal) else {
-                    return None;
-                };
+                let (site, _) = BasicAi::first_reachable_settle_site(g, uid, &legal)?;
                 match Self::settle_site_forecast_revolt(g, pid, site) {
                     Some((per_turn, turns)) if turns < STRANDED_SITE_MIN_HOLD_TURNS => {
                         think!(self.journal(), Expansion, Detail,
