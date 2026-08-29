@@ -16473,6 +16473,28 @@ local function tick()
 							answered = answered .. "+parked:" .. parked;
 						end
 					end
+					-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.
+					-- Parking the ready units repaired it for `ENDTURN_BLOCKING_UNITS`;
+					-- `FILL_CIVIC_SLOT` was left claiming completion over a slot that is
+					-- still open. Dismissing cannot help here: an empty slot is something
+					-- end-turn genuinely requires, so the engine raises it straight back.
+					--
+					-- Measured 2026-08-29, run civvis-20260829T022749Z at turn 114 -- 8
+					-- cities, the strongest empire of the day:
+					--     blocked   FILL_CIVIC_SLOT  answered civvis_complete   1
+					--     blocked   FILL_CIVIC_SLOT  answered civvis_complete  25
+					--     dismissed FILL_CIVIC_SLOT                            40
+					-- and that cycle repeated unchanged until the watchdog killed the
+					-- game. The forfeit ladder ran every time and dismissed every time.
+					--
+					-- `fillPolicies` returns nil the moment no slot is open, so on the
+					-- turns that are already right this costs one culture lookup.
+					if name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then
+						local filled = fillPolicies(player);
+						if filled then
+							answered = answered .. "+" .. tostring(filled);
+						end
+					end
 				else
 					-- Bounded per turn. The order pass is the expensive one, and a
 					-- soft blocker that will not clear -- a unit the engine keeps
