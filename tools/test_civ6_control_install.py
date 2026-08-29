@@ -359,6 +359,57 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('type(Close) == "function"', wonder)
         self.assertIn("Close();", wonder)
 
+    def test_wonder_completion_wins_and_chains_known_ui_replacement(self) -> None:
+        """A later UI mod must not replace the wonder closer or its audio."""
+        modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn(
+            '805cc499-c534-4e0a-bdce-32fb3c53ba38',
+            modinfo,
+        )
+        action = modinfo.split(
+            '<ReplaceUIScript id="CivvisControlAutoCloseWonderBuilt">', 1
+        )[1].split("</ReplaceUIScript>", 1)[0]
+        self.assertIn("<LoadOrder>100000</LoadOrder>", action)
+        self.assertIn(
+            'WonderBuiltPopup = "Suk_WonderBuiltPopup"',
+            closer,
+        )
+
+        # The known replacement includes the Firaxis script and must be loaded
+        # before haveScreen() checks for OnClose/Close. Keep this assertion
+        # textual because Lua's UI globals do not exist in the Python suite.
+        chain_at = closer.index('WonderBuiltPopup = "Suk_WonderBuiltPopup"')
+        include_at = closer.index("if CHAINED[NAME] then")
+        self.assertLess(chain_at, include_at)
+
+    def test_wonder_completion_waits_for_animation_before_minimizing(self) -> None:
+        """A short generic clock must not cut off the stock wonder reveal."""
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn("local WONDER_MIN_SECONDS = 1.0;", closer)
+        self.assertIn(
+            "local WONDER_ANIMATION_TIMEOUT_SECONDS = 8.0;",
+            closer,
+        )
+        self.assertIn(
+            'if NAME == "WonderBuiltPopup" then\n\tSECONDS = math.max(SECONDS, WONDER_MIN_SECONDS);\nend',
+            closer,
+        )
+        for control in ("HeaderAlpha", "HeaderSlide", "QuoteAlpha", "QuoteSlide"):
+            self.assertIn(f"Controls.{control}", closer)
+        self.assertIn("animation:IsStopped()", closer)
+        self.assertIn('report("autoclose_wait_animation"', closer)
+        self.assertIn('"animation_ready"', closer)
+        self.assertIn('"animation_timeout"', closer)
+        self.assertIn("if shown < WONDER_ANIMATION_TIMEOUT_SECONDS then", closer)
+        self.assertIn("remaining = DIALOGUE_READY_RETRY_SECONDS;", closer)
+
+        wait_at = closer.index("local wonderAnimationReadyAtClose = true;")
+        close_at = closer.index("local upFor = shown;", wait_at)
+        self.assertLess(wait_at, close_at)
+
     def test_between_turns_congress_uses_the_complete_firaxis_hide_path(self) -> None:
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
         congress = closer.split('NAME == "WorldCongressBetweenTurns"', 1)[1].split(
