@@ -67,12 +67,13 @@
 //! same agent — so a change to the controller moved these counts and nothing
 //! here could attribute the movement.
 //!
-//! `--without <gene>` withholds a live or production gene of the registry
-//! from every seat, so the same seeds replay with one
-//! behaviour removed and the lane counts compare directly. Repeat the flag to
-//! withhold more than one; an unknown name lists what is available rather than
-//! failing quietly. The fieldless default path is unchanged, so every number
-//! above still reproduces.
+//! `--without <gene>` withholds a registered gene from every seat, so the same
+//! seeds replay with one behaviour removed and the lane counts compare
+//! directly. This includes opt-ins selected by the deployment ledger, such as
+//! `science-victory-drive`. Repeat the flag to withhold more than one; an
+//! unknown name lists what is available rather than failing quietly. The
+//! fieldless default path is unchanged, so every number above still
+//! reproduces.
 //!
 //! `--deployment` starts each targeted seat from the deployed bridge profile
 //! (`AdvancedAi::enable_live_bridge`) before applying `--without` and `--with`.
@@ -211,21 +212,18 @@ fn main() {
                 eprintln!("--without requires a treatment name");
                 std::process::exit(2);
             };
-            // Both what the live bridge adds and what production itself
-            // ships: a tool that reads only the first cannot withhold a
-            // behaviour the shipped agent has and the bridge did not give it.
+            // Every registry row has a paired disable function. Opt-ins are
+            // included because the deployment ledger can seat one before the
+            // ablation is applied; filtering them out made a deployed opt-in
+            // impossible to measure.
             match civvis::ai::GENES
                 .iter()
-                .filter(|gene| gene.live() || gene.production())
                 .find(|gene| gene.field == name || gene.tag == name)
             {
                 Some(row) => rows.push(row),
                 None => {
                     eprintln!("unknown gene {name:?}; known names:");
-                    for gene in civvis::ai::GENES
-                        .iter()
-                        .filter(|gene| gene.live() || gene.production())
-                    {
+                    for gene in civvis::ai::GENES.iter() {
                         eprintln!("  {} ({})", gene.tag, gene.field);
                     }
                     std::process::exit(2);
