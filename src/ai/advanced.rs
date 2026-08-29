@@ -614,7 +614,7 @@ const SCIENCE_OPENING_CITY_TARGET: usize = 2;
 
 /// If hostile land or a slow start prevents two cities, give the Science lane
 /// only this many standard turns to finish that opening before it takes over.
-/// At Online speed this is forty turns, matching the first research
+/// At Online speed this is forty game turns, matching the first research
 /// infrastructure window rather than the generic expansion deadline.
 const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 60;
 
@@ -12003,7 +12003,8 @@ impl AdvancedAi {
         // ledger withheld this independently screenable treatment. The
         // treatment remains configurable for other lanes; Science gets the
         // same invariant from its target contract.
-        if (self.buildings_before_projects || self.victory_target == Some(VictoryTarget::Science))
+        if (self.buildings_before_projects
+            || self.active_victory_target(g) == Some(VictoryTarget::Science))
             && spec.repeatable
         {
             let waiting_for = BUILDINGS_BEFORE_PROJECTS.iter().chain(
