@@ -2451,9 +2451,29 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
               f"the default Continents map is {args.map}", file=sys.stderr)
         return False
     setup_shot = run_dir / "setup.png"
-    screenshot(setup_shot)
-    start_point = _observed_label_point(setup_shot, "Start Game", bounds,
-                                        strip=START_GAME_STRIP)
+    captured = screenshot(setup_shot)
+    start_point = None
+    if captured or setup_shot.is_file():
+        start_point = _observed_label_point(setup_shot, "Start Game", bounds,
+                                            strip=START_GAME_STRIP)
+    # `panel["shot"]` is the last full desktop frame whose setup values and leader
+    # were already read back successfully.  A ScreenCaptureKit miss can remove the
+    # final frame even though the Create Game page has not changed; reopening or
+    # guessing the button at that point loses a valid launch.  Reuse that proven
+    # same-page frame as a read-only fallback.  It is still OCR that licenses the
+    # click, and the frame is copied under the canonical name for post-run audit.
+    if start_point is None:
+        fallback = panel.get("shot")
+        if isinstance(fallback, Path) and fallback.is_file() and fallback != setup_shot:
+            start_point = _observed_label_point(fallback, "Start Game", bounds,
+                                                strip=START_GAME_STRIP)
+            if start_point is not None:
+                try:
+                    shutil.copyfile(fallback, setup_shot)
+                except OSError:
+                    pass
+                print(f"[setup] final frame was unreadable; reusing the last verified "
+                      f"setup frame ({fallback.name})", flush=True)
     if start_point is None:
         print("[setup] Start Game was NOT visible; refusing to launch",
               file=sys.stderr)
