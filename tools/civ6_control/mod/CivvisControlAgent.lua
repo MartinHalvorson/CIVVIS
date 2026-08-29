@@ -16735,12 +16735,23 @@ local function tick()
 							end
 						end
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
+						-- ⚠⚠⚠ ONE BLOCKER MUST NOT BE FORCED PAST YET. The congress session
+						-- defers its ballot by one forfeit cycle on purpose (the vote arm just
+						-- above): forfeit 1 waits for the stage-1/popup ballot to land, and only
+						-- forfeit 2 falls back to vote-and-submit. Forcing the turn at forfeit 1
+						-- ends it before either can happen, so the session is dismissed unvoted
+						-- every time -- and this seat plays for a DIPLOMATIC victory, where those
+						-- votes are the win condition, not a side decision worth forfeiting.
+						-- Once the ballot is cast for this turn the session is a spent blocker
+						-- like any other and is forced with the rest.
+						local holdForVote = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
+							and seen.voted_turn ~= turn;
 						local dropped = dismissBlocker(pid, blocker);
 						emit("dismissed", { turn = turn, blocker = name,
 						                    dismissed = dropped, attempts = attempts,
 						                    answered = answered, parked = parked,
 						                    forfeit = seen.forfeits,
-						                    forced = true });
+						                    forced = not holdForVote });
 						attempts = 0;
 						-- ⚠⚠⚠ EVERY FORFEITED BLOCKER GETS THE FORCED END TURN, NOT ONLY
 						-- THE UNIT ONES. Reaching this point means the ladder is spent: the
@@ -16767,10 +16778,12 @@ local function tick()
 						-- decision beats losing every turn after it. `parkReadyUnits` above
 						-- still runs for the unit blockers alone, because only those have units
 						-- to park.
-						pcall(function()
-							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
-							                 { REASON = "UserForced" });
-						end);
+						if not holdForVote then
+							pcall(function()
+								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								                 { REASON = "UserForced" });
+							end);
+						end
 					elseif not residual_taken and seen.forfeits == cap then
 						-- ⚠ THE RETRY IS SPENT AND THE TURN IS STILL NOT MOVING.
 						-- Say so, once, in the run's own event log. Issue #1374
