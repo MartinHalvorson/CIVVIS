@@ -800,6 +800,52 @@ fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
     assert_eq!(game.cities[&city].queue.first(), Some(&defender));
 }
 
+/// A targeted Science seat must finish the cheap half of a Campus before the
+/// strategic governor spends the city's queue on an unrelated district or
+/// building. The explicit target is the contract here; the independently
+/// screenable reserve gene remains off.
+#[test]
+fn an_explicit_science_target_reserves_its_owed_campus_building() {
+    let (mut game, city, _) = empire_with_a_capital(71_124);
+    clear_barbarian_fixture(&mut game);
+    install_ai_test_district(&mut game, city, "campus");
+    install_ai_test_district(&mut game, city, "theater_square");
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("walls")];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.turn = 60;
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    assert!(game.can_produce(0, city, &library), "the Library is legal");
+    assert!(game.cities[&city].queue.is_empty(), "the queue starts idle");
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        ai.research_economy,
+        "the targeted controller prices research"
+    );
+    assert!(
+        !ai.first_research_building_reserve,
+        "the independently screenable reserve stays off"
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&library),
+        "Science must reserve the owed Campus building before generic production"
+    );
+}
+
 /// `first-granary-reserve`: a capital grown to its housing starts its
 /// Granary ahead of the argmax. The toggles are twins and the gene ships off.
 #[test]
