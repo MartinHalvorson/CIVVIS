@@ -210,6 +210,24 @@ do
 	check("peace_city_requested", #state.requests, 1)
 end
 
+-- 3b. the plain move is guarded too: a MOVE_TO onto a peaceful civilian's
+--     plot is a capture the engine declares a war to make
+do
+	local state = fixture({ 4 })
+	local ok, why = applyOrder(player, 0, { kind = "unit", subject = 7, verb = "MOVE_TO", x = 10, y = 12 }, 40)
+	check("war_move_refused", ok, false)
+	check("war_move_reason", why, "would_declare_war:4")
+	check("war_move_not_requested", #state.requests, 0)
+	check("war_move_asked_x", state.asked and state.asked.x, 10)
+end
+do
+	local state = fixture({})
+	local ok, why = applyOrder(player, 0, { kind = "unit", subject = 7, verb = "MOVE_TO", x = 10, y = 12 }, 40)
+	check("peace_move_sent", ok, true)
+	check("peace_move_requested", #state.requests, 1)
+	check("peace_move_no_attack_modifier", state.requests[1] and state.requests[1].params.mods, nil)
+end
+
 -- 4. an absent API never refuses
 do
 	local state = fixture(false)

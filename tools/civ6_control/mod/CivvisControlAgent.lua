@@ -12848,14 +12848,24 @@ local function applyOrder(player, pid, row, turn)
 					row.x, row.y = x, y;
 				end
 			end
+			-- See `warStarters`: an order the engine would answer with a war
+			-- the agent never declared is refused before it is sent — and
+			-- that includes the PLAIN MOVE. Run civvis-20260829T105710Z, the
+			-- last game before #2755: Nubia read DIPLO_STATE_FRIENDLY at t139
+			-- frame 0 and DIPLO_STATE_WAR with 150 grievances against us at
+			-- frame 1, with two MOVE_TO orders and a FORTIFY the only thing
+			-- applied in between, no strike and no `war` order. A move onto a
+			-- plot a peaceful civilian stands on is a capture, and the engine
+			-- declares the surprise war to make it — which is exactly why the
+			-- shipped `WorldInput.lua:2067` asks this question before EVERY
+			-- move, not only before an attack. The leg is checked at the plot
+			-- it will be sent to, after the reach cap.
+			local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, verb, x, y, turn);
+			if warRefusal ~= nil then return false, warRefusal; end
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
 			if verb == "ATTACK" or verb == "CAPTURE" then
-				-- See `warStarters`: a strike the engine would answer with a
-				-- war the agent never declared is refused before it is sent.
-				local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, verb, x, y, turn);
-				if warRefusal ~= nil then return false, warRefusal; end
 				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
 				-- a strike, and the whole army has been swinging at air.
 				local modifiers = CivvisLedger.attackModifiers();
