@@ -22,6 +22,7 @@ import civ6_settler_captures as captures  # noqa: E402
 SETTLER = 524291
 GUARD = 655366
 SCOUT = 262147
+RAIDER = 393220
 
 
 def unit(uid, kind, x, y, moves=2, combat=0, hp=100, activity="awake"):
@@ -118,6 +119,54 @@ class DetectionTest(unittest.TestCase):
         markdown = captures.render_markdown(run.name, found)
         self.assertIn("`barbarian-scout`", markdown)
         self.assertIn("UNIT_SCOUT", markdown)
+
+    def test_a_settler_that_was_never_told_to_move_is_named_not_unclassified(self):
+        # ⚠⚠⚠ The capture where nothing went wrong tactically: the settler simply
+        # was not asked to move. Every other mechanism describes a settler doing
+        # something — walking into a nest, holding beside a raider, fleeing into
+        # reach — so this one used to land as `unclassified`, and the operator's
+        # rule that every capture gets a forensic got no answer.
+        #
+        # Measured 2026-08-29, run civvis-20260829T120711Z, settler 1441803 at t86:
+        # three turns holding at full movement, a Warrior closing from d=2 to d=1,
+        # and NO order for the settler in the whole window, while the journal still
+        # said "Settler marching to (-4,19)". Shaped here the same way.
+        #
+        # ⚠ It is deliberately none of the others: a hostile is in view at t-1 so
+        # it is not `alone-in-fog`, that hostile is at d=2 so it is not
+        # `held-beside-raider`, nothing is stacked so it is not `weak-guard`, and
+        # no journal means no site so it is not `site-in-barbarian-nest`.
+        approach = {8: [], 9: [hostile(RAIDER, "UNIT_WARRIOR", 7, 5)],
+                    10: [hostile(RAIDER, "UNIT_WARRIOR", 6, 5)]}
+        events = settler_walk((8, 9, 10), 5, 5, approach) + [
+            {"kind": "unit_lost", "turn": 10, "unit": SETTLER, "unit_kind": "UNIT_SETTLER",
+             "gold": 12},
+        ]
+        run = make_run(self.root, "civvis-stranded", events)
+        found = captures.detect_captures(run)
+        self.assertEqual(len(found), 1)
+        capture = found[0]
+        self.assertEqual(capture["mechanism"], "stranded-without-orders")
+        self.assertEqual(capture["orders"], [])
+        markdown = captures.render_markdown(run.name, found)
+        self.assertIn("`stranded-without-orders`", markdown)
+
+    def test_a_settler_that_was_ordered_and_refused_keeps_its_own_name(self):
+        # Non-vacuity for the mechanism above: the same three frames, but the
+        # settler WAS told to move and did not. That is a different fault and must
+        # not be swallowed by the stranded name.
+        approach = {8: [], 9: [hostile(RAIDER, "UNIT_WARRIOR", 7, 5)],
+                    10: [hostile(RAIDER, "UNIT_WARRIOR", 6, 5)]}
+        events = settler_walk((8, 9, 10), 5, 5, approach) + [
+            {"kind": "order_failed", "turn": 9, "subject": SETTLER, "order_kind": "unit",
+             "verb": "MOVE_TO", "reason": "did_not_move"},
+            {"kind": "unit_lost", "turn": 10, "unit": SETTLER, "unit_kind": "UNIT_SETTLER",
+             "gold": 12},
+        ]
+        run = make_run(self.root, "civvis-ordered", events)
+        found = captures.detect_captures(run)
+        self.assertEqual(len(found), 1)
+        self.assertNotIn("stranded-without-orders", found[0]["mechanisms"])
 
     def test_the_mods_unit_captured_event_is_the_precise_path(self):
         events = settler_walk((8, 9, 10), 5, 5) + [
