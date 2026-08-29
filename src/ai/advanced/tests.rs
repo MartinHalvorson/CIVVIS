@@ -1047,6 +1047,97 @@ fn a_seat_a_few_era_points_short_names_the_shortfall() {
     assert!(!ai.age_closer);
 }
 
+/// `cheapest-wonder-first`: a one-city empire whose capital can finish a
+/// wonder within twelve turns opens the live race for it under the gene;
+/// off, the three-city guard refuses it. The bargain-city test and the
+/// toggles are checked on the same board.
+#[test]
+fn a_wonder_twelve_turns_from_done_opens_the_race_in_a_one_city_empire() {
+    let (mut game, city, _) = empire_with_a_capital(71_121);
+    {
+        let capital = game.cities.get_mut(&city).expect("capital");
+        capital.pop = 30;
+        capital
+            .buildings
+            .extend([crate::name!("monument"), crate::name!("granary")]);
+    }
+    game.players[0].techs.extend([
+        crate::name!("pottery"),
+        crate::name!("mining"),
+        crate::name!("masonry"),
+        crate::name!("astrology"),
+        crate::name!("writing"),
+        crate::name!("archery"),
+        crate::name!("bronze_working"),
+        crate::name!("irrigation"),
+    ]);
+    game.players[0].civics.extend([
+        crate::name!("code_of_laws"),
+        crate::name!("mysticism"),
+        crate::name!("craftsmanship"),
+        crate::name!("foreign_trade"),
+        crate::name!("political_philosophy"),
+    ]);
+    let production = game.city_yields(city).production.max(1.0);
+    let mut wonders: Vec<(f64, Item)> = game
+        .producible_items(0, city)
+        .into_iter()
+        .filter(|item| matches!(item, Item::Wonder { .. }))
+        .map(|item| {
+            (
+                game.item_remaining_cost_for_city(0, city, &item) / production,
+                item,
+            )
+        })
+        .collect();
+    wonders.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (_, wonder) = wonders
+        .first()
+        .cloned()
+        .expect("fixture: the capital can build some wonder");
+    // Bank most of the wonder's cost as the idle queue's overflow, the way a
+    // resumed race stands: three turns of production remain.
+    let full_cost = game.item_remaining_cost_for_city(0, city, &wonder);
+    game.cities.get_mut(&city).expect("capital").production = full_cost - 3.0 * production;
+    let turns = game.item_remaining_cost_for_city(0, city, &wonder) / production;
+    assert!(
+        turns <= CHEAPEST_WONDER_TURNS,
+        "fixture: the wonder {wonder:?} needs {turns:.1} turns at {production:.1} production"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.cheapest_wonder_first, "the gene ships off");
+    assert!(!AdvancedAi::legacy().cheapest_wonder_first);
+    ai.enable_live_wonder_race();
+    assert!(
+        ai.wonder_bargain_city(&game, 0, city),
+        "the only city is the strongest"
+    );
+    let counts = ai.counts(&game, 0);
+    let refused = ai.production_value(&game, 0, city, &wonder, &plan, &counts);
+    assert!(
+        refused <= -10_000.0,
+        "off, a one-city empire fails the three-city guard: {refused}"
+    );
+    ai.enable_cheapest_wonder_first();
+    assert!(ai.cheapest_wonder_first);
+    let opened = ai.production_value(&game, 0, city, &wonder, &plan, &counts);
+    assert!(
+        opened > 0.0,
+        "under the gene the twelve-turn wonder opens the race: {opened}"
+    );
+    ai.disable_cheapest_wonder_first();
+    assert!(!ai.cheapest_wonder_first);
+}
+
 #[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
