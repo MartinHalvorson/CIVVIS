@@ -3205,6 +3205,17 @@ check likewise reports no unconsumed belief effect keys. The older Round 11
 and 2026-08-18 tables above remain historical snapshots of the queue before
 this follow-up; they are not the current coverage count.
 
+### The remaining rules-data drift is now closed (2026-08-29)
+
+The full installed Gathering Storm audit now reports **0 divergent fields
+across 29 tables**. The nine remaining fields after the belief pass were
+corrected from the shipped database: Pike and Shot upkeep; Tagma cost, upkeep
+and upgrade; Prasat Faith and Relic slots; Sukiennice Gold; Tlachtli Culture;
+and Eyjafjallajökull adjacent Food. The many rows in the audit's “only in
+Civ VI” columns remain intentionally outside the model when they are unique
+Great People, policies, or other systems CivVis does not yet simulate; they are
+not field divergences in rows the model claims to ship.
+
 ### How to re-measure
 
 The border table is one join: `orders.sqlite` (`kind='unit' and
