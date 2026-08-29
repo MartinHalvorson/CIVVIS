@@ -226,14 +226,24 @@ impl AdvancedAi {
     /// The wider questions asked when the preferred search returns nothing.
     ///
     /// Tier 2: the advanced ranking over a stranded radius, with this
-    /// Settler's retired sites, the empire's threat deferrals and the fog
-    /// guesses set aside; a candidate is refused only when the engine's own
-    /// Loyalty calculation of a city founded there revolts inside
-    /// [`STRANDED_SITE_MIN_HOLD_TURNS`]. Tier 3: any legal reachable site,
-    /// nearest first. `None` when the map holds nothing this Settler can
-    /// reach.
+    /// Settler's retired sites, hysteresis avoidance, the empire's threat
+    /// deferrals and the fog guesses set aside; a candidate is refused only
+    /// when the engine's own Loyalty calculation of a city founded there
+    /// revolts inside [`STRANDED_SITE_MIN_HOLD_TURNS`]. Tier 3: any legal
+    /// reachable site, nearest first, with the same per-Settler exclusions.
+    /// `None` when the map holds nothing this Settler can reach.
     pub(super) fn settler_exhaustion_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         let from = g.units[&uid].pos;
+        // The normal target picker receives this exception explicitly, but
+        // the exhaustion fallback is also reached after a target was dropped
+        // for an unsafe route step. Keep the same cooldown here or the
+        // never-idles lane immediately resurrects the very site hysteresis
+        // retired (the live t103-t111 `(13,31)` loop). Expiry is checked here
+        // as well so direct watchdog/test callers do not inherit stale state.
+        let avoided = self
+            .settler_avoid
+            .get(&uid)
+            .and_then(|(position, until)| (*until > g.turn).then_some(*position));
         let radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
             g.map.width + g.map.height
         } else {
@@ -251,6 +261,7 @@ impl AdvancedAi {
             .filter(|(pos, _)| {
                 !g.blocked_city_sites.contains(pos)
                     && !self.settler_site_is_dead(uid, *pos)
+                    && Some(*pos) != avoided
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
@@ -291,6 +302,7 @@ impl AdvancedAi {
                 self.base.valid_settle_site(g, pid, *pos)
                     && !g.blocked_city_sites.contains(pos)
                     && !self.settler_site_is_dead(uid, *pos)
+                    && Some(*pos) != avoided
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
@@ -985,7 +997,7 @@ mod tests {
             .into_iter()
             .map(|(pos, _)| pos)
             .filter(|pos| g.path_to(settler, *pos).is_some())
-            .take(3)
+            .take(4)
             .collect();
         let direct_valid = g
             .wdisk(home, 14)
@@ -993,18 +1005,24 @@ mod tests {
             .filter(|pos| ai.base.valid_settle_site(&g, 0, *pos))
             .count();
         assert!(
-            reachable.len() >= 2,
-            "fixture needs two reachable city sites, got {reachable:?} (direct valid={direct_valid})"
+            reachable.len() >= 3,
+            "fixture needs three reachable city sites, got {reachable:?} (direct valid={direct_valid})"
         );
         let retired = reachable[0];
         let reserved = reachable[1];
+        let avoided = reachable[2];
         ai.settler_dead_sites
             .entry(settler)
             .or_default()
             .insert(retired, g.turn + 1000);
         ai.settler_targets.insert(peer, reserved);
+        ai.settler_avoid.insert(settler, (avoided, g.turn + 1000));
 
         let picked = ai.settler_exhaustion_target(&g, 0, settler);
+        assert!(
+            picked.is_some(),
+            "the fixture leaves a fourth reachable site"
+        );
         assert_ne!(
             picked,
             Some(retired),
@@ -1014,6 +1032,11 @@ mod tests {
             picked,
             Some(reserved),
             "the fallback duplicated a peer target"
+        );
+        assert_ne!(
+            picked,
+            Some(avoided),
+            "the fallback resurrected the target in this Settler's hysteresis cooldown"
         );
     }
 
