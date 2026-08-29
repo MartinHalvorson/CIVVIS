@@ -1016,6 +1016,8 @@ fn a_weak_seat_beside_a_strong_neighbour_buys_the_contact_citys_defender() {
     );
     ai.disable_border_parity();
     assert!(!ai.border_parity);
+}
+
 /// `age-closer`: three points short of a Normal Age names the shortfall;
 /// at the bar, eight short, or off, nothing; and the ordinary closeness
 /// limit stands for the buyer to lift.
