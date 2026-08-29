@@ -168,21 +168,58 @@ impl AdvancedAi {
         .then_some("a rival border within five tiles may hide the city that would press it")
     }
 
-    /// Drop the sites `exhaustion_site_unpriceable` refuses from a candidate
-    /// list, saying so once. Nothing is dropped with the gene off.
-    fn set_aside_unpriceable_sites(&self, g: &Game, candidates: &mut Vec<(Pos, f64)>) {
-        if !(self.exhaustion_loyalty_guard && self.frontier_loyalty) {
+    /// Whether `site` sits inside a rival major's Loyalty sphere: a visible
+    /// rival-major city stands within the nine-tile pressure radius and no
+    /// own city stands as near. A city founded there loses about twenty
+    /// Loyalty a turn from turn one — run `civvis-20260829T050508Z` t56–t69
+    /// forecast −22 on each of the five plots nearest a stranded Settler
+    /// that had wandered between two Spanish cities, spent the forecast
+    /// retries on them, and held fourteen turns while sites eight tiles
+    /// nearer home would have passed. The forecast is the judge; this is the
+    /// cheap sieve that keeps its retries for plots that can pass.
+    pub(super) fn inside_rival_sphere(g: &Game, pid: usize, site: Pos) -> bool {
+        let mut nearest_rival: Option<i32> = None;
+        let mut nearest_own: Option<i32> = None;
+        for city in g.cities.values() {
+            let distance = g.wdist(city.pos, site);
+            if city.owner == pid {
+                nearest_own = Some(nearest_own.map_or(distance, |d| d.min(distance)));
+            } else if !g.players[city.owner].is_minor && !g.players[city.owner].is_barbarian {
+                nearest_rival = Some(nearest_rival.map_or(distance, |d| d.min(distance)));
+            }
+        }
+        match (nearest_rival, nearest_own) {
+            (Some(rival), Some(own)) => rival <= 9 && rival <= own,
+            (Some(rival), None) => rival <= 9,
+            _ => false,
+        }
+    }
+
+    /// Drop the sites `exhaustion_site_unpriceable` refuses, and the sites
+    /// inside a rival major's sphere, from a candidate list, saying so once.
+    /// Nothing is dropped with the gene off.
+    fn set_aside_unpriceable_sites(&self, g: &Game, pid: usize, candidates: &mut Vec<(Pos, f64)>) {
+        if !self.exhaustion_loyalty_guard {
             return;
         }
         let before = candidates.len();
         candidates.retain(|(pos, _)| self.exhaustion_site_unpriceable(g, *pos).is_none());
-        let set_aside = before - candidates.len();
-        if set_aside > 0 {
+        let unpriceable = before - candidates.len();
+        candidates.retain(|(pos, _)| !Self::inside_rival_sphere(g, pid, *pos));
+        let in_sphere = before - unpriceable - candidates.len();
+        if unpriceable > 0 {
             think!(self.journal(), Expansion, Detail,
-                   "Stranded Settler sets aside {set_aside} unpriceable site(s)";
+                   "Stranded Settler sets aside {unpriceable} unpriceable site(s)";
                    "each lies within five tiles of a rival border whose city may be hidden; \
                     the forecast cannot price that Loyalty pressure, and the exhaustion \
                     search will not guess at a city it would hand to that rival");
+        }
+        if in_sphere > 0 {
+            think!(self.journal(), Expansion, Detail,
+                   "Stranded Settler sets aside {in_sphere} site(s) inside a rival's sphere";
+                   "each stands nearer a visible rival major's city than any of ours, within \
+                    its nine-tile Loyalty reach; the forecast's retries are kept for plots \
+                    that can pass");
         }
     }
 
@@ -219,7 +256,7 @@ impl AdvancedAi {
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
             .collect();
-        self.set_aside_unpriceable_sites(g, &mut ranked);
+        self.set_aside_unpriceable_sites(g, pid, &mut ranked);
         for _ in 0..=STRANDED_FORECAST_RETRIES {
             let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, &ranked) else {
                 break;
@@ -261,7 +298,7 @@ impl AdvancedAi {
             .map(|pos| (pos, -(g.wdist(from, pos) as f64)))
             .collect();
         legal.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
-        self.set_aside_unpriceable_sites(g, &mut legal);
+        self.set_aside_unpriceable_sites(g, pid, &mut legal);
         if self.exhaustion_loyalty_guard {
             // This tier ran no forecast at all: of the sixteen nearest-legal
             // foundings in the King runs of 2026-08-27..29, six read a
@@ -310,6 +347,7 @@ impl AdvancedAi {
         self.settler_closest.remove(&uid);
         if g.can_found_city(uid)
             && self.exhaustion_site_unpriceable(g, here).is_none()
+            && !(self.exhaustion_loyalty_guard && Self::inside_rival_sphere(g, pid, here))
             && !Self::settle_site_forecast_revolt(g, pid, here)
                 .is_some_and(|(_, turns)| turns < STRANDED_SITE_MIN_HOLD_TURNS)
         {
@@ -540,6 +578,105 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The rival-sphere sieve on the doomed-target board: the plot four tiles
+    /// from a pop-12 rival capital is inside the sphere, a plot beside our
+    /// own capital is not, and with both plots the only ones left the guard's
+    /// exhaustion search answers the home plot instead of spending its
+    /// forecast retries on the doomed one and returning nothing.
+    #[test]
+    fn the_sieve_keeps_the_forecast_for_plots_outside_the_rivals_sphere() {
+        let mut g = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        g.current = 0;
+        for pid in 0..2 {
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| g.units[unit].kind == "settler")
+                .expect("a starting settler");
+            let pos = g.units[&settler].pos;
+            g.remove_unit(settler);
+            g.found_city_for(pid, pos, None);
+        }
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+        let ours = g.player_city_ids(0)[0];
+        let theirs = g.player_city_ids(1)[0];
+        let home = g.cities[&ours].pos;
+        let rival = g.cities[&theirs].pos;
+        assert!(g.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for position in &positions {
+            let tile = g.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            g.players[0].explored.insert(*position);
+        }
+        g.cities.get_mut(&theirs).unwrap().pop = 12;
+        g.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| g.wdist(*pos, rival) == 4 && g.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let doomed = beside_rival[0];
+        // Beside home, out of the rival's reach, and inside the stranded
+        // search radius from where the Settler will stand.
+        let mut beside_home: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| {
+                g.wdist(*pos, home) <= 4
+                    && g.wdist(*pos, rival) >= 8
+                    && g.wdist(*pos, doomed) < STRANDED_SITE_RADIUS
+            })
+            .collect();
+        beside_home.sort_by_key(|pos| (g.wdist(*pos, doomed), *pos));
+        let mut ai = AdvancedAi::new();
+        ai.enable_engine_repairs();
+        ai.enable_settler_never_idles();
+        ai.enable_exhaustion_loyalty_guard();
+        ai.attach_journal(Journal::recording());
+        let safe = beside_home
+            .iter()
+            .copied()
+            .find(|pos| ai.base.valid_settle_site(&g, 0, *pos))
+            .expect("fixture: a legal plot beside home");
+        assert!(
+            AdvancedAi::inside_rival_sphere(&g, 0, doomed),
+            "four tiles from a rival capital"
+        );
+        assert!(
+            !AdvancedAi::inside_rival_sphere(&g, 0, safe),
+            "beside our own capital"
+        );
+        // The Settler stands beside the doomed plot, the nearest legal one.
+        let start = g
+            .nbrs(doomed)
+            .into_iter()
+            .find(|pos| g.map.tiles.contains_key(pos) && g.wdist(*pos, rival) >= 4)
+            .expect("a neighbour to stand on");
+        let settler = g.spawn_test_unit("settler", 0, start);
+        g.units.get_mut(&settler).expect("settler").moves_left = 40.0;
+        let retired = ai.settler_dead_sites.entry(settler).or_default();
+        for pos in &positions {
+            if *pos != doomed && *pos != safe {
+                retired.insert(*pos, g.turn + 1000);
+            }
+        }
+        assert_eq!(
+            ai.settler_exhaustion_target(&g, 0, settler),
+            Some(safe),
+            "the sieve drops the doomed plot and the forecast passes the home plot"
+        );
     }
 
     /// The nearest-legal tier founded with no forecast at all. The board of
