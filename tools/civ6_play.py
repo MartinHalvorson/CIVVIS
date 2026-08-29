@@ -38,7 +38,8 @@ import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import (gamelock, launcher, macos_capture, macos_input,
                           macos_ocr, popup_clear, vision, watch)  # noqa: E402
-from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
+from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
+                                 reset_orders_db)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
@@ -3560,6 +3561,23 @@ def _play(args: argparse.Namespace) -> int:
                   f"{verdict['rival_best']}, under the "
                   f"{verdict['score_ratio_ceiling']:.0%} line "
                   "— stopping the game rather than playing it out", flush=True)
+            # ⚠⚠ RETIRE RATHER THAN JUST STOP, so the loss is a RESULT.
+            #
+            # Stopping alone leaves the game unfinished: Civilization VI files
+            # no defeat, `tools/civ6_ladder.py` records nothing, and an attempt
+            # we abandoned on the operator's own rule is indistinguishable from
+            # one that crashed. The mod answers this row with the shipped
+            # `UI.RequestAction(ActionTypes.ACTION_RETIRE)`.
+            #
+            # Best effort by design: a database we cannot write is not a reason
+            # to keep playing a game the rule has already called, so the return
+            # below is unconditional and the game stops either way.
+            asked = request_retire(orders_db_path(run_dir, args.orders_db),
+                                   args.tag, verdict["turn"], "below_leader_score")
+            state["retire_requested"] = bool(asked)
+            print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
+                  " — the game is filed as a loss rather than left unfinished",
+                  flush=True)
             return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
