@@ -22056,6 +22056,21 @@ impl AdvancedAi {
                 }
                 None => None,
             };
+            if chosen.is_none() && committed.is_none() {
+                // The silent turn, named. Measured across five King runs
+                // (2026-08-29): 383 empty city-turns, and 285 of them — 74 %,
+                // about 619 production a game — were cities this pass never
+                // spoke to again: the top candidate scored under the bar, the
+                // menu broke, and nothing was written. Ravenna in run
+                // civvis-20260829T062155Z sat idle from t131 to t171 with
+                // eighteen items buildable and appeared in the journal once,
+                // at its founding. The fallback above answers it only under
+                // `never-an-empty-queue` / `-2`; off, this line is the only
+                // trace the idle turn leaves.
+                think!(self.journal(), Cities, Detail,
+                       "{} builds nothing", g.cities[&cid].name;
+                       "every candidate scored under the veto bar and no idle-queue gene is on");
+            }
             if let Some((score, item)) = chosen {
                 {
                     // What this city was told to build. `BasicAi::production`
