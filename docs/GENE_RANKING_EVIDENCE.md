@@ -195,6 +195,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `exhaustion-loyalty-guard` | off (unmeasured) | A stranded Settler's exhaustion search sets aside a site beside an unresolved rival border — the one fog guess the preferred search made that names a city the forecast cannot see — and its nearest-legal tier runs the same concrete-revolt forecast the ranked tier does. | 1 \| 1 |
 | `first-district-first` | off (unmeasured) | `first-district-first`: a city's FIRST specialty district outranks the queue filler. | 1 \| 1 |
 | `first-granary-reserve` | off (unmeasured) | A city grown to its housing (pop + 1 ≥ housing) with no Granary starts one ahead of the argmax. | 1 \| 1 |
+| `first-luxury-first` | off (unmeasured) | `first-luxury-first`: an improvement that opens a luxury the empire holds NO copy of outranks ordinary ground, priced by the Amenities the empire is short; a duplicate copy keeps the shipped flat +14. | 1 \| 1 |
 | `settler-backlog-brake` | off (unmeasured) | Once the empire holds three cities, no Settler starts while an owned Settler has stood on one tile six turns; the same brake on the `BasicAi` pipeline. | 1 \| 1 |
 | `walls-after-districts` | off (unmeasured) | `walls-after-districts`: the barbarian pre-emption's WALL answer waits until the city holds a district; its unit answer is untouched. | 1 \| 1 |
 

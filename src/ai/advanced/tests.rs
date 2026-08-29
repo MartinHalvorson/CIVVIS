@@ -38297,3 +38297,154 @@ fn walls_wait_for_the_first_district_under_the_gene() {
     ai.disable_walls_after_districts();
     assert!(!ai.walls_after_districts);
 }
+
+/// `first-luxury-first`: 46% of King city-turns are Amenity-short (11 games,
+/// 7,071 city-turns, 2026-08-29) and 93.4% of that deficit sits on a luxury
+/// the empire already OWNS and never improved — 47% of owned luxury tiles
+/// were never improved at all, and the flat +14 `improvement_value_with_appeal`
+/// pays for a worked luxury cannot tell the empire's FIRST Silk from its
+/// fifth Wine. Off, the Builder walks to the Iron; under the gene, with three
+/// Amenities missing, it opens the Silk first; and once a copy of that Silk is
+/// held the premium is gone and the Iron wins again.
+#[test]
+fn the_builder_opens_the_empires_first_luxury_before_the_iron() {
+    let (mut game, capital, home) = empire_with_a_capital(43_000_001);
+    for tech in ["irrigation", "mining", "bronze_working"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let ring: Vec<Pos> = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != home)
+        .collect();
+    assert!(ring.len() >= 6, "fixture: a capital with a ring to work");
+    let (silk, farmland, iron, spare) = (ring[0], ring[1], ring[2], ring[5]);
+    // An owned, UNIMPROVED luxury: the tile the census says waits a median 21
+    // turns for a charge, and 47% of the time never gets one.
+    let plant_silk = |game: &mut Game, pos: Pos, improvement: Option<Name>| {
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = Some(crate::name!("forest"));
+        tile.hills = false;
+        tile.resource = Some(crate::name!("silk"));
+        tile.improvement = improvement;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+    };
+    plant_silk(&mut game, silk, None);
+    {
+        // Plain ground a Farm fits: the order the census counted 147 of
+        // against 15 Plantations.
+        let tile = game.map.tiles.get_mut(&farmland).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+    }
+    {
+        // An unopened strategic deposit, which the shipped scorer pays 30 for
+        // — comfortably above a first luxury's flat 14.
+        let tile = game.map.tiles.get_mut(&iron).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = true;
+        tile.resource = Some(crate::name!("iron"));
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+    }
+    // Displeased: `city_amenities_required` is ceil(pop / 2) against the
+    // Palace's two.
+    game.cities.get_mut(&capital).unwrap().pop = 10;
+    let builder = game.spawn_unit("builder", 0, home);
+
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.first_luxury_first, "the gene ships off");
+    assert!(!AdvancedAi::legacy().first_luxury_first);
+    assert_eq!(
+        ai.empire_amenity_deficit(&game, 0),
+        3.0,
+        "fixture: a capital three Amenities short"
+    );
+    assert_eq!(
+        ai.worthwhile_improvements(&game, 0, silk, GrandStrategy::Expansion)
+            .first()
+            .map(|name| name.to_string()),
+        Some("plantation".to_string()),
+        "fixture: the Plantation is the job the Silk tile is waiting for"
+    );
+    let plantation = ai.improvement_value(&game, silk, "plantation", GrandStrategy::Expansion);
+    let farm = ai.improvement_value(&game, farmland, "farm", GrandStrategy::Expansion);
+    assert_eq!(
+        ai.improvement_value_for(&game, 0, silk, "plantation", GrandStrategy::Expansion),
+        plantation,
+        "off, the premium is not reached at all"
+    );
+    let ranked_off = ai.builder_jobs_ranked(
+        &game,
+        0,
+        builder,
+        GrandStrategy::Expansion,
+        &HashSet::new(),
+    );
+    assert_eq!(
+        ranked_off.first(),
+        Some(&iron),
+        "off, the strategic deposit outranks an unopened luxury: \
+         plantation {plantation:.1}, farm {farm:.1}"
+    );
+
+    ai.enable_first_luxury_first();
+    assert!(ai.first_luxury_first);
+    assert_eq!(
+        ai.first_luxury_premium(&game, 0, silk, "plantation"),
+        first_luxury::FIRST_COPY_BASE + first_luxury::FIRST_COPY_PER_AMENITY * 3.0,
+        "the first copy is priced by the Amenities the empire is short"
+    );
+    assert_eq!(
+        ai.first_luxury_premium(&game, 0, farmland, "farm"),
+        0.0,
+        "ordinary ground carries no premium"
+    );
+    assert_eq!(
+        ai.first_luxury_premium(&game, 0, iron, "mine"),
+        0.0,
+        "a strategic deposit is not a luxury"
+    );
+    assert_eq!(
+        ai.builder_jobs_ranked(&game, 0, builder, GrandStrategy::Expansion, &HashSet::new())
+            .first(),
+        Some(&silk),
+        "under the gene the empire's first Silk is the Builder's first job"
+    );
+
+    // A second copy of the SAME luxury is worth what it always was: the gene
+    // says "open the ones nobody has opened", not "improve more luxuries".
+    plant_silk(&mut game, spare, Some(crate::name!("plantation")));
+    assert_eq!(
+        game.resource_access_count(0, "silk"),
+        1,
+        "fixture: the empire now holds one improved Silk"
+    );
+    assert_eq!(
+        ai.first_luxury_premium(&game, 0, silk, "plantation"),
+        0.0,
+        "a duplicate copy keeps the shipped flat premium and nothing more"
+    );
+    assert_eq!(
+        ai.builder_jobs_ranked(&game, 0, builder, GrandStrategy::Expansion, &HashSet::new())
+            .first(),
+        Some(&iron),
+        "with the luxury held, the Builder is back on the shipped ranking"
+    );
+
+    ai.disable_first_luxury_first();
+    assert!(!ai.first_luxury_first);
+}
