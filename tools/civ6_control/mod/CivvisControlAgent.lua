@@ -14054,6 +14054,69 @@ CivvisBoard.reachesThisTurn = function(unit, x, y)
 	return true, nil;
 end;
 
+-- Return the six in-map neighbours of a plot.  The Civ VI map API owns the
+-- staggered-hex coordinate rules (including wrap seams), so do not recreate
+-- them with x/y arithmetic here.  Keeping this as a board method also avoids
+-- another file-scope local in the host's 200-register chunk.
+CivvisBoard.adjacentPlots = function(x, y)
+	local result, seen = {}, {};
+	local names = {
+		"DIRECTION_WEST", "DIRECTION_EAST", "DIRECTION_NORTHWEST",
+		"DIRECTION_NORTHEAST", "DIRECTION_SOUTHWEST", "DIRECTION_SOUTHEAST",
+	};
+	for _, name in ipairs(names) do
+		local direction = try(function() return DirectionTypes[name]; end, nil);
+		local plot = direction ~= nil and try(function()
+			return Map.GetAdjacentPlot(x, y, direction);
+		end, nil) or nil;
+		if plot ~= nil then
+			local px = tonumber(try(function() return plot:GetX(); end, nil));
+			local py = tonumber(try(function() return plot:GetY(); end, nil));
+			if px ~= nil and py ~= nil then
+				local key = px .. ":" .. py;
+				if not seen[key] then
+					seen[key] = true;
+					result[#result + 1] = { x = px, y = py };
+				end
+			end
+		end
+	end
+	return result;
+end;
+
+-- When a visible hostile already covers a Settler's CURRENT tile, merely
+-- refusing its planned leg is not a safety action: the hostile phase still
+-- captures the stationary civilian.  Find a one-step destination that the
+-- host can actually execute this turn and that every supplied hostile cannot
+-- reach under the same conservative host-side predicate.  The caller owns
+-- the threat predicate because scouts use their measured geometric floor,
+-- while combat units prefer their path query and then a BaseMoves fallback.
+CivvisBoard.findSettlerCaptureEscape = function(settler, fromX, fromY, wantX, wantY,
+		threats, threatReaches)
+	local candidates = {};
+	for _, plot in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
+		if CivvisBoard.reachesThisTurn(settler, plot.x, plot.y) then
+			local safe = true;
+			for _, threat in ipairs(threats) do
+				local reaches = threatReaches(threat, plot.x, plot.y);
+				if reaches then safe = false; break; end
+			end
+			if safe then
+				local distance = tonumber(try(function()
+					return Map.GetPlotDistance(plot.x, plot.y, wantX, wantY);
+				end, 9999)) or 9999;
+				candidates[#candidates + 1] = { x = plot.x, y = plot.y, distance = distance };
+			end
+		end
+	end
+	table.sort(candidates, function(a, b)
+		if a.distance ~= b.distance then return a.distance < b.distance; end
+		if a.x ~= b.x then return a.x < b.x; end
+		return a.y < b.y;
+	end);
+	return candidates[1];
+end;
+
 CivvisBoard.isCombatEscort = function(unit)
 	return try(function()
 		local definition = GameInfo.Units[unit:GetUnitType()];
@@ -14278,14 +14341,11 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 									return Map.GetPlotDistance(sentX, sentY, scout.x, scout.y);
 								end, -1)) or -1;
 								if distance >= 0 and distance <= 2 then
-									held[settlerId] = scout;
-									CivvisBoard.stats.settler_scout_capture_held =
-										CivvisBoard.stats.settler_scout_capture_held + 1;
-									emit("settler_scout_capture_hold", {
-										turn = turn, settler = settlerId,
-										from = { fromX, fromY }, want = { wantX, wantY }, sent = { sentX, sentY },
-										scout = scout.id, scout_pos = { scout.x, scout.y },
-									});
+									held[settlerId] = {
+										settler = settlerId, fromX = fromX, fromY = fromY,
+										wantX = wantX, wantY = wantY, sentX = sentX, sentY = sentY,
+										scout = scout, row = row,
+									};
 									break;
 								end
 							end
@@ -14294,6 +14354,56 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 				end
 			end
 		end
+	end
+	-- A hold is only useful when the Settler is safe where it is.  If the
+	-- visible scout already covers the CURRENT tile, take a proven one-step
+	-- retreat outside every visible scout's floor instead of waiting for the
+	-- hostile phase to capture the stationary civilian.  This is a host-only
+	-- actuation repair; the original planner target remains in the event so a
+	-- subsequent turn can resume the intended route.
+	for settlerId, heldLeg in pairs(held) do
+		local function scoutReaches(scout, x, y)
+			local distance = tonumber(try(function()
+				return Map.GetPlotDistance(x, y, scout.x, scout.y);
+			end, -1)) or -1;
+			return distance >= 0 and distance <= 2;
+		end
+		local currentThreat = false;
+		for _, scout in ipairs(scouts) do
+			if scoutReaches(scout, heldLeg.fromX, heldLeg.fromY) then
+				currentThreat = true;
+				break;
+			end
+		end
+		if currentThreat then
+			local escape = CivvisBoard.findSettlerCaptureEscape(
+				liveUnit(pid, settlerId), heldLeg.fromX, heldLeg.fromY,
+				heldLeg.wantX, heldLeg.wantY, scouts, scoutReaches);
+			if escape ~= nil then
+				heldLeg.row.x, heldLeg.row.y = escape.x, escape.y;
+				emit("settler_capture_escape", {
+					turn = turn, settler = settlerId,
+					from = { heldLeg.fromX, heldLeg.fromY },
+					want = { heldLeg.wantX, heldLeg.wantY },
+					sent = { escape.x, escape.y },
+					threat_kind = "UNIT_SCOUT", threat = heldLeg.scout.id,
+					threat_pos = { heldLeg.scout.x, heldLeg.scout.y },
+				});
+				held[settlerId] = nil;
+			end
+		end
+	end
+	-- A planner may send a follow-up MOVE_TO for the same settler.  Mark each
+	-- one, so the queue cannot turn a held first leg into the same exposed walk.
+	for settlerId, heldLeg in pairs(held) do
+		CivvisBoard.stats.settler_scout_capture_held =
+			CivvisBoard.stats.settler_scout_capture_held + 1;
+		emit("settler_scout_capture_hold", {
+			turn = turn, settler = settlerId,
+			from = { heldLeg.fromX, heldLeg.fromY },
+			want = { heldLeg.wantX, heldLeg.wantY }, sent = { heldLeg.sentX, heldLeg.sentY },
+			scout = heldLeg.scout.id, scout_pos = { heldLeg.scout.x, heldLeg.scout.y },
+		});
 	end
 	-- A planner may send a follow-up MOVE_TO for the same setter.  Mark each
 	-- one, so the queue cannot turn a held first leg into the same exposed walk.
@@ -14317,13 +14427,13 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 	-- Mark every departure verb, not just MOVE_TO: a melee attack or CAPTURE
 	-- likewise leaves the civilian alone.  `escortHolds` additionally prevents
 	-- the unmentioned-unit explore fallback from walking the guard away.
-	for settlerId, scout in pairs(held) do
+	for settlerId, heldLeg in pairs(held) do
 		local settler = liveUnit(pid, settlerId);
 		if settler ~= nil then
-			local fromX = tonumber(try(function() return settler:GetX(); end, nil));
-			local fromY = tonumber(try(function() return settler:GetY(); end, nil));
+			local fromX = heldLeg.fromX;
+			local fromY = heldLeg.fromY;
 			local currentDistance = tonumber(try(function()
-				return Map.GetPlotDistance(fromX, fromY, scout.x, scout.y);
+				return Map.GetPlotDistance(fromX, fromY, heldLeg.scout.x, heldLeg.scout.y);
 			end, -1)) or -1;
 			if fromX ~= nil and fromY ~= nil and currentDistance >= 0 and currentDistance <= 2 then
 				eachUnit(player, function(candidate)
@@ -14337,7 +14447,8 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 						CivvisBoard.stats.settler_scout_guard_held + 1;
 					emit("settler_scout_guard_hold", {
 						turn = turn, settler = settlerId, guard = guardId,
-						at = { fromX, fromY }, scout = scout.id, scout_pos = { scout.x, scout.y },
+						at = { fromX, fromY }, scout = heldLeg.scout.id,
+						scout_pos = { heldLeg.scout.x, heldLeg.scout.y },
 					});
 					for _, row in ipairs(rows) do
 						local verb = tostring(row.verb or "");
@@ -14466,14 +14577,6 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 									reachKind = reachKind,
 									row = row,
 								};
-								CivvisBoard.stats.settler_barbarian_combat_capture_held =
-									CivvisBoard.stats.settler_barbarian_combat_capture_held + 1;
-								emit("settler_barbarian_combat_capture_hold", {
-									turn = turn, settler = settlerId,
-									from = { fromX, fromY }, want = { wantX, wantY }, sent = { sentX, sentY },
-									hostile = threat.id, hostile_type = threat.name,
-									hostile_pos = { threat.x, threat.y }, hostile_reach = reachKind,
-								});
 								break;
 							end
 						end
@@ -14481,6 +14584,49 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 				end
 			end
 		end
+	end
+	-- Refusing a leg does not save a Settler that is already standing in the
+	-- hostile's envelope.  Before falling back to a hold, use the host's own
+	-- one-step path answers to retreat outside every visible combat threat.
+	for settlerId, heldLeg in pairs(held) do
+		local currentThreat = false;
+		for _, threat in ipairs(threats) do
+			if threatReaches(threat, heldLeg.fromX, heldLeg.fromY) then
+				currentThreat = true;
+				break;
+			end
+		end
+		if currentThreat then
+			local escape = CivvisBoard.findSettlerCaptureEscape(
+				liveUnit(pid, settlerId), heldLeg.fromX, heldLeg.fromY,
+				heldLeg.wantX, heldLeg.wantY, threats, threatReaches);
+			if escape ~= nil then
+				heldLeg.row.x, heldLeg.row.y = escape.x, escape.y;
+				emit("settler_capture_escape", {
+					turn = turn, settler = settlerId,
+					from = { heldLeg.fromX, heldLeg.fromY },
+					want = { heldLeg.wantX, heldLeg.wantY },
+					sent = { escape.x, escape.y },
+					reach = heldLeg.reachKind,
+					threat_kind = heldLeg.threat.name, threat = heldLeg.threat.id,
+					threat_pos = { heldLeg.threat.x, heldLeg.threat.y },
+				});
+				held[settlerId] = nil;
+			end
+		end
+	end
+	for settlerId, heldLeg in pairs(held) do
+		local reachKind = heldLeg.reachKind;
+		CivvisBoard.stats.settler_barbarian_combat_capture_held =
+			CivvisBoard.stats.settler_barbarian_combat_capture_held + 1;
+		emit("settler_barbarian_combat_capture_hold", {
+			turn = turn, settler = settlerId,
+			from = { heldLeg.fromX, heldLeg.fromY },
+			want = { heldLeg.wantX, heldLeg.wantY }, sent = { heldLeg.sentX, heldLeg.sentY },
+			hostile = heldLeg.threat.id, hostile_type = heldLeg.threat.name,
+			hostile_pos = { heldLeg.threat.x, heldLeg.threat.y },
+			hostile_reach = reachKind,
+		});
 	end
 	if next(held) == nil then return; end
 

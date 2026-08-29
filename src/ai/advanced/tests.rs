@@ -37437,7 +37437,7 @@ fn a_barbarian_scout_is_a_capture_threat_on_the_live_seat() {
         })
         .expect("a post two tiles from the settler, in the capital's sight");
     let _settler = game.spawn_test_unit("settler", 0, start);
-    let _scout = game.spawn_test_unit("scout", 1, scout_at);
+    let scout = game.spawn_test_unit("scout", 1, scout_at);
 
     let mut native = AdvancedAi::new();
     native.enable_civilian_out_of_reach();
@@ -37460,6 +37460,23 @@ fn a_barbarian_scout_is_a_capture_threat_on_the_live_seat() {
     assert!(
         reach.covers(&game, start),
         "on the live seat the scout's three moves cover the settler's tile"
+    );
+    // The host safety floor is deliberately geometric because a path query
+    // can refuse a civilian-occupied destination.  Keep the native live
+    // answer conservative on that same floor even when the exact movement
+    // flood is narrower around a blocker or zone of control.
+    let exact = game.threat_reach(scout);
+    let geometric = game.wdisk(scout_at, 2).into_iter().find(|pos| {
+        game.map
+            .get(*pos)
+            .is_some_and(|tile| !game.rules.is_water(tile))
+            && !exact.contains(pos)
+    });
+    let pos = geometric
+        .expect("the fixture must leave a geometric scout tile outside the exact movement flood");
+    assert!(
+        live.barbarian_reach(&game, 0, pos, 10).covers(&game, pos),
+        "the live scout floor covers a geometric land tile the exact flood omitted"
     );
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge();
