@@ -3628,9 +3628,13 @@ mod tests {
         // Gathering Storm audit: Pike and Shot upkeep, Tagma cost/upkeep and
         // Tank upgrade, Prasat Faith/relic slots, Sukiennice Gold, Tlachtli
         // Culture, and Eyjafjallajokull adjacent Food.
+        // Moved again by giving Phoenicia its shipped Bireme replacement: the
+        // 4-move, 35-strength Galley successor was visible in the installed
+        // `Expansion2_Units_Major.xml` row but CIVVIS had been falling back to
+        // the weaker generic Galley.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:d6a5191b1716b015"
+            "fnv1a64:23c3684c969546ea"
         );
     }
 
@@ -4224,6 +4228,7 @@ mod tests {
             ("medic", "supply_convoy"),
             ("observation_balloon", "drone"),
             ("anti_air_gun", "mobile_sam"),
+            ("bireme", "caravel"),
             ("galley", "caravel"),
             ("caravel", "ironclad"),
             ("ironclad", "destroyer"),
@@ -4284,7 +4289,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 90);
+        assert_eq!(rules.units.len(), 91);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);

@@ -756,6 +756,32 @@ fn oromo_cavalry_matches_firaxis_identity_sight_and_hill_movement() {
 }
 
 #[test]
+fn bireme_matches_firaxis_identity_and_replaces_the_galley() {
+    let (mut game, origin) = controlled_game(91_013);
+    game.players[0].civ = "Phoenicia".to_string();
+    let spec = &game.rules.units["bireme"];
+
+    assert_eq!(
+        (spec.cost, spec.maintenance, spec.moves, spec.strength),
+        (65.0, 1.0, 4.0, 35.0)
+    );
+    assert_eq!(spec.replaces.as_deref(), Some("galley"));
+    assert_eq!(spec.upgrade_to.as_deref(), Some("caravel"));
+    assert_eq!(
+        game.rules.civs["Phoenicia"].unique_unit.as_deref(),
+        Some("bireme")
+    );
+    assert_eq!(
+        game.player_unit_replacement(0, crate::name!("galley")),
+        "bireme"
+    );
+
+    let unit = game.spawn_unit("bireme", 0, origin);
+    assert_eq!(game.unit_max_moves(unit), 4.0);
+    assert_eq!(game.unit_unembarked_strength(&game.units[&unit]), 35.0);
+}
+
+#[test]
 fn terrain_elevation_features_and_promotions_control_live_sight() {
     let (mut game, origin) = controlled_game(91_001);
     let blocker = along(&game, origin, 1);
