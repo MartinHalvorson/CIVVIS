@@ -672,6 +672,7 @@ else
 	-- be permanent.
 	local reported = false;
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
+	local heartbeat = 0;            -- seconds of UI time since the last heartbeat
 
 	-- ★★★★★ A DEAL SESSION CIVVIS OPENED IS NOT A SCREEN TO REFUSE. The
 	-- agent's sale, passage and peace arms now ask inside a `MAKE_DEAL`
@@ -698,6 +699,10 @@ else
 	-- How long to leave a screen alone once it has refused GIVE_UP_AFTER times.
 	-- Long enough not to hammer it, short enough that the map comes back on its
 	-- own if whatever held it goes away.
+	-- How often this context says it is alive. One a minute per armed screen
+	-- is enough to bracket a wedge (the outside watchdog allows five minutes)
+	-- without filling the log: a full 250-turn game adds a few hundred bytes.
+	local HEARTBEAT_SECONDS = 60.0;
 	local RETRY_SECONDS = 30.0;
 	local DIALOGUE_READY_RETRY_SECONDS = 0.05;
 
@@ -758,6 +763,37 @@ else
 	end
 
 	local function tick(fDTime)
+		-- ★★★★ PROOF THAT THE UI THREAD IS STILL ALIVE WHILE THE GAME IS NOT.
+		--
+		-- The dominant way a run now dies is a parked Game Core: the agent reports
+		-- one blocker, then `GameCoreEventPublishComplete` stops firing and the
+		-- agent — which is driven ONLY by that event — never ticks again. Every
+		-- sampled thread sits in `__psynch_cvwait`; of 35 threads in the sample
+		-- from run civvis-20260829T163259Z exactly one had a non-idle frame, and
+		-- that was a single Metal sample. The game is computing nothing and
+		-- waiting for input only the controller can give.
+		--
+		-- Whether that is recoverable turns on one question this log could not
+		-- answer: is the UI thread still running? The agent's silence proves
+		-- nothing about it, and this context's silence proves nothing either,
+		-- because it only ever spoke when a screen was up. So say so once a
+		-- minute. `ContextPtr:SetUpdate` runs on the UI thread every frame even
+		-- while this screen is hidden — that is why `isUp()` is the first thing
+		-- below — so a heartbeat here is a heartbeat for the whole UI context.
+		--
+		-- ⚠ A per-frame `SetUpdate` is NOT available to the agent: it was tried
+		-- and does not run in a script-only in-game context (see the note beside
+		-- `onGameCoreTick`). That is exactly why the answer has to come from here.
+		--
+		-- Read it as: heartbeats continuing after the agent's last event means the
+		-- UI thread lives and a nudge from this side could unpark the turn;
+		-- heartbeats stopping too means the whole process is gone and only the
+		-- outside watchdog can help.
+		heartbeat = (heartbeat or 0) + (tonumber(fDTime) or 0);
+		if heartbeat >= HEARTBEAT_SECONDS then
+			heartbeat = 0;
+			report("ui_heartbeat", string.format(',"up":%s', tostring(isUp())));
+		end
 		if not isUp() then
 			showing = false;
 			closes = 0;
