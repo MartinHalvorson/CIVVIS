@@ -744,6 +744,17 @@ class ProtectedInstallTest(unittest.TestCase):
         # only that: 24 `autoclose_armed`, 81 `autoclose`, 2 desktop
         # escalations, and zero heartbeats.
         self.assertIn("local HEARTBEAT_FRAMES = 600;", shim)
+        # ⚠⚠ THE EXPERIMENT IS OVER AND THE ANSWER WAS NO. Run
+        # civvis-20260829T194002Z emitted TWO heartbeats across 121 turns, both
+        # `"up":true`, both from the one screen actually showing. 600 frames took
+        # 5.0s, so the game renders ~120fps; had `SetUpdate` run on hidden
+        # contexts, each of the two dozen armed screens would have emitted one
+        # every five seconds. So a hidden context does not tick, there is no
+        # always-on UI tick, and an in-mod nudge for a parked Game Core has
+        # nothing to hang on. Keep the finding beside the code so it is not
+        # rebuilt on the same wrong premise.
+        self.assertIn("A HIDDEN CONTEXT DOES NOT TICK", shim)
+        self.assertIn("civvis-20260829T194002Z", shim)
         self.assertNotIn("HEARTBEAT_SECONDS", shim)
         # Seconds ride along so the two remaining possibilities separate:
         # frames climbing with seconds near zero means the tick runs while
