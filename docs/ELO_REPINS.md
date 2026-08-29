@@ -1855,3 +1855,21 @@ was literally `volcano`. Soil beside Vesuvius, Kilimanjaro or Eyjafjallajokull
 therefore fell through to the coordinate-seeded fallback and pointed in an
 arbitrary direction, away from the only volcano on screen. Both now ask
 `isVolcano`, which reads the served `volcano` flag over a four-name roster.
+
+## v27 (2026-08-29) — the installed Gathering Storm rows are the rules
+
+The full `tools/civ6_fidelity.py` audit against the installed Gathering Storm
+database found nine remaining field mismatches in rows CivVis already claimed:
+Pike and Shot upkeep; Tagma cost, upkeep and its shipped Tank upgrade; Prasat
+Faith and Relic slots; Sukiennice Gold; Tlachtli Culture; and Eyjafjallajökull
+adjacent Food. The model now carries those exact `GameplayDB.Units`,
+`GameplayDB.Buildings`, and `GameplayDB.Features` values, and the static upgrade
+graph and regression tests use the same Tagma → Tank edge.
+
+This is a shared rules correction, not a controller treatment. Every seat reads
+the same corrected JSON, so no gene can keep it away from `legacy()` and a
+re-pin is required. The installed audit is **0 divergent fields across 29
+tables**. The anchor moves by two decisions, from v26's 18,515 decisions and
+`0x04f5_da2a_c86b_099c` to **18,517 and `0x49d8_65b3_6d11_44fe`**. The shipped
+rules fingerprint moves from `fnv1a64:b72c5527d9e49a6c` to
+`fnv1a64:d6a5191b1716b015`, as the data correction should.

@@ -3624,10 +3624,35 @@ mod tests {
         // (faith purchase, Temple gate and Holy Site Culture Bomb). The
         // Warrior Monk production cost was corrected from 200 to the shipped
         // 100 at the same time; the Faith price remains the host's 200.
+        // Moved again by closing the remaining nine fields in the full
+        // Gathering Storm audit: Pike and Shot upkeep, Tagma cost/upkeep and
+        // Tank upgrade, Prasat Faith/relic slots, Sukiennice Gold, Tlachtli
+        // Culture, and Eyjafjallajokull adjacent Food.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:b72c5527d9e49a6c"
+            "fnv1a64:d6a5191b1716b015"
         );
+    }
+
+    #[test]
+    fn gathering_storm_unique_rows_match_the_installed_database() {
+        let rules = Rules::shipped();
+        let pike_and_shot = &rules.units["pike_and_shot"];
+        assert_eq!(pike_and_shot.maintenance, 3.0);
+
+        let tagma = &rules.units["tagma"];
+        assert_eq!(tagma.cost, 180.0);
+        assert_eq!(tagma.maintenance, 3.0);
+        assert_eq!(tagma.upgrade_to.as_deref(), Some("tank"));
+
+        let prasat = &rules.buildings["prasat"];
+        assert_eq!(prasat.yields.faith, 4.0);
+        assert_eq!(prasat.great_work_slots["relic"], 2);
+        assert_eq!(rules.buildings["sukiennice"].yields.gold, 3.0);
+        assert_eq!(rules.buildings["tlachtli"].yields.culture, 1.0);
+
+        let eyjafjallajokull = &rules.features["eyjafjallajokull"];
+        assert_eq!(eyjafjallajokull.adjacent_yields.food, 2.0);
     }
 
     #[test]
@@ -4187,7 +4212,7 @@ mod tests {
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
-            ("tagma", "cuirassier"),
+            ("tagma", "tank"),
             ("cuirassier", "tank"),
             ("tank", "modern_armor"),
             ("catapult", "trebuchet"),
