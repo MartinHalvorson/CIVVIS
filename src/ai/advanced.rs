@@ -605,16 +605,18 @@ pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 /// Science race to spend its opening on a sixteen-city settlement campaign.
 const SCIENCE_CITY_TARGET_CAP: usize = 8;
 
-/// A Science seat may take the first three cities before its lane owns the
-/// plan. This is the small opening economy that makes the target viable; after
-/// it, the research and space-race contract must be the active posture.
-const SCIENCE_OPENING_CITY_TARGET: usize = 3;
+/// A Science seat may take the first two cities before its lane owns the plan.
+/// This is the small opening economy that makes the target viable; after it,
+/// the research and space-race contract must be the active posture. A third
+/// city is welcome later when it is cheap, but it must not delay the first
+/// Campus chain when a hostile frontier has stalled the opening settler.
+const SCIENCE_OPENING_CITY_TARGET: usize = 2;
 
-/// If hostile land or a slow start prevents three cities, give the Science
-/// lane only this many standard turns to finish that opening before it takes
-/// over. At Online speed this is sixty turns, matching the first research
+/// If hostile land or a slow start prevents two cities, give the Science lane
+/// only this many standard turns to finish that opening before it takes over.
+/// At Online speed this is forty turns, matching the first research
 /// infrastructure window rather than the generic expansion deadline.
-const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 90;
+const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 60;
 
 /// Passable land per city the land grab prices the board at. Civilization VI
 /// packs cities four tiles apart (`CITY_MIN_RANGE` 3 plus the engine's own
