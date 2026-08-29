@@ -251,7 +251,7 @@ impl AdvancedAi {
             .filter(|(pos, _)| {
                 !g.blocked_city_sites.contains(pos)
                     && !self.settler_site_is_dead(uid, *pos)
-                    && (!self.settler_threat_detour
+                    && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
@@ -291,7 +291,7 @@ impl AdvancedAi {
                 self.base.valid_settle_site(g, pid, *pos)
                     && !g.blocked_city_sites.contains(pos)
                     && !self.settler_site_is_dead(uid, *pos)
-                    && (!self.settler_threat_detour
+                    && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
@@ -414,7 +414,7 @@ impl AdvancedAi {
         }
         let cached = self.settler_targets.get(&uid).copied().filter(|target| {
             !self.settler_site_is_dead(uid, *target)
-                && (!self.settler_threat_detour
+                && (!self.settler_threat_detour_on()
                     || !self.settler_threat_deferrals.contains_key(target))
                 && !self.settler_target_reserved_by_other(g, pid, uid, *target)
                 && ((*target == current && g.can_found_city(uid))

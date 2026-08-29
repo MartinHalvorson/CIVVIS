@@ -20118,7 +20118,7 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
 /// is a route-safety policy, not a barbarian-only special case.
 #[test]
 fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
-    let run = |barbarian: bool| {
+    let run = |barbarian: bool, live: bool| {
         let (mut game, home) = camp_bounty_board(if barbarian { 92_041 } else { 92_042 });
         game.record_contact(0, 1);
         game.at_war.insert((0, 1));
@@ -20231,7 +20231,20 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
             .expect("the first step has a visible threat post with a safe runner-up");
         let threat = game.spawn_test_unit("warrior", owner, threat_position);
         let mut ai = AdvancedAi::new();
-        ai.enable_settler_threat_detour();
+        if live {
+            ai.enable_live_bridge();
+            ai.disable_frontier_loyalty();
+            ai.disable_settler_never_idles();
+        } else {
+            ai.enable_settler_threat_detour();
+        }
+        if live {
+            // Mirror the live bridge's conservative host hold: the native
+            // scorer may see a guard on the Settler's tile, but the host still
+            // refuses a visible hostile destination and needs the detour.
+            let guard = game.spawn_test_unit("warrior", 0, home);
+            ai.settler_guards.insert(settler, guard);
+        }
         assert!(
             ai.settlement_safety,
             "the route gate needs settlement safety"
@@ -20241,9 +20254,13 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
             game.sees(&visible, threat_position),
             "the blocker is visible"
         );
-        assert!(
+        let step_risk = if live {
+            ai.settlement_tile_risk_with_support(&game, 0, Some(settler), step, &visible, false)
+        } else {
             ai.settlement_tile_risk(&game, 0, Some(settler), step, &visible)
-                > SETTLER_STEP_RISK_LIMIT,
+        };
+        assert!(
+            step_risk > SETTLER_STEP_RISK_LIMIT,
             "the blocker makes the next route step unsafe"
         );
         assert!(
@@ -20290,8 +20307,10 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
         );
     };
 
-    run(true);
-    run(false);
+    run(true, false);
+    run(false, false);
+    run(true, true);
+    run(false, true);
 }
 
 #[test]
@@ -20314,6 +20333,34 @@ fn settler_threat_detour_is_a_native_opt_in_withheld_by_the_ledger() {
     assert!(ai.settler_threat_detour);
     ai.disable_settler_threat_detour();
     assert!(!ai.settler_threat_detour);
+}
+
+/// The live bridge's capture model also needs the route-recovery gates.  The
+/// host refuses a visible hostile leg even when a stacked escort would make
+/// the native risk score look safe; the live-only helper must therefore turn
+/// on both the short target hold and the safe-runner detour without changing
+/// the screenable gene's published default.
+#[test]
+fn live_capture_lessons_enable_bounded_settler_route_recovery() {
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.live_settler_capture_lessons);
+    assert!(live.settlement_safety);
+    assert!(live.settler_routing_recovery_on());
+    assert!(live.settler_target_hysteresis_on());
+    assert!(live.settler_threat_detour_on());
+
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_live_settler_capture_lessons();
+    assert!(!withheld.settler_routing_recovery_on());
+    assert!(!withheld.settler_target_hysteresis_on());
+    assert!(!withheld.settler_threat_detour_on());
+
+    let mut native = AdvancedAi::new();
+    native.enable_engine_repairs();
+    assert!(!native.live_settler_capture_lessons);
+    assert!(!native.settler_routing_recovery_on());
 }
 
 /// `one_shot_recovery` lives on `BasicAi`, which is where `healing_step`
