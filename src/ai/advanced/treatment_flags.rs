@@ -3107,6 +3107,20 @@ impl AdvancedAi {
         self.live_settler_capture_lessons = false;
     }
 
+    /// A stranded Settler's exhaustion search sets aside a site beside an
+    /// unresolved rival border — the one fog guess the preferred search made
+    /// that names a city the forecast cannot see — and its nearest-legal
+    /// tier runs the same concrete-revolt forecast the ranked tier does. See
+    /// `AdvancedAi::exhaustion_site_unpriceable`.
+    pub fn enable_exhaustion_loyalty_guard(&mut self) {
+        self.exhaustion_loyalty_guard = true;
+    }
+
+    /// The twin of `enable_exhaustion_loyalty_guard`.
+    pub fn disable_exhaustion_loyalty_guard(&mut self) {
+        self.exhaustion_loyalty_guard = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
