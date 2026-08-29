@@ -1103,6 +1103,25 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("RequestCommand(unit, hash);", helper)
         self.assertNotIn("params", helper)
 
+    def test_parameterless_unit_operations_match_firaxis_unit_panel_signature(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        helper = source.split("local function canOperate", 1)[1].split(
+            "-- Same discipline as `operate`", 1
+        )[0]
+        operate = source.split("local function operate", 1)[1].split(
+            "-- Same discipline as `operate`", 1
+        )[0]
+
+        self.assertIn(
+            "CanStartOperation(unit, hash, nil, false, false)", helper
+        )
+        self.assertIn("next(params) == nil", helper)
+        self.assertIn("RequestOperation(unit, hash);", operate)
+        self.assertIn("next(params) == nil", operate)
+        self.assertIn(
+            "UnitManager.RequestOperation(unit, hash, params);", operate
+        )
+
     def test_builder_repair_uses_firaxis_repair_operation(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
 

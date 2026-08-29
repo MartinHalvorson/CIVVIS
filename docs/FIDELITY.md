@@ -3195,6 +3195,16 @@ the event kinds nothing in `src/` opens (`gp`, `unit_lost`, `wc_*`, `envoy`,
 effects first; and a settle-site's fresh water is still derived from the
 board (the host's `fw` is consulted for founded cities only).
 
+### The remaining Gathering Storm belief rows are now live (2026-08-29)
+
+The installed Gathering Storm XML was re-audited after the religious pass.
+`civ6_fidelity.py --table Beliefs` now reports **0 only-in-Civ-VI rows**:
+`holy_waters`, `monastic_isolation`, `papal_primacy`, `stewardship` and
+`warrior_monks` all have model data and runtime consumers. The inert-effect
+check likewise reports no unconsumed belief effect keys. The older Round 11
+and 2026-08-18 tables above remain historical snapshots of the queue before
+this follow-up; they are not the current coverage count.
+
 ### How to re-measure
 
 The border table is one join: `orders.sqlite` (`kind='unit' and

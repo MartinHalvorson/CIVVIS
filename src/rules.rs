@@ -3617,9 +3617,16 @@ mod tests {
         // Eyjafjallajokull — so those three had been scenery: never active,
         // never drawn by the eruption lottery, and never the source of a hex
         // of Volcanic Soil.
+        // Moved again by completing the five Gathering Storm belief rows the
+        // fidelity audit had left outside the model: Papal Primacy and
+        // Stewardship (founder yields/pressure), Holy Waters and Monastic
+        // Isolation (religious healing/combat pressure), and Warrior Monks
+        // (faith purchase, Temple gate and Holy Site Culture Bomb). The
+        // Warrior Monk production cost was corrected from 200 to the shipped
+        // 100 at the same time; the Faith price remains the host's 200.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:63b1654facb5b19b"
+            "fnv1a64:b72c5527d9e49a6c"
         );
     }
 
