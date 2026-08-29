@@ -9907,28 +9907,61 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	-- the answer says we give, matched against the offer by Firaxis type,
 	-- value and amount, so an equalizer that touched our side cannot slip a
 	-- bigger block or a different item through the accept. On a BUY the
-	-- directions flip: their side must hold exactly the Open Borders
-	-- agreement asked for (anything else is foreign, their gold included),
-	-- and our side must hold gold and nothing else, totalled into `pay`.
+	-- directions flip: their side is tallied into `theirs` by the same keys
+	-- and must hold exactly the one item the ask registered as
+	-- `pending.want` — the Open Borders agreement, or the luxury copy —
+	-- (anything else is foreign, their gold included), and our side must
+	-- hold gold and nothing else, totalled into `pay`.
 	local buying = pending ~= nil and pending.direction == "buy";
 	local gold, gpt, foreign, mine, offered = 0, 0, 0, {}, 0;
-	local borders, payGold, payGpt = 0, 0, 0;
-	local mineText = {};
+	local theirs, payGold, payGpt = {}, 0, 0;
+	local mineText, theirsText = {}, {};
 	if incoming ~= nil then
 		pcall(function()
+			-- One key per item, the shape `pending.gave` (a sale) and
+			-- `pending.want` (a purchase) are written in, so either side of
+			-- an answer is matched against what was asked for by Firaxis
+			-- type and value, never by position.
+			local function keyOf(item, kind, amount)
+				if kind == DealItemTypes.FAVOR then return "FAVOR", amount; end
+				if kind == DealItemTypes.RESOURCES then
+					return "RESOURCES:" .. tostring(item:GetValueType()), amount;
+				end
+				if kind == DealItemTypes.GREATWORK then
+					-- Matched by the work INSTANCE the sale offered. A work
+					-- has no amount — its presence is its quantity, and 0
+					-- here would fail the match against the `1` the ask
+					-- registered.
+					return "GREATWORK:" .. tostring(item:GetValueType()), 1;
+				end
+				if kind == DealItemTypes.AGREEMENTS and DealAgreementTypes ~= nil
+						and try(function() return item:GetSubType(); end, nil)
+							== DealAgreementTypes.OPEN_BORDERS then
+					-- An agreement has no amount either.
+					return "OPEN_BORDERS", 1;
+				end
+				return "OTHER:" .. tostring(kind), amount;
+			end
 			for item in incoming:Items() do
 				local kind = item:GetType();
 				local from = item:GetFromPlayerID();
 				local duration = item:GetDuration() or 0;
 				local amount = item:GetAmount() or 0;
 				if from == fromPlayer then
-					if kind == DealItemTypes.GOLD and not buying then
-						if duration == 0 then gold = gold + amount; else gpt = gpt + amount; end
-					elseif buying and kind == DealItemTypes.AGREEMENTS
-							and DealAgreementTypes ~= nil
-							and try(function() return item:GetSubType(); end, nil)
-								== DealAgreementTypes.OPEN_BORDERS then
-						borders = borders + 1;
+					if kind == DealItemTypes.GOLD then
+						-- Their gold is the price of a sale and foreign to a
+						-- purchase, whatever else the answer holds.
+						if buying then
+							foreign = foreign + 1;
+						elseif duration == 0 then
+							gold = gold + amount;
+						else
+							gpt = gpt + amount;
+						end
+					elseif buying then
+						local key, count = keyOf(item, kind, amount);
+						theirs[key] = (theirs[key] or 0) + count;
+						theirsText[#theirsText + 1] = key .. "=" .. tostring(count) .. "x" .. tostring(duration);
 					else
 						foreign = foreign + 1;
 					end
@@ -9937,23 +9970,9 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 						if duration == 0 then payGold = payGold + amount; else payGpt = payGpt + amount; end
 						mineText[#mineText + 1] = "GOLD=" .. tostring(amount) .. "x" .. tostring(duration);
 					else
-						local key;
-						if kind == DealItemTypes.FAVOR then
-							key = "FAVOR";
-						elseif kind == DealItemTypes.RESOURCES then
-							key = "RESOURCES:" .. tostring(item:GetValueType());
-						elseif kind == DealItemTypes.GREATWORK then
-							-- Matched by the work INSTANCE the sale offered.
-							-- A work has no amount — its presence is its
-							-- quantity, and 0 here would fail the match
-							-- against the `1` the ask registered.
-							key = "GREATWORK:" .. tostring(item:GetValueType());
-							amount = 1;
-						else
-							key = "OTHER:" .. tostring(kind);
-						end
-						mine[key] = (mine[key] or 0) + amount;
-						mineText[#mineText + 1] = key .. "=" .. tostring(amount) .. "x" .. tostring(duration);
+						local key, count = keyOf(item, kind, amount);
+						mine[key] = (mine[key] or 0) + count;
+						mineText[#mineText + 1] = key .. "=" .. tostring(count) .. "x" .. tostring(duration);
 					end
 				end
 			end
@@ -9961,10 +9980,16 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	end
 	local matches = pending ~= nil;
 	if buying then
-		-- The answer must be the agreement asked for and a price, nothing
-		-- else in either direction — a counter that slips another item onto
-		-- our side or keeps the agreement off theirs is walked away from.
-		matches = borders == 1 and next(mine) == nil;
+		-- The answer must be the one item asked for — the passage, or the
+		-- luxury copy the ask registered as `want` — and a price, nothing
+		-- else in either direction: a counter that slips another item onto
+		-- our side, swaps the copy for another, doubles it, or keeps it off
+		-- theirs is walked away from.
+		local want = pending.want or "OPEN_BORDERS";
+		matches = theirs[want] == 1 and next(mine) == nil;
+		for key, _ in pairs(theirs) do
+			if key ~= want then matches = false; end
+		end
 	elseif pending ~= nil then
 		for key, amount in pairs(pending.gave or {}) do
 			offered = offered + 1;
@@ -9994,6 +10019,8 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		direction = buying and "buy" or "sell",
 		gold = gold, gold_per_turn = gpt, worth = worth, pay = pay, foreign = foreign,
 		ours = table.concat(mineText, ","),
+		theirs = table.concat(theirsText, ","),
+		want = pending and pending.want or nil,
 		asked = pending ~= nil, asked_turn = pending and pending.turn or nil,
 		floor = pending and pending.floor or nil,
 		ceiling = pending and pending.ceiling or nil, matches = matches,
@@ -10008,7 +10035,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		emit("deal_declined", {
 			turn = turn, from = fromPlayer, action = action, worth = worth,
 			direction = buying and "buy" or "sell", pay = pay,
-			floor = pending.floor, ceiling = pending.ceiling,
+			floor = pending.floor, ceiling = pending.ceiling, want = pending.want,
 			matches = matches, foreign = foreign,
 		});
 		return;
@@ -10022,7 +10049,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	emit("deal_closed", {
 		turn = turn, from = fromPlayer, gold = gold, gold_per_turn = gpt, worth = worth,
 		direction = buying and "buy" or "sell", pay = pay,
-		floor = pending.floor, ceiling = pending.ceiling,
+		floor = pending.floor, ceiling = pending.ceiling, want = pending.want,
 		gave = pending.verb, sent = (ok and sent) and true or false,
 		threw = not ok,
 	});
@@ -11332,19 +11359,41 @@ local function applyOrder(player, pid, row, turn)
 	-- sale above, for the one purchase with a measured case: Open Borders,
 	-- the peacetime key to a sealed border (one live run held a scout against
 	-- Kongo's invisible border for 74 turns and explored 8.3% of the map).
-	-- `verb` names the agreement — OPEN_BORDERS is the only one this arm
-	-- buys — and `x` is the gold-equivalent ceiling (lump plus 25× per-turn)
-	-- ABOVE which the answer is declined. Built the way the shipped screen
-	-- adds an agreement (DiplomacyDealView.lua `OnClickAvailableAgreement`):
-	-- one AGREEMENTS item FROM the rival, subtype OPEN_BORDERS, the standard
-	-- thirty turns; then EQUALIZE, and `CivvisOnIncomingDeal` closes only when
-	-- the rival's own balance asks gold at or under the ceiling. Same
-	-- cooldowns and same one-working-deal-per-rival rule as the sale lane —
+	-- `verb` names the agreement — OPEN_BORDERS — and `x` is the
+	-- gold-equivalent ceiling (lump plus 25× per-turn) ABOVE which the answer
+	-- is declined. Built the way the shipped screen adds an agreement
+	-- (DiplomacyDealView.lua `OnClickAvailableAgreement`): one AGREEMENTS
+	-- item FROM the rival, subtype OPEN_BORDERS, the standard thirty turns;
+	-- then EQUALIZE, and `CivvisOnIncomingDeal` closes only when the rival's
+	-- own balance asks gold at or under the ceiling. Same cooldowns and same
+	-- one-working-deal-per-rival rule as the sale lane —
 	-- `CivvisTrade.pending`/`asked` are shared deliberately, because the host
 	-- holds ONE outgoing working deal per rival and a second ask would clear
 	-- the first mid-flight.
+	--
+	-- ★★★★★ THE LUXURY THE SEAT LACKS, BOUGHT THE SAME WAY. The second
+	-- purchase on this arm: `LUXURY_ANY` (or a `RESOURCE_*` name) asks the
+	-- rival for one copy of a luxury the seat holds none of, thirty turns,
+	-- at the rival's own price. The seat runs Displeased on 48% of its
+	-- city-turns — −10% on every yield, ≈1,150 yield points a game — and
+	-- luxuries are 60% of its amenities, while rivals visibly hold 2–8
+	-- improved luxuries and asked 2–14 Gold a turn per copy in the nine
+	-- recorded sales; one copy is +1 Amenity in four cities. The rival's own
+	-- tradeable list (`GetPossibleDealItems` with the RIVAL as owner, the
+	-- shipped screen's "their available resources" column) is the catalogue;
+	-- a luxury is one whose row is `RESOURCECLASS_LUXURY`; the seat lacks it
+	-- when the host's own count says zero (the planner's count includes a
+	-- suzerain's copy, see the sale arm); a copy this lane is selling to
+	-- anyone is not bought back. Their RESOURCES item, one copy, thirty
+	-- turns, nothing on our side; EQUALIZE; the handler closes only at or
+	-- under the ceiling, and only when their side is exactly that copy.
 	if kind == "buy" then
-		if verb ~= "OPEN_BORDERS" then return false, "buy_unknown_item"; end
+		local luxury = verb == "LUXURY_ANY" or string.find(verb, "^RESOURCE_") ~= nil;
+		if verb ~= "OPEN_BORDERS" and not luxury then return false, "buy_unknown_item"; end
+		if luxury and verb ~= "LUXURY_ANY"
+				and try(function() return GameInfo.Resources[verb]; end, nil) == nil then
+			return false, "buy_unknown_item";
+		end
 		if subject < 0 then return false, "buy_target_unmapped"; end
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
 		if diplomacy == nil then return false, "no_diplomacy"; end
@@ -11357,7 +11406,7 @@ local function applyOrder(player, pid, row, turn)
 		if not try(function() return Players[subject]:IsMajor(); end, false) then
 			return false, "buy_not_major";
 		end
-		if try(function() return diplomacy:HasOpenBordersFrom(subject); end, false) then
+		if not luxury and try(function() return diplomacy:HasOpenBordersFrom(subject); end, false) then
 			return false, "buy_already_open";
 		end
 		local trade = CivvisTrade;
@@ -11380,34 +11429,78 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local ceiling = math.max(0, math.floor(x or 0));
 		if ceiling <= 0 then return false, "buy_no_ceiling"; end
-		local ran, submitted, reason = pcall(function()
+		local ran, submitted, reason, wantName = pcall(function()
 			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			if deal == nil then return false, "no_working_deal"; end
-			-- The agreement rides FROM the rival: they grant, we pay. A
-			-- ruleset without the agreement type has nothing to buy here.
-			if DealAgreementTypes == nil or DealAgreementTypes.OPEN_BORDERS == nil then
-				return false, "no_agreement_type";
-			end
-			local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, subject);
-			if item == nil then return false, "no_agreement_item"; end
-			item:SetSubType(DealAgreementTypes.OPEN_BORDERS);
-			item:SetDuration(30);
-			if not try(function() return item:IsValid(); end, true) then
-				pcall(function() deal:RemoveItemByID(item:GetID()); end);
-				return false, "agreement_invalid";
+			local want, name = "OPEN_BORDERS", "OPEN_BORDERS";
+			if luxury then
+				-- Owner first: the RIVAL's tradeable resources, the column the
+				-- shipped screen fills for their side of the table.
+				local possible = try(function()
+					return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.RESOURCES, deal);
+				end, nil) or {};
+				local resources = try(function() return player:GetResources(); end, nil);
+				local forType = nil;
+				for _, entry in ipairs(possible) do
+					if forType == nil and entry.IsValid ~= false and (entry.MaxAmount or 0) > 0 then
+						local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+						if row ~= nil and row.ResourceClassType == "RESOURCECLASS_LUXURY"
+								and (verb == "LUXURY_ANY" or row.ResourceType == verb) then
+							-- The host's own count; a stub that answers
+							-- nothing is not zero and is left alone.
+							local owned = resources ~= nil and try(function()
+								return resources:GetResourceAmount(entry.ForType);
+							end, nil) or nil;
+							local key = "RESOURCES:" .. tostring(entry.ForType);
+							local selling = false;
+							for _, other in pairs(trade.pending) do
+								if other.gave ~= nil and other.gave[key] ~= nil then selling = true; end
+							end
+							if owned == 0 and not selling then
+								forType, name = entry.ForType, row.ResourceType;
+							end
+						end
+					end
+				end
+				if forType == nil then return false, "buy_no_luxury"; end
+				local item = deal:AddItemOfType(DealItemTypes.RESOURCES, subject);
+				if item == nil then return false, "no_resource_item"; end
+				item:SetValueType(forType);
+				item:SetDuration(30);
+				item:SetAmount(1);
+				if not try(function() return item:IsValid(); end, true) then
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+					return false, "resource_invalid";
+				end
+				want = "RESOURCES:" .. tostring(forType);
+			else
+				-- The agreement rides FROM the rival: they grant, we pay. A
+				-- ruleset without the agreement type has nothing to buy here.
+				if DealAgreementTypes == nil or DealAgreementTypes.OPEN_BORDERS == nil then
+					return false, "no_agreement_type";
+				end
+				local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, subject);
+				if item == nil then return false, "no_agreement_item"; end
+				item:SetSubType(DealAgreementTypes.OPEN_BORDERS);
+				item:SetDuration(30);
+				if not try(function() return item:IsValid(); end, true) then
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+					return false, "agreement_invalid";
+				end
 			end
 			deal:Validate();
-			if not deal:IsValid() then return false, "invalid_deal"; end
+			if not deal:IsValid() then return false, "invalid_deal", name; end
 			-- Registered BEFORE the ask goes out — see the sale arm above.
+			-- `want` is the key the handler matches their side against.
 			trade.pending[subject] = {
-				turn = turn, ceiling = ceiling, direction = "buy", verb = "OPEN_BORDERS",
+				turn = turn, ceiling = ceiling, direction = "buy", verb = name, want = want,
 			};
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
-			return true, "asked";
+			return true, "asked", name;
 		end);
 		if not ran then
-			submitted, reason = false, "throw";
+			submitted, reason, wantName = false, "throw", nil;
 		end
 		if submitted then
 			trade.asked[subject] = turn;
@@ -11417,16 +11510,19 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = nil;
 		end
 		if not submitted and (reason == "no_agreement_type" or reason == "no_agreement_item"
-				or reason == "agreement_invalid" or reason == "invalid_deal") then
+				or reason == "agreement_invalid" or reason == "invalid_deal"
+				or reason == "buy_no_luxury" or reason == "no_resource_item"
+				or reason == "resource_invalid") then
 			-- The engine will not sell passage here right now — usually a
-			-- missing Early Empire on one side; do not re-ask every turn for
-			-- the same answer.
+			-- missing Early Empire on one side — or has no luxury the seat
+			-- lacks on its table; do not re-ask every turn for the same
+			-- answer.
 			trade.asked[subject] = turn;
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 		end
 		emit("deal_offer", {
-			turn = turn, target = subject, verb = "OPEN_BORDERS", direction = "buy",
-			ceiling = ceiling,
+			turn = turn, target = subject, verb = verb, direction = "buy",
+			ceiling = ceiling, want = wantName,
 			submitted = submitted and true or false, reason = reason,
 			threw = reason == "throw",
 		});
