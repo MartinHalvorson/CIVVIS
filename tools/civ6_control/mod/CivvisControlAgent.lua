@@ -11251,6 +11251,23 @@ local function applyOrder(player, pid, row, turn)
 							forType = entry.ForType;
 						end
 					end
+					-- ★ NEVER SELL THE LAST COPY OF A LUXURY. Each distinct luxury
+					-- gives an Amenity to four cities; a second copy gives nothing
+					-- but its trade value, so the second is surplus and the first
+					-- is not. The planner's count includes a suzerain's copy, so
+					-- run civvis-20260829T040540Z sold its only Mercury three
+					-- times (t102, t126, t150) and dropped four Amenities each
+					-- time. Ask the host how many we actually hold; a stub that
+					-- answers nothing is not a number and leaves the sale alone.
+					if forType ~= nil then
+						local luxury = row.ResourceClassType == "RESOURCECLASS_LUXURY";
+						local owned = try(function()
+							return player:GetResources():GetResourceAmount(forType);
+						end, nil);
+						if luxury and type(owned) == "number" and owned <= want.amount then
+							return false, "sole_copy:" .. want.name, {}, "";
+						end
+					end
 					if forType ~= nil then
 						local consumption = try(function()
 							return GameInfo.Resource_Consumption[want.name];
