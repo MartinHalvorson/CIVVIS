@@ -215,6 +215,25 @@ impl AdvancedAi {
                         .into_iter()
                         .filter(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))),
                 );
+            } else if self.live_settler_capture_lessons && domain != Some("sea") && spec.moves > 0.0
+            {
+                // The host bridge has one deliberately conservative fallback
+                // that the native movement flood cannot reproduce: when
+                // `GetMoveToPathEx` cannot answer for a civilian-occupied
+                // destination, it treats every land tile within the unit's
+                // static `BaseMoves` radius as reachable.  A barbarian Horse
+                // Archer exposed this at live t21: the exact flood stopped at
+                // terrain, the host refused the planned escape tile as inside
+                // the four-hex envelope, and the Settler was captured on its
+                // current tile.  Union the same geometric land floor for the
+                // live bridge only; native/evaluator boards retain the exact
+                // terrain-aware answer.
+                let radius = spec.moves.ceil() as i32;
+                reach.extend(
+                    g.wdisk(unit.pos, radius)
+                        .into_iter()
+                        .filter(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))),
+                );
             }
             reach.sort_unstable();
             reach.dedup();
