@@ -73,6 +73,14 @@
 //! withhold more than one; an unknown name lists what is available rather than
 //! failing quietly. The fieldless default path is unchanged, so every number
 //! above still reproduces.
+//!
+//! `--deployment` starts each targeted seat from the deployed bridge profile
+//! (`AdvancedAi::enable_live_bridge`) before applying `--without` and `--with`.
+//! This is the profile to use when asking whether a shipped live treatment
+//! matters: the ordinary targeted profile is intentionally kept as the
+//! historical native baseline, and does not carry the live bridge's repair
+//! genes. Without this switch, withholding a live-only gene from a targeted
+//! seat is a no-op rather than a control arm.
 use civvis::ai::{run_game, AdvancedAi, VictoryTarget};
 use civvis::game::Game;
 use std::collections::{BTreeMap, BTreeSet};
@@ -113,6 +121,10 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
         .and_then(|index| args.get(index + 1))
         .and_then(|value| value.parse().ok())
         .unwrap_or(default)
+}
+
+fn deployment_profile(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--deployment")
 }
 
 fn selected_targets(args: &[String]) -> Result<Vec<VictoryTarget>, String> {
@@ -172,6 +184,7 @@ fn main() {
         std::process::exit(2);
     });
     let games = number(&args, "--games", 3);
+    let deployment = deployment_profile(&args);
     let start_seed = number(&args, "--start-seed", 9_000) as u64;
     let players = number(&args, "--players", 2).clamp(2, 8);
     let width = number(&args, "--width", 24).max(16) as i32;
@@ -293,6 +306,13 @@ fn main() {
             });
             let mut ais = AdvancedAi::fleet_targeting(&game, target);
             for ai in ais.iter_mut() {
+                if deployment {
+                    // Match the live bridge before applying arms. In
+                    // particular, this seats ledger-selected genes such as
+                    // science-victory-drive, and makes --without a real
+                    // ablation instead of disabling an already-false field.
+                    ai.enable_live_bridge();
+                }
                 for gene in &withheld {
                     (gene.disable)(ai);
                 }
@@ -505,6 +525,10 @@ fn main() {
         speed.cost_percent(),
         speed.turn_limit()
     );
+    println!(
+        "profile={}",
+        if deployment { "deployment" } else { "targeted" }
+    );
     println!("seat winners by target:");
     for target in &targets {
         println!(
@@ -552,6 +576,13 @@ mod tests {
 
     fn args(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| (*word).to_string()).collect()
+    }
+
+    #[test]
+    fn deployment_profile_is_opt_in_and_spelled_as_a_standalone_flag() {
+        assert!(!deployment_profile(&args(&[])));
+        assert!(deployment_profile(&args(&["--deployment"])));
+        assert!(!deployment_profile(&args(&["--deployment-mode"])));
     }
 
     /// ⚠ The reason this test exists is not the parser. #1278 removed this
