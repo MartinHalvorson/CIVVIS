@@ -3183,6 +3183,18 @@ impl AdvancedAi {
         self.age_closer = false;
     }
 
+    /// Research a prerequisite-met technology whose Eureka is in hand and
+    /// whose remaining cost is at most two turns of science before the lane's
+    /// beeline resumes. See `AdvancedAi::boosted_bargain_tech`.
+    pub fn enable_boosted_bargain_first(&mut self) {
+        self.boosted_bargain_first = true;
+    }
+
+    /// The twin of `enable_boosted_bargain_first`.
+    pub fn disable_boosted_bargain_first(&mut self) {
+        self.boosted_bargain_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
