@@ -736,7 +736,20 @@ class ProtectedInstallTest(unittest.TestCase):
         # there and does not run in a script-only in-game context.
         shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
         self.assertIn("ui_heartbeat", shim)
-        self.assertIn("local HEARTBEAT_SECONDS = 60.0;", shim)
+        # ⚠ COUNTED IN FRAMES, NOT SECONDS. The first version accumulated
+        # `fDTime` to sixty seconds and emitted nothing across a whole game —
+        # which read like an answer and was not. Each popup context is only up
+        # for a second or two at a time, so a per-context clock can never reach
+        # sixty however alive the thread is. Run civvis-20260829T183612Z proved
+        # only that: 24 `autoclose_armed`, 81 `autoclose`, 2 desktop
+        # escalations, and zero heartbeats.
+        self.assertIn("local HEARTBEAT_FRAMES = 600;", shim)
+        self.assertNotIn("HEARTBEAT_SECONDS", shim)
+        # Seconds ride along so the two remaining possibilities separate:
+        # frames climbing with seconds near zero means the tick runs while
+        # hidden but `fDTime` is not meaningful there; no frames at all means
+        # `SetUpdate` does not run on a hidden context.
+        self.assertIn('"frames":%d,"seconds":%.1f,"up":%s', shim)
         # It must sit BEFORE the not-up early return, or it would only ever
         # report while a popup happened to be showing — exactly the blind spot.
         tick = shim.split("local function tick(fDTime)", 1)[1]
@@ -744,8 +757,8 @@ class ProtectedInstallTest(unittest.TestCase):
         notup = tick.index("if not isUp() then")
         self.assertLess(beat, notup,
                         "the heartbeat must run whether or not the screen is up")
-        # Accumulated from the frame delta, not a wall clock the sandbox lacks.
-        self.assertIn("heartbeat = (heartbeat or 0) + (tonumber(fDTime) or 0);", shim)
+        # Incremented per call, so it climbs whenever the tick is reached at all.
+        self.assertIn("heartbeatFrames = heartbeatFrames + 1;", shim)
 
     def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
         # Seven diplomatic losses in a day and no record of what each session

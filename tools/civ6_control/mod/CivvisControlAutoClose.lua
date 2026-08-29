@@ -672,7 +672,8 @@ else
 	-- be permanent.
 	local reported = false;
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
-	local heartbeat = 0;            -- seconds of UI time since the last heartbeat
+	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
+	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
 
 	-- ★★★★★ A DEAL SESSION CIVVIS OPENED IS NOT A SCREEN TO REFUSE. The
 	-- agent's sale, passage and peace arms now ask inside a `MAKE_DEAL`
@@ -702,7 +703,18 @@ else
 	-- How often this context says it is alive. One a minute per armed screen
 	-- is enough to bracket a wedge (the outside watchdog allows five minutes)
 	-- without filling the log: a full 250-turn game adds a few hundred bytes.
-	local HEARTBEAT_SECONDS = 60.0;
+	-- Counted in FRAMES, not seconds, and that is the whole point.
+	--
+	-- The first attempt accumulated `fDTime` to sixty seconds and emitted
+	-- NOTHING across a whole game, which looked like an answer and was not:
+	-- each popup context is only up for a second or two at a time, so a
+	-- per-context clock can never reach sixty however alive the thread is.
+	-- A frame counter climbs whenever `tick` is CALLED, which is exactly the
+	-- question — and carrying the seconds alongside it separates the two
+	-- remaining possibilities: frames climbing with seconds near zero means
+	-- the tick runs while hidden but `fDTime` is not meaningful there, and
+	-- no frames at all means `SetUpdate` does not run on a hidden context.
+	local HEARTBEAT_FRAMES = 600;
 	local RETRY_SECONDS = 30.0;
 	local DIALOGUE_READY_RETRY_SECONDS = 0.05;
 
@@ -789,10 +801,14 @@ else
 		-- UI thread lives and a nudge from this side could unpark the turn;
 		-- heartbeats stopping too means the whole process is gone and only the
 		-- outside watchdog can help.
-		heartbeat = (heartbeat or 0) + (tonumber(fDTime) or 0);
-		if heartbeat >= HEARTBEAT_SECONDS then
-			heartbeat = 0;
-			report("ui_heartbeat", string.format(',"up":%s', tostring(isUp())));
+		heartbeatFrames = heartbeatFrames + 1;
+		heartbeatSeconds = heartbeatSeconds + (tonumber(fDTime) or 0);
+		if heartbeatFrames >= HEARTBEAT_FRAMES then
+			report("ui_heartbeat", string.format(',"frames":%d,"seconds":%.1f,"up":%s',
+			                                     heartbeatFrames, heartbeatSeconds,
+			                                     tostring(isUp())));
+			heartbeatFrames = 0;
+			heartbeatSeconds = 0;
 		end
 		if not isUp() then
 			showing = false;
