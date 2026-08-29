@@ -2694,6 +2694,111 @@ class AnUnreadableMenuLooksForTheBackItRenders(unittest.TestCase):
         self.assertIn("a dialog is covering the menu", self._source())
 
 
+class OperatorRetireUiTest(unittest.TestCase):
+    """The request cannot translate into a blind desktop click."""
+
+    @staticmethod
+    def _shot(path: Path) -> bool:
+        path.write_bytes(b"verified test frame")
+        return True
+
+    def test_the_visible_retire_and_yes_controls_are_the_only_clicks(self):
+        def observed(path, label, _bounds):
+            if path.name == "operator-retire-menu.png":
+                return {"Retire": (410, 360), "Return to Game": (410, 300)}.get(label)
+            return {"Yes": (390, 430), "No": (470, 430)}.get(label)
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
+             patch.object(civ6_play, "_observed_label_point", side_effect=observed), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            retired, detail, paused, retire_clicked = civ6_play.retire_from_game_menu(
+                Path(temporary), pause_requested=False, retire_clicked=False)
+
+        self.assertTrue(retired, detail)
+        self.assertFalse(paused)
+        self.assertTrue(retire_clicked)
+        self.assertEqual(click.call_args_list, [call(410, 360), call(390, 430)])
+
+    def test_an_unreadable_pause_menu_never_clicks_or_repeats_escape(self):
+        result = SimpleNamespace(returncode=0)
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
+             patch.object(civ6_play, "_observed_label_point", return_value=None), \
+             patch.object(civ6_play.macos_input, "press_key", return_value=result) as press, \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            retired, _detail, paused, retire_clicked = civ6_play.retire_from_game_menu(
+                Path(temporary), pause_requested=False, retire_clicked=False)
+
+        self.assertFalse(retired)
+        self.assertTrue(paused)
+        self.assertFalse(retire_clicked)
+        press.assert_called_once_with("escape")
+        click.assert_not_called()
+
+    def test_a_disabled_retire_retries_only_after_the_menu_is_still_visible(self):
+        def observed(path, label, _bounds):
+            # The Retire button is visible but has not opened a confirmation,
+            # which is what Civ VI does while it is not the local seat's turn.
+            return {"Retire": (410, 360), "Return to Game": (410, 300),
+                    "Exit to Desktop": (410, 480)}.get(label)
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
+             patch.object(civ6_play, "_observed_label_point", side_effect=observed), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            first = civ6_play.retire_from_game_menu(
+                Path(temporary), pause_requested=True, retire_clicked=False)
+            second = civ6_play.retire_from_game_menu(
+                Path(temporary), pause_requested=True, retire_clicked=True)
+
+        self.assertFalse(first[0])
+        self.assertTrue(first[3], "the first click waits for a possible animation")
+        self.assertFalse(second[0])
+        self.assertFalse(second[3], "the visible unchanged menu permits a later retry")
+        self.assertEqual(click.call_args_list, [call(410, 360), call(410, 300)])
+
+    def test_a_pause_menu_without_retire_is_resumed_not_left_blocking(self):
+        def observed(_path, label, _bounds):
+            return {"Return to Game": (410, 300),
+                    "Exit to Desktop": (410, 480)}.get(label)
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
+             patch.object(civ6_play, "_observed_label_point", side_effect=observed), \
+             patch.object(civ6_play.macos_input, "press_key") as press, \
+             patch.object(civ6_play, "click_at") as click:
+            retired, detail, paused, retire_clicked = civ6_play.retire_from_game_menu(
+                Path(temporary), pause_requested=False, retire_clicked=False)
+
+        self.assertFalse(retired)
+        self.assertIn("resumed the game", detail)
+        self.assertFalse(paused)
+        self.assertFalse(retire_clicked)
+        click.assert_called_once_with(410, 300)
+        press.assert_not_called()
+
+    def test_a_recorded_retire_reason_cannot_be_reclassified_as_setup_failure(self):
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"operator_retired": {"state": "retired"},
+                 "ruleset_match": False, "mode_mismatch": True,
+                 "seat": {"difficulty": "DIFFICULTY_PRINCE"}, "configured": False},
+                "operator_retired"),
+            "operator_retired")
+
+
 class EveryPerPollHostProbeIsBounded(unittest.TestCase):
     """⚠⚠⚠ All of them ran unbounded in the loop that drives the game.
 

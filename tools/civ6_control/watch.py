@@ -174,7 +174,9 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     and this controller's turn loop runs off game-core events, which are tied
     to frames -- so a browser window taking focus stops the game dead. That
     looked exactly like a machine under load, and cost a run that sat on turn
-    15 for ten minutes with nothing wrong in any log.
+    15 for ten minutes with nothing wrong in any log.  A callback may also
+    return a non-empty reason to end the loop at a non-event boundary; the
+    operator's visually confirmed in-game retirement is one such boundary.
 
     ``stall_s`` and ``frozen_s`` are two DIFFERENT deaths and both are needed:
 
@@ -283,7 +285,9 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             return (f"stalled: turn {last_turn} has not advanced for "
                     f"{frozen_s:.0f}s while events kept arriving")
         if each_poll is not None:
-            each_poll()
+            stop_reason = each_poll()
+            if isinstance(stop_reason, str) and stop_reason:
+                return stop_reason
         time.sleep(poll_s)
 
 

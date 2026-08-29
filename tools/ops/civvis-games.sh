@@ -2,6 +2,7 @@
 # civvis-games — the on/off switch for the two unattended game lanes.
 #
 #   civvis-games on  [reason]   run both lanes indefinitely
+#   civvis-games retire [reason] request the active game's in-game Retire path
 #   civvis-games off [reason]   stop both lanes NOW and keep them stopped
 #   civvis-games status         what is running, and why
 #   civvis-games wins [n]       the last n live-game wins from the ladder ledger
@@ -37,6 +38,7 @@ set -u
 OPS=${0:A:h}
 REPO=${CIVVIS_REPO:-${OPS:h:h}}
 GAMELOCK="$REPO/tools/civ6_control/gamelock.py"
+RUN_ROOT=${CIVVIS_RUNS_ROOT:-$HOME/civvis-civ6-runs/control}
 STOCK_LAUNCHER="$OPS/civvis-ladder-terminal-launcher.sh"
 # The operator wrapper the ladder keeper also honours (civvis_collab.py's
 # LADDER_OPERATOR_WRAPPER): only its EXISTENCE is a decision here, exactly as
@@ -282,7 +284,33 @@ on)
   say "  spectator: KeepAlive brings it back within ~60s"
   say ""
   say "watch it:  tail -f ~/Library/Logs/civvis-ladder.log"
+  say "retire one game: civvis-games retire"
   say "turn off:  civvis-games off"
+  ;;
+
+retire)
+  reason=${2:-"operator: retire current verification game"}
+  # A retirement replaces one live game; it is not an alternate spelling of
+  # `off`.  Refuse an explicitly halted lane so the command cannot claim that a
+  # successor will arrive when the operator has told all supervisors to stop.
+  if python3 "$GAMELOCK" --halt-status >/dev/null 2>&1; then
+    say "== retiring the active game =="
+    say "  refused: the game lanes are OFF; use civvis-games on before requesting a replacement"
+    exit 2
+  fi
+  say "== retiring the active game =="
+  python3 "$REPO/tools/civ6_control/operator_retire.py" request \
+    --runs-root "$RUN_ROOT" --reason "$reason"
+  retire_status=$?
+  if (( retire_status != 0 )); then
+    exit "$retire_status"
+  fi
+  # A live game can outlast an accidentally stale intent file.  Only set it
+  # after the request has safely bound to one real harness, so a typo does not
+  # cause an idle host to start playing by itself.
+  set_intent running
+  say "  requested Civilization VI's visible Retire -> Yes path; no process was stopped"
+  say "  lane remains ON; after operator_retired is recorded, the supervisor starts the next game"
   ;;
 
 off)
@@ -312,6 +340,7 @@ off)
   fi
   say ""
   say "the launchd services stay loaded and honour the halt, so nothing restarts."
+  say "to end one active game but keep playing: civvis-games retire"
   say "turn on:  civvis-games on"
   ;;
 
@@ -368,10 +397,15 @@ status)
     found=$(pids_for "$pattern")
     printf '  %-22s %s\n' "$label" "${found:-—}"
   done
-  run=$(ls -td "$HOME"/civvis-civ6-runs/control/*/ 2>/dev/null | head -1)
+  run=$(ls -td "$RUN_ROOT"/*/ 2>/dev/null | head -1)
   if [[ -n $run && -f "$run/events.jsonl" ]]; then
     turn=$(grep -o '"turn": [0-9]*' "$run/events.jsonl" 2>/dev/null | tail -1 | tr -dc 0-9)
     say "  newest run           $(basename $run) (turn ${turn:-?}, $(stat -f %Sm "$run/events.jsonl"))"
+    if [[ -f "$run/operator-retire-request.json" && ! -f "$run/operator-retire.json" ]]; then
+      say "  retirement           requested — awaiting verified in-game Retire"
+    elif [[ -f "$run/operator-retire.json" ]]; then
+      say "  retirement           recorded — operator_retired"
+    fi
   fi
   say ""
   say "recent live-game wins (Firaxis Civ VI):"
@@ -388,7 +422,7 @@ wins)
   ;;
 
 *)
-  say "usage: civvis-games {on|off|status|wins [n]|ensure} [reason]"
+  say "usage: civvis-games {on|retire|off|status|wins [n]|ensure} [reason]"
   exit 64
   ;;
 esac
