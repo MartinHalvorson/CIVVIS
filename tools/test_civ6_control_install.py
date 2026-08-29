@@ -641,7 +641,26 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("local rung = ((closes - 1) % GIVE_UP_AFTER) + 1;", shim)
         self.assertIn("pcall(function() ended = endScreen(rung); end);", shim)
         self.assertNotIn("endScreen(closes)", shim)
-        self.assertIn("if closes >= DESKTOP_AFTER and not desktopReported then", shim)
+        # ⚠⚠⚠ THE DESKTOP ASK MUST REPEAT WHILE THE SCREEN IS STILL UP.
+        # It used to latch on a boolean cleared only when the screen went away
+        # — which is exactly what a screen needing help does not do. A leader
+        # conversation cannot be dismissed blind (Escape does nothing on it, and
+        # Escape with nothing to close opens the pause menu), so the desktop side
+        # must see the screen; that capture fails transiently, and one such
+        # failure ended the run because the ask never came again. Measured
+        # 2026-08-29, run civvis-20260829T093602Z: one `autoclose_desktop` for
+        # DiplomacyDealView at 4 attempts, "popup capture unavailable" back, and
+        # the game sat on a leader screen until the watchdog killed it at t40.
+        self.assertIn(
+            "if closes >= DESKTOP_AFTER and closes - desktopReportedAt >= DESKTOP_AFTER then",
+            shim,
+        )
+        self.assertIn("desktopReportedAt = closes;", shim)
+        # The reset arms it again for the next appearance, and nothing else may
+        # make it permanent: the declaration says "Giving up is a BACK-OFF,
+        # never a stop".
+        self.assertEqual(shim.count("desktopReportedAt = -1;"), 3)
+        self.assertNotIn("desktopReported =", shim.replace("desktopReportedAt =", ""))
         self.assertIn("if closes >= GIVE_UP_AFTER then", shim)
         for field in ('"rung":%d', '"mode":%d', '"session":%d', '"fading":%s', '"popup":%s'):
             self.assertIn(field, shim)
