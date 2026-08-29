@@ -25,6 +25,8 @@
 --      barbarian combat unit is held even with a synchronized single escort,
 --      while invisible, distant, and proven-scout-escort cases retain ordinary
 --      movement.
+--  14. A co-located combat escort queued in an earlier frame stays with an
+--      exposed Settler until the later Settler safety row is actuated.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -600,6 +602,24 @@ check("exposed combat leg retreats without a guard", ops(53), "UNITOPERATION_MOV
 check("exposed combat retreat identifies the threat", has(lastEvent("settler_capture_escape"), '"settler":53')
 	and has(lastEvent("settler_capture_escape"), '"sent":[1,1]'), true)
 check("exposed combat retreat is not counted as a hold", has(lastEvent("orders"), '"settler_barbarian_combat_capture_held":0'), true)
+
+-- A co-located guard can be queued in an earlier combat frame than the
+-- Settler's later safety row.  Keep that guard on the exposed current tile;
+-- otherwise it leaves first and the Settler is captured before its held row
+-- is even visible to the host bridge.
+reset()
+host.units[54] = { id = 54, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[55] = { id = 55, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[105] = { id = 105, kind = "UNIT_WARRIOR", x = 1, y = 3, moves = 0 }
+host.paths["55:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(55, "MOVE_TO", 2, 1) })
+check("earlier-frame guard stays with exposed settler", ops(55), "")
+check("earlier-frame guard hold names both units",
+	has(lastEvent("settler_barbarian_combat_guard_hold"), '"settler":54')
+	and has(lastEvent("settler_barbarian_combat_guard_hold"), '"guard":55'), true)
+check("earlier-frame guard hold is counted", has(lastEvent("orders"),
+	'"settler_barbarian_combat_guard_held":1'), true)
 
 -- A nearby guard that already has an unrelated order is deliberately not
 -- overwritten.  The conservative result is observable: no rescue event or

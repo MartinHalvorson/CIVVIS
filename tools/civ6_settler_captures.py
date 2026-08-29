@@ -62,7 +62,8 @@ WHY_MARCH = re.compile(r"Settler (?:marching to|HELD short of|takes the nearest 
 FLED_WORDS = re.compile(r"flees|fled|out of reach|sidesteps", re.IGNORECASE)
 ESCORT_KINDS = (
     "escort_cap_synced", "escort_cap_unresolved", "escort_shadow_injected",
-    "settler_barbarian_combat_guard_rescue", "settler_barbarian_combat_capture_hold",
+    "settler_barbarian_combat_guard_rescue", "settler_barbarian_combat_guard_hold",
+    "settler_barbarian_combat_capture_hold",
 )
 ORDER_KINDS = ("order_verified", "order_failed")
 TERMINAL_KINDS = ("defeat", "victory", "gameover")
