@@ -3015,6 +3015,15 @@ Each line names where to start.
    the `can_declare` permission fake can retire, and a casus-belli-typed
    declaration so the host fights the Formal War the board chose instead of
    a Surprise War.
+   What #2755 closed on the same seam, from the other side: the mod's own
+   strikes (`ATTACK`, `CAPTURE`, `RANGE_ATTACK`, the city and encampment
+   strikes) were requested without the `CombatManager.IsAttackChangeWarState`
+   question `WorldInput.lua:2067` asks before a human's attack, so a strike on
+   a city-state's unit — 21 of the 28 self-inflicted wars in 46 King runs —
+   drew its suzerain into a Suzerain War at 150 grievances with no `war`
+   order and no journal line. The bridge now asks and refuses
+   (`would_declare_war:<players>`, event `war_refused`); the agent's
+   `DIPLOMACY_DECLARE_WAR` order stays the only route to a war.
 2. ~~**The buildable and purchasable menus with costs.**~~ SHIPPED (#2595) —
    see "the host's production and purchase menus cross" above: `buildable`,
    `purchasable` and the queue tail cross per city, and the production and
