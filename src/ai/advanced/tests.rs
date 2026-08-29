@@ -38142,15 +38142,17 @@ fn a_settler_does_not_cross_scarred_ground_alone() {
 #[test]
 fn the_first_district_outranks_the_filler_under_the_gene() {
     let (mut game, city, _) = empire_with_a_capital(71_119);
-    game.players[0]
-        .techs
-        .extend([crate::name!("writing"), crate::name!("pottery"), crate::name!("mining")]);
+    game.players[0].techs.extend([
+        crate::name!("writing"),
+        crate::name!("pottery"),
+        crate::name!("mining"),
+    ]);
     game.cities.get_mut(&city).expect("capital").pop = 3;
     assert!(
         game.cities[&city].districts.is_empty(),
         "fixture: the capital holds no district yet"
     );
-    let owned: Vec<Pos> = game.cities[&city].owned_tiles.iter().copied().collect();
+    let owned: Vec<Pos> = game.cities[&city].owned_tiles.to_vec();
     let campus = owned
         .into_iter()
         .map(|pos| Item::District {
@@ -38180,7 +38182,10 @@ fn the_first_district_outranks_the_filler_under_the_gene() {
         on > off && on > 0.0,
         "the first Campus prices higher under the gene: off {off:.1}, on {on:.1}"
     );
-    assert!(game.cities[&city].queue.is_empty(), "fixture: an idle queue");
+    assert!(
+        game.cities[&city].queue.is_empty(),
+        "fixture: an idle queue"
+    );
     ai.advanced_production(&mut game, 0, &plan, false);
     let started = game.cities[&city].queue.first().cloned();
     assert!(
@@ -38210,7 +38215,8 @@ fn walls_wait_for_the_first_district_under_the_gene() {
     assert!(!ai.walls_after_districts, "the gene ships off");
     assert!(!AdvancedAi::legacy().walls_after_districts);
     assert!(
-        ai.base.barbarian_local_alarm_for_controller(&game, 0, remote),
+        ai.base
+            .barbarian_local_alarm_for_controller(&game, 0, remote),
         "fixture: the remote city is under a barbarian alarm"
     );
     assert_eq!(
@@ -38226,7 +38232,10 @@ fn walls_wait_for_the_first_district_under_the_gene() {
         Some(walls.clone()),
         "fixture: the pre-emption answers the alarm with Walls"
     );
-    assert!(game.cities[&remote].districts.is_empty(), "fixture: no district yet");
+    assert!(
+        game.cities[&remote].districts.is_empty(),
+        "fixture: no district yet"
+    );
     game.cities.get_mut(&remote).expect("remote").queue.clear();
     let plan = StrategicPlan {
         strategy: GrandStrategy::Expansion,
