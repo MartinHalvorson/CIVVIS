@@ -3121,6 +3121,20 @@ impl AdvancedAi {
         self.exhaustion_loyalty_guard = false;
     }
 
+    /// Once the empire holds three cities, no Settler starts while an owned
+    /// Settler has stood on one tile six turns; the same brake on the
+    /// `BasicAi` pipeline. See `AdvancedAi::settler_in_flight_allowed`.
+    pub fn enable_settler_backlog_brake(&mut self) {
+        self.settler_backlog_brake = true;
+        self.base.settler_backlog_brake = true;
+    }
+
+    /// The twin of `enable_settler_backlog_brake`.
+    pub fn disable_settler_backlog_brake(&mut self) {
+        self.settler_backlog_brake = false;
+        self.base.settler_backlog_brake = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

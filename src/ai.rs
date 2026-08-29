@@ -2938,6 +2938,13 @@ pub struct BasicAi {
     /// it off so their recorded ladders and the frozen `advanced_v1` rating
     /// anchor keep replaying the historical controller.
     pub(crate) settler_strand_discount: bool,
+    /// `settler-backlog-brake`: once the empire holds
+    /// `SETTLER_BACKLOG_MIN_CITIES` cities, no Settler may start while an
+    /// owned Settler has stood on one tile for `SETTLER_BACKLOG_IDLE_TURNS`
+    /// turns. The twin of `settler_strand_discount`, which OPENS the pipeline
+    /// for a replacement when a Settler parks — and the replacement then
+    /// refuses the same sites. See `parked_settlers`.
+    pub(crate) settler_backlog_brake: bool,
     /// Let a second Settler enter the pipeline while one is already walking,
     /// once the empire holds two cities and is still at least two short of
     /// its target. Set only through `AdvancedAi::enable_parallel_settlers`
@@ -4607,6 +4614,7 @@ impl BasicAi {
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
+            settler_backlog_brake: false,
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
@@ -5026,6 +5034,7 @@ impl BasicAi {
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
+            settler_backlog_brake: false,
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
@@ -8286,6 +8295,17 @@ impl BasicAi {
     /// settlers count.
     const STRANDED_SETTLER_TURNS: u32 = 12;
 
+    /// A Settler that has stood on one tile this many turns is parked for the
+    /// purpose of `settler-backlog-brake`: half the stranded threshold, so the
+    /// brake closes the queue before `stranded-settler-discount` opens it.
+    /// The King runs of 2026-08-27..29 started 21 Settlers behind one parked
+    /// ≥5 turns (16 behind one parked ≥12); only 7 of the 21 founded by t150.
+    pub(crate) const SETTLER_BACKLOG_IDLE_TURNS: u32 = 6;
+
+    /// The brake never touches the opening: below this many cities the first
+    /// Settlers keep their pace whatever a walker is doing.
+    pub(crate) const SETTLER_BACKLOG_MIN_CITIES: usize = 3;
+
     /// Advance each owned Settler's idle counter, once per turn.
     ///
     /// Position is the whole tell. A settler with a target it can reach moves
@@ -8294,7 +8314,9 @@ impl BasicAi {
     /// oscillating between two — and in all three cases it is not going to
     /// found a city on its own.
     fn refresh_settler_idle(&mut self, g: &Game, pid: usize) {
-        if !self.settler_strand_discount || self.settler_idle_turn == Some(g.turn) {
+        if !(self.settler_strand_discount || self.settler_backlog_brake)
+            || self.settler_idle_turn == Some(g.turn)
+        {
             return;
         }
         self.settler_idle_turn = Some(g.turn);
@@ -8356,6 +8378,13 @@ impl BasicAi {
         if !self.settler_strand_discount {
             return 0;
         }
+        self.parked_settlers(g, pid, Self::STRANDED_SETTLER_TURNS)
+    }
+
+    /// Owned Settlers that have stood on one tile for at least `min_idle`
+    /// consecutive turns, as `refresh_settler_idle` counts them. Ungated: the
+    /// callers gate on their own gene.
+    pub(crate) fn parked_settlers(&self, g: &Game, pid: usize, min_idle: u32) -> usize {
         g.player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
@@ -8365,7 +8394,7 @@ impl BasicAi {
                     && self
                         .settler_idle
                         .get(uid)
-                        .is_some_and(|(_, idle)| *idle >= Self::STRANDED_SETTLER_TURNS)
+                        .is_some_and(|(_, idle)| *idle >= min_idle)
             })
             .count()
     }
@@ -10861,7 +10890,14 @@ impl BasicAi {
             } else {
                 1
             };
-            let none_in_flight = settlers.saturating_sub(stranded) < pipeline;
+            // ★★★★ A PARKED SETTLER HOLDS THE PIPELINE, IT DOES NOT OPEN IT.
+            // `stranded-settler-discount` above subtracts a Settler idle
+            // twelve turns so its replacement may start — and the replacement
+            // refuses the same sites. See `settler_backlog_brake`.
+            let parked_brake = self.settler_backlog_brake
+                && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES
+                && self.parked_settlers(g, pid, Self::SETTLER_BACKLOG_IDLE_TURNS) > 0;
+            let none_in_flight = !parked_brake && settlers.saturating_sub(stranded) < pipeline;
             // ★★★★ THE HOST'S FLOOR, NOT THE GENOME'S. See `host_settler_pop`:
             // Civilization VI starts a Settler at population 2, and the live
             // genome's 2.456 held a food-poor capital at one city for forty
@@ -10894,7 +10930,9 @@ impl BasicAi {
                     why.push("already at the city target");
                 }
                 if !none_in_flight {
-                    why.push(if pipeline > 1 {
+                    why.push(if parked_brake {
+                        "a parked settler holds the pipeline"
+                    } else if pipeline > 1 {
                         "the settler pipeline is full"
                     } else {
                         "a settler is already in flight"
@@ -18362,6 +18400,64 @@ mod tests {
     /// `STRANDED_SETTLER_TURNS` consecutive motionless turns, and any real
     /// move must reset the streak so a genuinely walking settler keeps the
     /// gate closed exactly as before.
+    /// The brake's own idle count runs without the discount, trips at six
+    /// turns on one tile, and leaves the discount's twelve-turn stranded count
+    /// alone. Same board as the stranded test below.
+    #[test]
+    fn a_parked_settler_counts_for_the_brake_at_six_turns() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("STRANDED", 91_774),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+        let parked = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .find(|position| game.wdist(capital, *position) == 3)
+            .unwrap();
+        game.spawn_unit("settler", 0, parked);
+
+        let mut ai = BasicAi::new();
+        assert!(!ai.settler_backlog_brake, "the brake ships off");
+        ai.settler_backlog_brake = true;
+        ai.settler_strand_discount = false;
+        for turn in 1..=BasicAi::SETTLER_BACKLOG_IDLE_TURNS {
+            game.turn = turn;
+            ai.refresh_settler_idle(&game, 0);
+            assert_eq!(
+                ai.parked_settlers(&game, 0, BasicAi::SETTLER_BACKLOG_IDLE_TURNS),
+                0,
+                "turn {turn} is inside the brake's patience"
+            );
+        }
+        game.turn = BasicAi::SETTLER_BACKLOG_IDLE_TURNS + 1;
+        ai.refresh_settler_idle(&game, 0);
+        assert_eq!(
+            ai.parked_settlers(&game, 0, BasicAi::SETTLER_BACKLOG_IDLE_TURNS),
+            1,
+            "six turns on one tile is parked"
+        );
+        assert_eq!(
+            ai.stranded_settlers(&game, 0),
+            0,
+            "the discount is off, so nothing is stranded for it"
+        );
+    }
+
     #[test]
     fn a_settler_that_stops_walking_stops_blocking_the_next_one() {
         let mut game = Game::new_full(
