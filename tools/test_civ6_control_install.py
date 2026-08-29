@@ -348,8 +348,10 @@ class ProtectedInstallTest(unittest.TestCase):
             '<LuaContext>WonderBuiltPopup</LuaContext>',
             modinfo,
         )
-        wonder = closer.split('if NAME == "WonderBuiltPopup"', 1)[1].split(
-            "return false;", 1
+        # Anchor at the ladder rather than the clock declaration above it; the
+        # stale-diplomacy guard also has an intentional `return false`.
+        wonder = closer.split("local function endScreen(attempt)", 1)[1].split(
+            'if NAME == "InGamePopup"', 1
         )[0]
         # WonderBuiltPopup.lua's own OnClose drains queued wonders and unlocks
         # the exclusive popup manager; Close is the defensive fallback if a
@@ -428,6 +430,28 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("tonumber(cfg.DialogueSeconds) or 0.25", closer)
         self.assertIn("DESKTOP_AFTER = 4", closer)
         self.assertIn('report("autoclose_desktop"', closer)
+
+    def test_stale_diplomacy_contexts_use_a_sessionless_native_visibility_fallback(self) -> None:
+        """A visible, uninitialized Firaxis context must not trap a run."""
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        fallback = closer.split("local function closeStaleDiplomacyContext()", 1)[1].split(
+            "-- InGamePopup is the one context", 1
+        )[0]
+
+        for context in ("DiplomacyActionView", "DiplomacyDealView"):
+            self.assertIn(f'NAME ~= "{context}"', fallback)
+        self.assertIn("ms_ActiveSessionID ~= nil", fallback)
+        self.assertIn("DiplomacyManager.FindOpenSessionID", fallback)
+        self.assertIn("ContextPtr:IsHidden()", fallback)
+        self.assertIn("ContextPtr:SetHide(true)", fallback)
+        self.assertIn('report("autoclose_stale_hide"', fallback)
+
+        # The helper must run before the deal refusal ladder; otherwise a
+        # successful-but-no-op OnRefuseDeal pcall can return first forever.
+        self.assertLess(
+            closer.index("if closeStaleDiplomacyContext() then return true; end"),
+            closer.index("if type(OnRefuseDeal) == \"function\""),
+        )
 
     def test_spy_popups_clear_through_their_shipped_paths(self) -> None:
         """Spy overlays must disappear without leaving an end-turn decision behind."""

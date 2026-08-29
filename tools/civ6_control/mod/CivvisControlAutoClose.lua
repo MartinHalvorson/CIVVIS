@@ -211,6 +211,77 @@ end
 if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
 if not haveScreen() then pcall(function() include(NAME); end); end
 
+-- A stock diplomacy context can be visible before its own InitializeView has
+-- completed. In that state CloseFocusedState() calls Close(), but the stock
+-- UninitializeView() returns before ContextPtr:SetHide(true), so every native
+-- close path can report success while the context remains over the map. This
+-- is not a dialogue to answer: the action view has no active session, and the
+-- deal view has no open session to reject. Prove both facts, give the shipped
+-- close path one last chance, then hide only that stale, session-less context.
+-- A failed state read is treated as unsafe and leaves the desktop backstop in
+-- charge; this must never become a blind click equivalent.
+local function closeStaleDiplomacyContext()
+	if NAME ~= "DiplomacyActionView" and NAME ~= "DiplomacyDealView" then
+		return false;
+	end
+
+	local visible = false;
+	if not pcall(function() visible = not ContextPtr:IsHidden(); end) or not visible then
+		return false;
+	end
+
+	local sessionOpen = false;
+	local sessionReadable = true;
+	if NAME == "DiplomacyActionView" then
+		sessionReadable = pcall(function() sessionOpen = ms_ActiveSessionID ~= nil; end);
+	elseif g_OtherPlayer ~= nil then
+		-- DiplomacyDealView keeps the other-player handle global. If it is not
+		-- present there is no deal session to close; if it is present, require
+		-- Firaxis' own session lookup to prove that the session is gone.
+		sessionReadable = pcall(function()
+			local sessionID = DiplomacyManager.FindOpenSessionID(
+				Game.GetLocalPlayer(), g_OtherPlayer:GetID());
+			sessionOpen = sessionID ~= nil;
+		end);
+	end
+	if not sessionReadable or sessionOpen then return false; end
+
+	-- A visible native popup is still an actionable state. Let its own ladder
+	-- consume it instead of hiding its parent context underneath it. The action
+	-- view's popup handle is global in the shipped script; the deal view keeps
+	-- its handle local, so its session check above is the available proof.
+	if NAME == "DiplomacyActionView" and m_PopupDialog ~= nil then
+		local popupOpen = false;
+		local popupReadable = pcall(function() popupOpen = m_PopupDialog:IsOpen(); end);
+		if not popupReadable or popupOpen then return false; end
+	end
+
+	local nativeClose = false;
+	if NAME == "DiplomacyActionView" and type(Close) == "function" then
+		nativeClose = pcall(Close);
+	elseif NAME == "DiplomacyDealView" and type(OnContinue) == "function" then
+		nativeClose = pcall(OnContinue);
+	else
+		return false;
+	end
+
+	local hidden = false;
+	local hiddenReadable = pcall(function() hidden = ContextPtr:IsHidden(); end);
+	if not hiddenReadable then return false; end
+	if hidden then return true; end
+
+	-- The native path above is deliberately first: this branch is only for the
+	-- stock uninitialized-context bug, where UninitializeView returned false.
+	local hideCalled = pcall(function() ContextPtr:SetHide(true); end);
+	local hiddenAfterFallback = false;
+	local fallbackReadable = pcall(function() hiddenAfterFallback = ContextPtr:IsHidden(); end);
+	if hideCalled and fallbackReadable and hiddenAfterFallback then
+		report("autoclose_stale_hide", string.format(',"native_close":%s', tostring(nativeClose)));
+		return true;
+	end
+	return false;
+end
+
 -- InGamePopup is the one context here that renders more than one kind of
 -- thing. Every generic in-game dialog goes through it: "your unit has been
 -- captured", which has a single button and asks nothing, and "raze or keep
@@ -410,6 +481,7 @@ local function endScreen(attempt)
 		OnAccept();
 		return true;
 	end
+	if closeStaleDiplomacyContext() then return true; end
 	-- ⚠ THE MEET-A-NEW-CIV SCREEN NEEDS ITS OWN EXIT.
 	--
 	-- `OnClose`/`Close` do not clear a leader conversation, and the operator saw
