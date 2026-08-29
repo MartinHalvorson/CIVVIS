@@ -13,6 +13,8 @@
 --   4. UnitDamageChanged deltas inside an open combat are recorded;
 --   5. our unit leaving the map emits `unit_lost` with its last known kind
 --      and the treasury; another player's does not;
+--   5b. our unit TAKEN emits `unit_captured` naming the captor and whether it
+--      is the barbarians (`UnitCaptured.lua:8`); a unit we capture does not;
 --   6. a city changing hands emits `city_occupation`.
 --
 -- Run: lua5.1 tools/civ6_control/mod/combat_ledger_test.lua
@@ -77,7 +79,10 @@ CombatManager = {
 	end,
 }
 Players = setmetatable({}, { __index = function(_, pid)
-	return { GetTreasury = function() return { GetGoldBalance = function() return host.gold end } end }
+	return {
+		GetTreasury = function() return { GetGoldBalance = function() return host.gold end } end,
+		IsBarbarian = function() return pid == 63 end,
+	}
 end })
 Game = { GetLocalPlayer = function() return PID end, GetCurrentGameTurn = function() return 41 end }
 CityManager = {
@@ -160,6 +165,20 @@ ledger.onUnitRemoved(0, 7)
 local lost = lastEvent("unit_lost")
 check("unit_lost names the kind", has(lost, '"unit_kind":"UNIT_ARCHER"'), true)
 check("unit_lost carries the treasury", has(lost, '"gold":120'), true)
+
+-- 5b. Our settler is TAKEN by the barbarians: the game's own word, ours only.
+ledger.kinds["8"] = "UNIT_SETTLER"
+before = #LOG
+ledger.onUnitCaptured(63, 900, 63, 0)   -- we took theirs: not our loss
+check("a unit we capture is not our loss", #LOG, before)
+ledger.onUnitCaptured(0, 8, 0, 63)
+local captured = lastEvent("unit_captured")
+check("unit_captured names the kind", has(captured, '"unit_kind":"UNIT_SETTLER"'), true)
+check("unit_captured names the captor", has(captured, '"captor":63'), true)
+check("the captor is the barbarians", has(captured, '"captor_is_barbarian":true'), true)
+ledger.onUnitCaptured(0, 8, 0, 3)
+captured = lastEvent("unit_captured")
+check("a major's capture is not barbarian", has(captured, '"captor_is_barbarian":false'), true)
 
 -- 6. A city changes hands.
 ledger.onCityOccupationChanged(0, 5)

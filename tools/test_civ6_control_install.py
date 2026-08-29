@@ -740,6 +740,41 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("domestic_tourists = try(function()", block)
         self.assertIn("other:GetCulture():GetStaycationers();", block)
 
+    def test_unit_captured_is_registered_and_names_the_captor_for_our_units_only(self) -> None:
+        """A settler taken by the barbarians must be told apart from one founding a city.
+
+        `UnitRemovedFromMap` fires for both, and `unit_lost` reads the same for
+        both — 24 settlers went to the barbarians in ten runs on 2026-08-28 and
+        no ledger column could tell. The game's own word is
+        `Events.UnitCaptured(currentUnitOwner, unit, owningPlayer,
+        capturingPlayer)` (`Base/Assets/UI/Popups/UnitCaptured.lua:8`,
+        registered at `:49`, filtered on the local owner at `:11`). Assert the
+        registration and the handler's shape, not a sentence claiming them.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        registrations = source.split("function Initialize()", 1)[1].split(
+            "pcall(function() Events[name].Add(handler); end);", 1
+        )[0]
+        self.assertIn("UnitRemovedFromMap = CivvisLedger.onUnitRemoved,", registrations)
+        self.assertIn("UnitCaptured = CivvisLedger.onUnitCaptured,", registrations)
+
+        handler = source.split("CivvisLedger.onUnitCaptured = function(", 1)[1].split(
+            "\nend;", 1
+        )[0]
+        self.assertTrue(handler.startswith(
+            "currentUnitOwner, unitId, owningPlayer, capturingPlayer)"))
+        # Ours only, the way the shipped popup filters (`UnitCaptured.lua:11`).
+        self.assertIn("if tonumber(currentUnitOwner) ~= pid then return; end", handler)
+        self.assertIn('emit("unit_captured", {', handler)
+        for key in ("turn =", "unit = tonumber(unitId)",
+                    "unit_kind = CivvisLedger.kinds[tostring(unitId)]",
+                    "owner = tonumber(currentUnitOwner)", "captor = captor",
+                    "captor_is_barbarian = barbarian"):
+            self.assertIn(key, handler)
+        self.assertIn("Players[captor]:IsBarbarian()", handler)
+        # `unit_lost` stays: the capture event is a second witness, not a replacement.
+        self.assertIn('emit("unit_lost", {', source)
+
     def test_the_seat_event_names_the_hosts_victory_table(self) -> None:
         # The TeamVictory event reports a raw integer and docs/CIV6_LADDER.md
         # rightly refuses guessed names for it. The seat event now carries the
