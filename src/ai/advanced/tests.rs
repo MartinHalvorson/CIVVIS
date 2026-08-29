@@ -1824,6 +1824,31 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
         "the target may still establish its first city opening"
     );
 
+    // Once the small opening has two cities, an assigned Science lane owns
+    // the plan immediately. This catches the hostile-frontier case where a
+    // third settler can be stranded for many turns while the cities need
+    // Campuses.
+    let first_city = game.player_city_ids(0)[0];
+    let second_position = game
+        .map
+        .tiles
+        .iter()
+        .find(|(position, tile)| {
+            tile.owner_city.is_none()
+                && game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.wdist(**position, game.cities[&first_city].pos) >= 7
+        })
+        .map(|(position, _)| *position)
+        .unwrap();
+    game.found_city_for(0, second_position, None);
+    let two_city_handoff = ai.assess(&game, 0);
+    assert_eq!(
+        two_city_handoff.strategy,
+        GrandStrategy::Science,
+        "two cities are enough to end the Science opening"
+    );
+
     game.turn = game.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS);
     let handoff = ai.assess(&game, 0);
     assert_eq!(handoff.desired_cities, SCIENCE_CITY_TARGET_CAP);
