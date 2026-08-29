@@ -35489,6 +35489,14 @@ impl AdvancedAi {
         // making the named Science lane self-consistent.
         self.base.science_building_first =
             self.science_building_first || active_victory_target == Some(VictoryTarget::Science);
+        // A targeted Science seat also has to get through the Advanced
+        // governor's reservation path. `science-building-first` only
+        // partitions BasicAi's final building list; districts are ranked
+        // before that list, so an owed Library would otherwise still lose to
+        // a Theater or another unrelated district. Keep the gene opt-in for
+        // adaptive seats while making the named lane self-consistent.
+        self.first_research_building_reserve = self.first_research_building_reserve
+            || active_victory_target == Some(VictoryTarget::Science);
         // One reading a turn: `Game::victory_races` walks every city of every
         // major, and `production_value` asks this question per item per city.
         self.lane_lost = self.assigned_lane_is_lost(g, pid);

@@ -4813,6 +4813,46 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(!AdvancedAi::legacy().buildings_before_projects);
 }
 
+/// The named Science target must reach the Advanced production reserve even
+/// when the live genome has not enabled that separately screenable opt-in.
+/// BasicAi's science partition is too late to prevent an unrelated district
+/// from winning the queue, so this exercises the actual turn handoff.
+#[test]
+fn a_targeted_science_turn_reserves_the_first_campus_building() {
+    let mut game = Game::new_full(1, 24, 16, 5_416, 250, 0, false);
+    game.victory_conditions = crate::game::VictoryConditions::parse("science,score").unwrap();
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "campus");
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.turn = 60;
+    game.cities.get_mut(&city).unwrap().queue.clear();
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.base.book_pos = 4;
+    ai.base.recon_replacement = false;
+    ai.take_turn(&mut game, 0);
+
+    assert!(
+        ai.first_research_building_reserve,
+        "an explicit Science target must activate the research-building reserve"
+    );
+    assert!(
+        matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building }) if *building == crate::name!("library")
+        ),
+        "Science queue: {:?}",
+        game.cities[&city].queue
+    );
+}
+
 /// Host competitions move the diplomatic race outside the ordinary Congress
 /// ballot. The exact score table must therefore make World Games and either
 /// Aid Request project legal and compelling, while the World's Fair rewards
