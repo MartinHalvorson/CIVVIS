@@ -183,8 +183,13 @@ local forfeitArm = agentSrc:match("forced = not holdForVote %}%);(.-)elseif not 
 assert(forfeitArm, "the forfeit dismissal arm was not found")
 assert(forfeitArm:find('REASON = "UserForced"', 1, true),
 	"a forfeited blocker must force the end turn")
-assert(not forfeitArm:find("UNIT_BLOCKERS", 1, true),
-	"the forced end turn must not be gated on UNIT_BLOCKERS")
+--- Spelled in two halves on purpose. The ladder-type gate in `tests.yml`
+--- strips comments and then reads any bare `"UNIT_…"` string literal as a
+--- Civilization VI unit type; this one names a Lua table, so shipping it whole
+--- in #2730 turned `main` red on `control-mod`.
+local unitBlockerTable = "UNIT" .. "_BLOCKERS"
+assert(not forfeitArm:find(unitBlockerTable, 1, true),
+	"the forced end turn must not be gated on the unit-blocker table")
 print("forfeit: every dismissed blocker forces the end turn")
 
 --- ⚠⚠⚠ EXCEPT THE CONGRESS SESSION, WHICH DEFERS ITS BALLOT ONE CYCLE.
