@@ -19389,6 +19389,50 @@ fn live_capture_lessons_activate_guard_survival_when_the_screen_is_withheld() {
     assert!(!unsafe_controller.settler_guard_holds_on());
 }
 
+/// The HostOnly capture-lessons bridge can imply the guard-survival predicate
+/// even while the screenable `settler-guard-holds` field is withheld.  The
+/// full Settler step must therefore build its visibility frame through the
+/// family helper too; using the raw field leaves a healthy stacked guard on
+/// the tile, reaches `guard_outmatched_at`, and panics with `None.unwrap()`.
+#[test]
+fn live_capture_lessons_do_not_panic_on_a_healthy_stacked_guard() {
+    let (mut game, _city, home) = barbarian_field(71_308);
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let raider_at = game
+        .wdisk(start, 2)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("a visible raider post");
+    let target = game
+        .wdisk(start, 4)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("an open settlement target");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let guard = game.spawn_test_unit("warrior", 0, start);
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    assert!(!ai.settler_guard_holds);
+    assert!(ai.settler_guard_holds_on());
+    ai.settler_guards.insert(settler, guard);
+    ai.settler_targets.insert(settler, target);
+
+    // This exercises the complete production Settler path, including the
+    // guarded-here branch that calls `guard_outmatched_at`. It must return
+    // normally with the bound healthy guard still recognized as protection.
+    let _ = ai.advanced_settler_step(&mut game, 0, settler);
+    assert_eq!(ai.settler_guards.get(&settler), Some(&guard));
+}
+
 /// The emergency civilian pass must apply the same survival test before it
 /// summons a guard.  Otherwise it preferentially calls a nearer Trebuchet,
 /// then records the Settler as stacked even though the visible Line Infantry
