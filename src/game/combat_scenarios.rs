@@ -4936,6 +4936,7 @@ fn a_city_strike_refuses_a_plot_where_a_unit_we_are_at_peace_with_stands() {
     let target = ring[0];
     g.spawn_unit("warrior", 1, target);
     g.spawn_unit("trader", 2, target);
+    let strike = Action::CityStrike { city: cid, target };
 
     let offered = |g: &Game| {
         g.legal_actions(0)
@@ -4944,25 +4945,11 @@ fn a_city_strike_refuses_a_plot_where_a_unit_we_are_at_peace_with_stands() {
     };
     assert!(!offered(&g));
     assert_eq!(
-        g.apply(
-            0,
-            &Action::CityStrike {
-                city: cid,
-                target,
-            },
-        )
-        .unwrap_err(),
+        g.apply(0, &strike).unwrap_err(),
         "a unit we are at peace with stands there"
     );
 
     g.at_war.insert(pair(0, 2));
     assert!(offered(&g));
-    g.apply(
-        0,
-        &Action::CityStrike {
-            city: cid,
-            target,
-        },
-    )
-    .unwrap();
+    g.apply(0, &strike).unwrap();
 }
