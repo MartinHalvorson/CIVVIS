@@ -69,7 +69,8 @@ ORDER_KINDS = ("order_verified", "order_failed")
 TERMINAL_KINDS = ("defeat", "victory", "gameover")
 MECHANISMS = (
     "site-in-barbarian-nest", "barbarian-scout", "alone-in-fog", "weak-guard",
-    "held-beside-raider", "fled-into-reach", "unclassified",
+    "held-beside-raider", "fled-into-reach", "stranded-without-orders",
+    "unclassified",
 )
 
 
@@ -300,7 +301,9 @@ def _guard_of(data: RunData, uid, turn: int, pos, state_before: dict | None) -> 
 
 
 def classify(frames: dict, why_before: list[str], guard: dict | None,
-             site_hostile_seen: bool, camp_near_site: bool) -> tuple[str, list[str]]:
+             site_hostile_seen: bool, camp_near_site: bool,
+             orders: list[dict] | None = None,
+             uid: int | None = None) -> tuple[str, list[str]]:
     """Name the mechanism; the first match in the operator's order is the verdict.
 
     `frames` maps relative turn offset (-2, -1, 0) to a dict with `pos`,
@@ -336,6 +339,38 @@ def classify(frames: dict, why_before: list[str], guard: dict | None,
         matched.append("held-beside-raider")
     if any(FLED_WORDS.search(line) for line in why_before):
         matched.append("fled-into-reach")
+    # ⚠⚠⚠ THE SETTLER THAT WAS SIMPLY NEVER TOLD TO MOVE.
+    #
+    # Every mechanism above describes a settler doing something wrong — walking
+    # into a nest, holding beside a raider, fleeing into reach. None of them
+    # describes the settler that stood still because nothing asked it to move,
+    # so that capture landed as `unclassified` and the operator's rule ("every
+    # settler capture gets a forensic and a fix") got no answer at all.
+    #
+    # Measured 2026-08-29, run civvis-20260829T120711Z, settler 1441803 at
+    # t86 — reported `unclassified`, mechanisms matched: none:
+    #     t84 (10,36) moves 2 hold   hostiles within 3: none
+    #     t85 (10,36) moves 2 hold   UNIT_WARRIOR d=2
+    #     t86 (10,36) moves 2 hold   UNIT_WARRIOR d=1  -> captured
+    #     Orders (settler and guard): none in the window
+    # with `why.log` at t84 still saying "Settler marching to (-4,19)". The
+    # escort trail explains the silence: synced at t75, `escort_cap_unresolved`
+    # (`guard_has_order`) at t77, and nothing afterwards — nine turns idle.
+    #
+    # ⚠ It is none of the others by construction: the site was clean (no
+    # `site-in-barbarian-nest`), a hostile WAS in view at t-1 (no
+    # `alone-in-fog`), that hostile was at d=2 rather than d=1 (no
+    # `held-beside-raider`), and nothing was stacked with it (no `weak-guard`).
+    #
+    # Deliberately narrow: it fires only when the window holds NO order for the
+    # settler at all and the settler still had movement to spend. A settler that
+    # was ordered and refused is a different fault and keeps its own name.
+    if uid is not None and orders is not None:
+        told = any(order.get("subject") == uid or order.get("unit") == uid
+                   or order.get("settler") == uid for order in orders)
+        could_move = any((frame or {}).get("moves") for frame in frames.values())
+        if not told and could_move:
+            matched.append("stranded-without-orders")
     mechanism = matched[0] if matched else "unclassified"
     return mechanism, matched
 
@@ -399,7 +434,8 @@ def _dossier(data: RunData, uid, turn: int, method: str, extra: dict) -> dict:
         if WHY_KEYWORDS.search(line)
     ]
     why_before = data.why.get(seen_turn - 1, [])
-    mechanism, matched = classify(frames, why_before, guard, site_hostile_seen, camp_near_site)
+    mechanism, matched = classify(frames, why_before, guard, site_hostile_seen,
+                                  camp_near_site, orders, uid)
     nearest = (frames[0]["hostiles"] or frames[-1]["hostiles"] or [None])[0]
     return {
         "run": data.name, "turn": turn, "seen_turn": seen_turn, "unit": uid,
