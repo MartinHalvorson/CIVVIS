@@ -601,9 +601,9 @@ pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
 /// A named Science seat needs enough cities to support several Campuses and a
 /// couple of launch pads, but the live land-grab ceiling is a different
-/// objective. Eight cities keeps the research base broad without asking a
+/// objective. Six cities keeps the research base broad without asking a
 /// Science race to spend its opening on a sixteen-city settlement campaign.
-const SCIENCE_CITY_TARGET_CAP: usize = 8;
+const SCIENCE_CITY_TARGET_CAP: usize = 6;
 
 /// A Science seat may take the first two cities before its lane owns the plan.
 /// This is the small opening economy that makes the target viable; after it,
@@ -24475,6 +24475,7 @@ impl AdvancedAi {
             }
             Item::Wonder { wonder, .. } => {
                 let spec = &g.rules.wonders[wonder];
+                let science_target = self.victory_target == Some(VictoryTarget::Science);
                 let wonder_civ =
                     !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                 let already_queued = g.cities.values().any(|other| {
@@ -24554,7 +24555,8 @@ impl AdvancedAi {
                 // score production buys — fifteen points and an era-score
                 // moment — and the guards below were written for the
                 // ordinary race, not for a bargain.
-                let bargain_race = self.cheapest_wonder_first
+                let bargain_race = !science_target
+                    && self.cheapest_wonder_first
                     && self.live_wonder_race
                     && !lane_opens
                     && plan.strategy != GrandStrategy::Recovery
@@ -24562,16 +24564,17 @@ impl AdvancedAi {
                     && wonder_era + 2 >= g.world_era
                     && wonders_in_flight < Self::live_wonder_race_lanes(city_count).max(1)
                     && self.wonder_bargain_city(g, pid, cid);
-                let live_race_opens = bargain_race
-                    || (self.live_wonder_race
-                        && !lane_opens
-                        && plan.strategy != GrandStrategy::Recovery
-                        && city_count >= 3
-                        && city.buildings.len() >= 3
-                        && wonder_era + 2 >= g.world_era
-                        && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
-                        && (!self.cheapest_wonder_first
-                            || turns <= CHEAPEST_WONDER_LANE_MAX_TURNS));
+                let live_race_opens = !science_target
+                    && (bargain_race
+                        || (self.live_wonder_race
+                            && !lane_opens
+                            && plan.strategy != GrandStrategy::Recovery
+                            && city_count >= 3
+                            && city.buildings.len() >= 3
+                            && wonder_era + 2 >= g.world_era
+                            && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
+                            && (!self.cheapest_wonder_first
+                                || turns <= CHEAPEST_WONDER_LANE_MAX_TURNS)));
                 // See `strategic_wonder_value`. The lane the agent is actually
                 // trying to win is its target when it has one, and its plan's
                 // strategy when it does not — a targeted agent whose plan has
@@ -24627,6 +24630,7 @@ impl AdvancedAi {
                 // refused by one bar and handed a bonus by another — the
                 // mistake the `strategic_value` comment above records.
                 let tally_opens = self.wonder_score_tally
+                    && !science_target
                     && !lane_opens
                     && !live_race_opens
                     && plan.strategy != GrandStrategy::Recovery
