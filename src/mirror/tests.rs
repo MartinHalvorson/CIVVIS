@@ -7107,17 +7107,37 @@ fn the_economic_drift_is_reported_and_an_old_export_reads_as_unknown() {
 
     // ⚠⚠ PRODUCTION was exported by #845 and never deserialized, so it could not
     // appear here at all. It is the yield that decides what every city builds,
-    // and since #867 CIVVIS chooses that for every city every turn.
+    // and since #867 CIVVIS chooses that for every city every turn. The exact
+    // empire total is authoritative; the per-city `production` field is the
+    // build queue's whole-number accessor and must not be used as a yield total.
     assert!(
         !drift.contains("production"),
         "a city reporting no production figure must stay silent, not claim a \
              100% drift: {drift}"
     );
-    state.cities[0].production = 12.0;
+    state.cities[0].production = 99.0;
+    state.public_stats.production = Some(12.0);
     let drift = economy_drift(&recon.game, &state).expect("yields present");
     assert!(
         drift.contains("production 12.0/"),
-        "the game's own production leads, as science and culture do: {drift}"
+        "the exact empire production leads, as science and culture do: {drift}"
+    );
+    assert!(
+        !drift.contains("production 99.0/"),
+        "the queue production accessor must not masquerade as the city's yield: {drift}"
+    );
+
+    // Older exports may have exact city yields without the public aggregate.
+    // That fallback is valid only when every city is represented.
+    state.public_stats.production = None;
+    state.cities[0].yields = Some(crate::rules::Yields {
+        production: 12.0,
+        ..Default::default()
+    });
+    let drift = economy_drift(&recon.game, &state).expect("yields present");
+    assert!(
+        drift.contains("production 12.0/"),
+        "exact per-city yields are a safe fallback when the aggregate is absent: {drift}"
     );
 }
 
