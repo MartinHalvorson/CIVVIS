@@ -92,6 +92,8 @@ behaviour changes under them.
 | 2 | "holds inside a barbarian's reach — no reachable tile is better": standing still beside a skirmisher, two tiles from a full-health archer (run `civvis-20260829T022749Z`, t78) | `live-settler-capture-lessons` (2): with no safe tile, a tile one of our military units holds outranks every bare tile — the settler walks onto it and binds that unit as its guard — and standing still loses to any tile farther from the nearest raider |
 | 2 | "flees … out of reach" to a tile the raider reached anyway | open: the mirror's movement flood disagreed with the host's; the dossiers carry both positions for the next reading |
 
+The first capture recorded after the treatments shipped (`civvis-20260829T022749Z`, t104) was a repeat of that run's t78 loss on the **same site**: the guard was released at t103 on the tile of the t78 capture ("no visible hostile within 8 tiles"), and the next settler was taken two tiles short. Two more rules under `live-settler-capture-lessons`: **(5)** a guard is not released while the settler stands on scarred ground, at either release site; **(6)** the route step onto scarred ground is refused alone — a guard is summoned and walks in stacked, else the settler sidesteps onto unscarred ground, else it waits ("Settler will not cross the ground that took a settler alone"). Tests: `a_guard_is_not_released_on_ground_that_took_a_settler`, `a_settler_does_not_cross_scarred_ground_alone`.
+
 Tests: `a_barbarian_scout_is_a_capture_threat_on_the_live_seat`,
 `a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons`,
 `a_lost_settler_retires_the_ground_around_it_for_every_settler`,

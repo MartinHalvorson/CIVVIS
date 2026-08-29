@@ -37325,3 +37325,113 @@ fn the_strongest_guard_that_can_reach_the_settler_is_summoned_under_the_lessons(
         "live: the strongest"
     );
 }
+
+/// Run civvis-20260829T022749Z, t103: "The settler's guard stands down — no
+/// visible hostile within 8 tiles" on the tile where a settler had been taken
+/// at t78; the next settler was taken at t104. Under the lessons the ground
+/// that took a settler is not quiet because nothing is visible on it today.
+#[test]
+fn a_guard_is_not_released_on_ground_that_took_a_settler() {
+    let (mut game, _city, home) = barbarian_field(71_305);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let warrior = game.spawn_test_unit("warrior", 0, start);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.settler_guards.insert(settler, warrior);
+    let reach = live.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.is_empty(),
+        "nothing is visible: the old rule would release"
+    );
+
+    let until = game.turn + 100;
+    for tile in game.wdisk(start, 3) {
+        live.settler_capture_scars.insert(tile, until);
+    }
+    live.release_guard_if_quiet(&game, 0, settler, &reach);
+    assert_eq!(
+        live.settler_guards.get(&settler),
+        Some(&warrior),
+        "the guard stays on the ground that took a settler"
+    );
+
+    live.settler_capture_scars.clear();
+    live.release_guard_if_quiet(&game, 0, settler, &reach);
+    assert!(
+        !live.settler_guards.contains_key(&settler),
+        "quiet, unscarred ground releases it as before"
+    );
+}
+
+/// Run civvis-20260829T022749Z, t103–t104: the next settler marched alone
+/// toward the site that had cost the last one and was taken two tiles short.
+/// Under the lessons the ground within three tiles of a capture is entered
+/// only with a guard stacked; alone, the settler waits for one.
+#[test]
+fn a_settler_does_not_cross_scarred_ground_alone() {
+    let (mut game, _city, home) = barbarian_field(71_306);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let target = game
+        .wdisk(start, 3)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 3 && game.wdist(*pos, home) >= 4 && open_land(&game, *pos)
+        })
+        .expect("a site three tiles from the settler, away from home");
+    let settler = game.spawn_test_unit("settler", 0, start);
+
+    let mut native = AdvancedAi::new();
+    native.enable_civilian_out_of_reach();
+    let mut rehearsal = game.clone();
+    assert!(
+        native.settler_step_out_of_reach(&mut rehearsal, 0, settler, target),
+        "off, the quiet march proceeds"
+    );
+    assert!(rehearsal.units[&settler].pos != start);
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let until = game.turn + 100;
+    for tile in game.wdisk(target, 3) {
+        live.settler_capture_scars.insert(tile, until);
+    }
+    assert!(
+        !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "alone, it will not step onto scarred ground"
+    );
+    assert_eq!(game.units[&settler].pos, start, "it waits where it stands");
+
+    // A guard that can reach it this turn is summoned, and the pair walks in.
+    let beside = game
+        .wdisk(start, 1)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 1 && game.wdist(*pos, target) >= 3 && open_land(&game, *pos)
+        })
+        .expect("a tile beside the settler, away from the site");
+    let warrior = game.spawn_test_unit("warrior", 0, beside);
+    assert!(
+        live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "with a guard it marches"
+    );
+    let now = game.units[&settler].pos;
+    assert!(now != start, "the settler stepped");
+    assert_eq!(
+        live.settler_guards.get(&settler),
+        Some(&warrior),
+        "bound on the way in"
+    );
+    assert_eq!(
+        game.units[&warrior].pos, now,
+        "and the guard stands with it"
+    );
+}
