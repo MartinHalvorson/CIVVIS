@@ -34,6 +34,16 @@ local cfg = CivvisControlConfig or {};
 -- read" is a judgement about the person watching, not a fact about the game.
 local SECONDS = tonumber(cfg.AnnouncementSeconds) or 1.0;
 
+-- WonderBuiltPopup has two stock alpha tracks and two stock slide tracks. The
+-- longest stock track is configured at `.5` seconds, while the generic
+-- announcement clock is deliberately much shorter on climb runs. Never let
+-- that generic clock cut the wonder reveal off before its animation has a
+-- chance to finish. The one-second floor covers the animation's first frames;
+-- the animation state below remains authoritative after that. A hard upper
+-- bound still keeps a broken animation from covering the map forever.
+local WONDER_MIN_SECONDS = 1.0;
+local WONDER_ANIMATION_TIMEOUT_SECONDS = 8.0;
+
 -- Dialogue is a blocker, not a readable announcement. Keep the configured
 -- value bounded even when an older launcher or a hand-written config supplies
 -- something slower. The pixel backstop uses the same budget independently.
@@ -105,6 +115,9 @@ if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
 -- is also why `NAME` has to be declared above: `ERA_SCREENS[nil]` reads as nil
 -- without complaint, which is how the era clock went a whole project unapplied.
 if END_SCREENS[NAME] then SECONDS = END_SECONDS; end
+if NAME == "WonderBuiltPopup" then
+	SECONDS = math.max(SECONDS, WONDER_MIN_SECONDS);
+end
 -- Leader/deal views are interactive overlays rather than readable completion
 -- cards. When one refuses its first exit path we need to reach the later response
 -- rungs promptly; twenty one-second probes left a real leader screen up for twenty
@@ -576,6 +589,7 @@ else
 	local remaining = 0;
 	local shown = 0;
 	local closes = 0;
+	local wonderAnimationWaitReported = false;
 	-- Whether this screen's failure has already been reported. Giving up is a
 	-- BACK-OFF, never a stop -- see the end of `tick` for why nothing here may
 	-- be permanent.
@@ -642,12 +656,37 @@ else
 		return true;
 	end
 
+	-- WonderBuiltPopup's stock XML exposes the four tracks that make up the
+	-- reveal. Return a second value saying whether the controls were readable;
+	-- a known-running animation is given the full timeout, while an
+	-- absent/incompatible control gets the same bounded fallback so one bad UI
+	-- build cannot cover the map forever.
+	local function wonderAnimationReady()
+		if Controls == nil or Controls.HeaderAlpha == nil
+				or Controls.HeaderSlide == nil or Controls.QuoteAlpha == nil
+				or Controls.QuoteSlide == nil then
+			return false, false;
+		end
+		local animations = {
+			Controls.HeaderAlpha, Controls.HeaderSlide,
+			Controls.QuoteAlpha, Controls.QuoteSlide,
+		};
+		for _, animation in ipairs(animations) do
+			local stopped = nil;
+			local readable = pcall(function() stopped = animation:IsStopped(); end);
+			if not readable or type(stopped) ~= "boolean" then return false, false; end
+			if not stopped then return false, true; end
+		end
+		return true, true;
+	end
+
 	local function tick(fDTime)
 		if not isUp() then
 			showing = false;
 			closes = 0;
 			reported = false;
 			desktopReported = false;
+			wonderAnimationWaitReported = false;
 			return;
 		end
 		if not showing then
@@ -673,6 +712,28 @@ else
 			-- closer rung while the shipped controls are still transitioning.
 			remaining = DIALOGUE_READY_RETRY_SECONDS;
 			return;
+		end
+		local wonderAnimationReadyAtClose = true;
+		local wonderAnimationTimedOut = false;
+		if NAME == "WonderBuiltPopup" then
+			local ready, stateKnown = wonderAnimationReady();
+			if not ready then
+				if shown < WONDER_ANIMATION_TIMEOUT_SECONDS then
+					if not wonderAnimationWaitReported then
+						wonderAnimationWaitReported = true;
+						report("autoclose_wait_animation", string.format(
+							',"minimum":%.2f,"timeout":%.2f,"state_known":%s',
+							WONDER_MIN_SECONDS, WONDER_ANIMATION_TIMEOUT_SECONDS,
+							tostring(stateKnown)));
+					end
+					remaining = DIALOGUE_READY_RETRY_SECONDS;
+					return;
+				end
+				-- The controls could not report their state. Dismiss rather than
+				-- leave an unreadable modal over the game indefinitely.
+				wonderAnimationReadyAtClose = false;
+				wonderAnimationTimedOut = true;
+			end
 		end
 
 		-- Re-armed before the close, not after: a screen with more
@@ -755,8 +816,15 @@ else
 		if NAME == "InGamePopup" then
 			detail = detail .. string.format(',"buttons":"%s"', dialogButtons);
 		end
-		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s%s',
-		                                  upFor, tostring(ended), tostring(gone), detail));
+		local animationDetail = "";
+		if NAME == "WonderBuiltPopup" then
+			animationDetail = string.format(
+				',"animation_ready":%s,"animation_timeout":%s',
+				tostring(wonderAnimationReadyAtClose), tostring(wonderAnimationTimedOut));
+		end
+		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s%s%s',
+		                                  upFor, tostring(ended), tostring(gone),
+		                                  animationDetail, detail));
 		-- ★★★★★ A CLOSE THAT WORKED MUST CLEAR THE COUNTER HERE, NOT LATER.
 		--
 		-- `closes` is meant to count consecutive FAILURES, and the `not isUp()`
