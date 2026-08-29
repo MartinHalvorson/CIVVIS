@@ -37096,7 +37096,10 @@ fn a_barbarian_scout_is_a_capture_threat_on_the_live_seat() {
 
     let mut native = AdvancedAi::new();
     native.enable_civilian_out_of_reach();
-    assert!(!native.live_barbarian_scouts_capture, "off for every native board");
+    assert!(
+        !native.live_barbarian_scouts_capture,
+        "off for every native board"
+    );
     assert!(
         native.barbarian_reach(&game, 0, start, 10).is_empty(),
         "a native barbarian scout is not a raider"
@@ -37162,7 +37165,10 @@ fn a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     let reach = live.barbarian_reach(&game, 0, start, 10);
-    assert!(reach.covers(&game, start), "the settler stands inside the horseman's reach");
+    assert!(
+        reach.covers(&game, start),
+        "the settler stands inside the horseman's reach"
+    );
     assert!(
         reach.covers(&game, cover_at),
         "the fixture leaves no safe tile: four moves on flat ground cover everything \
@@ -37207,13 +37213,20 @@ fn a_lost_settler_retires_the_ground_around_it_for_every_settler() {
     // The rebuilt board no longer carries the settler: nothing maps to it.
     game.remove_unit(taken);
     live.remap_unit_memory(&BTreeMap::new());
-    assert_eq!(live.settler_vanished, vec![far], "its last position waits for the turn");
+    assert_eq!(
+        live.settler_vanished,
+        vec![far],
+        "its last position waits for the turn"
+    );
     assert!(live.settler_last_seen.is_empty());
 
     let taken_turn = game.turn;
     live.resolve_vanished_settlers(&game, 0);
     let fresh = game.spawn_test_unit("settler", 0, home);
-    assert!(live.settler_site_is_dead(fresh, far), "the ground that took it is dead");
+    assert!(
+        live.settler_site_is_dead(fresh, far),
+        "the ground that took it is dead"
+    );
     let inside = game
         .wdisk(far, 3)
         .into_iter()
@@ -37224,7 +37237,10 @@ fn a_lost_settler_retires_the_ground_around_it_for_every_settler() {
         .into_iter()
         .find(|pos| game.wdist(*pos, far) == 4)
         .expect("a tile four out");
-    assert!(live.settler_site_is_dead(fresh, inside), "and three tiles around it");
+    assert!(
+        live.settler_site_is_dead(fresh, inside),
+        "and three tiles around it"
+    );
     assert!(!live.settler_site_is_dead(fresh, beyond), "but not four");
     assert!(live.settler_vanished.is_empty(), "resolved once");
 
@@ -37233,7 +37249,10 @@ fn a_lost_settler_retires_the_ground_around_it_for_every_settler() {
     assert!(live.settler_site_is_dead(fresh + 1000, far));
     game.turn = taken_turn + game.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS) + 1;
     live.resolve_vanished_settlers(&game, 0);
-    assert!(!live.settler_site_is_dead(fresh + 1000, far), "thirty standard turns later it is ground again");
+    assert!(
+        !live.settler_site_is_dead(fresh + 1000, far),
+        "thirty standard turns later it is ground again"
+    );
 
     // A settler that founded where it stood is not a loss.
     let founder = game.spawn_test_unit("settler", 0, far);
@@ -37273,13 +37292,16 @@ fn the_strongest_guard_that_can_reach_the_settler_is_summoned_under_the_lessons(
     let farther = game
         .wdisk(start, 2)
         .into_iter()
-        .find(|pos| game.wdist(*pos, start) == 2 && game.wdist(*pos, near) == 3 && open_land(&game, *pos))
+        .find(|pos| {
+            game.wdist(*pos, start) == 2 && game.wdist(*pos, near) == 3 && open_land(&game, *pos)
+        })
         .expect("a tile two from the settler");
     let settler = game.spawn_test_unit("settler", 0, start);
     let archer = game.spawn_test_unit("archer", 0, near);
     let warrior = game.spawn_test_unit("warrior", 0, farther);
     assert!(
-        game.unit_strength(&game.units[&warrior], false) > game.unit_strength(&game.units[&archer], false),
+        game.unit_strength(&game.units[&warrior], false)
+            > game.unit_strength(&game.units[&archer], false),
         "the fixture's warrior is the stronger body"
     );
 
@@ -37287,11 +37309,19 @@ fn the_strongest_guard_that_can_reach_the_settler_is_summoned_under_the_lessons(
     let mut native = AdvancedAi::new();
     native.enable_civilian_out_of_reach();
     assert!(native.summon_guard_to(&mut game, 0, settler, start));
-    assert_eq!(native.settler_guards.get(&settler), Some(&archer), "native: the nearest");
+    assert_eq!(
+        native.settler_guards.get(&settler),
+        Some(&archer),
+        "native: the nearest"
+    );
 
     let mut fresh = pristine;
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.summon_guard_to(&mut fresh, 0, settler, start));
-    assert_eq!(live.settler_guards.get(&settler), Some(&warrior), "live: the strongest");
+    assert_eq!(
+        live.settler_guards.get(&settler),
+        Some(&warrior),
+        "live: the strongest"
+    );
 }
