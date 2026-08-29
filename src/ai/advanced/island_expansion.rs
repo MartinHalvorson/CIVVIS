@@ -47,7 +47,7 @@ impl AdvancedAi {
             .filter(|(pos, _)| Some(*pos) != avoid)
             .filter(|(pos, _)| !self.settler_site_is_dead(uid, *pos))
             .filter(|(pos, _)| {
-                !self.settler_threat_detour || !self.settler_threat_deferrals.contains_key(pos)
+                !self.settler_threat_detour_on() || !self.settler_threat_deferrals.contains_key(pos)
             })
             .filter(|(pos, _)| {
                 !self

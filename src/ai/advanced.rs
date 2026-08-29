@@ -24906,8 +24906,28 @@ impl AdvancedAi {
         self.settler_guard_holds || self.settler_guard_holds_2
     }
 
+    /// The live bridge's host safety layer can refuse a Settler's next leg
+    /// even when the native route scorer discounts a stacked escort.  Keep a
+    /// bounded route-recovery policy active for that bridge-only case: the
+    /// capture-lessons treatment already identifies the host's civilian
+    /// semantics, while `settlement_safety` keeps the repair out of the
+    /// historical and evaluator controllers.
+    pub(super) fn settler_routing_recovery_on(&self) -> bool {
+        self.live_settler_capture_lessons && self.settlement_safety
+    }
+
+    pub(super) fn settler_threat_detour_on(&self) -> bool {
+        self.settler_threat_detour || self.settler_routing_recovery_on()
+    }
+
     fn settler_target_hysteresis_on(&self) -> bool {
-        self.settler_target_hysteresis || self.settler_target_hysteresis_2
+        self.settler_target_hysteresis
+            || self.settler_target_hysteresis_2
+            // The deployment bridge's watchdog (`settler-never-idles`) is
+            // the bounded recovery owner.  Keeping this conjunct means a
+            // screen's explicit hysteresis-withholding arm remains a true
+            // ablation even when it enables the broader live universe.
+            || (self.settler_never_idles && self.settler_routing_recovery_on())
     }
 
     fn guard_outmatched_at(
@@ -26091,7 +26111,7 @@ impl AdvancedAi {
             .filter(|(position, _)| {
                 Some(*position) != avoid
                     && !self.settler_site_is_dead(uid, *position)
-                    && (!self.settler_threat_detour
+                    && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(position))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *position)
             })
@@ -26322,8 +26342,18 @@ impl AdvancedAi {
         let visible = self.battlefront_visibility(g, pid);
         match g.route_step(uid, target, 0) {
             Some(next) => {
-                self.settlement_tile_risk(g, pid, Some(uid), next, &visible)
-                    > SETTLER_STEP_RISK_LIMIT
+                // The host bridge refuses a visible hostile leg even when a
+                // stacked guard would make that destination safe in the
+                // native model.  Price the live recovery probe without the
+                // escort discount so it can defer the same leg the host will
+                // hold, while native/evaluator detours retain their original
+                // support-aware semantics.
+                let risk = if self.settler_routing_recovery_on() {
+                    self.settlement_tile_risk_with_support(g, pid, Some(uid), next, &visible, false)
+                } else {
+                    self.settlement_tile_risk(g, pid, Some(uid), next, &visible)
+                };
+                risk > SETTLER_STEP_RISK_LIMIT
             }
             None => {
                 zoc_stopped
@@ -26345,7 +26375,7 @@ impl AdvancedAi {
         uid: u32,
         target: Pos,
     ) -> Option<Pos> {
-        if !self.settler_threat_detour
+        if !self.settler_threat_detour_on()
             || !self.settler_target_has_visible_route_threat(g, pid, uid, target)
         {
             return None;
@@ -26934,7 +26964,7 @@ impl AdvancedAi {
         if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
             sites.retain(|_, until| *until > g.turn);
         }
-        if self.settler_threat_detour {
+        if self.settler_threat_detour_on() {
             self.settler_threat_deferrals
                 .retain(|_, until| *until > g.turn);
         }
@@ -27133,7 +27163,7 @@ impl AdvancedAi {
                         .owner_city
                         .is_none_or(|cid| g.cities[&cid].owner == pid)
                     && !self.settler_site_is_dead(uid, *target)
-                    && (!self.settler_threat_detour
+                    && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(target))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *target)
                     && (*target == current || g.route_step(uid, *target, 0).is_some())
@@ -27184,7 +27214,7 @@ impl AdvancedAi {
                                     )
                                     .filter(|(pos, _)| {
                                         !self.settler_site_is_dead(uid, *pos)
-                                            && (!self.settler_threat_detour
+                                            && (!self.settler_threat_detour_on()
                                                 || !self.settler_threat_deferrals.contains_key(pos))
                                             && !self
                                                 .settler_target_reserved_by_other(g, pid, uid, *pos)
@@ -27311,7 +27341,7 @@ impl AdvancedAi {
             }
             // `commitment_patience`: a threat is a hold, not a drop — the
             // ledger retires the site if the hold outlasts its patience.
-            if self.settler_threat_detour
+            if self.settler_threat_detour_on()
                 && !self.commitment_patience
                 && self.settler_threat_deferrals.contains_key(&target)
             {
