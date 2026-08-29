@@ -14181,6 +14181,7 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         settler_scout_capture_held = 0,
 	                         settler_scout_guard_held = 0,
 	                         settler_barbarian_combat_capture_held = 0,
+	                         settler_barbarian_combat_guard_held = 0,
 	                         settler_barbarian_combat_guard_rescued = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
@@ -14191,6 +14192,7 @@ CivvisBoard.reset = function()
 	                     settler_scout_capture_held = 0,
 	                     settler_scout_guard_held = 0,
 	                     settler_barbarian_combat_capture_held = 0,
+	                     settler_barbarian_combat_guard_held = 0,
 	                     settler_barbarian_combat_guard_rescued = 0 };
 	CivvisBoard.escortHolds = {};
 end;
@@ -14747,6 +14749,40 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 		return false, nil;
 	end;
 
+	-- A combat escort can be issued in an earlier replan frame than its
+	-- Settler.  If the Settler is already standing inside a visible combat
+	-- threat, letting that escort leave in the earlier frame exposes the
+	-- civilian before the later Settler row can be held.  Remember which
+	-- Settlers have a row in this frame: an exposed Settler with no row is
+	-- waiting, so a co-located escort must stay; an exposed Settler with a row
+	-- is handled below by the leg hold/escape decision.
+	local exposedSettlers, currentSettlerRows = {}, {};
+	for _, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO" then
+			local id = tonumber(row.subject);
+			if id ~= nil then
+				local unit = liveUnit(pid, id);
+				if unit ~= nil and unitTypeName(unit) == "UNIT_SETTLER" then
+					currentSettlerRows[id] = row;
+				end
+			end
+		end
+	end
+	eachUnit(player, function(unit)
+		if unitTypeName(unit) ~= "UNIT_SETTLER" then return; end
+		local id = tonumber(try(function() return unit:GetID(); end, nil));
+		local x = tonumber(try(function() return unit:GetX(); end, nil));
+		local y = tonumber(try(function() return unit:GetY(); end, nil));
+		if id == nil or x == nil or y == nil then return; end
+		for _, threat in ipairs(threats) do
+			local reaches = threatReaches(threat, x, y);
+			if reaches then
+				exposedSettlers[id] = { x = x, y = y, threat = threat };
+				break;
+			end
+		end
+	end);
+
 	local held = {};
 	for _, row in ipairs(rows) do
 		local settlerId = tonumber(row.subject);
@@ -14809,6 +14845,44 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 				});
 				held[settlerId] = nil;
 			end
+		end
+	end
+	-- Keep a co-located combat escort from leaving an exposed Settler in an
+	-- earlier frame.  The Settler and escort can be queued in different frames
+	-- (for example, the escort at frame 1 and the Settler's held retreat at
+	-- frame 2), so the normal matching-row check below cannot see both at once.
+	-- Only a MOVE_TO is shadow-held: an attack or other combat action may clear
+	-- the threat, while an unrelated move would abandon the civilian before the
+	-- next host export.  A Settler with a same-frame row is held here only when
+	-- that row remains in `held`; a proven safe escape does not freeze its escort.
+	for settlerId, exposed in pairs(exposedSettlers) do
+		if currentSettlerRows[settlerId] == nil or held[settlerId] ~= nil then
+			eachUnit(player, function(candidate)
+				local guardId = tonumber(try(function() return candidate:GetID(); end, nil));
+				local guardX = tonumber(try(function() return candidate:GetX(); end, nil));
+				local guardY = tonumber(try(function() return candidate:GetY(); end, nil));
+				if guardId == nil or guardId == settlerId or guardX ~= exposed.x
+						or guardY ~= exposed.y or not CivvisBoard.isCombatEscort(candidate) then
+					return;
+				end
+				for _, row in ipairs(rows) do
+					if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+							and tonumber(row.subject) == guardId
+							and row._civvis_settler_barbarian_combat_hold ~= true then
+						row._civvis_settler_barbarian_combat_hold = true;
+						CivvisBoard.escortHolds[guardId] = true;
+						CivvisBoard.stats.settler_barbarian_combat_guard_held =
+							CivvisBoard.stats.settler_barbarian_combat_guard_held + 1;
+						emit("settler_barbarian_combat_guard_hold", {
+							turn = turn, settler = settlerId, guard = guardId,
+							at = { exposed.x, exposed.y }, hostile = exposed.threat.id,
+							hostile_type = exposed.threat.name,
+							hostile_pos = { exposed.threat.x, exposed.threat.y },
+						});
+						break;
+					end
+				end
+			end);
 		end
 	end
 	for settlerId, heldLeg in pairs(held) do
@@ -15483,6 +15557,11 @@ local function applyOrders(player, pid, turn, rows)
 		-- matching legs are held instead of counting the guard as coverage.
 		settler_barbarian_combat_capture_held =
 			CivvisBoard.stats.settler_barbarian_combat_capture_held,
+		-- A co-located guard was queued in an earlier frame while its exposed
+		-- Settler had no row yet; keep that guard from leaving before the later
+		-- Settler safety decision is actuated.
+		settler_barbarian_combat_guard_held =
+			CivvisBoard.stats.settler_barbarian_combat_guard_held,
 		-- A nearby unmentioned combat unit was moved onto a held settler's
 		-- current tile when the host could prove the rescue leg this turn.
 		settler_barbarian_combat_guard_rescued =
