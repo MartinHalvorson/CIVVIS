@@ -11660,6 +11660,42 @@ impl AdvancedAi {
             .map(|(_, name)| *name)
     }
 
+    /// Claim owed Campus-family buildings before the ancillary reservation
+    /// passes can fill an idle city with an Envoy district, Aerodrome, or
+    /// another unrelated one-off. The ordinary Advanced production reserve is
+    /// intentionally later in the turn; this narrow early pass exists only
+    /// for an explicit Science target and preserves the same cheapest-rung
+    /// ordering in every city that already owns a Campus.
+    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize) {
+        for cid in g.player_city_ids(pid) {
+            if !g.cities[&cid].queue.is_empty() {
+                continue;
+            }
+            let Some(building) = Self::first_owed_campus_building(g, pid, cid) else {
+                continue;
+            };
+            let item = Item::Building { building };
+            if !g.can_produce(pid, cid, &item)
+                || g.apply(
+                    pid,
+                    &Action::Produce {
+                        city: cid,
+                        item: item.clone(),
+                    },
+                )
+                .is_err()
+            {
+                continue;
+            }
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let city_name = g.cities[&cid].name.clone();
+                think!(self.journal(), Research, Decision,
+                    "{} reserves {} for the Science lane", city_name, Self::plain_item(&item);
+                    "the Campus chain is owed before ancillary production claims this idle queue");
+            }
+        }
+    }
+
     fn chain_horizon(&self, g: &Game, rung: ChainRung) -> f64 {
         let payback = match rung {
             ChainRung::Building => self.chain_payback_window || self.chain_payback_window_2,
@@ -35711,6 +35747,12 @@ impl AdvancedAi {
                 // only if the empire is still short of its city plan.
                 self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
                 self.redirect_repeatable_projects_for_settlement_gap(g, pid, &plan);
+            }
+            if active_victory_target == Some(VictoryTarget::Science) {
+                // The named research chain owns an idle Campus city before
+                // ancillary reservations such as Envoy infrastructure, so a
+                // one-off district cannot hide the Library/University debt.
+                self.reserve_targeted_research_buildings(g, pid);
             }
             // Reserve one reachable diplomatic stage before baseline queues fill.
 

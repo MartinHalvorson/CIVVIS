@@ -4819,8 +4819,15 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
 /// from winning the queue, so this exercises the actual turn handoff.
 #[test]
 fn a_targeted_science_turn_reserves_the_first_campus_building() {
-    let mut game = Game::new_full(1, 24, 16, 5_416, 250, 0, false);
+    let mut game = Game::new_full(1, 24, 16, 5_416, 250, 1, false);
     game.victory_conditions = crate::game::VictoryConditions::parse("science,score").unwrap();
+    let city_state = game
+        .players
+        .iter()
+        .find(|player| player.is_minor && !player.is_barbarian)
+        .expect("city-state seat")
+        .id;
+    game.record_contact(0, city_state);
     let settler = game
         .player_unit_ids(0)
         .into_iter()
