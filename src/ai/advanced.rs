@@ -24832,7 +24832,11 @@ impl AdvancedAi {
     fn settler_target_hysteresis_on(&self) -> bool {
         self.settler_target_hysteresis
             || self.settler_target_hysteresis_2
-            || self.settler_routing_recovery_on()
+            // The deployment bridge's watchdog (`settler-never-idles`) is
+            // the bounded recovery owner.  Keeping this conjunct means a
+            // screen's explicit hysteresis-withholding arm remains a true
+            // ablation even when it enables the broader live universe.
+            || (self.settler_never_idles && self.settler_routing_recovery_on())
     }
 
     fn guard_outmatched_at(
