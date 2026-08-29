@@ -21741,6 +21741,7 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         for cid in city_ids {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
@@ -21954,7 +21955,13 @@ impl AdvancedAi {
                     }
                 }
             }
-            if committed.is_none() && self.first_research_building_reserve {
+            // An explicit Science target makes the same contract as the
+            // opt-in reserve: once a city has paid for a Campus, finish its
+            // cheapest owed Campus-family building before the generic scorer
+            // can spend the queue on a Theater Square or another unrelated
+            // item. Adaptive seats still need the independently screenable
+            // gene; only a named Science lane gets this invariant for free.
+            if committed.is_none() && (self.first_research_building_reserve || science_targeted) {
                 let owed = Self::first_owed_campus_building(g, pid, cid);
                 if let Some(building) = owed {
                     let item = Item::Building { building };
