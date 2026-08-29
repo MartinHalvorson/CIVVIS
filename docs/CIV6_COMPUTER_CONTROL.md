@@ -395,6 +395,15 @@ long enough to read, short enough not to sit through), and then ends exactly
 the way its own close button ends it. Nothing about the announcement changes:
 what it says, when it fires, what it locks. Only who finishes it.
 
+`WonderBuiltPopup` is the animation-aware exception. Its stock header and quote
+alpha/slide tracks are allowed to finish before the shim calls the native
+`OnClose()` path, which hides the modal, drains queued wonders, restores the
+selection/lens state, and unlocks the popup manager. A one-second floor keeps
+the climb's short generic announcement clock from cutting off the reveal. If a
+future UI build cannot expose the animation state, an eight-second fallback
+prevents an unreadable modal from covering the map indefinitely; the close event
+records whether that fallback was used.
+
 Diplomacy conversations and trade offers are treated as blockers rather than
 readable announcements. They use `DialogueSeconds` (0.25 by default, capped at
 2 seconds), wait for their opening fade to become actionable, then answer or
