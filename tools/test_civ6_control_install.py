@@ -339,6 +339,26 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('type(OnPass) == "function"', closer)
         self.assertIn("OnPass();", closer)
 
+    def test_wonder_completion_popup_is_registered_and_uses_firaxis_close(self) -> None:
+        """A completed wonder must release its exclusive popup lock unattended."""
+        modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn(
+            '<LuaContext>WonderBuiltPopup</LuaContext>',
+            modinfo,
+        )
+        wonder = closer.split('if NAME == "WonderBuiltPopup"', 1)[1].split(
+            "return false;", 1
+        )[0]
+        # WonderBuiltPopup.lua's own OnClose drains queued wonders and unlocks
+        # the exclusive popup manager; Close is the defensive fallback if a
+        # future game build omits that wrapper.
+        self.assertIn('type(OnClose) == "function"', wonder)
+        self.assertIn("OnClose();", wonder)
+        self.assertIn('type(Close) == "function"', wonder)
+        self.assertIn("Close();", wonder)
+
     def test_between_turns_congress_uses_the_complete_firaxis_hide_path(self) -> None:
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
         congress = closer.split('NAME == "WorldCongressBetweenTurns"', 1)[1].split(

@@ -13942,7 +13942,8 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         escort_shadow_held = 0,
 	                         settler_scout_capture_held = 0,
 	                         settler_scout_guard_held = 0,
-	                         settler_barbarian_combat_capture_held = 0 }, escortHolds = {} };
+	                         settler_barbarian_combat_capture_held = 0,
+	                         settler_barbarian_combat_guard_rescued = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
 	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
@@ -13951,7 +13952,8 @@ CivvisBoard.reset = function()
 	                     escort_shadow_held = 0,
 	                     settler_scout_capture_held = 0,
 	                     settler_scout_guard_held = 0,
-	                     settler_barbarian_combat_capture_held = 0 };
+	                     settler_barbarian_combat_capture_held = 0,
+	                     settler_barbarian_combat_guard_rescued = 0 };
 	CivvisBoard.escortHolds = {};
 end;
 
@@ -14380,6 +14382,7 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 									settler = settlerId, fromX = fromX, fromY = fromY,
 									wantX = wantX, wantY = wantY,
 									sentX = sentX, sentY = sentY, threat = threat,
+									row = row,
 								};
 								CivvisBoard.stats.settler_barbarian_combat_capture_held =
 									CivvisBoard.stats.settler_barbarian_combat_capture_held + 1;
@@ -14424,6 +14427,74 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 					row._civvis_settler_barbarian_combat_hold = true;
 					CivvisBoard.escortHolds[guardId] = true;
 				end
+			end
+		end
+	end
+
+	-- Refusing the civilian's leg is not enough when a combat escort is nearby
+	-- but not already on its tile.  In the live loss at t73 the warrior was one
+	-- hex away and had an unrelated MOVE_TO, so the settler stayed exposed after
+	-- the hold and the hostile captured it before the next export.  Rescue only
+	-- the narrow, host-grounded case: the visible combat threat is adjacent to
+	-- the settler's CURRENT tile, exactly one unmentioned combat unit is within
+	-- two hexes and can reach that tile this turn, and no existing order has to
+	-- be overwritten.  The synthetic row is a shadow actuation, so it does not
+	-- change CIVVIS's decision counts; it merely co-locates the guard before the
+	-- held settler's row is processed.
+	local mentioned = {};
+	for _, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" then
+			local id = tonumber(row.subject);
+			if id ~= nil then mentioned[id] = true; end
+		end
+	end
+	for _, heldLeg in pairs(held) do
+		local currentDistance = tonumber(try(function()
+			return Map.GetPlotDistance(heldLeg.fromX, heldLeg.fromY,
+				heldLeg.threat.x, heldLeg.threat.y);
+		end, -1)) or -1;
+		if currentDistance >= 0 and currentDistance <= 1 then
+			local candidates = {};
+			eachUnit(player, function(candidate)
+				local guardId = tonumber(try(function() return candidate:GetID(); end, nil));
+				local guardX = tonumber(try(function() return candidate:GetX(); end, nil));
+				local guardY = tonumber(try(function() return candidate:GetY(); end, nil));
+				if guardId == nil or guardId == heldLeg.settler or mentioned[guardId]
+						or CivvisBoard.escortHolds[guardId]
+						or not CivvisBoard.isCombatEscort(candidate)
+						or guardX == nil or guardY == nil then return; end
+				local distance = tonumber(try(function()
+					return Map.GetPlotDistance(guardX, guardY, heldLeg.fromX, heldLeg.fromY);
+				end, -1)) or -1;
+				if distance < 0 or distance > 2 then return; end
+				local reaches = CivvisBoard.reachesThisTurn(candidate, heldLeg.fromX, heldLeg.fromY);
+				if reaches then candidates[#candidates + 1] = {
+					id = guardId, unit = candidate,
+				}; end
+			end);
+			if #candidates == 1 then
+				local guardId = candidates[1].id;
+				local insertAt = nil;
+				for i, row in ipairs(rows) do
+					if row == heldLeg.row then insertAt = i; break; end
+				end
+				table.insert(rows, insertAt or (#rows + 1), {
+					kind = "unit", subject = guardId, verb = "MOVE_TO",
+					x = heldLeg.fromX, y = heldLeg.fromY,
+					_civvis_escort_shadow = true,
+				});
+				mentioned[guardId] = true;
+				CivvisBoard.escortHolds[guardId] = true;
+				CivvisBoard.stats.escort_shadow_injected =
+					CivvisBoard.stats.escort_shadow_injected + 1;
+				CivvisBoard.stats.settler_barbarian_combat_guard_rescued =
+					CivvisBoard.stats.settler_barbarian_combat_guard_rescued + 1;
+				emit("settler_barbarian_combat_guard_rescue", {
+					turn = turn, settler = heldLeg.settler, guard = guardId,
+					at = { heldLeg.fromX, heldLeg.fromY },
+					hostile = heldLeg.threat.id,
+					hostile_pos = { heldLeg.threat.x, heldLeg.threat.y },
+				});
 			end
 		end
 	end
@@ -14988,6 +15059,10 @@ local function applyOrders(player, pid, turn, rows)
 		-- matching legs are held instead of counting the guard as coverage.
 		settler_barbarian_combat_capture_held =
 			CivvisBoard.stats.settler_barbarian_combat_capture_held,
+		-- A nearby unmentioned combat unit was moved onto a held settler's
+		-- current tile when the host could prove the rescue leg this turn.
+		settler_barbarian_combat_guard_rescued =
+			CivvisBoard.stats.settler_barbarian_combat_guard_rescued,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
