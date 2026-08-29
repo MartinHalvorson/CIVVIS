@@ -4799,6 +4799,12 @@ pub struct AdvancedAi {
     /// and in 81 % of those busy turns a district was placeable and lost to
     /// a Settler, Walls, an Archer, a Granary or a Builder.
     first_district_first: bool,
+    /// `escort-cap-holds`: the two-turn escort cap in `stacked_escort_pace`
+    /// releases the settler on time instead of being suspended by the one
+    /// predicate that reads only the visible frame, and a settler that is
+    /// already outside its own city and not stacked with anything marches on
+    /// quiet ground rather than fortifying bare. See `stacked_escort_pace`.
+    escort_cap_holds: bool,
     /// `first-granary-reserve`: a city grown to its housing builds its
     /// Granary ahead of the argmax, once. See `advanced_production`.
     first_granary_reserve: bool,
@@ -4954,6 +4960,17 @@ pub struct AdvancedAi {
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
     // ---- append: g-k ------------------------------------------------
+    /// `hostile-memory`: the civilian capture envelope counts every at-war
+    /// owner (barbarians, Free Cities and a major at war alike) and keeps
+    /// pricing a hostile the seat has actually seen for
+    /// `civilian_safety::HOSTILE_MEMORY_TURNS` turns after it walks back into
+    /// the fog. See `AdvancedAi::barbarian_reach`.
+    hostile_memory: bool,
+    /// Where each at-war military unit was last seen, and on which turn —
+    /// written once a turn by `observe_turn_start_hostiles` while
+    /// `hostile_memory` is on, and read by nothing else. Empty otherwise, so
+    /// the reach behaves exactly as it did before the gene existed.
+    hostile_last_seen: BTreeMap<u32, (Pos, u32)>,
     /// `gold-income-floor`: Markets, Lighthouses, gold buildings and the
     /// Commercial Hub or Harbor are priced by the income the empire is
     /// short of the floor. See `advanced/yield_floors.rs`.
@@ -6784,6 +6801,7 @@ impl AdvancedAi {
 
             // ---- append: e-f ----------------------------------------
             first_district_first: false,
+            escort_cap_holds: false,
             first_granary_reserve: false,
             exhaustion_loyalty_guard: false,
             enter_the_prophet_race: false,
@@ -6801,6 +6819,8 @@ impl AdvancedAi {
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
 
             // ---- append: g-k ----------------------------------------
+            hostile_memory: false,
+            hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
             government_ladder_2: false,
             government_capacity_fallback: false,
@@ -6904,6 +6924,16 @@ impl AdvancedAi {
     /// the live bridge calls it before its finishing volley, `take_turn`
     /// calls it as a fallback. A no-op unless `settler_stack_discipline`.
     pub fn observe_turn_start_hostiles(&mut self, g: &Game, pid: usize) {
+        // `hostile-memory` rides the same observation point and nothing else:
+        // this is the one call every seat makes before it has moved anything,
+        // so it is the only place on the board where "what the seat could see
+        // at the start of its turn" is still true. It is deliberately OUTSIDE
+        // the shadow's gate below — the shadow is a host-only treatment, while
+        // the memory feeds `barbarian_reach`, which a native board reaches
+        // through `civilian-out-of-reach`.
+        if self.hostile_memory {
+            self.remember_visible_hostiles(g, pid);
+        }
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
         {
             return;
@@ -6936,6 +6966,33 @@ impl AdvancedAi {
                     .max(1.0),
                 sea: spec.domain.as_deref() == Some("sea"),
             });
+        }
+    }
+
+    /// `hostile-memory`: remember where every at-war military unit the seat
+    /// can see right now is standing, and forget anything older than
+    /// [`civilian_safety::HOSTILE_MEMORY_TURNS`].
+    ///
+    /// The recorded fact is deliberately only what the seat SAW: the position
+    /// and the turn. `barbarian_reach` projects the envelope from that tile
+    /// and never asks the unit where it really is, which is the difference
+    /// between remembering a raider and reading the fog.
+    fn remember_visible_hostiles(&mut self, g: &Game, pid: usize) {
+        self.hostile_last_seen.retain(|_, (_, when)| {
+            *when <= g.turn && g.turn - *when <= civilian_safety::HOSTILE_MEMORY_TURNS
+        });
+        for unit in g.units.values() {
+            if unit.owner == pid
+                || !g.is_at_war(pid, unit.owner)
+                || !g.unit_visible_to(unit.id, pid)
+            {
+                continue;
+            }
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military" || spec.domain.as_deref() == Some("air") {
+                continue;
+            }
+            self.hostile_last_seen.insert(unit.id, (unit.pos, g.turn));
         }
     }
 
@@ -27221,8 +27278,22 @@ impl AdvancedAi {
             waited.saturating_add(1)
         };
         self.guard_wait.insert(uid, (g.turn, waited));
+        // ⭐ `escort-cap-holds`: THE CAP IS THE WHOLE POINT OF THE CAP.
+        // `unstacked_settler_step_is_capturable` is the one predicate in this
+        // wait that reads the VISIBLE frame only, and in the opening a visible
+        // hostile near the next step is the weather rather than the exception,
+        // so the two-turn ceiling is suspended indefinitely by it. Measured on
+        // the live King seat (2026-08-29, twenty-eight settler losses in
+        // eleven runs): EIGHT settlers were captured while parked waiting for
+        // a guard, and the median settler was ten turns old at its loss. The
+        // wait it is paying for does not prevent that — a parked civilian is
+        // exactly what a raider walks onto — while the ten losses to a hostile
+        // that was not visible at all say the predicate suspending the cap
+        // cannot see the thing that kills the settler either. With the gene on
+        // the cap releases on schedule and the ordinary safe-step route, which
+        // still refuses a genuinely unsafe departure, gets the settler back.
         if waited > STACKED_ESCORT_PATIENCE
-            && !self.unstacked_settler_step_is_capturable(g, pid, uid)
+            && (self.escort_cap_holds || !self.unstacked_settler_step_is_capturable(g, pid, uid))
         {
             // The guard is livelocked or refused. It keeps chasing, but the
             // settler stops paying for it; the counter stays saturated until
@@ -27270,6 +27341,33 @@ impl AdvancedAi {
                 // from the capital, and the second city at t37 against t20 in
                 // the game before. Two or more tiles behind, or any visible
                 // risk, keeps the hold and the fallback exactly as they were.
+                self.guard_wait.remove(&uid);
+                return None;
+            } else if self.escort_cap_holds {
+                // ⭐ `escort-cap-holds`, second half: A ZERO RISK READING IS
+                // NOT QUIET GROUND, IT IS AN EMPTY VISION FRAME.
+                // `settlement_tile_risk` prices what the seat can SEE, and the
+                // branch above releases the settler only when its guard is
+                // already one tile behind. Everything else — a guard three
+                // tiles back, or one that will never arrive — fortifies in
+                // place on a bare tile outside any city, which is precisely
+                // the posture that lost eight of the twenty-eight settlers of
+                // 2026-08-29 and the posture ten more died in without a
+                // hostile visible anywhere near them the turn before. By this
+                // point the settler is provably not stacked (a stacked guard
+                // returned above) and provably not standing in one of our own
+                // cities (the city departure returned above), so there is
+                // nothing here to protect it. Hand it to the ordinary
+                // safe-step route, which prices the step it is about to take
+                // against `SETTLER_STEP_RISK_LIMIT` rather than against zero
+                // and can still refuse it — the guard stays assigned and keeps
+                // chasing either way.
+                think!(self.journal(), Expansion, Detail,
+                       "Settler marches while its guard catches up";
+                       "nothing visible can reach this tile and the guard is {} tiles \
+                        back — standing still on open ground outside a city is how eight \
+                        of the last twenty-eight settlers were taken",
+                       g.wdist(current, guard_pos); guard_pos);
                 self.guard_wait.remove(&uid);
                 return None;
             }
