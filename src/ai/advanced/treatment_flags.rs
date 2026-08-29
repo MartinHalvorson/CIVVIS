@@ -3121,6 +3121,17 @@ impl AdvancedAi {
         self.exhaustion_loyalty_guard = false;
     }
 
+    /// A city grown to its housing (pop + 1 ≥ housing) with no Granary starts
+    /// one ahead of the argmax. See `AdvancedAi::first_granary_reserve`.
+    pub fn enable_first_granary_reserve(&mut self) {
+        self.first_granary_reserve = true;
+    }
+
+    /// The twin of `enable_first_granary_reserve`.
+    pub fn disable_first_granary_reserve(&mut self) {
+        self.first_granary_reserve = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

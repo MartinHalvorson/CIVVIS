@@ -800,6 +800,43 @@ fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
     assert_eq!(game.cities[&city].queue.first(), Some(&defender));
 }
 
+/// `first-granary-reserve`: a capital grown to its housing starts its
+/// Granary ahead of the argmax. The toggles are twins and the gene ships off.
+#[test]
+fn a_housing_bound_city_reserves_its_granary() {
+    let (mut game, city, _) = empire_with_a_capital(71_117);
+    game.players[0].techs.extend([crate::name!("pottery")]);
+    let housing = game.city_housing(&game.cities[&city]);
+    game.cities.get_mut(&city).expect("capital").pop = housing.floor().max(1.0) as i32;
+    assert!(game.cities[&city].queue.is_empty(), "fixture: an idle queue");
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    assert!(game.can_produce(0, city, &granary), "fixture: the Granary is legal");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.first_granary_reserve, "the gene ships off");
+    assert!(!AdvancedAi::legacy().first_granary_reserve);
+    ai.enable_first_granary_reserve();
+    assert!(ai.first_granary_reserve);
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&granary),
+        "the housing-bound capital starts its Granary"
+    );
+    ai.disable_first_granary_reserve();
+    assert!(!ai.first_granary_reserve);
+}
+
 #[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
