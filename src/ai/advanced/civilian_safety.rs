@@ -54,8 +54,35 @@
 //! bridge can act on.
 //!
 //! Off, every touched path is unchanged.
+//!
+//! **What the live seat learned (2026-08-28, twenty-four captures in ten
+//! runs)** — two host-only treatments, on for the Civilization VI seat and
+//! inert on a native board, so no screened gene changes under them:
+//!
+//! - `live-barbarian-scouts-capture`: the host's barbarian recon units DO
+//!   capture (one scout took four settlers in run civvis-20260828T122324Z),
+//!   so `barbarian_reach` and the other exact capture models count them.
+//! - `live-settler-capture-lessons`: (1) a settler that leaves the board
+//!   without a city within two tiles of where it stood was TAKEN, and every
+//!   site within `SETTLER_CAPTURE_SCAR_RADIUS` of that ground is dead for
+//!   every settler for `SETTLER_DEAD_SITE_AVOID_TURNS` (the same nest ate six
+//!   settlers in run civvis-20260829T000643Z while each retired it for itself
+//!   alone); (2) a flee with no safe tile prefers a tile holding one of our
+//!   military units — a stack a raider must first break — to the least
+//!   exposed bare tile, and never holds still beside a raider while a
+//!   farther tile exists (run civvis-20260829T022749Z t78: "holds inside a
+//!   barbarian's reach" beside a skirmisher, two tiles from a full-health
+//!   archer); (3) the strongest guard that can reach the settler this turn
+//!   is summoned first, not the nearest (an archer was bound over a
+//!   warrior and died on the settler's tile); (4) a guard is not released
+//!   while a known barbarian camp is within `SETTLER_ESCORT_THREAT_RADIUS`
+//!   — "no visible hostile within 8 tiles" preceded six captures by one
+//!   turn.
 
-use super::{AdvancedAi, SETTLER_ESCORT_THREAT_RADIUS, STACKED_GUARD_MIN_HP};
+use super::{
+    AdvancedAi, SETTLER_CAPTURE_SCAR_RADIUS, SETTLER_DEAD_SITE_AVOID_TURNS,
+    SETTLER_ESCORT_THREAT_RADIUS, STACKED_GUARD_MIN_HP,
+};
 use crate::game::{Action, Game};
 use crate::reasoning::plain;
 use crate::think;
@@ -126,7 +153,9 @@ impl AdvancedAi {
     /// The reach of every visible barbarian raider that could matter to a
     /// civilian at `around`: raiders within `radius`, each flooded with its
     /// full allowance through blockers (`threat_reach`). Recon units are
-    /// engine-managed scouts, not raiders — see `barbarian_scouts_are_scouts`.
+    /// engine-managed scouts, not raiders — see `barbarian_scouts_are_scouts`
+    /// — except on the live seat, whose scouts capture
+    /// (`live_barbarian_scouts_capture`).
     pub(super) fn barbarian_reach(
         &self,
         g: &Game,
@@ -152,7 +181,9 @@ impl AdvancedAi {
             }
             let spec = &g.rules.units[unit.kind];
             let domain = spec.domain.as_deref();
-            if spec.class != "military" || domain == Some("air") || spec.promotion_class == "recon"
+            if spec.class != "military"
+                || domain == Some("air")
+                || (spec.promotion_class == "recon" && !self.live_barbarian_scouts_capture)
             {
                 continue;
             }
@@ -294,6 +325,9 @@ impl AdvancedAi {
             return None;
         }
         let goal = self.civilian_goal(g, pid, uid);
+        if self.live_settler_capture_lessons {
+            return Some(self.flee_under_lessons(g, pid, uid, &reach, goal));
+        }
         let here_covering = reach.raiders_covering(g, current);
         let here_nearest = reach.nearest(g, current);
         let mut options: Vec<(bool, usize, i32, i32, Pos)> = g
@@ -384,11 +418,18 @@ impl AdvancedAi {
             })
             .map(|uid| {
                 let unit = &g.units[&uid];
-                (
-                    g.wdist(unit.pos, pos),
-                    -(g.unit_strength(unit, false) as i32),
-                    uid,
-                )
+                let distance = g.wdist(unit.pos, pos);
+                let strength = -(g.unit_strength(unit, false) as i32);
+                // Every candidate reaches the tile this turn; under the live
+                // lessons the strongest of them is the guard, not the nearest
+                // — run civvis-20260829T022749Z bound a 15-strength archer
+                // over a warrior and lost it, then the settler, to a
+                // skirmisher.
+                if self.live_settler_capture_lessons {
+                    (strength, distance, uid)
+                } else {
+                    (distance, strength, uid)
+                }
             })
             .collect();
         candidates.sort_unstable();
@@ -437,7 +478,14 @@ impl AdvancedAi {
         let quiet = reach.nearest(g, pos) > SETTLER_ESCORT_THREAT_RADIUS
             && self
                 .barbarian_reach(g, pid, pos, SETTLER_ESCORT_THREAT_RADIUS)
-                .is_empty();
+                .is_empty()
+            // A known camp is a raider that has not stepped out of the fog
+            // yet; see `live_settler_capture_lessons`.
+            && !(self.live_settler_capture_lessons
+                && g
+                    .barb_camps
+                    .keys()
+                    .any(|camp| g.wdist(*camp, pos) <= SETTLER_ESCORT_THREAT_RADIUS));
         if quiet {
             self.settler_guards.remove(&settler);
             self.guard_wait.remove(&settler);
@@ -620,5 +668,167 @@ impl AdvancedAi {
         reach: &BarbarianReach,
     ) -> bool {
         self.civilian_safe_at(g, pid, uid, pos, reach)
+    }
+
+    /// One of our land military units on `pos` that a settler could bind as
+    /// its guard by standing with it: healthy, unlinked, not another
+    /// settler's guard. Deliberately NOT the outmatched test: this is asked
+    /// when the alternative is standing bare beside a raider, and a stack the
+    /// raider must first break beats a civilian it can simply take.
+    fn bindable_guard_at(&self, g: &Game, pid: usize, settler: u32, pos: Pos) -> Option<u32> {
+        let bound: Vec<u32> = self.settler_guards.values().copied().collect();
+        g.unit_ids_at(pos)
+            .iter()
+            .copied()
+            .filter(|uid| {
+                let unit = &g.units[uid];
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && unit.hp >= STACKED_GUARD_MIN_HP
+                    && unit.linked_to.is_none()
+                    && (!bound.contains(uid) || self.settler_guards.get(&settler) == Some(uid))
+            })
+            .max_by_key(|uid| (g.unit_strength(&g.units[uid], false) as i32, *uid))
+    }
+
+    /// Rule 1 under `live_settler_capture_lessons`, for a civilian standing
+    /// inside the reach with nothing protecting its tile. Options rank: out
+    /// of reach (nearest the goal), then a tile holding a bindable friendly
+    /// unit, then the tile farthest from the nearest raider with the fewest
+    /// raiders covering it. Standing still competes as one more option and
+    /// loses to any of those that is better than here — so a settler beside
+    /// a raider never holds while a farther tile or a friendly stack exists.
+    /// Returns whether the unit moved.
+    fn flee_under_lessons(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        reach: &BarbarianReach,
+        goal: Option<Pos>,
+    ) -> bool {
+        let current = g.units[&uid].pos;
+        let kind = g.units[&uid].kind;
+        let here_covering = reach.raiders_covering(g, current);
+        let here_nearest = reach.nearest(g, current);
+        if kind == "settler" {
+            if let Some(guard) = self.bindable_guard_at(g, pid, uid, current) {
+                // Someone is already standing here: bind it and stay.
+                self.settler_guards.insert(uid, guard);
+                self.guard_wait.remove(&uid);
+                think!(self.journal(), Expansion, Detail, "A guard is called to the settler";
+                       "it already shares the tile; bound, its own turn keeps it here"; current);
+                return false;
+            }
+        }
+        let mut options: Vec<(bool, bool, i32, usize, i32, Pos)> = g
+            .reachable(uid)
+            .into_iter()
+            .filter(|pos| *pos != current && g.path_to(uid, *pos).is_some())
+            .map(|pos| {
+                let safe = self.civilian_safe_at(g, pid, uid, pos, reach);
+                let stacked = !safe
+                    && kind == "settler"
+                    && self.bindable_guard_at(g, pid, uid, pos).is_some();
+                (
+                    safe,
+                    stacked,
+                    reach.nearest(g, pos),
+                    reach.raiders_covering(g, pos),
+                    goal.map_or(0, |goal| g.wdist(pos, goal)),
+                    pos,
+                )
+            })
+            .collect();
+        options.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| if a.0 { a.4.cmp(&b.4) } else { b.2.cmp(&a.2) })
+                .then_with(|| a.3.cmp(&b.3))
+                .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| a.4.cmp(&b.4))
+                .then_with(|| a.5.cmp(&b.5))
+        });
+        for (safe, stacked, nearest, covering, _, pos) in options {
+            let better = safe
+                || stacked
+                || nearest > here_nearest
+                || (nearest == here_nearest && covering < here_covering);
+            if !better {
+                break;
+            }
+            if self.base.path_move(g, pid, uid, pos) {
+                let now = g.units[&uid].pos;
+                if kind == "settler" {
+                    if let Some(guard) = self.bindable_guard_at(g, pid, uid, now) {
+                        self.settler_guards.insert(uid, guard);
+                        self.guard_wait.remove(&uid);
+                    } else if now != current {
+                        self.pull_guard_along(g, pid, uid, current, now);
+                    }
+                }
+                think!(self.journal(), Expansion, Detail, "{} flees a barbarian's reach", plain(&kind);
+                       "{} raider(s) could take {current:?} next turn; {pos:?} is {}",
+                       here_covering,
+                       if safe {
+                           "out of reach"
+                       } else if stacked {
+                           "a tile one of our units already holds — a stack the raider must first break"
+                       } else {
+                           "the least exposed tile it can reach"
+                       }; pos);
+                return true;
+            }
+        }
+        think!(self.journal(), Expansion, Detail, "{} holds inside a barbarian's reach", plain(&kind);
+               "{} raider(s) could take {current:?} and no reachable tile is better", here_covering; current);
+        false
+    }
+
+    /// A settler that left the board since the last turn either founded a
+    /// city where it stood or was taken. The first leaves one of our cities
+    /// within two tiles of its last position; the second retires every site
+    /// within `SETTLER_CAPTURE_SCAR_RADIUS` of that ground for EVERY settler
+    /// for `SETTLER_DEAD_SITE_AVOID_TURNS` standard turns. Under
+    /// `live_settler_capture_lessons` only; expired scars are dropped here.
+    pub(super) fn resolve_vanished_settlers(&mut self, g: &Game, pid: usize) {
+        if !self.live_settler_capture_lessons {
+            return;
+        }
+        self.settler_capture_scars
+            .retain(|_, until| *until > g.turn);
+        // A native board keeps its unit ids, so a settler missing from it —
+        // or carried by someone else now — vanished without any remap.
+        let gone: Vec<u32> = self
+            .settler_last_seen
+            .keys()
+            .copied()
+            .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.owner != pid))
+            .collect();
+        for uid in gone {
+            if let Some(pos) = self.settler_last_seen.remove(&uid) {
+                self.settler_vanished.push(pos);
+            }
+        }
+        for pos in std::mem::take(&mut self.settler_vanished) {
+            let founded = g
+                .player_city_ids(pid)
+                .into_iter()
+                .any(|city| g.wdist(g.cities[&city].pos, pos) <= 2);
+            if founded {
+                continue;
+            }
+            let until = g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS);
+            for tile in g.wdisk(pos, SETTLER_CAPTURE_SCAR_RADIUS) {
+                let entry = self.settler_capture_scars.entry(tile).or_insert(until);
+                *entry = (*entry).max(until);
+            }
+            think!(self.journal(), Expansion, Decision, "A settler was lost at {pos:?}";
+                   "every site within {SETTLER_CAPTURE_SCAR_RADIUS} tiles is retired for \
+                    {SETTLER_DEAD_SITE_AVOID_TURNS} standard turns for every settler — the ground \
+                    that took one settler takes the next"; pos);
+        }
     }
 }

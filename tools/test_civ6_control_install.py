@@ -359,6 +359,57 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('type(Close) == "function"', wonder)
         self.assertIn("Close();", wonder)
 
+    def test_wonder_completion_wins_and_chains_known_ui_replacement(self) -> None:
+        """A later UI mod must not replace the wonder closer or its audio."""
+        modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn(
+            '805cc499-c534-4e0a-bdce-32fb3c53ba38',
+            modinfo,
+        )
+        action = modinfo.split(
+            '<ReplaceUIScript id="CivvisControlAutoCloseWonderBuilt">', 1
+        )[1].split("</ReplaceUIScript>", 1)[0]
+        self.assertIn("<LoadOrder>100000</LoadOrder>", action)
+        self.assertIn(
+            'WonderBuiltPopup = "Suk_WonderBuiltPopup"',
+            closer,
+        )
+
+        # The known replacement includes the Firaxis script and must be loaded
+        # before haveScreen() checks for OnClose/Close. Keep this assertion
+        # textual because Lua's UI globals do not exist in the Python suite.
+        chain_at = closer.index('WonderBuiltPopup = "Suk_WonderBuiltPopup"')
+        include_at = closer.index("if CHAINED[NAME] then")
+        self.assertLess(chain_at, include_at)
+
+    def test_wonder_completion_waits_for_animation_before_minimizing(self) -> None:
+        """A short generic clock must not cut off the stock wonder reveal."""
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn("local WONDER_MIN_SECONDS = 1.0;", closer)
+        self.assertIn(
+            "local WONDER_ANIMATION_TIMEOUT_SECONDS = 8.0;",
+            closer,
+        )
+        self.assertIn(
+            'if NAME == "WonderBuiltPopup" then\n\tSECONDS = math.max(SECONDS, WONDER_MIN_SECONDS);\nend',
+            closer,
+        )
+        for control in ("HeaderAlpha", "HeaderSlide", "QuoteAlpha", "QuoteSlide"):
+            self.assertIn(f"Controls.{control}", closer)
+        self.assertIn("animation:IsStopped()", closer)
+        self.assertIn('report("autoclose_wait_animation"', closer)
+        self.assertIn('"animation_ready"', closer)
+        self.assertIn('"animation_timeout"', closer)
+        self.assertIn("if shown < WONDER_ANIMATION_TIMEOUT_SECONDS then", closer)
+        self.assertIn("remaining = DIALOGUE_READY_RETRY_SECONDS;", closer)
+
+        wait_at = closer.index("local wonderAnimationReadyAtClose = true;")
+        close_at = closer.index("local upFor = shown;", wait_at)
+        self.assertLess(wait_at, close_at)
+
     def test_between_turns_congress_uses_the_complete_firaxis_hide_path(self) -> None:
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
         congress = closer.split('NAME == "WorldCongressBetweenTurns"', 1)[1].split(
@@ -688,6 +739,41 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("other:GetCulture():GetTouristsTo();", block)
         self.assertIn("domestic_tourists = try(function()", block)
         self.assertIn("other:GetCulture():GetStaycationers();", block)
+
+    def test_unit_captured_is_registered_and_names_the_captor_for_our_units_only(self) -> None:
+        """A settler taken by the barbarians must be told apart from one founding a city.
+
+        `UnitRemovedFromMap` fires for both, and `unit_lost` reads the same for
+        both — 24 settlers went to the barbarians in ten runs on 2026-08-28 and
+        no ledger column could tell. The game's own word is
+        `Events.UnitCaptured(currentUnitOwner, unit, owningPlayer,
+        capturingPlayer)` (`Base/Assets/UI/Popups/UnitCaptured.lua:8`,
+        registered at `:49`, filtered on the local owner at `:11`). Assert the
+        registration and the handler's shape, not a sentence claiming them.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        registrations = source.split("function Initialize()", 1)[1].split(
+            "pcall(function() Events[name].Add(handler); end);", 1
+        )[0]
+        self.assertIn("UnitRemovedFromMap = CivvisLedger.onUnitRemoved,", registrations)
+        self.assertIn("UnitCaptured = CivvisLedger.onUnitCaptured,", registrations)
+
+        handler = source.split("CivvisLedger.onUnitCaptured = function(", 1)[1].split(
+            "\nend;", 1
+        )[0]
+        self.assertTrue(handler.startswith(
+            "currentUnitOwner, unitId, owningPlayer, capturingPlayer)"))
+        # Ours only, the way the shipped popup filters (`UnitCaptured.lua:11`).
+        self.assertIn("if tonumber(currentUnitOwner) ~= pid then return; end", handler)
+        self.assertIn('emit("unit_captured", {', handler)
+        for key in ("turn =", "unit = tonumber(unitId)",
+                    "unit_kind = CivvisLedger.kinds[tostring(unitId)]",
+                    "owner = tonumber(currentUnitOwner)", "captor = captor",
+                    "captor_is_barbarian = barbarian"):
+            self.assertIn(key, handler)
+        self.assertIn("Players[captor]:IsBarbarian()", handler)
+        # `unit_lost` stays: the capture event is a second witness, not a replacement.
+        self.assertIn('emit("unit_lost", {', source)
 
     def test_the_seat_event_names_the_hosts_victory_table(self) -> None:
         # The TeamVictory event reports a raw integer and docs/CIV6_LADDER.md

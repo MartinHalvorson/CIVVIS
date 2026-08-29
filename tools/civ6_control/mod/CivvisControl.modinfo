@@ -18,15 +18,17 @@
 		<EnabledByDefault>1</EnabledByDefault>
 		<CompatibleVersions>2.0</CompatibleVersions>
 	</Properties>
-	<!-- Load after GranColombia_Maya, and only for the sake of one screen.
-	     Both mods declare a ReplaceUIScript for NaturalDisasterPopup, and the
-	     later mod wins: measured on 2026-07-29, eight of this mod's nine
-	     screens armed and that one did not, because GranColombia_Maya sorts
-	     after CivvisControl. A reference is soft: it orders the load if that
-	     mod is present and is ignored if it is not, and it is the same tag
-	     GranColombia_Maya itself uses to sit after Expansion2. -->
+	<!-- Load after the UI mods whose replacement scripts this mod chains. Both
+	     references are soft: they order the load when the optional mod is
+	     present and are ignored when it is not. Without the first reference,
+	     GranColombia_Maya's NaturalDisasterPopup replacement won and this
+	     closer never armed for that context. Sukritact's Simple UI Adjustments
+	     has the same conflict for WonderBuiltPopup; its replacement also adds
+	     the wonder audio, so the closer chains it rather than silently dropping
+	     that behavior. -->
 	<References>
 		<Mod id="9DE86512-DE1A-400D-8C0A-AB46EBBF76B9" title="GranColombia_Maya"/>
+		<Mod id="805cc499-c534-4e0a-bdce-32fb3c53ba38" title="Sukritact's Simple UI Adjustments"/>
 	</References>
 	<FrontEndActions>
 		<!-- ⚠ `AddUserInterfaces` with `<Context>FrontEnd</Context>` USED TO BE HERE and
@@ -205,6 +207,10 @@
 			<Properties>
 				<LuaContext>WonderBuiltPopup</LuaContext>
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+				<!-- Sukritact and several UI packs use LoadOrder 10 for this
+				     context. Keep this wrapper last so a completed wonder cannot
+				     bypass the native close path again. -->
+				<LoadOrder>100000</LoadOrder>
 			</Properties>
 		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseNaturalWonder">
