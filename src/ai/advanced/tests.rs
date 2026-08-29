@@ -38135,3 +38135,123 @@ fn a_settler_does_not_cross_scarred_ground_alone() {
         "and the guard stands with it"
     );
 }
+
+/// `first-district-first`: a young capital's first specialty district
+/// scores higher under the gene than off, and with an idle queue the gene
+/// starts it. Off, the pricing is byte-identical to the legacy scorer.
+#[test]
+fn the_first_district_outranks_the_filler_under_the_gene() {
+    let (mut game, city, _) = empire_with_a_capital(71_119);
+    game.players[0]
+        .techs
+        .extend([crate::name!("writing"), crate::name!("pottery"), crate::name!("mining")]);
+    game.cities.get_mut(&city).expect("capital").pop = 3;
+    assert!(
+        game.cities[&city].districts.is_empty(),
+        "fixture: the capital holds no district yet"
+    );
+    let owned: Vec<Pos> = game.cities[&city].owned_tiles.iter().copied().collect();
+    let campus = owned
+        .into_iter()
+        .map(|pos| Item::District {
+            district: crate::name!("campus"),
+            pos,
+        })
+        .find(|item| game.can_produce(0, city, item))
+        .expect("fixture: a legal Campus plot");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.first_district_first, "the gene ships off");
+    assert!(!AdvancedAi::legacy().first_district_first);
+    let counts = ai.counts(&game, 0);
+    let off = ai.production_value(&game, 0, city, &campus, &plan, &counts);
+    ai.enable_first_district_first();
+    assert!(ai.first_district_first);
+    let on = ai.production_value(&game, 0, city, &campus, &plan, &counts);
+    assert!(
+        on > off && on > 0.0,
+        "the first Campus prices higher under the gene: off {off:.1}, on {on:.1}"
+    );
+    assert!(game.cities[&city].queue.is_empty(), "fixture: an idle queue");
+    ai.advanced_production(&mut game, 0, &plan, false);
+    let started = game.cities[&city].queue.first().cloned();
+    assert!(
+        matches!(
+            &started,
+            Some(Item::District { district, .. }) if game.rules.districts[district].specialty
+        ),
+        "the idle capital starts a specialty district under the gene, not {started:?}"
+    );
+    ai.disable_first_district_first();
+    assert!(!ai.first_district_first);
+}
+
+/// `walls-after-districts`: a frontier city under a barbarian alarm whose
+/// garrison already closes the defender gap is answered with Walls by the
+/// pre-emption; under the gene the wall waits until the city holds a
+/// district, and the scorer picks instead. The unit answer is untouched.
+#[test]
+fn walls_wait_for_the_first_district_under_the_gene() {
+    let (mut game, _safe, remote) = remote_barbarian_trade_board();
+    game.players[0].techs.extend([crate::name!("masonry")]);
+    let home = game.cities[&remote].pos;
+    for _ in 0..4 {
+        game.spawn_unit("warrior", 0, home);
+    }
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.walls_after_districts, "the gene ships off");
+    assert!(!AdvancedAi::legacy().walls_after_districts);
+    assert!(
+        ai.base.barbarian_local_alarm_for_controller(&game, 0, remote),
+        "fixture: the remote city is under a barbarian alarm"
+    );
+    assert_eq!(
+        ai.base.barbarian_defense_gap(&game, 0, remote),
+        0,
+        "fixture: the garrison closes the defender gap"
+    );
+    let walls = Item::Building {
+        building: crate::name!("walls"),
+    };
+    assert_eq!(
+        ai.base.barbarian_defense_item(&game, 0, remote),
+        Some(walls.clone()),
+        "fixture: the pre-emption answers the alarm with Walls"
+    );
+    assert!(game.cities[&remote].districts.is_empty(), "fixture: no district yet");
+    game.cities.get_mut(&remote).expect("remote").queue.clear();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut control = game.clone();
+    ai.advanced_production(&mut control, 0, &plan, false);
+    assert_eq!(
+        control.cities[&remote].queue.first(),
+        Some(&walls),
+        "off, the alarm starts Walls ahead of the scorer"
+    );
+    ai.enable_walls_after_districts();
+    assert!(ai.walls_after_districts);
+    ai.advanced_production(&mut game, 0, &plan, false);
+    let started = game.cities[&remote].queue.first().cloned();
+    assert!(
+        started.is_some() && started.as_ref() != Some(&walls),
+        "under the gene the wall waits and the scorer picks: {started:?}"
+    );
+    ai.disable_walls_after_districts();
+    assert!(!ai.walls_after_districts);
+}
