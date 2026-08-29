@@ -326,7 +326,7 @@ impl AdvancedAi {
         }
         let goal = self.civilian_goal(g, pid, uid);
         if self.live_settler_capture_lessons {
-            return Some(self.flee_under_lessons(g, pid, uid, kind, current, &reach, goal));
+            return Some(self.flee_under_lessons(g, pid, uid, &reach, goal));
         }
         let here_covering = reach.raiders_covering(g, current);
         let here_nearest = reach.nearest(g, current);
@@ -706,11 +706,11 @@ impl AdvancedAi {
         g: &mut Game,
         pid: usize,
         uid: u32,
-        kind: crate::name::Name,
-        current: Pos,
         reach: &BarbarianReach,
         goal: Option<Pos>,
     ) -> bool {
+        let current = g.units[&uid].pos;
+        let kind = g.units[&uid].kind;
         let here_covering = reach.raiders_covering(g, current);
         let here_nearest = reach.nearest(g, current);
         if kind == "settler" {
