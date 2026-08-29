@@ -27181,6 +27181,22 @@ impl AdvancedAi {
         if let Some(why) = self.settle_site_frontier_loyalty_verdict(g, pid, site) {
             return Some(why);
         }
+        // `exhaustion-loyalty-guard`: the forecast below sums the rival
+        // cities the mirror can see, and under-reads the ones it cannot.
+        // Run civvis-20260829T090147Z founded Arretium at t29 four tiles from
+        // a visible Mongolian city and five from Rome; the forecast passed it,
+        // the engine read −7.2 Loyalty a turn from the first turn, and the
+        // city flipped at t42 in peacetime. The exhaustion search's sieve
+        // (`inside_rival_sphere`) already refuses such a plot; the preferred
+        // search now asks the same question first.
+        if self.exhaustion_loyalty_guard && Self::inside_rival_sphere(g, pid, site) {
+            return Some(
+                "it stands nearer a visible rival major's city than any of ours, inside that \
+                 city's nine-tile Loyalty reach, and the forecast under-reads the rival cities \
+                 it cannot see"
+                    .to_string(),
+            );
+        }
         Self::settle_site_forecast_revolt(g, pid, site).map(|(loyalty_per_turn, turns_to_flip)| {
             format!(
                 "the city would lose {:.1} Loyalty a turn beside its neighbours and revolt in about {:.0} turns",

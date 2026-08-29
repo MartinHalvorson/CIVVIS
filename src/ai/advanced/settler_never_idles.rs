@@ -691,6 +691,84 @@ mod tests {
         );
     }
 
+    /// Arretium in `civvis-20260829T090147Z`: a plot four tiles from a small
+    /// visible rival city and five from our own capital passes the mirror's
+    /// forecast (the rival's unseen cities are not on the board) and revolted
+    /// in peacetime. Under the guard the preferred search's verdict refuses it
+    /// for standing inside the rival's sphere; off, the forecast alone speaks.
+    #[test]
+    fn the_preferred_verdict_refuses_a_plot_inside_a_rivals_sphere_under_the_guard() {
+        let mut g = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        g.current = 0;
+        for pid in 0..2 {
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| g.units[unit].kind == "settler")
+                .expect("a starting settler");
+            let pos = g.units[&settler].pos;
+            g.remove_unit(settler);
+            g.found_city_for(pid, pos, None);
+        }
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+        let ours = g.player_city_ids(0)[0];
+        let theirs = g.player_city_ids(1)[0];
+        let home = g.cities[&ours].pos;
+        let rival = g.cities[&theirs].pos;
+        assert!(g.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for position in &positions {
+            let tile = g.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            g.players[0].explored.insert(*position);
+        }
+        // A small rival city: the forecast reads its two citizens as harmless
+        // once a city of ours stands five tiles from the plot — Arretium's
+        // board: Rome five away, Aksu (pop 2) four away.
+        g.cities.get_mut(&theirs).unwrap().pop = 2;
+        g.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| g.wdist(*pos, rival) == 4 && g.wdist(*pos, home) > 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let plot = beside_rival[0];
+        let mut near_plot: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| g.wdist(*pos, plot) == 5 && g.wdist(*pos, rival) >= 6)
+            .collect();
+        near_plot.sort_unstable();
+        let second = g.found_city_for(0, near_plot[0], None);
+        g.cities.get_mut(&second).unwrap().pop = 6;
+        assert!(
+            AdvancedAi::settle_site_forecast_revolt(&g, 0, plot).is_none(),
+            "fixture: the forecast passes a plot beside a pop-2 rival city"
+        );
+        assert!(AdvancedAi::inside_rival_sphere(&g, 0, plot));
+        let mut ai = AdvancedAi::new();
+        ai.enable_engine_repairs();
+        assert_eq!(
+            ai.settle_site_loyalty_verdict(&g, 0, plot),
+            None,
+            "off, the forecast alone speaks and passes it"
+        );
+        ai.enable_exhaustion_loyalty_guard();
+        let why = ai
+            .settle_site_loyalty_verdict(&g, 0, plot)
+            .expect("under the guard the preferred verdict refuses the plot");
+        assert!(why.contains("rival major's city"), "{why}");
+    }
+
     /// The nearest-legal tier founded with no forecast at all. The board of
     /// `research_probe`'s doomed-target tests: a pop-12 rival capital and a
     /// plot four tiles from it where a new city loses twenty Loyalty a turn.
