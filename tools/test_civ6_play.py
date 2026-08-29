@@ -2108,6 +2108,40 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 
+class TheAbandonWaitsForTheRetireToLand(unittest.TestCase):
+    """⚠⚠ THE ROW IS NOT THE RETIRE.
+
+    Writing it and returning ends the watch loop, which tears the game down —
+    so the mod never reaches its next tick, never sees the row, and the game
+    dies exactly as unfinished as before. Measured in run
+    `civvis-20260829T194002Z`: the row was on disk as
+    `154|99000|retire|below_leader_score|990` and no `retired` event ever
+    followed it.
+    """
+
+    def test_the_wait_is_bounded_and_long_enough_to_be_seen(self) -> None:
+        # The mod polls on `GameCoreEventPublishComplete`, which fires many
+        # times per frame while the game is live, so a few seconds is ample.
+        # The bound exists so a game that has ALREADY parked cannot hold the
+        # loop open — a parked core cannot answer a retire at all, and only the
+        # outside watchdog helps there.
+        self.assertGreaterEqual(civ6_play.ABANDON_RETIRE_WAIT_S, 5.0)
+        self.assertLessEqual(civ6_play.ABANDON_RETIRE_WAIT_S, 60.0)
+
+    def test_the_abandon_path_sleeps_only_when_the_row_was_written(self) -> None:
+        """An unwritable channel is not a reason to pause a game that is over."""
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        block = source.split("state[\"retire_requested\"] = bool(asked)", 1)[1]
+        block = block.split("return True", 1)[0]
+        self.assertIn("if asked:", block)
+        self.assertIn("time.sleep(ABANDON_RETIRE_WAIT_S)", block)
+
+    def test_the_run_record_says_whether_a_retire_was_asked(self) -> None:
+        """A game filed as a loss must be distinguishable from one that stopped."""
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('"retire_requested": state.get("retire_requested"),', source)
+
+
 class AnAbandonedGameIsRetiredSoItCounts(unittest.TestCase):
     """⚠⚠ Stopping alone leaves the attempt UNFINISHED, not lost.
 

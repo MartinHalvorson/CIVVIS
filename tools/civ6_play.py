@@ -3089,6 +3089,11 @@ def press_escape(times: int = 2) -> bool:
     return ok
 
 
+#: How long the abandon path waits for the control mod to answer its retire
+#: row before stopping the game regardless. The mod polls on game-core
+#: events, which fire many times per frame while the game is live.
+ABANDON_RETIRE_WAIT_S = 12.0
+
 OPERATOR_RETIRE_RETRY_S = 15.0
 OPERATOR_RETIRE_SETTLE_S = 0.8
 
@@ -3644,6 +3649,22 @@ def _play(args: argparse.Namespace) -> int:
             print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
                   " — the game is filed as a loss rather than left unfinished",
                   flush=True)
+            if asked:
+                # ⚠⚠ THE ROW IS NOT THE RETIRE. Writing it and returning ends
+                # the watch loop, which tears the game down — so the mod never
+                # reaches its next tick, never sees the row, and the game dies
+                # exactly as unfinished as before. Measured in run
+                # civvis-20260829T194002Z: the row was on disk
+                # (`154|99000|retire|below_leader_score|990`) and no `retired`
+                # event ever followed it.
+                #
+                # The mod polls on `GameCoreEventPublishComplete`, which fires
+                # many times per frame while the game is live, so this is a
+                # short wait in practice; the bound is only here so a game that
+                # has ALREADY parked cannot hold the loop open. A parked core
+                # cannot answer a retire at all — nothing is listening — and
+                # the outside watchdog is the only remedy for that case.
+                time.sleep(ABANDON_RETIRE_WAIT_S)
             return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
@@ -3887,6 +3908,12 @@ def _play(args: argparse.Namespace) -> int:
         # The verdict that ended an abandoned run: the turn, the standing, the
         # estimate and the floor it fell under. None for every other ending.
         "abandoned": state.get("abandoned"),
+        # Whether the abandon actually asked Civilization VI to Retire, so a
+        # game filed as a loss can be told from one that merely stopped. The
+        # request is best effort — an unwritable channel does not keep a game
+        # the rule has already called — and the run record should say which
+        # happened rather than leave it to be inferred.
+        "retire_requested": state.get("retire_requested"),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
