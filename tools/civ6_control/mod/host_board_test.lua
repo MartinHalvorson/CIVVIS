@@ -578,7 +578,7 @@ check("visible combat no-overwrite: rescue counter stays zero", has(lastEvent("o
 -- when the hostile has already spent its current-turn movement.
 reset()
 host.units[51] = { id = 51, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
-host.barbarians[102] = { id = 102, kind = "UNIT_HORSE_ARCHER", x = 4, y = 1, moves = 0 }
+host.barbarians[102] = { id = 102, kind = "UNIT_HORSEMAN", x = 4, y = 1, moves = 0 }
 host.paths["51:" .. plotIndex(2, 1)] = {
 	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
 host.paths["102:" .. plotIndex(2, 1)] = {
