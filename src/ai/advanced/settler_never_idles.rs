@@ -62,7 +62,7 @@
 //! Off, every touched path is byte-identical to before.
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
-use super::{AdvancedAi, SETTLEMENT_GLOBAL_PREFILTER_LIMIT};
+use super::{AdvancedAi, SETTLEMENT_GLOBAL_PREFILTER_LIMIT, SETTLER_STEP_RISK_LIMIT};
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};
 use crate::think;
@@ -290,11 +290,16 @@ impl AdvancedAi {
                 }
             }
         }
-        // Tier 3: a city anywhere beats a Settler for ever. Nearest first,
-        // the position the tie-break — deliberately no site value here: the
-        // value is a growth forecast over a radius-2 disk per plot, and a
-        // stranded Settler asks this every recheck for every legal plot in
-        // the radius.
+        // Tier 3 normally asks for the nearest legal site.  The live bridge
+        // has one additional failure mode: the nearest legal fallback can be
+        // a visibly exposed, low-value plot even while a safer and more
+        // defensible site is available.  That is exactly how a stranded
+        // Settler was sent into the Gaul lane on t110 of the managed run.
+        // Reuse the normal site value and route-risk model for the live-only
+        // fallback, while keeping the historical nearest-site behavior for
+        // native/evaluator controllers.
+        let live_fallback_safety = self.live_settler_capture_lessons && self.settlement_safety;
+        let visible = live_fallback_safety.then(|| self.battlefront_visibility(g, pid));
         let mut legal: Vec<(Pos, f64)> = g
             .wdisk(from, radius)
             .into_iter()
@@ -307,7 +312,37 @@ impl AdvancedAi {
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
-            .map(|pos| (pos, -(g.wdist(from, pos) as f64)))
+            .filter_map(|pos| {
+                if !live_fallback_safety {
+                    return Some((pos, -(g.wdist(from, pos) as f64)));
+                }
+                let visible = visible
+                    .as_ref()
+                    .expect("the live fallback owns a visibility frame");
+                // A fallback target is not allowed to be a tile a visible
+                // hostile can already take next turn.  If every legal plot
+                // is exposed, returning no target lets the emergency flee
+                // pass/stranded watchdog hold or retreat instead of knowingly
+                // marching into the capture envelope.
+                let tile_risk = self.settlement_tile_risk(g, pid, Some(uid), pos, visible);
+                if tile_risk > SETTLER_STEP_RISK_LIMIT {
+                    return None;
+                }
+                let site_value = self.settle_value_visible(g, pid, pos, visible);
+                let route_penalty = g
+                    .path_to(uid, pos)
+                    .map(|path| {
+                        let (movement_cost, route_risk) =
+                            self.settlement_route_risk(g, pid, uid, &path, visible);
+                        movement_cost * 0.8 + route_risk
+                    })
+                    .unwrap_or(0.0);
+                let distance_penalty = if radius > 12 { 0.78 } else { 1.25 };
+                Some((
+                    pos,
+                    site_value - distance_penalty * g.wdist(from, pos) as f64 - route_penalty,
+                ))
+            })
             .collect();
         legal.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         self.set_aside_unpriceable_sites(g, pid, &mut legal);
@@ -331,11 +366,19 @@ impl AdvancedAi {
                         legal.retain(|(pos, _)| *pos != site);
                     }
                     _ => {
-                        think!(self.journal(), Expansion, Detail,
-                               "Settler takes the nearest legal site at {site:?}";
-                               "no ranked site is reachable; a city {} tiles away beats a \
-                                Settler standing still, and the forecast says it holds",
-                               g.wdist(from, site); site);
+                        if live_fallback_safety {
+                            think!(self.journal(), Expansion, Detail,
+                                   "Settler takes the safest reachable legal site";
+                                   "no ranked site is reachable; {site:?} is {} tiles away and \
+                                    the forecast says it holds",
+                                   g.wdist(from, site); site);
+                        } else {
+                            think!(self.journal(), Expansion, Detail,
+                                   "Settler takes the nearest legal site at {site:?}";
+                                   "no ranked site is reachable; a city {} tiles away beats a \
+                                    Settler standing still, and the forecast says it holds",
+                                   g.wdist(from, site); site);
+                        }
                         return Some(site);
                     }
                 }
@@ -343,10 +386,19 @@ impl AdvancedAi {
             return None;
         }
         let site = BasicAi::first_reachable_settle_site(g, uid, &legal).map(|(pos, _)| pos)?;
-        think!(self.journal(), Expansion, Detail,
-               "Settler takes the nearest legal site at {site:?}";
-               "no ranked site is reachable; a city {} tiles away beats a Settler standing still",
-               g.wdist(from, site); site);
+        if live_fallback_safety {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler takes the safest reachable legal site";
+                   "no ranked site is reachable; {site:?} is {} tiles away and beats a Settler \
+                    standing still",
+                   g.wdist(from, site); site);
+        } else {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler takes the nearest legal site at {site:?}";
+                   "no ranked site is reachable; a city {} tiles away beats a Settler standing \
+                    still",
+                   g.wdist(from, site); site);
+        }
         Some(site)
     }
 
@@ -1037,6 +1089,120 @@ mod tests {
             picked,
             Some(avoided),
             "the fallback resurrected the target in this Settler's hysteresis cooldown"
+        );
+    }
+
+    /// A live fallback must not answer "never idle" by selecting a plot a
+    /// visible hostile can take on the next turn.  The historical controller
+    /// still asks the nearest legal site; the bridge's capture lessons reject
+    /// that sole exposed target and let the emergency safety pass/stranded
+    /// watchdog hold or retreat instead.
+    #[test]
+    fn live_exhaustion_fallback_drops_an_exposed_legal_site() {
+        let mut g = Game::new_full(2, 32, 20, 91_319, 120, 0, false);
+        g.current = 0;
+        let founding = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .expect("a starting settler");
+        let home = g.units[&founding].pos;
+        g.apply(0, &crate::game::Action::FoundCity { unit: founding })
+            .expect("the starting settler founds");
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for position in &positions {
+            let tile = g.map.tiles.get_mut(position).expect("map tile");
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            g.players[0].explored.insert(*position);
+        }
+        let probe = AdvancedAi::new();
+        let danger = positions
+            .iter()
+            .copied()
+            .filter(|pos| {
+                g.wdist(home, *pos) >= 6
+                    && g.wdist(home, *pos) <= 12
+                    && probe.base.valid_settle_site(&g, 0, *pos)
+            })
+            .min()
+            .expect("a legal frontier site");
+        let start = g
+            .nbrs(danger)
+            .into_iter()
+            .find(|pos| {
+                g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("a passable neighbour for the Settler");
+        let hostile_tile = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                g.wdist(danger, *pos) == 1
+                    && *pos != start
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("a visible hostile post beside the danger site");
+        let settler = g.spawn_test_unit("settler", 0, start);
+        g.units.get_mut(&settler).expect("settler").moves_left = 20.0;
+        let hostile = g.spawn_test_unit("warrior", 1, hostile_tile);
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        g.players[0].explored.insert(hostile_tile);
+
+        let mut plain = AdvancedAi::new();
+        plain.enable_settler_never_idles();
+        plain.settler_dead_sites.entry(settler).or_default().extend(
+            g.map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| *pos != danger)
+                .map(|pos| (pos, g.turn + 1000)),
+        );
+        assert_eq!(
+            plain.settler_exhaustion_target(&g, 0, settler),
+            Some(danger),
+            "the historical nearest-legal fallback sees the fixture site"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge_universe();
+        live.enable_settler_never_idles();
+        live.settler_dead_sites.entry(settler).or_default().extend(
+            g.map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| *pos != danger)
+                .map(|pos| (pos, g.turn + 1000)),
+        );
+        let visible = live.battlefront_visibility(&g, 0);
+        assert!(g.unit_visible_to(hostile, 0) && g.sees(&visible, hostile_tile));
+        assert!(
+            live.settlement_tile_risk(&g, 0, Some(settler), danger, &visible)
+                > super::super::SETTLER_STEP_RISK_LIMIT,
+            "the fixture danger site is visibly capturable"
+        );
+        assert_eq!(
+            live.settler_exhaustion_target(&g, 0, settler),
+            None,
+            "the live fallback refuses the exposed sole site"
         );
     }
 

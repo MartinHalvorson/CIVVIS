@@ -19370,6 +19370,25 @@ fn a_ranged_hostile_breaks_a_stacked_guard_with_ranged_strength() {
     );
 }
 
+/// The production bridge can withhold the screenable `settler-guard-holds`
+/// repair while still carrying the HostOnly capture lessons.  Those lessons
+/// must activate the same survival bar: otherwise a live Crossbowman is
+/// evaluated at its lower Combat strength and the escort is incorrectly
+/// treated as a shield.
+#[test]
+fn live_capture_lessons_activate_guard_survival_when_the_screen_is_withheld() {
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.live_settler_capture_lessons);
+    assert!(!live.settler_guard_holds);
+    assert!(live.settler_guard_holds_on());
+
+    let mut unsafe_controller = AdvancedAi::new();
+    unsafe_controller.enable_live_bridge();
+    unsafe_controller.settlement_safety = false;
+    assert!(!unsafe_controller.settler_guard_holds_on());
+}
+
 /// The emergency civilian pass must apply the same survival test before it
 /// summons a guard.  Otherwise it preferentially calls a nearer Trebuchet,
 /// then records the Settler as stacked even though the visible Line Infantry
@@ -19539,6 +19558,10 @@ fn a_civilian_is_priced_protected_only_by_a_guard_that_can_hold() {
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge_universe();
     withheld.disable_settler_guard_holds();
+    // The live capture-lessons bridge now owns the same survival predicate
+    // when the screenable guard gene is withheld.  Turn the bridge arm off as
+    // well so this fixture remains the true pre-repair comparison.
+    withheld.disable_live_settler_capture_lessons();
 
     // An UNBOUND warrior on the destination: the old pricing discounts the
     // capture risk to nothing; the repaired one prices the raider in full.
@@ -19655,6 +19678,7 @@ fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge_universe();
     withheld.disable_settler_guard_holds();
+    withheld.disable_live_settler_capture_lessons();
     let mut game_without = game.clone();
     let left_to = run(&mut withheld, &mut game_without);
     let mut live = AdvancedAi::new();

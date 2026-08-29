@@ -450,6 +450,7 @@ fn a_live_settler_refuses_a_loyalty_doomed_target_before_walking_there() {
         "the live bridge retires a doomed candidate before the Settler walks"
     );
     if let Some(target) = live.settler_targets.get(&settler).copied() {
+        println!("DEBUG target={target:?} verdict={:?} retired={retired:?}", live.settle_site_loyalty_verdict(&game, 0, target));
         assert!(!retired.contains_key(&target));
         assert!(
             !live.settle_site_loyalty_verdict(&game, 0, target).is_some(),
