@@ -4709,6 +4709,11 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// `exhaustion-loyalty-guard`: a stranded Settler's wider search may not
+    /// take a site the Loyalty forecast cannot price, and its nearest-legal
+    /// tier runs the same concrete-revolt forecast the ranked tier does. See
+    /// `advanced/settler_never_idles.rs`.
+    exhaustion_loyalty_guard: bool,
     /// Enter the finite Great Prophet race from an explicit victory lane.
     ///
     /// ★★★★ THE LIVE SEAT NEVER RESEARCHES ASTROLOGY. Every live game runs
@@ -6668,6 +6673,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            exhaustion_loyalty_guard: false,
             enter_the_prophet_race: false,
             early_archers: false,
             fire_plan: false,
