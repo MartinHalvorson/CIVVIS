@@ -4709,6 +4709,9 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// `first-granary-reserve`: a city grown to its housing builds its
+    /// Granary ahead of the argmax, once. See `advanced_production`.
+    first_granary_reserve: bool,
     /// `exhaustion-loyalty-guard`: a stranded Settler's wider search may not
     /// take a site the Loyalty forecast cannot price, and its nearest-legal
     /// tier runs the same concrete-revolt forecast the ranked tier does. See
@@ -6677,6 +6680,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            first_granary_reserve: false,
             exhaustion_loyalty_guard: false,
             enter_the_prophet_race: false,
             early_archers: false,
@@ -21280,6 +21284,41 @@ impl AdvancedAi {
                 {
                     counts.add_item(g, &builder);
                     continue;
+                }
+            }
+            // `first-granary-reserve`: a city grown to its housing builds its
+            // Granary before anything else. Measured on nine live King runs
+            // (6,754 city-turns, t40–150): housing bound 61 % of city-turns —
+            // pop at housing 31 % (growth ×0.25), one short 29 % (×0.49) —
+            // with a mean food surplus of 5.7 thrown away; the Granary came a
+            // median 53 turns after founding, 32 of 80 cities had none at
+            // t150, and on the 3,157 housing-bound Granary-less city-turns it
+            // was legal every time at a median four turns to build while the
+            // city built Walls, Castles, wonders and units instead. The same
+            // shape as `first_builder_reserve`: one compounding asset ahead of
+            // the argmax, once per city.
+            if committed.is_none() && self.first_granary_reserve {
+                let granary = crate::name!("granary");
+                let housing_bound = {
+                    let city = &g.cities[&cid];
+                    !city.buildings.contains(&granary)
+                        && city.pop as f64 + 1.0 >= g.city_housing(city)
+                };
+                if housing_bound {
+                    let item = Item::Building { building: granary };
+                    if g.can_produce(pid, cid, &item)
+                        && g.apply(
+                            pid,
+                            &Action::Produce {
+                                city: cid,
+                                item: item.clone(),
+                            },
+                        )
+                        .is_ok()
+                    {
+                        counts.add_item(g, &item);
+                        continue;
+                    }
                 }
             }
             if committed.is_none() && self.first_research_building_reserve {
