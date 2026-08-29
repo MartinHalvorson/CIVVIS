@@ -530,6 +530,47 @@ check("visible combat shadow: synthetic guard stays with setter", ops(38), "")
 check("visible combat shadow: host row was held, not applied", has(lastEvent("orders"), '"escort_shadow_injected":1')
 	and has(lastEvent("orders"), '"escort_shadow_refused":1'), true)
 
+-- A nearby guard with no existing order is rescued onto the settler's current
+-- tile when the settler's move is held.  This is the live t73 geometry: the
+-- warrior is adjacent rather than co-located, so refusing the settler alone
+-- would leave it capturable before the next export.
+reset()
+host.units[47] = { id = 47, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[48] = { id = 48, kind = "UNIT_WARRIOR", x = 2, y = 1, moves = 2 }
+host.barbarians[95] = { id = 95, kind = "UNIT_MAN_AT_ARMS", x = 2, y = 2, moves = 2 }
+host.paths["47:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+host.paths["48:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(2, 1), plotIndex(1, 1) }, turns = { 0, 1 } }
+local rescueRows = { row(47, "MOVE_TO", 1, 2) }
+applyOrders(player, PID, 7, rescueRows)
+check("visible combat rescue: setter stays out of capture leg", ops(47), "")
+check("visible combat rescue: nearby guard joins current tile", ops(48), "UNITOPERATION_MOVE_TO@1,1")
+check("visible combat rescue: row is inserted before held setter", rescueRows[1].subject, 48)
+check("visible combat rescue: event names both units", has(lastEvent("settler_barbarian_combat_guard_rescue"), '"settler":47')
+	and has(lastEvent("settler_barbarian_combat_guard_rescue"), '"guard":48'), true)
+check("visible combat rescue: shadow is applied, not counted as CIVVIS work",
+	has(lastEvent("orders"), '"settler_barbarian_combat_guard_rescued":1')
+	and has(lastEvent("orders"), '"escort_shadow_applied":1'), true)
+
+-- A nearby guard that already has an unrelated order is deliberately not
+-- overwritten.  The conservative result is observable: no rescue event or
+-- shadow row, and the guard keeps the route the planner supplied.
+reset()
+host.units[49] = { id = 49, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[50] = { id = 50, kind = "UNIT_WARRIOR", x = 2, y = 1, moves = 2 }
+host.barbarians[96] = { id = 96, kind = "UNIT_MAN_AT_ARMS", x = 2, y = 2, moves = 2 }
+host.paths["49:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+host.paths["50:" .. plotIndex(3, 1)] = {
+	plots = { plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1 } }
+local noOverwriteRows = { row(49, "MOVE_TO", 1, 2), row(50, "MOVE_TO", 3, 1) }
+applyOrders(player, PID, 7, noOverwriteRows)
+check("visible combat no-overwrite: setter stays out of capture leg", ops(49), "")
+check("visible combat no-overwrite: guard keeps its supplied route", ops(50), "UNITOPERATION_MOVE_TO@3,1")
+check("visible combat no-overwrite: no rescue is synthesized", lastEvent("settler_barbarian_combat_guard_rescue"), nil)
+check("visible combat no-overwrite: rescue counter stays zero", has(lastEvent("orders"), '"settler_barbarian_combat_guard_rescued":0'), true)
+
 -- A visible combat unit outside the adjacent-capture geometry does not freeze
 -- normal expansion movement.
 reset()

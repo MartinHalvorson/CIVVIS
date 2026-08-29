@@ -25868,6 +25868,7 @@ impl AdvancedAi {
                     && !self.settler_site_is_dead(uid, *position)
                     && (!self.settler_threat_detour
                         || !self.settler_threat_deferrals.contains_key(position))
+                    && !self.settler_target_reserved_by_other(g, pid, uid, *position)
             })
             .collect::<Vec<_>>();
         // See `settle_sooner`: the walk is priced in TURNS as well as tiles,
@@ -26628,6 +26629,27 @@ impl AdvancedAi {
             .is_some_and(|sites| sites.contains_key(&pos))
     }
 
+    /// Whether another live Settler already owns this site for the current
+    /// empire.  Normal target selection is sequential, but the live bridge can
+    /// have several Settlers in flight at once; without this check each one can
+    /// independently choose the same fallback after a target is retired.
+    fn settler_target_reserved_by_other(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
+        // Target reservations are part of the bounded recovery/commitment
+        // contract. Keep the historical controller's ordinary site ranking
+        // untouched; the frozen `advanced_v1` anchor has neither commitment
+        // nor never-idles recovery enabled.
+        if !self.settler_commit && !self.settler_never_idles {
+            return false;
+        }
+        self.settler_targets.iter().any(|(other, target)| {
+            *other != uid
+                && *target == pos
+                && g.units
+                    .get(other)
+                    .is_some_and(|unit| unit.owner == pid && unit.kind == "settler")
+        })
+    }
+
     /// The Settler's turn: the decision routine below and — under
     /// `settler-never-idles` — a watchdog that marches a Settler the routine
     /// has held for `SETTLER_IDLE_PATIENCE` turns. See
@@ -26865,8 +26887,10 @@ impl AdvancedAi {
                     && tile
                         .owner_city
                         .is_none_or(|cid| g.cities[&cid].owner == pid)
+                    && !self.settler_site_is_dead(uid, *target)
                     && (!self.settler_threat_detour
                         || !self.settler_threat_deferrals.contains_key(target))
+                    && !self.settler_target_reserved_by_other(g, pid, uid, *target)
                     && (*target == current || g.route_step(uid, *target, 0).is_some())
                     && (!self.settlement_safety
                         || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
@@ -26906,12 +26930,20 @@ impl AdvancedAi {
                         })
                         .or_else(|| {
                             if !self.opening_settlement_recon_active(g, pid) {
-                                self.base.best_reachable_settle_site(
-                                    g,
-                                    pid,
-                                    uid,
-                                    g.map.width + g.map.height,
-                                )
+                                self.base
+                                    .best_reachable_settle_site(
+                                        g,
+                                        pid,
+                                        uid,
+                                        g.map.width + g.map.height,
+                                    )
+                                    .filter(|(pos, _)| {
+                                        !self.settler_site_is_dead(uid, *pos)
+                                            && (!self.settler_threat_detour
+                                                || !self.settler_threat_deferrals.contains_key(pos))
+                                            && !self
+                                                .settler_target_reserved_by_other(g, pid, uid, *pos)
+                                    })
                             } else {
                                 None
                             }
@@ -27025,6 +27057,9 @@ impl AdvancedAi {
             }
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
+            }
+            if self.settler_target_reserved_by_other(g, pid, uid, target) {
+                return Some("another settler already owns the site");
             }
             // `commitment_patience`: a threat is a hold, not a drop — the
             // ledger retires the site if the hold outlasts its patience.
