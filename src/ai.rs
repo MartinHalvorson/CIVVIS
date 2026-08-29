@@ -8378,12 +8378,24 @@ impl BasicAi {
         if !self.settler_strand_discount {
             return 0;
         }
-        self.parked_settlers(g, pid, Self::STRANDED_SETTLER_TURNS)
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                g.units
+                    .get(uid)
+                    .is_some_and(|unit| unit.kind.as_str() == "settler")
+                    && self
+                        .settler_idle
+                        .get(uid)
+                        .is_some_and(|(_, idle)| *idle >= Self::STRANDED_SETTLER_TURNS)
+            })
+            .count()
     }
 
     /// Owned Settlers that have stood on one tile for at least `min_idle`
-    /// consecutive turns, as `refresh_settler_idle` counts them. Ungated: the
-    /// callers gate on their own gene.
+    /// consecutive turns, as `refresh_settler_idle` counts them — the brake's
+    /// reading of the same map `stranded_settlers` reads at twelve. Ungated:
+    /// the callers gate on their own gene.
     pub(crate) fn parked_settlers(&self, g: &Game, pid: usize, min_idle: u32) -> usize {
         g.player_unit_ids(pid)
             .into_iter()
