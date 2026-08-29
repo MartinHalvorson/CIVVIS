@@ -24144,6 +24144,24 @@ impl AdvancedAi {
             Item::District { district, pos } => {
                 let spec = &g.rules.districts[district];
                 let family = g.district_family(*district);
+                // A named Science seat has a narrower district contract than
+                // the adaptive stock lane. Once Campus buildings are caught
+                // up, generic Culture/Gold/Faith districts otherwise remain
+                // legal argmax candidates and can consume the queue before
+                // Electricity unlocks the Research Lab. Keep genuinely
+                // enabling infrastructure (Campus, Industrial Zone,
+                // Spaceport, production/housing/defense districts, and the
+                // first Government Plaza/Diplomatic Quarter) available, but
+                // do not let a Theater Square, Commercial Hub, Harbor, Holy
+                // Site, or Preserve become a Science detour.
+                if self.victory_target == Some(VictoryTarget::Science)
+                    && matches!(
+                        family.as_str(),
+                        "theater_square" | "commercial_hub" | "harbor" | "holy_site" | "preserve"
+                    )
+                {
+                    return -10_000.0;
+                }
                 if family == "spaceport" && city.districts.contains_key(crate::name!("spaceport")) {
                     // Multiple Spaceports are rules-legal, but one city can
                     // execute only one project at a time. Put additional

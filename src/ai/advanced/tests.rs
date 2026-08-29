@@ -11452,6 +11452,57 @@ fn district_search_values_unique_families_and_real_housing_need() {
     );
 }
 
+/// Once the Campus chain has no currently buildable rung, an explicit Science
+/// target must not fall through to a generic Culture, Gold, or Faith district.
+/// Those districts can look positive in the ordinary production argmax and
+/// still spend the queue seat before Electricity unlocks the Research Lab.
+#[test]
+fn a_targeted_science_refuses_unrelated_specialty_districts() {
+    let mut game = Game::new_full(1, 24, 16, 5_417, 250, 1, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    let site = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != game.cities[&city].pos)
+        .expect("owned district site");
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = ai.counts(&game, 0);
+
+    for district in [
+        "theater_square",
+        "commercial_hub",
+        "harbor",
+        "holy_site",
+        "preserve",
+    ] {
+        let item = Item::District {
+            district: Name::new(district),
+            pos: site,
+        };
+        assert!(
+            ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0,
+            "Science must refuse {district}"
+        );
+    }
+}
+
 #[test]
 fn production_search_uses_incremental_remaining_cost_for_paused_builds() {
     let mut game = Game::new_full(1, 20, 14, 71_002, 200, 0, false);
