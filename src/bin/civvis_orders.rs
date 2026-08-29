@@ -11724,7 +11724,11 @@ mod tests {
             Some("luxury_buy_hold:content")
         );
         let mut unknown = state.clone();
-        unknown.cities = vec![short(f64::NAN, f64::NAN), short(-1.0, -1.0), short(9.0, 4.0)];
+        unknown.cities = vec![
+            short(f64::NAN, f64::NAN),
+            short(-1.0, -1.0),
+            short(9.0, 4.0),
+        ];
         assert_eq!(amenity_deficit(&unknown), 5.0);
         unknown.cities.pop();
         assert_eq!(
