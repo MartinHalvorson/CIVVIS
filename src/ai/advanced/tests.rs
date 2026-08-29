@@ -1283,6 +1283,52 @@ fn a_weak_seat_that_cannot_buy_its_defender_produces_it() {
         game.rules.units[&unit].class == "military",
         "the unit is a defender, not a civilian: {unit}"
     );
+    // A severe deficit preempts a Settler on the queue; a mild one does not.
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    game.cities.get_mut(&ours).expect("capital").queue = vec![settler.clone()];
+    assert!(
+        ai.border_parity_production(&mut game, 0),
+        "under half the neighbour's power the contact city pauses its Settler for a defender"
+    );
+    let front = game.cities[&ours].queue.first().cloned();
+    assert!(
+        matches!(&front, Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"),
+        "the defender leads the queue: {front:?}"
+    );
+    // The affordable-first purchase, on a fresh board: price with a full
+    // treasury (an unaffordable purchase has no price), then leave only the
+    // cheapest defender's price above the reserve — it still buys.
+    let mut affordable = game.clone();
+    affordable
+        .cities
+        .get_mut(&ours)
+        .expect("capital")
+        .queue
+        .clear();
+    affordable.players[0].gold = 10_000.0;
+    let priced: Vec<(f64, String)> = [Some(true), Some(false)]
+        .into_iter()
+        .filter_map(|want_ranged| ai.base.best_military(&affordable, 0, ours, want_ranged))
+        .filter_map(|unit| {
+            affordable
+                .unit_purchase_cost(0, ours, &unit, "gold")
+                .map(|cost| (cost, unit))
+        })
+        .collect();
+    let (cheapest_cost, _) = priced
+        .iter()
+        .cloned()
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .expect("fixture: some defender has a Gold price");
+    affordable.players[0].gold = BORDER_PARITY_RESERVE + cheapest_cost + 1.0;
+    let units_before = affordable.player_unit_ids(0).len();
+    assert!(
+        ai.border_parity_purchase(&mut affordable, 0),
+        "a treasury that covers the cheaper defender buys it"
+    );
+    assert_eq!(affordable.player_unit_ids(0).len(), units_before + 1);
     ai.disable_border_parity_2();
     assert!(!ai.border_parity_2);
 }

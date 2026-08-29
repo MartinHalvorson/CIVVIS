@@ -368,6 +368,10 @@ const BORDER_PARITY_RATIO: f64 = 0.8;
 /// Gold kept back from a parity purchase, so the buy never empties the
 /// treasury the way a bankruptcy would.
 const BORDER_PARITY_RESERVE: f64 = 100.0;
+/// Under this share of the bordering major's power `border-parity-2` starts
+/// the contact city's defender ahead of whatever it is building; above it,
+/// only an idle queue takes the defender.
+const BORDER_PARITY_SEVERE_RATIO: f64 = 0.5;
 /// `age-closer`: the era-point shortfall from a Normal Age at which the seat
 /// spends its bank on a guaranteed Historic Moment. Nine live King games
 /// fell into 15 Dark Ages; ten of the fifteen shortfalls were five points or
@@ -17366,20 +17370,26 @@ impl AdvancedAi {
         let Some((ours, theirs, rival, contact)) = self.border_parity_target(g, pid) else {
             return false;
         };
-        let Some(unit) = self
-            .base
-            .best_military(g, pid, contact, Some(true))
-            .or_else(|| self.base.best_military(g, pid, contact, Some(false)))
-        else {
-            return false;
-        };
-        let Some(cost) = g.unit_purchase_cost(pid, contact, &unit, "gold") else {
-            return false;
-        };
+        // The best ranged unit first, then the best melee one — and the first
+        // of them the treasury can pay for. Run civvis-20260829T094737Z read
+        // 0.16 of Scotland at t100–t111 with 152–277 Gold, and the host's own
+        // purchasable list held a Spearman: asking only for the Crossbowman
+        // bought nothing for eleven turns.
         let bank = g.players[pid].gold;
-        if bank + f64::EPSILON < BORDER_PARITY_RESERVE + cost {
-            return false;
+        let mut candidates: Vec<String> = Vec::new();
+        for want_ranged in [Some(true), Some(false)] {
+            if let Some(unit) = self.base.best_military(g, pid, contact, want_ranged) {
+                if !candidates.contains(&unit) {
+                    candidates.push(unit);
+                }
+            }
         }
+        let Some(unit) = candidates.into_iter().find(|unit| {
+            g.unit_purchase_cost(pid, contact, unit, "gold")
+                .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
+        }) else {
+            return false;
+        };
         let wanted = Name::new(&unit);
         let action = self.legal_purchase_actions(g, pid).into_iter().find(|action| {
             matches!(
@@ -17402,6 +17412,68 @@ impl AdvancedAi {
                 "{spent:.0} Gold: {ours:.0} power against their {theirs:.0}, and every war declared \
                  on this seat before turn 100 came from the strongest bordering major at about \
                  four fifths of its power");
+        }
+        true
+    }
+
+    /// `border-parity-2` under a SEVERE deficit: our power under
+    /// `BORDER_PARITY_SEVERE_RATIO` of the bordering major's while the
+    /// contact city builds something that is neither a defender, walls, a
+    /// repair nor a wonder — start the defender ahead of it, the way a city
+    /// under fire reclaims its queue. The idle-queue reserve in
+    /// `advanced_production` covers the mild case; run
+    /// civvis-20260829T094737Z sat at 0.16 of Scotland for eleven turns with
+    /// every queue holding a Settler, a Consulate or a wonder.
+    fn border_parity_production(&self, g: &mut Game, pid: usize) -> bool {
+        if !self.border_parity_2 {
+            return false;
+        }
+        let Some((ours, theirs, rival, contact)) = self.border_parity_target(g, pid) else {
+            return false;
+        };
+        if ours >= BORDER_PARITY_SEVERE_RATIO * theirs {
+            return false;
+        }
+        let committed = g.cities[&contact].queue.first().cloned();
+        if committed.as_ref().is_some_and(|item| {
+            Self::active_queue_is_defensive(g, item) || matches!(item, Item::Wonder { .. })
+        }) {
+            return false;
+        }
+        let defender = self
+            .base
+            .best_military(g, pid, contact, Some(true))
+            .or_else(|| self.base.best_military(g, pid, contact, Some(false)));
+        let Some(unit) = defender else {
+            return false;
+        };
+        let item = Item::Unit {
+            unit: Name::new(&unit),
+        };
+        if committed.as_ref() == Some(&item) || !g.can_produce(pid, contact, &item) {
+            return false;
+        }
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: contact,
+                item: item.clone(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let city_name = g.cities[&contact].name.clone();
+            match committed {
+                Some(paused) => think!(self.journal(), Economy, Decision,
+                    "{city_name} pauses {} for {unit} to hold parity with {}", Self::plain_item(&paused), g.players[rival].civ;
+                    "{ours:.0} power against their {theirs:.0}, under half; a bordering major that strong declares"),
+                None => think!(self.journal(), Economy, Decision,
+                    "{city_name} starts {unit} to hold parity with {}", g.players[rival].civ;
+                    "{ours:.0} power against their {theirs:.0}, under half"),
+            }
         }
         true
     }
@@ -35312,6 +35384,9 @@ impl AdvancedAi {
         // the existing wall doctrine protect the plan's one threatened city
         // before it begins taking damage.
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
+        // `border-parity-2`: the severe-deficit preemption, beside the siege
+        // reclaim it mirrors.
+        self.border_parity_production(g, pid);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot
