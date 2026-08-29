@@ -1750,6 +1750,10 @@ pub const GENES: &[Gene] = &[
     // Research the tech that connects an owned, unimproved luxury before the
     // lane's beeline resumes; see `unconnected_luxury_tech`.
     Gene { tag: "connect-the-luxury", field: "connect_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_connect_the_luxury, disable: AdvancedAi::disable_connect_the_luxury },
+    // Hold four fifths of the strongest bordering major's military power in
+    // peacetime by buying the contact city's defender; see
+    // `border_parity_purchase`.
+    Gene { tag: "border-parity", field: "border_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity, disable: AdvancedAi::disable_border_parity },
     // A few era points short of a Normal Age, any affordable Great Person is
     // worth its moment; see `era_points_short`.
     Gene { tag: "age-closer", field: "age_closer", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer, disable: AdvancedAi::disable_age_closer },

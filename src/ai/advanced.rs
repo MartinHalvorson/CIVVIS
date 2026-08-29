@@ -331,6 +331,19 @@ const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 /// known-city sites. See `frontier_loyalty` and `Game::unseen_major_borders`.
 const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
 
+/// `border-parity`: a met major's visible city within this many tiles of one
+/// of ours is a border contact. Eleven of the thirteen pre-turn-100 wars
+/// declared on the seat came with at least one of our cities within six
+/// tiles of the declarer's; eight is the reach a Warrior stack covers in
+/// three turns.
+const BORDER_PARITY_CONTACT_RADIUS: i32 = 8;
+/// The share of the strongest bordering major's military power the seat
+/// keeps in peacetime. Twelve of fourteen city losses came at ratios under
+/// 0.8; at 0.8–1.0 one city was lost, at parity or above one.
+const BORDER_PARITY_RATIO: f64 = 0.8;
+/// Gold kept back from a parity purchase, so the buy never empties the
+/// treasury the way a bankruptcy would.
+const BORDER_PARITY_RESERVE: f64 = 100.0;
 /// `age-closer`: the era-point shortfall from a Normal Age at which the seat
 /// spends its bank on a guaranteed Historic Moment. Nine live King games
 /// fell into 15 Dark Ages; ten of the fifteen shortfalls were five points or
@@ -4447,6 +4460,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `border-parity`: in peacetime, once a met major's city stands within
+    /// `BORDER_PARITY_CONTACT_RADIUS` of ours, keep the seat's military power
+    /// at `BORDER_PARITY_RATIO` of the strongest such neighbour's by buying
+    /// the contact city's defender with Gold. See `border_parity_purchase`.
+    border_parity: bool,
     /// `age-closer`: a seat one to `AGE_CLOSER_MARGIN` era points short of a
     /// Normal Age lets any affordable Great Person be patronized for its
     /// moment. See `era_points_short` and `advanced_great_people`.
@@ -6651,6 +6669,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            border_parity: false,
             age_closer: false,
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
@@ -17155,8 +17174,136 @@ impl AdvancedAi {
     /// equally spendable. Late empires can earn more Gold each turn than one
     /// purchase consumes, so buy a bounded series and recompute needs after
     /// every item instead of carrying an ever-growing inert treasury.
+    /// `border-parity`: the wars that decide King games are declared on the
+    /// seat, not by it. Of 46 wars declared on it in the King runs of
+    /// 2026-08-26..29, **every one of the 13 before turn 100 came from the
+    /// strongest major bordering it**, at a median 0.79 of that major's
+    /// military power — 0.97 ten turns earlier; the gap opens in the last ten
+    /// turns, faster than production can answer, while the treasury held
+    /// 159–399 Gold. Twelve of the fourteen cities lost fell at ratios under
+    /// 0.8, and eight of thirteen had no unit within one tile the turn
+    /// before. A denouncement preceded one war in eleven; grievances read
+    /// zero in every row. `desired_military` is a headcount keyed to our own
+    /// city count and `peacetime-deterrence` multiplies that headcount by the
+    /// strongest MET major (scouts count), so it would have fired in two of
+    /// eight.
+    ///
+    /// The gene reads the host's own power figures: in peacetime, once a met
+    /// major's visible city stands within `BORDER_PARITY_CONTACT_RADIUS` of a
+    /// city of ours, and our `military_power` is under `BORDER_PARITY_RATIO`
+    /// of the strongest such neighbour's, buy the best ranged (else melee)
+    /// unit the contact city nearest that neighbour can produce, with Gold
+    /// above `BORDER_PARITY_RESERVE` — one purchase a turn, ahead of the
+    /// ordinary shopping. The unit is a garrison: `best_military` ranks by
+    /// movement and strength, and the ranged answer is what a walled city
+    /// turns into damage. Nothing here declares, raises the production
+    /// target, or fires at war.
+    fn border_parity_purchase(&self, g: &mut Game, pid: usize) -> bool {
+        if !self.border_parity {
+            return false;
+        }
+        let at_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_barbarian
+                && !player.is_minor
+                && g.is_at_war(pid, player.id)
+        });
+        if at_war {
+            return false;
+        }
+        let ours = g.military_power(pid).max(1.0);
+        let our_cities: Vec<(u32, Pos)> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| (cid, g.cities[&cid].pos))
+            .collect();
+        if our_cities.is_empty() {
+            return false;
+        }
+        // The strongest met major with a visible city in reach of ours, and
+        // our city nearest to that neighbour.
+        let mut strongest: Option<(f64, usize, u32)> = None;
+        for city in g.cities.values() {
+            let owner = city.owner;
+            if owner == pid {
+                continue;
+            }
+            let player = &g.players[owner];
+            if !player.alive
+                || player.is_barbarian
+                || player.is_minor
+                || g.same_team(pid, owner)
+                || !g.has_met(pid, owner)
+            {
+                continue;
+            }
+            let Some((contact, distance)) = our_cities
+                .iter()
+                .map(|(cid, pos)| (*cid, g.wdist(*pos, city.pos)))
+                .min_by_key(|(cid, distance)| (*distance, *cid))
+            else {
+                continue;
+            };
+            if distance > BORDER_PARITY_CONTACT_RADIUS {
+                continue;
+            }
+            let power = g.military_power(owner);
+            if strongest.is_none_or(|(best, _, _)| power > best) {
+                strongest = Some((power, owner, contact));
+            }
+        }
+        let Some((theirs, rival, contact)) = strongest else {
+            return false;
+        };
+        if ours >= BORDER_PARITY_RATIO * theirs {
+            return false;
+        }
+        let Some(unit) = self
+            .base
+            .best_military(g, pid, contact, Some(true))
+            .or_else(|| self.base.best_military(g, pid, contact, Some(false)))
+        else {
+            return false;
+        };
+        let Some(cost) = g.unit_purchase_cost(pid, contact, &unit, "gold") else {
+            return false;
+        };
+        let bank = g.players[pid].gold;
+        if bank + f64::EPSILON < BORDER_PARITY_RESERVE + cost {
+            return false;
+        }
+        let wanted = Name::new(&unit);
+        let action = self.legal_purchase_actions(g, pid).into_iter().find(|action| {
+            matches!(
+                action,
+                Action::Buy { city, unit, formation, currency }
+                    if *city == contact && *formation == 0 && currency == "gold" && *unit == wanted
+            )
+        });
+        let Some(action) = action else {
+            return false;
+        };
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let spent = (bank - g.players[pid].gold).max(0.0);
+            let city_name = g.cities[&contact].name.clone();
+            think!(self.journal(), Economy, Decision,
+                "Buying {unit} for {city_name} to hold parity with {}", g.players[rival].civ;
+                "{spent:.0} Gold: {ours:.0} power against their {theirs:.0}, and every war declared \
+                 on this seat before turn 100 came from the strongest bordering major at about \
+                 four fifths of its power");
+        }
+        true
+    }
+
     fn advanced_gold_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
         if self.emergency_city_defense_purchase(g, pid, plan) {
+            return true;
+        }
+        if self.border_parity_purchase(g, pid) {
             return true;
         }
         let city_count = g.player_city_ids(pid).len();
