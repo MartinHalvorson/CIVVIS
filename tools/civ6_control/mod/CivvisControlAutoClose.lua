@@ -703,6 +703,30 @@ else
 	-- How often this context says it is alive. One a minute per armed screen
 	-- is enough to bracket a wedge (the outside watchdog allows five minutes)
 	-- without filling the log: a full 250-turn game adds a few hundred bytes.
+	-- ★★★★ ANSWERED, AND THE ANSWER IS NO: A HIDDEN CONTEXT DOES NOT TICK.
+	--
+	-- This was built to decide whether the UI thread outlives a parked Game
+	-- Core, because if it did, a nudge from this side could unpark a turn the
+	-- agent can no longer reach. Run civvis-20260829T194002Z settles it:
+	-- **two** heartbeats across 121 turns, both `"up":true`, both from the one
+	-- screen that was actually showing.
+	--
+	-- 600 frames took 5.0 seconds, so the game renders about 120fps. Were
+	-- `SetUpdate` running on hidden contexts, each of the two dozen armed
+	-- screens would have emitted one every five seconds — hundreds apiece over
+	-- a 35-minute game. So `ContextPtr:SetUpdate` runs only while its context
+	-- is visible, and there is NO always-on UI tick here.
+	--
+	-- ⚠ Do not rebuild the in-mod nudge on this: there is nothing to hang it
+	-- on. An EXTERNAL keystroke is a different path and is unaffected — the
+	-- harness sends SHIFT+RETURN through the OS into the app's event loop
+	-- rather than through any mod tick (`macos_input.press_key`, #2781). If a
+	-- parked turn is recoverable at all, that is where to try it.
+	--
+	-- The heartbeat stays because it still reports something real and cheap:
+	-- a screen that held the UI for five seconds or more, which is the shape a
+	-- stuck popup makes.
+	--
 	-- Counted in FRAMES, not seconds, and that is the whole point.
 	--
 	-- The first attempt accumulated `fDTime` to sixty seconds and emitted
