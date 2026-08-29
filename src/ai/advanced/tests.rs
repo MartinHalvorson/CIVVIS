@@ -38387,13 +38387,8 @@ fn the_builder_opens_the_empires_first_luxury_before_the_iron() {
         plantation,
         "off, the premium is not reached at all"
     );
-    let ranked_off = ai.builder_jobs_ranked(
-        &game,
-        0,
-        builder,
-        GrandStrategy::Expansion,
-        &HashSet::new(),
-    );
+    let ranked_off =
+        ai.builder_jobs_ranked(&game, 0, builder, GrandStrategy::Expansion, &HashSet::new());
     assert_eq!(
         ranked_off.first(),
         Some(&iron),
