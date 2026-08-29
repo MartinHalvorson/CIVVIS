@@ -26258,14 +26258,7 @@ impl AdvancedAi {
                 // hold, while native/evaluator detours retain their original
                 // support-aware semantics.
                 let risk = if self.settler_routing_recovery_on() {
-                    self.settlement_tile_risk_with_support(
-                        g,
-                        pid,
-                        Some(uid),
-                        next,
-                        &visible,
-                        false,
-                    )
+                    self.settlement_tile_risk_with_support(g, pid, Some(uid), next, &visible, false)
                 } else {
                     self.settlement_tile_risk(g, pid, Some(uid), next, &visible)
                 };
