@@ -37727,6 +37727,58 @@ fn a_barbarian_scout_is_a_capture_threat_on_the_live_seat() {
     );
 }
 
+/// The live host falls back to a barbarian combat unit's static `BaseMoves`
+/// radius when a civilian destination cannot be answered by its path query.
+/// Keep the native live reach at least that conservative, or a settler can
+/// enter a tile the host will refuse as an escape and be captured in place.
+#[test]
+fn a_live_barbarian_combat_reach_matches_the_host_geometric_floor() {
+    let (mut game, _city, home) = barbarian_field(71_307);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let raider_at = game
+        .wdisk(start, 4)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 4 && game.wdist(*pos, home) <= 2 && open_land(&game, *pos)
+        })
+        .expect("open ground four tiles from the settler");
+    let _settler = game.spawn_test_unit("settler", 0, start);
+    let raider = game.spawn_test_unit("saka_horse_archer", 1, raider_at);
+
+    let exact = game.threat_reach(raider);
+    let geometric = game
+        .wdisk(raider_at, 4)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| !game.rules.is_water(tile))
+                && !exact.contains(pos)
+        })
+        .expect("the fixture must leave a geometric four-hex tile outside the exact flood");
+
+    let mut native = AdvancedAi::new();
+    native.enable_civilian_out_of_reach();
+    assert!(
+        !native
+            .barbarian_reach(&game, 0, geometric, 10)
+            .covers(&game, geometric),
+        "native/evaluator reach remains terrain-constrained"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.barbarian_reach(&game, 0, geometric, 10)
+            .covers(&game, geometric),
+        "the live reach includes the host's static four-hex land floor"
+    );
+}
+
 /// Run civvis-20260829T022749Z, t78: boxed between a skirmisher and a warrior
 /// with the sea behind it, the settler "held inside a barbarian's reach"
 /// beside the skirmisher — two tiles from a full-health archer it could have
