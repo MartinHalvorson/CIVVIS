@@ -755,4 +755,29 @@ if failures > 0 then
 	realPrint(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
 end
+-- The last copy of a luxury is never sold: each distinct luxury gives four
+-- cities an Amenity, and run civvis-20260829T040540Z sold its only Mercury
+-- three times because the planner counted a suzerain's copy. The host's own
+-- count decides; a second copy is surplus and still sells.
+reset()
+resourceRows.RESOURCE_SILK.ResourceClassType = "RESOURCECLASS_LUXURY"
+local sole, solePlayer = fixture({ possible = { RESOURCE_SILK = 5 } })
+solePlayer.GetResources = function()
+	return { GetResourceAmount = function() return 1 end }
+end
+ok, why = sellOrder(7, 3, solePlayer, 70, "RESOURCE_SILK=1", 30)
+check("the last copy of a luxury is refused", ok, false)
+check("the last copy is named", why, "sole_copy:RESOURCE_SILK")
+check("the last copy sends nothing", sole.sends, nil)
+check("the last copy leaves no pending ask", trade.pending[3], nil)
+reset()
+local spare, sparePlayer = fixture({ possible = { RESOURCE_SILK = 5 } })
+sparePlayer.GetResources = function()
+	return { GetResourceAmount = function() return 2 end }
+end
+ok, why = sellOrder(7, 3, sparePlayer, 70, "RESOURCE_SILK=1", 30)
+check("a second copy still sells", ok, true)
+check("a second copy is asked", why, "sell_asked")
+resourceRows.RESOURCE_SILK.ResourceClassType = nil
+
 realPrint("\nall surplus-sale checks passed")
