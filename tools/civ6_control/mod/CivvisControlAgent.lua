@@ -13953,10 +13953,12 @@ CivvisQueue.pendingCount = function() return CivvisQueue.count + CivvisQueue.wat
 -- A watch is a rows-less entry: it settles like any queued order
 -- (arrival, no movement left, the host's own event, or the grace period)
 -- and is dropped; it never issues anything and names no refusal.
-CivvisQueue.watch = function(subject, expect)
+CivvisQueue.watch = function(subject, expect, origin)
 	local q = CivvisQueue;
 	if q.pending[subject] ~= nil then return; end
-	q.pending[subject] = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
+	q.pending[subject] = {
+		rows = {}, next = 1, expect = expect, origin = origin, ready = false, wait = 0
+	};
 	q.order[#q.order + 1] = subject;
 	q.watching = q.watching + 1;
 end;
@@ -14027,7 +14029,20 @@ CivvisQueue.drain = function(player, pid, turn)
 				local arrived = entry.expect == nil
 					or (ux == entry.expect.x and uy == entry.expect.y);
 				local spent = moves ~= nil and moves <= 0;
-				local ready = entry.ready or arrived or spent or entry.wait >= grace;
+				-- A host operation can settle on a different plot than the
+				-- requested coordinate while an asynchronous walk is in flight.
+				-- The rows-less watch exists only to wait for that opening
+				-- operation; once the unit has demonstrably left its origin,
+				-- release the watch and let the brain re-plan from the actual
+				-- board instead of pinning the turn until the grace timeout.
+				-- Do not apply this to a real queued follow-up: its origin belongs
+				-- to the opening walk and must not make the next row run before its
+				-- own expectation settles.
+				local moved_from_origin = #entry.rows == 0
+					and entry.origin ~= nil
+					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
+				local ready = entry.ready or arrived or spent or moved_from_origin
+					or entry.wait >= grace;
 				if ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready then
@@ -15397,7 +15412,12 @@ local function applyOrders(player, pid, turn, rows)
 					-- Hold the turn until this walk lands (see CivvisQueue.watch);
 					-- a queued follow-up for the unit replaces the watch.
 					if queueOn and ok and firstRun[subject].expect ~= nil then
-						CivvisQueue.watch(subject, firstRun[subject].expect);
+						local watched = liveUnit(pid, subject);
+						local origin = watched ~= nil and {
+							x = tonumber(try(function() return watched:GetX(); end, -1)),
+							y = tonumber(try(function() return watched:GetY(); end, -1)),
+						} or nil;
+						CivvisQueue.watch(subject, firstRun[subject].expect, origin);
 					end
 					if queueOn and ok and foundRetry[subject] ~= nil
 							and tostring(row.verb or "") == "MOVE_TO" then

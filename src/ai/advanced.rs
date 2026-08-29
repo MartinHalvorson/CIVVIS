@@ -25485,7 +25485,18 @@ impl AdvancedAi {
     }
 
     fn settler_guard_holds_on(&self) -> bool {
-        self.settler_guard_holds || self.settler_guard_holds_2
+        self.settler_guard_holds
+            || self.settler_guard_holds_2
+            // The live bridge's capture-lessons treatment is HostOnly and is
+            // deliberately deployable even when the native guard-holds
+            // screen is withheld by the ledger.  Those lessons include the
+            // observed failure where a wounded or outmatched escort died in
+            // the hostile phase and the stacked Settler was captured next.
+            // Keeping the same survival predicate active for that bridge
+            // prevents the live safety layer from crediting a guard it has
+            // already proved cannot hold.  Native/evaluator controllers have
+            // neither live host lessons nor this implication.
+            || (self.live_settler_capture_lessons && self.settlement_safety)
     }
 
     /// The live bridge's host safety layer can refuse a Settler's next leg
