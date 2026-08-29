@@ -599,6 +599,23 @@ const PANTHEON_FAITH_CARD_FLOOR: f64 = 1.0;
 /// reach. Those are different quantities and this is what the difference cost.
 pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
+/// A named Science seat needs enough cities to support several Campuses and a
+/// couple of launch pads, but the live land-grab ceiling is a different
+/// objective. Eight cities keeps the research base broad without asking a
+/// Science race to spend its opening on a sixteen-city settlement campaign.
+const SCIENCE_CITY_TARGET_CAP: usize = 8;
+
+/// A Science seat may take the first three cities before its lane owns the
+/// plan. This is the small opening economy that makes the target viable; after
+/// it, the research and space-race contract must be the active posture.
+const SCIENCE_OPENING_CITY_TARGET: usize = 3;
+
+/// If hostile land or a slow start prevents three cities, give the Science
+/// lane only this many standard turns to finish that opening before it takes
+/// over. At Online speed this is sixty turns, matching the first research
+/// infrastructure window rather than the generic expansion deadline.
+const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 90;
+
 /// Passable land per city the land grab prices the board at. Civilization VI
 /// packs cities four tiles apart (`CITY_MIN_RANGE` 3 plus the engine's own
 /// wdist ≥ 4 rule); a city works nineteen tiles at radius two, and the rivals
@@ -10153,6 +10170,8 @@ impl AdvancedAi {
                     && !player.is_barbarian
                     && player.religion.is_some()
             });
+        let active_victory_target = self.active_victory_target(g);
+        let science_targeted = active_victory_target == Some(VictoryTarget::Science);
         let map_capacity = if self.wide_map_capacity && !conversion_race_live {
             // Live-bridge pricing: one city per 45 passable tiles, ceiling
             // twelve. A fresh live mirror knows the world's dimensions but
@@ -10256,6 +10275,18 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
+        // `land_grab` is a useful generic deployment policy, but its sixteen
+        // city horizon is incompatible with an explicit Science contract. A
+        // Science seat still settles enough productive cities to scale its
+        // Campuses, then stops treating open land as the main objective. Never
+        // lower the target beneath an empire that already exceeded the cap.
+        let desired_cities = if science_targeted {
+            desired_cities
+                .min(SCIENCE_CITY_TARGET_CAP)
+                .max(cities.len())
+        } else {
+            desired_cities
+        };
         // The rapid gene's phase boundary is deliberately the same practical
         // safe-site search that permits a Settler. A low-value, unsafe, or
         // unreachable tile therefore does not postpone the conquest phase;
@@ -10290,7 +10321,6 @@ impl AdvancedAi {
         // victory denial. Build them once for the assessment instead of
         // repeating a whole-world tourism scan for every sort comparison.
         let rival_culture_pressures = self.rival_culture_pressures(g);
-        let active_victory_target = self.active_victory_target(g);
         let actionable_denial =
             self.actionable_victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures);
         let emergency_objective = g.emergency_objective(pid).cloned();
@@ -10379,7 +10409,12 @@ impl AdvancedAi {
                     GrandStrategy::Religion,
                     "the religion lane still needs a religion",
                 )
-            } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
+            } else if cities.len() < desired_cities
+                && has_site
+                && g.turn < g.standard_duration(175)
+                && (!science_targeted
+                    || (cities.len() < SCIENCE_OPENING_CITY_TARGET
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS)))
             {
                 (
                     GrandStrategy::Expansion,
