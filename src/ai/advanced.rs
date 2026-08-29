@@ -25491,7 +25491,18 @@ impl AdvancedAi {
                 1
             };
             let attack_reach = attack_range + spec.moves.ceil() as i32;
-            let attacker = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+            // A ranged hostile breaks a stacked guard with the strength it
+            // will actually use on the civilian tile.  The melee strength is
+            // deliberately lower for units such as the Crossbowman (30
+            // Combat, 40 Ranged), so using `unit_strength` here can mark a
+            // guard as protective even though the hostile's ranged attack
+            // will kill it before the Settler's next turn.
+            let attacker_base = if spec.has_ranged_attack() {
+                g.unit_ranged_attack_strength(unit)
+            } else {
+                g.unit_strength(unit, false)
+            };
+            let attacker = crate::game::effective_strength(attacker_base, unit.hp);
             if g.wdist(unit.pos, pos) > attack_reach {
                 return false;
             }

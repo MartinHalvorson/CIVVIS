@@ -19337,6 +19337,39 @@ fn a_default_live_escort_replaces_guards_that_cannot_hold() {
     }
 }
 
+/// A Crossbowman attacks with its 40 Ranged strength, not its 30 Combat
+/// strength.  The latter is just below the 1.5x break threshold for a full
+/// Warrior, so the guard-survival test must use the actual ranged attack or
+/// the Settler will be priced as protected before the hostile turn.
+#[test]
+fn a_ranged_hostile_breaks_a_stacked_guard_with_ranged_strength() {
+    let (mut game, source, _target) = stacked_escort_fixture();
+    let guard = game.spawn_test_unit("warrior", 0, source);
+    let raider_at =
+        game.wdisk(source, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(source, *position) == 2
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a visible Crossbowman post in attack reach of the stack");
+    let raider = game.spawn_test_unit("crossbowman", 1, raider_at);
+    game.players[0].explored.insert(raider_at);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.enable_settler_guard_holds();
+    let visible = ai.battlefront_visibility(&game, 0);
+    assert!(game.unit_visible_to(raider, 0) && game.sees(&visible, raider_at));
+    assert!(
+        ai.guard_outmatched_at(&game, 0, &game.units[&guard], source, &visible),
+        "the guard must be rejected because the Crossbowman fires at 40 Ranged strength"
+    );
+}
+
 /// The emergency civilian pass must apply the same survival test before it
 /// summons a guard.  Otherwise it preferentially calls a nearer Trebuchet,
 /// then records the Settler as stacked even though the visible Line Infantry
