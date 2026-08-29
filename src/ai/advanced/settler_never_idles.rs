@@ -483,7 +483,7 @@ mod tests {
             assert!(!acted, "all explicitly retired sites remain retired");
             assert_eq!(after, before, "the settler does not wander to a dead site");
             assert!(
-                ai.settler_targets.get(&settler).is_none(),
+                !ai.settler_targets.contains_key(&settler),
                 "the stranded settler carries no resurrected target"
             );
             if gene {
