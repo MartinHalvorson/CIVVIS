@@ -1741,6 +1741,9 @@ pub const GENES: &[Gene] = &[
     // rival border and forecasts its nearest-legal tier; see
     // `advanced/settler_never_idles.rs`.
     Gene { tag: "exhaustion-loyalty-guard", field: "exhaustion_loyalty_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exhaustion_loyalty_guard, disable: AdvancedAi::disable_exhaustion_loyalty_guard },
+    // A parked Settler holds the Settler pipeline instead of opening it for a
+    // replacement; see `BasicAi::settler_backlog_brake`.
+    Gene { tag: "settler-backlog-brake", field: "settler_backlog_brake", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_backlog_brake, disable: AdvancedAi::disable_settler_backlog_brake },
     // A housing-bound city builds its Granary ahead of the argmax; see
     // `advanced_production`.
     Gene { tag: "first-granary-reserve", field: "first_granary_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve, disable: AdvancedAi::disable_first_granary_reserve },
