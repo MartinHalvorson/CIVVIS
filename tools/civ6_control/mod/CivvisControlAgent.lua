@@ -218,7 +218,8 @@ local function resolveActions()
 		-- `Base/Assets/UI/Panels/UnitPanel.lua:2518-2535` then takes its
 		-- "No mode needed, just do the operation" branch and calls
 		-- `UnitManager.RequestOperation(pSelectedUnit, actionHash)` with no
-		-- parameter table at all. That is why `{}` below is the whole request.
+		-- parameter table at all. The order layer may still use `{}` as its
+		-- empty logical parameter table; `operate` omits it at this host boundary.
 		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
 		"UNITOPERATION_RELIGIOUS_HEAL", "UNITOPERATION_CONVERT_BARBARIANS",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
@@ -1183,11 +1184,16 @@ end
 -- Without it a rejected order is indistinguishable from an accepted one, and
 -- that is how 518 `advance` orders were logged while the army stood still in
 -- its own city: `pcall` succeeded every time because the call did not throw,
--- and the engine quietly declined to move anything.
+-- and the engine quietly declined to move anything. Parameterless operations
+-- are a different overload: the shipped UnitPanel checks them with the strict
+-- five-argument form `(unit, hash, nil, false, false)`.
 local function canOperate(unit, hash, params)
 	if hash == nil then return false; end
 	local ok, result = pcall(function()
-		return UnitManager.CanStartOperation(unit, hash, nil, params or {});
+		if params == nil or next(params) == nil then
+			return UnitManager.CanStartOperation(unit, hash, nil, false, false);
+		end
+		return UnitManager.CanStartOperation(unit, hash, nil, params);
 	end);
 	return ok and result == true;
 end
@@ -1200,11 +1206,15 @@ end
 -- no-op into an observable refusal, so a fallback can actually run.
 local function operate(unit, hash, params)
 	if hash == nil then return false; end
-	params = params or {};
 	if not canOperate(unit, hash, params) then return false; end
-	return pcall(function()
-		UnitManager.RequestOperation(unit, hash, params);
-	end);
+	if params == nil or next(params) == nil then
+		-- UnitPanel.lua:2535 calls parameterless operations with exactly two
+		-- arguments. Passing `{}` as a third argument is not equivalent on the
+		-- live host: the request can return without throwing while FORTIFY,
+		-- SKIP_TURN and the other in-place operations never change the unit.
+		return pcall(function() UnitManager.RequestOperation(unit, hash); end);
+	end
+	return pcall(function() UnitManager.RequestOperation(unit, hash, params); end);
 end
 
 -- Same discipline as `operate`: ask whether the command can start before
@@ -13479,8 +13489,8 @@ local function applyOrder(player, pid, row, turn)
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
 		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
-		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- see the citation on
-		-- the `resolveActions` list for why `{}` is the whole request.
+		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- `operate` selects
+		-- the shipped UnitPanel's two-argument request for these.
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
 		-- ⚠ NAME THE REFUSAL, NOT THE VERB. This tail returned `verb` for BOTH
@@ -13493,8 +13503,8 @@ local function applyOrder(player, pid, row, turn)
 		-- it is a completely different repair from the request raising.
 		--
 		-- `operate` asks `canOperate` again on the line below; that is a cheap
-		-- repeat and deliberately not inlined, so the parameterless request
-		-- stays the single shape every other operation on this tail uses.
+		-- repeat and deliberately not inlined, so the parameterless request still
+		-- passes through the same signature-aware helper as every other operation.
 		if not canOperate(unit, hash, {}) then return false, "cannot_" .. verb; end
 		return operate(unit, hash, {}), verb;
 	end

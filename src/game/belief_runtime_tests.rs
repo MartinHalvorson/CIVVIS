@@ -1698,6 +1698,72 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
     );
 }
 
+#[test]
+fn stewardship_pays_science_and_gold_for_following_districts() {
+    let (mut game, cities) = game_with_capitals(91_853);
+    let religion = establish_religion(&mut game, cities[0], &[]);
+    place_district(&mut game, cities[0], "campus");
+    place_district(&mut game, cities[0], "commercial_hub");
+    game.players[0].religion_beliefs = vec!["stewardship".to_string()];
+
+    let yields = game.founder_belief_yields(0);
+    assert_eq!(game.players[0].religion.as_deref(), Some(religion.as_str()));
+    assert_eq!(yields.science, 1.0, "one following Campus");
+    assert_eq!(yields.gold, 1.0, "one following Commercial Hub");
+}
+
+#[test]
+fn monastic_isolation_prevents_theological_combat_pressure_loss() {
+    let (mut game, cities) = game_with_capitals(91_854);
+    let religion = establish_religion(&mut game, cities[0], &["monastic_isolation"]);
+    let city = cities[0];
+    game.cities.get_mut(&city).unwrap().pressure = BTreeMap::from([(religion.clone(), 500.0)]);
+    let position = game.cities[&city].pos;
+
+    game.religious_combat_pressure(None, &religion, position, 0, 125.0);
+    assert_eq!(game.cities[&city].pressure[&religion], 500.0);
+
+    game.players[0].religion_beliefs.clear();
+    game.religious_combat_pressure(None, &religion, position, 0, 125.0);
+    assert_eq!(game.cities[&city].pressure[&religion], 375.0);
+}
+
+#[test]
+fn papal_primacy_adds_religious_pressure_when_an_envoy_is_sent() {
+    let mut game = Game::new_full(1, 24, 16, 91_855, 100, 1, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.found_city_for(0, game.units[&settler].pos, None);
+    game.remove_unit(settler);
+    let minor = game
+        .players
+        .iter()
+        .find(|player| player.is_minor && !player.is_barbarian)
+        .map(|player| player.id)
+        .unwrap();
+    let minor_city = game.player_city_ids(minor)[0];
+    game.record_contact(0, minor);
+    game.players[0].religion = Some("Test Faith".to_string());
+    game.players[0].religion_beliefs = vec!["papal_primacy".to_string()];
+    game.players[0].envoys_free = 1;
+    game.cities.get_mut(&minor_city).unwrap().pressure =
+        BTreeMap::from([("Other Faith".to_string(), 100.0)]);
+
+    let before = game.cities[&minor_city]
+        .pressure
+        .get("Test Faith")
+        .copied()
+        .unwrap_or(0.0);
+    game.do_send_envoy(0, minor).unwrap();
+    assert_eq!(
+        game.cities[&minor_city].pressure["Test Faith"] - before,
+        200.0
+    );
+}
+
 /// The twelve pantheons added on 2026-08-24 pay what the install says they
 /// pay, on the plots the install names.
 ///
@@ -1902,6 +1968,44 @@ fn god_of_healing_lifts_the_rate_beside_our_own_holy_site() {
         rival.unit_heal_rate(ours) - bare,
         0,
         "a rival's Holy Site does not heal our army"
+    );
+}
+
+#[test]
+fn holy_waters_heals_only_matching_religious_units_near_a_following_holy_site() {
+    let (mut game, cities) = game_with_capitals(91_852);
+    let holy_site = place_district(&mut game, cities[0], "holy_site");
+    let beside = game
+        .nbrs(holy_site)
+        .into_iter()
+        .find(|position| game.unit_ids_at(*position).is_empty())
+        .expect("a plot beside the Holy Site");
+    let far = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.wdist(*position, holy_site) > 2)
+        .expect("a plot away from the Holy Site");
+    let religion = establish_religion(&mut game, cities[0], &[]);
+    let on = game.spawn_test_unit("missionary", 0, holy_site);
+    let next_to = game.spawn_test_unit("missionary", 0, beside);
+    let away = game.spawn_test_unit("missionary", 0, far);
+    let warrior = game.spawn_test_unit("warrior", 0, beside);
+    for uid in [on, next_to, away] {
+        game.units.get_mut(&uid).unwrap().religion = Some(religion.clone());
+    }
+
+    let bare = [on, next_to, away, warrior].map(|uid| game.unit_heal_rate(uid));
+    game.players[0].religion_beliefs = vec!["holy_waters".to_string()];
+    let healed = [on, next_to, away, warrior].map(|uid| game.unit_heal_rate(uid));
+    assert_eq!(healed[0] - bare[0], 10, "the district's own plot counts");
+    assert_eq!(healed[1] - bare[1], 10, "and its adjacent ring");
+    assert_eq!(healed[2] - bare[2], 0, "nothing beyond the adjacent ring");
+    assert_eq!(
+        healed[3] - bare[3],
+        0,
+        "Holy Waters only heals religious units"
     );
 }
 

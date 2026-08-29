@@ -5855,6 +5855,20 @@ impl Game {
         })
     }
 
+    /// Warrior Monks are a religious-unit unlock attached to the player's
+    /// founded religion, not a generic faith discount for military units.
+    /// Keeping this separate from the Theocracy/Masonry faith-purchase gate
+    /// prevents the unit from becoming available to every military-faith
+    /// buyer once the roster contains it.
+    fn player_has_warrior_monks_belief(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .and_then(|player| player.religion.as_deref())
+            .is_some_and(|religion| {
+                self.religion_belief_effect(religion, "warrior_monk_purchase") > 0.0
+            })
+    }
+
     /// Memoized front door for [`Game::unit_purchase_cost_for_formation_uncached`],
     /// scoped like [`Game::tile_appeal`] rather than like `producible_items`:
     /// cached only for the life of one [`QueryMemo`] guard (see
@@ -5930,13 +5944,14 @@ impl Game {
         }
 
         let religious = spec.class == "religious";
+        let warrior_monk = unit == "warrior_monk";
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
         let nihang = unit == "nihang"
             && formation == 0
             && currency == "faith"
             && self.grants_city_state_unique_bonus(pid, "Lahore");
-        if formation > 0 && (religious || rock_band || naturalist) {
+        if formation > 0 && (religious || warrior_monk || rock_band || naturalist) {
             return None;
         }
         if !nihang
@@ -5948,6 +5963,16 @@ impl Game {
         }
         if rock_band || naturalist {
             if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
+                return None;
+            }
+        } else if warrior_monk {
+            if currency != "faith"
+                || !self.player_has_warrior_monks_belief(pid)
+                || !self.unlocked(pid, &spec.tech, &spec.civic)
+                || spec.requires_building.as_ref().is_some_and(|building| {
+                    !self.city_has_building_family(city, Name::new(building))
+                })
+            {
                 return None;
             }
         } else if religious {
@@ -6152,6 +6177,7 @@ impl Game {
             return Err("no such unit".into());
         };
         let religious = spec.class == "religious";
+        let warrior_monk = unit == "warrior_monk";
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
         let nihang = unit == "nihang"
@@ -6167,7 +6193,7 @@ impl Game {
         if unit == "spy" {
             return Err("Spies cannot be purchased with Gold or Faith".into());
         }
-        if formation > 0 && (rock_band || naturalist || religious) {
+        if formation > 0 && (rock_band || naturalist || religious || warrior_monk) {
             return Err("that unit cannot be purchased as a formation".into());
         }
         // Isolationism closes the frontier to Gold and Faith as well as to
@@ -6178,6 +6204,21 @@ impl Game {
         if rock_band || naturalist {
             if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
                 return Err(format!("{unit} is unlocked and purchased with faith"));
+            }
+        } else if warrior_monk {
+            if currency != "faith" {
+                return Err("Warrior Monks are bought with faith".into());
+            }
+            if !self.player_has_warrior_monks_belief(pid) {
+                return Err("Warrior Monks require the founded religion's belief".into());
+            }
+            if !self.unlocked(pid, &spec.tech, &spec.civic) {
+                return Err("not unlocked".into());
+            }
+            if spec.requires_building.as_ref().is_some_and(|building| {
+                !self.city_has_building_family(&self.cities[&cid], Name::new(building))
+            }) {
+                return Err("required religious building is missing".into());
             }
         } else if religious {
             if currency != "faith" {
@@ -6289,7 +6330,7 @@ impl Game {
             self.units.get_mut(&placed).unwrap().charges +=
                 self.governor_effect(pid, cid, "builder_charges") as i32;
         }
-        if religious {
+        if religious || warrior_monk {
             self.units.get_mut(&placed).unwrap().religion =
                 self.city_religion(&self.cities[&cid]).map(str::to_string);
         }

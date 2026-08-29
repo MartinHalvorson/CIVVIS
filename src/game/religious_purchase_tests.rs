@@ -104,3 +104,75 @@ fn founder_purchase_still_prefers_the_city_majority() {
         .expect("missionary spawned");
     assert_eq!(missionary.religion.as_deref(), Some("Rival Faith"));
 }
+
+#[test]
+fn warrior_monks_require_the_belief_and_temple_and_use_faith() {
+    let (mut game, city) = founded_two_cities();
+    enable_faith_purchase(&mut game, city);
+    game.players[0].religion = Some("Home Faith".to_string());
+    game.players[0].religion_beliefs = vec!["warrior_monks".to_string()];
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .pressure
+        .insert("Home Faith".to_string(), 1_000.0);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("temple"));
+
+    for uid in game
+        .player_unit_ids(0)
+        .into_iter()
+        .filter(|uid| game.units[uid].kind == "warrior")
+        .collect::<Vec<_>>()
+    {
+        game.remove_unit(uid);
+    }
+
+    assert_eq!(game.rules.units["warrior_monk"].cost, 100.0);
+    assert_eq!(
+        game.unit_purchase_cost(0, city, "warrior_monk", "faith"),
+        Some(200.0)
+    );
+    assert_eq!(
+        game.unit_purchase_cost(0, city, "warrior_monk", "gold"),
+        None
+    );
+
+    game.players[0].religion_beliefs.clear();
+    assert_eq!(
+        game.unit_purchase_cost(0, city, "warrior_monk", "faith"),
+        None
+    );
+    game.players[0].religion_beliefs = vec!["warrior_monks".to_string()];
+    game.cities.get_mut(&city).unwrap().buildings.clear();
+    assert_eq!(
+        game.unit_purchase_cost(0, city, "warrior_monk", "faith"),
+        None
+    );
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("temple"));
+
+    game.apply(
+        0,
+        &Action::Buy {
+            city,
+            unit: crate::name!("warrior_monk"),
+            formation: 0,
+            currency: "faith".to_string(),
+        },
+    )
+    .expect("faith purchase");
+    let monk = game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "warrior_monk")
+        .expect("Warrior Monk spawned");
+    assert_eq!(monk.religion.as_deref(), Some("Home Faith"));
+    assert_eq!(game.players[0].faith, 800.0);
+}

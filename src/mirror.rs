@@ -3950,7 +3950,9 @@ fn restore_rival_outgoing_routes(game: &mut crate::game::Game, rivals: &[StateRi
 /// its SEAT as a decimal string, a resource/district/building/feature/project
 /// its CIVVIS node name, and the class-like targets (Great Person class,
 /// promotion class, great-work object, spy operation, yield) the Firaxis
-/// suffix in lower case, which is what the engine keys them by.
+/// suffix in lower case, which is what the engine keys them by. The popup
+/// exports localized display keys (`LOC_*_NAME` / `LOC_*_DESCRIPTION`) for many non-player
+/// targets, so those wrappers are removed before the rule-node translation.
 fn civvis_congress_effect(
     rules: &crate::rules::Rules,
     resolution: &StateResolution,
@@ -3962,7 +3964,12 @@ fn civvis_congress_effect(
         2 => "B",
         _ => return None,
     };
-    let target = resolution.target.trim();
+    let raw_target = resolution.target.trim();
+    let localized_target = raw_target.strip_prefix("LOC_").unwrap_or(raw_target);
+    let target = localized_target
+        .strip_suffix("_NAME")
+        .or_else(|| localized_target.strip_suffix("_DESCRIPTION"))
+        .unwrap_or(localized_target);
     let seat = || {
         target
             .parse::<usize>()
@@ -4044,6 +4051,42 @@ fn civvis_congress_effect(
     })
 }
 
+/// Extend the ordinary host-player map with the anonymous major seats that a
+/// Congress table exposes even when the seat has not met those players.
+///
+/// `seat_of_host` intentionally contains only players whose identity is known
+/// to the mirror (plus mapped city-states). That is the right map for most
+/// host data, but it made a numeric Congress target such as `"1"` disappear
+/// even though the same Congress export had already listed player 1's
+/// standing. Use the same deterministic ascending-player assignment as
+/// [`apply_congress_dvp`], without changing the global map and accidentally
+/// assigning an unseen major to a city-state slot in unrelated systems.
+fn congress_seat_of_host(
+    state: &StateSnapshot,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+    seat_count: usize,
+) -> std::collections::BTreeMap<usize, usize> {
+    let mut congress_seats = seat_of_host.clone();
+    let Some(congress) = &state.congress_dvp else {
+        return congress_seats;
+    };
+    let ours = state.seat.local_player.max(0) as usize;
+    let major_seats = match state.seat.players {
+        0 => seat_count,
+        players => players.min(seat_count),
+    };
+    let mut unmet: Vec<&StateCongressDvpEntry> = congress
+        .points
+        .iter()
+        .filter(|entry| entry.player != ours && !congress_seats.contains_key(&entry.player))
+        .collect();
+    unmet.sort_by_key(|entry| entry.player);
+    for (seat, entry) in (state.rivals.len() + 1..major_seats).zip(unmet) {
+        congress_seats.insert(entry.player, seat);
+    }
+    congress_seats
+}
+
 /// Put the host's binding World Congress resolutions on the board.
 ///
 /// The model has its own Congress and simulates one when it plans ahead, but on
@@ -4072,8 +4115,9 @@ fn apply_host_congress(
         .unwrap_or_else(|| game.standard_duration(30));
     let expires = game.turn.saturating_add(turns_left).saturating_add(1);
     game.active_congress_effects.clear();
+    let congress_seat_of_host = congress_seat_of_host(state, seat_of_host, game.players.len());
     for resolution in resolutions {
-        match civvis_congress_effect(&game.rules, resolution, seat_of_host, expires) {
+        match civvis_congress_effect(&game.rules, resolution, &congress_seat_of_host, expires) {
             Some(effect) => game.active_congress_effects.push(effect),
             None => {
                 let issue = format!(
@@ -8009,6 +8053,14 @@ fn civvis_belief_name(rules: &crate::rules::Rules, civ6: &str) -> Option<String>
         .strip_prefix("BELIEF_")
         .unwrap_or(civ6.trim())
         .to_ascii_lowercase();
+    // Gathering Storm's XML calls this `BELIEF_DEFENDER_OF_FAITH`, while the
+    // model keeps the unambiguous `defender_of_the_faith` node. The fidelity
+    // audit has the same shipped-data alias; the live mirror must use it too or
+    // the already-implemented combat bonus is silently absent in-game.
+    let name = match name.as_str() {
+        "defender_of_faith" => "defender_of_the_faith".to_string(),
+        _ => name,
+    };
     [
         &rules.beliefs.pantheon,
         &rules.beliefs.founder,
