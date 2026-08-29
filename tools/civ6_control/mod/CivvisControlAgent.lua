@@ -16700,14 +16700,37 @@ local function tick()
 						                    dismissed = dropped, attempts = attempts,
 						                    answered = answered, parked = parked,
 						                    forfeit = seen.forfeits,
-						                    forced = UNIT_BLOCKERS[name] == true });
+						                    forced = true });
 						attempts = 0;
-						if UNIT_BLOCKERS[name] then
-							pcall(function()
-								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
-								                 { REASON = "UserForced" });
-							end);
-						end
+						-- ⚠⚠⚠ EVERY FORFEITED BLOCKER GETS THE FORCED END TURN, NOT ONLY
+						-- THE UNIT ONES. Reaching this point means the ladder is spent: the
+						-- answer was tried, the blocker survived it, and the notification has
+						-- just been dismissed. Dismissal does not stick for anything end-turn
+						-- genuinely requires -- the engine raises it straight back -- and
+						-- `ACTION_ENDTURN` without a reason is refused while it stands. So the
+						-- turn could not end, and the run died holding a decision it had
+						-- already given up.
+						--
+						-- Measured across the 2026-08-28/29 ladder runs, dismissals by blocker:
+						--     26  forced   ENDTURN_BLOCKING_UNITS
+						--     39  NOT      ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION
+						--     24  NOT      ENDTURN_BLOCKING_FILL_CIVIC_SLOT
+						--     12  NOT      ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN
+						--      6  NOT      ENDTURN_BLOCKING_CLAIM_GREAT_PERSON
+						-- Run civvis-20260829T032446Z shows both halves in one game: t88
+						-- dismissed UNITS with `parked=0` and `forced=true` and the turn
+						-- advanced; t94 dismissed GIVE_INFLUENCE_TOKEN with `forced=false` and
+						-- the game never played another turn. Run ...T182156Z died the same way
+						-- on the same prompt at t85.
+						--
+						-- The trade is the one this ladder already chose: forfeiting one
+						-- decision beats losing every turn after it. `parkReadyUnits` above
+						-- still runs for the unit blockers alone, because only those have units
+						-- to park.
+						pcall(function()
+							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							                 { REASON = "UserForced" });
+						end);
 					elseif not residual_taken and seen.forfeits == cap then
 						-- ⚠ THE RETRY IS SPENT AND THE TURN IS STILL NOT MOVING.
 						-- Say so, once, in the run's own event log. Issue #1374
