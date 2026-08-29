@@ -1047,6 +1047,66 @@ fn a_seat_a_few_era_points_short_names_the_shortfall() {
     assert!(!ai.age_closer);
 }
 
+/// `boosted-bargain-first`: Mining with its Eureka in hand, a turn or two
+/// from done for a pop-12 capital, is researched ahead of the Diplomacy
+/// beeline; without the boost, or off, the beeline's own step stands.
+#[test]
+fn a_boosted_tech_two_turns_from_done_is_researched_first() {
+    let (mut game, city, _) = empire_with_a_capital(71_120);
+    game.cities.get_mut(&city).expect("capital").pop = 24;
+    game.players[0]
+        .techs
+        .retain(|tech| tech != &crate::name!("mining"));
+    game.players[0].research = None;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.boosted_bargain_first, "the gene ships off");
+    assert!(!AdvancedAi::legacy().boosted_bargain_first);
+    game.players[0].boosted_techs.insert(crate::name!("mining"));
+    assert_eq!(ai.boosted_bargain_tech(&game, 0), None, "off, nothing");
+    ai.enable_boosted_bargain_first();
+    assert!(ai.boosted_bargain_first);
+    let science: f64 = game
+        .player_city_ids(0)
+        .into_iter()
+        .map(|cid| game.city_yields(cid).science)
+        .sum();
+    let remaining = game.tech_cost("mining") * 0.6;
+    assert!(
+        remaining <= science.max(1.0) * BOOSTED_BARGAIN_TURNS,
+        "fixture: boosted Mining ({remaining:.1}) is within two turns of {science:.1} science"
+    );
+    assert_eq!(
+        ai.boosted_bargain_tech(&game, 0),
+        Some("mining"),
+        "the boosted bargain is Mining"
+    );
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("mining"),
+        "the research step takes the bargain ahead of the beeline"
+    );
+    game.players[0]
+        .boosted_techs
+        .remove(&crate::name!("mining"));
+    assert_eq!(
+        ai.boosted_bargain_tech(&game, 0),
+        None,
+        "without the Eureka there is no bargain"
+    );
+    ai.disable_boosted_bargain_first();
+    assert!(!ai.boosted_bargain_first);
+}
+
 /// `cheapest-wonder-first`: a one-city empire whose capital can finish a
 /// wonder within twelve turns opens the live race for it under the gene;
 /// off, the three-city guard refuses it. The bargain-city test and the

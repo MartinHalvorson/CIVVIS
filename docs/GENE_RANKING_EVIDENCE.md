@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `age-closer` | off (unmeasured) | One to four era points short of a Normal Age, patronize any Great Person the bank can carry for its Historic Moment. | 1 \| 1 |
+| `boosted-bargain-first` | off (unmeasured) | Research a prerequisite-met technology whose Eureka is in hand and whose remaining cost is at most two turns of science before the lane's beeline resumes. | 1 \| 1 |
 | `border-parity` | off (unmeasured) | In peacetime, keep the seat's military power at four fifths of the strongest bordering major's by buying the contact city's ranged defender with Gold above a reserve. | 1 \| 1 |
 | `capture-go-or-stand-down-2` | off (unmeasured) | Version 2 of `capture_go_or_stand_down`: also stands down a siege whose bodies are at the objective but have not pushed the city to a new low for `CAPTURE_STALL_TURNS` stalled readings. | 1 \| 2 |
 | `cheapest-wonder-first` | off (unmeasured) | A wonder within twelve turns of done in one of the empire's strongest cities opens the live wonder race without the three-city and three-building guards, with a bonus that scales with how quickly it finishes; a wonder further than twenty-five turns from done never opens the ordinary race. | 1 \| 1 |

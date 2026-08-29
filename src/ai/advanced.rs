@@ -331,6 +331,13 @@ const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 /// known-city sites. See `frontier_loyalty` and `Game::unseen_major_borders`.
 const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
 
+/// `boosted-bargain-first`: the most turns of the empire's science a boosted,
+/// prerequisite-met technology may still need to count as a bargain. Ten
+/// live King runs left 2–12 already-boosted techs unresearched at t150
+/// (Sailing 7/10, Astrology 8/10, Mass Production 9/10, Buttress 7/10), 2.7
+/// of them prerequisite-met and within two turns — 72 beakers for 2.7 techs
+/// against a lane beeline that never looks sideways.
+const BOOSTED_BARGAIN_TURNS: f64 = 2.0;
 /// `cheapest-wonder-first`: a wonder within this many turns of done, in a
 /// city producing at least `CHEAPEST_WONDER_CITY_SHARE` of the empire's
 /// best, is a bargain the race opens for. Eight live King games ignored 17
@@ -4477,6 +4484,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `boosted-bargain-first`: a prerequisite-met technology whose Eureka is
+    /// in hand and whose remaining cost is at most `BOOSTED_BARGAIN_TURNS` of
+    /// science is researched before the lane's beeline resumes. See
+    /// `boosted_bargain_tech`.
+    boosted_bargain_first: bool,
     /// `border-parity`: in peacetime, once a met major's city stands within
     /// `BORDER_PARITY_CONTACT_RADIUS` of ours, keep the seat's military power
     /// at `BORDER_PARITY_RATIO` of the strongest such neighbour's by buying
@@ -6693,6 +6705,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            boosted_bargain_first: false,
             border_parity: false,
             age_closer: false,
             builder_avoid: BTreeMap::new(),
@@ -12263,6 +12276,7 @@ impl AdvancedAi {
             let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
+            let bargain_goal = self.boosted_bargain_tech(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -12335,6 +12349,11 @@ impl AdvancedAi {
                 {
                     luxury_goal
                 }
+                // `boosted-bargain-first`: a Eureka in hand on a technology
+                // two turns from done is a tech for a fifth of its price, and
+                // the beeline walks past it every turn. Behind the luxury
+                // connection (an amenity for four cities), ahead of the lane.
+                _ if bargain_goal.is_some() => bargain_goal,
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment => [
@@ -12877,6 +12896,40 @@ impl AdvancedAi {
         } else {
             0.15
         }
+    }
+
+    /// `boosted-bargain-first`: the cheapest available technology whose
+    /// Eureka is in hand and whose remaining cost — the speed-scaled cost
+    /// less the boost's share — is at most `BOOSTED_BARGAIN_TURNS` of the
+    /// cities' science. `None` with the gene off or without such a bargain.
+    /// The science read here is the cities' own; empire-wide bonuses only
+    /// make the bargain cheaper than it reads.
+    fn boosted_bargain_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.boosted_bargain_first {
+            return None;
+        }
+        let player = &g.players[pid];
+        let science: f64 = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.city_yields(cid).science)
+            .sum::<f64>()
+            .max(1.0);
+        g.available_techs(pid)
+            .into_iter()
+            .filter(|tech| player.boosted_techs.contains(tech))
+            .map(|tech| {
+                let percent = g.rules.techs[tech.as_str()]
+                    .boost
+                    .as_ref()
+                    .and_then(|boost| boost.percent)
+                    .unwrap_or(40.0);
+                let remaining = g.tech_cost(tech.as_str()) * (1.0 - percent / 100.0);
+                (remaining, tech)
+            })
+            .filter(|(remaining, _)| *remaining <= science * BOOSTED_BARGAIN_TURNS)
+            .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+            .map(|(_, tech)| tech.as_str())
     }
 
     fn prophet_race_open_for(&self, g: &Game, pid: usize) -> bool {

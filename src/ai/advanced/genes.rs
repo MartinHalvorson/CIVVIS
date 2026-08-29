@@ -1757,6 +1757,9 @@ pub const GENES: &[Gene] = &[
     // A few era points short of a Normal Age, any affordable Great Person is
     // worth its moment; see `era_points_short`.
     Gene { tag: "age-closer", field: "age_closer", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer, disable: AdvancedAi::disable_age_closer },
+    // A boosted, prerequisite-met technology within two turns of science is
+    // researched before the lane's beeline resumes; see `boosted_bargain_tech`.
+    Gene { tag: "boosted-bargain-first", field: "boosted_bargain_first", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first, disable: AdvancedAi::disable_boosted_bargain_first },
     // A wonder twelve turns from done in a strong city opens the live race
     // without the ordinary guards; see `wonder_bargain_city`.
     Gene { tag: "cheapest-wonder-first", field: "cheapest_wonder_first", kind: Kind::OptIn, enable: AdvancedAi::enable_cheapest_wonder_first, disable: AdvancedAi::disable_cheapest_wonder_first },
