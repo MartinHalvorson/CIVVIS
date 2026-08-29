@@ -26357,9 +26357,12 @@ impl AdvancedAi {
         // civvis-20260829T000643Z was a camp the board knew about.
         let camp_near = self.live_settler_capture_lessons && {
             let position = g.units[&uid].pos;
-            g.barb_camps
-                .keys()
-                .any(|camp| g.wdist(*camp, position) <= SETTLER_ESCORT_THREAT_RADIUS)
+            // ... and the ground that took a settler is not quiet because
+            // nothing is visible on it today (civvis-20260829T022749Z t103).
+            self.settler_capture_scars.contains_key(&position)
+                || g.barb_camps
+                    .keys()
+                    .any(|camp| g.wdist(*camp, position) <= SETTLER_ESCORT_THREAT_RADIUS)
         };
         if !threatened && !camp_near {
             if self.settler_guards.remove(&uid).is_some() {

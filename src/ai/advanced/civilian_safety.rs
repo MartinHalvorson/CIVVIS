@@ -464,7 +464,7 @@ impl AdvancedAi {
 
     /// Release a settler's guard when nothing threatens the walk any more,
     /// so the army gets its unit back.
-    fn release_guard_if_quiet(
+    pub(super) fn release_guard_if_quiet(
         &mut self,
         g: &Game,
         pid: usize,
@@ -485,7 +485,12 @@ impl AdvancedAi {
                 && g
                     .barb_camps
                     .keys()
-                    .any(|camp| g.wdist(*camp, pos) <= SETTLER_ESCORT_THREAT_RADIUS));
+                    .any(|camp| g.wdist(*camp, pos) <= SETTLER_ESCORT_THREAT_RADIUS))
+            // Nor is the ground that took a settler quiet because nothing is
+            // visible on it today: run civvis-20260829T022749Z released the
+            // guard at t103 on the tile of the t78 capture and lost the next
+            // settler at t104.
+            && !self.scarred_ground(g, pid, pos);
         if quiet {
             self.settler_guards.remove(&settler);
             self.guard_wait.remove(&settler);
@@ -534,7 +539,7 @@ impl AdvancedAi {
         let current = g.units[&uid].pos;
         let reach = self.barbarian_reach(g, pid, current, REACH_SCAN_RADIUS);
         self.release_guard_if_quiet(g, pid, uid, &reach);
-        if reach.is_empty() {
+        if reach.is_empty() && !self.live_settler_capture_lessons {
             return self.settler_step_toward_safe(g, pid, uid, target);
         }
         let Some(next) = g
@@ -543,9 +548,16 @@ impl AdvancedAi {
         else {
             return self.settler_step_toward_safe(g, pid, uid, target);
         };
+        // See `live_settler_capture_lessons`: the ground that took a settler
+        // is entered only stacked, whether or not a raider is visible on it
+        // today — the raiders that took the last one walked out of the fog.
+        let scarred_next = self.scarred_ground(g, pid, next);
+        if reach.is_empty() && !scarred_next {
+            return self.settler_step_toward_safe(g, pid, uid, target);
+        }
         let founds_on_arrival =
             next == target && g.units[&uid].moves_left - g.step_cost_for(uid, current, next) > 1e-9;
-        let next_safe = self.civilian_safe_at(g, pid, uid, next, &reach)
+        let next_safe = (self.civilian_safe_at(g, pid, uid, next, &reach) && !scarred_next)
             || self.guard_can_follow(g, pid, uid, current, next)
             || founds_on_arrival;
         if next_safe {
@@ -581,6 +593,7 @@ impl AdvancedAi {
                     && g.map.get(*pos).is_some()
                     && g.can_move(uid, *pos)
                     && self.civilian_safe_at(g, pid, uid, *pos, &reach)
+                    && !self.scarred_ground(g, pid, *pos)
             })
             .map(|pos| {
                 (
@@ -598,6 +611,11 @@ impl AdvancedAi {
                        "{next:?} could be taken next turn; {pos:?} keeps out of it"; pos);
                 return true;
             }
+        }
+        if reach.is_empty() {
+            think!(self.journal(), Expansion, Detail, "Settler will not cross the ground that took a settler alone";
+                   "{next:?} is within three tiles of a capture; it waits for a guard to walk in with it"; current);
+            return false;
         }
         think!(self.journal(), Expansion, Detail, "Settler waits outside a barbarian's reach";
                "{next:?} could be taken next turn and no safe step makes progress"; current);
@@ -675,6 +693,17 @@ impl AdvancedAi {
     /// settler's guard. Deliberately NOT the outmatched test: this is asked
     /// when the alternative is standing bare beside a raider, and a stack the
     /// raider must first break beats a civilian it can simply take.
+    /// Ground within `SETTLER_CAPTURE_SCAR_RADIUS` of a settler's capture,
+    /// still under its retirement, and not one of our own cities. Under
+    /// `live_settler_capture_lessons` only (the scar map is empty otherwise).
+    fn scarred_ground(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+        self.live_settler_capture_lessons
+            && self.settler_capture_scars.contains_key(&pos)
+            && !g
+                .city_at(pos)
+                .is_some_and(|city| g.cities[&city].owner == pid)
+    }
+
     fn bindable_guard_at(&self, g: &Game, pid: usize, settler: u32, pos: Pos) -> Option<u32> {
         let bound: Vec<u32> = self.settler_guards.values().copied().collect();
         g.unit_ids_at(pos)
