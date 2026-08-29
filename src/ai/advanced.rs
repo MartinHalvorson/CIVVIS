@@ -4505,6 +4505,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `connect-the-luxury`: research the technology that connects an owned,
+    /// unimproved luxury before the lane's beeline resumes. See
+    /// `unconnected_luxury_tech`.
+    connect_the_luxury: bool,
     /// `commitment-patience`: a settle or improve target survives a passing
     /// threat — the two threat drop reasons and the Builder's reach filter no
     /// longer drop it — and the ledger retires it after
@@ -6644,6 +6648,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            connect_the_luxury: false,
             commitment_patience: false,
             capture_go_or_stand_down: false,
             capture_stood_down: BTreeMap::new(),
@@ -12186,6 +12191,7 @@ impl AdvancedAi {
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
             let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
+            let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -12243,6 +12249,20 @@ impl AdvancedAi {
                     && self.prophet_race_open_for(g, pid) =>
                 {
                     Some("astrology")
+                }
+                // `connect-the-luxury`: Irrigation and Sailing are dead-end
+                // branches no lane goal is an ancestor of, so no beeline ever
+                // reaches them — nine live King games researched Irrigation
+                // 0 times by t150 while owning a mean 3.1 unimproved
+                // Plantation or sea luxuries within three tiles of a city,
+                // and ran Displeased on 48 % of city-turns (−10 % on every
+                // yield, ≈1,150 yield points a game). Take the cheapest
+                // connecting tech once the opening is in; the beeline
+                // resumes the turn it lands.
+                _ if luxury_goal.is_some()
+                    && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS =>
+                {
+                    luxury_goal
                 }
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
@@ -12692,6 +12712,77 @@ impl AdvancedAi {
     /// Prophet already claimed or a slot still open once the Prophets other
     /// majors hold are counted, and the first half of the clock. See
     /// `enter_the_prophet_race`.
+    /// `connect-the-luxury`: the cheapest technology that would let some
+    /// improvement take an owned, unimproved luxury no unlocked improvement
+    /// can — Irrigation for a Plantation luxury, Sailing for a sea one.
+    /// `None` with the gene off, or when every owned luxury is connectable
+    /// already. The builder side already prices a luxury connection; this is
+    /// the research side it was waiting on.
+    fn unconnected_luxury_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.connect_the_luxury {
+            return None;
+        }
+        let player = &g.players[pid];
+        let unlocked = |tech: &Option<Name>, civic: &Option<Name>| {
+            tech.as_ref().is_none_or(|tech| player.techs.contains(tech))
+                && civic
+                    .as_ref()
+                    .is_none_or(|civic| player.civics.contains(civic))
+        };
+        let mut best: Option<(f64, Name)> = None;
+        for tile in g.map.tiles.values() {
+            let owned = tile
+                .owner_city
+                .and_then(|city| g.cities.get(&city))
+                .is_some_and(|city| city.owner == pid);
+            if !owned || tile.improvement.is_some() {
+                continue;
+            }
+            let Some(resource) = tile.resource else {
+                continue;
+            };
+            if !g
+                .rules
+                .resources
+                .get(&resource)
+                .is_some_and(|spec| spec.class == "luxury")
+            {
+                continue;
+            }
+            let takers: Vec<_> = g
+                .rules
+                .improvements
+                .values()
+                .filter(|spec| spec.resources.contains(&resource))
+                .collect();
+            if takers.iter().any(|spec| unlocked(&spec.tech, &spec.civic)) {
+                continue;
+            }
+            for spec in takers {
+                let Some(tech) = spec.tech else {
+                    continue;
+                };
+                if player.techs.contains(&tech)
+                    || spec
+                        .civic
+                        .as_ref()
+                        .is_some_and(|civic| !player.civics.contains(civic))
+                {
+                    continue;
+                }
+                let cost = g
+                    .rules
+                    .techs
+                    .get(&tech)
+                    .map_or(f64::INFINITY, |spec| spec.cost);
+                if best.is_none_or(|(best_cost, _)| cost < best_cost) {
+                    best = Some((cost, tech));
+                }
+            }
+        }
+        best.map(|(_, tech)| tech.as_str())
+    }
+
     fn prophet_race_open_for(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {

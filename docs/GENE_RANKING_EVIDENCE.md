@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `capture-go-or-stand-down-2` | off (unmeasured) | Version 2 of `capture_go_or_stand_down`: also stands down a siege whose bodies are at the objective but have not pushed the city to a new low for `CAPTURE_STALL_TURNS` stalled readings. | 1 \| 2 |
+| `connect-the-luxury` | off (unmeasured) | Research the cheapest technology that connects an owned, unimproved luxury (Irrigation, Sailing) ahead of the lane's beeline, once the opening techs are in. | 1 \| 1 |
 | `exhaustion-loyalty-guard` | off (unmeasured) | A stranded Settler's exhaustion search sets aside a site beside an unresolved rival border — the one fog guess the preferred search made that names a city the forecast cannot see — and its nearest-legal tier runs the same concrete-revolt forecast the ranked tier does. | 1 \| 1 |
 | `first-granary-reserve` | off (unmeasured) | A city grown to its housing (pop + 1 ≥ housing) with no Granary starts one ahead of the argmax. | 1 \| 1 |
 | `settler-backlog-brake` | off (unmeasured) | Once the empire holds three cities, no Settler starts while an owned Settler has stood on one tile six turns; the same brake on the `BasicAi` pipeline. | 1 \| 1 |
