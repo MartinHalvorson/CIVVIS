@@ -160,6 +160,14 @@
     "tally_great_people": {
       "group": "live-bridge-row",
       "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: banked Faith and gold patronise any affordable Great Person. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "live_barbarian_scouts_capture": {
+      "group": "host-only",
+      "reason": "The native barbarian seat's recon units cannot capture a civilian (the minor-seat gate returns them to fortify before `capture_adjacent_civilian`; the engine's scout phase moves them by `relocate`, which has no capture hook), so counting a barbarian scout in the exact capture-reach models is a zero-width change on a native board and a screen row could only measure noise. The Civilization VI host's scouts DO capture — run civvis-20260828T122324Z lost four settlers to one — so this is a `Kind::HostOnly` gene priced by the live ladder's `settlers_captured` column, with `disable_live_barbarian_scouts_capture` as the withholding arm."
+    },
+    "live_settler_capture_lessons": {
+      "group": "host-only",
+      "reason": "Every rule under it answers a live-seat fact a native board does not have: settler ids that change on every export (the vanished-settler detector is fed by `remap_unit_memory`), the host's own movement flood disagreeing with the mirror's, camps and raiders walking out of a fog the native barbarian seat does not hunt through, and the native seat's civilian losses being ~zero to begin with. A screen row would be zero-width by construction; the live ladder prices it directly through `settlers_captured` (#2724), with `disable_live_settler_capture_lessons` as the withholding arm."
     }
   }
 }
