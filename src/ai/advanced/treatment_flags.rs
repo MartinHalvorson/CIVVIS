@@ -3221,6 +3221,32 @@ impl AdvancedAi {
         self.border_parity_2 = false;
     }
 
+    /// The two-turn escort cap releases the settler on schedule instead of
+    /// being suspended by a predicate that reads only the visible frame, and
+    /// a settler already outside its own city with no guard on its tile
+    /// marches on a zero risk reading rather than fortifying bare. See
+    /// `AdvancedAi::stacked_escort_pace`.
+    pub fn enable_escort_cap_holds(&mut self) {
+        self.escort_cap_holds = true;
+    }
+
+    /// The twin of `enable_escort_cap_holds`.
+    pub fn disable_escort_cap_holds(&mut self) {
+        self.escort_cap_holds = false;
+    }
+
+    /// The civilian capture envelope counts every at-war owner and keeps
+    /// pricing a hostile the seat has seen for a few turns after it walks
+    /// back into the fog. See `AdvancedAi::barbarian_reach`.
+    pub fn enable_hostile_memory(&mut self) {
+        self.hostile_memory = true;
+    }
+
+    /// The twin of `enable_hostile_memory`.
+    pub fn disable_hostile_memory(&mut self) {
+        self.hostile_memory = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

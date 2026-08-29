@@ -103,6 +103,22 @@ pub(super) const REACH_SCAN_RADIUS: i32 = 10;
 /// Settler onto a tile the host will refuse, leaving it exposed on its
 /// current tile for the hostile phase.
 const LIVE_SCOUT_CAPTURE_RADIUS: i32 = 2;
+/// How long a hostile the seat has actually seen keeps counting after it walks
+/// back into the fog, under `hostile-memory`.
+///
+/// ⚠ THE HOSTILE LIST IS VISIBLE-ONLY AND THE SETTLERS DIE TO WHAT IS NOT ON
+/// IT. Twenty-eight real settler losses over eleven live King runs
+/// (2026-08-29) classify as: TEN walked into a hostile that was not visible
+/// anywhere within three tiles on the previous turn's state, eight were taken
+/// while parked waiting for a guard, six moved inside a visible hostile's
+/// reach unescorted, two were zone-of-control pinned, and two were taken by
+/// Free Cities units (player 62), which this reach ignored outright. Four
+/// turns is the window the losses live in: the median settler was ten turns
+/// old at its capture and the destination had changed within the last eight
+/// turns in nineteen of the twenty-eight, so a raider seen five turns ago has
+/// usually been overtaken by the walk anyway, while one seen last turn is the
+/// single best predictor the board has of what takes the settler next.
+pub(super) const HOSTILE_MEMORY_TURNS: u32 = 4;
 
 /// One known raider and the tiles it could end its next move on.
 struct Raider {
@@ -164,6 +180,29 @@ impl AdvancedAi {
     /// engine-managed scouts, not raiders — see `barbarian_scouts_are_scouts`
     /// — except on the live seat, whose scouts capture
     /// (`live_barbarian_scouts_capture`).
+    ///
+    /// ⭐ `hostile-memory` (opt-in, off) widens exactly two things about the
+    /// set, and nothing else:
+    ///
+    /// 1. **Every owner the seat is at war with**, not the Barbarian player
+    ///    alone. `resolve_entered_units` hands a Settler to whichever hostile
+    ///    military unit steps onto its tile — the engine has never asked who
+    ///    owns that unit — so a Free Cities Warrior and a major's Horseman
+    ///    take a civilian on exactly the terms a raider does. Two of the
+    ///    twenty-eight live losses of 2026-08-29 were Free Cities captures
+    ///    (player 62) that this envelope did not model at all.
+    /// 2. **A hostile seen within [`HOSTILE_MEMORY_TURNS`] turns**, projected
+    ///    from where it was last seen and padded by the turns since. Ten of
+    ///    those twenty-eight losses had NO visible hostile within three tiles
+    ///    on the previous turn's state: the unit that took the settler was in
+    ///    the fog when the step was priced, and half the time the board had
+    ///    watched it walk in there.
+    ///
+    /// ⚠ A remembered raider is projected with `wdisk` from its LAST SEEN
+    /// tile, never `threat_reach`, which floods from the unit's true current
+    /// position — fog knowledge the seat does not have and must not spend. The
+    /// pad is the turns elapsed, so a raider seen three turns ago is priced as
+    /// able to have walked three turns' worth of ground in any direction.
     pub(super) fn barbarian_reach(
         &self,
         g: &Game,
@@ -172,36 +211,83 @@ impl AdvancedAi {
         radius: i32,
     ) -> BarbarianReach {
         let mut raiders = Vec::new();
-        let Some(barbarian) = g.barb_pid else {
-            return BarbarianReach { raiders };
-        };
-        if !g.is_at_war(pid, barbarian) {
-            return BarbarianReach { raiders };
+        // Off, the Barbarian player is the whole of the question and its
+        // absence (or a peace with it) is the whole of the answer.
+        if !self.hostile_memory {
+            let Some(barbarian) = g.barb_pid else {
+                return BarbarianReach { raiders };
+            };
+            if !g.is_at_war(pid, barbarian) {
+                return BarbarianReach { raiders };
+            }
         }
         let visible = self.battlefront_visibility(g, pid);
         for unit in g.units.values() {
-            if unit.owner != barbarian
-                || g.wdist(unit.pos, around) > radius
-                || !g.sees(&visible, unit.pos)
-                || !g.unit_visible_to(unit.id, pid)
-            {
+            if self.hostile_memory {
+                if unit.owner == pid || !g.is_at_war(pid, unit.owner) {
+                    continue;
+                }
+            } else if Some(unit.owner) != g.barb_pid || g.wdist(unit.pos, around) > radius {
+                continue;
+            }
+            let seen_now = g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid);
+            // Where the seat believes this unit stands, and how stale that
+            // belief is. Off, only a unit in sight this turn counts and the
+            // memory is never written, so `seen_now` is the whole gate and
+            // `from` is the unit's own tile — byte for byte what shipped.
+            let (from, pad) = if seen_now {
+                (unit.pos, 0)
+            } else {
+                let Some(&(last_seen, when)) = self.hostile_last_seen.get(&unit.id) else {
+                    continue;
+                };
+                let elapsed = g.turn.saturating_sub(when);
+                if elapsed > HOSTILE_MEMORY_TURNS {
+                    continue;
+                }
+                (last_seen, elapsed as i32)
+            };
+            if g.wdist(from, around) > radius + pad {
                 continue;
             }
             let spec = &g.rules.units[unit.kind];
             let domain = spec.domain.as_deref();
-            if spec.class != "military"
-                || domain == Some("air")
-                || (spec.promotion_class == "recon" && !self.live_barbarian_scouts_capture)
-            {
+            // A recon unit is an engine-managed scout for the BARBARIAN seat;
+            // a major's or a Free City's Scout captures a civilian like
+            // anything else, which is why `observe_turn_start_hostiles` has
+            // always qualified this exclusion by owner. Off, `hostile_memory`
+            // is false and the clause reads exactly as it did.
+            let engine_managed_scout = spec.promotion_class == "recon"
+                && !self.live_barbarian_scouts_capture
+                && (!self.hostile_memory || g.players[unit.owner].is_barbarian);
+            if spec.class != "military" || domain == Some("air") || engine_managed_scout {
                 continue;
             }
             let farthest = (g.unit_max_moves(unit.id) * REACH_SCAN_MOVE_MULTIPLE).ceil() as i32 + 1;
-            if g.wdist(unit.pos, around) > farthest.max(1) + 1 {
+            if g.wdist(from, around) > farthest.max(1) + 1 + pad {
                 continue;
             }
             let is_live_scout =
                 spec.promotion_class == "recon" && self.live_barbarian_scouts_capture;
-            let mut reach = g.threat_reach(unit.id);
+            let mut reach = if seen_now {
+                g.threat_reach(unit.id)
+            } else {
+                // The projection. `threat_reach` is unavailable by
+                // construction — it starts from `units[&uid].pos`, which is
+                // where the unit REALLY is, not where the seat last saw it —
+                // so this is the geometric envelope the bridge already uses as
+                // its own conservative floor, from the remembered tile, grown
+                // by one turn of allowance for every turn since.
+                let projected = (spec.moves.ceil() as i32 + pad).max(1);
+                g.wdisk(from, projected)
+                    .into_iter()
+                    .filter(|pos| {
+                        g.map
+                            .get(*pos)
+                            .is_some_and(|tile| g.rules.is_water(tile) == (domain == Some("sea")))
+                    })
+                    .collect()
+            };
             if is_live_scout {
                 // `threat_reach` is the exact movement flood and remains the
                 // source of truth for every native/evaluator unit.  On the
@@ -211,7 +297,7 @@ impl AdvancedAi {
                 // two-hex land floor so the native route and host refusal
                 // cannot disagree on the first leg.
                 reach.extend(
-                    g.wdisk(unit.pos, LIVE_SCOUT_CAPTURE_RADIUS)
+                    g.wdisk(from, LIVE_SCOUT_CAPTURE_RADIUS)
                         .into_iter()
                         .filter(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))),
                 );
@@ -230,7 +316,7 @@ impl AdvancedAi {
                 // terrain-aware answer.
                 let radius = spec.moves.ceil() as i32;
                 reach.extend(
-                    g.wdisk(unit.pos, radius)
+                    g.wdisk(from, radius)
                         .into_iter()
                         .filter(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))),
                 );
@@ -238,7 +324,7 @@ impl AdvancedAi {
             reach.sort_unstable();
             reach.dedup();
             raiders.push(Raider {
-                pos: unit.pos,
+                pos: from,
                 sea: domain == Some("sea"),
                 reach,
             });
