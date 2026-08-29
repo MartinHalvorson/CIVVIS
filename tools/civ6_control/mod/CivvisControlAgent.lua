@@ -2422,6 +2422,15 @@ local function pressAttack(unit, turn)
 	if assault.turn ~= turn then
 		assault = { turn = turn, onTarget = 0, taken = {} };
 	end
+	-- The assault only ever aims at a declared target, so the war-state
+	-- question (`CivvisLedger.warStarters`) answers empty here; it is asked
+	-- anyway, because a declaration the host refused would otherwise turn
+	-- the first volley into a silent surprise war.
+	if CivvisLedger ~= nil and CivvisLedger.refuseWarStarter(
+			unit, try(function() return unit:GetID(); end), "RANGE_ATTACK",
+			warTarget.x, warTarget.y, turn) ~= nil then
+		return nil;
+	end
 	local params = {};
 	params[UnitOperationTypes.PARAM_X] = warTarget.x;
 	params[UnitOperationTypes.PARAM_Y] = warTarget.y;
@@ -10233,6 +10242,69 @@ do
 	end
 end
 
+-- ★★★★★ A STRIKE THE ENGINE WOULD TURN INTO A WAR IS REFUSED, NOT SENT.
+--
+-- Measured across the 46 King runs since 2026-08-26: 28 wars carried the
+-- signature of a war WE started and never chose — 150 grievances against
+-- us, none of ours, no `war` order and no journal line — in 19 games, 14 of
+-- them before turn 100. Twenty-one were Suzerain Wars: a strike (or a
+-- CAPTURE aimed at what the mirror took for a barbarian) landed on a
+-- city-state's unit, and its suzerain joined at 100 + 50 grievances
+-- (`GRIEVANCES_SUZERAIN_CITY_STATE_DOW` + `GRIEVANCES_HAVE_ENVOYS_CITY_STATE_DOW`,
+-- `DLC/Expansion2/Data/Expansion2_GlobalParameters.xml`); the other seven
+-- hit a major's unit directly. Run civvis-20260829T090147Z drew Nubia that
+-- way at t67 and lost the game at t106; civvis-20260829T094737Z drew
+-- Scotland at t59 with no leader screen open at all.
+--
+-- A human never does this by accident: `Base/Assets/UI/WorldInput.lua:2067`
+-- asks `CombatManager.IsAttackChangeWarState(componentID, x, y)` before every
+-- attack and raises "Declare Surprise War?" when the answer names a player.
+-- This file requests the operation directly and never asked, so the engine
+-- declared silently — and nothing logged it, because `war` is emitted only
+-- on the agent's own declare path. The same question is asked here, and a
+-- strike whose answer is non-empty is refused with the players it would have
+-- drawn in. The agent's `war` order (`DIPLOMACY_DECLARE_WAR`) stays the only
+-- route to a war, as designed: once that has been declared the check answers
+-- empty and the strike goes through unchanged.
+--
+-- ⚠ An absent or failing API answers nil and the strike proceeds — the
+-- historical behaviour — never a blanket refusal.
+-- ⚠ `#results` and `rawget`, not `ipairs`: the answer is a host table and
+-- the test harness stands in stubs whose `__index` invents members.
+CivvisLedger.warStarters = function(actor, x, y)
+	if actor == nil or x == nil or y == nil then return nil; end
+	local results = try(function()
+		return CombatManager.IsAttackChangeWarState(actor:GetComponentID(), x, y);
+	end, nil);
+	if type(results) ~= "table" then return nil; end
+	local players = {};
+	for i = 1, #results do
+		local id = tonumber(rawget(results, i));
+		if id ~= nil then players[#players + 1] = id; end
+	end
+	if #players == 0 then return nil; end
+	return players;
+end;
+
+-- The refusal, named for the ledger — `would_declare_war:<player ids>` —
+-- and a `war_refused` event carrying the actor, the verb, the plot and its
+-- owner, so the decider's half of the mistake (a strike aimed at a unit the
+-- mirror took for a barbarian) can be read off the next run.
+CivvisLedger.refuseWarStarter = function(actor, subject, verb, x, y, turn)
+	local players = CivvisLedger.warStarters(actor, x, y);
+	if players == nil then return nil; end
+	local names = {};
+	for i = 1, #players do names[i] = tostring(players[i]); end
+	emit("war_refused", {
+		turn = turn, unit = subject, verb = verb, x = x, y = y, players = players,
+		target_owner = try(function()
+			local plot = Map.GetPlot(x, y);
+			return plot and plot:GetOwner() or -1;
+		end, -1),
+	});
+	return "would_declare_war:" .. table.concat(names, ",");
+end;
+
 -- Called from `applyOrder` before a strike is requested: emit the preview and
 -- remember it, so the combat this strike produces can carry it.
 CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
@@ -10844,6 +10916,8 @@ local function applyOrder(player, pid, row, turn)
 		end, false) then
 			return false, "city_strike_refused";
 		end
+		local warRefusal = CivvisLedger.refuseWarStarter(city, subject, "CITY_STRIKE", x, y, turn);
+		if warRefusal ~= nil then return false, warRefusal; end
 		local ok = pcall(function()
 			CityManager.RequestCommand(city, CityCommandTypes.RANGE_ATTACK, params);
 		end);
@@ -10878,6 +10952,9 @@ local function applyOrder(player, pid, row, turn)
 		end, false) then
 			return false, "encampment_strike_refused";
 		end
+		local warRefusal = CivvisLedger.refuseWarStarter(
+			encampment, subject, "ENCAMPMENT_STRIKE", x, y, turn);
+		if warRefusal ~= nil then return false, warRefusal; end
 		local ok = pcall(function()
 			CityManager.RequestCommand(
 				encampment, CityCommandTypes.RANGE_ATTACK, params);
@@ -12775,6 +12852,10 @@ local function applyOrder(player, pid, row, turn)
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
 			if verb == "ATTACK" or verb == "CAPTURE" then
+				-- See `warStarters`: a strike the engine would answer with a
+				-- war the agent never declared is refused before it is sent.
+				local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, verb, x, y, turn);
+				if warRefusal ~= nil then return false, warRefusal; end
 				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
 				-- a strike, and the whole army has been swinging at air.
 				local modifiers = CivvisLedger.attackModifiers();
@@ -12869,6 +12950,8 @@ local function applyOrder(player, pid, row, turn)
 		end
 		if verb == "RANGE_ATTACK" then
 			if x == nil or y == nil then return false, "no_dest"; end
+			local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, verb, x, y, turn);
+			if warRefusal ~= nil then return false, warRefusal; end
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
