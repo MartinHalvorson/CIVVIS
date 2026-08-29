@@ -3209,6 +3209,18 @@ impl AdvancedAi {
         self.cheapest_wonder_first = false;
     }
 
+    /// Version two of `border-parity`: the same target and Gold purchase,
+    /// and when the treasury cannot pay, the contact city's idle queue starts
+    /// the defender. See `AdvancedAi::border_parity_target`.
+    pub fn enable_border_parity_2(&mut self) {
+        self.border_parity_2 = true;
+    }
+
+    /// The twin of `enable_border_parity_2`.
+    pub fn disable_border_parity_2(&mut self) {
+        self.border_parity_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

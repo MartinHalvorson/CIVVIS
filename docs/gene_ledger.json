@@ -1240,6 +1240,15 @@
           "amenity-project-preemption-2": null
         }
       },
+      "border-parity": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "border-parity": null,
+          "border-parity-2": null
+        }
+      },
       "campus-adjacency-threshold": {
         "rule_on": [],
         "head": "campus-adjacency-threshold",

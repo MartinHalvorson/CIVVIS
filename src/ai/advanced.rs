@@ -4484,6 +4484,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `border-parity-2`: version two of `border_parity` — the same target
+    /// and Gold purchase, and when the treasury cannot pay, the contact
+    /// city's idle queue starts the defender instead. See
+    /// `border_parity_target` and `advanced_production`.
+    border_parity_2: bool,
     /// `boosted-bargain-first`: a prerequisite-met technology whose Eureka is
     /// in hand and whose remaining cost is at most `BOOSTED_BARGAIN_TURNS` of
     /// science is researched before the lane's beeline resumes. See
@@ -6705,6 +6710,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            border_parity_2: false,
             boosted_bargain_first: false,
             border_parity: false,
             age_closer: false,
@@ -17289,9 +17295,14 @@ impl AdvancedAi {
     /// movement and strength, and the ranged answer is what a walled city
     /// turns into damage. Nothing here declares, raises the production
     /// target, or fires at war.
-    fn border_parity_purchase(&self, g: &mut Game, pid: usize) -> bool {
-        if !self.border_parity {
-            return false;
+    /// `border-parity`'s target: in peacetime, the strongest met major with a
+    /// visible city within `BORDER_PARITY_CONTACT_RADIUS` of one of ours
+    /// while our military power is under `BORDER_PARITY_RATIO` of its —
+    /// `(ours, theirs, rival, contact city)`. `None` with both versions off,
+    /// at war, without a border contact, or at parity.
+    fn border_parity_target(&self, g: &Game, pid: usize) -> Option<(f64, f64, usize, u32)> {
+        if !(self.border_parity || self.border_parity_2) {
+            return None;
         }
         let at_war = g.players.iter().any(|player| {
             player.id != pid
@@ -17301,7 +17312,7 @@ impl AdvancedAi {
                 && g.is_at_war(pid, player.id)
         });
         if at_war {
-            return false;
+            return None;
         }
         let ours = g.military_power(pid).max(1.0);
         let our_cities: Vec<(u32, Pos)> = g
@@ -17310,7 +17321,7 @@ impl AdvancedAi {
             .map(|cid| (cid, g.cities[&cid].pos))
             .collect();
         if our_cities.is_empty() {
-            return false;
+            return None;
         }
         // The strongest met major with a visible city in reach of ours, and
         // our city nearest to that neighbour.
@@ -17344,12 +17355,17 @@ impl AdvancedAi {
                 strongest = Some((power, owner, contact));
             }
         }
-        let Some((theirs, rival, contact)) = strongest else {
+        let (theirs, rival, contact) = strongest?;
+        if ours >= BORDER_PARITY_RATIO * theirs {
+            return None;
+        }
+        Some((ours, theirs, rival, contact))
+    }
+
+    fn border_parity_purchase(&self, g: &mut Game, pid: usize) -> bool {
+        let Some((ours, theirs, rival, contact)) = self.border_parity_target(g, pid) else {
             return false;
         };
-        if ours >= BORDER_PARITY_RATIO * theirs {
-            return false;
-        }
         let Some(unit) = self
             .base
             .best_military(g, pid, contact, Some(true))
@@ -21658,6 +21674,39 @@ impl AdvancedAi {
                 {
                     counts.add_item(g, &builder);
                     continue;
+                }
+            }
+            // `border-parity-2`: when the Gold purchase above could not pay,
+            // the contact city's idle queue starts the defender itself. Run
+            // civvis-20260829T074813Z never bought under version one — at
+            // t60 the seat read 0.72 of France with 158 Gold, at t90 0.55
+            // with 90 — and Russia took Ostia at t102 at 81 against 208.
+            if committed.is_none() && self.border_parity_2 {
+                if let Some((_, _, _, contact)) = self.border_parity_target(g, pid) {
+                    if contact == cid {
+                        let defender = self
+                            .base
+                            .best_military(g, pid, cid, Some(true))
+                            .or_else(|| self.base.best_military(g, pid, cid, Some(false)));
+                        if let Some(unit) = defender {
+                            let item = Item::Unit {
+                                unit: Name::new(&unit),
+                            };
+                            if g.can_produce(pid, cid, &item)
+                                && g.apply(
+                                    pid,
+                                    &Action::Produce {
+                                        city: cid,
+                                        item: item.clone(),
+                                    },
+                                )
+                                .is_ok()
+                            {
+                                counts.add_item(g, &item);
+                                continue;
+                            }
+                        }
+                    }
                 }
             }
             // `first-granary-reserve`: a city grown to its housing builds its

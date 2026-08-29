@@ -1198,6 +1198,95 @@ fn a_wonder_twelve_turns_from_done_opens_the_race_in_a_one_city_empire() {
     assert!(!ai.cheapest_wonder_first);
 }
 
+/// `border-parity-2`: the same board as version one's test, but with no
+/// Gold — the purchase cannot pay, so the contact city's idle queue starts
+/// the defender itself; off, nothing starts and the target reads nothing.
+#[test]
+fn a_weak_seat_that_cannot_buy_its_defender_produces_it() {
+    let mut game = Game::new_full(2, 40, 24, 91_776, 250, 0, false);
+    game.current = 0;
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("a starting settler");
+        let pos = game.units[&settler].pos;
+        game.remove_unit(settler);
+        game.found_city_for(pid, pos, None);
+    }
+    for pid in 0..2 {
+        for unit in game.player_unit_ids(pid) {
+            game.remove_unit(unit);
+        }
+    }
+    let ours = game.player_city_ids(0)[0];
+    let home = game.cities[&ours].pos;
+    let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    for position in &positions {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(*position);
+    }
+    let mut ring: Vec<Pos> = positions
+        .iter()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) == 6)
+        .collect();
+    ring.sort_unstable();
+    let border = ring[0];
+    game.found_city_for(1, border, None);
+    for _ in 0..6 {
+        game.spawn_test_unit("warrior", 1, border);
+    }
+    game.record_contact(0, 1);
+    game.players[0].gold = 0.0;
+    assert!(
+        game.cities[&ours].queue.is_empty(),
+        "fixture: an idle queue"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.border_parity_2, "the gene ships off");
+    assert!(!AdvancedAi::legacy().border_parity_2);
+    assert_eq!(ai.border_parity_target(&game, 0), None, "off, no target");
+    ai.enable_border_parity_2();
+    assert!(ai.border_parity_2);
+    let (_, _, rival, contact) = ai
+        .border_parity_target(&game, 0)
+        .expect("below parity beside a strong neighbour");
+    assert_eq!((rival, contact), (1, ours));
+    assert!(
+        !ai.border_parity_purchase(&mut game, 0),
+        "with no Gold the purchase cannot pay"
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    let queued = game.cities[&ours].queue.first().cloned();
+    let Some(Item::Unit { unit }) = queued else {
+        panic!("the contact city starts a unit, queued {queued:?}");
+    };
+    assert!(
+        game.rules.units[&unit].class == "military",
+        "the unit is a defender, not a civilian: {unit}"
+    );
+    ai.disable_border_parity_2();
+    assert!(!ai.border_parity_2);
+}
+
 #[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
