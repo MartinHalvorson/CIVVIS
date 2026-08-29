@@ -44,11 +44,26 @@ local LOG = {}
 Automation = { Log = function(line) LOG[#LOG + 1] = line end }
 UnitOperationTypes = { PARAM_X = "x", PARAM_Y = "y" }
 UnitCommandTypes = {}
+DirectionTypes = {
+	DIRECTION_WEST = "west", DIRECTION_EAST = "east",
+	DIRECTION_NORTHWEST = "northwest", DIRECTION_NORTHEAST = "northeast",
+	DIRECTION_SOUTHWEST = "southwest", DIRECTION_SOUTHEAST = "southeast",
+}
 -- Plot index = y * 100 + x on this fake map.
 local function plotIndex(x, y) return y * 100 + x end
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2) return math.max(math.abs(x1 - x2), math.abs(y1 - y2)) end,
 	GetPlot = function() return nil end,
+	GetAdjacentPlot = function(x, y, direction)
+		local dx, dy = 0, 0
+		if direction == DirectionTypes.DIRECTION_WEST then dx = -1
+		elseif direction == DirectionTypes.DIRECTION_EAST then dx = 1
+		elseif direction == DirectionTypes.DIRECTION_NORTHWEST then dy = -1
+		elseif direction == DirectionTypes.DIRECTION_NORTHEAST then dx, dy = 1, -1
+		elseif direction == DirectionTypes.DIRECTION_SOUTHWEST then dx, dy = -1, 1
+		elseif direction == DirectionTypes.DIRECTION_SOUTHEAST then dy = 1 end
+		return { GetX = function() return x + dx end, GetY = function() return y + dy end }
+	end,
 	GetPlotIndex = function(x, y) return plotIndex(x, y) end,
 	GetPlotByIndex = function(index)
 		return { GetX = function() return index % 100 end, GetY = function() return math.floor(index / 100) end }
@@ -409,6 +424,22 @@ check("visible scout: hold names setter and scout", has(lastEvent("settler_scout
 check("visible scout: order is an explicit held refusal", has(lastEvent("orders"), "settler_scout_capture_hold"), true)
 check("visible scout: orders count the held capture leg", has(lastEvent("orders"), '"settler_scout_capture_held":1'), true)
 
+-- A refusal is not enough when the Settler already stands inside the scout's
+-- measured envelope.  The host can prove a one-step retreat, so rewrite the
+-- actuation leg to that safe tile instead of leaving the civilian exposed.
+reset()
+host.units[32] = { id = 32, kind = "UNIT_SETTLER", x = 1, y = 2, moves = 2 }
+host.barbarians[92] = { id = 92, kind = "UNIT_SCOUT", x = 1, y = 4, moves = 0 }
+host.paths["32:" .. plotIndex(1, 3)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 3) }, turns = { 0, 1 } }
+host.paths["32:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(32, "MOVE_TO", 1, 3) })
+check("exposed scout leg retreats to a safe neighbour", ops(32), "UNITOPERATION_MOVE_TO@1,1")
+check("exposed scout retreat records the original target", has(lastEvent("settler_capture_escape"), '"want":[1,3]')
+	and has(lastEvent("settler_capture_escape"), '"sent":[1,1]'), true)
+check("exposed scout retreat is not counted as a hold", has(lastEvent("orders"), '"settler_scout_capture_held":0'), true)
+
 -- The safety decision is made against the first host leg, not the far-away
 -- planner target.  This catches a queued route whose current cap ends beside
 -- the scout even though its intended city site is two turns away.
@@ -552,6 +583,23 @@ check("visible combat rescue: event names both units", has(lastEvent("settler_ba
 check("visible combat rescue: shadow is applied, not counted as CIVVIS work",
 	has(lastEvent("orders"), '"settler_barbarian_combat_guard_rescued":1')
 	and has(lastEvent("orders"), '"escort_shadow_applied":1'), true)
+
+-- When no guard is available, an exposed Settler still gets a proven retreat
+-- rather than waiting on the combat threat's current tile.  This mirrors the
+-- live turn-20 loss where the held destination was safe by the mirror but the
+-- stationary Settler was already inside the host's BaseMoves envelope.
+reset()
+host.units[53] = { id = 53, kind = "UNIT_SETTLER", x = 1, y = 2, moves = 2 }
+host.barbarians[104] = { id = 104, kind = "UNIT_WARRIOR", x = 1, y = 4, moves = 0 }
+host.paths["53:" .. plotIndex(1, 3)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 3) }, turns = { 0, 1 } }
+host.paths["53:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(53, "MOVE_TO", 1, 3) })
+check("exposed combat leg retreats without a guard", ops(53), "UNITOPERATION_MOVE_TO@1,1")
+check("exposed combat retreat identifies the threat", has(lastEvent("settler_capture_escape"), '"settler":53')
+	and has(lastEvent("settler_capture_escape"), '"sent":[1,1]'), true)
+check("exposed combat retreat is not counted as a hold", has(lastEvent("orders"), '"settler_barbarian_combat_capture_held":0'), true)
 
 -- A nearby guard that already has an unrelated order is deliberately not
 -- overwritten.  The conservative result is observable: no rescue event or

@@ -95,6 +95,14 @@ const REACH_SCAN_MOVE_MULTIPLE: f64 = 2.0;
 /// Jobs and sites are priced against raiders this far around the civilian
 /// — the raid leash is ten tiles and a Horseman moves four.
 pub(super) const REACH_SCAN_RADIUS: i32 = 10;
+/// The live Civ VI bridge conservatively treats a visible barbarian Scout as
+/// able to capture any land tile within two hexes.  Its path query cannot
+/// always answer for a civilian-occupied destination, so the bridge falls
+/// back to this geometric floor (`Map.GetPlotDistance <= 2`).  Keep the
+/// native live envelope at the same floor; otherwise the planner can send a
+/// Settler onto a tile the host will refuse, leaving it exposed on its
+/// current tile for the hostile phase.
+const LIVE_SCOUT_CAPTURE_RADIUS: i32 = 2;
 
 /// One known raider and the tiles it could end its next move on.
 struct Raider {
@@ -191,7 +199,23 @@ impl AdvancedAi {
             if g.wdist(unit.pos, around) > farthest.max(1) + 1 {
                 continue;
             }
+            let is_live_scout =
+                spec.promotion_class == "recon" && self.live_barbarian_scouts_capture;
             let mut reach = g.threat_reach(unit.id);
+            if is_live_scout {
+                // `threat_reach` is the exact movement flood and remains the
+                // source of truth for every native/evaluator unit.  On the
+                // live seat, however, the host's conservative scout guard
+                // intentionally ignores terrain/path answers when the
+                // destination contains a civilian.  Union only its measured
+                // two-hex land floor so the native route and host refusal
+                // cannot disagree on the first leg.
+                reach.extend(
+                    g.wdisk(unit.pos, LIVE_SCOUT_CAPTURE_RADIUS)
+                        .into_iter()
+                        .filter(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))),
+                );
+            }
             reach.sort_unstable();
             reach.dedup();
             raiders.push(Raider {
