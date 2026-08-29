@@ -12263,3 +12263,104 @@ fn top_level_host_state_effects(source: &str, signature: &str, indent: usize) ->
     }
     effects
 }
+
+/// ★★★★★ A CITY-STATE'S CIVILIAN SHARING A PLOT WAS SILENTLY DROPPED.
+///
+/// `sync` plants hostiles first (behind their own collision guard), rivals
+/// second with NO guard — so a major's Trader stacks on a barbarian and the
+/// board sees it — and minors third behind `&& !self.game.units.values()
+/// .any(|live| live.pos == pos)`. A city-state's unit sharing a plot
+/// therefore never reached the board at all: not in `dropped_units`, not in
+/// `unmapped`, simply absent.
+///
+/// A unit the mirror cannot see is a unit no veto can refuse to shoot.
+/// Measured 2026-08-29: `civvis-20260827T145140Z` t52 struck the plot
+/// Bologna's TRADER stood on and `civvis-20260829T022207Z` t66 the plot
+/// Kumasi's did — both a surprise war on the host, neither visible to
+/// `Game::peaceful_foreign_unit_at`. `rebuild_from_state` has always planted
+/// minors through the same `plant_unit` as rivals; `sync` was the odd one out.
+#[test]
+fn a_minors_unit_is_planted_on_a_plot_a_barbarian_already_holds() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 30,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![
+            plot(5, 5, "TERRAIN_GRASS"),
+            plot(6, 6, "TERRAIN_PLAINS"),
+            plot(7, 6, "TERRAIN_PLAINS"),
+        ],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 30,
+        minors: vec![StateMinor {
+            player: 6,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            suzerain: -1,
+            cities: vec![StateCity {
+                id: 70,
+                name: "Kabul".to_string(),
+                x: 6,
+                y: 6,
+                pop: 4,
+                ..StateCity::default()
+            }],
+            units: vec![StateUnit {
+                id: 71,
+                kind: "UNIT_TRADER".to_string(),
+                x: 7,
+                y: 6,
+                hp: 100.0,
+                ..StateUnit::default()
+            }],
+            ..StateMinor::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    state.cities.push(StateCity {
+        id: 1,
+        name: "Roma".to_string(),
+        x: 5,
+        y: 5,
+        pop: 3,
+        ..StateCity::default()
+    });
+    state.hostiles.push(StateUnit {
+        id: 90,
+        kind: "UNIT_WARRIOR".to_string(),
+        player: 63,
+        x: 7,
+        y: 6,
+        hp: 100.0,
+        ..StateUnit::default()
+    });
+
+    let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+    // The sync path is the one that runs every live turn, and the one that
+    // used to drop the Trader.
+    mirror.sync(&snapshot, &state, 0);
+
+    let pos = crate::hex::offset_to_axial(7, 6);
+    let trader = *mirror
+        .foreign_uid_of
+        .get(&71)
+        .expect("the minor's Trader reaches the board even though a barbarian holds the plot");
+    assert_eq!(mirror.game.units[&trader].pos, pos);
+    assert!(
+        mirror
+            .game
+            .units
+            .values()
+            .any(|unit| unit.pos == pos && Some(unit.owner) == mirror.game.barb_pid),
+        "the barbarian is still there too"
+    );
+    assert!(
+        !mirror.game.is_at_war(0, mirror.game.units[&trader].owner),
+        "and we are at peace with its owner"
+    );
+    assert!(
+        mirror.game.peaceful_foreign_unit_at(0, pos),
+        "so the strike veto can see it"
+    );
+}
