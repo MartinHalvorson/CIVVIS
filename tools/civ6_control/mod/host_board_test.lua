@@ -21,9 +21,9 @@
 --  10. a refused settler move cannot draw its guard into a synthetic move;
 --  11. the `orders` event carries the cap and shadow counters.
 --  13. an unguarded settler will not step into the measured two-plot reach of
---      a visible barbarian scout; any settler leg beside a visible barbarian
---      combat unit is held even with a synchronized single escort, while
---      invisible, distant, and proven-scout-escort cases retain ordinary
+--      a visible barbarian scout; any settler leg reachable by a visible
+--      barbarian combat unit is held even with a synchronized single escort,
+--      while invisible, distant, and proven-scout-escort cases retain ordinary
 --      movement.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
@@ -570,6 +570,36 @@ check("visible combat no-overwrite: setter stays out of capture leg", ops(49), "
 check("visible combat no-overwrite: guard keeps its supplied route", ops(50), "UNITOPERATION_MOVE_TO@3,1")
 check("visible combat no-overwrite: no rescue is synthesized", lastEvent("settler_barbarian_combat_guard_rescue"), nil)
 check("visible combat no-overwrite: rescue counter stays zero", has(lastEvent("orders"), '"settler_barbarian_combat_guard_rescued":0'), true)
+
+-- A combat unit can capture from more than one plot away on its next turn.
+-- The live horse-archer loss at t43 used this geometry: the staggered-hex
+-- distance was two, so an adjacency-only check let the Settler step onto the
+-- exact tile the horse archer could enter.  Prefer the host path proof even
+-- when the hostile has already spent its current-turn movement.
+reset()
+host.units[51] = { id = 51, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[102] = { id = 102, kind = "UNIT_HORSEMAN", x = 4, y = 1, moves = 0 }
+host.paths["51:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.paths["102:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(4, 1), plotIndex(3, 1), plotIndex(2, 1) }, turns = { 0, 1, 1 } }
+applyOrders(player, PID, 7, { row(51, "MOVE_TO", 2, 1) })
+check("two-step combat reach: setter stays out of capture leg", ops(51), "")
+check("two-step combat reach: host path names the threat", has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile":102')
+	and has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile_reach":"path"'), true)
+
+-- If the host cannot answer an enemy path to a civilian-occupied plot, the
+-- conservative BaseMoves/distance fallback still holds a normal two-move
+-- barbarian rather than accepting a false-safe leg.
+reset()
+host.units[52] = { id = 52, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[103] = { id = 103, kind = "UNIT_HORSEMAN", x = 4, y = 1, moves = 0 }
+host.paths["52:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(52, "MOVE_TO", 2, 1) })
+check("two-step fallback reach: setter stays out of capture leg", ops(52), "")
+check("two-step fallback reach: distance names the threat", has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile":103')
+	and has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile_reach":"base_moves"'), true)
 
 -- A visible combat unit outside the adjacent-capture geometry does not freeze
 -- normal expansion movement.
