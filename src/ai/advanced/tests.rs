@@ -1788,6 +1788,77 @@ fn the_land_grab_wants_the_land_not_a_rung() {
     assert!(!AdvancedAi::legacy().base.land_grab);
 }
 
+/// An assigned Science lane may use the first few turns to establish a small
+/// empire, but it must not inherit the live seat's sixteen-city land grab.
+/// Once the opening window closes, the plan must become Science even when a
+/// safe site remains, so Campus buildings and the space-race funnel can own
+/// production before the generic expansion deadline.
+#[test]
+fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
+    let mut game = Game::new_with(GameOptions {
+        speed: "online".to_string(),
+        ..GameOptions::new(2, 74, 46, 91_508, 250, 0)
+    });
+    game.victory_conditions = crate::game::VictoryConditions::parse("science,score").unwrap();
+    game.current = 0;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.found_city_for(0, game.units[&settler].pos, None);
+    game.remove_unit(settler);
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_live_bridge_universe();
+
+    game.turn = 1;
+    let opening = ai.assess(&game, 0);
+    assert_eq!(
+        opening.desired_cities, SCIENCE_CITY_TARGET_CAP,
+        "Science must cap the live land-grab horizon"
+    );
+    assert_eq!(
+        opening.strategy,
+        GrandStrategy::Expansion,
+        "the target may still establish its first city opening"
+    );
+
+    // Once the small opening has two cities, an assigned Science lane owns
+    // the plan immediately. This catches the hostile-frontier case where a
+    // third settler can be stranded for many turns while the cities need
+    // Campuses.
+    let first_city = game.player_city_ids(0)[0];
+    let second_position = game
+        .map
+        .tiles
+        .iter()
+        .find(|(position, tile)| {
+            tile.owner_city.is_none()
+                && game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.wdist(**position, game.cities[&first_city].pos) >= 7
+        })
+        .map(|(position, _)| *position)
+        .unwrap();
+    game.found_city_for(0, second_position, None);
+    let two_city_handoff = ai.assess(&game, 0);
+    assert_eq!(
+        two_city_handoff.strategy,
+        GrandStrategy::Science,
+        "two cities are enough to end the Science opening"
+    );
+
+    game.turn = game.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS);
+    let handoff = ai.assess(&game, 0);
+    assert_eq!(handoff.desired_cities, SCIENCE_CITY_TARGET_CAP);
+    assert_eq!(
+        handoff.strategy,
+        GrandStrategy::Science,
+        "a remaining site must not keep an assigned Science seat in Expansion"
+    );
+}
+
 /// `settler-backlog-brake`: with three cities and a Settler parked six turns
 /// the pipeline is closed; off, the land grab's three walkers stand. Below
 /// three cities the brake never speaks.
@@ -4694,6 +4765,30 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
         "the Library outranks the race while it is owed: {library_value} vs {project_value}"
     );
     assert!(project_value > 0.0, "the project stays a positive fallback");
+
+    // A directly targeted Science controller gets the same guard even when
+    // the deployment genome has not enabled the separately screenable
+    // `buildings-before-projects` treatment. This is the live failure mode:
+    // the objective is Science, but a Commercial Hub Investment must not
+    // consume a city's only chance to build its Library.
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut targeted = AdvancedAi::targeting(VictoryTarget::Science);
+    targeted.refresh_research_weight(&game);
+    let targeted_value =
+        targeted.district_project_value(&game, 0, city, "commercial_hub_investment", &science_plan);
+    assert!(
+        targeted_value <= PROJECT_BEHIND_BUILDINGS_CAP,
+        "the Science target must cap the repeatable project without a genome override: \
+         {targeted_value}"
+    );
 
     // Library built, University not yet reachable: nothing owed, the race
     // is priced as before.
