@@ -4789,6 +4789,16 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// `first-district-first`: a city's FIRST specialty district outranks
+    /// the queue filler. Three edits inside `production_value`, all gated:
+    /// a per-city first-district bonus beside `first_copy`, a gentler cost
+    /// divisor for that one item, and a taper in place of the half-empire
+    /// `balanced_core` cliff (the Campus keeps asking in a city of four).
+    /// Measured 2026-08-29 across ten King runs: the first district landed a
+    /// median 19 turns after founding, 26 % of all city-turns preceded it,
+    /// and in 81 % of those busy turns a district was placeable and lost to
+    /// a Settler, Walls, an Archer, a Granary or a Builder.
+    first_district_first: bool,
     /// `escort-cap-holds`: the two-turn escort cap in `stacked_escort_pace`
     /// releases the settler on time instead of being suspended by the one
     /// predicate that reads only the visible frame, and a settler that is
@@ -5490,6 +5500,13 @@ pub struct AdvancedAi {
     siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// `walls-after-districts`: the barbarian pre-emption's WALL answer
+    /// waits until the city holds a district; its unit answer is untouched.
+    /// `barbarian_defense_item` reaches its wall loop on a mere local alarm
+    /// once no defender gap remains, and measured across ten King runs that
+    /// cost 219 pre-first-district city-turns, every one with a district
+    /// placeable. See `advanced_production`.
+    walls_after_districts: bool,
     /// `threatened-city-reserve`: while a city of ours is threatened
     /// (`plan.threatened_city`) or bleeding (`native_city_emergency`), every
     /// ordinary Gold purchase — the strategic buyer here and the baseline
@@ -6783,6 +6800,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            first_district_first: false,
             escort_cap_holds: false,
             first_granary_reserve: false,
             exhaustion_loyalty_guard: false,
@@ -6863,6 +6881,7 @@ impl AdvancedAi {
             siege_is_progress_2: false,
 
             // ---- append: t-z ----------------------------------------
+            walls_after_districts: false,
             threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
             treasury_at_work: false,
@@ -21730,7 +21749,23 @@ impl AdvancedAi {
             // wall/defender emergency from losing to a high-value district or
             // Settler merely because the empire is otherwise healthy.
             if committed.is_none() {
-                if let Some(item) = self.base.barbarian_defense_item(g, pid, cid) {
+                // `walls-after-districts`: the pre-emption's WALL answer (its
+                // unit answer passes untouched) waits until this city holds a
+                // district. The wall loop runs on a local alarm alone once no
+                // defender gap remains; measured across ten King runs it took
+                // 219 city-turns before a first district, all with a district
+                // placeable, in cities whose garrison the same probe had just
+                // judged sufficient.
+                let walls_wait = |item: &Item| {
+                    self.walls_after_districts
+                        && matches!(item, Item::Building { .. })
+                        && g.cities[&cid].districts.is_empty()
+                };
+                if let Some(item) = self
+                    .base
+                    .barbarian_defense_item(g, pid, cid)
+                    .filter(|item| !walls_wait(item))
+                {
                     if g.apply(
                         pid,
                         &Action::Produce {
@@ -22078,6 +22113,21 @@ impl AdvancedAi {
                 }
                 None => None,
             };
+            if chosen.is_none() && committed.is_none() {
+                // The silent turn, named. Measured across five King runs
+                // (2026-08-29): 383 empty city-turns, and 285 of them — 74 %,
+                // about 619 production a game — were cities this pass never
+                // spoke to again: the top candidate scored under the bar, the
+                // menu broke, and nothing was written. Ravenna in run
+                // civvis-20260829T062155Z sat idle from t131 to t171 with
+                // eighteen items buildable and appeared in the journal once,
+                // at its founding. The fallback above answers it only under
+                // `never-an-empty-queue` / `-2`; off, this line is the only
+                // trace the idle turn leaves.
+                think!(self.journal(), Cities, Detail,
+                       "{} builds nothing", g.cities[&cid].name;
+                       "every candidate scored under the veto bar and no idle-queue gene is on");
+            }
             if let Some((score, item)) = chosen {
                 {
                     // What this city was told to build. `BasicAi::production`
@@ -24062,7 +24112,26 @@ impl AdvancedAi {
                 // until they qualify. Below the cliff nothing changes.
                 let campus_keeps_asking = false;
 
-                let balanced_core = if !core_capped || campus_keeps_asking {
+                let balanced_core = if self.first_district_first {
+                    // `first-district-first`: a slope in place of the cliff.
+                    // Coverage measured at t150 lands exactly on the cliff —
+                    // Campus 0.56 of cities, Commercial Hub 0.33, Theatre 0.27
+                    // — so the ask now shrinks with coverage instead of
+                    // vanishing at half, and the Campus keeps asking outright
+                    // in a city of four, the floor the 2026-08-19 repair named
+                    // and never wired (`campus_keeps_asking` is a literal).
+                    let base = match family.as_str() {
+                        "campus" | "theater_square" | "commercial_hub" => 130.0,
+                        "harbor" | "industrial_zone" => 90.0,
+                        _ => 0.0,
+                    };
+                    if family == "campus" && city.pop >= 4 {
+                        base
+                    } else {
+                        let coverage = district_count as f64 / city_count.max(1) as f64;
+                        base * (1.0 - 0.5 * coverage.min(1.0))
+                    }
+                } else if !core_capped || campus_keeps_asking {
                     match family.as_str() {
                         "campus" | "theater_square" | "commercial_hub" => 130.0,
                         "harbor" | "industrial_zone" => 90.0,
@@ -24259,6 +24328,23 @@ impl AdvancedAi {
                     "aerodrome" if district_count == 0 && counts.aircraft > 0 => 260.0,
                     _ => 0.0,
                 };
+                // `first-district-first`: THIS city's first specialty district.
+                // `first_copy` above pays only the empire's first Government
+                // Plaza, Diplomatic Quarter or Aerodrome, which is why the
+                // capital's first district was the Plaza in eight of ten King
+                // runs while every other city's first district waited a median
+                // 19 turns behind Settlers, Walls, Archers and Granaries. A
+                // town of one may still grow first; from two the district wins
+                // the tie with the filler and loses to a real emergency.
+                let first_district = if self.first_district_first
+                    && spec.specialty
+                    && city.districts.is_empty()
+                    && city.pop >= 2
+                {
+                    180.0
+                } else {
+                    0.0
+                };
                 let development_penalty = if spec.specialty
                     && !city.districts.is_empty()
                     && city.buildings.len() <= city.districts.len()
@@ -24324,6 +24410,7 @@ impl AdvancedAi {
                     + balanced_core
                     + strategic_family
                     + first_copy
+                    + first_district
                     + effect_value
                     + development_penalty
                     + research_coverage
@@ -24780,7 +24867,20 @@ impl AdvancedAi {
         } else {
             1.0
         };
-        completion_discount * raw / (7.0 + turns.max(1.0))
+        // `first-district-first`: the divisor is what buries the first
+        // district. A young city runs two to four production, so a Campus is
+        // 15-25 turns and divides by 22-32 while a Warrior divides by 12-17;
+        // the district's raw score never gets to speak. For THIS city's first
+        // specialty district only, the turns count at six tenths.
+        let first_district_item = self.first_district_first
+            && city.districts.is_empty()
+            && matches!(item, Item::District { district, .. } if g.rules.districts[district].specialty);
+        let divisor = if first_district_item {
+            7.0 + turns.max(1.0) * 0.6
+        } else {
+            7.0 + turns.max(1.0)
+        };
+        completion_discount * raw / divisor
     }
 
     fn settlement_base_housing(g: &Game, pos: Pos) -> f64 {
@@ -25448,7 +25548,18 @@ impl AdvancedAi {
                 1
             };
             let attack_reach = attack_range + spec.moves.ceil() as i32;
-            let attacker = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+            // A ranged hostile breaks a stacked guard with the strength it
+            // will actually use on the civilian tile.  The melee strength is
+            // deliberately lower for units such as the Crossbowman (30
+            // Combat, 40 Ranged), so using `unit_strength` here can mark a
+            // guard as protective even though the hostile's ranged attack
+            // will kill it before the Settler's next turn.
+            let attacker_base = if spec.has_ranged_attack() {
+                g.unit_ranged_attack_strength(unit)
+            } else {
+                g.unit_strength(unit, false)
+            };
+            let attacker = crate::game::effective_strength(attacker_base, unit.hp);
             if g.wdist(unit.pos, pos) > attack_reach {
                 return false;
             }

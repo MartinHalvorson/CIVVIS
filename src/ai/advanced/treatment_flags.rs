@@ -3221,6 +3221,22 @@ impl AdvancedAi {
         self.border_parity_2 = false;
     }
 
+    pub fn enable_first_district_first(&mut self) {
+        self.first_district_first = true;
+    }
+
+    pub fn disable_first_district_first(&mut self) {
+        self.first_district_first = false;
+    }
+
+    pub fn enable_walls_after_districts(&mut self) {
+        self.walls_after_districts = true;
+    }
+
+    pub fn disable_walls_after_districts(&mut self) {
+        self.walls_after_districts = false;
+    }
+
     /// The two-turn escort cap releases the settler on schedule instead of
     /// being suspended by a predicate that reads only the visible frame, and
     /// a settler already outside its own city with no guard on its tile

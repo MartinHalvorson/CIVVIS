@@ -2,7 +2,13 @@ use super::*;
 use crate::rules::PillageReward;
 
 fn controlled_game(seed: u64) -> (Game, Pos, Vec<Pos>) {
-    let mut g = Game::new_full(2, 20, 14, seed, 40, 0, false);
+    controlled_game_of(2, seed)
+}
+
+/// `controlled_game` with a seat count, for the scenarios that need a third
+/// player standing on the board at peace with us.
+fn controlled_game_of(players: usize, seed: u64) -> (Game, Pos, Vec<Pos>) {
+    let mut g = Game::new_full(players, 20, 14, seed, 40, 0, false);
     let ids: Vec<u32> = g.units.keys().copied().collect();
     for id in ids {
         g.remove_unit(id);
@@ -4839,4 +4845,111 @@ fn a_cornered_survivor_pays_for_the_retreat_it_cannot_make() {
             g.units[&defender].hp
         );
     }
+}
+
+/// ★★★★★ A STRIKE IS ADDRESSED TO A PLOT AND THE HOST PICKS THE DEFENDER.
+///
+/// `civvis_orders` emits `Attack` and `RANGE_ATTACK` as bare coordinates, so
+/// the legality gates here are the only place a bystander can be spared. They
+/// were all existential (`.any()`): one at-war military unit made the plot
+/// legal and the unit beside it never got a vote — and when Civ 6 resolved
+/// the blow against THAT unit it started a war nobody declared, at 150
+/// grievances.
+///
+/// Measured 2026-08-29 over 95 live runs: of 3,832 deduped plot-addressed
+/// strikes, 24 were aimed at a plot whose own state frame showed a foreign
+/// unit we were at peace with, every one of them a civilian stacked with a
+/// barbarian — `civvis-20260827T183146Z` t53 at (56,35), a Brazilian
+/// MISSIONARY on a barbarian WARRIOR; `civvis-20260828T142735Z` t58 at
+/// (70,23), a Mongolian TRADER on a barbarian WARRIOR.
+#[test]
+fn a_strike_refuses_a_plot_where_a_unit_we_are_at_peace_with_stands() {
+    let (mut g, target, ring) = controlled_game_of(3, 3181);
+    g.players[1].is_barbarian = true;
+    g.barb_pid = Some(1);
+    g.spawn_unit("warrior", 1, target);
+    let bystander = g.spawn_unit("builder", 2, target);
+    assert!(
+        g.is_at_war(0, 1),
+        "the barbarian seat is at war with everyone"
+    );
+    assert!(!g.is_at_war(0, 2), "and Player 2 is not");
+    assert_eq!(g.units[&bystander].pos, target);
+
+    let archer = g.spawn_unit("archer", 0, ring[0]);
+    let warrior = g.spawn_unit("warrior", 0, ring[1]);
+    let offered = |g: &Game| {
+        g.legal_actions(0).into_iter().any(|action| {
+            matches!(action, Action::Ranged { target: to, .. } | Action::Attack { target: to, .. }
+                if to == target)
+        })
+    };
+
+    assert!(
+        g.peaceful_foreign_unit_at(0, target),
+        "the Builder's owner is at peace with us"
+    );
+    assert!(
+        !offered(&g),
+        "no strike is offered at the barbarian while a Builder we are at peace with shares its plot"
+    );
+    assert!(!g.melee_order_is_legal(0, warrior, target));
+    assert_eq!(
+        g.apply(
+            0,
+            &Action::Ranged {
+                unit: archer,
+                target,
+            },
+        )
+        .unwrap_err(),
+        "a unit we are at peace with stands there",
+        "and the shot the picker did not propose is refused if it is sent anyway"
+    );
+
+    // The same plot and the same two defenders, with the Builder's owner at
+    // war: there is no bystander left to surprise.
+    g.at_war.insert(pair(0, 2));
+    assert!(!g.peaceful_foreign_unit_at(0, target));
+    assert!(offered(&g));
+    assert!(g.melee_order_is_legal(0, warrior, target));
+    g.apply(
+        0,
+        &Action::Ranged {
+            unit: archer,
+            target,
+        },
+    )
+    .unwrap();
+}
+
+/// The same veto on the other plot-addressed strike: a city's ranged attack
+/// names a tile, and the host picks the defender standing on it.
+#[test]
+fn a_city_strike_refuses_a_plot_where_a_unit_we_are_at_peace_with_stands() {
+    let (mut g, center, ring) = controlled_game_of(3, 3182);
+    g.players[1].is_barbarian = true;
+    g.barb_pid = Some(1);
+    let cid = g.place_city(0, center, Some("Roma".to_string()));
+    g.cities.get_mut(&cid).unwrap().wall_hp = 50;
+    assert!(g.city_can_strike(&g.cities[&cid]));
+    let target = ring[0];
+    g.spawn_unit("warrior", 1, target);
+    g.spawn_unit("trader", 2, target);
+    let strike = Action::CityStrike { city: cid, target };
+
+    let offered = |g: &Game| {
+        g.legal_actions(0)
+            .into_iter()
+            .any(|action| matches!(action, Action::CityStrike { target: to, .. } if to == target))
+    };
+    assert!(!offered(&g));
+    assert_eq!(
+        g.apply(0, &strike).unwrap_err(),
+        "a unit we are at peace with stands there"
+    );
+
+    g.at_war.insert(pair(0, 2));
+    assert!(offered(&g));
+    g.apply(0, &strike).unwrap();
 }
