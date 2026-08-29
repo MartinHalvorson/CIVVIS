@@ -18,7 +18,8 @@ from unittest.mock import call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import civ6_play  # noqa: E402
+import civ6_play
+from civ6_control import orders  # noqa: E402
 
 try:
     import PIL  # noqa: F401
@@ -2079,6 +2080,80 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 
+class AnAbandonedGameIsRetiredSoItCounts(unittest.TestCase):
+    """⚠⚠ Stopping alone leaves the attempt UNFINISHED, not lost.
+
+    Civilization VI files no defeat for a game whose controller simply went
+    away: `tools/civ6_ladder.py` records nothing, and a game abandoned on the
+    operator's own rule is indistinguishable from one that crashed. The mod
+    answers a `retire` row with the shipped
+    `UI.RequestAction(ActionTypes.ACTION_RETIRE)` — the single call the stock
+    `InGameTopOptionsMenu.lua` makes in `OnReallyRetire`.
+    """
+
+    def _db(self) -> Path:
+        path = Path(self.tmp.name) / "orders.sqlite"
+        import sqlite3
+        with sqlite3.connect(str(path)) as db:
+            db.execute("CREATE TABLE orders (run TEXT NOT NULL, turn INTEGER NOT NULL,"
+                       " seq INTEGER NOT NULL, kind TEXT NOT NULL, subject INTEGER,"
+                       " verb TEXT, x INTEGER, y INTEGER,"
+                       " frame INTEGER NOT NULL DEFAULT 0,"
+                       " PRIMARY KEY (run, turn, seq))")
+        return path
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_the_row_is_written_where_the_mod_will_find_it(self) -> None:
+        import sqlite3
+        path = self._db()
+        self.assertTrue(orders.request_retire(path, "civvis-run", 150, "below_leader_score"))
+        with sqlite3.connect(str(path)) as db:
+            rows = list(db.execute("SELECT run, turn, seq, kind, verb, frame FROM orders"))
+        self.assertEqual(len(rows), 1)
+        run, turn, seq, kind, verb, frame = rows[0]
+        self.assertEqual((run, turn, kind, verb), ("civvis-run", 150, "retire", "below_leader_score"))
+        # The mod matches a retire on the RUN alone, but the sentinel frame keeps
+        # the row out of any real batch: `fetchOrders` filters on an exact frame
+        # and the decider's replan frames are single digits.
+        self.assertEqual(seq, orders.RETIRE_SEQ)
+        self.assertEqual(frame, orders.RETIRE_FRAME)
+        self.assertGreater(frame, 9)
+
+    def test_repeats_on_one_turn_collapse_and_the_mod_needs_only_one(self) -> None:
+        """The key is (run, turn, seq), so a repeat on the SAME turn replaces.
+
+        A second call on a LATER turn does add a row, and that is harmless on
+        purpose: the mod matches `kind = 'retire'` on the run and latches after
+        it has asked once, so any number of rows still means exactly one
+        `ACTION_RETIRE`. Asserting a single row would be asserting a property
+        the code does not have and does not need.
+        """
+        import sqlite3
+        path = self._db()
+        orders.request_retire(path, "civvis-run", 150)
+        orders.request_retire(path, "civvis-run", 150)
+        with sqlite3.connect(str(path)) as db:
+            same_turn = list(db.execute(
+                "SELECT count(*) FROM orders WHERE kind = 'retire'"))[0][0]
+        self.assertEqual(same_turn, 1, "a repeat on one turn replaces its row")
+        orders.request_retire(path, "civvis-run", 151)
+        with sqlite3.connect(str(path)) as db:
+            rows = list(db.execute(
+                "SELECT count(*) FROM orders WHERE kind = 'retire'"))[0][0]
+        self.assertEqual(rows, 2)
+        # What the mod actually asks is "is there one at all", so both states
+        # answer the same way.
+        self.assertGreater(rows, 0)
+
+    def test_an_unwritable_database_is_not_a_reason_to_keep_playing(self) -> None:
+        """The rule has already called the game; filing it is best effort."""
+        missing = Path(self.tmp.name) / "no-such-dir" / "orders.sqlite"
+        self.assertFalse(orders.request_retire(missing, "civvis-run", 150))
+
+
 class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
     """The sole current early stop is below 60 % of the leader after turn 150.
 
@@ -2694,108 +2769,32 @@ class AnUnreadableMenuLooksForTheBackItRenders(unittest.TestCase):
         self.assertIn("a dialog is covering the menu", self._source())
 
 
-class OperatorRetireUiTest(unittest.TestCase):
-    """The request cannot translate into a blind desktop click."""
+class OperatorRetireNativeTest(unittest.TestCase):
+    """A host retirement must stay inside Civ VI's native action channel."""
 
     @staticmethod
-    def _shot(path: Path) -> bool:
-        path.write_bytes(b"verified test frame")
-        return True
+    def _source() -> str:
+        return Path(civ6_play.__file__).read_text()
 
-    def test_the_visible_retire_and_yes_controls_are_the_only_clicks(self):
-        def observed(path, label, _bounds):
-            if path.name == "operator-retire-menu.png":
-                return {"Retire": (410, 360), "Return to Game": (410, 300)}.get(label)
-            return {"Yes": (390, 430), "No": (470, 430)}.get(label)
+    def test_the_host_writes_a_native_order_and_waits_for_the_mod_ack(self):
+        source = self._source()
+        self.assertIn("request_retire(\n                orders_db_path", source)
+        self.assertIn("operator_retire.record_retired(", source)
+        self.assertIn('elif kind == "retired":', source)
+        self.assertIn("OPERATOR_RETIRE_SETTLE_S", source)
 
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
-             patch.object(civ6_play, "focus_game"), \
-             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
-             patch.object(civ6_play, "_observed_label_point", side_effect=observed), \
-             patch.object(civ6_play, "click_at") as click, \
-             patch.object(civ6_play.time, "sleep"):
-            retired, detail, paused, retire_clicked = civ6_play.retire_from_game_menu(
-                Path(temporary), pause_requested=False, retire_clicked=False)
+    def test_no_pause_menu_or_screen_click_path_remains(self):
+        source = self._source()
+        self.assertNotIn("retire_from_game_menu", source)
+        self.assertNotIn("operator-retire-menu.png", source)
 
-        self.assertTrue(retired, detail)
-        self.assertFalse(paused)
-        self.assertTrue(retire_clicked)
-        self.assertEqual(click.call_args_list, [call(410, 360), call(390, 430)])
-
-    def test_an_unreadable_pause_menu_never_clicks_or_repeats_escape(self):
-        result = SimpleNamespace(returncode=0)
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
-             patch.object(civ6_play, "focus_game"), \
-             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
-             patch.object(civ6_play, "_observed_label_point", return_value=None), \
-             patch.object(civ6_play.macos_input, "press_key", return_value=result) as press, \
-             patch.object(civ6_play, "click_at") as click, \
-             patch.object(civ6_play.time, "sleep"):
-            retired, _detail, paused, retire_clicked = civ6_play.retire_from_game_menu(
-                Path(temporary), pause_requested=False, retire_clicked=False)
-
-        self.assertFalse(retired)
-        self.assertTrue(paused)
-        self.assertFalse(retire_clicked)
-        press.assert_called_once_with("escape")
-        click.assert_not_called()
-
-    def test_a_disabled_retire_retries_only_after_the_menu_is_still_visible(self):
-        def observed(path, label, _bounds):
-            # The Retire button is visible but has not opened a confirmation,
-            # which is what Civ VI does while it is not the local seat's turn.
-            return {"Retire": (410, 360), "Return to Game": (410, 300),
-                    "Exit to Desktop": (410, 480)}.get(label)
-
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
-             patch.object(civ6_play, "focus_game"), \
-             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
-             patch.object(civ6_play, "_observed_label_point", side_effect=observed), \
-             patch.object(civ6_play, "click_at") as click, \
-             patch.object(civ6_play.time, "sleep"):
-            first = civ6_play.retire_from_game_menu(
-                Path(temporary), pause_requested=True, retire_clicked=False)
-            second = civ6_play.retire_from_game_menu(
-                Path(temporary), pause_requested=True, retire_clicked=True)
-
-        self.assertFalse(first[0])
-        self.assertTrue(first[3], "the first click waits for a possible animation")
-        self.assertFalse(second[0])
-        self.assertFalse(second[3], "the visible unchanged menu permits a later retry")
-        self.assertEqual(click.call_args_list, [call(410, 360), call(410, 300)])
-
-    def test_a_pause_menu_without_retire_is_resumed_not_left_blocking(self):
-        def observed(_path, label, _bounds):
-            return {"Return to Game": (410, 300),
-                    "Exit to Desktop": (410, 480)}.get(label)
-
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play, "game_window", return_value=(0, 0, 900, 600)), \
-             patch.object(civ6_play, "focus_game"), \
-             patch.object(civ6_play, "screenshot", side_effect=self._shot), \
-             patch.object(civ6_play, "_observed_label_point", side_effect=observed), \
-             patch.object(civ6_play.macos_input, "press_key") as press, \
-             patch.object(civ6_play, "click_at") as click:
-            retired, detail, paused, retire_clicked = civ6_play.retire_from_game_menu(
-                Path(temporary), pause_requested=False, retire_clicked=False)
-
-        self.assertFalse(retired)
-        self.assertIn("resumed the game", detail)
-        self.assertFalse(paused)
-        self.assertFalse(retire_clicked)
-        click.assert_called_once_with(410, 300)
-        press.assert_not_called()
-
-    def test_a_recorded_retire_reason_cannot_be_reclassified_as_setup_failure(self):
+    def test_a_native_acknowledgement_cannot_be_reclassified_as_setup_failure(self):
         self.assertEqual(
             civ6_play.summary_reason(
-                {"operator_retired": {"state": "retired"},
+                {"operator_retire_event": {"kind": "retired"},
                  "ruleset_match": False, "mode_mismatch": True,
                  "seat": {"difficulty": "DIFFICULTY_PRINCE"}, "configured": False},
-                "operator_retired"),
+                "stopped"),
             "operator_retired")
 
 

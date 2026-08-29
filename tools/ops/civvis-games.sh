@@ -2,7 +2,7 @@
 # civvis-games — the on/off switch for the two unattended game lanes.
 #
 #   civvis-games on  [reason]   run both lanes indefinitely
-#   civvis-games retire [reason] request the active game's in-game Retire path
+#   civvis-games retire [reason] request the active game's native Retire action
 #   civvis-games off [reason]   stop both lanes NOW and keep them stopped
 #   civvis-games status         what is running, and why
 #   civvis-games wins [n]       the last n live-game wins from the ladder ledger
@@ -309,7 +309,7 @@ retire)
   # after the request has safely bound to one real harness, so a typo does not
   # cause an idle host to start playing by itself.
   set_intent running
-  say "  requested Civilization VI's visible Retire -> Yes path; no process was stopped"
+  say "  requested Civilization VI's native Retire action; no process was stopped"
   say "  lane remains ON; after operator_retired is recorded, the supervisor starts the next game"
   ;;
 
@@ -402,7 +402,7 @@ status)
     turn=$(grep -o '"turn": [0-9]*' "$run/events.jsonl" 2>/dev/null | tail -1 | tr -dc 0-9)
     say "  newest run           $(basename $run) (turn ${turn:-?}, $(stat -f %Sm "$run/events.jsonl"))"
     if [[ -f "$run/operator-retire-request.json" && ! -f "$run/operator-retire.json" ]]; then
-      say "  retirement           requested — awaiting verified in-game Retire"
+      say "  retirement           requested — awaiting native in-game retirement acknowledgement"
     elif [[ -f "$run/operator-retire.json" ]]; then
       say "  retirement           recorded — operator_retired"
     fi

@@ -2,15 +2,17 @@
 """Request a recorded, in-game retirement from the live Civ VI harness.
 
 ``civvis-games retire`` is deliberately a request, not a process kill.  The
-active ``civ6_play`` process sees the sidecar below, opens Civilization VI's
-pause menu, chooses its rendered **Retire** control, confirms **Yes**, and
-writes the outcome into both the run summary and the ladder row.  Keeping the
-request on disk gives the operator a durable audit trail and lets the harness
-refuse a stale or foreign run instead of guessing which game to end.
+active ``civ6_play`` process sees the sidecar below, writes an out-of-band
+``retire`` order, and the installed control mod invokes Civilization VI's
+native ``ACTION_RETIRE`` action.  Its ``retired`` acknowledgement is then
+written into both the run summary and the ladder row.  Keeping the request on
+disk gives the operator a durable audit trail and lets the harness refuse a
+stale or foreign run instead of guessing which game to end.
 
 This module contains the on-disk protocol and the narrow process-to-run
-ownership check.  The GUI work belongs to ``civ6_play.py`` because it already
-owns the focused game window and the recording-safe capture path.
+ownership check.  ``civ6_play.py`` translates the request into the native
+control-mod order through ``civ6_control.orders``; no desktop menu automation
+is involved.
 """
 
 from __future__ import annotations
@@ -114,7 +116,7 @@ def record_attempt(run_dir: Path, request: dict[str, Any], detail: str) -> None:
 
 
 def record_retired(run_dir: Path, request: dict[str, Any], detail: str) -> dict[str, Any]:
-    """Persist visual confirmation of the real in-game retirement action."""
+    """Persist the control mod's native in-game retirement acknowledgement."""
     payload = {
         "tag": request.get("tag"),
         "reason": request.get("reason"),

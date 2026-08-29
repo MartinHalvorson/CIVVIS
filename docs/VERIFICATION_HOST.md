@@ -106,7 +106,7 @@ will build.
 ```
 civvis-games status     the switch, the services, the entry point, what will build, what is playing, recent wins
 civvis-games on         clear any halt, record intent=running, start the chain through Terminal, reset the pin to head
-civvis-games retire     request Civ VI's visible Retire -> Yes path for exactly one active, already-playing harness; record operator_retired and keep the lane on for its replacement
+civvis-games retire     request Civ VI's native Retire action for exactly one active, already-playing harness; record operator_retired and keep the lane on for its replacement
 civvis-games off        halt AND tear the live chain down, youngest first (TERM only on the Civ VI core)
 civvis-games wins 20    the last twenty live-game wins from the ladder ledger
 ```
@@ -116,8 +116,9 @@ civvis-games wins 20    the last twenty live-game wins from the ladder ledger
 the chain when nothing is playing. `off` writes `stopped`, so nothing restarts
 until the operator says `on`. To end just the current game while continuing
 the indefinite lane, use `retire`, not `off`: it refuses setup/no-turn and
-ambiguous harnesses, waits for the game to visibly expose its own Retire and
-Yes controls, and leaves a durable request/status/result sidecar in that run.
+ambiguous harnesses, asks the installed control mod to invoke Civilization
+VI's native Retire action, waits for its `retired` acknowledgement, and leaves
+a durable request/status/result sidecar in that run.
 
 ## The "App Background Activity" alert
 

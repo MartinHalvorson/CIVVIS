@@ -12,7 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from civ6_control import operator_retire, watch  # noqa: E402
+from civ6_control import operator_retire  # noqa: E402
 
 
 def harness(tag: str, pid: int = 4271) -> str:
@@ -85,35 +85,20 @@ class RetireRequestTest(unittest.TestCase):
             run = self.make_live_run(root)
             requested = operator_retire.request_active_run(
                 root, "operator: retire this game", ps_output=harness("civvis-live"))
-            operator_retire.record_attempt(run, requested, "pause menu is not visibly verified")
+            operator_retire.record_attempt(
+                run, requested, "native retire order is awaiting acknowledgement")
             self.assertEqual(
                 json.loads((run / operator_retire.STATUS_FILE).read_text())["state"], "pending")
 
             with mock.patch.object(operator_retire, "utc_stamp",
                                    return_value="2026-08-29T15:02:00Z"):
                 retired = operator_retire.record_retired(
-                    run, requested, "clicked the in-game Retire confirmation")
+                    run, requested,
+                    "the control mod acknowledged Civilization VI ACTION_RETIRE")
             self.assertEqual(retired["state"], "retired")
             self.assertEqual(retired["reason"], "operator: retire this game")
             self.assertEqual(retired["retired_utc"], "2026-08-29T15:02:00Z")
             self.assertIsNone(operator_retire.read_pending_request(run, "civvis-live"))
-
-
-class OperatorRetireWatchTest(unittest.TestCase):
-    def test_a_verified_retirement_can_end_the_watch_loop_without_a_kill(self) -> None:
-        class QuietTail:
-            def poll(self) -> list[dict]:
-                return []
-
-        with mock.patch.object(watch.env, "game_pids", return_value=[1]), \
-             mock.patch.object(watch.time, "sleep") as sleep:
-            reason = watch.follow(
-                QuietTail(), 60.0, lambda _event: None, poll_s=0.1,
-                stall_s=None, frozen_s=None,
-                each_poll=lambda: "operator_retired",
-            )
-        self.assertEqual(reason, "operator_retired")
-        sleep.assert_not_called()
 
 
 if __name__ == "__main__":

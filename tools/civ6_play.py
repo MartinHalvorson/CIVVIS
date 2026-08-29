@@ -39,7 +39,8 @@ from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import (gamelock, launcher, macos_capture, macos_input,
                           macos_ocr, operator_retire, popup_clear, vision,
                           watch)  # noqa: E402
-from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
+from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
+                                 reset_orders_db)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
@@ -3069,120 +3070,7 @@ def press_escape(times: int = 2) -> bool:
 
 
 OPERATOR_RETIRE_RETRY_S = 15.0
-
-
-def retire_from_game_menu(run_dir: Path, *, pause_requested: bool,
-                          retire_clicked: bool) -> tuple[bool, str, bool, bool]:
-    """Choose Civilization VI's own Retire control only after reading it.
-
-    ``InGameTopOptionsMenu.lua`` wires ``RetireButton`` to ``OnRetireGame``;
-    its confirmation's red **Yes** button alone calls ``UI.RequestAction(
-    ActionTypes.ACTION_RETIRE)``.  The visible labels are therefore the real
-    game's authorization for both clicks.  A sidecar request is never a license
-    to strike a guessed coordinate, and an unavailable recording-safe capture
-    leaves the game running and the request pending.
-
-    Returns ``(retired, detail, pause_requested, retire_clicked)``.  The two
-    state flags prevent a failed confirmation read from repeatedly sending
-    Escape or clicking behind a dialog on later polls.  ``retire_clicked`` is
-    retained while the confirmation may still be animating; it is reset only
-    when a later frame proves the Retire menu is still open instead.
-    """
-    bounds = game_window()
-    if bounds is None:
-        return False, "game window is unavailable", pause_requested, retire_clicked
-    focus_game(GAME_SIDE, GAME_FRACTION)
-
-    def capture(name: str) -> Path | None:
-        shot = run_dir / name
-        return shot if screenshot(shot) else None
-
-    def confirmation(shot: Path) -> tuple[int, int] | None:
-        # The shipped Retire dialog has both Yes and No.  Requiring both avoids
-        # treating an unrelated visible affirmative as a retirement consent.
-        yes = _observed_label_point(shot, "Yes", bounds)
-        no = _observed_label_point(shot, "No", bounds)
-        return yes if yes is not None and no is not None else None
-
-    def pause_menu_return(shot: Path) -> tuple[int, int] | None:
-        """Return a proven Resume control, never a similarly named popup row."""
-        resume = _observed_label_point(shot, "Return to Game", bounds)
-        exit_to_desktop = _observed_label_point(shot, "Exit to Desktop", bounds)
-        return resume if resume is not None and exit_to_desktop is not None else None
-
-    if retire_clicked:
-        shot = capture("operator-retire-confirmation.png")
-        if shot is None:
-            return False, "retire confirmation capture is unavailable", pause_requested, True
-        yes = confirmation(shot)
-        if yes is not None:
-            click_at(*yes)
-            # The official callback invoked by this click immediately requests
-            # ACTION_RETIRE.  Give the UI event a frame before the normal
-            # terminal cleanup closes the app.
-            time.sleep(0.8)
-            return True, "clicked the in-game Retire confirmation", pause_requested, True
-        # Retire is disabled while it is not this seat's turn.  A paused game
-        # cannot advance to that turn, so a visibly unchanged pause menu must
-        # be resumed before retrying later.  This is intentionally stricter
-        # than matching "Return to Game" alone: `Exit to Desktop` proves it is
-        # Civilization VI's pause menu rather than an unrelated popup.
-        resume = pause_menu_return(shot)
-        if resume is not None:
-            click_at(*resume)
-            return False, "Retire did not open its confirmation; resumed the game", False, False
-        return False, "Retire confirmation is not visibly verified", pause_requested, True
-
-    shot = capture("operator-retire-menu.png")
-    if shot is None:
-        return False, "pause-menu capture is unavailable", pause_requested, False
-    retire = _observed_label_point(shot, "Retire", bounds)
-    resume = _observed_label_point(shot, "Return to Game", bounds)
-    verified_resume = pause_menu_return(shot)
-    if retire is None and verified_resume is not None:
-        # The menu is known, but this game mode does not expose Retire.  Put a
-        # healthy game straight back instead of leaving it paused behind an
-        # unfulfillable request; the durable sidecar records the deferral and
-        # will be tried again after the modest retry interval.
-        click_at(*verified_resume)
-        return False, "Retire is not exposed in the in-game pause menu; resumed the game", False, False
-    if retire is None or resume is None:
-        if pause_requested:
-            return False, "pause menu is not visibly verified", True, False
-        try:
-            pressed = macos_input.press_key("escape")
-        except (macos_input.InputUnavailable, OSError, subprocess.SubprocessError) as error:
-            return False, f"could not open the pause menu: {error}", True, False
-        if pressed.returncode != 0:
-            return False, "could not open the pause menu", True, False
-        pause_requested = True
-        time.sleep(0.8)
-        shot = capture("operator-retire-menu.png")
-        if shot is None:
-            return False, "pause-menu capture is unavailable", True, False
-        retire = _observed_label_point(shot, "Retire", bounds)
-        resume = _observed_label_point(shot, "Return to Game", bounds)
-        verified_resume = pause_menu_return(shot)
-        if retire is None and verified_resume is not None:
-            click_at(*verified_resume)
-            return False, "Retire is not exposed in the in-game pause menu; resumed the game", False, False
-        if retire is None or resume is None:
-            return False, "pause menu does not visibly expose Retire", True, False
-
-    click_at(*retire)
-    retire_clicked = True
-    time.sleep(0.8)
-    shot = capture("operator-retire-confirmation.png")
-    if shot is None:
-        return False, "retire confirmation capture is unavailable", pause_requested, True
-    yes = confirmation(shot)
-    if yes is None:
-        return False, "Retire confirmation is not visibly verified", pause_requested, True
-    click_at(*yes)
-    # `OnReallyRetire` dispatches ACTION_RETIRE from the game's own button
-    # callback.  Do not tear down the process in the same UI instant.
-    time.sleep(0.8)
-    return True, "clicked the in-game Retire confirmation", pause_requested, True
+OPERATOR_RETIRE_SETTLE_S = 0.8
 
 
 def dismiss_world_congress_between_turns() -> bool:
@@ -3346,11 +3234,12 @@ def summary_reason(state: dict, reason: str) -> str:
     place that turns "the game disagreed" into a refusal is a place a test can
     call. `is False` and not truthiness: `None` is the readback failing.
     """
-    # An operator retirement is a deliberate, in-game ending.  It needs to be
-    # preserved even if a diagnostic readback was incomplete in the same poll;
-    # otherwise a recorded Retire -> Yes action can be filed as an unrelated
-    # setup refusal and the ledger loses the operator's actual reason.
-    if state.get("operator_retired") and reason == "operator_retired":
+    # An operator retirement is a deliberate, in-game ending.  The control mod
+    # emits `retired` only after it has issued Civilization VI's own
+    # ACTION_RETIRE, so preserve that event even if a diagnostic readback was
+    # incomplete in the same poll; otherwise the ledger loses the operator's
+    # actual reason.
+    if state.get("operator_retire_event"):
         return "operator_retired"
     if state.get("ruleset_match") is False:
         return "wrong_ruleset"
@@ -3487,6 +3376,12 @@ def _play(args: argparse.Namespace) -> int:
         "modes": None, "mode_mismatch": False,
         # Three-way: True agreed, False disagreed, None never read back.
         "ruleset": None, "ruleset_match": None,
+        # The host-side `civvis-games retire` request and the control mod's
+        # acknowledgement are distinct: writing the out-of-band order is not a
+        # result until the game emits `retired` after ACTION_RETIRE.
+        "operator_retire_request": None,
+        "operator_retire_event": None,
+        "operator_retired": None,
         # ★★★ THE OPENING TEMPO, which is the strongest correlate the live
         # ladder has ever shown. Measured over the 35 completed runs of
         # 2026-08-16/17: cities held at turn 60 correlates r=+0.69 with final
@@ -3647,6 +3542,30 @@ def _play(args: argparse.Namespace) -> int:
             result = "sent" if ok else "skipped safely" if safe_skip else "FAILED"
             print(f"[{kind}] {how} {result} for {screen}",
                   file=sys.stderr if not ok and not safe_skip else sys.stdout)
+        elif kind == "retired":
+            request = state.get("operator_retire_request")
+            if request is None:
+                # A policy-triggered abandon also uses the native action.  It
+                # remains `abandoned` rather than impersonating an operator
+                # request, but the event is still useful in the run log.
+                print(f"[retired] {json.dumps(event, sort_keys=True)}")
+            else:
+                state["operator_retire_event"] = dict(event)
+                detail = ("the control mod acknowledged Civilization VI "
+                          "ACTION_RETIRE")
+                try:
+                    state["operator_retired"] = operator_retire.record_retired(
+                        run_dir, request, detail)
+                except OSError as error:
+                    # The native action is still an honest ending even if the
+                    # audit sidecar cannot be flushed; the run summary carries
+                    # the mod event and the logger reports the recovery need.
+                    print(f"[retire] could not record native acknowledgement: {error}",
+                          file=sys.stderr, flush=True)
+                print(f"[retire] {detail}; recording operator_retired", flush=True)
+        elif kind == "retire_failed" and state.get("operator_retire_request"):
+            print(f"[retire] game could not issue ACTION_RETIRE: "
+                  f"{event.get('why') or 'unknown reason'}", file=sys.stderr, flush=True)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
             if kind in ("victory", "defeat"):
@@ -3671,6 +3590,10 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
+        if kind == "retired" and state.get("operator_retire_event"):
+            # This is the exact control-mod acknowledgement for the durable
+            # host request, not an inferred game exit or a generic stop.
+            return True
         # And OUR decision that the game is lost — the operator's one rule:
         # under 40 % of the leader's score on a readable turn at or after 150.
         # See `below_leader_score_reading`.
@@ -3684,6 +3607,23 @@ def _play(args: argparse.Namespace) -> int:
                   f"{verdict['rival_best']}, under the "
                   f"{verdict['score_ratio_ceiling']:.0%} line "
                   "— stopping the game rather than playing it out", flush=True)
+            # ⚠⚠ RETIRE RATHER THAN JUST STOP, so the loss is a RESULT.
+            #
+            # Stopping alone leaves the game unfinished: Civilization VI files
+            # no defeat, `tools/civ6_ladder.py` records nothing, and an attempt
+            # we abandoned on the operator's own rule is indistinguishable from
+            # one that crashed. The mod answers this row with the shipped
+            # `UI.RequestAction(ActionTypes.ACTION_RETIRE)`.
+            #
+            # Best effort by design: a database we cannot write is not a reason
+            # to keep playing a game the rule has already called, so the return
+            # below is unconditional and the game stops either way.
+            asked = request_retire(orders_db_path(run_dir, args.orders_db),
+                                   args.tag, verdict["turn"], "below_leader_score")
+            state["retire_requested"] = bool(asked)
+            print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
+                  " — the game is filed as a loss rather than left unfinished",
+                  flush=True)
             return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
@@ -3720,8 +3660,6 @@ def _play(args: argparse.Namespace) -> int:
     retire_flow = {
         "request": None,
         "last_attempt": 0.0,
-        "pause_requested": False,
-        "retire_clicked": False,
     }
 
     def console_locked() -> bool:
@@ -3736,59 +3674,53 @@ def _play(args: argparse.Namespace) -> int:
         session_was_locked[0] = locked
         return locked
 
-    def process_operator_retirement() -> str | None:
-        """Honor one durable retire request without making an unverified click."""
+    def process_operator_retirement() -> None:
+        """Turn one durable host request into the control mod's native action."""
         request = operator_retire.read_pending_request(run_dir, args.tag)
         if request is None:
-            return None
+            return
+        state["operator_retire_request"] = request
         identity = (request.get("tag"), request.get("requested_utc"))
         if retire_flow["request"] != identity:
             retire_flow.update({
                 "request": identity,
                 "last_attempt": 0.0,
-                "pause_requested": False,
-                "retire_clicked": False,
             })
         now = time.monotonic()
         if now - float(retire_flow["last_attempt"]) < OPERATOR_RETIRE_RETRY_S:
-            return None
+            return
         retire_flow["last_attempt"] = now
-        retired, detail, pause_requested, retire_clicked = retire_from_game_menu(
-            run_dir,
-            pause_requested=bool(retire_flow["pause_requested"]),
-            retire_clicked=bool(retire_flow["retire_clicked"]),
-        )
-        retire_flow["pause_requested"] = pause_requested
-        retire_flow["retire_clicked"] = retire_clicked
+        turn = state.get("turn")
+        if not isinstance(turn, int) or turn < 0:
+            sent = False
+            detail = "no in-run turn is available for the native retire request"
+        else:
+            sent = request_retire(
+                orders_db_path(run_dir, args.orders_db), args.tag, turn,
+                str(request.get("reason") or "operator"),
+            )
+            detail = ("wrote native retire order; awaiting control-mod acknowledgement"
+                      if sent else "could not write the native retire order")
         try:
-            if retired:
-                state["operator_retired"] = operator_retire.record_retired(
-                    run_dir, request, detail)
-                print(f"[retire] {detail}; recording operator_retired", flush=True)
-                return "operator_retired"
             operator_retire.record_attempt(run_dir, request, detail)
         except OSError as error:
             # The retirement request remains present, so a transient full disk
             # or filesystem failure can be retried without falsely claiming an
-            # outcome.  Never let reporting itself take a healthy game down.
+            # outcome. Never let reporting itself take a healthy game down.
             print(f"[retire] could not record retirement state: {error}",
                   file=sys.stderr, flush=True)
-        print(f"[retire] waiting: {detail}", flush=True)
-        return None
+        print(f"[retire] {'requested' if sent else 'waiting'}: {detail}", flush=True)
 
-    def keep_foreground() -> str | None:
-        retirement = process_operator_retirement()
-        if retirement is not None:
-            return retirement
+    def keep_foreground() -> None:
+        process_operator_retirement()
         now = time.monotonic()
         if now - last_focus[0] < args.focus_every:
-            return None
+            return
         last_focus[0] = now
         focus_game()
         # Safe here and only here: the game is in play, so there is no menu
         # being read off the screen for a resize to invalidate.
         place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
-        return None
 
     # ⚠ THE POLL INTERVAL IS THE OUTBOUND LEG OF THE DECISION LOOP. With CIVVIS
     # deciding, the mod holds its turn open until orders arrive, and orders cannot
@@ -3900,6 +3832,13 @@ def _play(args: argparse.Namespace) -> int:
         print(f"holding the final screen for {args.end_game_seconds:.0f}s",
               flush=True)
         time.sleep(args.end_game_seconds)
+    elif state.get("operator_retire_event"):
+        # ``UI.RequestAction`` crosses from the control mod into the game core
+        # asynchronously.  Leave it a small frame window to commit the native
+        # retirement before ordinary harness cleanup closes Civilization VI.
+        print(f"holding the native retire action for {OPERATOR_RETIRE_SETTLE_S:.1f}s",
+              flush=True)
+        time.sleep(OPERATOR_RETIRE_SETTLE_S)
     game_stopped = launcher.stop()
     stop_brain()
     if not game_stopped:
@@ -3946,10 +3885,12 @@ def _play(args: argparse.Namespace) -> int:
         "seat": state["seat"],
         "outcome": outcome or None,
         "game_stopped": game_stopped,
-        # This is the verified human-equivalent exit path, not an inferred
-        # loss: ``operator-retire.json`` is written only after the visible
-        # Retire -> Yes flow has been completed by `retire_from_game_menu`.
-        "operator_retire": state.get("operator_retired"),
+        # This is a native in-game acknowledgement, not an inferred loss:
+        # ``operator-retire.json`` is written after the control mod reports
+        # that it issued Civilization VI's own ACTION_RETIRE request. Preserve
+        # the event in the summary too if flushing that sidecar ever fails.
+        "operator_retire": (state.get("operator_retired")
+                            or state.get("operator_retire_event")),
         # ★★★★★ WHICH VICTORY THIS RUN WAS PLAYING FOR.
         #
         # The summary is the artefact the ladder is built from, and until now it
