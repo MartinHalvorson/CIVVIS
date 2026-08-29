@@ -156,6 +156,37 @@ for _, op in ipairs({ "SKIP_TURN", "FORTIFY", "ALERT", "SLEEP" }) do
 end
 print("units blocker: parks ready units before claiming completion, holding orders only")
 
+--- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, MEASURED AGAIN ON THE POLICY SLOT.
+--- Run civvis-20260829T022749Z wedged at turn 114 holding 8 cities:
+---     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"   1
+---     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"  25
+---     dismissed FILL_CIVIC_SLOT                              40
+--- repeating unchanged until the watchdog killed the game. Dismissing the
+--- notification cannot clear a slot end-turn still requires, so the answer
+--- has to actually fill it -- exactly as the units blocker parks its units.
+assert(agentSrc:find('if name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then%s+local filled = fillPolicies%(player%)'),
+	"the policy-slot blocker must fill the slot before answering civvis_complete")
+assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+"%s*%.%.%s*tostring%(filled%)'),
+	"a filled answer must be distinguishable from a bare civvis_complete")
+print("policy slot: fills the open slot before claiming completion")
+
+--- ⚠⚠⚠ THE FORFEIT'S FORCED END TURN MUST NOT BE GATED ON THE UNIT BLOCKERS.
+--- `ACTION_ENDTURN` with no reason is refused while a blocker stands, and
+--- dismissing does not stick for anything end-turn genuinely requires, so a
+--- forfeited blocker that is not a unit blocker left the turn unable to end.
+--- Dismissals across the 2026-08-28/29 ladder runs: 26 forced (all UNITS), and
+--- 39 world-congress, 24 policy-slot, 12 envoy-token, 6 great-person NOT forced.
+--- Run civvis-20260829T032446Z shows both halves: t88 dismissed UNITS with
+--- `parked=0`, forced, and advanced; t94 dismissed GIVE_INFLUENCE_TOKEN unforced
+--- and never played another turn.
+local forfeitArm = agentSrc:match("forced = true %}%);(.-)elseif not residual_taken")
+assert(forfeitArm, "the forfeit dismissal arm was not found")
+assert(forfeitArm:find('REASON = "UserForced"', 1, true),
+	"a forfeited blocker must force the end turn")
+assert(not forfeitArm:find("UNIT_BLOCKERS", 1, true),
+	"the forced end turn must not be gated on UNIT_BLOCKERS")
+print("forfeit: every dismissed blocker forces the end turn")
+
 print("blocker ownership: " ..
 	#(function() local n = {} for _ in pairs(answers) do n[#n + 1] = 1 end return n end)() ..
 	" answered prompts owned, no soft overlap, every order kind real")
