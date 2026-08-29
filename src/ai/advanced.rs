@@ -11960,7 +11960,15 @@ impl AdvancedAi {
         }
         // ★★★★ THE CHEAP HALF OF A RESEARCH CITY BEFORE THE RACE IN IT. See
         // `buildings_before_projects`.
-        if self.buildings_before_projects && spec.repeatable {
+        // A named Science seat must not let a cheap Commercial Hub Investment
+        // (or any other repeatable project) outrank an available Library,
+        // University, Research Lab or Workshop merely because the deployment
+        // ledger withheld this independently screenable treatment. The
+        // treatment remains configurable for other lanes; Science gets the
+        // same invariant from its target contract.
+        if (self.buildings_before_projects || self.victory_target == Some(VictoryTarget::Science))
+            && spec.repeatable
+        {
             let waiting_for = BUILDINGS_BEFORE_PROJECTS.iter().chain(
                 CULTURE_BUILDINGS_BEFORE_PROJECTS
                     .iter()
@@ -35432,7 +35440,14 @@ impl AdvancedAi {
         if prophet_race_open || (self.enter_the_prophet_race && g.players[pid].religion.is_some()) {
             self.base.pursue_religion = true;
         }
-        self.base.science_building_first = self.science_building_first;
+        // An explicit Science target is a production contract, not only a
+        // research tie-break. The live genome may withhold the opt-in
+        // `science-building-first` treatment, but a targeted seat must still
+        // finish the Campus chain before spending its cities on unrelated
+        // buildings. Keep the opt-in available for adaptive seats while
+        // making the named Science lane self-consistent.
+        self.base.science_building_first =
+            self.science_building_first || active_victory_target == Some(VictoryTarget::Science);
         // One reading a turn: `Game::victory_races` walks every city of every
         // major, and `production_value` asks this question per item per city.
         self.lane_lost = self.assigned_lane_is_lost(g, pid);
