@@ -35483,6 +35483,59 @@ fn a_wounded_stacked_guard_does_not_cancel_the_settlers_barbarian_escape() {
     );
 }
 
+/// A healthy Slinger is still no protection when a visible Barbarian
+/// Warrior can overwhelm it.  The live planner used to bind that co-located
+/// body in `flee_under_lessons` without the survival check, hold the Settler
+/// in place, and let the hostile phase kill the escort before capturing the
+/// civilian.  The escape must reject the outmatched binding and leave the
+/// Settler on ground no visible hostile can take next turn.
+#[test]
+fn an_outmatched_stacked_guard_does_not_cancel_the_settlers_barbarian_escape() {
+    let (mut game, _city, home) = barbarian_field(71_307);
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let raider_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("an open adjacent raider post");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let guard = game.spawn_test_unit("slinger", 0, start);
+    let raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.settler_guards.insert(settler, guard);
+    let visible = ai.battlefront_visibility(&game, 0);
+    assert!(
+        ai.guard_outmatched_at(&game, 0, &game.units[&guard], start, &visible),
+        "the Warrior overwhelms a Slinger on the civilian's tile"
+    );
+    assert!(game.unit_visible_to(raider, 0));
+    let reach = ai.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the Settler is in capture reach"
+    );
+    assert!(!ai.civilian_safe_at(&game, 0, settler, start, &reach));
+    assert_eq!(
+        ai.civilian_flee_step(&mut game, 0, settler),
+        Some(true),
+        "an outmatched co-located guard must not cancel the emergency escape"
+    );
+    let after = game.units[&settler].pos;
+    assert_ne!(after, start, "the Settler leaves the doomed stack");
+    assert!(
+        !reach.covers(&game, after),
+        "the escape leaves the Warrior's capture reach: {after:?}"
+    );
+}
+
 /// The route step into a raider's reach is refused: a settler one tile short
 /// of it either sidesteps to safe ground or holds, and never ends its turn
 /// where the Warrior could stand next turn.
@@ -37914,10 +37967,10 @@ fn a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons() {
         .expect("ground two tiles from the settler on the far side of the raider");
     let settler = game.spawn_test_unit("settler", 0, start);
     let _horseman = game.spawn_test_unit("horseman", 1, raider_at);
-    let warrior = game.spawn_test_unit("warrior", 0, cover_at);
-    // The warrior has already moved this turn: it cannot be summoned onto
+    let guard = game.spawn_test_unit("man_at_arms", 0, cover_at);
+    // The guard has already moved this turn: it cannot be summoned onto
     // the settler's tile, so the settler must go to it.
-    game.units.get_mut(&warrior).expect("spawned").moves_left = 0.0;
+    game.units.get_mut(&guard).expect("spawned").moves_left = 0.0;
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
@@ -37938,12 +37991,12 @@ fn a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons() {
     );
     assert_eq!(
         game.units[&settler].pos, cover_at,
-        "it stands with the warrior rather than on the least exposed bare tile"
+        "it stands with the guard rather than on the least exposed bare tile"
     );
     assert_eq!(
         live.settler_guards.get(&settler),
-        Some(&warrior),
-        "and binds the warrior as its guard, so the guard's own turn keeps it there"
+        Some(&guard),
+        "and binds the guard, so its own turn keeps it there"
     );
 }
 

@@ -627,15 +627,29 @@ impl AdvancedAi {
     }
 
     /// The stacked guard follows the settler onto `to` when it still has
-    /// the movement; a settler never leaves its guard behind on purpose.
+    /// the movement and can survive there; a settler never leaves a viable
+    /// guard behind on purpose.  An outmatched escort is deliberately left
+    /// behind so it cannot turn a safe retreat into the same exposed stack.
     fn pull_guard_along(&mut self, g: &mut Game, pid: usize, settler: u32, from: Pos, to: Pos) {
         let Some(guard) = self.settler_guards.get(&settler).copied() else {
             return;
         };
-        let can_follow = g
-            .units
-            .get(&guard)
-            .is_some_and(|unit| unit.owner == pid && unit.pos == from && unit.moves_left > 0.0);
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
+        let can_follow = g.units.get(&guard).is_some_and(|unit| {
+            unit.owner == pid
+                && unit.pos == from
+                && unit.moves_left > 0.0
+                && (!self.settler_guard_holds_on()
+                    || !self.guard_outmatched_at(
+                        g,
+                        pid,
+                        unit,
+                        to,
+                        visible.as_ref().expect("computed under the flag"),
+                    ))
+        });
         if can_follow && g.reachable(guard).contains(&to) {
             self.base.path_move(g, pid, guard, to);
         }
@@ -644,12 +658,23 @@ impl AdvancedAi {
     /// Could the bound guard, stacked on `from`, stand on `to` with the
     /// settler after this step?
     fn guard_can_follow(&self, g: &Game, pid: usize, settler: u32, from: Pos, to: Pos) -> bool {
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
         self.settler_guards.get(&settler).is_some_and(|guard| {
             g.units.get(guard).is_some_and(|unit| {
                 unit.owner == pid
                     && unit.pos == from
                     && unit.moves_left > 0.0
                     && g.reachable(*guard).contains(&to)
+                    && (!self.settler_guard_holds_on()
+                        || !self.guard_outmatched_at(
+                            g,
+                            pid,
+                            unit,
+                            to,
+                            visible.as_ref().expect("computed under the flag"),
+                        ))
             })
         })
     }
@@ -819,9 +844,12 @@ impl AdvancedAi {
 
     /// One of our land military units on `pos` that a settler could bind as
     /// its guard by standing with it: healthy, unlinked, not another
-    /// settler's guard. Deliberately NOT the outmatched test: this is asked
-    /// when the alternative is standing bare beside a raider, and a stack the
-    /// raider must first break beats a civilian it can simply take.
+    /// settler's guard. Under the live survival bar, an escort the first
+    /// visible hostile would break is not a shield at all: the hostile phase
+    /// can kill that body and capture the civilian in the same turn. Keep the
+    /// old "any healthy stack is better than a bare civilian" answer for the
+    /// native/evaluator controllers, but make the live binding agree with
+    /// `bound_guard_protects_settler_at` and `settlement_tile_risk`.
     /// Ground within `SETTLER_CAPTURE_SCAR_RADIUS` of a settler's capture,
     /// still under its retirement, and not one of our own cities. Under
     /// `live_settler_capture_lessons` only (the scar map is empty otherwise).
@@ -835,6 +863,9 @@ impl AdvancedAi {
 
     fn bindable_guard_at(&self, g: &Game, pid: usize, settler: u32, pos: Pos) -> Option<u32> {
         let bound: Vec<u32> = self.settler_guards.values().copied().collect();
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
         g.unit_ids_at(pos)
             .iter()
             .copied()
@@ -847,6 +878,14 @@ impl AdvancedAi {
                     && unit.hp >= STACKED_GUARD_MIN_HP
                     && unit.linked_to.is_none()
                     && (!bound.contains(uid) || self.settler_guards.get(&settler) == Some(uid))
+                    && (!self.settler_guard_holds_on()
+                        || !self.guard_outmatched_at(
+                            g,
+                            pid,
+                            unit,
+                            pos,
+                            visible.as_ref().expect("computed under the flag"),
+                        ))
             })
             .max_by_key(|uid| (g.unit_strength(&g.units[uid], false) as i32, *uid))
     }
