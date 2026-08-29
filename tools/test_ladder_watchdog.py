@@ -903,6 +903,29 @@ class SupervisorUnownedHarnessDetection(unittest.TestCase):
                     process.terminate()
                     process.wait(timeout=5)
 
+    def test_launch_boundary_rechecks_after_preflight(self):
+        """A new owner can appear while the supervisor builds or refreshes.
+
+        The initial ownership scan cannot protect the whole preflight window:
+        an independent live game may start after that scan but before the
+        climb is launched.  Keep the second scan immediately after mirror
+        refresh so the supervisor does not spend a no-turn cycle colliding
+        with that owner.
+        """
+        source = self.SUPERVISOR.read_text()
+        mirror_end = source.index("\n  LAUNCH_UNOWNED_PID=", source.index("display mirror"))
+        launch_check_end = source.index("\n  TAG=$(date -u", mirror_end)
+        boundary = source[mirror_end:launch_check_end]
+
+        self.assertIn(
+            "LAUNCH_UNOWNED_PID=$(unowned_harness_pid || true)", boundary)
+        self.assertIn(
+            "an unowned Civ VI harness appeared during preflight", boundary)
+        self.assertIn("sleep 60", boundary)
+        self.assertIn("continue", boundary)
+        self.assertLess(
+            boundary.index("LAUNCH_UNOWNED_PID="), boundary.index("sleep 60"))
+
 
 class OvernightWatchdogHasNoImplicitDeadline(unittest.TestCase):
     def test_the_default_watchdog_is_unbounded_but_accepts_an_operator_deadline(self):

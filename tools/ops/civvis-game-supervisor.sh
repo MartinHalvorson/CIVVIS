@@ -611,6 +611,18 @@ while true; do
     sleep 5
   fi
 
+  # The ownership scan above runs before the fetch/build/mirror-preflight
+  # work.  That work is long enough for an independent harness to start and
+  # claim Civ VI after the scan; launching into it produces an instant
+  # "something already holds the game" failure and falsely burns a ladder
+  # cycle.  Recheck at the launch boundary and leave the other owner alone.
+  LAUNCH_UNOWNED_PID=$(unowned_harness_pid || true)
+  if [[ -n "$LAUNCH_UNOWNED_PID" ]]; then
+    say "an unowned Civ VI harness appeared during preflight (pid $LAUNCH_UNOWNED_PID); leaving it alone and retrying in 60s"
+    sleep 60
+    continue
+  fi
+
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
   say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
