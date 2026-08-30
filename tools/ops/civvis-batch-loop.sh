@@ -483,10 +483,13 @@ while true; do
   # ⚠ This changes what the ladder measures. Rows are separated by `code_rev`,
   # but a code_rev boundary now also carries this configuration change — do not
   # read a before/after difference as a code effect.
+  # Keep this legacy production loop comparable with the installed supervisor:
+  # every recorded game uses Rome / Trajan.
   ( cd $RUNNER && python3 -u tools/civ6_civvis_climb.py \
       --attempts $ATTEMPTS \
       --victory $lane \
       --difficulty $rung \
+      --leader LEADER_TRAJAN \
       --strategy auto \
       --logs $RUNS/control ) >> $batchlog 2>&1
   rc=$?

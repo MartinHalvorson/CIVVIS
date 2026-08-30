@@ -68,7 +68,7 @@ from civ6_control import gamelock, install, launcher  # noqa: E402
 # The default is imported for the same reason the list is: this launcher used
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
-from civ6_play import VICTORY_LANES  # noqa: E402
+from civ6_play import ROMAN_LEADER, VICTORY_LANES, enforce_roman_leader  # noqa: E402
 # The run's supplied binary can come from another checkout than this bridge.
 # Reuse the same provenance and digest helpers the brain writes into
 # `runtime_updates.jsonl`, so the human-facing climb log and the durable dossier
@@ -1485,8 +1485,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--orders-db", str(orders_db),
          "--difficulty", args.difficulty,
          "--map-size", args.map_size,
-         "--speed", args.speed]
-        + (["--leader", args.leader] if args.leader else [])
+         "--speed", args.speed,
+         "--leader", ROMAN_LEADER]
         + (["--load-save", str(load_save)] if load_save is not None else [])
         + [
          "--max-turns", str(args.max_turns),
@@ -1673,10 +1673,11 @@ def main() -> int:
     # consecutive rows comparable at all. Rows recorded before this change carry a
     # random seat and cannot be pooled with rows recorded after it.
     #
-    # Pass `--leader ""` to restore the old random deal deliberately.
-    ap.add_argument("--leader", default="LEADER_TRAJAN",
-                    help="Firaxis leader type to select and verify on the picker; "
-                         "empty string takes whatever the lobby deals")
+    # The operator has since made this an invariant rather than a launcher
+    # default: any explicit non-Roman value is recorded and coerced below.
+    ap.add_argument("--leader", default=ROMAN_LEADER,
+                    help="accepted for compatibility; live games always select "
+                         "Rome's Trajan")
     ap.add_argument("--timeout", type=float, default=5400.0)
     # ⚠⚠⚠ THE OUTER WATCHDOG MUST SIT ABOVE THE INNER CEILING, NOT ABOVE
     # `--timeout`, AND FOR TEN DAYS IT DID BOTH BECAUSE THEY WERE THE SAME
@@ -1861,6 +1862,7 @@ def main() -> int:
                     help="allow the code to change mid-batch; rows stop being "
                          "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
+    args.leader = enforce_roman_leader(args.leader, caller="civ6_civvis_climb")
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
     logs.mkdir(parents=True, exist_ok=True)

@@ -1823,6 +1823,16 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
 
+    def test_the_play_command_always_selects_rome(self):
+        """Even a direct caller cannot pass another leader through the climb."""
+        for requested in (None, "LEADER_TOKUGAWA", "LEADER_TRAJAN"):
+            with self.subTest(requested=requested):
+                cmd = climb.play_command(
+                    self._play_args(leader=requested), "t",
+                    Path("orders.sqlite"), Path("civvis_orders"))
+                leader = cmd.index("--leader")
+                self.assertEqual(cmd[leader + 1], climb.ROMAN_LEADER)
+
     def test_the_mid_turn_frames_reach_the_play_command(self):
         """The combat frame (#2132) was never forwarded by the climb, so no
         ladder run ever played it; both frame counts now cross verbatim, the
