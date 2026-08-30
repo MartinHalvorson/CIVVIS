@@ -600,6 +600,15 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("bypasses CIVVIS's war decision", error.getvalue())
 
+    def test_live_launcher_coerces_an_explicit_non_roman_leader(self) -> None:
+        """A direct harness call must not bypass the standing Rome policy."""
+        with patch.object(civ6_play, "play", return_value=0) as play:
+            result = civ6_play.main(
+                ["--tag", "rome-policy", "--leader", "LEADER_TOKUGAWA"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(play.call_args.args[0].leader, civ6_play.ROMAN_LEADER)
+
     def test_setup_does_not_start_when_a_required_dropdown_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=False) as setter, \

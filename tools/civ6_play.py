@@ -138,9 +138,30 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 # separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
 # untargeted `civvis` the batch loop used to hard-code.
 DEFAULT_CIVVIS_VICTORY = "diplomatic"
+# The operator's standing instruction is unambiguous: every live game plays
+# Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
+# not merely in a launcher default, so a direct ``civ6_play.py --leader ...``
+# invocation cannot quietly start a different civilization.
+ROMAN_LEADER = "LEADER_TRAJAN"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
+
+
+def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
+    """Return the one live-game leader, recording an attempted override.
+
+    ``--leader`` remains accepted for command-line compatibility, but a
+    verification result is only comparable when every game uses the same
+    civilization.  The caller label makes a coerced direct invocation visible
+    in its durable play or climb log rather than silently pretending the
+    requested leader was honored.
+    """
+    if requested != ROMAN_LEADER:
+        named = requested or "Random Leader"
+        print(f"[{caller}] overriding requested leader {named!r}; live games "
+              f"always play Rome / Trajan ({ROMAN_LEADER})", flush=True)
+    return ROMAN_LEADER
 
 # ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
 # policy: play verification games out in full, except at or after turn 150
@@ -4185,7 +4206,9 @@ def main(argv: list[str] | None = None) -> int:
                          "60%% of the leader's score), and no "
                          "other early stop")
     ap.add_argument("--city-target", type=int, default=6)
-    ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
+    ap.add_argument("--leader", default=ROMAN_LEADER,
+                    help="accepted for compatibility; live games always select "
+                         "Rome's Trajan")
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
@@ -4464,6 +4487,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.status:
         return status()
+    args.leader = enforce_roman_leader(args.leader, caller="civ6_play")
     if args.tag is None:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
