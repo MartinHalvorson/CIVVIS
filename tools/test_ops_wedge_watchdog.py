@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -158,3 +159,54 @@ class DeepWedgeIsHandedToTheClimb(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
+    """⚠⚠ A READ-ONLY QUERY MUST NOT REDIRECT THE WATCHDOG.
+
+    The run was chosen by directory mtime. A directory's mtime changes whenever
+    an entry is created in it, and opening a run's `orders.sqlite` — even
+    read-only — creates `-shm`/`-wal` beside it. So any analysis tool run
+    against a FINISHED game promoted that game to "newest", and the watchdog
+    spent every poll saying "does not match the proven climb-owned player;
+    leaving it alone" while the live game went unguarded.
+
+    Observed 2026-08-30: two runs from hours earlier were touched by a
+    read-only query and the watchdog followed them instead of the live t57
+    game. `events.jsonl` is appended by the mod itself, so its mtime is the
+    game actually being played.
+    """
+
+    def _source(self) -> str:
+        return WATCHDOG.read_text(encoding="utf-8")
+
+    def test_the_tag_comes_from_the_newest_events_file(self):
+        source = self._source()
+        self.assertIn('tag=$(ls -t "$RUNS"/civvis-*/events.jsonl', source)
+        self.assertIn("tag=${tag:h:t}", source)
+
+    def test_the_directory_listing_is_gone(self):
+        """The old form promoted whichever run directory was touched last."""
+        self.assertNotIn("""ls -t "$RUNS" 2>/dev/null | grep '^civvis-'""",
+                         self._source())
+
+    def test_it_picks_the_appended_run_over_a_touched_one(self):
+        """The behaviour itself, through the same zsh the watchdog runs."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live, stale = root / "civvis-live", root / "civvis-stale"
+            for d in (live, stale):
+                d.mkdir()
+                (d / "events.jsonl").write_text("{}\n")
+            # The stale run's DIRECTORY is touched after the live run's events
+            # — exactly what a read-only sqlite open does.
+            os.utime(live / "events.jsonl", (2_000_000_000, 2_000_000_000))
+            (stale / "orders.sqlite-wal").write_text("")
+            os.utime(stale / "events.jsonl", (1_000_000_000, 1_000_000_000))
+            picked = subprocess.run(
+                ["zsh", "-c",
+                 f'tag=$(ls -t {root}/civvis-*/events.jsonl 2>/dev/null | head -1); print "${{tag:h:t}}"'],
+                capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(picked, "civvis-live")
