@@ -47,10 +47,14 @@ class AWedgeRestartLeavesEvidence(unittest.TestCase):
     def test_a_failed_sample_never_blocks_the_restart(self):
         """Evidence is worth having, never worth an outage."""
         source = self._source()
+        # ⚠ The boundary is the first `say "$reason` — the end of the SAMPLE
+        # handling — not the `kill`. A deliberate recovery that returns instead
+        # of killing now sits between the two (the deep-game handoff below), and
+        # slicing to the kill made this read as the very defect it guards.
         block = source[source.index("game_pid=$(pgrep -x Civ6_Exe_Child"):
-                       source.index('kill -TERM "$climb"')]
+                       source.index('say "$reason;')]
         self.assertIn("restarting without it", block)
-        # No `return` or `exit` may sit between the sample and the kill.
+        # No `return` or `exit` may sit inside the sample handling itself.
         self.assertNotIn("return", block)
         self.assertNotIn("exit", block)
 
@@ -100,6 +104,56 @@ class AWedgeRestartLeavesEvidence(unittest.TestCase):
             self.assertTrue(written.is_file(),
                             "the sample must land where the run's evidence lives")
             self.assertIn("Call graph", written.read_text(errors="replace"))
+
+
+
+
+class DeepWedgeIsHandedToTheClimb(unittest.TestCase):
+    """⭐⭐⭐ A DEEP WEDGED GAME IS RELOADED, NOT THROWN AWAY.
+
+    Civ 6 autosaves every turn and `civ6_civvis_climb.py` can reload one into a
+    FRESH Civ 6 — the only thing that recovers a parked core, whose own process
+    answers no input at all (an external SHIFT+RETURN was measured and ignored
+    in two clean trials). That path runs only while the CLIMB is alive, and this
+    watchdog killed the climb first: seven `<tag>-contN` runs exist, all from
+    08-17..19, none since it began signalling. Games as deep as t179 with 15
+    cities at 0.763 of the leader were discarded with their save on disk.
+    """
+
+    def _source(self) -> str:
+        return WATCHDOG.read_text(encoding="utf-8")
+
+    def test_a_deep_game_signals_the_player_and_leaves_the_climb(self):
+        source = self._source()
+        handoff = source.index('t${turn} is worth reloading')
+        killed = source.index('kill -TERM "$climb"')
+        self.assertLess(handoff, killed,
+                        "the handoff must be considered before the kill")
+        block = source[handoff:killed]
+        self.assertIn('kill -INT "$play"', block)
+        self.assertNotIn('kill -TERM', block)
+        self.assertIn("return 0", block)
+
+    def test_the_floor_matches_the_climbs_own_resume_floor(self):
+        """Below it the climb redoes the game from scratch anyway, so handing
+        one over would only cost the reload."""
+        self.assertIn("RESUME_FLOOR=${CIVVIS_WEDGE_RESUME_MIN_TURN:-20}",
+                      self._source())
+        climb = (WATCHDOG.parent.parent / "civ6_civvis_climb.py").read_text(
+            encoding="utf-8")
+        self.assertIn("RESUME_MIN_TURN = 20", climb)
+
+    def test_a_second_wedge_on_the_same_tag_is_not_handed_over_again(self):
+        """One reload attempt per run. If the game wedges again under the same
+        tag the handoff did not take, and the climb is killed as before."""
+        self.assertIn('[[ "$tag" != "$handoff_tag" ]]', self._source())
+
+    def test_a_climb_that_never_reloads_is_terminated_after_all(self):
+        """⚠ This watchdog exists for a climb that is ITSELF blocked, so the
+        handoff must never become a way for one to sit forever."""
+        source = self._source()
+        self.assertIn("HANDOFF_GRACE=${CIVVIS_WEDGE_HANDOFF_GRACE:-12}", source)
+        self.assertIn('kill -TERM "$handoff_climb"', source)
 
 
 if __name__ == "__main__":
