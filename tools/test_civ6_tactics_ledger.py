@@ -332,3 +332,38 @@ class TheQueueIsReportedAgainstItsOwnStream(unittest.TestCase):
         queue = ledger.orders_section(self.EVENTS, [])["queue"]
         self.assertEqual(queue["queued_followups"], 9, "5 + 4 from the orders events")
         self.assertNotEqual(queue["queued_followups"], queue["drained"])
+
+
+class HoldingGroundIsNotHovering(unittest.TestCase):
+    """⚠ A FORTIFIED UNIT THAT NEITHER MOVED NOR STRUCK IS DOING ITS JOB.
+
+    "Hovering" counts a military unit 2–4 tiles from a hostile that did not move
+    and did not attack — which is also the exact description of a defender under
+    orders, and run `civvis-20260830T121826Z` carries 333 FORTIFY orders. Of its
+    105 hovering unit-turns only 17 were fortified; the other 88 are unfortified
+    units standing near an enemy doing nothing, and that is the number worth
+    acting on.
+    """
+
+    def _events(self, fortified):
+        near = {"id": 1, "x": 5, "y": 5, "kind": "warrior", "class": "military",
+                "combat": 20, "fortified": fortified}
+        hostile = {"id": 99, "x": 8, "y": 5, "kind": "warrior", "class": "military",
+                   "combat": 20, "owner": 1}
+        return [
+            {"kind": "state", "turn": 1, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+            {"kind": "state", "turn": 2, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+        ]
+
+    def test_the_split_separates_defence_from_idleness(self):
+        for fortified in (True, False):
+            section = ledger.hover_section(self._events(fortified), [])
+            total = section["hovering_unit_turns"]
+            self.assertEqual(
+                section["hovering_fortified"] + section["hovering_idle"], total,
+                "the two halves must account for every hovering unit-turn")
+            if total:
+                self.assertEqual(section["hovering_fortified"], 1 if fortified else 0)
+                self.assertEqual(section["hovering_idle"], 0 if fortified else 1)

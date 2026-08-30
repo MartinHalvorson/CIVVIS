@@ -434,6 +434,7 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
     military_turns = 0
     near_turns = 0
     hover = 0
+    fortified_hover = 0
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
@@ -451,10 +452,22 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
             moved = after is not None and (int(after["x"]), int(after["y"])) != pos
             if not moved and (turn, uid) not in strikes_by_turn_unit:
                 hover += 1
+                # ⚠ A FORTIFIED UNIT HOLDING GROUND IS NOT HOVERING. "Neither
+                # moved nor struck" is exactly what a defender is ordered to do,
+                # and the run carries 333 FORTIFY orders, so the raw count mixes
+                # deliberate defence with idleness. Measured on run
+                # civvis-20260830T121826Z: of 105 hovering unit-turns only 17
+                # were fortified — the other 88 are a military unit standing
+                # two to four tiles from a hostile, unfortified, doing nothing.
+                # That 88 is the number worth acting on.
+                if unit.get("fortified"):
+                    fortified_hover += 1
     return {
         "military_unit_turns": military_turns,
         "unit_turns_2_to_4_from_a_hostile": near_turns,
         "hovering_unit_turns": hover,
+        "hovering_fortified": fortified_hover,
+        "hovering_idle": hover - fortified_hover,
         "hover_share_of_near": round(hover / near_turns, 3) if near_turns else None,
     }
 
@@ -623,7 +636,8 @@ def render(report: dict[str, Any]) -> str:
     hover = report["hover"]
     lines.append(
         f"  hover    {hover['hovering_unit_turns']} of {hover['unit_turns_2_to_4_from_a_hostile']} "
-        f"near-hostile unit-turns neither moved nor struck ({_fmt_share(hover['hover_share_of_near'])}); "
+        f"near-hostile unit-turns neither moved nor struck ({_fmt_share(hover['hover_share_of_near'])}"
+        f" — {hover['hovering_fortified']} fortified, {hover['hovering_idle']} idle); "
         f"{hover['military_unit_turns']} military unit-turns"
     )
     hof = report.get("hall_of_fame")
