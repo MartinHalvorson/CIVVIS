@@ -860,6 +860,16 @@ def trailing_unmeasured(attempts: list) -> int:
     """
     dark = 0
     for attempt in reversed(attempts):
+        # ⚠⚠ A KILLED RUN IS EVIDENCE OF NEITHER. `civ6_play.partial_summary`
+        # records a run stopped by a signal — the wedge watchdog's INT or the
+        # supervisor's TERM — and such a run never reaches the point where the
+        # rate is written. Counting it would let a spell of parked cores raise
+        # "the instrument has gone dark" while the instrument is fine, which is
+        # the dominant way a run ends; breaking on it would let one hide a real
+        # outage. It is skipped, so this still reads the newest runs that
+        # actually finished.
+        if attempt.get("partial"):
+            continue
         if attempt.get("applied_pct") is not None:
             break
         dark += 1
