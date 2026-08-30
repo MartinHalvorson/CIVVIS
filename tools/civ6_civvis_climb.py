@@ -1668,7 +1668,13 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 #
 # ⚠ n=3. If a later run escapes at two-back this stride is wrong; the number to
 # watch is which index the escaping resume used.
-RESUME_STEPS: tuple[int, ...] = (0, 3)
+#
+# The third step (nine back) exists because the budget rose to three: a game can
+# park more than once. Run `civvis-20260830T223229Z` parked at t66, was rescued
+# ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
+# deadlock, not a replay of the first. Without a distinct third index the extra
+# attempt would reload the same save as the second.
+RESUME_STEPS: tuple[int, ...] = (0, 3, 8)
 
 
 def _autosave_turn(save: Path) -> int | None:
@@ -1820,7 +1826,7 @@ def main() -> int:
     # ★★★★ A FROZEN GAME IS RESUMED, NOT SCORED. See `resume_from_autosave`:
     # three leading games died on the clock in one day, each with a
     # turn-fresh autosave on disk.
-    ap.add_argument("--max-resumes", type=int, default=2,
+    ap.add_argument("--max-resumes", type=int, default=3,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
                          "as it stands (0 disables)")
