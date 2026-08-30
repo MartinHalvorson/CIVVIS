@@ -46,6 +46,22 @@ BLOCKER_STREAK=${CIVVIS_WEDGE_BLOCKER_STREAK:-6}
 PROGRESS_CONFIRM=${CIVVIS_WEDGE_PROGRESS_CONFIRM:-5}
 PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 SELF_DIR=${0:A:h}
+
+# ⚠⚠⚠ THIS PROCESS OUTLIVES ITS OWN SOURCE, AND THAT HAS COST REAL FIXES.
+#
+# zsh parses a function once; a long-running loop therefore keeps whatever the
+# file said when it started. The supervisor refreshes the mirror every cycle, so
+# a merged repair lands on disk while THIS process goes on running the old one —
+# and the ladder looks patched when it is not. It has happened three times in
+# this project (the mirror, the popup clearer, and this watchdog twice), and on
+# 2026-08-30 it delayed the parked-core repair across three consecutive wedges
+# until it was restarted by hand.
+#
+# So notice, and hand over. `exec` replaces this process in place, which keeps
+# the pid the interactive host adopted and the lock it already owns; the file is
+# re-read from scratch, so the next loop runs the new code.
+SELF_PATH=${0:A}
+SELF_STAMP=$(/usr/bin/stat -f '%m %z' "$SELF_PATH" 2>/dev/null || print -r -- "unknown")
 STATE_READER=${CIVVIS_WEDGE_STATE_READER:-${SELF_DIR}/civvis_watchdog_state.py}
 LOCK=${CIVVIS_WEDGE_LOCK:-$HOME/.civvis-agent-wedge-watchdog.lock}
 
@@ -227,6 +243,21 @@ last_tag=""
 last_unowned_tag=""
 while true; do
   sleep "$POLL_S"
+  # Cheap: two numbers from one stat, once a minute. Deliberately mtime+size
+  # rather than a hash — a rewritten script always changes one of them, and a
+  # hash of a file being written mid-refresh could be read torn.
+  now_stamp=$(/usr/bin/stat -f '%m %z' "$SELF_PATH" 2>/dev/null || print -r -- "unknown")
+  if [[ "$now_stamp" != "unknown" && "$now_stamp" != "$SELF_STAMP" ]]; then
+    say "own script changed on disk; re-executing so the next loop runs it"
+    # ⚠⚠ RELEASE THE LOCK FIRST. `exec` keeps this pid, and the EXIT trap does
+    # not run when the image is replaced — so the new one would find the lock
+    # held by a pid that is very much alive (its own), log "another watchdog is
+    # alive" and exit 0. It would only come back because the interactive host
+    # restarts it seconds later, which is a long way round for something this
+    # loop can simply hand over.
+    rm -rf -- "$LOCK"
+    exec /bin/zsh "$SELF_PATH"
+  fi
   tag=$(ls -t "$RUNS" 2>/dev/null | grep '^civvis-' | head -1)
   [[ -z "$tag" ]] && { strikes=0; reset_progress; continue }
   ownership=$(owned_climb_and_player || true)
