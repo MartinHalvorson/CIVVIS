@@ -954,6 +954,13 @@ def entry_from(summary: dict) -> dict:
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
+        # ⚠ `civ6_play.partial_summary` marks a run STOPPED by a signal — the
+        # wedge watchdog's INT or the supervisor's TERM. The flag exists so a
+        # consumer can tell such a row from one whose game finished, and it has
+        # to survive onto the ledger row to do that: `reason` alone is a free
+        # string, and the ladder's own rule is that an attempt which did not
+        # finish is neither a loss nor a measurement.
+        "partial": summary.get("partial"),
         # The harness's own early-stop verdict (the one remaining rule:
         # under 60 % of the leader's score after turn 150,
         # `civ6_play.below_leader_score_reading`; older rows carry the retired
