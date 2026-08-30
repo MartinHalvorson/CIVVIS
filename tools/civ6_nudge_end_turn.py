@@ -85,7 +85,8 @@ def focus_game() -> bool:
     return done.returncode == 0
 
 
-def nudge(presses: int = NUDGE_PRESSES, interval_s: float = NUDGE_INTERVAL_S) -> bool:
+def nudge(presses: int = NUDGE_PRESSES, interval_s: float = NUDGE_INTERVAL_S,
+          focus_settle_s: float = FOCUS_SETTLE_S) -> bool:
     """Send SHIFT+RETURN a few times.  Returns whether every press was sent.
 
     Sending is not landing: this reports what the harness managed to emit, and
@@ -95,7 +96,7 @@ def nudge(presses: int = NUDGE_PRESSES, interval_s: float = NUDGE_INTERVAL_S) ->
     if not focus_game():
         return False
     # Give the raise a moment to take effect before the first key.
-    time.sleep(FOCUS_SETTLE_S)
+    time.sleep(focus_settle_s)
     sent = True
     for index in range(presses):
         if index:
