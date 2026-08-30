@@ -283,7 +283,18 @@ while true; do
     rm -rf -- "$LOCK"
     exec /bin/zsh "$SELF_PATH"
   fi
-  tag=$(ls -t "$RUNS" 2>/dev/null | grep '^civvis-' | head -1)
+  # ⚠⚠ PICK THE RUN BY ITS events.jsonl, NOT BY ITS DIRECTORY. A directory's
+  # mtime changes whenever an entry is created or removed in it — and opening a
+  # run's `orders.sqlite`, even read-only, creates `-shm`/`-wal` beside it. So
+  # ANY analysis tool run against a finished game promotes that game to
+  # "newest", and the watchdog then reports "does not match the proven
+  # climb-owned player; leaving it alone" every poll while the LIVE game goes
+  # unguarded. Observed 2026-08-30: two runs from hours earlier were touched by
+  # a read-only query and the watchdog followed them instead of the live t57
+  # game. `events.jsonl` is appended by the mod itself, so its mtime is the
+  # game that is actually being played.
+  tag=$(ls -t "$RUNS"/civvis-*/events.jsonl 2>/dev/null | head -1)
+  tag=${tag:h:t}
   [[ -z "$tag" ]] && { strikes=0; reset_progress; continue }
   ownership=$(owned_climb_and_player || true)
   if [[ -z "$ownership" ]]; then
