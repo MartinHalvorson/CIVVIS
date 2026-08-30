@@ -481,6 +481,45 @@ impl AdvancedAi {
     /// legal one, else toward what the exhaustion search finds, onto the
     /// first progressing tile the exact-reach rule allows. Founds when it
     /// stands on its target. Returns whether it acted.
+    /// Neighbours worth giving ground for, best first, when raiders already
+    /// cover the tile the settler stands on. Empty whenever holding is not the
+    /// losing move — nothing covers this tile, or nothing reachable beats it.
+    ///
+    /// Ordered by the fewest raiders that reach it, then the farthest from any
+    /// of them. ⚠ It deliberately ignores PROGRESS, which every other step
+    /// filter in this crate requires (`wdist(next, target) < distance` above,
+    /// `regress <= 0` in `settler_step_out_of_reach`). Retreat is correct only
+    /// here, because this is reached solely when standing still is losing.
+    fn cornered_retreats(
+        &self,
+        g: &Game,
+        uid: u32,
+        current: Pos,
+        reach: &BarbarianReach,
+    ) -> Vec<Pos> {
+        let here_covering = reach.raiders_covering(g, current);
+        if here_covering == 0 {
+            return Vec::new();
+        }
+        let here_nearest = reach.nearest(g, current);
+        let mut retreats: Vec<(usize, i32, Pos)> = g
+            .nbrs(current)
+            .into_iter()
+            .filter(|next| g.map.get(*next).is_some() && g.can_move(uid, *next))
+            .map(|next| (reach.raiders_covering(g, next), reach.nearest(g, next), next))
+            .filter(|(covering, nearest, _)| {
+                *covering < here_covering
+                    || (*covering == here_covering && *nearest > here_nearest)
+            })
+            .collect();
+        retreats.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        retreats.into_iter().map(|(_, _, pos)| pos).collect()
+    }
+
     pub(super) fn settler_watchdog_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
         if g.units[&uid].moves_left <= 0.0 {
@@ -549,6 +588,44 @@ impl AdvancedAi {
                        "Settler stops waiting and marches to {next:?}";
                        "it stood still {streak} turns; {target:?} is {distance} tiles away and \
                         nothing visible can reach {next:?} next turn"; next);
+                self.settler_stalls.remove(&uid);
+                return true;
+            }
+        }
+        // ⚠⚠⚠ A HOLD IS NOT SAFETY WHEN THE TILE UNDER THE SETTLER IS ALREADY
+        // COVERED. Every candidate above must both make PROGRESS
+        // (`wdist(next, target) < distance`) and pass `watchdog_tile_is_safe`,
+        // which is an absolute test. A settler that raiders have surrounded has
+        // no such tile, so the watchdog refused "to walk it into a capture"
+        // while it was standing in one — and the comparison it never made was
+        // against staying.
+        //
+        // Live, run `civvis-20260830T095742Z`, settler 589826 — its own journal:
+        //
+        //     t36 settler holds inside a barbarian's reach | 3 raider(s) could
+        //         take (14, 9) and no reachable tile is better
+        //     t37 Settler holds at (13, 9) ... it has stood still 7 turns;
+        //         the watchdog will not walk it into a capture
+        //
+        // It held from t34 to t47 — seventeen `settler_barbarian_combat_capture_hold`
+        // events — and a horseman took it on t47. That game built EIGHT settlers
+        // and finished turn 150 with ONE city, abandoned at 0.277 of the leader.
+        //
+        // So when raiders already cover this tile, give ground: the least-covered
+        // neighbour that is STRICTLY better than here, progress or not. Bounded
+        // by its own condition — coverage strictly decreases, so it cannot
+        // oscillate, and once nothing covers the settler the ordinary march
+        // resumes. ⚠ Retreat is exactly what the sidestep filters elsewhere
+        // forbid (`regress <= 0`, `wdist < distance`); it is correct only
+        // because this branch is reached solely when standing still is losing.
+        let here_covering = reach.raiders_covering(g, current);
+        for next in self.cornered_retreats(g, uid, current, &reach) {
+            if self.base.path_move(g, pid, uid, next) {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler gives ground rather than wait to be taken";
+                       "it stood still {streak} turns and {here_covering} raider(s) already \
+                        cover {current:?}; {next:?} is reached by fewer";
+                       next);
                 self.settler_stalls.remove(&uid);
                 return true;
             }
@@ -1388,5 +1465,77 @@ mod tests {
                 .any(|thought| thought.headline.starts_with("Settler is stranded")),
             "the hold is named"
         );
+    }
+
+    /// ⚠⚠⚠ A HOLD IS NOT SAFETY WHEN THE TILE UNDER THE SETTLER IS COVERED.
+    ///
+    /// Every candidate the watchdog considers must make PROGRESS and pass the
+    /// absolute `watchdog_tile_is_safe`. A settler raiders have surrounded has
+    /// no such tile, so it refused "to walk it into a capture" while standing
+    /// in one. Live, `civvis-20260830T095742Z` settler 589826 held from t34 to
+    /// t47 — its own journal reading "3 raider(s) could take (14, 9) and no
+    /// reachable tile is better" — and a horseman took it. That game built
+    /// EIGHT settlers and ended turn 150 with ONE city at 0.277 of the leader.
+    #[test]
+    fn a_cornered_settler_gives_ground_rather_than_wait_to_be_taken() {
+        let mut g = Game::new_full(2, 20, 12, 91_306, 120, 0, true);
+        let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        g.players[0].explored.extend(explored.iter().copied());
+        // ⚠ `players.iter().position(|p| p.is_barbarian)` is NOT the same seat:
+        // it finds an earlier slot and the spawned raiders end up owned by a
+        // minor, so the reach never sees them. `barb_pid` is the one the reach
+        // itself asks for.
+        let barb = g
+            .barb_pid
+            .expect("new_full's last argument seats the barbarians");
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .expect("a starting settler");
+        let here = g.units[&settler].pos;
+        g.units.get_mut(&settler).expect("settler").moves_left = 2.0;
+        let ai = AdvancedAi::new();
+
+        // Nothing is hunting it: holding is not the losing move, so the
+        // watchdog is offered no reason to give ground.
+        let quiet = ai.barbarian_reach(&g, 0, here, REACH_SCAN_RADIUS);
+        assert!(
+            ai.cornered_retreats(&g, settler, here, &quiet).is_empty(),
+            "an unthreatened settler is never told to retreat"
+        );
+
+        // Now put raiders on it. Two neighbours are enough to cover the tile.
+        for next in g.nbrs(here).into_iter().take(2) {
+            g.spawn_unit("warrior", barb, next);
+        }
+        let hunted = ai.barbarian_reach(&g, 0, here, REACH_SCAN_RADIUS);
+        let here_covering = hunted.raiders_covering(&g, here);
+        let seen: Vec<(u32, bool)> = g
+            .units
+            .values()
+            .filter(|u| Some(u.owner) == g.barb_pid)
+            .map(|u| (u.id, g.unit_visible_to(u.id, 0)))
+            .collect();
+        assert!(here_covering > 0, "the raiders cover the settler's own tile: {seen:?}");
+
+        let retreats = ai.cornered_retreats(&g, settler, here, &hunted);
+        // The contract, whatever this map happens to offer: never the tile it
+        // already stands on, every choice STRICTLY better than staying, and
+        // ordered so the least-covered is taken first.
+        assert!(!retreats.contains(&here), "retreating to here is not retreating");
+        let mut previous = 0usize;
+        for next in &retreats {
+            let covering = hunted.raiders_covering(&g, *next);
+            assert!(
+                covering < here_covering
+                    || (covering == here_covering
+                        && hunted.nearest(&g, *next) > hunted.nearest(&g, here)),
+                "{next:?} is covered by {covering} against {here_covering} here — \
+                 it is not strictly better than holding"
+            );
+            assert!(covering >= previous, "the least-covered tile is offered first");
+            previous = covering;
+        }
     }
 }

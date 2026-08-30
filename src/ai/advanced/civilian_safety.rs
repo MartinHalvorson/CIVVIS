@@ -146,7 +146,7 @@ impl BarbarianReach {
         self.raiders_covering(g, pos) > 0
     }
 
-    fn raiders_covering(&self, g: &Game, pos: Pos) -> usize {
+    pub(super) fn raiders_covering(&self, g: &Game, pos: Pos) -> usize {
         self.raiders
             .iter()
             .filter(|raider| {
