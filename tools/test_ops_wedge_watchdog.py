@@ -192,6 +192,8 @@ class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
 
     def test_it_picks_the_appended_run_over_a_touched_one(self):
         """The behaviour itself, through the same zsh the watchdog runs."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             live, stale = root / "civvis-live", root / "civvis-stale"
