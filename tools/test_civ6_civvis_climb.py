@@ -2270,7 +2270,24 @@ class TheParkedTurnsSaveIsNeverReloaded(unittest.TestCase):
         self.assertEqual(got, Path("AutoSave_0043.Civ6Save"),
                          "reloading t44 after parking at t44 is a spent resume")
 
-    def test_the_second_resume_walks_one_farther_back(self):
+    def test_the_second_resume_reaches_well_past_the_first(self):
+        """⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK, so the second
+        attempt must not sample the board next door to the first.
+
+        Three parks on 2026-08-30: t44 escaped at one back and played on to t112;
+        t62 parked again at one back; t136 parked again at one back AND at two
+        back. The t136 game spent both attempts on boards one turn apart.
+        """
+        saves = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(44, 36, -1)]
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 1, self._args(), 0.0,
+            recent=lambda newer_than=None: list(saves))
+        self.assertEqual(got, Path("AutoSave_0040.Civ6Save"),
+                         "four turns back, not two")
+
+    def test_a_short_autosave_list_takes_the_oldest_it_has(self):
+        """The stride is a reach, not a requirement: with only two candidates the
+        second attempt takes the older rather than giving up."""
         got = climb.resume_from_autosave(
             {"last_turn": 44}, "frozen", 1, self._args(), 0.0,
             recent=lambda newer_than=None: list(self.SAVES))

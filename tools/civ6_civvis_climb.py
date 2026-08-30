@@ -1644,7 +1644,31 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     # board known to fail. That is half of a two-resume budget: the same game
     # then parked again at t112 and had nothing left to recover with.
     saves = [save for save in saves if _autosave_turn(save) != turn]
-    return saves[resumes_so_far] if resumes_so_far < len(saves) else None
+    step = RESUME_STEPS[min(resumes_so_far, len(RESUME_STEPS) - 1)]
+    index = min(step, len(saves) - 1)
+    return saves[index] if 0 <= index < len(saves) else None
+
+
+# How far back each successive resume reaches, as an index into the autosaves
+# (newest first, with the parked turn's own save already removed). So the first
+# attempt reloads ONE turn back and the second FOUR.
+#
+# ⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK. Walking back one save at
+# a time samples a board that is nearly identical, and the park is deterministic
+# enough to survive that. Measured over three parks on 2026-08-30:
+#
+#     t44   -> t43 ESCAPED, played on to t112 with 8 cities
+#     t62   -> t61 parked again at t62
+#     t136  -> t135 parked again at t136, then t134 parked again at t136
+#
+# One escape in three, and the t136 game spent BOTH attempts on boards one turn
+# apart. A wider second step costs only the few turns it replays and samples a
+# genuinely different trajectory — different unit positions, different decisions
+# — which is the only thing that has ever broken a park.
+#
+# ⚠ n=3. If a later run escapes at two-back this stride is wrong; the number to
+# watch is which index the escaping resume used.
+RESUME_STEPS: tuple[int, ...] = (0, 3)
 
 
 def _autosave_turn(save: Path) -> int | None:
