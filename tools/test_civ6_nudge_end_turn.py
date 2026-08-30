@@ -59,13 +59,50 @@ class OnlyTheWatchdogMayCallIt(unittest.TestCase):
                         "the nudge must precede the kill; afterwards there is "
                         "nothing left to nudge")
 
-    def test_its_failure_never_blocks_the_restart(self) -> None:
+    def test_the_game_is_given_time_to_act_before_it_is_killed(self) -> None:
+        """⚠⚠ Without a wait this is a gesture, not a repair.
+
+        The first live firing sent the keystroke and killed in the SAME SECOND
+        — `02:10:34 sent SHIFT+RETURN` and `02:10:34 restarting` — so a forced
+        end turn could never be observed to work either way. The watchdog now
+        nudges, settles, and asks the progress question again; a turn that
+        moved resets the strikes and the game plays on.
+        """
         script = OPS.read_text(encoding="utf-8")
-        block = script[script.index("civ6_nudge_end_turn.py"):]
-        block = block[:block.index('kill -TERM "$climb"')]
-        # No early return, no exit: the restart follows whatever happened.
-        self.assertNotIn("return 1", block)
-        self.assertNotIn("exit ", block)
+        self.assertIn("NUDGE_SETTLE_S", script)
+        arm = script[script.index("if nudge_end_turn; then"):]
+        arm = arm[:arm.index('restart_attempt "$tag NO GAME PROGRESS')]
+        self.assertIn('sleep "$NUDGE_SETTLE_S"', arm)
+        # It must re-read progress, not re-use the reading that condemned it.
+        self.assertIn("--progress", arm)
+        # And a moved turn must skip the kill outright.
+        self.assertIn("not restarting", arm)
+        self.assertIn("continue", arm)
+
+    def test_only_one_copy_of_the_nudge_survives(self) -> None:
+        """It was inline in `restart_attempt` first; two copies would send the
+        keystroke twice on the path that still kills."""
+        script = OPS.read_text(encoding="utf-8")
+        self.assertEqual(script.count("civ6_nudge_end_turn.py"), 1)
+
+    def test_its_failure_never_blocks_the_restart(self) -> None:
+        """The nudge is attempted, not depended on.
+
+        ⚠ This used to assert that no `return 1` appeared between the nudge and
+        the kill, which was right while the nudge was inline in
+        `restart_attempt`. It is now a function whose own `return 1` means
+        "could not send" — so the property has to be asserted at the CALL SITE
+        instead: the failure path falls through to the restart.
+        """
+        script = OPS.read_text(encoding="utf-8")
+        arm = script[script.index("if nudge_end_turn; then"):]
+        # `restart_attempt` is DEFINED earlier in the file than it is called, so
+        # the kill text never appears after the call site; anchor on the call.
+        arm = arm[:arm.index('restart_attempt "$tag NO GAME PROGRESS')]
+        # The only early exit is the recovery one, and it is conditioned on the
+        # progress signal having actually changed.
+        self.assertEqual(arm.count("continue"), 1)
+        self.assertIn('"$after" != "$progress_signal"', arm)
 
     def test_nothing_else_in_the_tree_sends_a_forced_end_turn(self) -> None:
         """Discovered, not listed: a second caller fails here rather than
