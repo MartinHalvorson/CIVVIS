@@ -643,11 +643,15 @@ while true; do
   # that re-execs onto a newer GitHub revision mid-game turns one fresh-build
   # game into an unrepeatable mixture of programs; fetch and build again only
   # at the next game boundary.
+  # Every production ladder row is Rome.  Do not inherit the climb's default:
+  # an upstream default change must not silently change the civilization that
+  # the live ledger compares.
   CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
   CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --refresh-seconds 0 \
       --difficulty "$DIFFICULTY" \
+      --leader LEADER_TRAJAN \
       "${WITHOUT_ARGS[@]}" \
       "${WITH_ARGS[@]}" \
       "${TIMEOUT_ARGS[@]}" \
