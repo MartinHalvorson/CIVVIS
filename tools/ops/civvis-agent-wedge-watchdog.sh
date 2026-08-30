@@ -156,6 +156,35 @@ restart_attempt() {
   else
     say "  no Civ 6 process to sample; restarting without it"
   fi
+  # ⚠⚠ ONE FORCED END TURN BEFORE THE KILL, because most games die here.
+  #
+  # Nine of twelve recent runs ended on a parked Game Core, against three that
+  # reached the operator's abandon rule: the agent reports one blocker,
+  # `GameCoreEventPublishComplete` stops firing, and the agent — driven only by
+  # that event — never ticks again. The mod cannot reach the game from inside,
+  # and there is no UI tick to borrow either, because `ContextPtr:SetUpdate`
+  # runs only while its context is visible (measured, #2784).
+  #
+  # An external keystroke is the one path left: it enters through the OS into
+  # the application's event loop rather than through any mod tick. SHIFT+RETURN
+  # is Civilization VI's forced end turn, the same action the mod issues as
+  # `ACTION_ENDTURN` with `REASON = "UserForced"` when it can still run.
+  #
+  # ⚠ Safe ONLY here. A forced end turn on a healthy game would be a real
+  # hazard, so this runs after the no-progress test has already condemned the
+  # run and immediately before the kill — the game is lost either way, and a
+  # refused keystroke costs nothing. Its failure never blocks the restart.
+  # `SELF_DIR` is `${0:A:h}`, so the nudge is found beside this script's own
+  # checkout rather than through a named path — the same rule the rest of the
+  # ops scripts follow, and the reason a symlinked copy still works.
+  local nudge_tool="$SELF_DIR/../civ6_nudge_end_turn.py"
+  if [[ -r "$nudge_tool" ]]; then
+    if "${PYTHON:-python3}" "$nudge_tool" >/dev/null 2>&1; then
+      say "  sent SHIFT+RETURN before the kill; a parked turn may have moved"
+    else
+      say "  could not send SHIFT+RETURN; restarting anyway"
+    fi
+  fi
   say "$reason; restarting (TERM climb, then INT civ6_play)"
   kill -TERM "$climb" 2>/dev/null && say "  TERM climb $climb"
   for _ in 1 2 3 4 5 6 7 8 9 10; do
