@@ -180,6 +180,7 @@ def orders_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str,
     strikes_planned = strikes_landed = queue_applied = queue_refused = 0
     queue_refusals: collections.Counter = collections.Counter()
     saw_queue_field = False
+    queue_drained = 0
     for event in events:
         kind = event.get("kind")
         if kind == "orders" and "queued" in event:
@@ -191,6 +192,9 @@ def orders_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str,
             strikes_landed += int(event.get("strikes_landed") or 0)
             queue_applied += int(event.get("applied") or 0)
             queue_refused += int(event.get("refused") or 0)
+            # ⚠ The drain event carries its OWN `queued`, and that is the only
+            # number `applied` and `refused` can honestly be read against.
+            queue_drained += int(event.get("queued") or 0)
             for why, count in (event.get("refusals") or {}).items():
                 queue_refusals[str(why)] += int(count or 0)
     return {
@@ -203,6 +207,7 @@ def orders_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str,
         if not saw_queue_field
         else {
             "queued_followups": queued,
+            "drained": queue_drained,
             "orders_queue_events": queue_events,
             "applied": queue_applied,
             "refused": queue_refused,
@@ -554,10 +559,24 @@ def render(report: dict[str, Any]) -> str:
     if queue is None:
         lines.append("           queue: (mod predates the per-unit order queue)")
     else:
+        # ⚠⚠⚠ TWO DIFFERENT STREAMS, AND PRINTING THEM AS A RATIO INVITED THE
+        # WRONG READING. `queued_followups` sums the `queued` field of `orders`
+        # events (410 of them in run civvis-20260830T121826Z, total 865);
+        # `applied` and `refused` come from the far rarer `orders_queue` drain
+        # events (82 of them). Side by side that read as "865 queued, 148
+        # applied" — an 82% loss that does not exist. Within the drain stream
+        # the same run is queued 159, applied 148, refused 11: **93% applied**.
+        #
+        # So the drain is reported against its own queued count, and the
+        # decider-side total is named separately as what it is.
         lines.append(
-            f"           queue: {queue['queued_followups']} follow-ups queued, "
+            f"           queue: {queue['drained']} follow-ups drained, "
             f"{queue['applied']} applied, {queue['refused']} refused; "
             f"strikes planned {queue['strikes_planned']}, landed same turn {queue['strikes_landed']}"
+        )
+        lines.append(
+            f"           (the decider reported queuing {queue['queued_followups']} "
+            f"across its own order events — a different stream, not this one's denominator)"
         )
         if queue["refusals"]:
             lines.append(
