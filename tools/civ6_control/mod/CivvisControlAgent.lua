@@ -16480,7 +16480,28 @@ local function tick()
 		-- locals here stop the whole mod compiling. `RequestAction` is also
 		-- asynchronous, so the tick keeps running for a few frames afterwards and
 		-- re-asking would queue a pile of retires behind the first.
+		-- ⚠⚠⚠ SAY ONCE THAT THIS RAN, because three abandons in a row wrote the
+		-- row and got no answer, and nothing in the log could tell whether the
+		-- poll executed, whether the attach failed, or whether the query simply
+		-- found nothing. Every explanation was unfalsifiable — the same trap the
+		-- wedge sampler was added to close.
+		--
+		-- Measured 2026-08-30, run civvis-20260830T055337Z: abandoned at t150,
+		-- `retire_requested: true`, the row present as
+		-- `150|99000|retire|below_leader_score|990` with a run tag byte-identical
+		-- to the decider's own rows, and NO `retired` event. The mod was alive —
+		-- it emitted `orders` and `turn` for t150 — so it should have polled.
+		--
+		-- One event per game, on the first poll only: enough to separate "never
+		-- ran" from "ran and saw nothing", and cheap enough to keep afterwards.
 		if not CivvisBoard.retireAsked and attachOrders() then
+			if not CivvisBoard.retirePollSeen then
+				CivvisBoard.retirePollSeen = true;
+				-- ⚠ `turn` is NOT in scope this early in the tick; ask the host.
+				emit("retire_poll", { turn = try(function()
+					return Game.GetCurrentGameTurn();
+				end, -1) });
+			end
 			local wanted = false;
 			pcall(function()
 				local rows = DB.Query(string.format(
