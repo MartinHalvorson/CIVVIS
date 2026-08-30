@@ -493,6 +493,21 @@ class DeciderRebuildTests(unittest.TestCase):
         self.assertIn("--no-build", note)
 
 
+class DeciderProvenanceTests(unittest.TestCase):
+    """The climb names the executable, not only the Python bridge checkout."""
+
+    def test_the_attempt_log_line_names_the_binary_digest_and_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "civvis_orders"
+            binary.write_bytes(b"decider image")
+            line = climb.decider_provenance_line(binary)
+
+        self.assertIn("revision=unknown", line)
+        self.assertIn("source=unverified-binary", line)
+        self.assertIn(climb.hashlib.sha256(b"decider image").hexdigest(), line)
+        self.assertIn(str(binary), line)
+
+
 class ClimbBudgetTests(_Harness, unittest.TestCase):
     # ---- the regression itself -------------------------------------------------
 

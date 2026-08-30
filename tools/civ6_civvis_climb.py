@@ -69,6 +69,11 @@ from civ6_control import gamelock, install, launcher  # noqa: E402
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
 from civ6_play import VICTORY_LANES  # noqa: E402
+# The run's supplied binary can come from another checkout than this bridge.
+# Reuse the same provenance and digest helpers the brain writes into
+# `runtime_updates.jsonl`, so the human-facing climb log and the durable dossier
+# cannot disagree about which program decided the game.
+from civ6_brain import binary_provenance, binary_sha256  # noqa: E402
 # The settler-capture detector: one module, imported here so the ladder row
 # and the per-run dossier count the same captures the CLI does.
 import civ6_settler_captures  # noqa: E402
@@ -155,6 +160,20 @@ def refresh_orders_binary(orders_bin: Path, enabled: bool = True) -> str:
         tail = ((proc.stderr or proc.stdout or "").strip().splitlines() or ["no output"])[-1]
         return f"decider: rebuild FAILED ({tail}); using the binary as it is"
     return f"decider: release build current for {code_state()}"
+
+
+def decider_provenance_line(orders_bin: Path) -> str:
+    """Describe the executable that the next attempt will actually run.
+
+    ``code_state()`` identifies this Python harness, not a ``--orders-bin``
+    supplied from another worktree.  Keep the old line for the harness pin, but
+    add the binary's source revision and digest after the last possible rebuild
+    so a climb log cannot attribute an experiment to the wrong checkout.
+    """
+    revision, source = binary_provenance(orders_bin)
+    digest = binary_sha256(orders_bin)
+    return (f"decider binary: revision={revision or 'unknown'} source={source} "
+            f"sha256={digest or 'unknown'} path={orders_bin}")
 
 
 def dismiss_crash_dialogs() -> None:
@@ -1993,6 +2012,10 @@ def main() -> int:
             return 4
         # ★★★★ The program that will actually play: see `refresh_orders_binary`.
         print(refresh_orders_binary(orders_bin, args.build), flush=True)
+        # `code_rev` names the bridge tree.  A supplied binary may be built from
+        # a different worktree, so record its identity beside the attempt after
+        # any rebuild has completed.
+        print(decider_provenance_line(orders_bin), flush=True)
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
         # The database path is as much part of a run as its event log.  SQLite
