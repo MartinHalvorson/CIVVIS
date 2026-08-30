@@ -1662,17 +1662,24 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                          without(second, "--tag", "--orders-db", "--load-save"))
 
     def test_the_resume_budget_is_bounded_and_the_last_freeze_is_the_row(self):
-        verdicts = ["frozen", "frozen", "frozen"]
+        # ⚠ The budget is THREE — a game can park more than once at DIFFERENT
+        # turns (run civvis-20260830T223229Z parked at t66, was rescued one turn
+        # back, played 27 more turns, then parked again at t93). So this needs a
+        # fourth verdict to prove the fourth attempt is refused. The save list is
+        # long because autosaves accumulate one per turn and the resume floor is
+        # t20; a short list would force the stride to clamp onto a board that
+        # just failed.
+        verdicts = ["frozen", "frozen", "frozen", "frozen"]
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0150.Civ6Save"),
-            Path("/saves/AutoSave_0149.Civ6Save"),
+            Path(f"/saves/AutoSave_{n:04d}.Civ6Save") for n in range(160, 130, -1)
         ]
         try:
             code, rows = self.climb_with(
-                [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151}],
+                [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151},
+                 {"last_turn": 158}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
@@ -1680,12 +1687,16 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         row = rows[0]
-        self.assertEqual(row["last_turn"], 151)
+        self.assertEqual(row["last_turn"], 158)
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
-        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140])
+        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140, 151])
+        # One back, four back, nine back — RESUME_STEPS = (0, 3, 8) against the
+        # list with the parked turn's own save removed. Each attempt reaches a
+        # board the last one did not.
         self.assertEqual([r["save"] for r in row["resumes"]],
-                         ["AutoSave_0150.Civ6Save", "AutoSave_0149.Civ6Save"])
-        self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont2"))
+                         ["AutoSave_0160.Civ6Save", "AutoSave_0157.Civ6Save",
+                          "AutoSave_0152.Civ6Save"])
+        self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont3"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
         verdicts = ["frozen", "exited"]
@@ -2301,3 +2312,39 @@ class TheParkedTurnsSaveIsNeverReloaded(unittest.TestCase):
             {"last_turn": 44}, "frozen", 0, self._args(), 0.0,
             recent=lambda newer_than=None: list(saves))
         self.assertEqual(got, Path("civvis-resume.Civ6Save"))
+
+
+class TheThirdResumeSamplesSomewhereNew(unittest.TestCase):
+    """⚠ A GAME CAN PARK MORE THAN ONCE, AT DIFFERENT TURNS.
+
+    Run `civvis-20260830T223229Z` parked at t66, was rescued ONE turn back,
+    played 27 more turns, and parked again at t93 — a genuinely new deadlock, not
+    a replay of the first. Across 2026-08-30, 5 of the 14 runs that used a resume
+    (36%) exhausted the budget, so a third attempt earns its place.
+
+    It needs its own stride index: without one it would reload the same board the
+    second attempt just failed on, which is the waste #2817 removed.
+    """
+
+    def _args(self):
+        import argparse
+        return argparse.Namespace(max_resumes=3,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    SAVES = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(93, 78, -1)]
+
+    def test_each_attempt_reaches_somewhere_the_last_did_not(self):
+        picks = [climb.resume_from_autosave(
+                     {"last_turn": 93}, "frozen", i, self._args(), 0.0,
+                     recent=lambda newer_than=None: list(self.SAVES))
+                 for i in range(3)]
+        self.assertEqual(len(set(picks)), 3, f"three distinct boards: {picks}")
+        self.assertEqual(picks, [Path("AutoSave_0092.Civ6Save"),
+                                 Path("AutoSave_0089.Civ6Save"),
+                                 Path("AutoSave_0084.Civ6Save")])
+
+    def test_a_fourth_attempt_is_refused(self):
+        """The budget still bounds the loop."""
+        self.assertIsNone(climb.resume_from_autosave(
+            {"last_turn": 93}, "frozen", 3, self._args(), 0.0,
+            recent=lambda newer_than=None: list(self.SAVES)))
