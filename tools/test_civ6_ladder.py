@@ -1351,6 +1351,38 @@ class LatestCodeGuarantee(LedgerCase):
                          ["aaa", "bbb", "ddd"])
         self.assertIsNone(civ6_ladder.decider_revisions(self.runs / "absent"))
 
+    def test_decider_binaries_keep_actual_revision_and_digest(self):
+        updates = self.runs / "runtime_updates.jsonl"
+        rows = [
+            {"kind": "runtime_update", "status": "start",
+             "to_revision": "aaa", "source": "binary-checkout",
+             "binary_revision": "aaa", "binary_source": "binary-checkout",
+             "binary_sha256": "digest-a"},
+            {"kind": "runtime_update", "status": "handoff",
+             "to_revision": "bbb", "source": "origin/main",
+             "binary_revision": "bbb", "binary_source": "published-path",
+             "binary_sha256": "digest-b"},
+            # The handoff's fresh brain writes this duplicate start row. Its
+            # source label differs, but it is still the same executable image.
+            {"kind": "runtime_update", "status": "start",
+             "to_revision": "bbb", "source": "runtime-argument",
+             "binary_revision": "bbb", "binary_source": "published-path",
+             "binary_sha256": "digest-b"},
+        ]
+        updates.write_text("\n".join(json.dumps(r) for r in rows))
+        self.assertEqual(
+            civ6_ladder.decider_binaries(updates),
+            [
+                {"revision": "aaa", "source": "binary-checkout",
+                 "binary_revision": "aaa", "binary_source": "binary-checkout",
+                 "binary_sha256": "digest-a"},
+                {"revision": "bbb", "source": "origin/main",
+                 "binary_revision": "bbb", "binary_source": "published-path",
+                 "binary_sha256": "digest-b"},
+            ],
+        )
+        self.assertIsNone(civ6_ladder.decider_binaries(self.runs / "absent"))
+
     def test_decider_genome_reads_the_deciders_own_first_record(self):
         why = self.runs / "why.log"
         why.write_text(
@@ -1387,6 +1419,13 @@ class LatestCodeGuarantee(LedgerCase):
             self.runs, summary("tracked", decider_revisions=["aaa", "bbb"])))
         self.assertEqual(self.state()["attempts"][0]["revisions"],
                          ["aaa", "bbb"])
+
+    def test_binary_provenance_is_recorded_on_the_attempt(self):
+        binaries = [{"revision": "aaa", "binary_sha256": "digest-a"}]
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("binary-tracked", decider_binaries=binaries)))
+        self.assertEqual(self.state()["attempts"][0]["decider_binaries"],
+                         binaries)
 
     def heartbeat_problem(self, payload, minutes=10,
                           now=datetime(2026, 8, 17, 12, 0,
@@ -1494,6 +1533,19 @@ class TheHealthFloorStaysFalsifiable(LedgerCase):
             [{"applied_pct": None}] * 300 + [{"applied_pct": 97.0}]), 0)
         self.assertEqual(civ6_ladder.trailing_unmeasured(
             [{"applied_pct": 97.0}] + [{"applied_pct": None}] * 3), 3)
+
+    def test_a_killed_run_is_evidence_of_neither(self):
+        """⚠⚠ Runs stopped by a signal carry no rate because they never reached
+        the point where it is written. Parked cores are the dominant way a run
+        ends, so counting them would raise "the instrument has gone dark" on a
+        healthy instrument — and breaking on them would hide a real outage."""
+        # A spell of killed runs after a healthy one raises nothing.
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": 97.0}] + [{"partial": True}] * 6), 0)
+        # And they do not mask a genuine outage behind them.
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": 97.0}] + [{"applied_pct": None}] * 2
+            + [{"partial": True}] * 4), 2)
 
 
 class TheBackfillRecoversBridgeHealth(LedgerCase):
@@ -1810,3 +1862,26 @@ class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
         self.assertIn('"seat_autonomy": summary.get("seat_autonomy")', ladder)
         self.assertIn('"civvis_unit_share"', ladder)
         self.assertIn('summary["seat_autonomy"] = autonomy', play)
+
+
+class AStoppedRunIsMarkedOnTheLedgerRow(unittest.TestCase):
+    """⚠ THE FLAG HAS TO REACH THE ROW TO BE USABLE.
+
+    `civ6_play.partial_summary` marks a run stopped by a signal so a consumer can
+    tell it from one whose game finished. The ledger row dropped the field, so on
+    the ledger the only trace was `reason`, a free string. Live: three `-cont`
+    rows from the 08-30 resumes landed with `partial: None`.
+    """
+
+    def test_the_partial_flag_survives_onto_the_row(self):
+        row = civ6_ladder.entry_from({
+            "tag": "civvis-x", "reason": "killed", "partial": True,
+            "last_turn": 44,
+        })
+        self.assertIs(row["partial"], True)
+
+    def test_a_finished_run_carries_no_flag(self):
+        row = civ6_ladder.entry_from({
+            "tag": "civvis-y", "reason": "abandoned", "last_turn": 150,
+        })
+        self.assertIsNone(row["partial"])

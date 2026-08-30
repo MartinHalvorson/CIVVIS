@@ -206,6 +206,21 @@
     "upgrade_to": "caravel",
     "obsolete_tech": "steam_power"
   },
+  "bireme": {
+    "class": "military",
+    "cost": 65,
+    "maintenance": 1,
+    "moves": 4,
+    "strength": 35,
+    "domain": "sea",
+    "tech": "sailing",
+    "unique_to": "Phoenicia",
+    "replaces": "galley",
+    "promotion_class": "naval_melee",
+    "zone_of_control": true,
+    "upgrade_to": "caravel",
+    "obsolete_tech": "steam_power"
+  },
   "quadrireme": {
     "class": "military",
     "cost": 120,
@@ -857,8 +872,9 @@
     "can_formations": false, "can_combine": false, "earns_xp": false, "faith_purchasable": false
   },
   "warrior_monk": {
-    "class": "military", "cost": 200, "maintenance": 2, "moves": 3, "strength": 40,
-    "buildable": false, "promotion_class": "warrior_monk", "zone_of_control": true
+    "class": "military", "cost": 100, "maintenance": 2, "moves": 3, "strength": 40,
+    "buildable": false, "requires_building": "temple",
+    "promotion_class": "warrior_monk", "zone_of_control": true
   },
   "nihang": {
     "class": "military", "cost": 100, "maintenance": 2, "moves": 2, "strength": 25,

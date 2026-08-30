@@ -138,9 +138,30 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 # separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
 # untargeted `civvis` the batch loop used to hard-code.
 DEFAULT_CIVVIS_VICTORY = "diplomatic"
+# The operator's standing instruction is unambiguous: every live game plays
+# Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
+# not merely in a launcher default, so a direct ``civ6_play.py --leader ...``
+# invocation cannot quietly start a different civilization.
+ROMAN_LEADER = "LEADER_TRAJAN"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
+
+
+def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
+    """Return the one live-game leader, recording an attempted override.
+
+    ``--leader`` remains accepted for command-line compatibility, but a
+    verification result is only comparable when every game uses the same
+    civilization.  The caller label makes a coerced direct invocation visible
+    in its durable play or climb log rather than silently pretending the
+    requested leader was honored.
+    """
+    if requested != ROMAN_LEADER:
+        named = requested or "Random Leader"
+        print(f"[{caller}] overriding requested leader {named!r}; live games "
+              f"always play Rome / Trajan ({ROMAN_LEADER})", flush=True)
+    return ROMAN_LEADER
 
 # ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
 # policy: play verification games out in full, except at or after turn 150
@@ -186,6 +207,54 @@ def _nonnegative_metric(value: object) -> float | int | None:
             and math.isfinite(value) and value >= 0):
         return value
     return None
+
+
+def _retire_was_answered(run_tag: str) -> bool:
+    """Did the control mod actually issue Civilization VI's Retire?
+
+    Read straight from `Automation.log` rather than `events.jsonl`: the abandon
+    tears the game down immediately afterwards, so the watcher is gone before
+    the mod's answer would ever be copied across.  Best effort — a log we
+    cannot read means "unknown", reported as not acknowledged, and never blocks
+    the stop.
+    """
+    try:
+        log = env.logs_dir() / "Automation.log"
+        needle = f'"kind":"retired","run":"{run_tag}"'
+        with log.open("r", encoding="utf-8", errors="ignore") as handle:
+            # Only the tail can matter: this run's retire is the last thing in
+            # it, and the file grows to tens of megabytes across a session.
+            handle.seek(0, 2)
+            handle.seek(max(0, handle.tell() - 262_144))
+            return needle in handle.read()
+    except (OSError, ValueError):
+        return False
+
+
+def partial_summary(tag: str, config: dict, state: dict) -> dict:
+    """The record a run leaves when it is stopped before it can finish one.
+
+    Same core fields as the full summary so a later `civ6_ladder.py sync`
+    produces a sensible row, plus `partial` so a consumer can tell a run that
+    was STOPPED from one that finished. `reason` is `killed` rather than
+    `wedged`: this process cannot tell the wedge watchdog's INT from the
+    supervisor's teardown TERM, and the watchdog's own log says which.
+    """
+    return {
+        "tag": tag,
+        "finished_utc": utc_stamp(),
+        "difficulty": config["Difficulty"],
+        "map_size": config["MapSize"],
+        "speed": config["GameSpeed"],
+        "max_turns": config["MaxTurns"],
+        "reason": "killed",
+        "partial": True,
+        "last_turn": state.get("turn"),
+        "last_score": state.get("score"),
+        "cities_at_60": state.get("cities_at_60"),
+        "outcome": state.get("outcome"),
+        "abandoned": state.get("abandoned"),
+    }
 
 
 def below_leader_score_reading(
@@ -2317,8 +2386,34 @@ def _observed_label_points(path: Path, label: str,
     points = collect(_menu_ocr_observations(path))
     if not points:
         points = collect(_menu_crop_ocr(path, bounds))
-    if not points and strip is not None:
-        points = collect(_menu_crop_ocr(path, bounds, strip=strip, tag="strip"))
+    if strip is not None:
+        # ⚠⚠⚠ THE STRIP RAN ONLY WHEN THE EARLIER PASSES FOUND *NOTHING*, WHICH
+        # IS NEVER ON THE SCREEN IT WAS WRITTEN FOR.
+        #
+        # `LOAD_GAME_ACTION_STRIP` exists because the full-screen pass and the
+        # general menu crop both miss the small Load Game BUTTON on the bottom
+        # edge. But the same screen carries a large LOAD GAME HEADING, which
+        # every pass reads easily — so `points` came back non-empty, the strip
+        # pass was skipped, and the caller then rejected the screen with "only
+        # the Load Game heading is visible". The repair could not run on the
+        # only screen that needed it.
+        #
+        # Live, 2026-08-30: the first autosave reload the watchdog handoff ever
+        # produced (`civvis-20260830T112732Z-cont1`) died exactly there.
+        # `load-selected-attempt2.png` shows `civvis-resume` SELECTED, the
+        # preview reading TURN 75 Renaissance Era, and the blue Load Game button
+        # plainly rendered at the bottom of the panel.
+        #
+        # So run the strip whenever nothing has been found INSIDE it — the band
+        # it covers is exactly the band the earlier passes are unreliable in.
+        # When the button was already read, this costs nothing; the extra OCR is
+        # spent only on the screens that were failing.
+        strip_top = bounds[1] + int(bounds[3] * strip[1])
+        if not any(point[1] >= strip_top for point in points):
+            for point in collect(
+                    _menu_crop_ocr(path, bounds, strip=strip, tag="strip")):
+                if point not in points:
+                    points.append(point)
     return points
 
 
@@ -2451,9 +2546,29 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
               f"the default Continents map is {args.map}", file=sys.stderr)
         return False
     setup_shot = run_dir / "setup.png"
-    screenshot(setup_shot)
-    start_point = _observed_label_point(setup_shot, "Start Game", bounds,
-                                        strip=START_GAME_STRIP)
+    captured = screenshot(setup_shot)
+    start_point = None
+    if captured or setup_shot.is_file():
+        start_point = _observed_label_point(setup_shot, "Start Game", bounds,
+                                            strip=START_GAME_STRIP)
+    # `panel["shot"]` is the last full desktop frame whose setup values and leader
+    # were already read back successfully.  A ScreenCaptureKit miss can remove the
+    # final frame even though the Create Game page has not changed; reopening or
+    # guessing the button at that point loses a valid launch.  Reuse that proven
+    # same-page frame as a read-only fallback.  It is still OCR that licenses the
+    # click, and the frame is copied under the canonical name for post-run audit.
+    if start_point is None:
+        fallback = panel.get("shot")
+        if isinstance(fallback, Path) and fallback.is_file() and fallback != setup_shot:
+            start_point = _observed_label_point(fallback, "Start Game", bounds,
+                                                strip=START_GAME_STRIP)
+            if start_point is not None:
+                try:
+                    shutil.copyfile(fallback, setup_shot)
+                except OSError:
+                    pass
+                print(f"[setup] final frame was unreadable; reusing the last verified "
+                      f"setup frame ({fallback.name})", flush=True)
     if start_point is None:
         print("[setup] Start Game was NOT visible; refusing to launch",
               file=sys.stderr)
@@ -3069,6 +3184,11 @@ def press_escape(times: int = 2) -> bool:
     return ok
 
 
+#: How long the abandon path waits for the control mod to answer its retire
+#: row before stopping the game regardless. The mod polls on game-core
+#: events, which fire many times per frame while the game is live.
+ABANDON_RETIRE_WAIT_S = 12.0
+
 OPERATOR_RETIRE_RETRY_S = 15.0
 OPERATOR_RETIRE_SETTLE_S = 0.8
 
@@ -3398,6 +3518,37 @@ def _play(args: argparse.Namespace) -> int:
         "founds": [], "cities_at_60": None,
     }
 
+    # ⚠⚠⚠ A KILLED RUN LEFT NO RECORD AT ALL, AND THAT IS MOST OF THEM.
+    #
+    # `summary.json` is written near the end of `main`. A run stopped by a
+    # signal never reaches it, so it leaves an events file and nothing else —
+    # and the ledger, every "how our games end" tally, and every win rate are
+    # computed over the survivors only.
+    #
+    # Measured 2026-08-30 over the 08-29/30 runs: **53 of 64 runs had no
+    # summary**, 17% coverage. The missing 83% are precisely the interesting
+    # ones — the parked cores the wedge watchdog kills, which are the dominant
+    # way a run dies. So the record was systematically blind to the failure it
+    # most needed to show, and biased toward games that ended cleanly.
+    #
+    # The watchdog signals `civ6_play` with INT and the supervisor's teardown
+    # sends TERM, and `_terminate` turns TERM into SystemExit, so both unwind
+    # through `atexit`. This writes what the run had reached, once, and only if
+    # nothing better exists. `partial` marks it so a consumer can tell a run
+    # that was stopped from one that finished; the wedge watchdog's log says
+    # which hand stopped it.
+    def _partial_summary_if_stopped() -> None:
+        path = run_dir / "summary.json"
+        if path.exists():
+            return
+        partial = partial_summary(args.tag, config, state)
+        try:
+            path.write_text(json.dumps(partial, indent=2, sort_keys=True))
+        except OSError:
+            pass  # evidence is best effort; it must never fail a shutdown
+
+    atexit.register(_partial_summary_if_stopped)
+
     def record(event: dict) -> None:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
@@ -3624,6 +3775,41 @@ def _play(args: argparse.Namespace) -> int:
             print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
                   " — the game is filed as a loss rather than left unfinished",
                   flush=True)
+            if asked:
+                # ⚠⚠ THE ROW IS NOT THE RETIRE. Writing it and returning ends
+                # the watch loop, which tears the game down — so the mod never
+                # reaches its next tick, never sees the row, and the game dies
+                # exactly as unfinished as before. Measured in run
+                # civvis-20260829T194002Z: the row was on disk
+                # (`154|99000|retire|below_leader_score|990`) and no `retired`
+                # event ever followed it.
+                #
+                # The mod polls on `GameCoreEventPublishComplete`, which fires
+                # many times per frame while the game is live, so this is a
+                # short wait in practice; the bound is only here so a game that
+                # has ALREADY parked cannot hold the loop open. A parked core
+                # cannot answer a retire at all — nothing is listening — and
+                # the outside watchdog is the only remedy for that case.
+                time.sleep(ABANDON_RETIRE_WAIT_S)
+                # ⚠⚠ AND READ THE ANSWER, or a success is indistinguishable
+                # from a failure.
+                #
+                # The teardown below stops the watcher, so anything the mod
+                # emits during the wait never reaches `events.jsonl`. That made
+                # a WORKING retire look broken for four abandons: run
+                # civvis-20260830T083406Z has no `retired` event in its
+                # events.jsonl, while the raw Automation.log for the same run
+                # holds `"kind":"retired","why":"requested"`, our own
+                # `"kind":"defeat","ours":true`, and the `EndGameMenu` opening.
+                #
+                # So ask the log directly, once, and put the answer in the run
+                # record where the next person will look.
+                state["retire_confirmed"] = _retire_was_answered(args.tag)
+                print("[abandon] retire "
+                      + ("acknowledged by the mod"
+                         if state["retire_confirmed"]
+                         else "NOT acknowledged; the game was still stopped"),
+                      flush=True)
             return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
@@ -3867,6 +4053,17 @@ def _play(args: argparse.Namespace) -> int:
         # The verdict that ended an abandoned run: the turn, the standing, the
         # estimate and the floor it fell under. None for every other ending.
         "abandoned": state.get("abandoned"),
+        # Whether the abandon actually asked Civilization VI to Retire, so a
+        # game filed as a loss can be told from one that merely stopped. The
+        # request is best effort — an unwritable channel does not keep a game
+        # the rule has already called — and the run record should say which
+        # happened rather than leave it to be inferred.
+        "retire_requested": state.get("retire_requested"),
+        # And whether the mod actually issued it. These differ: the abandon
+        # tears the game down right after asking, so the watcher is gone before
+        # the answer could reach `events.jsonl` — a working retire looked
+        # broken for four abandons until the raw log was read instead.
+        "retire_confirmed": state.get("retire_confirmed"),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
@@ -4008,6 +4205,10 @@ def _play(args: argparse.Namespace) -> int:
             run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
+        binaries = civ6_ladder.decider_binaries(
+            run_dir / "runtime_updates.jsonl")
+        if binaries:
+            summary["decider_binaries"] = binaries
         # And which GENOME decided it. `--civvis-strategy` is forwarded to
         # `civvis_orders --strategy` by name. New deciders accept an unambiguous
         # league display label as well as the immutable internal name, but old
@@ -4134,7 +4335,9 @@ def main(argv: list[str] | None = None) -> int:
                          "60%% of the leader's score), and no "
                          "other early stop")
     ap.add_argument("--city-target", type=int, default=6)
-    ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
+    ap.add_argument("--leader", default=ROMAN_LEADER,
+                    help="accepted for compatibility; live games always select "
+                         "Rome's Trajan")
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
@@ -4413,6 +4616,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.status:
         return status()
+    args.leader = enforce_roman_leader(args.leader, caller="civ6_play")
     if args.tag is None:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))

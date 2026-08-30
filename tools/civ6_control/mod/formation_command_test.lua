@@ -105,8 +105,12 @@ UnitManager = {
 		host.calls[#host.calls + 1] = { what = "CanStartOperation", hash = hash, params = params }
 		return host.allow[hash] == true
 	end,
-	RequestOperation = function(unit, hash, params)
-		host.calls[#host.calls + 1] = { what = "RequestOperation", hash = hash, params = params }
+	RequestOperation = function(...)
+		local argc = select("#", ...)
+		local unit, hash, params = ...
+		host.calls[#host.calls + 1] = {
+			what = "RequestOperation", hash = hash, params = params, argc = argc
+		}
 	end,
 }
 Game = { GetLocalPlayer = function() return PID end, GetCurrentGameTurn = function() return 118 end }
@@ -211,8 +215,9 @@ check("remove heresy accepted", ok, true)
 check("remove heresy label", why, "REMOVE_HERESY")
 local heresy = lastCall("RequestOperation", hashFor("UNITOPERATION_REMOVE_HERESY"))
 check("remove heresy requested", heresy ~= nil, true)
-check("remove heresy carries no destination",
-	heresy and heresy.params[UnitOperationTypes.PARAM_X], nil)
+check("remove heresy uses the native parameterless signature",
+	heresy and heresy.argc, 2)
+check("remove heresy carries no parameter table", heresy and heresy.params, nil)
 
 reset()
 ok, why = applyOrder(player, PID,

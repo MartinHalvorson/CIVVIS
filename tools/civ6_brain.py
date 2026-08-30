@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 import re
@@ -755,10 +756,67 @@ def local_revision(repo: Path) -> str | None:
     return revision if result.returncode == 0 and GIT_SHA.fullmatch(revision) else None
 
 
+def binary_sha256(binary: Path) -> str | None:
+    """Return the digest of the executable image that will make decisions."""
+    try:
+        digest = hashlib.sha256()
+        with binary.expanduser().resolve().open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except (OSError, ValueError):
+        return None
+
+
+def binary_provenance(binary: Path) -> tuple[str | None, str]:
+    """Find the source revision, if any, that produced ``binary``.
+
+    A supplied binary may come from a different worktree than this Python
+    bridge.  Looking up ``__file__`` in that case stamped the bridge checkout
+    onto a game played by the other checkout.  Prefer the nearest Git worktree
+    around the executable, then recognize the revision-named binaries emitted
+    by ``GitHubRuntimeUpdater``.  The digest remains the identity when neither
+    convention can prove a source revision.
+    """
+    try:
+        resolved = binary.expanduser().resolve()
+    except OSError:
+        resolved = binary.expanduser()
+
+    published = resolved.parent
+    if (GIT_SHA.fullmatch(published.name)
+            and published.parent.name == "published"):
+        return published.name, "published-path"
+
+    candidate = resolved.parent
+    while True:
+        if (candidate / ".git").exists():
+            revision = local_revision(candidate)
+            return (revision,
+                    "binary-checkout" if revision
+                    else "binary-checkout-unverified")
+        if candidate == candidate.parent:
+            break
+        candidate = candidate.parent
+    return None, "unverified-binary"
+
+
+def launch_provenance(binary: Path | None, requested_revision: str | None,
+                      launcher_repo: Path) -> tuple[str | None, str]:
+    """Choose the revision/source to stamp when this brain opens a run."""
+    if requested_revision:
+        return requested_revision, "runtime-argument"
+    if binary is not None:
+        return binary_provenance(binary)
+    return local_revision(launcher_repo), "launcher-checkout"
+
+
 def record_runtime_event(run_dir: Path, status: str, turn: int | None,
                          from_revision: str | None, runtime: LiveRuntime,
-                         detail: str | None = None) -> None:
+                         detail: str | None = None,
+                         source: str = "origin/main") -> None:
     """Durably name every mid-game GitHub handoff and any failed re-exec."""
+    binary_revision, binary_source = binary_provenance(runtime.binary)
     payload = {
         "kind": "runtime_update",
         "status": status,
@@ -766,8 +824,11 @@ def record_runtime_event(run_dir: Path, status: str, turn: int | None,
         "turn": turn,
         "from_revision": from_revision,
         "to_revision": runtime.revision,
-        "source": "origin/main",
+        "source": source,
         "binary": str(runtime.binary),
+        "binary_revision": binary_revision,
+        "binary_source": binary_source,
+        "binary_sha256": binary_sha256(runtime.binary),
     }
     if detail:
         payload["detail"] = detail
@@ -932,10 +993,13 @@ def main() -> int:
     orders_db = orders_db_path(run_dir, args.orders_db)
     conn = connect(orders_db)
     repo_root = Path(__file__).resolve().parent.parent
-    runtime_revision = args.runtime_revision or local_revision(repo_root)
+    runtime_revision, runtime_source = launch_provenance(
+        binary, args.runtime_revision, repo_root
+    )
     print(f"[brain] mode={args.mode} run={run_tag} db={orders_db} "
           f"decider={'server' if args.server else 'per-turn'} "
           f"revision={runtime_revision or 'unverified'} "
+          f"binary_source={runtime_source} "
           f"forced={args.with_ or 'none'} withheld={args.without or 'none'}", flush=True)
     strategy = None if args.strategy.strip().lower() in {"", "stock", "none"} else args.strategy
     decider = (Decider(binary, run_dir, args.victory, args.war_from_plan, strategy,
@@ -964,7 +1028,9 @@ def main() -> int:
         record_runtime_event(
             run_dir, "start", None, None,
             LiveRuntime(revision=runtime_revision or "unverified",
-                        binary=binary, brain=Path(__file__).resolve()))
+                        binary=binary, brain=Path(__file__).resolve()),
+            source=runtime_source,
+        )
 
     deadline = time.time() + args.seconds
     offset = 0

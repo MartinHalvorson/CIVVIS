@@ -324,7 +324,7 @@ function unitHasHealth(unit) {
 const CIV6_UNIT_ICON_TYPES = [
   "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
   "artillery", "at_crew", "battering_ram", "battleship", "biplane",
-  "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
+  "bireme", "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
   "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
   "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "galley",
   "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",

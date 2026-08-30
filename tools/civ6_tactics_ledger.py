@@ -104,10 +104,32 @@ def read_unit_orders(path: Path) -> list[tuple[int, int, int, str, Any, Any]]:
 
 
 def _states(events: Iterable[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """The board at the START of each turn, keyed by turn.
+
+    ⚠⚠⚠ THE FIRST FRAME, NOT THE LAST. This kept the LAST `state` of each turn,
+    and 137 of 150 turns in an ordinary run carry more than one — the mid-turn
+    replan and combat frames each export another. Every caller here uses the
+    entry as the board an order was decided FROM, so the last frame is the board
+    AFTER that order already moved the unit.
+
+    The cost was not subtle. `self_tile` counts a MOVE_TO whose destination
+    equals the unit's position, and judged against the last frame that is every
+    order that ARRIVED. Run `civvis-20260830T121826Z`, first move per unit-turn,
+    698 orders with both frames known:
+
+        judged against the turn's LAST state    574 self_tile  (82%)
+        judged against the turn's FIRST state     0 self_tile  ( 0%)
+
+    Not one order in that game actually named the tile its unit already stood
+    on. Worse, `self_tile` orders are skipped before the arrival verdict, so the
+    reported "arrived 16.8%" was computed after discarding 82% of the orders
+    that had arrived — the metric said the seat could not move when it was
+    moving normally.
+    """
     states: dict[int, dict[str, Any]] = {}
     for event in events:
         if event.get("kind") == "state" and isinstance(event.get("turn"), int):
-            states[event["turn"]] = event
+            states.setdefault(event["turn"], event)
     return states
 
 
@@ -158,6 +180,7 @@ def orders_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str,
     strikes_planned = strikes_landed = queue_applied = queue_refused = 0
     queue_refusals: collections.Counter = collections.Counter()
     saw_queue_field = False
+    queue_drained = 0
     for event in events:
         kind = event.get("kind")
         if kind == "orders" and "queued" in event:
@@ -169,6 +192,9 @@ def orders_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str,
             strikes_landed += int(event.get("strikes_landed") or 0)
             queue_applied += int(event.get("applied") or 0)
             queue_refused += int(event.get("refused") or 0)
+            # ⚠ The drain event carries its OWN `queued`, and that is the only
+            # number `applied` and `refused` can honestly be read against.
+            queue_drained += int(event.get("queued") or 0)
             for why, count in (event.get("refusals") or {}).items():
                 queue_refusals[str(why)] += int(count or 0)
     return {
@@ -181,6 +207,7 @@ def orders_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str,
         if not saw_queue_field
         else {
             "queued_followups": queued,
+            "drained": queue_drained,
             "orders_queue_events": queue_events,
             "applied": queue_applied,
             "refused": queue_refused,
@@ -407,6 +434,7 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
     military_turns = 0
     near_turns = 0
     hover = 0
+    fortified_hover = 0
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
@@ -424,10 +452,22 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
             moved = after is not None and (int(after["x"]), int(after["y"])) != pos
             if not moved and (turn, uid) not in strikes_by_turn_unit:
                 hover += 1
+                # ⚠ A FORTIFIED UNIT HOLDING GROUND IS NOT HOVERING. "Neither
+                # moved nor struck" is exactly what a defender is ordered to do,
+                # and the run carries 333 FORTIFY orders, so the raw count mixes
+                # deliberate defence with idleness. Measured on run
+                # civvis-20260830T121826Z: of 105 hovering unit-turns only 17
+                # were fortified — the other 88 are a military unit standing
+                # two to four tiles from a hostile, unfortified, doing nothing.
+                # That 88 is the number worth acting on.
+                if unit.get("fortified"):
+                    fortified_hover += 1
     return {
         "military_unit_turns": military_turns,
         "unit_turns_2_to_4_from_a_hostile": near_turns,
         "hovering_unit_turns": hover,
+        "hovering_fortified": fortified_hover,
+        "hovering_idle": hover - fortified_hover,
         "hover_share_of_near": round(hover / near_turns, 3) if near_turns else None,
     }
 
@@ -532,10 +572,24 @@ def render(report: dict[str, Any]) -> str:
     if queue is None:
         lines.append("           queue: (mod predates the per-unit order queue)")
     else:
+        # ⚠⚠⚠ TWO DIFFERENT STREAMS, AND PRINTING THEM AS A RATIO INVITED THE
+        # WRONG READING. `queued_followups` sums the `queued` field of `orders`
+        # events (410 of them in run civvis-20260830T121826Z, total 865);
+        # `applied` and `refused` come from the far rarer `orders_queue` drain
+        # events (82 of them). Side by side that read as "865 queued, 148
+        # applied" — an 82% loss that does not exist. Within the drain stream
+        # the same run is queued 159, applied 148, refused 11: **93% applied**.
+        #
+        # So the drain is reported against its own queued count, and the
+        # decider-side total is named separately as what it is.
         lines.append(
-            f"           queue: {queue['queued_followups']} follow-ups queued, "
+            f"           queue: {queue['drained']} follow-ups drained, "
             f"{queue['applied']} applied, {queue['refused']} refused; "
             f"strikes planned {queue['strikes_planned']}, landed same turn {queue['strikes_landed']}"
+        )
+        lines.append(
+            f"           (the decider reported queuing {queue['queued_followups']} "
+            f"across its own order events — a different stream, not this one's denominator)"
         )
         if queue["refusals"]:
             lines.append(
@@ -582,7 +636,8 @@ def render(report: dict[str, Any]) -> str:
     hover = report["hover"]
     lines.append(
         f"  hover    {hover['hovering_unit_turns']} of {hover['unit_turns_2_to_4_from_a_hostile']} "
-        f"near-hostile unit-turns neither moved nor struck ({_fmt_share(hover['hover_share_of_near'])}); "
+        f"near-hostile unit-turns neither moved nor struck ({_fmt_share(hover['hover_share_of_near'])}"
+        f" — {hover['hovering_fortified']} fortified, {hover['hovering_idle']} idle); "
         f"{hover['military_unit_turns']} military unit-turns"
     )
     hof = report.get("hall_of_fame")

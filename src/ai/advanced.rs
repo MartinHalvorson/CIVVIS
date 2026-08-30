@@ -12039,7 +12039,8 @@ impl AdvancedAi {
         // ledger withheld this independently screenable treatment. The
         // treatment remains configurable for other lanes; Science gets the
         // same invariant from its target contract.
-        if (self.buildings_before_projects || self.victory_target == Some(VictoryTarget::Science))
+        if (self.buildings_before_projects
+            || self.active_victory_target(g) == Some(VictoryTarget::Science))
             && spec.repeatable
         {
             let waiting_for = BUILDINGS_BEFORE_PROJECTS.iter().chain(
@@ -20837,6 +20838,39 @@ impl AdvancedAi {
         }
     }
 
+    /// The normal siege picker waits for damage before returning a queue item.
+    /// That is correct for a passing patrol, but a plan that has already named
+    /// this city while a major war is active has stronger evidence: the contact
+    /// is a locally competitive hostile force, not merely a scout. Reuse the
+    /// same wall-first/local-land-defender order as the damage path so the
+    /// threatened city can reclaim a Settler before the first hit lands.
+    fn preemptive_major_war_defense_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        threatened_city: Option<u32>,
+        active_major_war: bool,
+    ) -> Option<Item> {
+        if !active_major_war || threatened_city != Some(city) {
+            return None;
+        }
+        for building in ["walls", "medieval_walls", "renaissance_walls"] {
+            let wall = Item::Building {
+                building: Name::new(building),
+            };
+            if g.can_produce(pid, city, &wall) {
+                return Some(wall);
+            }
+        }
+        self.base
+            .best_military(g, pid, city, Some(false))
+            .or_else(|| self.base.best_military(g, pid, city, None))
+            .map(|unit| Item::Unit {
+                unit: Name::new(&unit),
+            })
+    }
+
     /// Let a confirmed city-siege treatment interrupt one unsafe queue.
     /// `BasicAi::besieged_city_item` normally reaches only an empty queue
     /// through `pick_item`, while Recovery's strategic governor skips a
@@ -20898,6 +20932,15 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city)
                 .or_else(|| self.native_emergency_item(g, pid, city))
+                .or_else(|| {
+                    self.preemptive_major_war_defense_item(
+                        g,
+                        pid,
+                        city,
+                        threatened_city,
+                        active_major_war,
+                    )
+                })
             else {
                 continue;
             };
@@ -21776,6 +21819,7 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         for cid in city_ids {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
@@ -21989,7 +22033,13 @@ impl AdvancedAi {
                     }
                 }
             }
-            if committed.is_none() && self.first_research_building_reserve {
+            // An explicit Science target makes the same contract as the
+            // opt-in reserve: once a city has paid for a Campus, finish its
+            // cheapest owed Campus-family building before the generic scorer
+            // can spend the queue on a Theater Square or another unrelated
+            // item. Adaptive seats still need the independently screenable
+            // gene; only a named Science lane gets this invariant for free.
+            if committed.is_none() && (self.first_research_building_reserve || science_targeted) {
                 let owed = Self::first_owed_campus_building(g, pid, cid);
                 if let Some(building) = owed {
                     let item = Item::Building { building };
@@ -33529,11 +33579,11 @@ impl AdvancedAi {
             // attack into that domain"), all of them scored in full first.
             //
             // ⚠ These are the engine's own predicates, not re-derivations of
-            // them. `unit_has_line_of_sight` is deliberately not the public
-            // `line_of_sight_from`: the tile version cannot know about the
-            // firing unit's `see_through_woods`, so gating with it would
-            // withhold a shot the engine would have allowed. Re-deriving any
-            // of the four here would be the same bug in a new place.
+            // them. `ranged_order_is_legal` is deliberately passed the
+            // hoisted frames: rebuilding them per tile made the first version
+            // of this guard slower. Its line-of-sight check also knows about
+            // the firing unit's `see_through_woods`, so re-deriving any part
+            // of the legality rule here would be the same bug in a new place.
             //
             // ⚠ This is a CORRECTNESS change and nothing else. Measured on
             // `tools/speed_ab.py`, 8 paired games at the deployment shape, it
@@ -33550,11 +33600,7 @@ impl AdvancedAi {
             // hoisted below for that reason. Do not inline them back.
             let frames = vision_frames
                 .get_or_insert_with(|| (g.player_vision_frame(pid), g.visibility_viewers(pid)));
-            if spec.has_ranged_attack()
-                && distance <= g.unit_attack_range(uid)
-                && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
-                && g.unit_has_line_of_sight(uid, pos)
-            {
+            if g.ranged_order_is_legal(pid, uid, pos, &frames.0, &frames.1) {
                 actions.push(Action::Ranged {
                     unit: uid,
                     target: pos,

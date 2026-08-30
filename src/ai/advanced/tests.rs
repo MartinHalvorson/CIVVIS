@@ -669,6 +669,56 @@ fn live_siege_response_replaces_a_queued_siege_with_a_local_defender() {
 }
 
 #[test]
+fn major_war_threat_preempts_an_undamaged_settler_queue() {
+    // In the live Science run, Antium was the named threatened city as Brazil
+    // opened a major war, but its full-health queue was still a Settler. The
+    // damage-gated siege picker returned no item until two turns later, after
+    // which Antium fell. A named wartime threat must use the legal wall answer
+    // before the first hit instead of waiting for damage evidence.
+    let (mut game, city, _) = empire_with_a_capital(71_145);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&city).expect("capital exists").pop = 2;
+    assert!(
+        game.is_at_war(0, 1),
+        "fixture must contain an active major war"
+    );
+    assert_eq!(game.cities[&city].hp, 200);
+    assert_eq!(game.cities[&city].wall_hp, 0);
+
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    assert!(game.can_produce(0, city, &settler));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: settler.clone(),
+        },
+    )
+    .expect("queue the unsafe expansion commitment");
+
+    let mut untouched = game.clone();
+    AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0, Some(city));
+    assert_eq!(
+        untouched.cities[&city].queue.first(),
+        Some(&settler),
+        "the frozen controller must retain its historical queue"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_garrison_under_fire();
+    live.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("walls")
+        }),
+        "a named city under major war must start its legal wall defense before damage"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy
@@ -798,6 +848,52 @@ fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
     };
     live.advanced_production(&mut game, 0, &plan, false);
     assert_eq!(game.cities[&city].queue.first(), Some(&defender));
+}
+
+/// A targeted Science seat must finish the cheap half of a Campus before the
+/// strategic governor spends the city's queue on an unrelated district or
+/// building. The explicit target is the contract here; the independently
+/// screenable reserve gene remains off.
+#[test]
+fn an_explicit_science_target_reserves_its_owed_campus_building() {
+    let (mut game, city, _) = empire_with_a_capital(71_124);
+    clear_barbarian_fixture(&mut game);
+    install_ai_test_district(&mut game, city, "campus");
+    install_ai_test_district(&mut game, city, "theater_square");
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("walls")];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.turn = 60;
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    assert!(game.can_produce(0, city, &library), "the Library is legal");
+    assert!(game.cities[&city].queue.is_empty(), "the queue starts idle");
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        ai.research_economy,
+        "the targeted controller prices research"
+    );
+    assert!(
+        !ai.first_research_building_reserve,
+        "the independently screenable reserve stays off"
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&library),
+        "Science must reserve the owed Campus building before generic production"
+    );
 }
 
 /// `first-granary-reserve`: a capital grown to its housing starts its
@@ -14949,6 +15045,140 @@ fn exact_ground_search_prefers_the_high_value_kill_over_a_static_tie() {
         Some((0, Action::Attack { target, .. } | Action::Ranged { target, .. }))
             if *target == targets[1]
     ));
+}
+
+#[test]
+fn advanced_tactical_picker_skips_embarked_ranged_attacks() {
+    let mut game = Game::new_full(2, 24, 16, 71_021, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("seat starts with a Settler");
+    let capital = game.units[&settler].pos;
+    game.found_city_for(0, capital, None);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.at_war.insert((0, 1));
+    let origin = capital;
+    let target = game
+        .wdisk(origin, 2)
+        .into_iter()
+        .find(|position| game.wdist(origin, *position) == 2 && game.city_at(*position).is_none())
+        .expect("capital needs an unoccupied range-two target");
+    for position in game.wdisk(origin, 2) {
+        if let Some(tile) = game.map.tiles.get_mut(&position) {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+    game.map.tiles.get_mut(&origin).unwrap().terrain = crate::name!("ocean");
+
+    let archer = game.spawn_test_unit("archer", 0, origin);
+    let defender = game.spawn_test_unit("warrior", 1, target);
+    game.units.get_mut(&defender).unwrap().hp = 1;
+    let frames = (game.player_vision_frame(0), game.visibility_viewers(0));
+    assert!(game.is_embarked(&game.units[&archer]));
+    assert!(
+        game.combat_target_visible_at(0, target, &frames.0, &frames.1),
+        "the fixture must expose the hostile target"
+    );
+    assert!(game.unit_has_line_of_sight(archer, target));
+
+    let refused_before = AdvancedAi::illegal_attack_census()
+        .into_iter()
+        .find_map(|(reason, count)| (reason == "cannot attack while embarked").then_some(count))
+        .unwrap_or(0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    let _ = ai.advanced_military_step(&mut game, 0, archer, &plan);
+    let refused_after = AdvancedAi::illegal_attack_census()
+        .into_iter()
+        .find_map(|(reason, count)| (reason == "cannot attack while embarked").then_some(count))
+        .unwrap_or(0);
+    assert_eq!(
+        refused_after, refused_before,
+        "an embarked ranged unit must not enter the tactical attack scorer"
+    );
+}
+
+#[test]
+fn advanced_tactical_picker_skips_ranged_units_without_attacks() {
+    let mut game = Game::new_full(2, 24, 16, 71_022, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("seat starts with a Settler");
+    let capital = game.units[&settler].pos;
+    game.found_city_for(0, capital, None);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.at_war.insert((0, 1));
+    let target = game
+        .wdisk(capital, 2)
+        .into_iter()
+        .find(|position| game.wdist(capital, *position) == 2 && game.city_at(*position).is_none())
+        .expect("capital needs an unoccupied range-two target");
+    for position in game.wdisk(capital, 2) {
+        if let Some(tile) = game.map.tiles.get_mut(&position) {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+
+    let archer = game.spawn_test_unit("archer", 0, capital);
+    let defender = game.spawn_test_unit("warrior", 1, target);
+    game.units.get_mut(&archer).unwrap().attacks_left = 0;
+    game.units.get_mut(&defender).unwrap().hp = 1;
+    let frames = (game.player_vision_frame(0), game.visibility_viewers(0));
+    assert!(
+        game.combat_target_visible_at(0, target, &frames.0, &frames.1),
+        "the fixture must expose the hostile target"
+    );
+    assert!(game.unit_has_line_of_sight(archer, target));
+    assert!(
+        !game.ranged_order_is_legal(0, archer, target, &frames.0, &frames.1),
+        "the engine must reject a ranged unit with no attacks left"
+    );
+
+    let refused_before = AdvancedAi::illegal_attack_census()
+        .into_iter()
+        .find_map(|(reason, count)| (reason == "no moves left").then_some(count))
+        .unwrap_or(0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    let _ = ai.advanced_military_step(&mut game, 0, archer, &plan);
+    let refused_after = AdvancedAi::illegal_attack_census()
+        .into_iter()
+        .find_map(|(reason, count)| (reason == "no moves left").then_some(count))
+        .unwrap_or(0);
+    assert_eq!(
+        refused_after, refused_before,
+        "a spent ranged unit must not enter the tactical attack scorer"
+    );
 }
 
 #[test]

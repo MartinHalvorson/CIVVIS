@@ -600,6 +600,15 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("bypasses CIVVIS's war decision", error.getvalue())
 
+    def test_live_launcher_coerces_an_explicit_non_roman_leader(self) -> None:
+        """A direct harness call must not bypass the standing Rome policy."""
+        with patch.object(civ6_play, "play", return_value=0) as play:
+            result = civ6_play.main(
+                ["--tag", "rome-policy", "--leader", "LEADER_TOKUGAWA"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(play.call_args.args[0].leader, civ6_play.ROMAN_LEADER)
+
     def test_setup_does_not_start_when_a_required_dropdown_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=False) as setter, \
@@ -672,6 +681,34 @@ class Civ6PlayTest(unittest.TestCase):
         screenshot.assert_called_once_with(Path(temporary) / "setup.png")
         focus.assert_not_called()
         click.assert_not_called()
+
+    def test_setup_reuses_last_verified_frame_when_final_capture_is_unreadable(self) -> None:
+        """A transient ScreenCaptureKit miss must not discard a verified setup."""
+        with tempfile.TemporaryDirectory() as temporary:
+            fallback = Path(temporary) / "leader-selected.png"
+            fallback.write_bytes(b"verified setup frame")
+
+            def select_leader(*_args, panel_out=None, **_kwargs):
+                panel_out["shot"] = fallback
+                return True
+
+            with patch.object(civ6_play, "set_dropdown", return_value=True), \
+                 patch.object(civ6_play, "select_requested_leader",
+                              side_effect=select_leader), \
+                 patch.object(civ6_play, "screenshot", return_value=False), \
+                 patch.object(civ6_play, "_observed_label_point",
+                              side_effect=[(321, 432)]), \
+                 patch.object(civ6_play, "focus_game") as focus, \
+                 patch.object(civ6_play, "click_at") as click:
+                started = civ6_play.configure_and_start(
+                    (100, 33, 756, 480), args(), Path(temporary)
+                )
+
+            setup = Path(temporary) / "setup.png"
+            self.assertTrue(started)
+            self.assertEqual(setup.read_bytes(), fallback.read_bytes())
+            focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
+            click.assert_called_once_with(321, 432)
 
     def test_setup_refuses_to_start_when_requested_leader_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
@@ -2080,6 +2117,87 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 
+class AWorkingRetireMustNotLookBroken(unittest.TestCase):
+    """⚠⚠ The teardown outruns the watcher, so the answer never lands.
+
+    Run `civvis-20260830T083406Z` has NO `retired` event in its events.jsonl,
+    while the raw `Automation.log` for the same run holds
+    `"kind":"retired","why":"requested"`, our own `"kind":"defeat","ours":true`
+    and the `EndGameMenu` opening. The retire had been working; four abandons
+    were read as failures because `events.jsonl` was the wrong place to look.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.logs = Path(self.tmp.name)
+        patcher = mock.patch.object(civ6_play.env, "logs_dir", return_value=self.logs)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _write(self, text: str) -> None:
+        (self.logs / "Automation.log").write_text(text, encoding="utf-8")
+
+    def test_an_answered_retire_is_recognised(self) -> None:
+        self._write('CIVVISJSON {"kind":"retired","run":"civvis-run","why":"requested"}\n')
+        self.assertTrue(civ6_play._retire_was_answered("civvis-run"))
+
+    def test_another_runs_retire_is_not_ours(self) -> None:
+        self._write('CIVVISJSON {"kind":"retired","run":"civvis-other","why":"requested"}\n')
+        self.assertFalse(civ6_play._retire_was_answered("civvis-run"))
+
+    def test_a_missing_log_is_unknown_not_a_crash(self) -> None:
+        """The game is stopped either way; this must never raise."""
+        self.assertFalse(civ6_play._retire_was_answered("civvis-run"))
+
+    def test_only_the_tail_is_read(self) -> None:
+        """The log reaches tens of megabytes across a session."""
+        self._write("x" * 2_000_000 + '\nCIVVISJSON {"kind":"retired","run":"civvis-run"}\n')
+        self.assertTrue(civ6_play._retire_was_answered("civvis-run"))
+        self._write('CIVVISJSON {"kind":"retired","run":"civvis-run"}\n' + "x" * 2_000_000)
+        self.assertFalse(civ6_play._retire_was_answered("civvis-run"),
+                         "an answer buried a megabyte back is not this run's")
+
+    def test_the_record_separates_asking_from_landing(self) -> None:
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('"retire_requested": state.get("retire_requested"),', source)
+        self.assertIn('"retire_confirmed": state.get("retire_confirmed"),', source)
+
+
+class TheAbandonWaitsForTheRetireToLand(unittest.TestCase):
+    """⚠⚠ THE ROW IS NOT THE RETIRE.
+
+    Writing it and returning ends the watch loop, which tears the game down —
+    so the mod never reaches its next tick, never sees the row, and the game
+    dies exactly as unfinished as before. Measured in run
+    `civvis-20260829T194002Z`: the row was on disk as
+    `154|99000|retire|below_leader_score|990` and no `retired` event ever
+    followed it.
+    """
+
+    def test_the_wait_is_bounded_and_long_enough_to_be_seen(self) -> None:
+        # The mod polls on `GameCoreEventPublishComplete`, which fires many
+        # times per frame while the game is live, so a few seconds is ample.
+        # The bound exists so a game that has ALREADY parked cannot hold the
+        # loop open — a parked core cannot answer a retire at all, and only the
+        # outside watchdog helps there.
+        self.assertGreaterEqual(civ6_play.ABANDON_RETIRE_WAIT_S, 5.0)
+        self.assertLessEqual(civ6_play.ABANDON_RETIRE_WAIT_S, 60.0)
+
+    def test_the_abandon_path_sleeps_only_when_the_row_was_written(self) -> None:
+        """An unwritable channel is not a reason to pause a game that is over."""
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        block = source.split("state[\"retire_requested\"] = bool(asked)", 1)[1]
+        block = block.split("return True", 1)[0]
+        self.assertIn("if asked:", block)
+        self.assertIn("time.sleep(ABANDON_RETIRE_WAIT_S)", block)
+
+    def test_the_run_record_says_whether_a_retire_was_asked(self) -> None:
+        """A game filed as a loss must be distinguishable from one that stopped."""
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('"retire_requested": state.get("retire_requested"),', source)
+
+
 class AnAbandonedGameIsRetiredSoItCounts(unittest.TestCase):
     """⚠⚠ Stopping alone leaves the attempt UNFINISHED, not lost.
 
@@ -2872,3 +2990,111 @@ class EveryPerPollHostProbeIsBounded(unittest.TestCase):
         self.assertEqual(unbounded, [], "civ6_play.py line(s) "
                          f"{unbounded} shell out with no timeout; every call "
                          "here can land in the per-poll driving path")
+
+
+class AStoppedRunStillLeavesARecord(unittest.TestCase):
+    """⚠⚠⚠ A KILLED RUN LEFT NO RECORD AT ALL, AND THAT IS MOST OF THEM.
+
+    `summary.json` is written near the end of `main`, so a run stopped by a
+    signal left an events file and nothing else. Measured 2026-08-30 over the
+    08-29/30 runs: **53 of 64 runs had no summary** — 17% coverage — and the
+    missing 83% are precisely the parked cores the wedge watchdog kills, the
+    dominant way a run dies. Every "how our games end" tally, the abandon rate
+    and the win rate were computed over the survivors only.
+    """
+
+    def _config(self) -> dict:
+        return {"Difficulty": "DIFFICULTY_KING", "MapSize": "MAPSIZE_SMALL",
+                "GameSpeed": "GAMESPEED_ONLINE", "MaxTurns": 250,
+                "MapSeed": None}
+
+    def test_it_records_what_the_run_had_reached(self):
+        state = {"turn": 118, "score": 240, "cities_at_60": 3,
+                 "outcome": None, "abandoned": None}
+        row = civ6_play.partial_summary("civvis-x", self._config(), state)
+        self.assertEqual(row["last_turn"], 118)
+        self.assertEqual(row["last_score"], 240)
+        self.assertEqual(row["cities_at_60"], 3)
+        self.assertEqual(row["difficulty"], "DIFFICULTY_KING")
+        self.assertEqual(row["tag"], "civvis-x")
+
+    def test_it_is_marked_partial_and_killed(self):
+        """A stopped run must never be mistaken for a played one."""
+        row = civ6_play.partial_summary("civvis-x", self._config(),
+                                        {"turn": 1, "score": -1})
+        self.assertIs(row["partial"], True)
+        self.assertEqual(row["reason"], "killed")
+
+    def test_a_run_that_never_played_is_still_honest(self):
+        """A run that never reached a turn records nothing rather than a zero:
+        a missing key stays None so the ledger cannot read it as a played
+        game at turn 0."""
+        row = civ6_play.partial_summary("civvis-x", self._config(), {})
+        self.assertIsNone(row["last_turn"])
+        self.assertIsNone(row["cities_at_60"])
+
+    def test_the_fallback_is_registered_and_never_overwrites(self):
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        self.assertIn("atexit.register(_partial_summary_if_stopped)", source)
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        # It must bail out when a real summary is already on disk.
+        self.assertIn("if path.exists():", block)
+        self.assertLess(block.index("if path.exists():"),
+                        block.index("partial_summary("))
+
+
+class TheBottomStripRunsWhenTheHeadingHidesTheButton(unittest.TestCase):
+    """⚠⚠⚠ THE STRIP RAN ONLY WHEN THE EARLIER PASSES FOUND *NOTHING*.
+
+    `LOAD_GAME_ACTION_STRIP` exists because the full-screen pass and the general
+    menu crop both miss the small Load Game BUTTON on the bottom edge. But the
+    same screen carries a large LOAD GAME HEADING that every pass reads easily,
+    so `points` came back non-empty, the strip pass was skipped, and the caller
+    rejected the screen with "only the Load Game heading is visible". The repair
+    could not run on the only screen that needed it.
+
+    Live 2026-08-30: the first autosave reload the watchdog handoff ever produced
+    (`civvis-20260830T112732Z-cont1`) died exactly there, with
+    `load-selected-attempt2.png` showing `civvis-resume` selected, the preview
+    reading TURN 75 Renaissance Era, and the button plainly rendered.
+    """
+
+    BOUNDS = (756, 33, 756, 480)
+    HEADING = {"text": "Load Game", "x": 0.70, "y": 0.16,
+               "width": 0.06, "height": 0.02}
+    BUTTON = {"text": "Load Game", "x": 0.70, "y": 0.49,
+              "width": 0.04, "height": 0.02}
+
+    def test_the_strip_still_runs_when_only_the_heading_was_read(self) -> None:
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "recognize_once", return_value=[self.HEADING]), \
+             patch.object(civ6_play, "_menu_crop_ocr",
+                          return_value=[self.BUTTON]) as crop:
+            points = civ6_play._observed_label_points(
+                Path("load-selected.png"), "Load Game", self.BOUNDS,
+                strip=civ6_play.LOAD_GAME_ACTION_STRIP,
+            )
+
+        # Both are kept, and the caller's `max(..., key=y)` now reaches the
+        # button instead of refusing the screen.
+        self.assertEqual(len(points), 2)
+        self.assertEqual(max(points, key=lambda point: point[1]), (1088, 491))
+        crop.assert_called_once_with(
+            Path("load-selected.png"), self.BOUNDS,
+            strip=civ6_play.LOAD_GAME_ACTION_STRIP, tag="strip")
+
+    def test_a_button_already_read_costs_no_extra_pass(self) -> None:
+        """The band it covers is the band the earlier passes are unreliable in;
+        when one of them did read something there, the extra OCR is waste."""
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "recognize_once", return_value=[self.BUTTON]), \
+             patch.object(civ6_play, "_menu_crop_ocr") as crop:
+            points = civ6_play._observed_label_points(
+                Path("load-selected.png"), "Load Game", self.BOUNDS,
+                strip=civ6_play.LOAD_GAME_ACTION_STRIP,
+            )
+
+        self.assertEqual(points, [(1088, 491)])
+        crop.assert_not_called()

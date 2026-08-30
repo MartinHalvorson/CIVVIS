@@ -657,6 +657,55 @@ def decider_revisions(updates_path: Path) -> list[str] | None:
     return revisions or None
 
 
+def decider_binaries(updates_path: Path) -> list[dict] | None:
+    """Ordered identities of the executable images that decided this run.
+
+    ``decider_revisions`` is not enough when a brain is handed an executable
+    from another checkout: the bridge can report its own revision while the
+    binary came from a different branch, and two builds of one revision can
+    still differ.  The runtime rows carry the executable's source revision and
+    SHA-256.  Paths are intentionally omitted because they are machine-local.
+    Older rows remain readable and simply carry whichever identity fields they
+    recorded.
+    """
+    if not updates_path.is_file():
+        return None
+    binaries: list[dict] = []
+    with updates_path.open() as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (event.get("kind") != "runtime_update"
+                    or event.get("status") not in ("start", "handoff")):
+                continue
+            record = {
+                "revision": event.get("to_revision"),
+            }
+            for field in ("source", "binary_revision", "binary_source",
+                          "binary_sha256"):
+                value = event.get(field)
+                if value is not None:
+                    record[field] = value
+            # A handoff is followed by a fresh start. They describe the same
+            # image, so the ledger should show one identity rather than count
+            # the re-exec as a second decider.
+            identity = tuple(record.get(field) for field in (
+                "revision", "binary_revision", "binary_source",
+                "binary_sha256",
+            ))
+            if binaries:
+                previous = tuple(binaries[-1].get(field) for field in (
+                    "revision", "binary_revision", "binary_source",
+                    "binary_sha256",
+                ))
+                if identity == previous:
+                    continue
+            binaries.append(record)
+    return binaries or None
+
+
 def decider_genome(why_log: Path) -> dict | None:
     """The genome the decider actually played, from its own first record.
 
@@ -811,6 +860,16 @@ def trailing_unmeasured(attempts: list) -> int:
     """
     dark = 0
     for attempt in reversed(attempts):
+        # ⚠⚠ A KILLED RUN IS EVIDENCE OF NEITHER. `civ6_play.partial_summary`
+        # records a run stopped by a signal — the wedge watchdog's INT or the
+        # supervisor's TERM — and such a run never reaches the point where the
+        # rate is written. Counting it would let a spell of parked cores raise
+        # "the instrument has gone dark" while the instrument is fine, which is
+        # the dominant way a run ends; breaking on it would let one hide a real
+        # outage. It is skipped, so this still reads the newest runs that
+        # actually finished.
+        if attempt.get("partial"):
+            continue
         if attempt.get("applied_pct") is not None:
             break
         dark += 1
@@ -895,6 +954,13 @@ def entry_from(summary: dict) -> dict:
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
+        # ⚠ `civ6_play.partial_summary` marks a run STOPPED by a signal — the
+        # wedge watchdog's INT or the supervisor's TERM. The flag exists so a
+        # consumer can tell such a row from one whose game finished, and it has
+        # to survive onto the ledger row to do that: `reason` alone is a free
+        # string, and the ladder's own rule is that an attempt which did not
+        # finish is neither a loss nor a measurement.
+        "partial": summary.get("partial"),
         # The harness's own early-stop verdict (the one remaining rule:
         # under 60 % of the leader's score after turn 150,
         # `civ6_play.below_leader_score_reading`; older rows carry the retired
@@ -915,6 +981,7 @@ def entry_from(summary: dict) -> dict:
         # The return codes' rate beside the verified one; see `orders_ledger`.
         "reported_pct": reported_pct(summary),
         "revisions": summary.get("decider_revisions"),
+        "decider_binaries": summary.get("decider_binaries"),
         # Which genome the decider actually played (see `decider_genome`) and
         # the name the launcher asked for. `genome.strategy == "stock"` beside a
         # `strategy_requested` that names a league entrant is the resolver's

@@ -348,8 +348,10 @@ class ProtectedInstallTest(unittest.TestCase):
             '<LuaContext>WonderBuiltPopup</LuaContext>',
             modinfo,
         )
-        wonder = closer.split('if NAME == "WonderBuiltPopup"', 1)[1].split(
-            "return false;", 1
+        # Anchor at the ladder rather than the clock declaration above it; the
+        # stale-diplomacy guard also has an intentional `return false`.
+        wonder = closer.split("local function endScreen(attempt)", 1)[1].split(
+            'if NAME == "InGamePopup"', 1
         )[0]
         # WonderBuiltPopup.lua's own OnClose drains queued wonders and unlocks
         # the exclusive popup manager; Close is the defensive fallback if a
@@ -428,6 +430,28 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("tonumber(cfg.DialogueSeconds) or 0.25", closer)
         self.assertIn("DESKTOP_AFTER = 4", closer)
         self.assertIn('report("autoclose_desktop"', closer)
+
+    def test_stale_diplomacy_contexts_use_a_sessionless_native_visibility_fallback(self) -> None:
+        """A visible, uninitialized Firaxis context must not trap a run."""
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        fallback = closer.split("local function closeStaleDiplomacyContext()", 1)[1].split(
+            "-- InGamePopup is the one context", 1
+        )[0]
+
+        for context in ("DiplomacyActionView", "DiplomacyDealView"):
+            self.assertIn(f'NAME ~= "{context}"', fallback)
+        self.assertIn("ms_ActiveSessionID ~= nil", fallback)
+        self.assertIn("DiplomacyManager.FindOpenSessionID", fallback)
+        self.assertIn("ContextPtr:IsHidden()", fallback)
+        self.assertIn("ContextPtr:SetHide(true)", fallback)
+        self.assertIn('report("autoclose_stale_hide"', fallback)
+
+        # The helper must run before the deal refusal ladder; otherwise a
+        # successful-but-no-op OnRefuseDeal pcall can return first forever.
+        self.assertLess(
+            closer.index("if closeStaleDiplomacyContext() then return true; end"),
+            closer.index("if type(OnRefuseDeal) == \"function\""),
+        )
 
     def test_spy_popups_clear_through_their_shipped_paths(self) -> None:
         """Spy overlays must disappear without leaving an end-turn decision behind."""
@@ -691,6 +715,95 @@ class ProtectedInstallTest(unittest.TestCase):
         # Latched on an existing table rather than a new file-scope local: this
         # main chunk sits at Civ 6's 200-register ceiling.
         self.assertNotIn("local retireAsked", shim)
+
+    def test_the_ui_context_says_it_is_alive_once_a_minute(self) -> None:
+        # ⚠⚠ The dominant way a run dies now is a PARKED GAME CORE: the agent
+        # reports one blocker, `GameCoreEventPublishComplete` stops firing, and
+        # the agent — driven only by that event — never ticks again. In the
+        # sample from run civvis-20260829T163259Z, 34 of 35 threads sat in an
+        # idle wait and the one exception was a single Metal frame: the game was
+        # computing nothing and waiting for input only the controller can give.
+        # It ended a game holding 15 cities at 76% of the leader on turn 179.
+        #
+        # Whether that is recoverable turns on whether the UI thread is still
+        # running, and nothing in the log could answer it — this context only
+        # ever spoke when a screen was up, so its silence meant nothing either
+        # way. `ContextPtr:SetUpdate` runs every frame even while the screen is
+        # hidden (which is why `isUp()` is the first thing the tick checks), so
+        # a heartbeat here reports for the whole UI context.
+        #
+        # ⚠ The agent cannot do this itself: a per-frame `SetUpdate` was tried
+        # there and does not run in a script-only in-game context.
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("ui_heartbeat", shim)
+        # ⚠ COUNTED IN FRAMES, NOT SECONDS. The first version accumulated
+        # `fDTime` to sixty seconds and emitted nothing across a whole game —
+        # which read like an answer and was not. Each popup context is only up
+        # for a second or two at a time, so a per-context clock can never reach
+        # sixty however alive the thread is. Run civvis-20260829T183612Z proved
+        # only that: 24 `autoclose_armed`, 81 `autoclose`, 2 desktop
+        # escalations, and zero heartbeats.
+        self.assertIn("local HEARTBEAT_FRAMES = 600;", shim)
+        # ⚠⚠ THE EXPERIMENT IS OVER AND THE ANSWER WAS NO. Run
+        # civvis-20260829T194002Z emitted TWO heartbeats across 121 turns, both
+        # `"up":true`, both from the one screen actually showing. 600 frames took
+        # 5.0s, so the game renders ~120fps; had `SetUpdate` run on hidden
+        # contexts, each of the two dozen armed screens would have emitted one
+        # every five seconds. So a hidden context does not tick, there is no
+        # always-on UI tick, and an in-mod nudge for a parked Game Core has
+        # nothing to hang on. Keep the finding beside the code so it is not
+        # rebuilt on the same wrong premise.
+        self.assertIn("A HIDDEN CONTEXT DOES NOT TICK", shim)
+        self.assertIn("civvis-20260829T194002Z", shim)
+        self.assertNotIn("HEARTBEAT_SECONDS", shim)
+        # Seconds ride along so the two remaining possibilities separate:
+        # frames climbing with seconds near zero means the tick runs while
+        # hidden but `fDTime` is not meaningful there; no frames at all means
+        # `SetUpdate` does not run on a hidden context.
+        self.assertIn('"frames":%d,"seconds":%.1f,"up":%s', shim)
+        # It must sit BEFORE the not-up early return, or it would only ever
+        # report while a popup happened to be showing — exactly the blind spot.
+        tick = shim.split("local function tick(fDTime)", 1)[1]
+        beat = tick.index("ui_heartbeat")
+        notup = tick.index("if not isUp() then")
+        self.assertLess(beat, notup,
+                        "the heartbeat must run whether or not the screen is up")
+        # Incremented per call, so it climbs whenever the tick is reached at all.
+        self.assertIn("heartbeatFrames = heartbeatFrames + 1;", shim)
+
+    def test_the_retire_poll_reports_periodically_with_a_real_turn(self) -> None:
+        # ⚠⚠ Three abandons in a row wrote the retire row and got no answer,
+        # and nothing in the log could separate "the poll never ran" from "it
+        # ran and saw nothing". Every explanation was unfalsifiable.
+        #
+        # Measured 2026-08-30, run civvis-20260830T055337Z: abandoned at t150
+        # with `retire_requested: true`, the row present as
+        # `150|99000|retire|below_leader_score|990` under a run tag
+        # byte-identical to the decider's own rows, and no `retired` event —
+        # while the mod was demonstrably alive, emitting `orders` and `turn`
+        # for t150.
+        shim = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('emit("retire_poll"', shim)
+        # ⚠⚠ ONCE PER GAME ANSWERED THE WRONG QUESTION. The first version
+        # latched and reported `retire_poll at turn 1` and nothing more, which
+        # proves only that the poll runs at game START. What matters is whether
+        # it is still running when the harness writes the row, at turn 150 or
+        # later — and a parked Game Core stops publishing, which is exactly what
+        # would stop this poll. Periodic reporting separates "the poll stopped
+        # when the game parked" from "the poll ran and did not see the row".
+        self.assertIn("CivvisBoard.retirePollAt", shim)
+        self.assertNotIn("retirePollSeen", shim)
+        self.assertIn("pollTurn % 25 == 0", shim)
+        # ⚠ `turn` is not in scope this early in the tick, so the value comes
+        # from the host. It is computed BEFORE the emit now, because the period
+        # test needs it too — so look in the poll arm rather than after the call.
+        arm = shim.split("CivvisBoard.retirePollAt", 1)[0][-600:]
+        self.assertIn("Game.GetCurrentGameTurn", arm)
+        # Scoped to this arm: `{ turn = turn }` is a valid idiom elsewhere in
+        # the mod, where `turn` really is in scope.
+        emit_call = shim.split('emit("retire_poll"', 1)[1][:60]
+        self.assertIn("pollTurn", emit_call)
+        self.assertNotIn("turn = turn", emit_call)
 
     def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
         # Seven diplomatic losses in a day and no record of what each session
@@ -1102,6 +1215,25 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("CanStartCommand(unit, hash, false, true)", helper)
         self.assertIn("RequestCommand(unit, hash);", helper)
         self.assertNotIn("params", helper)
+
+    def test_parameterless_unit_operations_match_firaxis_unit_panel_signature(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        helper = source.split("local function canOperate", 1)[1].split(
+            "-- Same discipline as `operate`", 1
+        )[0]
+        operate = source.split("local function operate", 1)[1].split(
+            "-- Same discipline as `operate`", 1
+        )[0]
+
+        self.assertIn(
+            "CanStartOperation(unit, hash, nil, false, false)", helper
+        )
+        self.assertIn("next(params) == nil", helper)
+        self.assertIn("RequestOperation(unit, hash);", operate)
+        self.assertIn("next(params) == nil", operate)
+        self.assertIn(
+            "UnitManager.RequestOperation(unit, hash, params);", operate
+        )
 
     def test_builder_repair_uses_firaxis_repair_operation(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
@@ -1797,3 +1929,92 @@ class AgentChunkLocalLimitTest(unittest.TestCase):
             f"allows {self.LIMIT} and the mod would fail to compile in-game "
             f"with no log line anywhere. Nest a helper instead of adding one.",
         )
+
+
+class TheProductionRepairSaysWhenItFails(unittest.TestCase):
+    """⚠⚠⚠ THE REPAIR HAD NEVER ONCE FIRED, AND NOTHING SAID SO.
+
+    Answering `ENDTURN_BLOCKING_PRODUCTION` with `civvis_complete` over a city
+    that has nothing queued parks the Game Core, so the handler calls
+    `driveProduction(..., true)` first and appends `+produced:N`. Measured over
+    the twelve runs of 2026-08-30: **87 such blockers answered, zero carrying
+    `+produced:`, and 40 of them answered while a city genuinely had
+    `producing_hash == 0` in that turn's exported state.**
+
+    `set == 0` is the right answer on a complete board and the wrong one on a
+    board with an empty city, and the ledger could not tell them apart — the fix
+    was unfalsifiable from outside the game. `+empty:N` names the failure.
+    """
+
+    def _claim_site(self) -> str:
+        """The arm that answers an owned blocker `civvis_complete`.
+
+        ⚠ NOT sliced on `driveProduction(player, turn, true)`: the residual
+        answers path calls it too, earlier in the file, so slicing on the call
+        finds that one instead. `+produced:` is unique to this site.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        start = source.index('answered = "civvis_complete";')
+        return source[start:source.index('"+empty:"', start) + 400]
+
+    def test_a_drive_that_filled_nothing_counts_what_it_left(self) -> None:
+        site = self._claim_site()
+        self.assertIn("driveProduction(player, turn, true)", site)
+        self.assertIn('"+produced:"', site)
+        self.assertIn('"+empty:"', site)
+        # The count is only taken when the drive filled nothing: a board it
+        # repaired must not also be reported as empty.
+        self.assertLess(site.index('"+produced:"'), site.index('"+empty:"'))
+
+    def test_the_count_reads_the_queue_and_changes_nothing(self) -> None:
+        """Read-only: it must not issue a build of its own, or it becomes a
+        second production path competing with the ladder."""
+        site = self._claim_site()
+        tail = site[site.index('"+produced:"'):]
+        self.assertIn("GetCurrentProductionTypeHash", tail)
+        self.assertNotIn("RequestOperation", tail)
+        self.assertNotIn("buildParams", tail)
+
+
+class TheLeaderIsMeasuredAgainstTheWholeField(unittest.TestCase):
+    """⚠⚠⚠ `rival_best` IS THE BEST RIVAL WE HAVE MET, NOT THE LEADER.
+
+    The operator's abandon rule is "under 60% of the leader's score at turn 150
+    or later" and reads that number, but a seat that has met two of five majors
+    is compared against the best of two. Rivals MET at turn 150 across the twelve
+    abandons of 2026-08-30, out of five:
+
+        3, 2, 5, 2, 3, 4, 4, 4, 3, 2, 1, 2
+
+    Exactly one run had met the whole field; one had met a single rival. The rule
+    is therefore systematically lenient — the true leader is often unmet, our
+    recorded ratio flatters us, and games play on that the rule would have
+    called. The error is in the safe direction, but it is not what the rule says.
+
+    `rival_best_all` is the same maximum over every alive major. REPORTING ONLY:
+    nothing decides on it, so the gap can be measured before a rule is changed.
+    """
+
+    def _source(self) -> str:
+        return (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def test_the_all_majors_maximum_is_reported(self) -> None:
+        source = self._source()
+        self.assertIn("rival_best_all = rivalTopAll", source)
+        self.assertIn("majors = majorCount", source)
+
+    def test_the_met_only_maximum_still_gates_on_hasmet(self) -> None:
+        """The decision number must not change: `rival_best` stays met-only."""
+        fn = self._source().split("local function rivalBest", 1)[1].split("\nend", 1)[0]
+        self.assertIn("HasMet", fn)
+        # `allBest` is accumulated OUTSIDE the HasMet branch, `best` inside it.
+        self.assertLess(fn.index("allBest == nil or score > allBest"),
+                        fn.index("HasMet"))
+        self.assertLess(fn.index("HasMet"),
+                        fn.index("best == nil or score > best"))
+
+    def test_the_abandon_rule_still_reads_the_met_only_number(self) -> None:
+        play = (install.MOD_SOURCE.parent.parent / "civ6_play.py").read_text()
+        rule = play.split("def below_leader_score_reading", 1)[1][:1200]
+        self.assertIn('event.get("rival_best")', rule)
+        self.assertNotIn("rival_best_all", rule)
