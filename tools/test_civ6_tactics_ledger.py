@@ -301,3 +301,34 @@ class TheBoardIsReadAtTheStartOfTheTurn(unittest.TestCase):
         before = states[4]["units"][0]
         self.assertNotEqual((before["x"], before["y"]), (2, 1),
                             "judged against the first frame it is a real move")
+
+
+class TheQueueIsReportedAgainstItsOwnStream(unittest.TestCase):
+    """⚠⚠⚠ TWO STREAMS PRINTED AS A RATIO READ AS AN 82% LOSS THAT DOES NOT EXIST.
+
+    `queued_followups` sums the `queued` field of `orders` events; `applied` and
+    `refused` come from the far rarer `orders_queue` drain events. On run
+    `civvis-20260830T121826Z` that was 410 `orders` events totalling 865 against
+    82 drains totalling 148 applied — printed side by side as "865 follow-ups
+    queued, 148 applied". Within the drain stream the same run is queued 159,
+    applied 148, refused 11: **93% applied**. The follow-up queue was working.
+    """
+
+    EVENTS = [
+        {"kind": "orders", "queued": 5},
+        {"kind": "orders", "queued": 4},
+        {"kind": "orders_queue", "queued": 3, "applied": 3, "refused": 0},
+        {"kind": "orders_queue", "queued": 2, "applied": 1, "refused": 1},
+    ]
+
+    def test_the_drain_carries_its_own_denominator(self):
+        queue = ledger.orders_section(self.EVENTS, [])["queue"]
+        self.assertEqual(queue["drained"], 5, "3 + 2 from the drain events")
+        self.assertEqual(queue["applied"], 4)
+        self.assertEqual(queue["refused"], 1)
+
+    def test_the_decider_side_total_is_kept_but_separate(self):
+        """Still reported — it is real — just never as this one's denominator."""
+        queue = ledger.orders_section(self.EVENTS, [])["queue"]
+        self.assertEqual(queue["queued_followups"], 9, "5 + 4 from the orders events")
+        self.assertNotEqual(queue["queued_followups"], queue["drained"])
