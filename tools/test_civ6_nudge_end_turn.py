@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -17,29 +18,89 @@ OPS = Path(__file__).resolve().parent / "ops" / "civvis-agent-wedge-watchdog.sh"
 
 
 class NudgeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        """⚠⚠ Stub the raise for every test that is not about the raise.
+
+        Without this, `nudge()` runs the REAL `focus_game`, which osascripts a
+        live Civilization VI to the front — a unit test with a side effect on
+        the running game. It also fails on CI, where there is no `osascript`:
+        the raise returns False, `nudge` correctly sends nothing, and the
+        assertion reads `False is not true` with no hint that focus is why.
+        """
+        patcher = mock.patch.object(nudge, "focus_game", return_value=True)
+        self.focus = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_it_sends_the_forced_end_turn_and_nothing_else(self) -> None:
         """SHIFT+RETURN is the one end-turn form the engine does not refuse
         while a blocker stands. ⚠ Escape is not an alternative: with nothing to
         close it opens the pause menu, which stops the game advancing."""
         with mock.patch.object(macos_input, "press_key") as press:
             press.return_value = mock.Mock(returncode=0)
-            self.assertTrue(nudge.nudge(presses=2, interval_s=0))
+            self.assertTrue(nudge.nudge(presses=2, interval_s=0, focus_settle_s=0))
         self.assertEqual(press.call_count, 2)
         for call in press.call_args_list:
             self.assertEqual(call.args[0], "return")
             self.assertEqual(call.kwargs["modifier"], "shift")
+
+    def test_the_game_is_raised_before_any_key_is_sent(self) -> None:
+        """⚠⚠⚠ Without this the key goes to whatever is FRONTMOST.
+
+        `cliclick` exits zero whoever receives the keystroke, so the harness
+        reports "sent" either way. The first live firing (2026-08-30T04:39)
+        logged `sent SHIFT+RETURN to a parked game` then `the forced end turn
+        changed nothing` — which is exactly what an unfocused keystroke also
+        looks like, so that result proved nothing until the raise existed.
+        """
+        calls = []
+        with mock.patch.object(macos_input, "press_key") as press:
+            press.side_effect = lambda *a, **k: calls.append("key") or mock.Mock(returncode=0)
+            nudge.nudge(presses=1, interval_s=0, focus_settle_s=0)
+        self.focus.assert_called_once()
+        self.assertEqual(calls, ["key"])
+
+    def test_a_game_that_cannot_be_raised_gets_no_keystroke_at_all(self) -> None:
+        """Better to send nothing than to send a forced end turn somewhere else."""
+        self.focus.return_value = False
+        with mock.patch.object(macos_input, "press_key") as press:
+            self.assertFalse(nudge.nudge(presses=2, interval_s=0, focus_settle_s=0))
+        press.assert_not_called()
+
+    def test_the_raise_does_not_move_or_resize_the_window(self) -> None:
+        """`civ6_play` records that re-placing on every focus pass resized the
+        window between a menu read and its click and cost a whole run."""
+        source = Path(nudge.__file__).read_text(encoding="utf-8")
+        body = source.split("def focus_game(", 1)[1].split("def nudge(", 1)[0]
+        self.assertIn("set frontmost", body)
+        for forbidden in ("set position", "set size", "AXPosition", "AXSize"):
+            self.assertNotIn(forbidden, body)
+
+    def test_no_test_here_touches_the_live_game(self) -> None:
+        """⚠ These tests ran the REAL raise before `setUp` stubbed it, which
+        osascripted a live Civilization VI to the front — a unit test with a
+        side effect on the running ladder — and failed on CI, where there is no
+        `osascript`, as a bare `False is not true`."""
+        source = Path(__file__).read_text(encoding="utf-8")
+        # Every nudge call passes a zero settle, so no test sleeps on the raise.
+        for call in re.findall(r"nudge\.nudge\([^)]*\)", source):
+            self.assertIn("focus_settle_s=0", call, call)
+
+    def test_the_process_name_is_not_a_second_copy(self) -> None:
+        """`civ6_play` takes it from `popup_clear` too; a duplicate would drift."""
+        from civ6_control import popup_clear
+        self.assertEqual(nudge.GAME_PROCESS, popup_clear.GAME_PROCESS)
 
     def test_a_backend_that_cannot_send_is_reported_not_raised(self) -> None:
         """The watchdog is about to kill the game; a failure here must not
         become an exception that skips the restart."""
         with mock.patch.object(macos_input, "press_key",
                                side_effect=OSError("no input backend")):
-            self.assertFalse(nudge.nudge(presses=2, interval_s=0))
+            self.assertFalse(nudge.nudge(presses=2, interval_s=0, focus_settle_s=0))
 
     def test_a_refused_press_is_not_reported_as_sent(self) -> None:
         with mock.patch.object(macos_input, "press_key") as press:
             press.return_value = mock.Mock(returncode=1)
-            self.assertFalse(nudge.nudge(presses=1, interval_s=0))
+            self.assertFalse(nudge.nudge(presses=1, interval_s=0, focus_settle_s=0))
 
 
 class OnlyTheWatchdogMayCallIt(unittest.TestCase):
