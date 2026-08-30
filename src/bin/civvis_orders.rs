@@ -5050,6 +5050,27 @@ fn unit_appeared_at_city(
     })
 }
 
+/// A newly visible unit can prove either a completed production order or a
+/// purchase made in the same turn. When both orders ask the same city for the
+/// same unit, the next frame cannot attribute the appearance to production.
+/// Keep that ambiguity from turning a refused queue replacement into a false
+/// `order_verified` row.
+fn production_unit_appearance_conflicts_with_purchase(
+    order: &IssuedOrder,
+    same_turn_orders: &[IssuedOrder],
+) -> bool {
+    order.kind == "produce"
+        && order
+            .verb
+            .as_deref()
+            .is_some_and(|verb| verb.starts_with("UNIT_"))
+        && same_turn_orders.iter().any(|other| {
+            matches!(other.kind.as_str(), "purchase" | "purchase_faith")
+                && other.subject == order.subject
+                && other.verb == order.verb
+        })
+}
+
 fn verify_unit_order(
     order: &IssuedOrder,
     turn: u32,
@@ -5267,13 +5288,14 @@ fn verify_unit_order(
 }
 
 /// The next frame's verdict on one order issued on `turn`.
-fn verify_order(
+fn verify_order_with_context(
     order: &IssuedOrder,
     turn: u32,
     before: &civvis::mirror::StateSnapshot,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    same_turn_orders: &[IssuedOrder],
 ) -> Verdict {
     if unverifiable_kind(&order.kind) {
         return Verdict::Unverifiable;
@@ -5286,11 +5308,16 @@ fn verify_order(
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
                 return failed("city_gone".to_string());
             };
+            let unit_appeared = unit_appeared_at_city(before, after, city, verb);
+            let purchase_conflict =
+                production_unit_appearance_conflicts_with_purchase(order, same_turn_orders);
             if city.producing.as_deref() == Some(verb)
                 || city_holds(city, verb)
-                || unit_appeared_at_city(before, after, city, verb)
+                || (unit_appeared && !purchase_conflict)
             {
                 Verdict::Verified
+            } else if unit_appeared && purchase_conflict {
+                failed("unit_appearance_ambiguous_purchase".to_string())
             } else {
                 failed(format!(
                     "producing={}",
@@ -5489,18 +5516,42 @@ fn verify_order(
     }
 }
 
+/// Verify one order without sibling-order context. The single-order helper
+/// remains useful for focused postcondition tests; live settlement supplies
+/// the full turn context through `verify_orders` below.
+#[cfg(test)]
+fn verify_order(
+    order: &IssuedOrder,
+    turn: u32,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+) -> Verdict {
+    verify_order_with_context(order, turn, before, after, tiles, evidence, &[])
+}
+
 /// Every order in `pending` against the frame that followed it.
 fn verify_orders(
     pending: &PendingOrders,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    same_turn_orders: &[IssuedOrder],
 ) -> Vec<OrderCheck> {
     pending
         .orders
         .iter()
         .map(|order| OrderCheck {
-            verdict: verify_order(order, pending.turn, &pending.before, after, tiles, evidence),
+            verdict: verify_order_with_context(
+                order,
+                pending.turn,
+                &pending.before,
+                after,
+                tiles,
+                evidence,
+                same_turn_orders,
+            ),
             order: order.clone(),
         })
         .collect()
@@ -5590,12 +5641,23 @@ fn settle_pending_orders(
     let turns: Vec<u32> = answered.iter().flat_map(|p| [p.turn, p.turn + 1]).collect();
     let evidence = ledger_evidence(events, &turns);
     let mut rows = Vec::new();
+    let mut same_turn_orders: std::collections::BTreeMap<u32, Vec<IssuedOrder>> =
+        Default::default();
+    for frame in &answered {
+        same_turn_orders
+            .entry(frame.turn)
+            .or_default()
+            .extend(frame.orders.iter().cloned());
+    }
     let mut by_turn: std::collections::BTreeMap<u32, Vec<OrderCheck>> = Default::default();
     for frame in &answered {
+        let context = same_turn_orders
+            .get(&frame.turn)
+            .map_or(&[][..], Vec::as_slice);
         by_turn
             .entry(frame.turn)
             .or_default()
-            .extend(verify_orders(frame, after, tiles, &evidence));
+            .extend(verify_orders(frame, after, tiles, &evidence, context));
     }
     for (turn, checks) in by_turn {
         rows.extend(verdict_rows(turn, &checks));
@@ -5710,7 +5772,7 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             orders,
             before: before.clone(),
         };
-        for check in verify_orders(&pending, after, &tiles, &window) {
+        for check in verify_orders(&pending, after, &tiles, &window, &pending.orders) {
             let label = match check.order.kind.as_str() {
                 "unit" => check
                     .order
@@ -13046,6 +13108,42 @@ mod order_postcondition_tests {
         done.buildings = vec!["BUILDING_MONUMENT".to_string()];
         finished.cities = vec![done];
         assert_eq!(check(&produce, &before, &finished, &[]), Verdict::Verified);
+    }
+
+    #[test]
+    fn a_purchased_unit_cannot_verify_a_same_turn_production_order() {
+        let mut before = frame(30);
+        before.cities = vec![city(65_536, 20, 20, Some("UNIT_SETTLER"))];
+
+        let mut after = frame(31);
+        after.cities = before.cities.clone();
+        after.units = vec![unit(8, "UNIT_WARRIOR", 20, 20)];
+
+        let produce = order("produce", Some(65_536), Some("UNIT_WARRIOR"), None);
+        let purchase = order(
+            "purchase",
+            Some(65_536),
+            Some("UNIT_WARRIOR"),
+            Some((0, -1)),
+        );
+        let pending = PendingOrders {
+            turn: 30,
+            orders: vec![produce.clone(), purchase.clone()],
+            before: before.clone(),
+        };
+
+        // Without a sibling purchase, the new unit remains valid completion
+        // evidence for the production postcondition.
+        assert_eq!(check(&produce, &before, &after, &[]), Verdict::Verified);
+
+        let checks = verify_orders(&pending, &after, &no_tiles(), &[], &pending.orders);
+        assert_eq!(checks[0].order, produce);
+        assert_eq!(
+            checks[0].verdict,
+            failed("unit_appearance_ambiguous_purchase")
+        );
+        assert_eq!(checks[1].order, purchase);
+        assert_eq!(checks[1].verdict, Verdict::Verified);
     }
 
     #[test]
