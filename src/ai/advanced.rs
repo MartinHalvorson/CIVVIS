@@ -20802,6 +20802,39 @@ impl AdvancedAi {
         }
     }
 
+    /// The normal siege picker waits for damage before returning a queue item.
+    /// That is correct for a passing patrol, but a plan that has already named
+    /// this city while a major war is active has stronger evidence: the contact
+    /// is a locally competitive hostile force, not merely a scout. Reuse the
+    /// same wall-first/local-land-defender order as the damage path so the
+    /// threatened city can reclaim a Settler before the first hit lands.
+    fn preemptive_major_war_defense_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        threatened_city: Option<u32>,
+        active_major_war: bool,
+    ) -> Option<Item> {
+        if !active_major_war || threatened_city != Some(city) {
+            return None;
+        }
+        for building in ["walls", "medieval_walls", "renaissance_walls"] {
+            let wall = Item::Building {
+                building: Name::new(building),
+            };
+            if g.can_produce(pid, city, &wall) {
+                return Some(wall);
+            }
+        }
+        self.base
+            .best_military(g, pid, city, Some(false))
+            .or_else(|| self.base.best_military(g, pid, city, None))
+            .map(|unit| Item::Unit {
+                unit: Name::new(&unit),
+            })
+    }
+
     /// Let a confirmed city-siege treatment interrupt one unsafe queue.
     /// `BasicAi::besieged_city_item` normally reaches only an empty queue
     /// through `pick_item`, while Recovery's strategic governor skips a
@@ -20863,6 +20896,15 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city)
                 .or_else(|| self.native_emergency_item(g, pid, city))
+                .or_else(|| {
+                    self.preemptive_major_war_defense_item(
+                        g,
+                        pid,
+                        city,
+                        threatened_city,
+                        active_major_war,
+                    )
+                })
             else {
                 continue;
             };

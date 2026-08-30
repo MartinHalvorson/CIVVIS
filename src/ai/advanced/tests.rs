@@ -669,6 +669,56 @@ fn live_siege_response_replaces_a_queued_siege_with_a_local_defender() {
 }
 
 #[test]
+fn major_war_threat_preempts_an_undamaged_settler_queue() {
+    // In the live Science run, Antium was the named threatened city as Brazil
+    // opened a major war, but its full-health queue was still a Settler. The
+    // damage-gated siege picker returned no item until two turns later, after
+    // which Antium fell. A named wartime threat must use the legal wall answer
+    // before the first hit instead of waiting for damage evidence.
+    let (mut game, city, _) = empire_with_a_capital(71_145);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&city).expect("capital exists").pop = 2;
+    assert!(
+        game.is_at_war(0, 1),
+        "fixture must contain an active major war"
+    );
+    assert_eq!(game.cities[&city].hp, 200);
+    assert_eq!(game.cities[&city].wall_hp, 0);
+
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    assert!(game.can_produce(0, city, &settler));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: settler.clone(),
+        },
+    )
+    .expect("queue the unsafe expansion commitment");
+
+    let mut untouched = game.clone();
+    AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0, Some(city));
+    assert_eq!(
+        untouched.cities[&city].queue.first(),
+        Some(&settler),
+        "the frozen controller must retain its historical queue"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_garrison_under_fire();
+    live.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("walls")
+        }),
+        "a named city under major war must start its legal wall defense before damage"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy
