@@ -357,13 +357,39 @@ class HoldingGroundIsNotHovering(unittest.TestCase):
              "hostiles": [hostile]},
         ]
 
-    def test_the_split_separates_defence_from_idleness(self):
+    def _events_hp(self, hp):
+        near = {"id": 1, "x": 5, "y": 5, "kind": "warrior", "class": "military",
+                "combat": 20, "fortified": False, "hp": hp}
+        hostile = {"id": 99, "x": 8, "y": 5, "kind": "warrior", "class": "military",
+                   "combat": 20, "owner": 1}
+        return [
+            {"kind": "state", "turn": 1, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+            {"kind": "state", "turn": 2, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+        ]
+
+    def test_the_split_accounts_for_every_hovering_unit_turn(self):
         for fortified in (True, False):
             section = ledger.hover_section(self._events(fortified), [])
             total = section["hovering_unit_turns"]
             self.assertEqual(
-                section["hovering_fortified"] + section["hovering_idle"], total,
-                "the two halves must account for every hovering unit-turn")
+                section["hovering_fortified"] + section["hovering_healing"]
+                + section["hovering_unexplained"], total,
+                "the three parts must account for every hovering unit-turn")
             if total:
                 self.assertEqual(section["hovering_fortified"], 1 if fortified else 0)
-                self.assertEqual(section["hovering_idle"], 0 if fortified else 1)
+
+    def test_a_wounded_unit_resting_is_healing_not_loitering(self):
+        """⚠⚠ Civ 6 heals a unit that neither moves nor attacks, so "did nothing
+        beside an enemy" also describes a wounded unit doing the right thing. On
+        run civvis-20260830T121826Z these are 37 of 105 hovering unit-turns —
+        more than the fortified ones — and #2816 reported all 88 non-fortified as
+        "idle", overstating the defect by better than 2x."""
+        hurt = ledger.hover_section(self._events_hp(58), [])
+        whole = ledger.hover_section(self._events_hp(100), [])
+        if hurt["hovering_unit_turns"]:
+            self.assertEqual(hurt["hovering_healing"], 1)
+            self.assertEqual(hurt["hovering_unexplained"], 0)
+            self.assertEqual(whole["hovering_healing"], 0)
+            self.assertEqual(whole["hovering_unexplained"], 1)

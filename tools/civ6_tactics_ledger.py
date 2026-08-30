@@ -435,6 +435,7 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
     near_turns = 0
     hover = 0
     fortified_hover = 0
+    healing_hover = 0
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
@@ -462,12 +463,27 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
                 # That 88 is the number worth acting on.
                 if unit.get("fortified"):
                     fortified_hover += 1
+                elif (unit.get("hp") or 100) < 100:
+                    # ⚠⚠ A DAMAGED UNIT RESTING IS HEALING, NOT LOITERING. Civ 6
+                    # heals a unit that neither moves nor attacks, so "did
+                    # nothing beside an enemy" is also the description of a
+                    # wounded unit doing the right thing. On run
+                    # civvis-20260830T121826Z these are 37 of 105 hovering
+                    # unit-turns — more than the fortified ones — and #2816's
+                    # split reported all 88 non-fortified as "idle", which
+                    # overstated the defect by better than 2x.
+                    healing_hover += 1
     return {
         "military_unit_turns": military_turns,
         "unit_turns_2_to_4_from_a_hostile": near_turns,
         "hovering_unit_turns": hover,
         "hovering_fortified": fortified_hover,
-        "hovering_idle": hover - fortified_hover,
+        "hovering_healing": healing_hover,
+        # ⚠ NOT "idle" in any stronger sense than "we cannot name a reason".
+        # `moves` is NOT usable to narrow this further: at the first frame of a
+        # turn it reads 0 for 1156 of ~1350 military units, so it is the
+        # export's default rather than evidence about that unit.
+        "hovering_unexplained": hover - fortified_hover - healing_hover,
         "hover_share_of_near": round(hover / near_turns, 3) if near_turns else None,
     }
 
@@ -637,7 +653,8 @@ def render(report: dict[str, Any]) -> str:
     lines.append(
         f"  hover    {hover['hovering_unit_turns']} of {hover['unit_turns_2_to_4_from_a_hostile']} "
         f"near-hostile unit-turns neither moved nor struck ({_fmt_share(hover['hover_share_of_near'])}"
-        f" — {hover['hovering_fortified']} fortified, {hover['hovering_idle']} idle); "
+        f" — {hover['hovering_fortified']} fortified, {hover['hovering_healing']} healing, "
+        f"{hover['hovering_unexplained']} unexplained); "
         f"{hover['military_unit_turns']} military unit-turns"
     )
     hof = report.get("hall_of_fame")
