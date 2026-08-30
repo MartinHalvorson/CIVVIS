@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -116,6 +117,18 @@ class OpeningCensusTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             with self.assertRaises(census.CensusError):
                 census.census(Path(scratch))
+
+    def test_busy_orders_database_is_a_named_skip(self):
+        """A live WAL race cannot abort a corpus census."""
+        with tempfile.TemporaryDirectory() as scratch:
+            run = _write_run(Path(scratch))
+            with patch.object(
+                census.sqlite3,
+                "connect",
+                side_effect=sqlite3.OperationalError("unable to open database file"),
+            ):
+                rows = census.rows_for([run])
+        self.assertEqual(rows, [])
 
 
 if __name__ == "__main__":
