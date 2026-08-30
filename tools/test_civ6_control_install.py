@@ -1929,3 +1929,48 @@ class AgentChunkLocalLimitTest(unittest.TestCase):
             f"allows {self.LIMIT} and the mod would fail to compile in-game "
             f"with no log line anywhere. Nest a helper instead of adding one.",
         )
+
+
+class TheProductionRepairSaysWhenItFails(unittest.TestCase):
+    """⚠⚠⚠ THE REPAIR HAD NEVER ONCE FIRED, AND NOTHING SAID SO.
+
+    Answering `ENDTURN_BLOCKING_PRODUCTION` with `civvis_complete` over a city
+    that has nothing queued parks the Game Core, so the handler calls
+    `driveProduction(..., true)` first and appends `+produced:N`. Measured over
+    the twelve runs of 2026-08-30: **87 such blockers answered, zero carrying
+    `+produced:`, and 40 of them answered while a city genuinely had
+    `producing_hash == 0` in that turn's exported state.**
+
+    `set == 0` is the right answer on a complete board and the wrong one on a
+    board with an empty city, and the ledger could not tell them apart — the fix
+    was unfalsifiable from outside the game. `+empty:N` names the failure.
+    """
+
+    def _claim_site(self) -> str:
+        """The arm that answers an owned blocker `civvis_complete`.
+
+        ⚠ NOT sliced on `driveProduction(player, turn, true)`: the residual
+        answers path calls it too, earlier in the file, so slicing on the call
+        finds that one instead. `+produced:` is unique to this site.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        start = source.index('answered = "civvis_complete";')
+        return source[start:source.index('"+empty:"', start) + 400]
+
+    def test_a_drive_that_filled_nothing_counts_what_it_left(self) -> None:
+        site = self._claim_site()
+        self.assertIn("driveProduction(player, turn, true)", site)
+        self.assertIn('"+produced:"', site)
+        self.assertIn('"+empty:"', site)
+        # The count is only taken when the drive filled nothing: a board it
+        # repaired must not also be reported as empty.
+        self.assertLess(site.index('"+produced:"'), site.index('"+empty:"'))
+
+    def test_the_count_reads_the_queue_and_changes_nothing(self) -> None:
+        """Read-only: it must not issue a build of its own, or it becomes a
+        second production path competing with the ladder."""
+        site = self._claim_site()
+        tail = site[site.index('"+produced:"'):]
+        self.assertIn("GetCurrentProductionTypeHash", tail)
+        self.assertNotIn("RequestOperation", tail)
+        self.assertNotIn("buildParams", tail)

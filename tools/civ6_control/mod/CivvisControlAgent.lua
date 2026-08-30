@@ -17176,6 +17176,34 @@ local function tick()
 						local set = driveProduction(player, turn, true) or 0;
 						if set > 0 then
 							answered = answered .. "+produced:" .. set;
+						else
+							-- ⚠⚠⚠ THE REPAIR HAS NEVER ONCE FIRED, AND NOTHING SAID SO.
+							-- Measured over the twelve runs of 2026-08-30: 87
+							-- `ENDTURN_BLOCKING_PRODUCTION` blockers answered, **zero**
+							-- carrying `+produced:`, and **40 of them answered while a
+							-- city genuinely had an empty queue** (`producing_hash == 0`
+							-- in the same turn's exported state). Run
+							-- civvis-20260830T104408Z parked at t88 with Lugdunum on
+							-- `hash = 0`.
+							--
+							-- `set == 0` is the right answer on a board that is already
+							-- complete and the WRONG one on a board with an empty city,
+							-- and the ledger could not tell those apart — so the fix
+							-- above was unfalsifiable from the outside. Count what the
+							-- drive left behind and say it. Read-only: `+empty:N` beside
+							-- a `civvis_complete` on this blocker is the repair failing,
+							-- and its absence is a board that needed nothing.
+							local empty = 0;
+							eachCity(player, function(city)
+								local hash = try(function()
+									local queue = city:GetBuildQueue();
+									return queue and queue:GetCurrentProductionTypeHash() or 0;
+								end, 0);
+								if hash == nil or hash == 0 then empty = empty + 1; end
+							end);
+							if empty > 0 then
+								answered = answered .. "+empty:" .. empty;
+							end
 						end
 					end
 				else
