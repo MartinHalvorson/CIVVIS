@@ -1078,7 +1078,28 @@ def outcome_of(tag: str) -> dict:
                 # The mod's terminal event is emitted by the game core BEFORE it
                 # halts, so unlike the end-screen autoclose below it actually
                 # arrives. See the note under `reached_end_screen`.
-                ended_on_screen = event
+                #
+                # ⚠⚠⚠ EXCEPT A RIVAL'S DEFEAT, WHICH IS AN ELIMINATION AND NOT AN
+                # ENDING. A rival's VICTORY does end the game — that is the
+                # deliberate choice explained below — but one civ being knocked
+                # out leaves the others playing. Run `civvis-20260830T104408Z`
+                # emitted
+                #
+                #     {"kind":"defeat","ours":false,"player":11,"turn":38}
+                #
+                # for a seat that was eliminated on turn 38, and then played on
+                # to turn 88. The row recorded `end_screen_turn = 38` for a game
+                # that ran fifty turns longer, and — because
+                # `resume_from_autosave` refuses a run that already reached an
+                # end screen — it blocked the reload of the FIRST wedge the
+                # handoff ever handed to the climb, with `AutoSave_0088.Civ6Save`
+                # sitting on disk.
+                #
+                # ⚠ Only an explicit `ours: false` is excluded: a `defeat` event
+                # from before the flag existed carries no opinion, and treating
+                # it as ours is what every older row already assumes.
+                if not (kind == "defeat" and event.get("ours") is False):
+                    ended_on_screen = event
             # ★★★★ A GAME THAT ENDED IS NOT A GAME THAT HUNG. Civilization VI's
             # end-game screen halts the game core, so the agent stops exporting and
             # the harness times out — and every such run was written down as

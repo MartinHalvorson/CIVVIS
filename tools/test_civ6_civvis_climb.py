@@ -2146,3 +2146,63 @@ class TheKeepersOwnClearerGetsThisBatchsBuildToo(unittest.TestCase):
         self.assertIn("the keeper's own clearer so this", branch)
         self.assertLess(branch.index("the keeper's own clearer so this"),
                         branch.index("        return"))
+
+
+class ARivalsDefeatIsNotOurEnding(unittest.TestCase):
+    """⚠⚠⚠ A RIVAL'S ELIMINATION WAS READ AS THE GAME ENDING.
+
+    `outcome_of` treated every `victory` / `defeat` / `gameover` event as the
+    game reaching its end. Counting a rival's VICTORY is deliberate — that does
+    end the game — but a rival's DEFEAT is an elimination and the others play on.
+
+    Run `civvis-20260830T104408Z` emitted
+    `{"kind":"defeat","ours":false,"player":11,"turn":38}` for a seat knocked out
+    on turn 38 and then played to turn 88. The row recorded `end_screen_turn =
+    38` for a game that ran fifty turns longer, and because
+    `resume_from_autosave` refuses a run that already reached an end screen, it
+    blocked the reload of the FIRST wedge the watchdog handoff ever gave the
+    climb — with `AutoSave_0088.Civ6Save` sitting on disk.
+    """
+
+    # ⚠ NOT `_outcome`: unittest stores its own `_Outcome` result recorder on
+    # the instance under that name, so it silently shadows the framework and
+    # every call fails with "'_Outcome' object is not callable". The same trap
+    # is documented above.
+    def _row(self, *events):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run").mkdir()
+            (root / "run" / "events.jsonl").write_text(
+                "".join(json.dumps(event) + "\n" for event in events))
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            try:
+                return climb.outcome_of("run")
+            finally:
+                climb.RUN_ROOT = original
+
+    TURN = {"kind": "turn", "turn": 88, "score": 130}
+
+    def test_a_rival_knocked_out_does_not_end_our_game(self):
+        row = self._row(
+            {"kind": "defeat", "ours": False, "player": 11, "turn": 38},
+            self.TURN)
+        self.assertIsNone(row["end_screen_turn"], "the game played on to t88")
+        self.assertEqual(row["last_turn"], 88)
+
+    def test_our_own_defeat_still_ends_it(self):
+        row = self._row({"kind": "defeat", "ours": True, "turn": 38},
+                            self.TURN)
+        self.assertEqual(row["end_screen_turn"], 38)
+
+    def test_a_defeat_from_before_the_flag_is_still_ours(self):
+        """Only an explicit `ours: false` is excluded — an older event carries
+        no opinion, and every existing row already assumes it was ours."""
+        row = self._row({"kind": "defeat", "turn": 38}, self.TURN)
+        self.assertEqual(row["end_screen_turn"], 38)
+
+    def test_a_rivals_victory_still_ends_it(self):
+        """Deliberate, and unchanged: somebody else winning ends the game."""
+        row = self._row({"kind": "victory", "ours": False, "turn": 38},
+                            self.TURN)
+        self.assertEqual(row["end_screen_turn"], 38)
