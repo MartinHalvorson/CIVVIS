@@ -771,7 +771,7 @@ class ProtectedInstallTest(unittest.TestCase):
         # Incremented per call, so it climbs whenever the tick is reached at all.
         self.assertIn("heartbeatFrames = heartbeatFrames + 1;", shim)
 
-    def test_the_retire_poll_says_once_that_it_ran(self) -> None:
+    def test_the_retire_poll_reports_periodically_with_a_real_turn(self) -> None:
         # ⚠⚠ Three abandons in a row wrote the retire row and got no answer,
         # and nothing in the log could separate "the poll never ran" from "it
         # ran and saw nothing". Every explanation was unfalsifiable.
@@ -784,13 +784,26 @@ class ProtectedInstallTest(unittest.TestCase):
         # for t150.
         shim = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         self.assertIn('emit("retire_poll"', shim)
-        # Once per game, not once per tick: this runs on every game-core batch.
-        self.assertIn("CivvisBoard.retirePollSeen", shim)
-        # ⚠ `turn` is not in scope this early in the tick, so it must come from
-        # the host rather than a nil local.
-        block = shim.split('emit("retire_poll"', 1)[1][:200]
-        self.assertIn("Game.GetCurrentGameTurn", block)
-        self.assertNotIn("turn = turn", block)
+        # ⚠⚠ ONCE PER GAME ANSWERED THE WRONG QUESTION. The first version
+        # latched and reported `retire_poll at turn 1` and nothing more, which
+        # proves only that the poll runs at game START. What matters is whether
+        # it is still running when the harness writes the row, at turn 150 or
+        # later — and a parked Game Core stops publishing, which is exactly what
+        # would stop this poll. Periodic reporting separates "the poll stopped
+        # when the game parked" from "the poll ran and did not see the row".
+        self.assertIn("CivvisBoard.retirePollAt", shim)
+        self.assertNotIn("retirePollSeen", shim)
+        self.assertIn("pollTurn % 25 == 0", shim)
+        # ⚠ `turn` is not in scope this early in the tick, so the value comes
+        # from the host. It is computed BEFORE the emit now, because the period
+        # test needs it too — so look in the poll arm rather than after the call.
+        arm = shim.split("CivvisBoard.retirePollAt", 1)[0][-600:]
+        self.assertIn("Game.GetCurrentGameTurn", arm)
+        # Scoped to this arm: `{ turn = turn }` is a valid idiom elsewhere in
+        # the mod, where `turn` really is in scope.
+        emit_call = shim.split('emit("retire_poll"', 1)[1][:60]
+        self.assertIn("pollTurn", emit_call)
+        self.assertNotIn("turn = turn", emit_call)
 
     def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
         # Seven diplomatic losses in a day and no record of what each session
