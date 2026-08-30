@@ -17131,6 +17131,38 @@ local function tick()
 							answered = answered .. "+" .. tostring(filled);
 						end
 					end
+					-- ⚠⚠⚠ AND THE SAME THING AGAIN ON PRODUCTION, WHICH PARKS THE
+					-- WHOLE GAME RATHER THAN ONE TURN.
+					--
+					-- A city with nothing queued is something end-turn genuinely
+					-- requires, so `civvis_complete` — "CIVVIS has already decided
+					-- this board" — is a claim the engine does not accept. Unlike the
+					-- policy slot it is not merely re-raised: the Game Core stops
+					-- publishing while it waits, the agent is driven ONLY by
+					-- `GameCoreEventPublishComplete`, and so it never ticks again.
+					-- Nothing recovers that from inside or outside the process (see
+					-- `civ6_nudge_end_turn.py`: an external forced end turn was
+					-- measured and ignored, twice).
+					--
+					-- Measured 2026-08-30, run civvis-20260830T074021Z, parked at
+					-- t87 on `ENDTURN_BLOCKING_PRODUCTION` answered `civvis_complete`
+					-- at attempts=1 — the forfeit ladder never even ran. The last
+					-- board shows why:
+					--     Rome      producing BUILDING_PETRA        turns 11
+					--     Ravenna   producing nil                   turns -1
+					--     Lugdunum  producing BUILDING_CONSULATE    turns 18
+					-- One city with nothing to build ended the run.
+					--
+					-- `driveProduction` is the same call the ordinary production arm
+					-- makes; forced, so a city the ranking left empty gets something
+					-- rather than nothing. It returns how many cities it set, so a
+					-- board that was already complete costs one pass and says so.
+					if name == "ENDTURN_BLOCKING_PRODUCTION" then
+						local set = driveProduction(player, turn, true) or 0;
+						if set > 0 then
+							answered = answered .. "+produced:" .. set;
+						end
+					end
 				else
 					-- Bounded per turn. The order pass is the expensive one, and a
 					-- soft blocker that will not clear -- a unit the engine keeps

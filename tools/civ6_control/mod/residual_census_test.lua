@@ -170,6 +170,21 @@ assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+"%s*%.%.%s*tostring%(f
 	"a filled answer must be distinguishable from a bare civvis_complete")
 print("policy slot: fills the open slot before claiming completion")
 
+--- ⚠⚠⚠ AND THE SAME SHAPE ON PRODUCTION, WHICH COSTS THE WHOLE GAME.
+--- A city with nothing queued is something end-turn genuinely requires, so
+--- `civvis_complete` is a claim the engine does not accept — and unlike the
+--- policy slot it is not merely re-raised. The Game Core stops publishing while
+--- it waits, and the agent, driven only by `GameCoreEventPublishComplete`,
+--- never ticks again. Nothing recovers that: an external forced end turn was
+--- measured and ignored twice.
+--- Run civvis-20260830T074021Z parked at t87 on `ENDTURN_BLOCKING_PRODUCTION`
+--- answered `civvis_complete` at attempts=1, with `Ravenna producing nil`.
+assert(agentSrc:find('if name == "ENDTURN_BLOCKING_PRODUCTION" then%s+local set = driveProduction%(player, turn, true%)'),
+	"the production blocker must actually set production before claiming completion")
+assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+produced:"%s*%.%.%s*set'),
+	"a produced answer must be distinguishable from a bare civvis_complete")
+print("production: sets an empty city before claiming completion")
+
 --- ⚠⚠⚠ THE FORFEIT'S FORCED END TURN MUST NOT BE GATED ON THE UNIT BLOCKERS.
 --- `ACTION_ENDTURN` with no reason is refused while a blocker stands, and
 --- dismissing does not stick for anything end-turn genuinely requires, so a
