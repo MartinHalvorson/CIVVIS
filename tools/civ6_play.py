@@ -2386,8 +2386,34 @@ def _observed_label_points(path: Path, label: str,
     points = collect(_menu_ocr_observations(path))
     if not points:
         points = collect(_menu_crop_ocr(path, bounds))
-    if not points and strip is not None:
-        points = collect(_menu_crop_ocr(path, bounds, strip=strip, tag="strip"))
+    if strip is not None:
+        # ⚠⚠⚠ THE STRIP RAN ONLY WHEN THE EARLIER PASSES FOUND *NOTHING*, WHICH
+        # IS NEVER ON THE SCREEN IT WAS WRITTEN FOR.
+        #
+        # `LOAD_GAME_ACTION_STRIP` exists because the full-screen pass and the
+        # general menu crop both miss the small Load Game BUTTON on the bottom
+        # edge. But the same screen carries a large LOAD GAME HEADING, which
+        # every pass reads easily — so `points` came back non-empty, the strip
+        # pass was skipped, and the caller then rejected the screen with "only
+        # the Load Game heading is visible". The repair could not run on the
+        # only screen that needed it.
+        #
+        # Live, 2026-08-30: the first autosave reload the watchdog handoff ever
+        # produced (`civvis-20260830T112732Z-cont1`) died exactly there.
+        # `load-selected-attempt2.png` shows `civvis-resume` SELECTED, the
+        # preview reading TURN 75 Renaissance Era, and the blue Load Game button
+        # plainly rendered at the bottom of the panel.
+        #
+        # So run the strip whenever nothing has been found INSIDE it — the band
+        # it covers is exactly the band the earlier passes are unreliable in.
+        # When the button was already read, this costs nothing; the extra OCR is
+        # spent only on the screens that were failing.
+        strip_top = bounds[1] + int(bounds[3] * strip[1])
+        if not any(point[1] >= strip_top for point in points):
+            for point in collect(
+                    _menu_crop_ocr(path, bounds, strip=strip, tag="strip")):
+                if point not in points:
+                    points.append(point)
     return points
 
 

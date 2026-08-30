@@ -3043,3 +3043,58 @@ class AStoppedRunStillLeavesARecord(unittest.TestCase):
         self.assertIn("if path.exists():", block)
         self.assertLess(block.index("if path.exists():"),
                         block.index("partial_summary("))
+
+
+class TheBottomStripRunsWhenTheHeadingHidesTheButton(unittest.TestCase):
+    """⚠⚠⚠ THE STRIP RAN ONLY WHEN THE EARLIER PASSES FOUND *NOTHING*.
+
+    `LOAD_GAME_ACTION_STRIP` exists because the full-screen pass and the general
+    menu crop both miss the small Load Game BUTTON on the bottom edge. But the
+    same screen carries a large LOAD GAME HEADING that every pass reads easily,
+    so `points` came back non-empty, the strip pass was skipped, and the caller
+    rejected the screen with "only the Load Game heading is visible". The repair
+    could not run on the only screen that needed it.
+
+    Live 2026-08-30: the first autosave reload the watchdog handoff ever produced
+    (`civvis-20260830T112732Z-cont1`) died exactly there, with
+    `load-selected-attempt2.png` showing `civvis-resume` selected, the preview
+    reading TURN 75 Renaissance Era, and the button plainly rendered.
+    """
+
+    BOUNDS = (756, 33, 756, 480)
+    HEADING = {"text": "Load Game", "x": 0.70, "y": 0.16,
+               "width": 0.06, "height": 0.02}
+    BUTTON = {"text": "Load Game", "x": 0.70, "y": 0.49,
+              "width": 0.04, "height": 0.02}
+
+    def test_the_strip_still_runs_when_only_the_heading_was_read(self) -> None:
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "recognize_once", return_value=[self.HEADING]), \
+             patch.object(civ6_play, "_menu_crop_ocr",
+                          return_value=[self.BUTTON]) as crop:
+            points = civ6_play._observed_label_points(
+                Path("load-selected.png"), "Load Game", self.BOUNDS,
+                strip=civ6_play.LOAD_GAME_ACTION_STRIP,
+            )
+
+        # Both are kept, and the caller's `max(..., key=y)` now reaches the
+        # button instead of refusing the screen.
+        self.assertEqual(len(points), 2)
+        self.assertEqual(max(points, key=lambda point: point[1]), (1088, 491))
+        crop.assert_called_once_with(
+            Path("load-selected.png"), self.BOUNDS,
+            strip=civ6_play.LOAD_GAME_ACTION_STRIP, tag="strip")
+
+    def test_a_button_already_read_costs_no_extra_pass(self) -> None:
+        """The band it covers is the band the earlier passes are unreliable in;
+        when one of them did read something there, the extra OCR is waste."""
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "recognize_once", return_value=[self.BUTTON]), \
+             patch.object(civ6_play, "_menu_crop_ocr") as crop:
+            points = civ6_play._observed_label_points(
+                Path("load-selected.png"), "Load Game", self.BOUNDS,
+                strip=civ6_play.LOAD_GAME_ACTION_STRIP,
+            )
+
+        self.assertEqual(points, [(1088, 491)])
+        crop.assert_not_called()
