@@ -945,19 +945,42 @@ end
 -- ⚠ Only civilizations we have MET. Reading the score of a civilization we have
 -- never encountered is knowledge the seat has not earned, and a decision taken on
 -- it would make the run worthless as a measurement.
+-- ⚠⚠⚠ `best` IS THE BEST RIVAL WE HAVE MET, NOT THE LEADER. The operator's
+-- abandon rule is "under 60% of the leader's score at turn 150 or later", and it
+-- reads this number — but a seat that has met two of five majors is being
+-- compared against the best of two. Measured over the twelve abandons of
+-- 2026-08-30, rivals MET at turn 150 were:
+--
+--     3, 2, 5, 2, 3, 4, 4, 4, 3, 2, 1, 2      (of five)
+--
+-- Exactly one run had met the whole field and one had met a single rival. So the
+-- rule is systematically LENIENT: the true leader is often unmet and uncounted,
+-- our recorded ratio flatters us, and games play on that the rule would have
+-- called. The error is in the safe direction — it never abandons a game it
+-- should not — but it is not what the rule says.
+--
+-- `allBest` is the same maximum over every alive major, met or not. It is
+-- REPORTING ONLY: nothing decides on it yet, and CIVVIS never sees it, so this
+-- cannot leak unmet-civ knowledge into gameplay. It exists so the gap between
+-- "the best we have met" and "the leader" can be measured before anyone changes
+-- a rule on top of it.
 local function rivalBest(player, pid)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
-	if diplomacy == nil then return nil, 0; end
+	if diplomacy == nil then return nil, 0, nil, 0; end
 	local best, met = nil, 0;
+	local allBest, majors = nil, 0;
 	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
-		if otherId ~= pid
-				and try(function() return diplomacy:HasMet(otherId); end, false) then
-			met = met + 1;
+		if otherId ~= pid then
+			majors = majors + 1;
 			local score = try(function() return Players[otherId]:GetScore(); end, -1) or -1;
-			if score >= 0 and (best == nil or score > best) then best = score; end
+			if score >= 0 and (allBest == nil or score > allBest) then allBest = score; end
+			if try(function() return diplomacy:HasMet(otherId); end, false) then
+				met = met + 1;
+				if score >= 0 and (best == nil or score > best) then best = score; end
+			end
 		end
 	end
-	return best, met;
+	return best, met, allBest, majors;
 end
 
 local function stackCensus(player)
@@ -15674,7 +15697,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- turn, and the harness reads `turn` records as its clock.
 	if (awaiting.frame or 0) > 0 then return applied; end
 	local counts = countUnits(player);
-	local rivalTop, metCount = rivalBest(player, pid);
+	local rivalTop, metCount, rivalTopAll, majorCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	local cityCount = 0;
 	eachCity(player, function() cityCount = cityCount + 1; end);
@@ -15686,6 +15709,10 @@ local function applyOrders(player, pid, turn, rows)
 		score = ourScore,
 		rival_best = rivalTop,
 		met = metCount,
+		-- Reporting only; see `rivalBest`. The abandon rule still reads
+		-- `rival_best`, so this changes no decision.
+		rival_best_all = rivalTopAll,
+		majors = majorCount,
 		lead = (rivalTop ~= nil and ourScore >= 0) and (ourScore - rivalTop) or nil,
 		cities = cityCount,
 		units = counts.total or counts.military,
@@ -16376,7 +16403,7 @@ local function playTurn(player, pid, turn)
 			loyaltyWatch.worst_rate = perTurn;
 		end
 	end);
-	local rivalTop, metCount = rivalBest(player, pid);
+	local rivalTop, metCount, rivalTopAll, majorCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	emit("turn", {
 		policies = policies,
@@ -16386,6 +16413,10 @@ local function playTurn(player, pid, turn)
 		score = ourScore,
 		rival_best = rivalTop,
 		met = metCount,
+		-- Reporting only; see `rivalBest`. The abandon rule still reads
+		-- `rival_best`, so this changes no decision.
+		rival_best_all = rivalTopAll,
+		majors = majorCount,
 		-- Positive means we would win a score victory at the turn limit against
 		-- everyone we have met. This is the number that decides the reachable
 		-- victory, and until now the log showed only our own half of it.
