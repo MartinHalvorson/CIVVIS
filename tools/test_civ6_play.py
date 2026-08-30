@@ -2117,6 +2117,53 @@ class VictoryLaneListTests(unittest.TestCase):
 
 
 
+class AWorkingRetireMustNotLookBroken(unittest.TestCase):
+    """⚠⚠ The teardown outruns the watcher, so the answer never lands.
+
+    Run `civvis-20260830T083406Z` has NO `retired` event in its events.jsonl,
+    while the raw `Automation.log` for the same run holds
+    `"kind":"retired","why":"requested"`, our own `"kind":"defeat","ours":true`
+    and the `EndGameMenu` opening. The retire had been working; four abandons
+    were read as failures because `events.jsonl` was the wrong place to look.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.logs = Path(self.tmp.name)
+        patcher = mock.patch.object(civ6_play.env, "logs_dir", return_value=self.logs)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _write(self, text: str) -> None:
+        (self.logs / "Automation.log").write_text(text, encoding="utf-8")
+
+    def test_an_answered_retire_is_recognised(self) -> None:
+        self._write('CIVVISJSON {"kind":"retired","run":"civvis-run","why":"requested"}\n')
+        self.assertTrue(civ6_play._retire_was_answered("civvis-run"))
+
+    def test_another_runs_retire_is_not_ours(self) -> None:
+        self._write('CIVVISJSON {"kind":"retired","run":"civvis-other","why":"requested"}\n')
+        self.assertFalse(civ6_play._retire_was_answered("civvis-run"))
+
+    def test_a_missing_log_is_unknown_not_a_crash(self) -> None:
+        """The game is stopped either way; this must never raise."""
+        self.assertFalse(civ6_play._retire_was_answered("civvis-run"))
+
+    def test_only_the_tail_is_read(self) -> None:
+        """The log reaches tens of megabytes across a session."""
+        self._write("x" * 2_000_000 + '\nCIVVISJSON {"kind":"retired","run":"civvis-run"}\n')
+        self.assertTrue(civ6_play._retire_was_answered("civvis-run"))
+        self._write('CIVVISJSON {"kind":"retired","run":"civvis-run"}\n' + "x" * 2_000_000)
+        self.assertFalse(civ6_play._retire_was_answered("civvis-run"),
+                         "an answer buried a megabyte back is not this run's")
+
+    def test_the_record_separates_asking_from_landing(self) -> None:
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('"retire_requested": state.get("retire_requested"),', source)
+        self.assertIn('"retire_confirmed": state.get("retire_confirmed"),', source)
+
+
 class TheAbandonWaitsForTheRetireToLand(unittest.TestCase):
     """⚠⚠ THE ROW IS NOT THE RETIRE.
 

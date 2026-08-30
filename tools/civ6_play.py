@@ -209,6 +209,28 @@ def _nonnegative_metric(value: object) -> float | int | None:
     return None
 
 
+def _retire_was_answered(run_tag: str) -> bool:
+    """Did the control mod actually issue Civilization VI's Retire?
+
+    Read straight from `Automation.log` rather than `events.jsonl`: the abandon
+    tears the game down immediately afterwards, so the watcher is gone before
+    the mod's answer would ever be copied across.  Best effort — a log we
+    cannot read means "unknown", reported as not acknowledged, and never blocks
+    the stop.
+    """
+    try:
+        log = env.logs_dir() / "Automation.log"
+        needle = f'"kind":"retired","run":"{run_tag}"'
+        with log.open("r", encoding="utf-8", errors="ignore") as handle:
+            # Only the tail can matter: this run's retire is the last thing in
+            # it, and the file grows to tens of megabytes across a session.
+            handle.seek(0, 2)
+            handle.seek(max(0, handle.tell() - 262_144))
+            return needle in handle.read()
+    except (OSError, ValueError):
+        return False
+
+
 def below_leader_score_reading(
     _state: dict, event: dict, score_ratio_ceiling: float
 ) -> dict | None:
@@ -3686,6 +3708,25 @@ def _play(args: argparse.Namespace) -> int:
                 # cannot answer a retire at all — nothing is listening — and
                 # the outside watchdog is the only remedy for that case.
                 time.sleep(ABANDON_RETIRE_WAIT_S)
+                # ⚠⚠ AND READ THE ANSWER, or a success is indistinguishable
+                # from a failure.
+                #
+                # The teardown below stops the watcher, so anything the mod
+                # emits during the wait never reaches `events.jsonl`. That made
+                # a WORKING retire look broken for four abandons: run
+                # civvis-20260830T083406Z has no `retired` event in its
+                # events.jsonl, while the raw Automation.log for the same run
+                # holds `"kind":"retired","why":"requested"`, our own
+                # `"kind":"defeat","ours":true`, and the `EndGameMenu` opening.
+                #
+                # So ask the log directly, once, and put the answer in the run
+                # record where the next person will look.
+                state["retire_confirmed"] = _retire_was_answered(args.tag)
+                print("[abandon] retire "
+                      + ("acknowledged by the mod"
+                         if state["retire_confirmed"]
+                         else "NOT acknowledged; the game was still stopped"),
+                      flush=True)
             return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
@@ -3935,6 +3976,11 @@ def _play(args: argparse.Namespace) -> int:
         # the rule has already called — and the run record should say which
         # happened rather than leave it to be inferred.
         "retire_requested": state.get("retire_requested"),
+        # And whether the mod actually issued it. These differ: the abandon
+        # tears the game down right after asking, so the watcher is gone before
+        # the answer could reach `events.jsonl` — a working retire looked
+        # broken for four abandons until the raw log was read instead.
+        "retire_confirmed": state.get("retire_confirmed"),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
