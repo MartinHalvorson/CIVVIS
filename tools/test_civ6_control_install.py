@@ -1974,3 +1974,47 @@ class TheProductionRepairSaysWhenItFails(unittest.TestCase):
         self.assertIn("GetCurrentProductionTypeHash", tail)
         self.assertNotIn("RequestOperation", tail)
         self.assertNotIn("buildParams", tail)
+
+
+class TheLeaderIsMeasuredAgainstTheWholeField(unittest.TestCase):
+    """⚠⚠⚠ `rival_best` IS THE BEST RIVAL WE HAVE MET, NOT THE LEADER.
+
+    The operator's abandon rule is "under 60% of the leader's score at turn 150
+    or later" and reads that number, but a seat that has met two of five majors
+    is compared against the best of two. Rivals MET at turn 150 across the twelve
+    abandons of 2026-08-30, out of five:
+
+        3, 2, 5, 2, 3, 4, 4, 4, 3, 2, 1, 2
+
+    Exactly one run had met the whole field; one had met a single rival. The rule
+    is therefore systematically lenient — the true leader is often unmet, our
+    recorded ratio flatters us, and games play on that the rule would have
+    called. The error is in the safe direction, but it is not what the rule says.
+
+    `rival_best_all` is the same maximum over every alive major. REPORTING ONLY:
+    nothing decides on it, so the gap can be measured before a rule is changed.
+    """
+
+    def _source(self) -> str:
+        return (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def test_the_all_majors_maximum_is_reported(self) -> None:
+        source = self._source()
+        self.assertIn("rival_best_all = rivalTopAll", source)
+        self.assertIn("majors = majorCount", source)
+
+    def test_the_met_only_maximum_still_gates_on_hasmet(self) -> None:
+        """The decision number must not change: `rival_best` stays met-only."""
+        fn = self._source().split("local function rivalBest", 1)[1].split("\nend", 1)[0]
+        self.assertIn("HasMet", fn)
+        # `allBest` is accumulated OUTSIDE the HasMet branch, `best` inside it.
+        self.assertLess(fn.index("allBest == nil or score > allBest"),
+                        fn.index("HasMet"))
+        self.assertLess(fn.index("HasMet"),
+                        fn.index("best == nil or score > best"))
+
+    def test_the_abandon_rule_still_reads_the_met_only_number(self) -> None:
+        play = (install.MOD_SOURCE.parent.parent / "civ6_play.py").read_text()
+        rule = play.split("def below_leader_score_reading", 1)[1][:1200]
+        self.assertIn('event.get("rival_best")', rule)
+        self.assertNotIn("rival_best_all", rule)
