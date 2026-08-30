@@ -771,6 +771,27 @@ class ProtectedInstallTest(unittest.TestCase):
         # Incremented per call, so it climbs whenever the tick is reached at all.
         self.assertIn("heartbeatFrames = heartbeatFrames + 1;", shim)
 
+    def test_the_retire_poll_says_once_that_it_ran(self) -> None:
+        # ⚠⚠ Three abandons in a row wrote the retire row and got no answer,
+        # and nothing in the log could separate "the poll never ran" from "it
+        # ran and saw nothing". Every explanation was unfalsifiable.
+        #
+        # Measured 2026-08-30, run civvis-20260830T055337Z: abandoned at t150
+        # with `retire_requested: true`, the row present as
+        # `150|99000|retire|below_leader_score|990` under a run tag
+        # byte-identical to the decider's own rows, and no `retired` event —
+        # while the mod was demonstrably alive, emitting `orders` and `turn`
+        # for t150.
+        shim = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('emit("retire_poll"', shim)
+        # Once per game, not once per tick: this runs on every game-core batch.
+        self.assertIn("CivvisBoard.retirePollSeen", shim)
+        # ⚠ `turn` is not in scope this early in the tick, so it must come from
+        # the host rather than a nil local.
+        block = shim.split('emit("retire_poll"', 1)[1][:200]
+        self.assertIn("Game.GetCurrentGameTurn", block)
+        self.assertNotIn("turn = turn", block)
+
     def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
         # Seven diplomatic losses in a day and no record of what each session
         # resolved: the mod now emits `wc_outcome` from the shipped review data
