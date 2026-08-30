@@ -1862,3 +1862,26 @@ class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
         self.assertIn('"seat_autonomy": summary.get("seat_autonomy")', ladder)
         self.assertIn('"civvis_unit_share"', ladder)
         self.assertIn('summary["seat_autonomy"] = autonomy', play)
+
+
+class AStoppedRunIsMarkedOnTheLedgerRow(unittest.TestCase):
+    """⚠ THE FLAG HAS TO REACH THE ROW TO BE USABLE.
+
+    `civ6_play.partial_summary` marks a run stopped by a signal so a consumer can
+    tell it from one whose game finished. The ledger row dropped the field, so on
+    the ledger the only trace was `reason`, a free string. Live: three `-cont`
+    rows from the 08-30 resumes landed with `partial: None`.
+    """
+
+    def test_the_partial_flag_survives_onto_the_row(self):
+        row = civ6_ladder.entry_from({
+            "tag": "civvis-x", "reason": "killed", "partial": True,
+            "last_turn": 44,
+        })
+        self.assertIs(row["partial"], True)
+
+    def test_a_finished_run_carries_no_flag(self):
+        row = civ6_ladder.entry_from({
+            "tag": "civvis-y", "reason": "abandoned", "last_turn": 150,
+        })
+        self.assertIsNone(row["partial"])
