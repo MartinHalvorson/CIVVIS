@@ -5333,6 +5333,11 @@ fn verify_unit_order(
     }
 }
 
+struct VerificationContext<'a> {
+    same_turn_orders: &'a [IssuedOrder],
+    later_fortified: bool,
+}
+
 /// The next frame's verdict on one order issued on `turn`.
 fn verify_order_with_context(
     order: &IssuedOrder,
@@ -5341,8 +5346,7 @@ fn verify_order_with_context(
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
-    same_turn_orders: &[IssuedOrder],
-    later_fortified: bool,
+    context: VerificationContext<'_>,
 ) -> Verdict {
     if unverifiable_kind(&order.kind) {
         return Verdict::Unverifiable;
@@ -5350,14 +5354,22 @@ fn verify_order_with_context(
     let verb = order.verb.as_deref().unwrap_or("");
     let failed = |why: String| Verdict::Failed(why);
     match order.kind.as_str() {
-        "unit" => verify_unit_order(order, turn, before, after, tiles, evidence, later_fortified),
+        "unit" => verify_unit_order(
+            order,
+            turn,
+            before,
+            after,
+            tiles,
+            evidence,
+            context.later_fortified,
+        ),
         "produce" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
                 return failed("city_gone".to_string());
             };
             let unit_appeared = unit_appeared_at_city(before, after, city, verb);
             let purchase_conflict =
-                production_unit_appearance_conflicts_with_purchase(order, same_turn_orders);
+                production_unit_appearance_conflicts_with_purchase(order, context.same_turn_orders);
             if city.producing.as_deref() == Some(verb)
                 || city_holds(city, verb)
                 || (unit_appeared && !purchase_conflict)
@@ -5575,7 +5587,18 @@ fn verify_order(
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
 ) -> Verdict {
-    verify_order_with_context(order, turn, before, after, tiles, evidence, &[], false)
+    verify_order_with_context(
+        order,
+        turn,
+        before,
+        after,
+        tiles,
+        evidence,
+        VerificationContext {
+            same_turn_orders: &[],
+            later_fortified: false,
+        },
+    )
 }
 
 /// Every order in `pending` against the frame that followed it.
@@ -5617,10 +5640,12 @@ fn verify_orders_with_later_fortifications(
                 after,
                 tiles,
                 evidence,
-                same_turn_orders,
-                order
-                    .subject
-                    .is_some_and(|id| later_fortified.contains(&id)),
+                VerificationContext {
+                    same_turn_orders,
+                    later_fortified: order
+                        .subject
+                        .is_some_and(|id| later_fortified.contains(&id)),
+                },
             ),
             order: order.clone(),
         })
