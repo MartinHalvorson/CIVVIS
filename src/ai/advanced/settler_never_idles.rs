@@ -506,10 +506,15 @@ impl AdvancedAi {
             .nbrs(current)
             .into_iter()
             .filter(|next| g.map.get(*next).is_some() && g.can_move(uid, *next))
-            .map(|next| (reach.raiders_covering(g, next), reach.nearest(g, next), next))
+            .map(|next| {
+                (
+                    reach.raiders_covering(g, next),
+                    reach.nearest(g, next),
+                    next,
+                )
+            })
             .filter(|(covering, nearest, _)| {
-                *covering < here_covering
-                    || (*covering == here_covering && *nearest > here_nearest)
+                *covering < here_covering || (*covering == here_covering && *nearest > here_nearest)
             })
             .collect();
         retreats.sort_by(|a, b| {
@@ -1517,13 +1522,19 @@ mod tests {
             .filter(|u| Some(u.owner) == g.barb_pid)
             .map(|u| (u.id, g.unit_visible_to(u.id, 0)))
             .collect();
-        assert!(here_covering > 0, "the raiders cover the settler's own tile: {seen:?}");
+        assert!(
+            here_covering > 0,
+            "the raiders cover the settler's own tile: {seen:?}"
+        );
 
         let retreats = ai.cornered_retreats(&g, settler, here, &hunted);
         // The contract, whatever this map happens to offer: never the tile it
         // already stands on, every choice STRICTLY better than staying, and
         // ordered so the least-covered is taken first.
-        assert!(!retreats.contains(&here), "retreating to here is not retreating");
+        assert!(
+            !retreats.contains(&here),
+            "retreating to here is not retreating"
+        );
         let mut previous = 0usize;
         for next in &retreats {
             let covering = hunted.raiders_covering(&g, *next);
@@ -1534,7 +1545,10 @@ mod tests {
                 "{next:?} is covered by {covering} against {here_covering} here — \
                  it is not strictly better than holding"
             );
-            assert!(covering >= previous, "the least-covered tile is offered first");
+            assert!(
+                covering >= previous,
+                "the least-covered tile is offered first"
+            );
             previous = covering;
         }
     }
