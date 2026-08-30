@@ -285,6 +285,7 @@
     "ability": "mediterranean_colonies",
     "note": "Mediterranean Colonies: +50% production toward settlers, and +1 gold in every city",
     "agenda": "sea_lanes",
+    "unique_unit": "bireme",
     "traits": [
       "expansionist",
       "mediterranean"

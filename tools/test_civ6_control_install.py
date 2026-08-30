@@ -348,8 +348,10 @@ class ProtectedInstallTest(unittest.TestCase):
             '<LuaContext>WonderBuiltPopup</LuaContext>',
             modinfo,
         )
-        wonder = closer.split('if NAME == "WonderBuiltPopup"', 1)[1].split(
-            "return false;", 1
+        # Anchor at the ladder rather than the clock declaration above it; the
+        # stale-diplomacy guard also has an intentional `return false`.
+        wonder = closer.split("local function endScreen(attempt)", 1)[1].split(
+            'if NAME == "InGamePopup"', 1
         )[0]
         # WonderBuiltPopup.lua's own OnClose drains queued wonders and unlocks
         # the exclusive popup manager; Close is the defensive fallback if a
@@ -358,6 +360,57 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("OnClose();", wonder)
         self.assertIn('type(Close) == "function"', wonder)
         self.assertIn("Close();", wonder)
+
+    def test_wonder_completion_wins_and_chains_known_ui_replacement(self) -> None:
+        """A later UI mod must not replace the wonder closer or its audio."""
+        modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn(
+            '805cc499-c534-4e0a-bdce-32fb3c53ba38',
+            modinfo,
+        )
+        action = modinfo.split(
+            '<ReplaceUIScript id="CivvisControlAutoCloseWonderBuilt">', 1
+        )[1].split("</ReplaceUIScript>", 1)[0]
+        self.assertIn("<LoadOrder>100000</LoadOrder>", action)
+        self.assertIn(
+            'WonderBuiltPopup = "Suk_WonderBuiltPopup"',
+            closer,
+        )
+
+        # The known replacement includes the Firaxis script and must be loaded
+        # before haveScreen() checks for OnClose/Close. Keep this assertion
+        # textual because Lua's UI globals do not exist in the Python suite.
+        chain_at = closer.index('WonderBuiltPopup = "Suk_WonderBuiltPopup"')
+        include_at = closer.index("if CHAINED[NAME] then")
+        self.assertLess(chain_at, include_at)
+
+    def test_wonder_completion_waits_for_animation_before_minimizing(self) -> None:
+        """A short generic clock must not cut off the stock wonder reveal."""
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn("local WONDER_MIN_SECONDS = 1.0;", closer)
+        self.assertIn(
+            "local WONDER_ANIMATION_TIMEOUT_SECONDS = 8.0;",
+            closer,
+        )
+        self.assertIn(
+            'if NAME == "WonderBuiltPopup" then\n\tSECONDS = math.max(SECONDS, WONDER_MIN_SECONDS);\nend',
+            closer,
+        )
+        for control in ("HeaderAlpha", "HeaderSlide", "QuoteAlpha", "QuoteSlide"):
+            self.assertIn(f"Controls.{control}", closer)
+        self.assertIn("animation:IsStopped()", closer)
+        self.assertIn('report("autoclose_wait_animation"', closer)
+        self.assertIn('"animation_ready"', closer)
+        self.assertIn('"animation_timeout"', closer)
+        self.assertIn("if shown < WONDER_ANIMATION_TIMEOUT_SECONDS then", closer)
+        self.assertIn("remaining = DIALOGUE_READY_RETRY_SECONDS;", closer)
+
+        wait_at = closer.index("local wonderAnimationReadyAtClose = true;")
+        close_at = closer.index("local upFor = shown;", wait_at)
+        self.assertLess(wait_at, close_at)
 
     def test_between_turns_congress_uses_the_complete_firaxis_hide_path(self) -> None:
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
@@ -377,6 +430,28 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("tonumber(cfg.DialogueSeconds) or 0.25", closer)
         self.assertIn("DESKTOP_AFTER = 4", closer)
         self.assertIn('report("autoclose_desktop"', closer)
+
+    def test_stale_diplomacy_contexts_use_a_sessionless_native_visibility_fallback(self) -> None:
+        """A visible, uninitialized Firaxis context must not trap a run."""
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        fallback = closer.split("local function closeStaleDiplomacyContext()", 1)[1].split(
+            "-- InGamePopup is the one context", 1
+        )[0]
+
+        for context in ("DiplomacyActionView", "DiplomacyDealView"):
+            self.assertIn(f'NAME ~= "{context}"', fallback)
+        self.assertIn("ms_ActiveSessionID ~= nil", fallback)
+        self.assertIn("DiplomacyManager.FindOpenSessionID", fallback)
+        self.assertIn("ContextPtr:IsHidden()", fallback)
+        self.assertIn("ContextPtr:SetHide(true)", fallback)
+        self.assertIn('report("autoclose_stale_hide"', fallback)
+
+        # The helper must run before the deal refusal ladder; otherwise a
+        # successful-but-no-op OnRefuseDeal pcall can return first forever.
+        self.assertLess(
+            closer.index("if closeStaleDiplomacyContext() then return true; end"),
+            closer.index("if type(OnRefuseDeal) == \"function\""),
+        )
 
     def test_spy_popups_clear_through_their_shipped_paths(self) -> None:
         """Spy overlays must disappear without leaving an end-turn decision behind."""
@@ -590,13 +665,145 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("local rung = ((closes - 1) % GIVE_UP_AFTER) + 1;", shim)
         self.assertIn("pcall(function() ended = endScreen(rung); end);", shim)
         self.assertNotIn("endScreen(closes)", shim)
-        self.assertIn("if closes >= DESKTOP_AFTER and not desktopReported then", shim)
+        # ⚠⚠⚠ THE DESKTOP ASK MUST REPEAT WHILE THE SCREEN IS STILL UP.
+        # It used to latch on a boolean cleared only when the screen went away
+        # — which is exactly what a screen needing help does not do. A leader
+        # conversation cannot be dismissed blind (Escape does nothing on it, and
+        # Escape with nothing to close opens the pause menu), so the desktop side
+        # must see the screen; that capture fails transiently, and one such
+        # failure ended the run because the ask never came again. Measured
+        # 2026-08-29, run civvis-20260829T093602Z: one `autoclose_desktop` for
+        # DiplomacyDealView at 4 attempts, "popup capture unavailable" back, and
+        # the game sat on a leader screen until the watchdog killed it at t40.
+        self.assertIn(
+            "if closes >= DESKTOP_AFTER and closes - desktopReportedAt >= DESKTOP_AFTER then",
+            shim,
+        )
+        self.assertIn("desktopReportedAt = closes;", shim)
+        # The reset arms it again for the next appearance, and nothing else may
+        # make it permanent: the declaration says "Giving up is a BACK-OFF,
+        # never a stop".
+        self.assertEqual(shim.count("desktopReportedAt = -1;"), 3)
+        self.assertNotIn("desktopReported =", shim.replace("desktopReportedAt =", ""))
         self.assertIn("if closes >= GIVE_UP_AFTER then", shim)
         for field in ('"rung":%d', '"mode":%d', '"session":%d', '"fading":%s', '"popup":%s'):
             self.assertIn(field, shim)
         self.assertIn("ms_currentViewMode", shim)
         self.assertIn("ms_ActiveSessionID", shim)
         self.assertIn("Controls.BlackFadeAnim:IsStopped()", shim)
+
+    def test_the_mod_answers_a_retire_row_with_the_shipped_action(self) -> None:
+        # ⚠⚠ A killed game is UNFINISHED, not lost: Civilization VI files no
+        # defeat, so `tools/civ6_ladder.py` records nothing and an attempt the
+        # operator called on the score rule reads exactly like a crash.
+        #
+        # The retire itself is one call. The stock
+        # `Base/Assets/UI/Menus/InGameTopOptionsMenu.lua` `OnReallyRetire` does
+        # `UI.RequestAction(ActionTypes.ACTION_RETIRE)` and nothing else that
+        # matters, so there is no pause menu to open and no confirm dialog to
+        # find and click blind.
+        shim = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("ActionTypes.ACTION_RETIRE", shim)
+        self.assertIn("kind = 'retire'", shim)
+        # Matched on the RUN alone. The ordinary fetch filters on the exact turn
+        # and frame it is reading, so a request made at an unscheduled moment
+        # would sit unread until a frame happened to match.
+        self.assertNotIn("AND turn = %d\" ..\n\t\t\t\"AND kind = 'retire'", shim)
+        # Asked once: `RequestAction` is asynchronous and the tick keeps running.
+        self.assertIn("CivvisBoard.retireAsked = true;", shim)
+        self.assertIn("if not CivvisBoard.retireAsked", shim)
+        # Latched on an existing table rather than a new file-scope local: this
+        # main chunk sits at Civ 6's 200-register ceiling.
+        self.assertNotIn("local retireAsked", shim)
+
+    def test_the_ui_context_says_it_is_alive_once_a_minute(self) -> None:
+        # ⚠⚠ The dominant way a run dies now is a PARKED GAME CORE: the agent
+        # reports one blocker, `GameCoreEventPublishComplete` stops firing, and
+        # the agent — driven only by that event — never ticks again. In the
+        # sample from run civvis-20260829T163259Z, 34 of 35 threads sat in an
+        # idle wait and the one exception was a single Metal frame: the game was
+        # computing nothing and waiting for input only the controller can give.
+        # It ended a game holding 15 cities at 76% of the leader on turn 179.
+        #
+        # Whether that is recoverable turns on whether the UI thread is still
+        # running, and nothing in the log could answer it — this context only
+        # ever spoke when a screen was up, so its silence meant nothing either
+        # way. `ContextPtr:SetUpdate` runs every frame even while the screen is
+        # hidden (which is why `isUp()` is the first thing the tick checks), so
+        # a heartbeat here reports for the whole UI context.
+        #
+        # ⚠ The agent cannot do this itself: a per-frame `SetUpdate` was tried
+        # there and does not run in a script-only in-game context.
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("ui_heartbeat", shim)
+        # ⚠ COUNTED IN FRAMES, NOT SECONDS. The first version accumulated
+        # `fDTime` to sixty seconds and emitted nothing across a whole game —
+        # which read like an answer and was not. Each popup context is only up
+        # for a second or two at a time, so a per-context clock can never reach
+        # sixty however alive the thread is. Run civvis-20260829T183612Z proved
+        # only that: 24 `autoclose_armed`, 81 `autoclose`, 2 desktop
+        # escalations, and zero heartbeats.
+        self.assertIn("local HEARTBEAT_FRAMES = 600;", shim)
+        # ⚠⚠ THE EXPERIMENT IS OVER AND THE ANSWER WAS NO. Run
+        # civvis-20260829T194002Z emitted TWO heartbeats across 121 turns, both
+        # `"up":true`, both from the one screen actually showing. 600 frames took
+        # 5.0s, so the game renders ~120fps; had `SetUpdate` run on hidden
+        # contexts, each of the two dozen armed screens would have emitted one
+        # every five seconds. So a hidden context does not tick, there is no
+        # always-on UI tick, and an in-mod nudge for a parked Game Core has
+        # nothing to hang on. Keep the finding beside the code so it is not
+        # rebuilt on the same wrong premise.
+        self.assertIn("A HIDDEN CONTEXT DOES NOT TICK", shim)
+        self.assertIn("civvis-20260829T194002Z", shim)
+        self.assertNotIn("HEARTBEAT_SECONDS", shim)
+        # Seconds ride along so the two remaining possibilities separate:
+        # frames climbing with seconds near zero means the tick runs while
+        # hidden but `fDTime` is not meaningful there; no frames at all means
+        # `SetUpdate` does not run on a hidden context.
+        self.assertIn('"frames":%d,"seconds":%.1f,"up":%s', shim)
+        # It must sit BEFORE the not-up early return, or it would only ever
+        # report while a popup happened to be showing — exactly the blind spot.
+        tick = shim.split("local function tick(fDTime)", 1)[1]
+        beat = tick.index("ui_heartbeat")
+        notup = tick.index("if not isUp() then")
+        self.assertLess(beat, notup,
+                        "the heartbeat must run whether or not the screen is up")
+        # Incremented per call, so it climbs whenever the tick is reached at all.
+        self.assertIn("heartbeatFrames = heartbeatFrames + 1;", shim)
+
+    def test_the_retire_poll_reports_periodically_with_a_real_turn(self) -> None:
+        # ⚠⚠ Three abandons in a row wrote the retire row and got no answer,
+        # and nothing in the log could separate "the poll never ran" from "it
+        # ran and saw nothing". Every explanation was unfalsifiable.
+        #
+        # Measured 2026-08-30, run civvis-20260830T055337Z: abandoned at t150
+        # with `retire_requested: true`, the row present as
+        # `150|99000|retire|below_leader_score|990` under a run tag
+        # byte-identical to the decider's own rows, and no `retired` event —
+        # while the mod was demonstrably alive, emitting `orders` and `turn`
+        # for t150.
+        shim = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('emit("retire_poll"', shim)
+        # ⚠⚠ ONCE PER GAME ANSWERED THE WRONG QUESTION. The first version
+        # latched and reported `retire_poll at turn 1` and nothing more, which
+        # proves only that the poll runs at game START. What matters is whether
+        # it is still running when the harness writes the row, at turn 150 or
+        # later — and a parked Game Core stops publishing, which is exactly what
+        # would stop this poll. Periodic reporting separates "the poll stopped
+        # when the game parked" from "the poll ran and did not see the row".
+        self.assertIn("CivvisBoard.retirePollAt", shim)
+        self.assertNotIn("retirePollSeen", shim)
+        self.assertIn("pollTurn % 25 == 0", shim)
+        # ⚠ `turn` is not in scope this early in the tick, so the value comes
+        # from the host. It is computed BEFORE the emit now, because the period
+        # test needs it too — so look in the poll arm rather than after the call.
+        arm = shim.split("CivvisBoard.retirePollAt", 1)[0][-600:]
+        self.assertIn("Game.GetCurrentGameTurn", arm)
+        # Scoped to this arm: `{ turn = turn }` is a valid idiom elsewhere in
+        # the mod, where `turn` really is in scope.
+        emit_call = shim.split('emit("retire_poll"', 1)[1][:60]
+        self.assertIn("pollTurn", emit_call)
+        self.assertNotIn("turn = turn", emit_call)
 
     def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
         # Seven diplomatic losses in a day and no record of what each session
@@ -688,6 +895,59 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("other:GetCulture():GetTouristsTo();", block)
         self.assertIn("domestic_tourists = try(function()", block)
         self.assertIn("other:GetCulture():GetStaycationers();", block)
+
+    def test_unit_captured_is_registered_and_names_the_captor_for_our_units_only(self) -> None:
+        """A settler taken by the barbarians must be told apart from one founding a city.
+
+        `UnitRemovedFromMap` fires for both, and `unit_lost` reads the same for
+        both — 24 settlers went to the barbarians in ten runs on 2026-08-28 and
+        no ledger column could tell. The game's own word is
+        `Events.UnitCaptured(currentUnitOwner, unit, owningPlayer,
+        capturingPlayer)` (`Base/Assets/UI/Popups/UnitCaptured.lua:8`,
+        registered at `:49`, filtered on the local owner at `:11`). Assert the
+        registration and the handler's shape, not a sentence claiming them.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        registrations = source.split("function Initialize()", 1)[1].split(
+            "pcall(function() Events[name].Add(handler); end);", 1
+        )[0]
+        self.assertIn("UnitRemovedFromMap = CivvisLedger.onUnitRemoved,", registrations)
+        self.assertIn("UnitCaptured = CivvisLedger.onUnitCaptured,", registrations)
+
+        handler = source.split("CivvisLedger.onUnitCaptured = function(", 1)[1].split(
+            "\nend;", 1
+        )[0]
+        self.assertTrue(handler.startswith(
+            "currentUnitOwner, unitId, owningPlayer, capturingPlayer)"))
+        # Ours only, the way the shipped popup filters (`UnitCaptured.lua:11`).
+        self.assertIn("if tonumber(currentUnitOwner) ~= pid then return; end", handler)
+        self.assertIn('emit("unit_captured", {', handler)
+        for key in ("turn =", "unit = tonumber(unitId)",
+                    "unit_kind = CivvisLedger.kinds[tostring(unitId)]",
+                    "owner = tonumber(currentUnitOwner)", "captor = captor",
+                    "captor_is_barbarian = barbarian"):
+            self.assertIn(key, handler)
+        self.assertIn("Players[captor]:IsBarbarian()", handler)
+        # `unit_lost` stays: the capture event is a second witness, not a replacement.
+        self.assertIn('emit("unit_lost", {', source)
+
+    def test_settler_combat_hold_checks_the_hostile_units_full_capture_reach(self) -> None:
+        """A combat unit's capture reach is wider than destination adjacency."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        hold = source.split(
+            "CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function", 1
+        )[1].split("CivvisBoard.holdVisibleScoutCaptureLegs", 1)[0]
+
+        self.assertIn("unit = unit,", hold)
+        self.assertIn("local function threatReaches(threat, x, y)", hold)
+        self.assertIn(
+            "UnitManager.GetMoveToPathEx(threat.unit, destination)", hold
+        )
+        self.assertIn("local definition = GameInfo.Units[threat.unit:GetUnitType()]", hold)
+        self.assertIn("definition.BaseMoves", hold)
+        self.assertIn("if distance >= 0 and distance <= baseMoves then", hold)
+        self.assertIn("hostile_reach = reachKind", hold)
+        self.assertNotIn("distance == 1", hold)
 
     def test_the_seat_event_names_the_hosts_victory_table(self) -> None:
         # The TeamVictory event reports a raw integer and docs/CIV6_LADDER.md
@@ -955,6 +1215,25 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("CanStartCommand(unit, hash, false, true)", helper)
         self.assertIn("RequestCommand(unit, hash);", helper)
         self.assertNotIn("params", helper)
+
+    def test_parameterless_unit_operations_match_firaxis_unit_panel_signature(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        helper = source.split("local function canOperate", 1)[1].split(
+            "-- Same discipline as `operate`", 1
+        )[0]
+        operate = source.split("local function operate", 1)[1].split(
+            "-- Same discipline as `operate`", 1
+        )[0]
+
+        self.assertIn(
+            "CanStartOperation(unit, hash, nil, false, false)", helper
+        )
+        self.assertIn("next(params) == nil", helper)
+        self.assertIn("RequestOperation(unit, hash);", operate)
+        self.assertIn("next(params) == nil", operate)
+        self.assertIn(
+            "UnitManager.RequestOperation(unit, hash, params);", operate
+        )
 
     def test_builder_repair_uses_firaxis_repair_operation(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

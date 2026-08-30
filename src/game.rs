@@ -10993,6 +10993,39 @@ impl Game {
         }
     }
 
+    /// Holy Waters: `HOLY_WATERS_HEALING` attaches a +10 healing modifier to
+    /// every Holy Site in a city following the religion, and
+    /// `MODIFIER_ALL_UNITS_ADJUST_HEAL_RELIGION_PER_TURN` applies it to that
+    /// religion's units on the district's own plot or its adjacent ring.
+    fn holy_waters_heal(&self, uid: u32) -> i32 {
+        let unit = &self.units[&uid];
+        if self.rules.units[unit.kind].class != "religious" {
+            return 0;
+        }
+        let Some(religion) = unit.religion.as_deref() else {
+            return 0;
+        };
+        let amount = self.religion_belief_effect(religion, "holy_waters_heal");
+        if amount == 0.0 {
+            return 0;
+        }
+        let beside_a_qualifying_holy_site = self.wdisk(unit.pos, 1).into_iter().any(|position| {
+            self.map.get(position).is_some_and(|tile| {
+                tile.district.is_some_and(|district| {
+                    self.district_is_family(district, crate::name!("holy_site"))
+                }) && tile
+                    .owner_city
+                    .and_then(|city_id| self.cities.get(&city_id))
+                    .is_some_and(|city| self.city_religion(city) == Some(religion))
+            })
+        });
+        if beside_a_qualifying_holy_site {
+            amount.round() as i32
+        } else {
+            0
+        }
+    }
+
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind];
@@ -11029,6 +11062,7 @@ impl Game {
         // barbarian, an arena, fallout, a grounded aircraft — because a
         // healing modifier lifts a rate, it does not create one.
         let holy_site_heal = self.pantheon_holy_site_heal(uid);
+        let holy_waters_heal = self.holy_waters_heal(uid);
         if self
             .map
             .get(unit.pos)
@@ -11096,7 +11130,7 @@ impl Game {
                 .map(|other| self.promotion_effect(&self.units[&other], "adjacent_heal"))
                 .fold(0.0, f64::max);
             best = best.max(chaplain);
-            return best.round() as i32 + holy_site_heal;
+            return best.round() as i32 + holy_site_heal + holy_waters_heal;
         }
         if spec.domain.as_deref() == Some("sea")
             && self
@@ -13950,6 +13984,29 @@ impl Game {
         } else {
             (0.0, 0.0, 0.0)
         };
+        let (campuses, commercial_hubs) =
+            if effect("science_per_campus") + effect("gold_per_commercial_hub") > 0.0 {
+                self.cities
+                    .values()
+                    .filter(|city| self.city_religion(city) == Some(religion))
+                    .fold((0.0, 0.0), |(campuses, commercial_hubs), city| {
+                        let districts = |family: &str| {
+                            city.districts
+                                .iter()
+                                .filter(|(district, position)| {
+                                    self.district_is_family(district, Name::new(family))
+                                        && self.district_is_active(city, district, **position)
+                                })
+                                .count() as f64
+                        };
+                        (
+                            campuses + districts("campus"),
+                            commercial_hubs + districts("commercial_hub"),
+                        )
+                    })
+            } else {
+                (0.0, 0.0)
+            };
         let sacred_places = effect("yield_per_wonder_city") * wonder_cities;
         Yields {
             // ⚠ Every arm here has a belief that sets it, and that is
@@ -13967,6 +14024,7 @@ impl Game {
             // match it; #2050 put them back. See `docs/FIDELITY.md`.
             gold: effect("gold_per_city") * following
                 + (effect("gold_per_followers") * followers).floor()
+                + effect("gold_per_commercial_hub") * commercial_hubs
                 + sacred_places,
             culture: (effect("culture_per_followers") * followers).floor()
                 + (effect("culture_per_foreign_followers") * foreign_followers).floor()
@@ -13974,6 +14032,7 @@ impl Game {
                 + sacred_places,
             // Cross-Cultural Dialogue counts followers abroad only.
             science: (effect("science_per_foreign_followers") * foreign_followers).floor()
+                + effect("science_per_campus") * campuses
                 + sacred_places,
             faith: effect("faith_per_city") * following
                 + effect("faith_per_foreign_city") * foreign_following
@@ -14295,6 +14354,12 @@ impl Game {
         radius: i32,
         amount: f64,
     ) {
+        let pressure_loss = (1.0
+            - self
+                .religion_belief_effect(loser, "theological_combat_loss_reduction_pct")
+                .clamp(0.0, 100.0)
+                / 100.0)
+            .max(0.0);
         let targets: Vec<u32> = self
             .cities
             .values()
@@ -14314,7 +14379,7 @@ impl Game {
             {
                 let city = self.cities.get_mut(&cid).unwrap();
                 let losing = city.pressure.entry(loser.to_string()).or_insert(0.0);
-                *losing = (*losing - amount).max(0.0);
+                *losing = (*losing - amount * pressure_loss).max(0.0);
                 if let Some((religion, _)) = winner {
                     *city.pressure.entry(religion.to_string()).or_insert(0.0) += amount;
                 }
@@ -16770,11 +16835,29 @@ impl Game {
             .map(|_| self.policy_effect(pid, "different_government_envoy_bonus") as i64)
             .unwrap_or(0);
         let amount = 1 + first_bonus + different_government_bonus;
+        let papal_religion = self.players[pid].religion.clone();
+        let papal_pressure = papal_religion
+            .as_deref()
+            .map(|religion| self.religion_belief_effect(religion, "envoy_religious_pressure"))
+            .unwrap_or(0.0);
         let p = &mut self.players[pid];
         p.envoys_free -= 1;
         match p.envoys.iter_mut().find(|(m, _)| *m == minor) {
             Some(e) => e.1 += amount,
             None => p.envoys.push((minor, amount)),
+        }
+        if papal_pressure > 0.0 {
+            if let Some(city) = self.player_city_ids(minor).first().copied() {
+                if let Some(religion) = papal_religion {
+                    *self
+                        .cities
+                        .get_mut(&city)
+                        .unwrap()
+                        .pressure
+                        .entry(religion)
+                        .or_insert(0.0) += papal_pressure;
+                }
+            }
         }
         // Actual final-patch behavior is narrower than the Civilopedia's
         // summary: the first manually sent Envoy and sends that merely tie the
@@ -32887,7 +32970,16 @@ impl Game {
                         self.share_team_technology_boost(pid, "apprenticeship");
                     }
                 }
+                let warrior_monk_bomb =
+                    self.players[pid]
+                        .religion
+                        .as_deref()
+                        .is_some_and(|religion| {
+                            self.religion_belief_effect(religion, "holy_site_culture_bomb") > 0.0
+                        })
+                        && self.district_is_family(district, crate::name!("holy_site"));
                 if spec.effects.get("culture_bomb").copied().unwrap_or(0.0) > 0.0
+                    || warrior_monk_bomb
                     || (self.players[pid].civ == "Gaul" && spec.specialty)
                 {
                     self.culture_bomb(cid, *pos);

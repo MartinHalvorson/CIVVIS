@@ -1351,6 +1351,38 @@ class LatestCodeGuarantee(LedgerCase):
                          ["aaa", "bbb", "ddd"])
         self.assertIsNone(civ6_ladder.decider_revisions(self.runs / "absent"))
 
+    def test_decider_binaries_keep_actual_revision_and_digest(self):
+        updates = self.runs / "runtime_updates.jsonl"
+        rows = [
+            {"kind": "runtime_update", "status": "start",
+             "to_revision": "aaa", "source": "binary-checkout",
+             "binary_revision": "aaa", "binary_source": "binary-checkout",
+             "binary_sha256": "digest-a"},
+            {"kind": "runtime_update", "status": "handoff",
+             "to_revision": "bbb", "source": "origin/main",
+             "binary_revision": "bbb", "binary_source": "published-path",
+             "binary_sha256": "digest-b"},
+            # The handoff's fresh brain writes this duplicate start row. Its
+            # source label differs, but it is still the same executable image.
+            {"kind": "runtime_update", "status": "start",
+             "to_revision": "bbb", "source": "runtime-argument",
+             "binary_revision": "bbb", "binary_source": "published-path",
+             "binary_sha256": "digest-b"},
+        ]
+        updates.write_text("\n".join(json.dumps(r) for r in rows))
+        self.assertEqual(
+            civ6_ladder.decider_binaries(updates),
+            [
+                {"revision": "aaa", "source": "binary-checkout",
+                 "binary_revision": "aaa", "binary_source": "binary-checkout",
+                 "binary_sha256": "digest-a"},
+                {"revision": "bbb", "source": "origin/main",
+                 "binary_revision": "bbb", "binary_source": "published-path",
+                 "binary_sha256": "digest-b"},
+            ],
+        )
+        self.assertIsNone(civ6_ladder.decider_binaries(self.runs / "absent"))
+
     def test_decider_genome_reads_the_deciders_own_first_record(self):
         why = self.runs / "why.log"
         why.write_text(
@@ -1387,6 +1419,13 @@ class LatestCodeGuarantee(LedgerCase):
             self.runs, summary("tracked", decider_revisions=["aaa", "bbb"])))
         self.assertEqual(self.state()["attempts"][0]["revisions"],
                          ["aaa", "bbb"])
+
+    def test_binary_provenance_is_recorded_on_the_attempt(self):
+        binaries = [{"revision": "aaa", "binary_sha256": "digest-a"}]
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("binary-tracked", decider_binaries=binaries)))
+        self.assertEqual(self.state()["attempts"][0]["decider_binaries"],
+                         binaries)
 
     def heartbeat_problem(self, payload, minutes=10,
                           now=datetime(2026, 8, 17, 12, 0,

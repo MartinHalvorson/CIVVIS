@@ -31,7 +31,9 @@
     "pilgrimage": {"note":"+2 Faith for each city following this religion","effects":{"faith_per_city":2}},
     "religious_unity": {"note":"first conversion of a city-state grants an Envoy","effects":{"envoy_first_city_state_conversion":1}},
     "lay_ministry": {"note":"+1 Faith for each Holy Site and +1 Culture for each Theater Square in cities following this religion","effects":{"faith_per_holy_site":1,"culture_per_theater_square":1}},
-    "sacred_places": {"note":"+2 Science, Culture, Gold and Faith for each city following this religion that has a Wonder","effects":{"yield_per_wonder_city":2}}
+    "sacred_places": {"note":"+2 Science, Culture, Gold and Faith for each city following this religion that has a Wonder","effects":{"yield_per_wonder_city":2}},
+    "papal_primacy": {"note":"sending an Envoy to a City-State adds 200 Religious pressure","effects":{"envoy_religious_pressure":200}},
+    "stewardship": {"note":"+1 Science per Campus and +1 Gold per Commercial Hub in cities following this religion","effects":{"science_per_campus":1,"gold_per_commercial_hub":1}}
   },
   "follower": {
     "choral_music": {"note":"Shrines and Temples provide Culture equal to Faith","effects":{"holy_building_culture":1}},
@@ -39,6 +41,7 @@
     "feed_the_world": {"note":"Shrines and Temples each provide +3 Food and +2 Housing","effects":{"shrine_food":3,"temple_food":3,"shrine_housing":2,"temple_housing":2}},
     "jesuit_education": {"note":"Campus and Theater buildings may be purchased with Faith","effects":{"faith_purchase_science_culture_buildings":1}},
     "religious_community": {"note":"international routes gain +2 Gold from the origin Holy Site and each of its buildings","effects":{"trade_gold_per_holy_building":2}},
+    "warrior_monks": {"note":"Warrior Monks may be purchased with Faith; completing a Holy Site triggers a Culture Bomb","effects":{"warrior_monk_purchase":1,"holy_site_culture_bomb":1}},
     "zen_meditation": {"note":"+1 Amenity in cities with two specialty districts","effects":{"amenity_two_specialty":1}},
     "divine_inspiration": {"note":"Wonders provide +4 Faith","effects":{"wonder_faith":4}},
     "reliquaries": {"note":"Relics provide triple Faith and Tourism","effects":{"relic_faith_pct":300,"relic_tourism_pct":300}}
@@ -50,7 +53,9 @@
     "missionary_zeal": {"note":"religious units ignore terrain movement costs","effects":{"religious_flat_movement":1}},
     "religious_colonization": {"note":"new cities begin with this religion","effects":{"new_city_religion":1}},
     "just_war": {"note":"+10 Combat Strength near foreign cities following this religion","effects":{"foreign_city_combat_strength":10}},
-    "defender_of_the_faith": {"note":"+5 Combat Strength near friendly cities following this religion","effects":{"friendly_city_combat_strength":5}}
+    "defender_of_the_faith": {"note":"+5 Combat Strength near friendly cities following this religion","effects":{"friendly_city_combat_strength":5}},
+    "holy_waters": {"note":"religious units heal +10 in or adjacent to Holy Sites in cities following this religion","effects":{"holy_waters_heal":10}},
+    "monastic_isolation": {"note":"this religion loses no pressure from Theological Combat","effects":{"theological_combat_loss_reduction_pct":100}}
   },
   "worship": {
     "cathedral": {"note":"unlocks the Cathedral worship building","effects":{"building":1}},

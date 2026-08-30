@@ -156,6 +156,73 @@ for _, op in ipairs({ "SKIP_TURN", "FORTIFY", "ALERT", "SLEEP" }) do
 end
 print("units blocker: parks ready units before claiming completion, holding orders only")
 
+--- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, MEASURED AGAIN ON THE POLICY SLOT.
+--- Run civvis-20260829T022749Z wedged at turn 114 holding 8 cities:
+---     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"   1
+---     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"  25
+---     dismissed FILL_CIVIC_SLOT                              40
+--- repeating unchanged until the watchdog killed the game. Dismissing the
+--- notification cannot clear a slot end-turn still requires, so the answer
+--- has to actually fill it -- exactly as the units blocker parks its units.
+assert(agentSrc:find('if name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then%s+local filled = fillPolicies%(player%)'),
+	"the policy-slot blocker must fill the slot before answering civvis_complete")
+assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+"%s*%.%.%s*tostring%(filled%)'),
+	"a filled answer must be distinguishable from a bare civvis_complete")
+print("policy slot: fills the open slot before claiming completion")
+
+--- ⚠⚠⚠ AND THE SAME SHAPE ON PRODUCTION, WHICH COSTS THE WHOLE GAME.
+--- A city with nothing queued is something end-turn genuinely requires, so
+--- `civvis_complete` is a claim the engine does not accept — and unlike the
+--- policy slot it is not merely re-raised. The Game Core stops publishing while
+--- it waits, and the agent, driven only by `GameCoreEventPublishComplete`,
+--- never ticks again. Nothing recovers that: an external forced end turn was
+--- measured and ignored twice.
+--- Run civvis-20260830T074021Z parked at t87 on `ENDTURN_BLOCKING_PRODUCTION`
+--- answered `civvis_complete` at attempts=1, with `Ravenna producing nil`.
+assert(agentSrc:find('if name == "ENDTURN_BLOCKING_PRODUCTION" then%s+local set = driveProduction%(player, turn, true%)'),
+	"the production blocker must actually set production before claiming completion")
+assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+produced:"%s*%.%.%s*set'),
+	"a produced answer must be distinguishable from a bare civvis_complete")
+print("production: sets an empty city before claiming completion")
+
+--- ⚠⚠⚠ THE FORFEIT'S FORCED END TURN MUST NOT BE GATED ON THE UNIT BLOCKERS.
+--- `ACTION_ENDTURN` with no reason is refused while a blocker stands, and
+--- dismissing does not stick for anything end-turn genuinely requires, so a
+--- forfeited blocker that is not a unit blocker left the turn unable to end.
+--- Dismissals across the 2026-08-28/29 ladder runs: 26 forced (all UNITS), and
+--- 39 world-congress, 24 policy-slot, 12 envoy-token, 6 great-person NOT forced.
+--- Run civvis-20260829T032446Z shows both halves: t88 dismissed UNITS with
+--- `parked=0`, forced, and advanced; t94 dismissed GIVE_INFLUENCE_TOKEN unforced
+--- and never played another turn.
+local forfeitArm = agentSrc:match("forced = not holdForVote %}%);(.-)elseif not residual_taken")
+assert(forfeitArm, "the forfeit dismissal arm was not found")
+assert(forfeitArm:find('REASON = "UserForced"', 1, true),
+	"a forfeited blocker must force the end turn")
+--- Spelled in two halves on purpose. The ladder-type gate in `tests.yml`
+--- strips comments and then reads any bare `"UNIT_…"` string literal as a
+--- Civilization VI unit type; this one names a Lua table, so shipping it whole
+--- in #2730 turned `main` red on `control-mod`.
+local unitBlockerTable = "UNIT" .. "_BLOCKERS"
+assert(not forfeitArm:find(unitBlockerTable, 1, true),
+	"the forced end turn must not be gated on the unit-blocker table")
+print("forfeit: every dismissed blocker forces the end turn")
+
+--- ⚠⚠⚠ EXCEPT THE CONGRESS SESSION, WHICH DEFERS ITS BALLOT ONE CYCLE.
+--- Forfeit 1 waits for the stage-1/popup ballot; only forfeit 2 falls back to
+--- vote-and-submit. Forcing the turn at forfeit 1 ends it before either can
+--- happen, so the session is dismissed unvoted every time -- and this seat plays
+--- for a DIPLOMATIC victory, where those votes are the win condition. The hold
+--- lifts as soon as the ballot is cast for the turn.
+assert(forfeitArm:find("holdForVote", 1, true),
+	"the forced end turn must be held while a congress ballot is still owed")
+local hold = agentSrc:match("local holdForVote = (.-);\n")
+assert(hold, "holdForVote is not defined")
+assert(hold:find("ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION", 1, true),
+	"the hold must name the congress session")
+assert(hold:find("voted_turn", 1, true),
+	"the hold must lift once the ballot is cast for this turn")
+print("forfeit: the congress session is not forced before its ballot")
+
 print("blocker ownership: " ..
 	#(function() local n = {} for _ in pairs(answers) do n[#n + 1] = 1 end return n end)() ..
 	" answered prompts owned, no soft overlap, every order kind real")

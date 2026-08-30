@@ -69,3 +69,32 @@ other gene (`docs/GENE_SCREEN.md`).
 - It does not send military units hunting barbarians (`barbarian-hunt`,
   `camp-party` own that).
 - Off, every touched path is unchanged.
+
+## What the live seat learned (2026-08-28): twenty-four captures in ten runs
+
+The operator's standing rule, 2026-08-28: *every* settler a barbarian takes is
+reconstructed turn by turn and the mechanism is fixed. The first day under the
+rule read all twenty-four captures of the day's ten Civilization VI runs
+(`tools/civ6_settler_captures.py` now writes the dossiers; run
+`civvis-20260829T000643Z` alone lost eight). They fell into six mechanisms, and
+two **host-only** treatments answer five of them. Host-only because the native
+barbarian seat's recon cannot capture and its raids are already priced by the
+screens: both are on for the Civilization VI seat through
+`enable_live_bridge_universe`, inert on a native board, so no screened gene's
+behaviour changes under them.
+
+| captures | mechanism | answer |
+|---:|---|---|
+| 11 | the site chosen was beside a nest that had already taken a settler — "takes a site the preferred search refused"; a dead site was retired per settler, six turns | `live-settler-capture-lessons` (1): a settler that leaves the board with no city of ours within two tiles of where it last stood was **taken**; every tile within `SETTLER_CAPTURE_SCAR_RADIUS` (3) of that ground is dead for **every** settler for `SETTLER_DEAD_SITE_AVOID_TURNS` (30 standard turns) — `settler_site_is_dead` reads the scar, so the ranking, the exhaustion fallback and the target validation all refuse it, and the journal says "A settler was lost at …" |
+| 6 | a barbarian **scout** two tiles away, exempt from every capture model on the claim that Firaxis' scouts never capture (`barbarian-scouts-are-scouts`); run `civvis-20260828T122324Z` shows one scout standing on our captured settler and taking three more | `live-barbarian-scouts-capture`: a barbarian recon unit counts in `barbarian_reach`, the turn-start hostiles, the unstacked-step capture test, the guard release and the route scorer's capture threats. The graded `settlement_tile_risk` keeps the exemption so the fourteen-turn freeze that gene fixed does not return |
+| 6 | marching alone into fog: "The settler's guard stands down — no visible hostile within 8 tiles" fired the turn before a raider walked out of the fog, six times beside a camp the board knew about | `live-settler-capture-lessons` (4): the guard is not released while a known barbarian camp is within `SETTLER_ESCORT_THREAT_RADIUS` |
+| 3 | a wounded or outclassed guard counted as protection (a 15-strength archer bound over a warrior; a guard at 12 HP "stands with its settler") | `live-settler-capture-lessons` (3): of the guards that can reach the settler this turn the **strongest** is summoned, not the nearest |
+| 2 | "holds inside a barbarian's reach — no reachable tile is better": standing still beside a skirmisher, two tiles from a full-health archer (run `civvis-20260829T022749Z`, t78) | `live-settler-capture-lessons` (2): with no safe tile, a tile one of our military units holds outranks every bare tile — the settler walks onto it and binds that unit as its guard — and standing still loses to any tile farther from the nearest raider |
+| 2 | "flees … out of reach" to a tile the raider reached anyway | open: the mirror's movement flood disagreed with the host's; the dossiers carry both positions for the next reading |
+
+The first capture recorded after the treatments shipped (`civvis-20260829T022749Z`, t104) was a repeat of that run's t78 loss on the **same site**: the guard was released at t103 on the tile of the t78 capture ("no visible hostile within 8 tiles"), and the next settler was taken two tiles short. Two more rules under `live-settler-capture-lessons`: **(5)** a guard is not released while the settler stands on scarred ground, at either release site; **(6)** the route step onto scarred ground is refused alone — a guard is summoned and walks in stacked, else the settler sidesteps onto unscarred ground, else it waits ("Settler will not cross the ground that took a settler alone"). Tests: `a_guard_is_not_released_on_ground_that_took_a_settler`, `a_settler_does_not_cross_scarred_ground_alone`.
+
+Tests: `a_barbarian_scout_is_a_capture_threat_on_the_live_seat`,
+`a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons`,
+`a_lost_settler_retires_the_ground_around_it_for_every_settler`,
+`the_strongest_guard_that_can_reach_the_settler_is_summoned_under_the_lessons`.

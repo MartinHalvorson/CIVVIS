@@ -1722,6 +1722,88 @@ pub const GENES: &[Gene] = &[
     // marches on the exact-reach rule alone. See
     // `advanced/settler_never_idles.rs`.
     Gene { tag: "settler-never-idles", field: "settler_never_idles", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_never_idles, disable: AdvancedAi::disable_settler_never_idles },
+    // ⚠ 2026-08-28: the live seat lost twenty-four settlers in ten runs. Six
+    // went to barbarian SCOUTS, which every capture model exempted on the
+    // claim that Firaxis' scouts neither attack nor capture — run
+    // civvis-20260828T122324Z shows one scout standing on our captured
+    // settler and taking three more. Host-only: the native barbarian seat's
+    // recon really cannot capture, so no screen can price this.
+    Gene { tag: "live-barbarian-scouts-capture", field: "live_barbarian_scouts_capture", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_barbarian_scouts_capture, disable: AdvancedAi::disable_live_barbarian_scouts_capture },
+    // The other eighteen: eleven walked to a site beside a nest that had
+    // already taken a settler (dead sites were per settler and six turns
+    // long), six marched alone after "no visible hostile within 8 tiles"
+    // beside a known camp, one held still beside a skirmisher two tiles from
+    // a full-health archer. Every settler lost on the live seat is now a
+    // reconstructed case and a fix (operator rule, 2026-08-28). See
+    // `advanced/civilian_safety.rs`.
+    Gene { tag: "live-settler-capture-lessons", field: "live_settler_capture_lessons", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_settler_capture_lessons, disable: AdvancedAi::disable_live_settler_capture_lessons },
+    // A stranded Settler's wider search refuses a site beside an unresolved
+    // rival border and forecasts its nearest-legal tier; see
+    // `advanced/settler_never_idles.rs`.
+    Gene { tag: "exhaustion-loyalty-guard", field: "exhaustion_loyalty_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exhaustion_loyalty_guard, disable: AdvancedAi::disable_exhaustion_loyalty_guard },
+    // A parked Settler holds the Settler pipeline instead of opening it for a
+    // replacement; see `BasicAi::settler_backlog_brake`.
+    Gene { tag: "settler-backlog-brake", field: "settler_backlog_brake", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_backlog_brake, disable: AdvancedAi::disable_settler_backlog_brake },
+    // A housing-bound city builds its Granary ahead of the argmax; see
+    // `advanced_production`.
+    Gene { tag: "first-granary-reserve", field: "first_granary_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve, disable: AdvancedAi::disable_first_granary_reserve },
+    // Research the tech that connects an owned, unimproved luxury before the
+    // lane's beeline resumes; see `unconnected_luxury_tech`.
+    Gene { tag: "connect-the-luxury", field: "connect_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_connect_the_luxury, disable: AdvancedAi::disable_connect_the_luxury },
+    // Hold four fifths of the strongest bordering major's military power in
+    // peacetime by buying the contact city's defender; see
+    // `border_parity_purchase`.
+    Gene { tag: "border-parity", field: "border_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity, disable: AdvancedAi::disable_border_parity },
+    // A few era points short of a Normal Age, any affordable Great Person is
+    // worth its moment; see `era_points_short`.
+    Gene { tag: "age-closer", field: "age_closer", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer, disable: AdvancedAi::disable_age_closer },
+    // A boosted, prerequisite-met technology within two turns of science is
+    // researched before the lane's beeline resumes; see `boosted_bargain_tech`.
+    Gene { tag: "boosted-bargain-first", field: "boosted_bargain_first", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first, disable: AdvancedAi::disable_boosted_bargain_first },
+    // A wonder twelve turns from done in a strong city opens the live race
+    // without the ordinary guards; see `wonder_bargain_city`.
+    Gene { tag: "cheapest-wonder-first", field: "cheapest_wonder_first", kind: Kind::OptIn, enable: AdvancedAi::enable_cheapest_wonder_first, disable: AdvancedAi::disable_cheapest_wonder_first },
+    // Version two of border-parity: produce the defender when it cannot be
+    // bought; see `border_parity_target`.
+    Gene { tag: "border-parity-2", field: "border_parity_2", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_2, disable: AdvancedAi::disable_border_parity_2 },
+    Gene { tag: "first-district-first", field: "first_district_first", kind: Kind::OptIn, enable: AdvancedAi::enable_first_district_first, disable: AdvancedAi::disable_first_district_first },
+    Gene { tag: "walls-after-districts", field: "walls_after_districts", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_after_districts, disable: AdvancedAi::disable_walls_after_districts },
+    // ⚠ THE HOSTILE LIST IS VISIBLE-ONLY AND THE SETTLERS DIE TO WHAT IS NOT
+    // ON IT. Twenty-eight real settler losses over eleven live King runs
+    // (2026-08-29): TEN walked into a hostile with none visible within three
+    // tiles on the previous turn's state, eight were captured while parked
+    // waiting for a guard, six moved inside a visible hostile's reach
+    // unescorted, two were zone-of-control pinned, and TWO were taken by Free
+    // Cities units (player 62), which `barbarian_reach` ignored outright
+    // because it early-returned on `g.barb_pid` and skipped every unit whose
+    // owner was not the Barbarian player. The envelope now counts every
+    // at-war owner, and keeps pricing a hostile it has actually seen for
+    // `HOSTILE_MEMORY_TURNS` after it walks back into the fog — projected
+    // with `wdisk` from the last seen tile, padded by the turns since, never
+    // from where the unit really is. See `advanced/civilian_safety.rs`.
+    Gene { tag: "hostile-memory", field: "hostile_memory", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory, disable: AdvancedAi::disable_hostile_memory },
+    // The other half of the same twenty-eight: eight settlers were captured
+    // while PARKED waiting for a guard. `stacked_escort_pace` bounds that
+    // wait at `STACKED_ESCORT_PATIENCE` = 2 turns and then suspends the bound
+    // whenever `unstacked_settler_step_is_capturable` is true — the one
+    // predicate in the wait that reads the visible frame alone, which in the
+    // opening is the weather rather than the exception. Its fallback then
+    // fortifies a settler bare on open ground on `risk > 0.0`, so a zero
+    // reading (nothing VISIBLE can reach it) is treated as quiet ground when
+    // it is just as often an empty vision frame — the march itself prices the
+    // same step against `SETTLER_STEP_RISK_LIMIT` = 30. With the gene on the
+    // cap releases on schedule and an unstacked settler already outside its
+    // own city marches instead of standing still.
+    // ⚠ OptIn rather than HostOnly, unlike `escort-patience-runs-out` above,
+    // because the operator arms it as a labelled live arm (`--with`, which
+    // only a held-off opt-in or a ledger-held live treatment can seat) rather
+    // than shipping it on with the live universe. The path it sits in is
+    // still gated by `formationless_settler_escort()` ->
+    // `live_formationless_settler_shadow`, so a native screen cannot price it
+    // and it carries a fire waiver saying exactly that; the live ladder
+    // measures it directly, and the abandon rule it targets fires on 45% of
+    // King games.
+    Gene { tag: "escort-cap-holds", field: "escort_cap_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_escort_cap_holds, disable: AdvancedAi::disable_escort_cap_holds },
 ];
 
 // ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══

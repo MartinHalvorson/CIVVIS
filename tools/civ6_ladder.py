@@ -657,6 +657,55 @@ def decider_revisions(updates_path: Path) -> list[str] | None:
     return revisions or None
 
 
+def decider_binaries(updates_path: Path) -> list[dict] | None:
+    """Ordered identities of the executable images that decided this run.
+
+    ``decider_revisions`` is not enough when a brain is handed an executable
+    from another checkout: the bridge can report its own revision while the
+    binary came from a different branch, and two builds of one revision can
+    still differ.  The runtime rows carry the executable's source revision and
+    SHA-256.  Paths are intentionally omitted because they are machine-local.
+    Older rows remain readable and simply carry whichever identity fields they
+    recorded.
+    """
+    if not updates_path.is_file():
+        return None
+    binaries: list[dict] = []
+    with updates_path.open() as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (event.get("kind") != "runtime_update"
+                    or event.get("status") not in ("start", "handoff")):
+                continue
+            record = {
+                "revision": event.get("to_revision"),
+            }
+            for field in ("source", "binary_revision", "binary_source",
+                          "binary_sha256"):
+                value = event.get(field)
+                if value is not None:
+                    record[field] = value
+            # A handoff is followed by a fresh start. They describe the same
+            # image, so the ledger should show one identity rather than count
+            # the re-exec as a second decider.
+            identity = tuple(record.get(field) for field in (
+                "revision", "binary_revision", "binary_source",
+                "binary_sha256",
+            ))
+            if binaries:
+                previous = tuple(binaries[-1].get(field) for field in (
+                    "revision", "binary_revision", "binary_source",
+                    "binary_sha256",
+                ))
+                if identity == previous:
+                    continue
+            binaries.append(record)
+    return binaries or None
+
+
 def decider_genome(why_log: Path) -> dict | None:
     """The genome the decider actually played, from its own first record.
 
@@ -915,6 +964,7 @@ def entry_from(summary: dict) -> dict:
         # The return codes' rate beside the verified one; see `orders_ledger`.
         "reported_pct": reported_pct(summary),
         "revisions": summary.get("decider_revisions"),
+        "decider_binaries": summary.get("decider_binaries"),
         # Which genome the decider actually played (see `decider_genome`) and
         # the name the launcher asked for. `genome.strategy == "stock"` beside a
         # `strategy_requested` that names a league entrant is the resolver's

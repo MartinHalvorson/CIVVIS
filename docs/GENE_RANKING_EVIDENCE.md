@@ -185,7 +185,20 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `age-closer` | off (unmeasured) | One to four era points short of a Normal Age, patronize any Great Person the bank can carry for its Historic Moment. | 1 \| 1 |
+| `boosted-bargain-first` | off (unmeasured) | Research a prerequisite-met technology whose Eureka is in hand and whose remaining cost is at most two turns of science before the lane's beeline resumes. | 1 \| 1 |
+| `border-parity` | off (unmeasured) | In peacetime, keep the seat's military power at four fifths of the strongest bordering major's by buying the contact city's ranged defender with Gold above a reserve. | — \| 2 |
+| `border-parity-2` | off (unmeasured) | Version two of `border-parity`: the same target and Gold purchase, and when the treasury cannot pay, the contact city's idle queue starts the defender. | — \| 2 |
 | `capture-go-or-stand-down-2` | off (unmeasured) | Version 2 of `capture_go_or_stand_down`: also stands down a siege whose bodies are at the objective but have not pushed the city to a new low for `CAPTURE_STALL_TURNS` stalled readings. | 1 \| 2 |
+| `cheapest-wonder-first` | off (unmeasured) | A wonder within twelve turns of done in one of the empire's strongest cities opens the live wonder race without the three-city and three-building guards, with a bonus that scales with how quickly it finishes; a wonder further than twenty-five turns from done never opens the ordinary race. | 1 \| 1 |
+| `connect-the-luxury` | off (unmeasured) | Research the cheapest technology that connects an owned, unimproved luxury (Irrigation, Sailing) ahead of the lane's beeline, once the opening techs are in. | 1 \| 1 |
+| `escort-cap-holds` | off (unmeasured) | The two-turn escort cap releases the settler on schedule instead of being suspended by a predicate that reads only the visible frame, and a settler already outside its own city with no guard on its tile marches on a zero risk reading rather than fortifying bare. | 1 \| 1 |
+| `exhaustion-loyalty-guard` | off (unmeasured) | A stranded Settler's exhaustion search sets aside a site beside an unresolved rival border — the one fog guess the preferred search made that names a city the forecast cannot see — and its nearest-legal tier runs the same concrete-revolt forecast the ranked tier does. | 1 \| 1 |
+| `first-district-first` | off (unmeasured) | `first-district-first`: a city's FIRST specialty district outranks the queue filler. | 1 \| 1 |
+| `first-granary-reserve` | off (unmeasured) | A city grown to its housing (pop + 1 ≥ housing) with no Granary starts one ahead of the argmax. | 1 \| 1 |
+| `hostile-memory` | off (unmeasured) | The civilian capture envelope counts every at-war owner and keeps pricing a hostile the seat has seen for a few turns after it walks back into the fog. | 1 \| 1 |
+| `settler-backlog-brake` | off (unmeasured) | Once the empire holds three cities, no Settler starts while an owned Settler has stood on one tile six turns; the same brake on the `BasicAi` pipeline. | 1 \| 1 |
+| `walls-after-districts` | off (unmeasured) | `walls-after-districts`: the barbarian pre-emption's WALL answer waits until the city holds a district; its unit answer is untouched. | 1 \| 1 |
 
 ## Removed from the code
 

@@ -750,11 +750,11 @@ reported fifteen. Five are fixed here; the rest are triaged below.
   2, government plaza 1, strategic 1), which is what makes the one outlier
   convincing rather than a projection artifact.
 
-- **`Buildings` — three uniques must follow the installed Gathering Storm rows,
-  not stale expansion snippets.** The Prasat ships Faith **4** with two Relic
-  slots; CIVVIS had 6 and one. The Sukiennice ships Gold **3**; CIVVIS had 2.
-  The Tlachtli ships Culture **1**; CIVVIS had 2. The XML load order, not an
-  isolated historical row, is the authority for all three.
+- **`Buildings` — the effective cache rows supersede the earlier XML reading.**
+  The compiled Gathering Storm cache ships the Prasat with Faith **6** and one
+  Relic slot, the Sukiennice with **2** Gold, and the Tlachtli with **2** Culture;
+  CIVVIS now matches all three. An earlier XML-oriented reading inverted these
+  values, which is why the cache audit remains the authority for the running game.
 - **`Improvements` / `sphinx` terrain.** CIVVIS allowed Snow;
   `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
   their Hills variants, and no Snow.
@@ -1246,8 +1246,9 @@ found two defects in **this audit**, not in the engine:
   four "divergences" the earlier fingerprint notes had recorded as CIVVIS
   corrections were CIVVIS being right against a stale reference. What remains
   between the two routes (12 fields, all matching the compiled cache: Pike and
-  Shot upkeep, the Tagma, three unique buildings, Eyjafjallajökull's adjacent
-  Food) is content-pack rebalancing the XML route still misses; the cache
+  Shot upkeep 4, the Tagma's 220/4/Cuirassier row, the three unique buildings,
+  and Eyjafjallajökull's adjacent Food 1) is content-pack rebalancing the XML
+  route still misses; the cache
   route — `--cache`, which now also finds the Aspyr build's nested path — is
   the reference for the running game.
 
@@ -2036,9 +2037,10 @@ wonder.** Fixed together with the roster:
   Gathering Storm's rebalance of Rise and Fall content, and sorted filename
   order applied it *before* the rows it edits existed — so every `<Update>` in
   it silently matched nothing. The Eye of the Sahara kept Rise and Fall's 1
-  Production against CIVVIS' correct 2, and Pike and Shot's maintenance was
-  read as 4 when Gathering Storm sets it to 3 (that one was a real CIVVIS
-  error, now fixed). Cross-expansion overlays are applied last.
+  Production against CIVVIS' correct 2. The XML route reads Pike and Shot's
+  maintenance as 3, while the effective compiled cache used by the running
+  game reads 4; the earlier XML-only reconciliation incorrectly called the
+  cache value a CIVVIS error. Cross-expansion overlays are applied last.
 - `RemoveData` files were excluded as cosmetic. They are how the later packs
   retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
   Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
@@ -2073,7 +2075,7 @@ were already exact; the rest surfaced 62 divergences, all resolved:
 |---|---|
 | Naval Raider and Carrier promotion trees rearranged | Loot is tier 1 with no prerequisite, Homing Torpedoes tier 2, Silent Running tier 3, Wolfpack tier 4 — plus five wrong prerequisite lists (Armor Piercing, Hangar Deck, Folding Wings, Observation, Swift Keel) |
 | Reactor-era project costs | Coal/Oil/Uranium conversions 300/360/480 → 200/300/400, Recommission Reactor 200 → 400, Operation Ivy 1200 → 1000 |
-| Gathering Storm building buffs missed | Palace grants 2 Amenities (not 1), Biosphère +8 Science, Prasat 2 Relic slots and 4 Faith, Sukiennice 3 Gold, Tlachtli 1 Culture |
+| Gathering Storm building values reconciled | Palace grants 2 Amenities (not 1), Biosphère +8 Science, and the effective cache rows are Prasat 1 Relic slot and 6 Faith, Sukiennice 2 Gold, Tlachtli 2 Culture |
 | Jebel Barkal double-counted | Its +4 Faith reaches every city within 6 tiles including its host; CIVVIS carried a local copy on top of the regional effect |
 | Estádio do Maracanã was local | The game gives its 6 Culture and 2 Amenities to every city in the empire (regional range 100000) |
 | Improvement siting was intersection-based | Civ 6 sites improvements through any of three routes — valid terrain OR valid feature OR valid resource. Farms on desert Floodplains and flat resource mines now place exactly as shipped |
@@ -3015,6 +3017,15 @@ Each line names where to start.
    the `can_declare` permission fake can retire, and a casus-belli-typed
    declaration so the host fights the Formal War the board chose instead of
    a Surprise War.
+   What #2755 closed on the same seam, from the other side: the mod's own
+   strikes (`ATTACK`, `CAPTURE`, `RANGE_ATTACK`, the city and encampment
+   strikes) were requested without the `CombatManager.IsAttackChangeWarState`
+   question `WorldInput.lua:2067` asks before a human's attack, so a strike on
+   a city-state's unit — 21 of the 28 self-inflicted wars in 46 King runs —
+   drew its suzerain into a Suzerain War at 150 grievances with no `war`
+   order and no journal line. The bridge now asks and refuses
+   (`would_declare_war:<players>`, event `war_refused`); the agent's
+   `DIPLOMACY_DECLARE_WAR` order stays the only route to a war.
 2. ~~**The buildable and purchasable menus with costs.**~~ SHIPPED (#2595) —
    see "the host's production and purchase menus cross" above: `buildable`,
    `purchasable` and the queue tail cross per city, and the production and
@@ -3185,6 +3196,28 @@ the event kinds nothing in `src/` opens (`gp`, `unit_lost`, `wc_*`, `envoy`,
 `deal_response`) still carry facts the board could use — Great Person city
 effects first; and a settle-site's fresh water is still derived from the
 board (the host's `fw` is consulted for founded cities only).
+
+### The remaining Gathering Storm belief rows are now live (2026-08-29)
+
+The installed Gathering Storm XML was re-audited after the religious pass.
+`civ6_fidelity.py --table Beliefs` now reports **0 only-in-Civ-VI rows**:
+`holy_waters`, `monastic_isolation`, `papal_primacy`, `stewardship` and
+`warrior_monks` all have model data and runtime consumers. The inert-effect
+check likewise reports no unconsumed belief effect keys. The older Round 11
+and 2026-08-18 tables above remain historical snapshots of the queue before
+this follow-up; they are not the current coverage count.
+
+### The rules-data re-pin was corrected after cache verification (2026-08-29)
+
+The effective compiled Gathering Storm cache now reports **0 divergent fields
+across 29 tables**. A prior re-pin interpreted nine cache/XML discrepancies in
+the wrong direction; direct cache reads restored the values the running game
+uses: Pike and Shot upkeep 4; Tagma cost 220, upkeep 4 and upgrade to
+Cuirassier; Prasat Faith 6 with one Relic slot; Sukiennice Gold 2; Tlachtli
+Culture 2; and Eyjafjallajökull adjacent Food 1. The many rows in the audit's
+“only in Civ VI” columns remain intentionally outside the model when they are
+unique Great People, policies, or other systems CivVis does not yet simulate;
+they are not field divergences in rows the model claims to ship.
 
 ### How to re-measure
 

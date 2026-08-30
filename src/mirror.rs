@@ -1811,7 +1811,8 @@ pub struct StateCity {
     /// Production already invested in `producing`.
     #[serde(default = "unknown_metric")]
     pub production_progress: f64,
-    /// ⚠⚠ THE CITY'S PRODUCTION YIELD PER TURN, AND IT WAS BEING THROWN AWAY.
+    /// ⚠⚠ THE PRODUCTION AVAILABLE TO THE CITY'S BUILD QUEUE, AND IT WAS BEING
+    /// THROWN AWAY.
     ///
     /// PR #845 added `production`, `production_cost` and `production_turns` to the
     /// export precisely because they are a DECISION input and not only a diagnostic,
@@ -1823,6 +1824,10 @@ pub struct StateCity {
     ///
     /// Live on run `civvis-20260802T083838Z`: `production: 11`, `production_cost: 60`,
     /// `production_turns: 3` for a Quadrireme at `production_progress: 27`.
+    /// This is the queue's whole-number production reading, not the exact
+    /// per-city yield used by `City:GetYield(YieldTypes.PRODUCTION)`. The latter
+    /// crosses in `yields.production` (and in `public_stats.production` for the
+    /// empire total) and is the value an economy comparison must use.
     ///
     /// ⚠ This matters far more since #867, which stopped CIVVIS deferring to the
     /// mod's ladder and made it choose production for every city every turn. Choosing
@@ -3950,7 +3955,9 @@ fn restore_rival_outgoing_routes(game: &mut crate::game::Game, rivals: &[StateRi
 /// its SEAT as a decimal string, a resource/district/building/feature/project
 /// its CIVVIS node name, and the class-like targets (Great Person class,
 /// promotion class, great-work object, spy operation, yield) the Firaxis
-/// suffix in lower case, which is what the engine keys them by.
+/// suffix in lower case, which is what the engine keys them by. The popup
+/// exports localized display keys (`LOC_*_NAME` / `LOC_*_DESCRIPTION`) for many non-player
+/// targets, so those wrappers are removed before the rule-node translation.
 fn civvis_congress_effect(
     rules: &crate::rules::Rules,
     resolution: &StateResolution,
@@ -3962,7 +3969,12 @@ fn civvis_congress_effect(
         2 => "B",
         _ => return None,
     };
-    let target = resolution.target.trim();
+    let raw_target = resolution.target.trim();
+    let localized_target = raw_target.strip_prefix("LOC_").unwrap_or(raw_target);
+    let target = localized_target
+        .strip_suffix("_NAME")
+        .or_else(|| localized_target.strip_suffix("_DESCRIPTION"))
+        .unwrap_or(localized_target);
     let seat = || {
         target
             .parse::<usize>()
@@ -4044,6 +4056,42 @@ fn civvis_congress_effect(
     })
 }
 
+/// Extend the ordinary host-player map with the anonymous major seats that a
+/// Congress table exposes even when the seat has not met those players.
+///
+/// `seat_of_host` intentionally contains only players whose identity is known
+/// to the mirror (plus mapped city-states). That is the right map for most
+/// host data, but it made a numeric Congress target such as `"1"` disappear
+/// even though the same Congress export had already listed player 1's
+/// standing. Use the same deterministic ascending-player assignment as
+/// [`apply_congress_dvp`], without changing the global map and accidentally
+/// assigning an unseen major to a city-state slot in unrelated systems.
+fn congress_seat_of_host(
+    state: &StateSnapshot,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+    seat_count: usize,
+) -> std::collections::BTreeMap<usize, usize> {
+    let mut congress_seats = seat_of_host.clone();
+    let Some(congress) = &state.congress_dvp else {
+        return congress_seats;
+    };
+    let ours = state.seat.local_player.max(0) as usize;
+    let major_seats = match state.seat.players {
+        0 => seat_count,
+        players => players.min(seat_count),
+    };
+    let mut unmet: Vec<&StateCongressDvpEntry> = congress
+        .points
+        .iter()
+        .filter(|entry| entry.player != ours && !congress_seats.contains_key(&entry.player))
+        .collect();
+    unmet.sort_by_key(|entry| entry.player);
+    for (seat, entry) in (state.rivals.len() + 1..major_seats).zip(unmet) {
+        congress_seats.insert(entry.player, seat);
+    }
+    congress_seats
+}
+
 /// Put the host's binding World Congress resolutions on the board.
 ///
 /// The model has its own Congress and simulates one when it plans ahead, but on
@@ -4072,8 +4120,9 @@ fn apply_host_congress(
         .unwrap_or_else(|| game.standard_duration(30));
     let expires = game.turn.saturating_add(turns_left).saturating_add(1);
     game.active_congress_effects.clear();
+    let congress_seat_of_host = congress_seat_of_host(state, seat_of_host, game.players.len());
     for resolution in resolutions {
-        match civvis_congress_effect(&game.rules, resolution, seat_of_host, expires) {
+        match civvis_congress_effect(&game.rules, resolution, &congress_seat_of_host, expires) {
             Some(effect) => game.active_congress_effects.push(effect),
             None => {
                 let issue = format!(
@@ -5743,6 +5792,7 @@ fn civvis_node_name<T>(
     // `civvis_orders` pins the round trip for every orderable name.
     if prefix == "UNIT_" {
         let alias = match base.as_str() {
+            "phoenicia_bireme" => Some("bireme"),
             "byzantine_tagma" => Some("tagma"),
             "roman_legion" => Some("legion"),
             "portuguese_nau" => Some("nau"),
@@ -7453,20 +7503,30 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     }
     // ★★★★ PRODUCTION BELONGS ON THIS LINE NOW, AND COULD NOT BEFORE.
     //
-    // Science and culture arrive as seat totals; production only ever existed
-    // per-city, and `StateCity` was not reading it (see the field). Summing the
-    // export's own per-city figure gives the same civ6-versus-CIVVIS comparison for
-    // the yield that decides what every city builds.
-    //
-    // ⚠ Only cities the export actually reported a figure for are summed, so an
-    // older mod reads as unknown rather than as zero — the same rule the seat totals
-    // follow. `unknown_metric` is negative, which is why the filter is `>= 0`.
-    let host_production: f64 = state
-        .cities
-        .iter()
-        .map(|city| city.production)
-        .filter(|value| *value >= 0.0)
-        .sum();
+    // Use the exact empire total first. `StateCity.production` is the
+    // BuildQueue's whole-number `GetProductionYield()` reading, not the city's
+    // exact `City:GetYield(YieldTypes.PRODUCTION)` value; summing it manufactured
+    // a recurring +3% drift on the live Science run even while the exact city
+    // yields and `public_stats.production` agreed. Fall back to exact per-city
+    // yields for exports that predate `public_stats`, but only when every city is
+    // present and has a finite reading so a partial export cannot look complete.
+    let host_production = state
+        .public_stats
+        .production
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .or_else(|| {
+            let values: Vec<f64> = state
+                .cities
+                .iter()
+                .filter_map(|city| city.yields.map(|yields| yields.production))
+                .collect();
+            (!values.is_empty()
+                && values.len() == state.cities.len()
+                && values
+                    .iter()
+                    .all(|value| value.is_finite() && *value >= 0.0))
+            .then(|| values.into_iter().sum())
+        });
     let pct = |ours: f64, theirs: f64| {
         if theirs.abs() < 1e-6 {
             return "n/a".to_string();
@@ -7517,14 +7577,14 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     };
     // Omitted rather than printed as 0.0/x when no city reported a figure, so an
     // older mod is silent here instead of claiming a 100% drift.
-    let production_part = match host_production > 0.0 {
-        true => format!(
+    let production_part = match host_production.filter(|value| *value > 0.0) {
+        Some(host_production) => format!(
             " production {:.1}/{:.1} {}",
             host_production,
             production,
             pct(production, host_production)
         ),
-        false => String::new(),
+        None => String::new(),
     };
     Some(format!(
         "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}{}",
@@ -8009,6 +8069,14 @@ fn civvis_belief_name(rules: &crate::rules::Rules, civ6: &str) -> Option<String>
         .strip_prefix("BELIEF_")
         .unwrap_or(civ6.trim())
         .to_ascii_lowercase();
+    // Gathering Storm's XML calls this `BELIEF_DEFENDER_OF_FAITH`, while the
+    // model keeps the unambiguous `defender_of_the_faith` node. The fidelity
+    // audit has the same shipped-data alias; the live mirror must use it too or
+    // the already-implemented combat bonus is silently absent in-game.
+    let name = match name.as_str() {
+        "defender_of_faith" => "defender_of_the_faith".to_string(),
+        _ => name,
+    };
     [
         &rules.beliefs.pantheon,
         &rules.beliefs.founder,
@@ -13445,17 +13513,34 @@ impl LiveMirror {
                     continue;
                 };
                 let pos = crate::hex::offset_to_axial(unit.x, unit.y);
-                if self.game.map.get(pos).is_some()
-                    && !self.game.units.values().any(|live| live.pos == pos)
-                {
-                    let uid = self.game.spawn_unit(&name, owner, pos);
-                    let progress =
-                        observed_unit_progress(&self.game.rules, unit, &mut self.unmapped);
-                    if let Some(live) = self.game.units.get_mut(&uid) {
-                        apply_unit_observation(live, unit, progress);
-                        self.rival_units.push(uid);
-                        self.foreign_uid_of.insert(unit.id, uid);
-                    }
+                if self.game.map.get(pos).is_none() {
+                    continue;
+                }
+                // ★★★★ A CITY-STATE'S UNIT IS PLANTED LIKE A RIVAL'S, ON AN
+                // OCCUPIED PLOT TOO.
+                //
+                // This loop used to carry `&& !self.game.units.values().any(|live|
+                // live.pos == pos)`, so a minor's unit sharing a plot with anything
+                // already planted was silently DROPPED — not counted in
+                // `dropped_units`, not named in `unmapped`, simply absent. The
+                // hostiles above are planted first (with their own guard) and the
+                // rivals second with NO guard, so the board could see a major's
+                // Trader stacked on a barbarian and never the city-state's.
+                //
+                // A unit the mirror cannot see is a unit no veto can refuse to
+                // shoot. Measured 2026-08-29: `civvis-20260827T145140Z` t52 struck
+                // the plot Bologna's TRADER stood on and `civvis-20260829T022207Z`
+                // t66 the plot Kumasi's did — both invisible on our own board, both
+                // a surprise war on the host. `rebuild_from_state` has always
+                // planted minors through the same `plant_unit` as rivals, with no
+                // such guard; `sync` was the odd one out. See
+                // `Game::peaceful_foreign_unit_at`.
+                let uid = self.game.spawn_unit(&name, owner, pos);
+                let progress = observed_unit_progress(&self.game.rules, unit, &mut self.unmapped);
+                if let Some(live) = self.game.units.get_mut(&uid) {
+                    apply_unit_observation(live, unit, progress);
+                    self.rival_units.push(uid);
+                    self.foreign_uid_of.insert(unit.id, uid);
                 }
             }
         }
