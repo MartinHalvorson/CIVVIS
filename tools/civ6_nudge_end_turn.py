@@ -33,13 +33,18 @@ which stops the game advancing and has already cost a run.
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from civ6_control import macos_input  # noqa: E402
+from civ6_control import macos_input, popup_clear  # noqa: E402
+
+#: One source of truth for the process name. `civ6_play` takes it from here too
+#: (`GAME_PROCESS = popup_clear.GAME_PROCESS`); a second copy would drift.
+GAME_PROCESS = popup_clear.GAME_PROCESS
 
 #: How many forced end turns to send.  More than one because the first may land
 #: while the game is between frames, few because each one is a real keystroke.
@@ -50,6 +55,35 @@ NUDGE_PRESSES = 3
 #: patience.
 NUDGE_INTERVAL_S = 1.5
 
+#: Seconds to let the raise take effect before the first key. A keystroke that
+#: arrives while the window is still coming forward lands on the old frontmost
+#: application.
+FOCUS_SETTLE_S = 1.0
+
+
+def focus_game() -> bool:
+    """Raise Civilization VI so the keystroke reaches IT.
+
+    ⚠⚠⚠ WITHOUT THIS THE NUDGE IS SENT TO WHATEVER IS FRONTMOST, and the
+    harness reports it as sent regardless — `cliclick` exits zero whoever
+    receives the key. The first live firing (2026-08-30T04:39) reported
+    "sent SHIFT+RETURN to a parked game" and then "the forced end turn changed
+    nothing", which is exactly what an unfocused keystroke also looks like. So
+    that result proved nothing until this existed.
+
+    ⚠ Raise only. Deliberately NOT placing or resizing the window: `civ6_play`
+    records that re-placing on every focus pass resized the window between a
+    menu read and its click and cost a whole run.
+    """
+    script = ('tell application "System Events" to set frontmost of '
+              f'process "{GAME_PROCESS}" to true')
+    try:
+        done = subprocess.run(["osascript", "-e", script],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
+
 
 def nudge(presses: int = NUDGE_PRESSES, interval_s: float = NUDGE_INTERVAL_S) -> bool:
     """Send SHIFT+RETURN a few times.  Returns whether every press was sent.
@@ -58,6 +92,10 @@ def nudge(presses: int = NUDGE_PRESSES, interval_s: float = NUDGE_INTERVAL_S) ->
     whether the turn actually advanced is for the caller to observe.  Saying
     otherwise would be the kind of claim that reads as a fix and is not one.
     """
+    if not focus_game():
+        return False
+    # Give the raise a moment to take effect before the first key.
+    time.sleep(FOCUS_SETTLE_S)
     sent = True
     for index in range(presses):
         if index:
