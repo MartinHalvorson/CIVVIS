@@ -1563,21 +1563,31 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         saves = [
             Path("/saves/AutoSave_0181.Civ6Save"),
             Path("/saves/AutoSave_0180.Civ6Save"),
+            Path("/saves/AutoSave_0179.Civ6Save"),
         ]
         finder = lambda newer_than=None: saves
         frozen = {"last_turn": 181}
 
+        # ⚠⚠ THE FIRST STEP BACK IS THE PARKED TURN ITSELF. This asserted that
+        # resume 1 reloads AutoSave_0181 — the save written AT the turn that
+        # hung — which reproduces the hang and spends half the budget on a board
+        # already known to fail. Live 2026-08-30: run civvis-20260830T131438Z
+        # parked at t44, `-cont1` reloaded AutoSave_0044 and parked AT THE SAME
+        # TURN ON THE SAME BLOCKER, and only `-cont2` on AutoSave_0043 escaped —
+        # then the game reached t112 with 8 cities and had no resume left when
+        # it parked again. The name of this test was always the right contract;
+        # the numbers were one step behind it.
         self.assertEqual(
             climb.resume_from_autosave(
                 frozen, "frozen", 0, args, 1234.5, recent=finder,
             ),
-            saves[0],
+            saves[1],
         )
         self.assertEqual(
             climb.resume_from_autosave(
                 frozen, "frozen", 1, args, 1234.5, recent=finder,
             ),
-            saves[1],
+            saves[2],
         )
 
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
@@ -1592,8 +1602,12 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        # ⚠ ONE TURN BACK, not the parked turn's own save. `resume_from_autosave`
+        # skips the autosave written AT the turn that hung, because reloading it
+        # reproduces the hang — so `AutoSave_0102.Civ6Save` for a t102 freeze is
+        # no longer a candidate and no resume would be attempted at all.
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0102.Civ6Save")
+            Path("/saves/AutoSave_0101.Civ6Save")
         ]
         climb.subprocess.Popen = Recording
         try:
@@ -1617,15 +1631,19 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertNotEqual(row.get("reason"), "attempt frozen",
                             "a resumed-and-finished game is not 'attempt frozen'")
         cont = row["resumed_from"] + "-cont1"
+        # `from_turn` is the turn that FROZE; `save` is the board reloaded, which
+        # is one turn back because the parked turn's own save reproduces the hang.
         self.assertEqual(row["resumes"], [{"tag": cont, "from_turn": 102,
-                                           "save": "AutoSave_0102.Civ6Save"}])
+                                           "save": "AutoSave_0101.Civ6Save"}])
 
         plays = [argv for argv in spawned if any("civ6_play.py" in str(w) for w in argv)]
         self.assertEqual(len(plays), 2, "the original launch and one continuation")
         first, second = plays
         self.assertNotIn("--load-save", first)
         self.assertIn("--load-save", second)
-        self.assertEqual(second[second.index("--load-save") + 1], "/saves/AutoSave_0102.Civ6Save")
+        # One turn back: the parked turn's own save reproduces the hang, so it is
+        # not a candidate. See `resume_from_autosave`.
+        self.assertEqual(second[second.index("--load-save") + 1], "/saves/AutoSave_0101.Civ6Save")
         self.assertEqual(second[second.index("--tag") + 1], cont)
         self.assertEqual(first[first.index("--tag") + 1], row["resumed_from"])
         # Everything else about the continuation is the original command.
@@ -1674,8 +1692,12 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        # ⚠ ONE TURN BACK, not the parked turn's own save. `resume_from_autosave`
+        # skips the autosave written AT the turn that hung, because reloading it
+        # reproduces the hang — so `AutoSave_0102.Civ6Save` for a t102 freeze is
+        # no longer a candidate and no resume would be attempted at all.
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0102.Civ6Save")
+            Path("/saves/AutoSave_0101.Civ6Save")
         ]
         try:
             code, rows = self.climb_with(
@@ -1698,8 +1720,12 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        # ⚠ ONE TURN BACK, not the parked turn's own save. `resume_from_autosave`
+        # skips the autosave written AT the turn that hung, because reloading it
+        # reproduces the hang — so `AutoSave_0102.Civ6Save` for a t102 freeze is
+        # no longer a candidate and no resume would be attempted at all.
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0102.Civ6Save")
+            Path("/saves/AutoSave_0101.Civ6Save")
         ]
         try:
             code, rows = self.climb_with([{"last_turn": 102}], attempts=1,
@@ -2206,3 +2232,55 @@ class ARivalsDefeatIsNotOurEnding(unittest.TestCase):
         row = self._row({"kind": "victory", "ours": False, "turn": 38},
                             self.TURN)
         self.assertEqual(row["end_screen_turn"], 38)
+
+
+class TheParkedTurnsSaveIsNeverReloaded(unittest.TestCase):
+    """⚠⚠ RELOADING THE TURN THAT JUST PARKED REPRODUCES THE PARK.
+
+    `saves` is newest first, so `saves[0]` is the autosave written AT the parked
+    turn — the very board that deadlocked. Measured twice:
+
+    - 2026-08-24: "reloading the exact same t181 save twice reproduced the same
+      engine-side PLEASE WAIT spin twice" — the observation this rotation exists
+      for.
+    - 2026-08-30: run `civvis-20260830T131438Z` parked at t44 on
+      `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN`; `-cont1` reloaded AutoSave_0044
+      and parked AT THE SAME TURN ON THE SAME BLOCKER; `-cont2` reloaded
+      AutoSave_0043 and played on to turn 112 with 8 cities.
+
+    The rotation walked one save back per attempt but started one step too late,
+    so the first attempt was always spent on the board known to fail — half of a
+    two-resume budget. That same game then parked again at t112 with nothing
+    left to recover with.
+    """
+
+    def _args(self):
+        import argparse
+        return argparse.Namespace(max_resumes=2,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    SAVES = [Path("AutoSave_0044.Civ6Save"),
+             Path("AutoSave_0043.Civ6Save"),
+             Path("AutoSave_0042.Civ6Save")]
+
+    def test_the_first_resume_skips_the_turn_that_parked(self):
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 0, self._args(), 0.0,
+            recent=lambda newer_than=None: list(self.SAVES))
+        self.assertEqual(got, Path("AutoSave_0043.Civ6Save"),
+                         "reloading t44 after parking at t44 is a spent resume")
+
+    def test_the_second_resume_walks_one_farther_back(self):
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 1, self._args(), 0.0,
+            recent=lambda newer_than=None: list(self.SAVES))
+        self.assertEqual(got, Path("AutoSave_0042.Civ6Save"))
+
+    def test_an_unparsable_name_is_kept_rather_than_dropped(self):
+        """A name this cannot read is still a candidate; dropping every save
+        would be a worse failure than reloading one."""
+        saves = [Path("civvis-resume.Civ6Save"), Path("AutoSave_0043.Civ6Save")]
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 0, self._args(), 0.0,
+            recent=lambda newer_than=None: list(saves))
+        self.assertEqual(got, Path("civvis-resume.Civ6Save"))

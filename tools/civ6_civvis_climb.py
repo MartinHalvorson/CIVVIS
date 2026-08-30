@@ -1625,7 +1625,36 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
         return latest(newer_than=started_at)
     finder = recent if recent is not None else _recent_autosaves
     saves = finder(newer_than=started_at)
+    # ⚠⚠ NEVER RELOAD THE SAVE OF THE TURN THAT JUST PARKED. `saves` is newest
+    # first, so `saves[0]` is the autosave written AT `turn` — the very board
+    # that deadlocked. Reloading it replays the same turn from the same start
+    # and parks again, which is measured, twice:
+    #
+    #   2026-08-24: "reloading the exact same t181 save twice reproduced the
+    #               same engine-side PLEASE WAIT spin twice" — the observation
+    #               this rotation was built for.
+    #   2026-08-30: run civvis-20260830T131438Z parked at t44 on
+    #               ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN; `-cont1` reloaded
+    #               AutoSave_0044 and parked AT THE SAME TURN ON THE SAME
+    #               BLOCKER; `-cont2` reloaded AutoSave_0043 and played on to
+    #               turn 112 with 8 cities.
+    #
+    # The rotation already walks one save farther back per attempt; it simply
+    # started one step too late, so the FIRST attempt was always spent on the
+    # board known to fail. That is half of a two-resume budget: the same game
+    # then parked again at t112 and had nothing left to recover with.
+    saves = [save for save in saves if _autosave_turn(save) != turn]
     return saves[resumes_so_far] if resumes_so_far < len(saves) else None
+
+
+def _autosave_turn(save: Path) -> int | None:
+    """The turn an `AutoSave_NNNN.Civ6Save` holds, or None if unreadable.
+
+    Unreadable means KEEP the save: a name this cannot parse is still a
+    candidate, and dropping it would be a worse failure than reloading it.
+    """
+    match = re.search(r"(\d+)", save.stem)
+    return int(match.group(1)) if match else None
 
 
 def _recent_autosaves(newer_than: float | None = None) -> list[Path]:
