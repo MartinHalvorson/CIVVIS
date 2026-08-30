@@ -39,6 +39,18 @@ CONFIRM=${CIVVIS_WEDGE_CONFIRM:-2}
 # tried its bounded forfeit ladder; this separate guard keeps the unattended
 # lane from spending the rest of the timeout on that one board.
 BLOCKER_STREAK=${CIVVIS_WEDGE_BLOCKER_STREAK:-6}
+# ⭐⭐⭐ A DEEP WEDGED GAME IS HANDED TO THE CLIMB, NOT DESTROYED. Civ 6 writes
+# an autosave every turn and `civ6_civvis_climb.py` can reload one into a FRESH
+# Civ 6 (`resume_from_autosave` -> `civ6_play --load-save`), which is the only
+# thing that recovers a parked core: the deadlocked process is replaced and the
+# match is kept. Killing the climb here threw that away — 7 `-contN` runs exist,
+# all from 08-17..19, none since this watchdog began signalling. So past this
+# turn, signal ONLY the player and leave the climb alive to do the reload.
+RESUME_FLOOR=${CIVVIS_WEDGE_RESUME_MIN_TURN:-20}
+# Polls with no owned player after a handoff before the climb is presumed hung
+# and terminated after all. This watchdog exists for a climb that is itself
+# blocked, so the handoff must never become a way for one to sit forever.
+HANDOFF_GRACE=${CIVVIS_WEDGE_HANDOFF_GRACE:-12}
 # Consecutive one-minute samples with no synchronized game progress before a
 # clean recovery. Five means roughly five minutes after the first trustworthy
 # sample — shorter than the harness's eight-minute frozen-turn backstop, but
@@ -121,7 +133,7 @@ player_uses_tag() {
 # and can strand the run tag for the successor game.  Both PIDs were proven as
 # one climb-owned pair by owned_climb_and_player before this is called.
 restart_attempt() {
-  local reason="$1" climb="$2" play="$3" tag="$4"
+  local reason="$1" climb="$2" play="$3" tag="$4" turn="${5:-0}"
   if ! is_python_harness "$climb" "civ6_civvis_climb.py" \
       || ! player_uses_tag "$play" "$tag"; then
     say "$tag recovery target is no longer the proven owned pair; leaving it alone"
@@ -156,6 +168,16 @@ restart_attempt() {
   else
     say "  no Civ 6 process to sample; restarting without it"
   fi
+  if [[ "$turn" =~ '^[0-9]+$' ]] && (( turn >= RESUME_FLOOR )) \
+      && [[ "$tag" != "$handoff_tag" ]]; then
+    say "$reason; t${turn} is worth reloading, handing to the climb (INT civ6_play only)"
+    handoff_tag="$tag"
+    handoff_climb="$climb"
+    handoff_polls=0
+    player_uses_tag "$play" "$tag" \
+      && kill -INT "$play" 2>/dev/null && say "  INT civ6_play $play"
+    return 0
+  fi
   say "$reason; restarting (TERM climb, then INT civ6_play)"
   kill -TERM "$climb" 2>/dev/null && say "  TERM climb $climb"
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -187,6 +209,9 @@ strikes=0
 progress_strikes=0
 last_progress=""
 last_tag=""
+handoff_tag=""
+handoff_climb=""
+handoff_polls=0
 last_unowned_tag=""
 while true; do
   sleep "$POLL_S"
@@ -202,11 +227,23 @@ while true; do
       say "$tag has an unowned direct civ6_play; watchdog will not signal it"
       last_unowned_tag="$tag"
     fi
+    if [[ -n "$handoff_tag" ]]; then
+      handoff_polls=$(( handoff_polls + 1 ))
+      if (( handoff_polls >= HANDOFF_GRACE )); then
+        say "no player ${handoff_polls} poll(s) after handing $handoff_tag to the climb; TERM climb $handoff_climb"
+        kill -TERM "$handoff_climb" 2>/dev/null
+        handoff_tag=""; handoff_climb=""; handoff_polls=0
+      fi
+    fi
     strikes=0
     reset_progress
     continue
   fi
   read -r climb_pid play_pid <<< "$ownership"
+  if [[ -n "$handoff_tag" && "$tag" != "$handoff_tag" ]]; then
+    say "$tag is playing after the handoff of $handoff_tag; the reload recovered the match"
+    handoff_tag=""; handoff_climb=""; handoff_polls=0
+  fi
   if ! player_uses_tag "$play_pid" "$tag"; then
     say "$tag does not match the proven climb-owned player; leaving it alone"
     strikes=0
@@ -236,7 +273,7 @@ while true; do
       && [[ "$blocker_count" =~ '^[0-9]+$' ]] \
       && (( blocker_count >= BLOCKER_STREAK )); then
     restart_attempt "$tag repeating unit blocker ${blocker_name} at t${blocker_turn} (${blocker_count} sightings)" \
-      "$climb_pid" "$play_pid" "$tag"
+      "$climb_pid" "$play_pid" "$tag" "$blocker_turn"
     strikes=0
     reset_progress
     continue
@@ -272,7 +309,7 @@ PY
       say "$tag no synchronized progress (${progress_signal}) strike ${progress_strikes}/${PROGRESS_CONFIRM}"
       if (( progress_strikes >= PROGRESS_CONFIRM )); then
         restart_attempt "$tag NO GAME PROGRESS confirmed at t${mirror_turn}" \
-          "$climb_pid" "$play_pid" "$tag"
+          "$climb_pid" "$play_pid" "$tag" "$mirror_turn"
         strikes=0
         reset_progress
         continue
@@ -291,7 +328,7 @@ PY
     strikes=$(( strikes + 1 ))
     say "$tag agent t${agent_turn} vs game t${mirror_turn} (gap ${gap}) strike ${strikes}/${CONFIRM}"
     if (( strikes >= CONFIRM )); then
-      restart_attempt "$tag DEAD AGENT confirmed" "$climb_pid" "$play_pid" "$tag"
+      restart_attempt "$tag DEAD AGENT confirmed" "$climb_pid" "$play_pid" "$tag" "$mirror_turn"
       strikes=0
       reset_progress
     fi

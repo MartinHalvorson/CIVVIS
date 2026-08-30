@@ -1949,3 +1949,106 @@ class TheWedgeWatchdogGetsThisBatchsBuildToo(unittest.TestCase):
                       "    # The host restarts this one; see "
                       "`retire_stale_wedge_watchdog`.\n"
                       "    retire_stale_wedge_watchdog()", source)
+
+
+class ExitWhileStaleIsFrozen(unittest.TestCase):
+    """⭐⭐⭐ THE WEDGE WATCHDOG'S KILL MUST REACH THE RESUME PATH.
+
+    Civ 6 writes an autosave every turn, and `resume_from_autosave` reloads one
+    into a FRESH Civ 6 — the only thing that recovers a parked core, whose own
+    process no longer answers input at all. But it runs ONLY for `why ==
+    "frozen"`, and `frozen_s` here is 900 s while the external wedge watchdog
+    signals the player after five confirmed one-minute samples. So the watchdog
+    always won the race, `play.wait()` returned, the attempt was filed as
+    "exited", and the autosave on disk was discarded.
+
+    The evidence is the run tags: seven `<tag>-contN` runs exist, every one from
+    08-17..19, and NONE since the watchdog began signalling — which is exactly
+    the window in which parked cores became the dominant way a run dies, taking
+    games as deep as t179 holding 15 cities at 0.763 of the leader.
+    """
+
+    class _DyingPlay:
+        """A player that exits on the Nth wait, as an outside signal makes it."""
+
+        def __init__(self, clock, step, die_on):
+            self.signalled = None
+            self._clock, self._step = clock, step
+            self._die_on, self._waits = die_on, 0
+
+        def wait(self, timeout=None):
+            self._waits += 1
+            self._clock["t"] += self._step
+            if self._waits >= self._die_on:
+                return 0
+            raise climb.subprocess.TimeoutExpired("play", timeout or 0)
+
+        def send_signal(self, sig):
+            self.signalled = sig
+
+        def kill(self):
+            pass
+
+    def _run(self, die_on, step=60.0, frozen_s=900.0):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run").mkdir()
+            (root / "run" / "events.jsonl").write_text(
+                json.dumps({"kind": "turn", "turn": 102}) + "\n")
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            clock = {"t": 0.0}
+            try:
+                play = self._DyingPlay(clock, step, die_on)
+                with mock.patch.object(climb.time, "time", lambda: clock["t"]):
+                    return climb.wait_watching_the_turn(
+                        play, "run", 100_000.0, frozen_s,
+                        locked_probe=lambda: False)
+            finally:
+                climb.RUN_ROOT = original
+
+    def test_a_player_killed_on_a_stale_turn_is_frozen_not_exited(self):
+        # The turn lands at t=60 and the player is signalled at t=360, so the
+        # turn had been stale for 300 s — past EXIT_WHILE_STALE_S (240 s), and
+        # about when the watchdog's fifth no-progress sample confirms a wedge.
+        self.assertEqual(self._run(die_on=6), "frozen")
+
+    def test_a_game_that_simply_ends_is_still_exited(self):
+        # Stale for only 60 s: an attempt reaching its own end screen must not
+        # be reloaded from an autosave.
+        self.assertEqual(self._run(die_on=2), "exited")
+
+    def test_the_threshold_sits_under_the_watchdogs_confirmation(self):
+        """The watchdog confirms over five 60 s samples; this must be below it
+        so its signal is what arrives, and above a normal end."""
+        self.assertLess(climb.EXIT_WHILE_STALE_S, 5 * 60)
+        self.assertGreaterEqual(climb.EXIT_WHILE_STALE_S, 3 * 60)
+
+
+class AbandonedGamesAreNotReloaded(unittest.TestCase):
+    """⚠ AN ABANDONED GAME MUST STAY ABANDONED.
+
+    The operator rule retires a run under 60% of the leader at turn 150+. A
+    retirement leaves the turn stale while the end screens settle, which now
+    reads as "frozen" — so without this guard the resume path would reload the
+    very game the rule had just ended.
+    """
+
+    def _args(self):
+        import argparse
+        return argparse.Namespace(max_resumes=2,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    def test_a_retired_attempt_is_not_resumed(self):
+        record = {"last_turn": 150, "retire_requested": True}
+        self.assertIsNone(climb.resume_from_autosave(
+            record, "frozen", 0, self._args(), 0.0,
+            latest=lambda newer_than=None: Path("/saves/AutoSave_0150.Civ6Save")))
+
+    def test_a_wedged_attempt_at_the_same_turn_still_is(self):
+        record = {"last_turn": 150}
+        self.assertEqual(
+            climb.resume_from_autosave(
+                record, "frozen", 0, self._args(), 0.0,
+                latest=lambda newer_than=None: Path("/s/AutoSave_0150.Civ6Save")),
+            Path("/s/AutoSave_0150.Civ6Save"))

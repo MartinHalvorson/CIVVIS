@@ -1189,6 +1189,23 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
         slice_started = time.time()
         try:
             play.wait(timeout=20.0)
+            # ⚠⚠ A PLAYER KILLED FROM OUTSIDE WHILE THE TURN WAS STALE IS A
+            # FROZEN ATTEMPT, NOT A FINISHED ONE — and only "frozen" reaches
+            # `resume_from_autosave`. The external wedge watchdog signals the
+            # player after five minutes of no synchronized progress, long
+            # before `frozen_s` (900 s) elapses here, so every wedge it caught
+            # was classified "exited" and the autosave on disk was discarded.
+            # Seven `-contN` runs exist, all from 08-17..19; NONE since the
+            # watchdog began signalling, which is exactly the window in which
+            # parked cores became the dominant way a run dies.
+            if (last_turn is not None
+                    and time.time() - last_turn_at > EXIT_WHILE_STALE_S):
+                print(f"[watchdog] the player exited with turn {last_turn} "
+                      f"stale for "
+                      f"{time.time() - last_turn_at:.0f}s; treating the "
+                      f"attempt as frozen so its autosave can be reloaded",
+                      flush=True)
+                return "frozen"
             return "exited"
         except subprocess.TimeoutExpired:
             pass
@@ -1265,6 +1282,13 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
                 play.kill()
             return "frozen"
     return "timeout"
+
+
+# How stale the turn must be when the player exits for the attempt to be read
+# as frozen rather than finished. The external wedge watchdog confirms a wedge
+# over five one-minute samples, so anything past four minutes of no new turn is
+# its signal arriving, not a game ending on its own.
+EXIT_WHILE_STALE_S = 240.0
 
 
 # A game frozen before this turn is redone from scratch faster than it is
@@ -1457,6 +1481,12 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     the ledger exactly as before.
     """
     if why != "frozen" or resumes_so_far >= args.max_resumes:
+        return None
+    # ⚠ An abandoned game must STAY abandoned. The operator rule retires a run
+    # that is under 60% of the leader at turn 150+, and a retirement leaves the
+    # turn stale while the end screens settle — which now reads as "frozen".
+    # Reloading it would restart the very game the rule just ended.
+    if record.get("retire_requested"):
         return None
     turn = record.get("last_turn")
     if not isinstance(turn, int) or turn < args.resume_min_turn:
