@@ -16495,12 +16495,27 @@ local function tick()
 		-- One event per game, on the first poll only: enough to separate "never
 		-- ran" from "ran and saw nothing", and cheap enough to keep afterwards.
 		if not CivvisBoard.retireAsked and attachOrders() then
-			if not CivvisBoard.retirePollSeen then
-				CivvisBoard.retirePollSeen = true;
-				-- ⚠ `turn` is NOT in scope this early in the tick; ask the host.
-				emit("retire_poll", { turn = try(function()
-					return Game.GetCurrentGameTurn();
-				end, -1) });
+			-- ⚠⚠ ONCE PER GAME ANSWERED THE WRONG QUESTION. The first version
+			-- latched, so it said "retire_poll at turn 1" and nothing more —
+			-- proving only that the poll runs at game START. What matters is
+			-- whether it is still running at the moment the harness writes the
+			-- row, which is turn 150 or later, and the latch could never say.
+			--
+			-- That distinction is the whole question. A parked Game Core stops
+			-- publishing, and this poll runs on `GameCoreEventPublishComplete`,
+			-- so a game that parked BEFORE the abandon fired cannot answer a
+			-- retire row however correct the row is. Periodic reporting
+			-- distinguishes "the poll stopped when the game parked" from "the
+			-- poll was running and did not see the row".
+			--
+			-- Every 25 turns: about six lines a game, one of them near t150.
+			local pollTurn = try(function()
+				return Game.GetCurrentGameTurn();
+			end, -1);
+			if pollTurn >= 0 and CivvisBoard.retirePollAt ~= pollTurn
+					and (pollTurn % 25 == 0 or pollTurn == 1) then
+				CivvisBoard.retirePollAt = pollTurn;
+				emit("retire_poll", { turn = pollTurn });
 			end
 			local wanted = false;
 			pcall(function()
