@@ -13677,12 +13677,14 @@ end
 -- ⚠ BE HONEST ABOUT WHAT THIS IS: walking to a legal plot and pressing Activate
 -- is an actuation formality of Civilization VI — the same class as
 -- FOUND_CITY-before-MOVE_TO — because the decision (acquire this Great Person)
--- was already taken upstream. The legal plots are the ENGINE's own answer
--- (`GetActivationHighlightPlots`, the call the shipped SelectedUnit.lua shades
--- the map with), so this cannot invent a target the game would refuse, and the
--- engine is asked (`CanStartCommand`) before Activate is claimed. Counted apart
--- from `applied` (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never
--- presents it as CIVVIS's work.
+-- was already taken upstream. The legal activation plots are the ENGINE's own
+-- answer (`GetActivationHighlightPlots`, the call the shipped SelectedUnit.lua
+-- shades the map with), but that list is an eligibility highlight, not a
+-- route: the host can accept a MOVE_TO to a highlighted plot behind a closed
+-- border and leave the unit at its origin. The bridge therefore checks the
+-- host pathfinder before choosing a target. Counted apart from `applied`
+-- (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never presents it
+-- as CIVVIS's work.
 local gpPending = {};      -- unit id -> {x, y} last reported walk target
 local gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
 local gpApiMissing = false;
@@ -13785,6 +13787,30 @@ local function orderGreatPerson(player, unit, id, turn)
 		local ux = try(function() return unit:GetX(); end, nil);
 		local uy = try(function() return unit:GetY(); end, nil);
 		local bestX, bestY, bestD, bestRank = nil, nil, nil, nil;
+		-- `GetActivationHighlightPlots` is what the UI shades, not a promise that
+		-- this unit can walk to every highlighted tile. In particular, the nearest
+		-- natural-wonder tile may belong to a civilization with no Open Borders.
+		-- Return nil when the path API is unavailable so old hosts retain the
+		-- historical nearest-highlight behavior; return false only when the host
+		-- explicitly proves that the destination cannot be reached.
+		local function activationReachable(x, y)
+			local pathFinder = try(function() return UnitManager.GetMoveToPathEx; end, nil);
+			local plotIndexer = try(function() return Map.GetPlotIndex; end, nil);
+			if type(pathFinder) ~= "function" or type(plotIndexer) ~= "function" then
+				return nil;
+			end
+			local destination = try(function() return plotIndexer(x, y); end, nil);
+			if destination == nil then return false; end
+			local path = try(function() return pathFinder(unit, destination); end, nil);
+			if path == nil or type(path.plots) ~= "table" then return false; end
+			local n = 0;
+			for _ in pairs(path.plots) do n = n + 1; end
+			-- A one-entry path is the host's no-progress/no-route result. Also
+			-- require the endpoint to be the requested plot: a partial route or
+			-- stale path must not turn into another endless MOVE_TO.
+			if n <= 1 or path.plots[n] ~= destination then return false; end
+			return true;
+		end
 		for _, idx in ipairs(plots) do
 			local plot = try(function() return Map.GetPlotByIndex(idx); end, nil);
 			if plot ~= nil and ux ~= nil then
@@ -13799,12 +13825,14 @@ local function orderGreatPerson(player, unit, id, turn)
 				-- builds capacity. Fall through to the idle report instead.
 				if rank < 2 and (slotCount == nil or slotCount > 0) then
 					local px, py = plot:GetX(), plot:GetY();
-					local d = try(function()
-						return Map.GetPlotDistance(ux, uy, px, py);
-					end, 9999);
-					if bestRank == nil or rank < bestRank
-							or (rank == bestRank and d < bestD) then
-						bestX, bestY, bestD, bestRank = px, py, d, rank;
+					if activationReachable(px, py) ~= false then
+						local d = try(function()
+							return Map.GetPlotDistance(ux, uy, px, py);
+						end, 9999);
+						if bestRank == nil or rank < bestRank
+								or (rank == bestRank and d < bestD) then
+							bestX, bestY, bestD, bestRank = px, py, d, rank;
+						end
 					end
 				end
 			end
