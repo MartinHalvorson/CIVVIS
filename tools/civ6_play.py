@@ -231,6 +231,32 @@ def _retire_was_answered(run_tag: str) -> bool:
         return False
 
 
+def partial_summary(tag: str, config: dict, state: dict) -> dict:
+    """The record a run leaves when it is stopped before it can finish one.
+
+    Same core fields as the full summary so a later `civ6_ladder.py sync`
+    produces a sensible row, plus `partial` so a consumer can tell a run that
+    was STOPPED from one that finished. `reason` is `killed` rather than
+    `wedged`: this process cannot tell the wedge watchdog's INT from the
+    supervisor's teardown TERM, and the watchdog's own log says which.
+    """
+    return {
+        "tag": tag,
+        "finished_utc": utc_stamp(),
+        "difficulty": config["Difficulty"],
+        "map_size": config["MapSize"],
+        "speed": config["GameSpeed"],
+        "max_turns": config["MaxTurns"],
+        "reason": "killed",
+        "partial": True,
+        "last_turn": state.get("turn"),
+        "last_score": state.get("score"),
+        "cities_at_60": state.get("cities_at_60"),
+        "outcome": state.get("outcome"),
+        "abandoned": state.get("abandoned"),
+    }
+
+
 def below_leader_score_reading(
     _state: dict, event: dict, score_ratio_ceiling: float
 ) -> dict | None:
@@ -3465,6 +3491,37 @@ def _play(args: argparse.Namespace) -> int:
         # watched it between runs and no treatment could ever be judged on it.
         "founds": [], "cities_at_60": None,
     }
+
+    # ⚠⚠⚠ A KILLED RUN LEFT NO RECORD AT ALL, AND THAT IS MOST OF THEM.
+    #
+    # `summary.json` is written near the end of `main`. A run stopped by a
+    # signal never reaches it, so it leaves an events file and nothing else —
+    # and the ledger, every "how our games end" tally, and every win rate are
+    # computed over the survivors only.
+    #
+    # Measured 2026-08-30 over the 08-29/30 runs: **53 of 64 runs had no
+    # summary**, 17% coverage. The missing 83% are precisely the interesting
+    # ones — the parked cores the wedge watchdog kills, which are the dominant
+    # way a run dies. So the record was systematically blind to the failure it
+    # most needed to show, and biased toward games that ended cleanly.
+    #
+    # The watchdog signals `civ6_play` with INT and the supervisor's teardown
+    # sends TERM, and `_terminate` turns TERM into SystemExit, so both unwind
+    # through `atexit`. This writes what the run had reached, once, and only if
+    # nothing better exists. `partial` marks it so a consumer can tell a run
+    # that was stopped from one that finished; the wedge watchdog's log says
+    # which hand stopped it.
+    def _partial_summary_if_stopped() -> None:
+        path = run_dir / "summary.json"
+        if path.exists():
+            return
+        partial = partial_summary(args.tag, config, state)
+        try:
+            path.write_text(json.dumps(partial, indent=2, sort_keys=True))
+        except OSError:
+            pass  # evidence is best effort; it must never fail a shutdown
+
+    atexit.register(_partial_summary_if_stopped)
 
     def record(event: dict) -> None:
         events.write(json.dumps(event, sort_keys=True) + "\n")

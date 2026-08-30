@@ -2990,3 +2990,56 @@ class EveryPerPollHostProbeIsBounded(unittest.TestCase):
         self.assertEqual(unbounded, [], "civ6_play.py line(s) "
                          f"{unbounded} shell out with no timeout; every call "
                          "here can land in the per-poll driving path")
+
+
+class AStoppedRunStillLeavesARecord(unittest.TestCase):
+    """⚠⚠⚠ A KILLED RUN LEFT NO RECORD AT ALL, AND THAT IS MOST OF THEM.
+
+    `summary.json` is written near the end of `main`, so a run stopped by a
+    signal left an events file and nothing else. Measured 2026-08-30 over the
+    08-29/30 runs: **53 of 64 runs had no summary** — 17% coverage — and the
+    missing 83% are precisely the parked cores the wedge watchdog kills, the
+    dominant way a run dies. Every "how our games end" tally, the abandon rate
+    and the win rate were computed over the survivors only.
+    """
+
+    def _config(self) -> dict:
+        return {"Difficulty": "DIFFICULTY_KING", "MapSize": "MAPSIZE_SMALL",
+                "GameSpeed": "GAMESPEED_ONLINE", "MaxTurns": 250,
+                "MapSeed": None}
+
+    def test_it_records_what_the_run_had_reached(self):
+        state = {"turn": 118, "score": 240, "cities_at_60": 3,
+                 "outcome": None, "abandoned": None}
+        row = civ6_play.partial_summary("civvis-x", self._config(), state)
+        self.assertEqual(row["last_turn"], 118)
+        self.assertEqual(row["last_score"], 240)
+        self.assertEqual(row["cities_at_60"], 3)
+        self.assertEqual(row["difficulty"], "DIFFICULTY_KING")
+        self.assertEqual(row["tag"], "civvis-x")
+
+    def test_it_is_marked_partial_and_killed(self):
+        """A stopped run must never be mistaken for a played one."""
+        row = civ6_play.partial_summary("civvis-x", self._config(),
+                                        {"turn": 1, "score": -1})
+        self.assertIs(row["partial"], True)
+        self.assertEqual(row["reason"], "killed")
+
+    def test_a_run_that_never_played_is_still_honest(self):
+        """A run that never reached a turn records nothing rather than a zero:
+        a missing key stays None so the ledger cannot read it as a played
+        game at turn 0."""
+        row = civ6_play.partial_summary("civvis-x", self._config(), {})
+        self.assertIsNone(row["last_turn"])
+        self.assertIsNone(row["cities_at_60"])
+
+    def test_the_fallback_is_registered_and_never_overwrites(self):
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        self.assertIn("atexit.register(_partial_summary_if_stopped)", source)
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        # It must bail out when a real summary is already on disk.
+        self.assertIn("if path.exists():", block)
+        self.assertLess(block.index("if path.exists():"),
+                        block.index("partial_summary("))
