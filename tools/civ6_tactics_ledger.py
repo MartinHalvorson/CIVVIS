@@ -104,10 +104,32 @@ def read_unit_orders(path: Path) -> list[tuple[int, int, int, str, Any, Any]]:
 
 
 def _states(events: Iterable[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """The board at the START of each turn, keyed by turn.
+
+    ⚠⚠⚠ THE FIRST FRAME, NOT THE LAST. This kept the LAST `state` of each turn,
+    and 137 of 150 turns in an ordinary run carry more than one — the mid-turn
+    replan and combat frames each export another. Every caller here uses the
+    entry as the board an order was decided FROM, so the last frame is the board
+    AFTER that order already moved the unit.
+
+    The cost was not subtle. `self_tile` counts a MOVE_TO whose destination
+    equals the unit's position, and judged against the last frame that is every
+    order that ARRIVED. Run `civvis-20260830T121826Z`, first move per unit-turn,
+    698 orders with both frames known:
+
+        judged against the turn's LAST state    574 self_tile  (82%)
+        judged against the turn's FIRST state     0 self_tile  ( 0%)
+
+    Not one order in that game actually named the tile its unit already stood
+    on. Worse, `self_tile` orders are skipped before the arrival verdict, so the
+    reported "arrived 16.8%" was computed after discarding 82% of the orders
+    that had arrived — the metric said the seat could not move when it was
+    moving normally.
+    """
     states: dict[int, dict[str, Any]] = {}
     for event in events:
         if event.get("kind") == "state" and isinstance(event.get("turn"), int):
-            states[event["turn"]] = event
+            states.setdefault(event["turn"], event)
     return states
 
 

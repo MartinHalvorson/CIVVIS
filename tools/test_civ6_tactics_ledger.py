@@ -259,3 +259,45 @@ class HallOfFameTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheBoardIsReadAtTheStartOfTheTurn(unittest.TestCase):
+    """⚠⚠⚠ `_states` KEPT THE LAST FRAME OF EACH TURN, NOT THE FIRST.
+
+    137 of 150 turns in an ordinary run carry more than one `state` event — the
+    mid-turn replan and combat frames each export another. Every caller uses the
+    entry as the board an order was decided FROM, so the last frame is the board
+    AFTER that order already moved the unit.
+
+    `self_tile` counts a MOVE_TO whose destination equals the unit's position,
+    so judged against the last frame it counts every order that ARRIVED. On run
+    `civvis-20260830T121826Z`, 698 first-moves with both frames known: 574
+    self_tile (82%) against the last frame, ZERO against the first. And because
+    `self_tile` is skipped before the arrival verdict, the reported "arrived
+    16.8%" was computed after discarding 82% of the orders that had arrived —
+    correcting it moved the same run to 701 judged and **arrived 68.9%**.
+    """
+
+    def test_the_first_frame_of_a_turn_wins(self):
+        events = [
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 1, "y": 1}]},
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 2, "y": 1}]},
+            {"kind": "state", "turn": 5, "units": [{"id": 7, "x": 2, "y": 1}]},
+        ]
+        states = ledger._states(events)
+        self.assertEqual(states[4]["units"][0]["x"], 1,
+                         "the board an order was decided from, not the one it produced")
+        self.assertEqual(states[5]["units"][0]["x"], 2)
+
+    def test_a_move_that_arrived_is_not_counted_as_a_self_tile_order(self):
+        """The whole defect in one case: unit 7 is ordered from (1,1) to (2,1),
+        gets there, and a later frame in the same turn reports it at (2,1)."""
+        events = [
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 1, "y": 1, "kind": "warrior"}]},
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 2, "y": 1, "kind": "warrior"}]},
+            {"kind": "state", "turn": 5, "units": [{"id": 7, "x": 2, "y": 1, "kind": "warrior"}]},
+        ]
+        states = ledger._states(events)
+        before = states[4]["units"][0]
+        self.assertNotEqual((before["x"], before["y"]), (2, 1),
+                            "judged against the first frame it is a real move")
