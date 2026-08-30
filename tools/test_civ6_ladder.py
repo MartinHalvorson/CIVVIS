@@ -1534,6 +1534,19 @@ class TheHealthFloorStaysFalsifiable(LedgerCase):
         self.assertEqual(civ6_ladder.trailing_unmeasured(
             [{"applied_pct": 97.0}] + [{"applied_pct": None}] * 3), 3)
 
+    def test_a_killed_run_is_evidence_of_neither(self):
+        """⚠⚠ Runs stopped by a signal carry no rate because they never reached
+        the point where it is written. Parked cores are the dominant way a run
+        ends, so counting them would raise "the instrument has gone dark" on a
+        healthy instrument — and breaking on them would hide a real outage."""
+        # A spell of killed runs after a healthy one raises nothing.
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": 97.0}] + [{"partial": True}] * 6), 0)
+        # And they do not mask a genuine outage behind them.
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": 97.0}] + [{"applied_pct": None}] * 2
+            + [{"partial": True}] * 4), 2)
+
 
 class TheBackfillRecoversBridgeHealth(LedgerCase):
     """The self-healing path could not heal the one number it was built for.
