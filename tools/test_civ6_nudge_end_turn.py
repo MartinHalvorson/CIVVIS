@@ -103,6 +103,42 @@ class NudgeTest(unittest.TestCase):
             self.assertFalse(nudge.nudge(presses=1, interval_s=0, focus_settle_s=0))
 
 
+class TheWatchdogPicksUpItsOwnRepairs(unittest.TestCase):
+    """⚠⚠ This process outlives its own source, and that has cost real fixes.
+
+    zsh parses a function once, so a long-running loop keeps whatever the file
+    said when it started. The supervisor refreshes the mirror every cycle, so a
+    merged repair lands on disk while the running watchdog goes on executing the
+    old one — the ladder looks patched when it is not. It has happened to the
+    mirror, the popup clearer, and this watchdog twice; on 2026-08-30 it delayed
+    the parked-core repair across three consecutive wedges.
+    """
+
+    def test_it_notices_its_own_script_changing(self) -> None:
+        script = OPS.read_text(encoding="utf-8")
+        self.assertIn("SELF_STAMP", script)
+        self.assertIn('exec /bin/zsh "$SELF_PATH"', script)
+        # Compared inside the poll loop, not only at startup.
+        loop = script[script.index("while true; do"):]
+        self.assertIn("SELF_STAMP", loop)
+
+    def test_it_releases_the_lock_before_handing_over(self) -> None:
+        """⚠ `exec` keeps the pid and skips the EXIT trap, so the new image
+        would find the lock held by a live pid — its own — and exit 0."""
+        script = OPS.read_text(encoding="utf-8")
+        arm = script[script.index("own script changed on disk"):]
+        arm = arm[:arm.index('exec /bin/zsh "$SELF_PATH"')]
+        self.assertIn('rm -rf -- "$LOCK"', arm)
+
+    def test_the_stamp_is_cheap_and_not_a_torn_hash(self) -> None:
+        """mtime+size from one stat: a rewritten script always changes one, and
+        hashing a file mid-refresh could read it torn."""
+        script = OPS.read_text(encoding="utf-8")
+        self.assertIn("stat -f '%m %z'", script)
+        for hashing in ("shasum", "md5", "cksum"):
+            self.assertNotIn(hashing, script)
+
+
 class OnlyTheWatchdogMayCallIt(unittest.TestCase):
     """⚠⚠ A forced end turn on a HEALTHY game would be a real hazard.
 
