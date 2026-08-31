@@ -66,6 +66,10 @@ GameInfo.Types = {
 	UNIT_SETTLER = { Hash = 101, Kind = "KIND_UNIT" },
 	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },
 }
+GameInfo.CommemorationTypes = {
+	[17] = { CommemorationType = "COMMEMORATION_INFRASTRUCTURE" },
+	[19] = { CommemorationType = "COMMEMORATION_SCIENTIFIC" },
+}
 CityOperationTypes = {
 	BUILD = "BUILD",
 	VALUE_REPLACE_AT = "REPLACE_AT",
@@ -207,7 +211,28 @@ PlayerManager = { GetAliveIDs = function() return { PID, 63 } end,
 PlayersVisibility = setmetatable({}, { __index = function()
 	return { IsVisible = function() return true end, IsRevealed = function() return true end }
 end })
-Game = { GetLocalPlayer = function() return PID end, GetCurrentGameTurn = function() return 7 end }
+local playerOperations = {}
+PlayerOperations = {
+	PARAM_COMMEMORATION_TYPE = "commemoration_type",
+	COMMEMORATE = "COMMEMORATE",
+}
+UI = {
+	RequestPlayerOperation = function(pid, operation, parameters)
+		playerOperations[#playerOperations + 1] = {
+			pid = pid, operation = operation, parameters = parameters,
+		}
+	end,
+}
+Game = {
+	GetLocalPlayer = function() return PID end,
+	GetCurrentGameTurn = function() return 7 end,
+	GetEras = function()
+		return {
+			GetPlayerNumAllowedCommemorations = function() return 1 end,
+			GetPlayerCommemorateChoices = function() return { 17, 19 } end,
+		}
+	end,
+}
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
 assert(chunk, "could not load agent: " .. tostring(err))
@@ -322,6 +347,21 @@ check("t9 orders_seen with only verdicts", field(lastEvent("turn"), "orders_seen
 -- replace it while it is the only city's path to city two.
 local applyOrder = rawget(_G, "CivvisApplyOrder")
 assert(type(applyOrder) == "function", "CivvisApplyOrder is not exported")
+local dedicationOk, dedicationWhy = applyOrder(player, PID, {
+	kind = "dedication", verb = "COMMEMORATION_SCIENTIFIC",
+}, 10)
+assert(dedicationOk and dedicationWhy == "COMMEMORATION_SCIENTIFIC",
+	"named dedication was not accepted: " .. tostring(dedicationWhy))
+assert(#playerOperations == 1
+	and playerOperations[1].operation == "COMMEMORATE"
+	and playerOperations[1].parameters.commemoration_type == 19,
+	"dedication did not request the offered named commemoration value")
+local missingDedication, missingWhy = applyOrder(player, PID, {
+	kind = "dedication", verb = "COMMEMORATION_CULTURAL",
+}, 10)
+assert(not missingDedication
+	and missingWhy == "dedication_not_offered_COMMEMORATION_CULTURAL",
+	"an unoffered dedication must be refused by name")
 host.cities[42] = { id = 42, x = 4, y = 4, current = 101 }
 local cityOpsBefore = #host.cityOps
 local kept, keepWhy = applyOrder(player, PID,

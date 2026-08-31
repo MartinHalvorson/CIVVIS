@@ -4957,6 +4957,10 @@ local CIVVIS_OWNED_BLOCKERS = {
 	--
 	ENDTURN_BLOCKING_PANTHEON = true,
 	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = true,
+	-- CIVVIS chooses the exact dedication on its era-boundary board. Keep the
+	-- native ladder from spending a different choice while that operation is
+	-- still crossing the asynchronous player-operation boundary.
+	ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = true,
 	-- An Apostle's EVANGELIZE_BELIEF operation raises this prompt. The pending
 	-- order stores the exact CIVVIS choice, and `answerBlocker` supplies it
 	-- instead of allowing a generic chooser to race the operation.
@@ -5005,6 +5009,7 @@ CivvisAnswersPrompt = {
 	ENDTURN_BLOCKING_PRODUCTION = "produce",
 	ENDTURN_BLOCKING_PANTHEON = "pantheon",
 	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = "policy_deck",
+	ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = "dedication",
 	ENDTURN_BLOCKING_BELIEF = "unit",
 	ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE = "government",
 };
@@ -11997,6 +12002,51 @@ local function applyOrder(player, pid, row, turn)
 		-- the blocker every turn.
 		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
 		return ok, ok and resolved or "throw";
+	end
+
+	-- CIVVIS names the dedication it selected; the host operation accepts the
+	-- choice value returned by Game.GetEras(), which may be an index/hash rather
+	-- than the visible `COMMEMORATION_*` type name. Match the requested name
+	-- against the currently offered choices before submitting it. Reusing the
+	-- first offered choice here would recreate the exact ownership leak this arm
+	-- is meant to close.
+	if kind == "dedication" then
+		local param = try(function()
+			return PlayerOperations.PARAM_COMMEMORATION_TYPE;
+		end);
+		local operation = try(function() return PlayerOperations.COMMEMORATE; end);
+		if param == nil or operation == nil then
+			return false, "dedication_api_unavailable";
+		end
+		local eras = try(function() return Game.GetEras(); end);
+		if eras == nil then return false, "dedication_no_eras"; end
+		local allowed = tonumber(try(function()
+			return eras:GetPlayerNumAllowedCommemorations(pid);
+		end, 0)) or 0;
+		if allowed <= 0 then return false, "dedication_none_allowed"; end
+		local choices = try(function()
+			return eras:GetPlayerCommemorateChoices(pid);
+		end);
+		if choices == nil then return false, "dedication_no_choices"; end
+		local selected;
+		for _, choice in ipairs(choices) do
+			local choiceRow = GameInfo.CommemorationTypes[choice];
+			local choiceName = choiceRow and choiceRow.CommemorationType
+				or tostring(choice);
+			if choiceName == verb then
+				selected = choice;
+				break;
+			end
+		end
+		if selected == nil then
+			return false, "dedication_not_offered_" .. verb;
+		end
+		local params = {};
+		params[param] = selected;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, operation, params);
+		end);
+		return ok, ok and verb or "dedication_throw";
 	end
 
 	if kind == "pantheon" then
