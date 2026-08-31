@@ -33531,6 +33531,8 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         });
+        let protect_threatened_rescue =
+            self.base.barbarian_settler_capture && holding_threatened_city;
         // A bound guard's first obligation is to rejoin its Settler.  The
         // default live shadow used to give this priority only while the pair
         // was already stacked; after a host frame separated them, recovery or
@@ -33582,8 +33584,13 @@ impl AdvancedAi {
         // tiles out is walked onto rather than watched. #2075 enabled the
         // flag and never called this from here, so on the live seat the
         // pursuit existed only in `BasicAi::military_step`, which a major
-        // does not run.
+        // does not run. A unit already assigned to a threatened city is the
+        // exception: the live t83–84 run peeled Warrior 57 from Antium's
+        // defense to chase a Barbarian Builder into the siege stack, then
+        // lost the Warrior. Immediate adjacent captures were handled above;
+        // this guard only refuses the multi-tile detour.
         if self.base.barbarian_settler_capture
+            && !holding_threatened_city
             && self
                 .base
                 .pursue_capturable_civilian(g, pid, uid, decline_settlers)
@@ -33825,6 +33832,16 @@ impl AdvancedAi {
             // wartime stand.
             if let Some(acted) = self.chokepoint_garrison_step(g, pid, uid) {
                 return acted;
+            }
+            // The advanced rescue gene is also present in the BasicAi fallback
+            // below. Once this plan has marked a nearby city as threatened,
+            // do not let that fallback reopen the same civilian detour after
+            // the advanced branches deliberately refused it. There is no
+            // visible combat target left in this branch, so holding the
+            // defender is the safe answer until the next frame refreshes the
+            // threat picture.
+            if protect_threatened_rescue {
+                return self.base.fortify_or_stop(g, pid, uid);
             }
             return self.base.military_step(g, pid, uid);
         }
@@ -34309,7 +34326,12 @@ impl AdvancedAi {
             let city = g.cities.get(&cid)?;
             g.units
                 .values()
-                .filter(|u| enemies.contains(&u.owner) && g.wdist(city.pos, u.pos) <= 7)
+                .filter(|u| {
+                    enemies.contains(&u.owner)
+                        && (!protect_threatened_rescue
+                            || g.rules.units[u.kind].class == "military")
+                        && g.wdist(city.pos, u.pos) <= 7
+                })
                 .min_by_key(|u| (g.wdist(unit.pos, u.pos), u.id))
                 .map(|u| u.pos)
         });
@@ -34324,7 +34346,27 @@ impl AdvancedAi {
                         .and_then(|cid| g.cities.get(&cid).map(|c| c.pos))
                 })
                 .or_else(|| self.base.capture_objective_target(g, pid, uid))
-                .or_else(|| self.base.nearest_enemy(g, pid, uid, &enemies))
+                .or_else(|| {
+                    // A threatened-city defender may still join a real fight,
+                    // but must not treat a nearby Barbarian Builder as a
+                    // combat objective after the dedicated rescue detour was
+                    // refused. The live t83–84 run selected exactly that
+                    // civilian through this fallback and lost Warrior 57.
+                    if protect_threatened_rescue {
+                        self.base
+                            .nearest_enemy(g, pid, uid, &enemies)
+                            .filter(|position| {
+                                g.city_at(*position).is_some()
+                                    || g.unit_ids_at(*position).iter().any(|other| {
+                                        let enemy = &g.units[other];
+                                        enemies.contains(&enemy.owner)
+                                            && g.rules.units[enemy.kind].class == "military"
+                                    })
+                            })
+                    } else {
+                        self.base.nearest_enemy(g, pid, uid, &enemies)
+                    }
+                })
         };
         // Rear reinforcements march before taking group orders: Hold is
         // correct for a front force that is locally outnumbered, and wrong
