@@ -12284,10 +12284,10 @@ impl AdvancedAi {
         if threatened {
             value -= 360.0;
         }
-        // A generic early science project is a tempo loss against the city
-        // needs it postpones. Keep the rare Prophet and high-impact Scientist
-        // races above, plus emergencies/competitions priced outside this
-        // routine, as the forcing exceptions.
+        // A generic early Great-Person project is a tempo loss against the
+        // city needs it postpones. Keep the rare Prophet and high-impact
+        // Scientist races above, plus emergencies/competitions priced outside
+        // this routine, as the forcing exceptions.
         if early_gpp_project_restrained {
             value = value.min(EARLY_GPP_PROJECT_FALLBACK_CAP);
         }
