@@ -802,7 +802,11 @@ def unit_fact_mismatches(state, board, top):
         accepted = {kind} | ({base_kind} if base_kind else set())
         candidates = [unit for unit in by_pos.get(pos, [])
                       if str(unit.get("type") or "").lower() in accepted
-                      and (owner is None or unit.get("owner") == owner)]
+                      and (
+                          unit.get("owner") != board.get("view_player", 0)
+                          if owner is None
+                          else unit.get("owner") == owner
+                      )]
         if len(candidates) != len(sources):
             if not all(unmodelled_great_person(exported_unit_kind(source)) for source in sources):
                 mismatches.append(

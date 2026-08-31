@@ -372,6 +372,31 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertEqual(len(mismatches), 1)
         self.assertIn("UNIT_WARRIOR@(1, 5) count Civ6=1 CIVVIS=0", mismatches[0])
 
+    def test_foreign_unit_stack_does_not_consume_a_seated_unit(self) -> None:
+        source = {
+            "kind": "UNIT_TRADER", "x": 3, "y": 5,
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }
+        state = {
+            "units": [source],
+            "minors": [{
+                "player": 6, "civ": "CIVILIZATION_KABUL",
+                "units": [dict(source)],
+            }],
+        }
+        board = {
+            "view_player": 0,
+            "units": [
+                {"owner": 0, "type": "trader", "pos": [1, 5],
+                 "hp": 100, "fortified": False, "fortify_turns": 0},
+                {"owner": 6, "type": "trader", "pos": [1, 5],
+                 "hp": 100, "fortified": False, "fortify_turns": 0},
+            ],
+            "visible": [[1, 5]],
+        }
+
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
     def test_unmodelled_unique_unit_uses_firaxis_replacement_role(self) -> None:
         state = {"rivals": [{"units": [{
             "kind": "UNIT_SCOTTISH_HIGHLANDER", "x": 3, "y": 5,
