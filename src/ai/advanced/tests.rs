@@ -21982,18 +21982,24 @@ fn settler_threat_detour_is_a_native_opt_in_withheld_by_the_ledger() {
 /// on the safe-runner detour while the separately screened short target hold
 /// remains governed by the published default.
 #[test]
-fn live_capture_lessons_enable_route_recovery_without_hysteresis() {
+fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
     assert!(live.settlement_safety);
     assert!(live.settler_routing_recovery_on());
-    assert!(!live.settler_target_hysteresis_on());
+    assert!(
+        live.settler_target_hysteresis_2,
+        "the average-based deployment selection now enables the selected version"
+    );
+    live.disable_settler_target_hysteresis_2();
+    assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_threat_detour_on());
 
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge();
     withheld.disable_live_settler_capture_lessons();
+    withheld.disable_settler_target_hysteresis_2();
     assert!(!withheld.settler_routing_recovery_on());
     assert!(!withheld.settler_target_hysteresis_on());
     assert!(!withheld.settler_threat_detour_on());
@@ -36650,8 +36656,13 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() 
         "the deployed seat uses the live shadow"
     );
     assert!(
+        ai.civilian_out_of_reach,
+        "the average-based deployment selection enables the broader civilian-safety opt-in"
+    );
+    ai.disable_civilian_out_of_reach();
+    assert!(
         !ai.civilian_out_of_reach,
-        "the explicit selection withholds the broader civilian-safety opt-in"
+        "the fixture explicitly withholds the broader civilian-safety opt-in"
     );
     let reach = ai.barbarian_reach(&game, 0, start, 10);
     assert!(
