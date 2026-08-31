@@ -1702,11 +1702,13 @@ impl Game {
         jobs
     }
 
-    /// Choose the actual population-worked tiles. It starts with the highest
-    /// strategic-value set, then performs the least-cost swaps needed to hit
-    /// the food target. A final local improvement pass recovers strategic
-    /// value without violating nutrition. This keeps the hot turn loop fast
-    /// while preventing a production-focused governor from starving a city.
+    /// Choose the actual population-worked tiles. It exhausts food-bearing and
+    /// other usable tiles before falling back to specialists, while choosing
+    /// by strategic value within each tier. It then performs the least-cost
+    /// swaps needed to hit the food target. A final local improvement pass
+    /// recovers strategic value without violating nutrition. This keeps the
+    /// hot turn loop fast while preventing a production-focused governor from
+    /// starving a city.
     pub fn city_citizen_plan(&self, cid: u32) -> CitizenPlan {
         self.city_citizen_plan_weighted(cid, None)
     }
@@ -1745,6 +1747,11 @@ impl Game {
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
 
+        const FOOD_TILE_TIER: u8 = 0;
+        const USABLE_TILE_TIER: u8 = 1;
+        const SPECIALIST_TIER: u8 = 2;
+        const BARREN_TILE_TIER: u8 = 3;
+
         #[derive(Clone)]
         struct Job {
             key: String,
@@ -1752,7 +1759,15 @@ impl Game {
             specialist: Option<String>,
             yields: Yields,
             value: f64,
+            // Lower tiers are exhausted first. A specialist should not pull
+            // an early citizen off usable ground just because its district
+            // yield matches the city's current focus; barren plots remain a
+            // lower fallback so a city with no usable tiles can still employ
+            // its available specialist slots.
+            fallback_tier: u8,
         }
+
+        let growth_supported = strategy.food_target > 2.0 * city.pop.max(0) as f64 + 1e-9;
 
         let mut cands: Vec<Job> = city
             .owned_tiles
@@ -1777,12 +1792,20 @@ impl Game {
                     return None;
                 }
                 let ys = self.workable_tile_yields(*pos);
+                let fallback_tier = if growth_supported && ys.food > 0.0 {
+                    FOOD_TILE_TIER
+                } else if ys.total() > 0.0 {
+                    USABLE_TILE_TIER
+                } else {
+                    BARREN_TILE_TIER
+                };
                 Some(Job {
                     key: format!("tile:{:+06}:{:+06}", pos.0, pos.1),
                     pos: Some(*pos),
                     specialist: None,
                     yields: ys,
                     value: Self::citizen_value(ys, strategy.weights),
+                    fallback_tier,
                 })
             })
             .collect();
@@ -1793,12 +1816,13 @@ impl Game {
                 specialist: Some(district),
                 yields,
                 value: Self::citizen_value(yields, strategy.weights),
+                fallback_tier: SPECIALIST_TIER,
             });
         }
         cands.sort_by(|a, b| {
-            b.value
-                .partial_cmp(&a.value)
-                .unwrap()
+            a.fallback_tier
+                .cmp(&b.fallback_tier)
+                .then_with(|| b.value.partial_cmp(&a.value).unwrap())
                 .then(a.key.cmp(&b.key))
         });
         let workers = (city.pop.max(0) as usize).min(cands.len());
@@ -1897,6 +1921,9 @@ impl Game {
             let mut best: Option<(f64, String, String, usize, usize)> = None;
             for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
+                    if b.fallback_tier > a.fallback_tier {
+                        continue;
+                    }
                     let value_gain = b.value - a.value;
                     let next_food = food + b.yields.food - a.yields.food;
                     if value_gain <= 1e-9 || next_food + 1e-9 < strategy.food_target {
