@@ -856,10 +856,15 @@ def blocked_reason() -> str | None:
 
     Deliberately cheap and deliberately narrow: it names only preconditions this
     harness cannot itself supply, so it can be polled every few seconds without
-    becoming its own reason for a slow run. `launcher` is imported rather than
-    re-implemented so there is ONE definition of "Steam is up" — the check here and
-    the `SystemExit` inside `launcher.launch` must never be able to disagree.
+    becoming its own reason for a slow run. The durable operator halt comes first,
+    because it is an explicit instruction not to start and must not be hidden by a
+    later failed precondition. `launcher` is imported rather than re-implemented so
+    there is ONE definition of "Steam is up" — the check here and the `SystemExit`
+    inside `launcher.launch` must never be able to disagree.
     """
+    halt = gamelock.operator_halt_description()
+    if halt is not None:
+        return halt
     if not launcher.steam_running():
         return "the Steam client is not running"
     binary = launcher.game_binary()
