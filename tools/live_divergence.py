@@ -39,9 +39,11 @@ file or a directory holding ``live_divergence``, e.g. a published runtime dir
 ``~/.cache/civvis/live-game-runtime/published/<sha>/``), then
 ``$CARGO_TARGET_DIR/release``, ``target/release``, and the newest published
 runtime dir that carries one; only when none names a file is
-``cargo build --release --bin live_divergence`` run (about six minutes).
+``cargo build --release --features developer-tools --bin live_divergence`` run
+(about six minutes).
 Build it by hand in a task worktree, never in the live checkout:
-``nice -n 15 cargo build --release --locked --bin live_divergence -j 4``.
+``nice -n 15 cargo build --release --locked --features developer-tools --bin
+live_divergence -j 4``.
 """
 
 from __future__ import annotations
@@ -403,7 +405,15 @@ def find_binary(explicit: str | None, no_build: bool = False) -> Path:
             f"{[str(p) for p in candidates]} and --no-build was passed")
     print("live_divergence: building target/release/live_divergence", file=sys.stderr)
     subprocess.run(
-        ["cargo", "build", "--release", "--bin", "live_divergence"],
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--features",
+            "developer-tools",
+            "--bin",
+            "live_divergence",
+        ],
         cwd=REPO, check=True,
     )
     for path in candidates:
@@ -440,7 +450,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--bin", help=f"live_divergence binary (else ${BIN_ENV}, $CARGO_TARGET_DIR/release, "
                     "target/release, the newest published runtime dir; see the header)")
     ap.add_argument("--no-build", action="store_true",
-                    help="fail instead of running `cargo build` when no built "
+                    help="fail instead of running `cargo build --features "
+                         "developer-tools` when no built "
                          "binary is found among the --bin candidates")
     ap.add_argument("--fidelity-dir", default=str(FIDELITY_DIR))
     ap.add_argument("--no-scoreboard", action="store_true", help="write only the report")

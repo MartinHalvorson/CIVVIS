@@ -15,16 +15,16 @@
 //! positions are a curriculum; the captured file is the distribution.
 //!
 //! ```bash
-//! cargo run --release --bin doctrine_arena -- --list
-//! cargo run --release --bin doctrine_arena -- --a advanced --b advanced --seeds 12   # CONTROL FIRST
-//! cargo run --release --bin doctrine_arena -- --a advanced --b basic --seeds 60
-//! cargo run --release --bin doctrine_arena -- --position the_defile --a advanced --b basic
-//! cargo run --release --bin doctrine_arena -- --profile advanced --seeds 20
-//! cargo run --release --bin doctrine_arena -- --capture --games 24 --out target/engagements.json
-//! cargo run --release --bin doctrine_arena -- --capture --majors-only --games 48 --turns 200 --out target/wars.json
-//! cargo run --release --bin doctrine_arena -- --engagements target/engagements.json \
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --list
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --a advanced --b advanced --seeds 12   # CONTROL FIRST
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --a advanced --b basic --seeds 60
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --position the_defile --a advanced --b basic
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --profile advanced --seeds 20
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --capture --games 24 --out target/engagements.json
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --capture --majors-only --games 48 --turns 200 --out target/wars.json
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --engagements target/engagements.json \
 //!     --a advanced+close-as-a-body --b advanced --seeds 12
-//! cargo run --release --bin doctrine_arena -- --engagements target/engagements.json --heal \
+//! cargo run --release --features developer-tools --bin doctrine_arena -- --engagements target/engagements.json --heal \
 //!     --a advanced --b advanced_v1
 //! ```
 //!

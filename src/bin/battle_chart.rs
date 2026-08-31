@@ -2,8 +2,8 @@
 //! against the history without opening a browser.
 //!
 //! ```text
-//! cargo run --bin battle_chart -- thermopylae
-//! cargo run --bin battle_chart            # every drawn battle
+//! cargo run --features developer-tools --bin battle_chart -- thermopylae
+//! cargo run --features developer-tools --bin battle_chart            # every drawn battle
 //! ```
 //!
 //! The legend is one character per tile, chosen so a field reads at a glance:
