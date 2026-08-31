@@ -4947,6 +4947,10 @@ pub struct AdvancedAi {
     /// is Ancient and Classical, and Archery chased until a city can train
     /// one. Opt-in gene `early-archers`; see `advanced/early_archers.rs`.
     early_archers: bool,
+    /// During the opening, reserve repeatable Great-Person projects for an
+    /// open Prophet race or a one-project claim on a high-impact Scientist.
+    /// Opt-in gene `early-project-restraint`.
+    early_project_restraint: bool,
     /// The turn's fire is planned once from the engine's arithmetic: the
     /// kills that can be finished, their shooters first in the unit order,
     /// each biased toward its planned target. Opt-in gene `fire-plan`; see
@@ -5945,6 +5949,13 @@ const EARLY_CONTACT_UNMET_VALUE: f64 = 110.0;
 /// enough that any of those buildings (raw 300–600) outranks it, positive so a
 /// city with nothing else to do still runs it.
 const PROJECT_BEHIND_BUILDINGS_CAP: f64 = 120.0;
+/// The opening lasts ninety standard turns — turn 60 at Online speed. Before
+/// then, ordinary repeatable Great-Person projects give way to concrete city
+/// development unless they can secure a religion or an exceptional Scientist.
+const EARLY_PROJECT_RESTRAINT_STANDARD_TURNS: u32 = 90;
+/// A restrained opening project remains legal for a city with nothing better
+/// to do, but loses to ordinary units, districts, and first buildings.
+const EARLY_GPP_PROJECT_FALLBACK_CAP: f64 = 100.0;
 /// The buildings a district project waits behind. See
 /// `buildings_before_projects`.
 const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research_lab", "workshop"];
@@ -6950,6 +6961,7 @@ impl AdvancedAi {
             exhaustion_loyalty_guard: false,
             enter_the_prophet_race: false,
             early_archers: false,
+            early_project_restraint: false,
             fire_plan: false,
             fire_plan_orders: fire_plan::FirePlan::default(),
             escort_patience_runs_out: false,
@@ -12027,6 +12039,69 @@ impl AdvancedAi {
             + yields.faith * faith
     }
 
+    /// Whether an opening Great-Person project is one of the few forcing
+    /// cases worth production before ordinary infrastructure is in place.
+    fn early_project_race_exception(g: &Game, pid: usize, awards: &BTreeMap<String, f64>) -> bool {
+        // A religion is a finite opening race. Holy Site Prayers stays live
+        // while a Prophet can still be earned, even when a single completion
+        // is not enough to claim one immediately.
+        if awards
+            .get("prophet")
+            .is_some_and(|award| *award > f64::EPSILON)
+            && g.players[pid].religion.is_none()
+            && g.great_person_class_earnable(pid, "prophet")
+            && g.great_person_class_offered_now(pid, "prophet")
+            && g.live_great_person_offer_blocker(pid, "prophet").is_none()
+        {
+            return true;
+        }
+
+        let Some(award) = awards
+            .get("scientist")
+            .copied()
+            .filter(|award| *award > f64::EPSILON)
+        else {
+            return false;
+        };
+        if !g.great_person_class_earnable(pid, "scientist")
+            || !g.great_person_class_offered_now(pid, "scientist")
+            || g.live_great_person_offer_blocker(pid, "scientist")
+                .is_some()
+        {
+            return false;
+        }
+        let Some((_, scientist)) = g.current_great_person("scientist") else {
+            return false;
+        };
+        // An early Scientist is worth an opening diversion only when their
+        // effect compounds broadly (free/scaled science infrastructure) or
+        // supplies at least three Eureka boosts. This admits the Aryabhata /
+        // Hypatia class without spending a project merely to clutch Euclid.
+        let high_impact = [
+            "free_library",
+            "free_university",
+            "libraries_science",
+            "universities_science",
+            "research_labs_science",
+        ]
+        .into_iter()
+        .any(|effect| {
+            scientist
+                .effects
+                .get(effect)
+                .is_some_and(|value| *value > 0.0)
+        }) || scientist
+            .effects
+            .get("tech_boosts")
+            .is_some_and(|boosts| *boosts >= 3.0);
+        if !high_impact {
+            return false;
+        }
+        let cost = g.gp_cost(pid, "scientist");
+        let mine = g.players[pid].gpp.get("scientist").copied().unwrap_or(0.0);
+        mine < cost && mine + award + f64::EPSILON >= cost
+    }
+
     /// Evaluate a repeatable district project as a bounded race move. The
     /// ongoing conversion is valued over the actual build horizon, while the
     /// completion award is priced against the live global Great Person race.
@@ -12069,6 +12144,11 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
+        let early_gpp_project_restrained = self.early_project_restraint
+            && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS)
+            && spec.repeatable
+            && !spec.completion_gpp.is_empty()
+            && !Self::early_project_race_exception(g, pid, &gpp_awards);
         let host_competition_gpp_scores = [
             (
                 "EMERGENCY_WORLDS_FAIR",
@@ -12210,6 +12290,13 @@ impl AdvancedAi {
         }
         if threatened {
             value -= 360.0;
+        }
+        // A generic early Great-Person project is a tempo loss against the
+        // city needs it postpones. Keep the rare Prophet and high-impact
+        // Scientist races above, plus emergencies/competitions priced outside
+        // this routine, as the forcing exceptions.
+        if early_gpp_project_restrained {
+            value = value.min(EARLY_GPP_PROJECT_FALLBACK_CAP);
         }
         // ★★★★ THE CHEAP HALF OF A RESEARCH CITY BEFORE THE RACE IN IT. See
         // `buildings_before_projects`.

@@ -14354,7 +14354,9 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         settler_scout_guard_held = 0,
 	                         settler_barbarian_combat_capture_held = 0,
 	                         settler_barbarian_combat_guard_held = 0,
-	                         settler_barbarian_combat_guard_rescued = 0 }, escortHolds = {} };
+	                         settler_barbarian_combat_guard_rescued = 0,
+	                         builder_barbarian_capture_held = 0,
+	                         builder_capture_escaped = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
 	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
@@ -14365,7 +14367,9 @@ CivvisBoard.reset = function()
 	                     settler_scout_guard_held = 0,
 	                     settler_barbarian_combat_capture_held = 0,
 	                     settler_barbarian_combat_guard_held = 0,
-	                     settler_barbarian_combat_guard_rescued = 0 };
+	                     settler_barbarian_combat_guard_rescued = 0,
+	                     builder_barbarian_capture_held = 0,
+	                     builder_capture_escaped = 0 };
 	CivvisBoard.escortHolds = {};
 end;
 
@@ -15191,6 +15195,212 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
+-- Builders are civilians too.  A live Civ 6 run lost a Builder immediately
+-- after CIVVIS moved it from the capital onto a tile reachable by a visible
+-- barbarian Warrior; the normal civilian bridge only protected Settlers, so
+-- the Builder disappeared before the next export.  Keep this repair narrow:
+-- inspect only visible barbarian units, only a host-proven same-turn Builder
+-- leg, and only refuse the hand-off when no co-located combat escort is
+-- proven to take that exact leg.  The planner still owns the destination and
+-- the existing opt-in advanced Builder gene remains independent of this
+-- actuation floor.
+CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
+	local player = try(function() return Players[pid]; end, nil);
+	if player == nil then return; end
+	local visible = function(x, y)
+		return try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) == true;
+	end
+	local threats = {};
+	pcall(function()
+		for _, otherId in ipairs(PlayerManager.GetAliveIDs() or {}) do
+			if otherId ~= pid then
+				local other = Players[otherId];
+				local barbarian = other ~= nil
+					and try(function() return other:IsBarbarian(); end, false) == true;
+				if barbarian then
+					eachUnit(other, function(unit)
+						local name = unitTypeName(unit);
+						-- Barb scouts have a measured two-plot civilian-capture
+						-- floor; other combat units use the host path below.
+						if name ~= "UNIT_SCOUT" and not CivvisBoard.isCombatEscort(unit) then return; end
+						local x = tonumber(try(function() return unit:GetX(); end, nil));
+						local y = tonumber(try(function() return unit:GetY(); end, nil));
+						if x ~= nil and y ~= nil and visible(x, y) then
+							threats[#threats + 1] = {
+								id = tonumber(try(function() return unit:GetID(); end, nil)),
+								unit = unit, name = name, x = x, y = y,
+								scout = name == "UNIT_SCOUT",
+							};
+						end
+					end);
+				end
+			end
+		end
+	end);
+	if #threats == 0 then return; end
+
+	local function threatReaches(threat, x, y)
+		if threat.scout then
+			local distance = tonumber(try(function()
+				return Map.GetPlotDistance(x, y, threat.x, threat.y);
+			end, -1)) or -1;
+			return distance >= 0 and distance <= 2, "scout_distance";
+		end
+		local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
+		local path = try(function()
+			return UnitManager.GetMoveToPathEx(threat.unit, destination);
+		end, nil);
+		if destination ~= nil and path ~= nil and path.plots ~= nil and path.turns ~= nil then
+			local n = 0;
+			for _ in pairs(path.plots) do n = n + 1; end
+			local last = tonumber(path.turns[n]);
+			if n > 0 and path.plots[n] == destination and last ~= nil and last <= 1 then
+				return true, "path";
+			end
+		end
+		local baseMoves = tonumber(try(function()
+			local definition = GameInfo.Units[threat.unit:GetUnitType()];
+			return definition ~= nil and definition.BaseMoves;
+		end, nil)) or 2;
+		local distance = tonumber(try(function()
+			return Map.GetPlotDistance(x, y, threat.x, threat.y);
+		end, -1)) or -1;
+		return distance >= 0 and distance <= baseMoves, "base_moves";
+	end
+
+	local function onOwnCity(x, y)
+		local found = false;
+		eachCity(player, function(city)
+			if found then return; end
+			local cx = tonumber(try(function() return city:GetX(); end, nil));
+			local cy = tonumber(try(function() return city:GetY(); end, nil));
+			if cx == x and cy == y then found = true; end
+		end);
+		return found;
+	end
+
+	-- A Builder can travel with a combat unit.  Preserve that explicit escort
+	-- contract, but require the host to prove both the co-location and the
+	-- exact same-turn destination before allowing the exposed civilian leg.
+	local function guardedLeg(builderId, fromX, fromY, sentX, sentY)
+		local guarded = false;
+		eachUnit(player, function(candidate)
+			if guarded or not CivvisBoard.isCombatEscort(candidate) then return; end
+			local guardId = tonumber(try(function() return candidate:GetID(); end, nil));
+			local guardX = tonumber(try(function() return candidate:GetX(); end, nil));
+			local guardY = tonumber(try(function() return candidate:GetY(); end, nil));
+			if guardId == nil or guardId == builderId or guardX ~= fromX or guardY ~= fromY then return; end
+			for _, row in ipairs(rows) do
+				if tostring(row.kind or "") == "unit" and tonumber(row.subject) == guardId
+						and tostring(row.verb or "") == "MOVE_TO"
+						and tonumber(row.x) == sentX and tonumber(row.y) == sentY
+						and CivvisBoard.reachesThisTurn(candidate, sentX, sentY) then
+					guarded = true;
+					break;
+				end
+			end
+		end);
+		return guarded;
+	end
+
+	local held = {};
+	for _, row in ipairs(rows) do
+		local builderId = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and row._civvis_builder_barbarian_capture_hold ~= true
+				and builderId ~= nil and wantX ~= nil and wantY ~= nil and held[builderId] == nil then
+			local builder = liveUnit(pid, builderId);
+			if builder ~= nil and unitTypeName(builder) == "UNIT_BUILDER" then
+				local fromX = tonumber(try(function() return builder:GetX(); end, nil));
+				local fromY = tonumber(try(function() return builder:GetY(); end, nil));
+				local capped = CivvisBoard.capToTurn(builder, wantX, wantY);
+				if fromX ~= nil and fromY ~= nil and capped ~= false then
+					local sentX, sentY = wantX, wantY;
+					if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
+					if (sentX ~= fromX or sentY ~= fromY)
+							and CivvisBoard.reachesThisTurn(builder, sentX, sentY)
+							and not guardedLeg(builderId, fromX, fromY, sentX, sentY) then
+						for _, threat in ipairs(threats) do
+							local reaches, reachKind = threatReaches(threat, sentX, sentY);
+							if reaches then
+								held[builderId] = {
+									builder = builderId, fromX = fromX, fromY = fromY,
+									wantX = wantX, wantY = wantY,
+									sentX = sentX, sentY = sentY, threat = threat,
+									reachKind = reachKind, row = row,
+								};
+								break;
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- If an already travelling Builder is inside the visible envelope, try the
+	-- same bounded host-proven escape used by Settlers.  A Builder in one of our
+	-- own city centers is treated as a safe origin: moving it out of the city is
+	-- not required to answer a threatened destination, and the city itself is a
+	-- separate defense problem.
+	for builderId, heldLeg in pairs(held) do
+		if not onOwnCity(heldLeg.fromX, heldLeg.fromY) then
+			local currentThreat = false;
+			for _, threat in ipairs(threats) do
+				if threatReaches(threat, heldLeg.fromX, heldLeg.fromY) then
+					currentThreat = true;
+					break;
+				end
+			end
+			if currentThreat then
+				local escape = CivvisBoard.findSettlerCaptureEscape(
+					liveUnit(pid, builderId), heldLeg.fromX, heldLeg.fromY,
+					heldLeg.wantX, heldLeg.wantY, threats, threatReaches);
+				if escape ~= nil then
+					heldLeg.row.x, heldLeg.row.y = escape.x, escape.y;
+					CivvisBoard.stats.builder_capture_escaped =
+						CivvisBoard.stats.builder_capture_escaped + 1;
+					emit("builder_capture_escape", {
+						turn = turn, builder = builderId,
+						from = { heldLeg.fromX, heldLeg.fromY },
+						want = { heldLeg.wantX, heldLeg.wantY },
+						sent = { escape.x, escape.y },
+						reach = heldLeg.reachKind,
+						threat_kind = heldLeg.threat.name, threat = heldLeg.threat.id,
+						threat_pos = { heldLeg.threat.x, heldLeg.threat.y },
+					});
+					held[builderId] = nil;
+				end
+			end
+		end
+	end
+	-- A Builder can receive a follow-up MOVE_TO in a later replan frame.  Mark
+	-- every move for a held Builder, not only the first row that established the
+	-- threat, so a second frame cannot reintroduce the same exposed leg.
+	for builderId in pairs(held) do
+		for _, row in ipairs(rows) do
+			if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+					and tonumber(row.subject) == builderId then
+				row._civvis_builder_barbarian_capture_hold = true;
+			end
+		end
+	end
+	for builderId, heldLeg in pairs(held) do
+		CivvisBoard.stats.builder_barbarian_capture_held =
+			CivvisBoard.stats.builder_barbarian_capture_held + 1;
+		emit("builder_barbarian_capture_hold", {
+			turn = turn, builder = builderId,
+			from = { heldLeg.fromX, heldLeg.fromY },
+			want = { heldLeg.wantX, heldLeg.wantY },
+			sent = { heldLeg.sentX, heldLeg.sentY },
+			hostile = heldLeg.threat.id, hostile_type = heldLeg.threat.name,
+			hostile_pos = { heldLeg.threat.x, heldLeg.threat.y },
+			hostile_reach = heldLeg.reachKind,
+		});
+	end
+end;
+
 -- Cancel stale host movement on combat units before the board owns them.
 --
 -- `GetQueuedDestination` catches an ordinary multi-turn MOVE_TO, but it is
@@ -15405,6 +15615,7 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
 	CivvisBoard.holdVisibleScoutCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
+	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -15460,6 +15671,11 @@ local function applyOrders(player, pid, turn, rows)
 		local subject = tonumber(row.subject);
 		local shadow = row._civvis_escort_shadow == true;
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if row._civvis_builder_barbarian_capture_hold == true then
+			countRefusal(kind, "builder_barbarian_capture_hold");
+			ordered[index] = true;
+			return false, "builder_barbarian_capture_hold";
+		end
 		-- This move is still a CIVVIS decision and must remain in the order
 		-- accounting.  The bridge declined only its exposed host hand-off; emit
 		-- the named refusal instead of silently deleting a planned expansion leg.
@@ -15762,6 +15978,11 @@ local function applyOrders(player, pid, turn, rows)
 		-- current tile when the host could prove the rescue leg this turn.
 		settler_barbarian_combat_guard_rescued =
 			CivvisBoard.stats.settler_barbarian_combat_guard_rescued,
+		-- Builders are civilians as well.  These are visible barbarian capture
+		-- legs held by the host bridge, plus proven escapes for Builders that were
+		-- already exposed before the current order frame.
+		builder_barbarian_capture_held = CivvisBoard.stats.builder_barbarian_capture_held,
+		builder_capture_escaped = CivvisBoard.stats.builder_capture_escaped,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),

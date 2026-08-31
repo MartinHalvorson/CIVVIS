@@ -12322,6 +12322,27 @@ function cityIconInk(fill, cityState) {
   if (cityState) return "#e7e9e3";
   return lightness(fill) < .55 ? "#fff4d4" : "#11161b";
 }
+// Civilization VI changes a city's ordinary fortification mark to this pair
+// of shields once it has outer defenses. The source is the exact
+// `Banner_StrengthIcon_Shields` sprite its CityBannerManager selects from
+// `Base/Platforms/Windows/BLPs/UI/InWorld.blp`, cut by
+// tools/civ6_city_banner_art.py rather than redrawn here.
+const CIV6_CITY_BANNER_WALL_SHIELDS_WIDTH = 21;
+const CIV6_CITY_BANNER_WALL_SHIELDS_HEIGHT = 18;
+const CIV6_CITY_BANNER_WALL_SHIELDS = new Image();
+let CIV6_CITY_BANNER_WALL_SHIELDS_READY = false;
+CIV6_CITY_BANNER_WALL_SHIELDS.onload = () => {
+  CIV6_CITY_BANNER_WALL_SHIELDS_READY = true;
+  if (state) draw();
+};
+CIV6_CITY_BANNER_WALL_SHIELDS.src = "/assets/civ6-city-banner-shields.png";
+function drawCiv6CityBannerWallShields(context, x, y, width) {
+  if (!CIV6_CITY_BANNER_WALL_SHIELDS_READY) return;
+  const height = width * CIV6_CITY_BANNER_WALL_SHIELDS_HEIGHT /
+    CIV6_CITY_BANNER_WALL_SHIELDS_WIDTH;
+  context.drawImage(CIV6_CITY_BANNER_WALL_SHIELDS,
+                    x - width / 2, y - height / 2, width, height);
+}
 function drawCityIcon(context, x, y, radius, fill, outline, cityState = false,
                       capital = false, badge = true) {
   const r = Math.max(.75, radius);
@@ -21666,8 +21687,17 @@ function drawScene() {
       }
       if ((c.wall_max || 0) > 0) {
         const wallFraction = Math.max(0, Math.min(1, (c.wall_hp || 0) / c.wall_max));
-        cx.fillStyle = "#071b2b"; cx.fillRect(bx, statusY, tw, 3);
-        cx.fillStyle = "#59aee1"; cx.fillRect(bx, statusY, tw * wallFraction, 3);
+        // Civ VI puts its double-shield marker directly beside this blue outer
+        // defense meter. Reserving its own seat means the marker explains the
+        // bar without extending a city banner into its faith or spy markers.
+        const wallIconWidth = Math.min(15 * UI_K(), Math.max(10, tw * .24));
+        const wallBarX = bx + wallIconWidth + 2;
+        const wallBarWidth = Math.max(1, tw - wallIconWidth - 2);
+        drawCiv6CityBannerWallShields(cx, bx + wallIconWidth / 2,
+                                      statusY + 1.5, wallIconWidth);
+        cx.fillStyle = "#071b2b"; cx.fillRect(wallBarX, statusY, wallBarWidth, 3);
+        cx.fillStyle = "#59aee1";
+        cx.fillRect(wallBarX, statusY, wallBarWidth * wallFraction, 3);
         statusY += 4;
       }
       // Production lives in the medallion alone — one circle on the plate's

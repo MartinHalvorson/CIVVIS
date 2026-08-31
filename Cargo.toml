@@ -5,6 +5,7 @@ edition = "2021"
 default-run = "civvis"
 description = "Martin Halvorson's Civilization VIS - Rust performance core (headless Civ 6-style engine)"
 license = "GPL-3.0-or-later"
+autobins = false
 
 [lib]
 name = "civvis"
@@ -14,7 +15,67 @@ path = "src/lib.rs"
 name = "civvis"
 path = "src/main.rs"
 
+[[bin]]
+name = "civvis_orders"
+path = "src/bin/civvis_orders.rs"
+
+# These commands are analysis, evaluation, and diagnostic instruments. Keep
+# them reproducible on request without compiling them in production builds or
+# CI's ordinary all-targets warning gate.
+[[bin]]
+name = "audit"
+path = "src/bin/audit.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "battle_bench"
+path = "src/bin/battle_bench.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "battle_chart"
+path = "src/bin/battle_chart.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "doctrine_arena"
+path = "src/bin/doctrine_arena.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "gene_census"
+path = "src/bin/gene_census.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "gene_screen"
+path = "src/bin/gene_screen.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "leader_census"
+path = "src/bin/leader_census.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "leader_study"
+path = "src/bin/leader_study.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "live_divergence"
+path = "src/bin/live_divergence.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
+name = "victory_eval"
+path = "src/bin/victory_eval.rs"
+required-features = ["developer-tools"]
+
 [features]
+# Opt-in analysis and diagnostic executables under `src/bin/`.
+developer-tools = []
+
 # Closed experiment executables remain reproducible evidence, but they are not
 # part of the default product or CI target surface.
 closed-experiments = []

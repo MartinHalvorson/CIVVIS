@@ -24,7 +24,7 @@ another, which is the number you actually need before deciding what to change.
 ## The positions
 
 ```bash
-cargo run --release --bin doctrine_arena -- --list
+cargo run --release --features developer-tools --bin doctrine_arena -- --list
 ```
 
 | id | engagement | the decision |
@@ -64,7 +64,7 @@ problem in equal measure.
 **Run the control first, every time.**
 
 ```bash
-cargo run --release --bin doctrine_arena -- --a advanced --b advanced --seeds 12
+cargo run --release --features developer-tools --bin doctrine_arena -- --a advanced --b advanced --seeds 12
 ```
 
 It must report a paired mean of exactly `+0.0` on every position with `0/12`
@@ -78,10 +78,10 @@ is the harness talking, not the game.
 ## Reading the report
 
 ```bash
-cargo run --release --bin doctrine_arena -- --a advanced --b basic --seeds 60
-cargo run --release --bin doctrine_arena -- --position the_reserve --a advanced --b basic
-cargo run --release --bin doctrine_arena -- --profile advanced --seeds 20
-cargo run --release --bin doctrine_arena -- --correlate --a advanced --b basic --seeds 120
+cargo run --release --features developer-tools --bin doctrine_arena -- --a advanced --b basic --seeds 60
+cargo run --release --features developer-tools --bin doctrine_arena -- --position the_reserve --a advanced --b basic
+cargo run --release --features developer-tools --bin doctrine_arena -- --profile advanced --seeds 20
+cargo run --release --features developer-tools --bin doctrine_arena -- --correlate --a advanced --b basic --seeds 120
 ```
 
 **Read the rows, not the pooled line.** The positions were chosen to pose
@@ -282,7 +282,7 @@ has to be built and run through the gates in order.
 ### Does arriving together actually cause winning? Mostly not.
 
 ```bash
-cargo run --release --bin doctrine_arena -- --correlate --a advanced --b basic --seeds 120
+cargo run --release --features developer-tools --bin doctrine_arena -- --correlate --a advanced --b basic --seeds 120
 ```
 
 Per seed, how much more of its force each agent had up at first contact than the
@@ -404,9 +404,9 @@ Three additions, each answering one of the limits stated below.
 ### The positions are a curriculum; a captured file is the distribution
 
 ```bash
-cargo run --release --bin doctrine_arena -- --capture --games 24 --out target/engagements.json
-cargo run --release --bin doctrine_arena -- --engagements target/engagements.json --list
-cargo run --release --bin doctrine_arena -- --engagements target/engagements.json \
+cargo run --release --features developer-tools --bin doctrine_arena -- --capture --games 24 --out target/engagements.json
+cargo run --release --features developer-tools --bin doctrine_arena -- --engagements target/engagements.json --list
+cargo run --release --features developer-tools --bin doctrine_arena -- --engagements target/engagements.json \
     --a advanced --b advanced --seeds 12          # the control, on the file too
 ```
 
@@ -462,8 +462,8 @@ both. They are different questions, and a board says which it is asking.
 ### A seat can carry genes
 
 ```bash
-cargo run --release --bin doctrine_arena -- --a advanced+close-as-a-body --b advanced --seeds 60
-cargo run --release --bin battle_bench -- --a advanced+fire-plan --b advanced --games 200
+cargo run --release --features developer-tools --bin doctrine_arena -- --a advanced+close-as-a-body --b advanced --seeds 60
+cargo run --release --features developer-tools --bin battle_bench -- --a advanced+fire-plan --b advanced --games 200
 ```
 
 A seat is a built-in name or `advanced+<gene>+<gene>` (`civvis::elo::seat_spec`,

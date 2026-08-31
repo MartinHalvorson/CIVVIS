@@ -1148,10 +1148,21 @@ def main(argv=None):
     board = state = None
     game_turn = -1
     terminal_turn = latest_terminal_turn(run) if args.archive else None
+    mirror_error = None
     for _ in range(20):
-        board = json.load(
-            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/state", timeout=30)
-        )
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{PORT}/state", timeout=30
+            ) as response:
+                board = json.load(response)
+        except (OSError, ValueError) as exc:
+            # `live_runtime_problems` can already have proved that the
+            # controller/sidecar is absent. Keep that useful diagnosis intact:
+            # a checker must report an unavailable mirror, not replace it with
+            # a Python traceback from the same connection failure.
+            board = None
+            mirror_error = f"{type(exc).__name__}: {exc}"
+            break
         _, game_turn = load_export(run)
         state = latest_state(run, upto=board["turn"])
         state_turn = int((state or {}).get("turn") or -1)
@@ -1161,7 +1172,11 @@ def main(argv=None):
         ):
             break
         time.sleep(0.1)
-    assert board is not None
+    if board is None:
+        print(f"run   {os.path.basename(run)}")
+        detail = mirror_error or "no response"
+        print(f"MIRROR  ⚠ unavailable on :{PORT}/state ({detail})")
+        return 1
     state_turn = int((state or {}).get("turn") or -1)
     if not exact_host_frame(
         board["turn"], state_turn, game_turn, archive=args.archive,
