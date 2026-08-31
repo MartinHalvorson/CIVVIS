@@ -81,6 +81,7 @@ local function unitObject(u)
 		GetGreatPerson = function() return nil end,
 		GetFortifyTurns = function() return 0 end,
 		GetFormationUnitCount = function() return 1 end,
+		GetAttacksRemaining = function() return u.attacks or 1 end,
 	}
 end
 UnitManager = {
@@ -252,6 +253,20 @@ host.refuse[13] = nil
 host.arrive(13)
 queue.drain(player, PID, 7)
 check("found retried on arrival", ops(13), "UNITOPERATION_MOVE_TO,UNITOPERATION_FOUND_CITY")
+
+-- 5b. A target-specific ranged refusal is named with the host's probe and
+-- the unit state read at the same instant. A generic RANGE_ATTACK counter
+-- cannot distinguish a stale target/LOS decision from an actuation mismatch.
+reset()
+host.units[20] = { id = 20, kind = "UNIT_ARCHER", x = 8, y = 8, moves = 2, attacks = 1 }
+host.refuse[20] = { UNITOPERATION_RANGE_ATTACK = true }
+applyOrders(player, PID, 7, { row(20, "RANGE_ATTACK", 10, 8) })
+check("refused ranged shot issues nothing", ops(20), "")
+local refusedRange = lastEvent("range_attack_refused") or ""
+check("ranged refusal names unit", refusedRange:find('"unit":20', 1, true) ~= nil, true)
+check("ranged refusal names target", refusedRange:find('"x":10', 1, true) ~= nil, true)
+check("ranged refusal samples moves", refusedRange:find('"moves":2', 1, true) ~= nil, true)
+check("ranged refusal carries host probe", refusedRange:find('"why":"', 1, true) ~= nil, true)
 
 -- 6. Spent movement refuses what needs it, by name.
 reset()
