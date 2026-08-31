@@ -22,9 +22,9 @@ had never been seen by a CI run. This page is how any Mac gets the same loop.
 | --- | --- | --- |
 | `tools/ops/civvis-games.sh` | `~/bin/civvis-games` (symlink) | `on` / `retire` / `off` / `status` / `wins` / `ensure` — the lane switch and the operator's standing intent |
 | `tools/ops/civvis-verified-head-launcher.sh` | `~/civvis-verification-launch.command` (symlink) | the entry point every start goes through: fresh `origin/main`, deployment genome, this host's policy, nothing inherited from the window |
-| `tools/ops/civvis-run-prune.sh` | — | removes run directories older than 48 h; never the ledgers, an open run, or the newest run |
+| `tools/ops/civvis-run-prune.sh` | — | removes every run directory older than 24 h; never the ledgers or an open run |
 | `deploy/com.civvis.keepplaying.plist` | `~/Library/LaunchAgents/…` | `civvis-games ensure` every 5 min |
-| `deploy/com.civvis.run-prune.plist` | `~/Library/LaunchAgents/…` | `civvis-run-prune.sh` daily at 03:17 |
+| `deploy/com.civvis.run-prune.plist` | `~/Library/LaunchAgents/…` | `civvis-run-prune.sh` hourly |
 | `tools/ops/civvis-install-host-automation.sh` | — | wires all of the above, idempotently |
 
 Symlinks, never copies: a home copy of a tracked script is exactly what
