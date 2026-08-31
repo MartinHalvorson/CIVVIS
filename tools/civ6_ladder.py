@@ -760,6 +760,13 @@ def runtime_heartbeat_problem(heartbeat: Path, max_minutes: float,
     nobody's problem; a cache directory with a missing, stale, or erroring
     heartbeat means the verification game may be silently playing old code —
     the exact silence this check exists to make loud.
+
+    A heartbeat that says ``"refresh": "disabled"`` is the one deliberate
+    silence: the live loop launched with ``--github-refresh-seconds 0`` and
+    stamped it, so no age can accrue meaning — the binary's freshness is the
+    supervisor's per-cycle checkout's contract instead. Before the stamp
+    existed this check alarmed on the last enabled run's frozen file forever
+    (from 2026-08-19), and an alarm that always fires catches nothing.
     """
     if not heartbeat.parent.is_dir():
         return None
@@ -770,6 +777,11 @@ def runtime_heartbeat_problem(heartbeat: Path, max_minutes: float,
         beat = json.loads(heartbeat.read_text())
     except (OSError, json.JSONDecodeError) as exc:
         return f"unreadable runtime heartbeat {heartbeat}: {exc}"
+    if beat.get("refresh") == "disabled":
+        error = (beat.get("last_error") or "").strip()
+        if error:
+            return f"runtime refresh is failing: {error[:200]}"
+        return None
     now = now or datetime.now(timezone.utc)
     stamp = beat.get("utc")
     try:

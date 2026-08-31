@@ -311,6 +311,38 @@ class GitHubRuntimeUpdater:
             return runtime
 
 
+def write_disabled_heartbeat(cache_root: Path | None = None,
+                             revision: str | None = None) -> None:
+    """Stamp the runtime heartbeat when the GitHub watcher is deliberately off.
+
+    The live loop launches with ``--github-refresh-seconds 0``: the game plays
+    exactly the binary the supervisor built for this cycle, and no updater
+    thread runs. Without this stamp the last enabled run's heartbeat stayed
+    frozen on disk (2026-08-19) and ``civ6_ladder.py check`` alarmed on its age
+    forever — an alarm that always fires cannot catch real staleness. The
+    stamp says the silence is chosen, so the check can hold its fire while
+    keeping the missing-file and erroring cases loud. Staleness of the binary
+    itself is then the supervisor's per-cycle checkout's contract, not this
+    watcher's.
+    """
+    root = (cache_root or (
+        Path.home() / ".cache" / "civvis" / "live-game-runtime"
+    )).expanduser()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "utc": _utc_stamp(),
+            "refresh": "disabled",
+            "current_revision": revision,
+            "last_error": "",
+        }
+        temporary = root / f".heartbeat.{os.getpid()}.tmp"
+        temporary.write_text(json.dumps(payload, sort_keys=True) + "\n")
+        os.replace(temporary, root / "heartbeat.json")
+    except OSError:
+        pass  # the heartbeat must never hurt the game it watches
+
+
 def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str,
                   strategy: str | None = None, civ: str | None = None,
                   without: list[str] | None = None,
@@ -1018,6 +1050,15 @@ def main() -> int:
         print(f"[brain] watching GitHub origin/main every "
               f"{args.github_refresh_seconds:g}s; verified builds publish from "
               f"{updater.cache_root}", flush=True)
+    elif args.mode == "civvis":
+        # Refresh 0 is a choice, not a death: stamp the heartbeat so the
+        # ladder check stops reading the last enabled run's frozen file as
+        # "the game may be playing old code". See `write_disabled_heartbeat`.
+        write_disabled_heartbeat(
+            cache_root=(Path(args.github_cache).expanduser()
+                        if args.github_cache else None),
+            revision=runtime_revision,
+        )
     if args.mode == "civvis" and binary is not None:
         # The first row of runtime_updates.jsonl names the revision the run
         # OPENED on, so a run with zero handoffs still records what code
