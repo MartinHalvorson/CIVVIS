@@ -17361,9 +17361,12 @@ impl AdvancedAi {
     /// A targeted Science seat must notice the attack before city health is
     /// the only proof left. The generic siege picker is intentionally
     /// damage-gated because a passing patrol should not interrupt a city, but
-    /// two visible major-civilization land units in the city's five-tile ring
-    /// are not a patrol. A siege unit alone is also enough: it is the piece
-    /// that turns a healthy walled city into a capture countdown.
+    /// two visible hostile land units in the city's five-tile ring are not a
+    /// patrol. A siege unit alone is also enough: it is the piece that turns a
+    /// healthy walled city into a capture countdown. Barbarian bombardment is
+    /// included even though it has no ordinary war declaration; Ravenna fell
+    /// to exactly that stack while the major-only filter still saw a healthy
+    /// city.
     fn science_siege_pressure(&self, g: &Game, pid: usize, cid: u32) -> Option<(usize, f64)> {
         if self.active_victory_target(g) != Some(VictoryTarget::Science) {
             return None;
@@ -17378,10 +17381,11 @@ impl AdvancedAi {
         let mut has_siege = false;
         for unit in g.units.values().filter(|unit| {
             unit.owner != pid
-                && g.is_at_war(pid, unit.owner)
-                && g.players
-                    .get(unit.owner)
-                    .is_some_and(|player| player.alive && !player.is_minor && !player.is_barbarian)
+                && (Some(unit.owner) == g.barb_pid
+                    || (g.is_at_war(pid, unit.owner)
+                        && g.players.get(unit.owner).is_some_and(|player| {
+                            player.alive && !player.is_minor && !player.is_barbarian
+                        })))
                 && (!self.battlefront_observation
                     || (g.sees(&visible, unit.pos)
                         && self.battlefront_unit_visible(g, pid, unit.id)))
@@ -21198,9 +21202,12 @@ impl AdvancedAi {
             // Before it is damaged, `besieged_city_item` only supplies a
             // defender after seeing a real multi-unit raiding party. That is
             // enough proof to reclaim one queue during a major war. Outside a
-            // major war, the plan's independent threat call supplies the extra
-            // proof that this is an active siege rather than passing scouts.
-            let confirmed_non_major_siege = threatened_city == Some(city);
+            // major war, an explicit Science lane's own pre-damage siege
+            // signal supplies the same proof, including a barbarian stack;
+            // passing scouts still return no signal.
+            let confirmed_non_major_siege = threatened_city == Some(city)
+                || (self.active_victory_target(g) == Some(VictoryTarget::Science)
+                    && self.science_siege_pressure(g, pid, city).is_some());
             if damage == 0 && wall_damage == 0 && !active_major_war && !confirmed_non_major_siege {
                 continue;
             }

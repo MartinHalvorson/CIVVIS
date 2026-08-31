@@ -776,6 +776,68 @@ fn explicit_science_reacts_to_a_pre_damage_major_siege_without_a_war_gene() {
 }
 
 #[test]
+fn explicit_science_reacts_to_a_pre_damage_barbarian_siege() {
+    // Ravenna was lost to a barbarian Bombard stack while its city and walls
+    // were still healthy enough to evade the old damage-only handoff. The
+    // explicit Science lane must reserve the city against that contact too;
+    // Barbarians do not need a diplomatic war declaration to capture it.
+    let (mut game, city, home) = empire_with_a_capital(71_147);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    let barb = 1;
+    game.players[barb].is_barbarian = true;
+    game.barb_pid = Some(barb);
+    game.at_war.remove(&(0, barb));
+    game.at_war.remove(&(barb, 0));
+    let first = clear_land_at(&game, home, 2, &[], 0);
+    let second =
+        game.wdisk(home, 2)
+            .into_iter()
+            .filter(|position| {
+                *position != first
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+            })
+            .next()
+            .expect("the capital ring needs a second clear land tile");
+    game.spawn_test_unit("warrior", barb, first);
+    game.spawn_test_unit("warrior", barb, second);
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.battlefront_observation = false;
+    assert_eq!(game.cities[&city].hp, CITY_MAX_HP);
+    assert_eq!(
+        science.science_siege_defense_item(&game, 0, city),
+        Some(Item::Building {
+            building: crate::name!("walls")
+        }),
+        "the pre-damage Science contact should choose Walls against Barbarians"
+    );
+
+    let unsafe_queue = Item::Building {
+        building: crate::name!("monument"),
+    };
+    game.cities.get_mut(&city).unwrap().queue = vec![unsafe_queue];
+    science.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("walls")
+        }),
+        "the explicit Science lane must reclaim the queue before barbarian damage"
+    );
+    assert_eq!(
+        science
+            .science_siege_pressure(&game, 0, city)
+            .map(|(count, _)| count),
+        Some(2),
+        "both barbarian units remain part of the siege signal"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy
