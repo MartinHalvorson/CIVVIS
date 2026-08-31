@@ -16546,6 +16546,17 @@ impl AdvancedAi {
             // `advanced/one_war.rs`.
             let one_war_peace = self.one_war_peace(g, pid, *other);
             let one_war_presses = self.one_war_presses(g, pid, *other);
+            // An explicit Science seat has no offensive use for a war it did
+            // not appoint. A losing proposal can still be refused by the
+            // attacker, so make the direct-peace condition part of the outer
+            // offer gate as well; otherwise a merely outmatched (rather than
+            // catastrophically outmatched) besieged city never reaches it.
+            let science_defensive_peace = self.victory_target == Some(VictoryTarget::Science)
+                && self.war_plan.is_none()
+                && plan.strategy != GrandStrategy::Conquest
+                && plan.threatened_city.is_some()
+                && my_power < g.military_power(*other) * 0.85
+                && g.peace_available_at(pid, *other).is_none();
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -16571,7 +16582,8 @@ impl AdvancedAi {
                             || g.turn.saturating_sub(self.last_campaign_progress)
                                 >= g.standard_duration(PEACE_STALL_TURNS)))
                     || envoy_reclaim.is_some()
-                    || one_war_peace.is_some())
+                    || one_war_peace.is_some()
+                    || science_defensive_peace)
             {
                 self.peace_offers.insert(*other);
                 // Only a rout licenses a live tribute; every other reason
@@ -16612,20 +16624,9 @@ impl AdvancedAi {
                            "Offering peace to {}", g.players[*other].civ;
                            "{because}: {my_power:.0} power against their {their_power:.0}");
                 }
-                // An explicit Science seat has no offensive use for a war it
-                // did not appoint.  A losing proposal can still be refused by
-                // the attacker, which leaves the besieged city paying for the
-                // same war every turn.  Once the treaty clock is legal, end a
-                // clearly losing, locally threatened defensive war directly.
                 // Keep this narrow: ordinary adaptive seats still negotiate,
                 // and an appointed campaign or Emergency war retains its
                 // bilateral commitment.
-                let science_defensive_peace = self.victory_target == Some(VictoryTarget::Science)
-                    && self.war_plan.is_none()
-                    && plan.strategy != GrandStrategy::Conquest
-                    && plan.threatened_city.is_some()
-                    && my_power < g.military_power(*other) * 0.85
-                    && g.peace_available_at(pid, *other).is_none();
                 if science_defensive_peace
                     && g.apply(pid, &Action::MakePeace { player: *other }).is_ok()
                 {

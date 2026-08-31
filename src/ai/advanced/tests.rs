@@ -7289,8 +7289,11 @@ fn an_explicit_science_lane_ends_a_losing_threatened_war_directly() {
         game.remove_unit(settler);
     }
     let staging = game.cities[&game.player_city_ids(0)[0]].pos;
-    for _ in 0..3 {
-        game.spawn_test_unit("modern_armor", 0, staging);
+    let defender_staging = game.cities[&game.player_city_ids(1)[0]].pos;
+    game.spawn_test_unit("modern_armor", 0, staging);
+    game.spawn_test_unit("modern_armor", 1, defender_staging);
+    for _ in 0..2 {
+        game.spawn_test_unit("warrior", 0, staging);
     }
     game.current = 0;
     game.turn = 60;
@@ -7300,6 +7303,7 @@ fn an_explicit_science_lane_ends_a_losing_threatened_war_directly() {
         .peace_available_at(0, 1)
         .expect("the new war has a mandatory minimum");
     assert!(game.military_power(1) < game.military_power(0) * 0.85);
+    assert!(game.military_power(1) >= game.military_power(0) * 0.62);
 
     let threatened_city = game.player_city_ids(1).into_iter().next();
     let plan = StrategicPlan {
