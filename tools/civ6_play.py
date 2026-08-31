@@ -3429,6 +3429,14 @@ def _play(args: argparse.Namespace) -> int:
 
     brain = None
     brain_log = None
+    brain_command = None
+    brain_binary = None
+    brain_restart = {
+        "last_started": 0.0,
+        "last_attempt": 0.0,
+        "consecutive_failures": 0,
+        "disabled": False,
+    }
     if args.civvis_decides:
         binary = Path(args.civvis_bin).expanduser() if args.civvis_bin else (
             REPO_ROOT / "target" / "release" / "civvis_orders"
@@ -3437,25 +3445,46 @@ def _play(args: argparse.Namespace) -> int:
             print(f"CIVVIS decision binary does not exist: {binary}", file=sys.stderr)
             return 4
         brain_log = (run_dir / "brain.log").open("a", buffering=1)
-        command = supervised_brain_command(args, run_dir, orders_db, binary)
-        brain = subprocess.Popen(
-            command,
-            cwd=REPO_ROOT,
-            stdout=brain_log,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        # ⚠ Print the WHOLE configuration, not a chosen subset. `--war-from-plan`
-        # was carried by a second, undeclared brain for as long as it existed, and a
-        # banner naming only strategy and victory could not have shown that.
-        refresh = ("brain-default" if args.civvis_refresh_seconds is None
-                   else args.civvis_refresh_seconds)
-        print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
-              f"victory={args.civvis_victory} "
-              f"war_from_plan={args.civvis_war_from_plan} "
-              f"refresh_seconds={refresh} "
-              f"forced={args.civvis_with or 'none'} "
-              f"withheld={args.civvis_without or 'none'} bin={binary}")
+        brain_binary = binary
+        brain_command = supervised_brain_command(args, run_dir, orders_db, binary)
+
+        def start_brain(restarting: bool = False) -> None:
+            """Start the one decision worker for this run.
+
+            The worker owns no game state: the event journal is its input and the
+            SQLite checkpoint is its output. Reusing both makes a restart safe at
+            a live turn barrier, while keeping the subprocess singular prevents
+            two deciders from racing over the same `ready` row.
+            """
+            nonlocal brain
+            assert brain_command is not None
+            assert brain_log is not None
+            brain = subprocess.Popen(
+                brain_command,
+                cwd=REPO_ROOT,
+                stdout=brain_log,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            brain_restart["last_started"] = time.monotonic()
+            label = ("restarted CIVVIS decision worker"
+                     if restarting else "CIVVIS decision worker")
+            # ⚠ Print the WHOLE configuration, not a chosen subset.
+            # `--war-from-plan` was carried by a second, undeclared brain for as
+            # long as it existed, and a short banner could not prove the worker
+            # was playing the requested lane.
+            refresh = ("brain-default" if args.civvis_refresh_seconds is None
+                       else args.civvis_refresh_seconds)
+            print(f"{label} pid={brain.pid} strategy={args.civvis_strategy} "
+                  f"victory={args.civvis_victory} "
+                  f"war_from_plan={args.civvis_war_from_plan} "
+                  f"refresh_seconds={refresh} "
+                  f"forced={args.civvis_with or 'none'} "
+                  f"withheld={args.civvis_without or 'none'} "
+                  f"bin={brain_binary or 'unknown'}",
+                  flush=True)
+
+        start_brain()
 
     def stop_brain() -> None:
         nonlocal brain, brain_log
@@ -3469,6 +3498,42 @@ def _play(args: argparse.Namespace) -> int:
         if brain_log is not None:
             brain_log.close()
             brain_log = None
+
+    def restart_dead_brain() -> None:
+        """Recover a worker that exited while the native game is still live.
+
+        `CivvisDecides` holds a turn open until the worker writes `ready`. A
+        worker crash therefore looks like a frozen game even though the native
+        process and event stream remain healthy. Restart only after the prior
+        subprocess has been reaped, use a short backoff to avoid a crash loop,
+        and stop retrying after several consecutive failures so a bad binary
+        falls back visibly instead of spawning forever.
+        """
+        if brain is None or brain_command is None:
+            return
+        now = time.monotonic()
+        return_code = brain.poll()
+        if return_code is None:
+            if (now - brain_restart["last_started"] >= 5.0
+                    and brain_restart["consecutive_failures"]):
+                brain_restart["consecutive_failures"] = 0
+            return
+        if brain_restart["disabled"]:
+            return
+        if now - brain_restart["last_attempt"] < 2.0:
+            return
+        if brain_restart["consecutive_failures"] >= 5:
+            brain_restart["disabled"] = True
+            print("CIVVIS decision worker recovery disabled after five "
+                  "consecutive failures; the native run remains observable",
+                  file=sys.stderr, flush=True)
+            return
+        brain_restart["last_attempt"] = now
+        brain_restart["consecutive_failures"] += 1
+        print(f"CIVVIS decision worker exited ({return_code}); "
+              f"recovery attempt {brain_restart['consecutive_failures']} of 5",
+              file=sys.stderr, flush=True)
+        start_brain(restarting=True)
 
     # Covers KeyboardInterrupt and unexpected exceptions between the explicit
     # cleanup sites below. Calling it again after a normal run is harmless.
@@ -3917,6 +3982,7 @@ def _play(args: argparse.Namespace) -> int:
 
     def keep_foreground() -> None:
         process_operator_retirement()
+        restart_dead_brain()
         now = time.monotonic()
         if now - last_focus[0] < args.focus_every:
             return

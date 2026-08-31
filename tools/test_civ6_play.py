@@ -145,6 +145,23 @@ class TermTakesTheBrainWithIt(unittest.TestCase):
                       "and the cleanup it returns to must still be registered")
 
 
+class LiveBrainRecoveryTest(unittest.TestCase):
+    """A dead decision worker must not leave a native turn held forever."""
+
+    def test_the_live_poll_restarts_a_worker_that_exited_unexpectedly(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        recovery = source[source.index("    def restart_dead_brain"):
+                          source.index("    # Covers KeyboardInterrupt", source.index(
+                              "    def restart_dead_brain"))]
+        foreground = source[source.index("    def keep_foreground"):
+                            source.index("    # ⚠ THE POLL INTERVAL", source.index(
+                                "    def keep_foreground"))]
+        self.assertIn("return_code = brain.poll()", recovery)
+        self.assertIn("start_brain(restarting=True)", recovery)
+        self.assertIn("restart_dead_brain()", foreground)
+        self.assertIn("brain_restart[\"consecutive_failures\"]", recovery)
+
+
 class Civ6PlayTest(unittest.TestCase):
     def setUp(self) -> None:
         # Every production harness is a fresh process; reset its equivalent
