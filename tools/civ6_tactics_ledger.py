@@ -144,24 +144,33 @@ def _own_units(state: dict[str, Any]) -> dict[int, dict[str, Any]]:
 
 
 def _hostile_plots(state: dict[str, Any]) -> list[tuple[int, int]]:
-    """Visible hostile combat units and at-war rival cities, as offset plots."""
+    """Visible hostile combat units and at-war actor cities, as offset plots.
+
+    The host exports major civilizations in ``rivals`` and city-states in
+    ``minors``.  Both lists carry the local player's ``at_war`` relation, while
+    ``hostiles`` is reserved for barbarians and Free Cities.  Omitting minors
+    made a city-state army disappear from the loss/hover context even though
+    the same units were visible to the controller's contact guard.
+    """
     plots: list[tuple[int, int]] = []
     for hostile in state.get("hostiles") or []:
         combat = hostile.get("combat") or 0
         ranged = hostile.get("ranged") or 0
         if (combat or ranged) and isinstance(hostile.get("x"), int):
             plots.append((hostile["x"], hostile["y"]))
-    for rival in state.get("rivals") or []:
-        if not rival.get("at_war"):
-            continue
-        for unit in rival.get("units") or []:
-            if ((unit.get("combat") or 0) or (unit.get("ranged") or 0)) and isinstance(
-                unit.get("x"), int
-            ):
-                plots.append((unit["x"], unit["y"]))
-        for city in rival.get("cities") or []:
-            if isinstance(city.get("x"), int):
-                plots.append((city["x"], city["y"]))
+
+    for actor_group in ("rivals", "minors"):
+        for actor in state.get(actor_group) or []:
+            if not actor.get("at_war"):
+                continue
+            for unit in actor.get("units") or []:
+                if ((unit.get("combat") or 0) or (unit.get("ranged") or 0)) and isinstance(
+                    unit.get("x"), int
+                ):
+                    plots.append((unit["x"], unit["y"]))
+            for city in actor.get("cities") or []:
+                if isinstance(city.get("x"), int):
+                    plots.append((city["x"], city["y"]))
     return plots
 
 
@@ -346,7 +355,18 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
         preview = event.get("preview") or {}
         predicted = preview.get("damage_to_defender")
         if we_attack and isinstance(predicted, (int, float)) and isinstance(dealt, (int, float)):
-            preview_error.append(float(dealt) - float(predicted))
+            comparable = float(predicted)
+            # `SimulateAttackInto` reports the strike's potential damage, while
+            # the combat callback reports the HP delta. Civ VI caps that delta
+            # at the defender's remaining HP, so a lethal preview of 64 against
+            # a 26-HP unit is an expected 26, not a -38 combat-model mismatch.
+            # Cities and districts stay uncapped here: their preview also
+            # carries wall damage while `damage_to_defender` is the garrison
+            # readback, so the two fields are not the same quantity.
+            defender_hp = defender.get("hp")
+            if defender.get("type") == "unit" and isinstance(defender_hp, (int, float)):
+                comparable = min(comparable, max(0.0, float(defender_hp)))
+            preview_error.append(float(dealt) - comparable)
     kills = ours["kills"] + theirs["losses_attacking"]
     losses = theirs["kills"] + ours["losses_attacking"]
     mean_err = (sum(preview_error) / len(preview_error)) if preview_error else None
@@ -435,6 +455,7 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
     near_turns = 0
     hover = 0
     fortified_hover = 0
+    healing_hover = 0
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
@@ -462,12 +483,27 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
                 # That 88 is the number worth acting on.
                 if unit.get("fortified"):
                     fortified_hover += 1
+                elif (unit.get("hp") or 100) < 100:
+                    # ⚠⚠ A DAMAGED UNIT RESTING IS HEALING, NOT LOITERING. Civ 6
+                    # heals a unit that neither moves nor attacks, so "did
+                    # nothing beside an enemy" is also the description of a
+                    # wounded unit doing the right thing. On run
+                    # civvis-20260830T121826Z these are 37 of 105 hovering
+                    # unit-turns — more than the fortified ones — and #2816's
+                    # split reported all 88 non-fortified as "idle", which
+                    # overstated the defect by better than 2x.
+                    healing_hover += 1
     return {
         "military_unit_turns": military_turns,
         "unit_turns_2_to_4_from_a_hostile": near_turns,
         "hovering_unit_turns": hover,
         "hovering_fortified": fortified_hover,
-        "hovering_idle": hover - fortified_hover,
+        "hovering_healing": healing_hover,
+        # ⚠ NOT "idle" in any stronger sense than "we cannot name a reason".
+        # `moves` is NOT usable to narrow this further: at the first frame of a
+        # turn it reads 0 for 1156 of ~1350 military units, so it is the
+        # export's default rather than evidence about that unit.
+        "hovering_unexplained": hover - fortified_hover - healing_hover,
         "hover_share_of_near": round(hover / near_turns, 3) if near_turns else None,
     }
 
@@ -637,7 +673,8 @@ def render(report: dict[str, Any]) -> str:
     lines.append(
         f"  hover    {hover['hovering_unit_turns']} of {hover['unit_turns_2_to_4_from_a_hostile']} "
         f"near-hostile unit-turns neither moved nor struck ({_fmt_share(hover['hover_share_of_near'])}"
-        f" — {hover['hovering_fortified']} fortified, {hover['hovering_idle']} idle); "
+        f" — {hover['hovering_fortified']} fortified, {hover['hovering_healing']} healing, "
+        f"{hover['hovering_unexplained']} unexplained); "
         f"{hover['military_unit_turns']} military unit-turns"
     )
     hof = report.get("hall_of_fame")

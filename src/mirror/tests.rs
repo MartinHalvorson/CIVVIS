@@ -25,6 +25,16 @@ fn a_unique_unit_resolves_through_its_noun() {
         Some("legion"),
         "the civ-qualifier fallback already handled this and must not regress"
     );
+    assert_eq!(
+        resolved_civvis_unit_name(&rules, "UNIT_BARBARIAN_HORSEMAN").as_deref(),
+        Some("barbarian_horseman"),
+        "the host-only barbarian horseman must keep its slower, weaker profile"
+    );
+    assert_eq!(
+        resolved_civvis_unit_name(&rules, "UNIT_BARBARIAN_HORSE_ARCHER").as_deref(),
+        Some("barbarian_horse_archer"),
+        "the host-only barbarian horse archer must not become a Saka archer"
+    );
     // A Great Person is a MODELLING gap, not a naming one — there is no
     // entry to find and inventing one would be worse than reporting none.
     assert_eq!(
@@ -418,6 +428,18 @@ fn a_civ_qualifier_is_stripped_and_great_is_not() {
         "Firaxis declares the Hwacha as Korea's Field Cannon replacement"
     );
     assert_eq!(
+        resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_NUBIAN_PITATI")
+            .as_deref(),
+        Some("pitati_archer"),
+        "the host's shortened Pitati type must round-trip to CIVVIS"
+    );
+    assert_eq!(
+        resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_LAHORE_NIHANG")
+            .as_deref(),
+        Some("nihang"),
+        "Nihang is a special suzerain unit, not a civilization-unique row"
+    );
+    assert_eq!(
         civvis_unit_name_unqualified("UNIT_GREAT_GENERAL"),
         None,
         "`great` is not a civilization, so there is no qualifier to remove"
@@ -426,6 +448,49 @@ fn a_civ_qualifier_is_stripped_and_great_is_not() {
         civvis_unit_name_unqualified("UNIT_SETTLER"),
         None,
         "a single-token name has no qualifier at all"
+    );
+}
+
+/// A stripped prefix is only a civilization qualifier when the destination
+/// rules row says it is a unique unit. Otherwise a missing exact row must not
+/// silently turn a modern host unit into an older ordinary unit.
+#[test]
+fn an_unmodelled_qualified_stock_unit_is_not_relabelled_as_its_tail() {
+    for (host, exact, tail) in [
+        ("UNIT_JET_FIGHTER", "jet_fighter", "fighter"),
+        ("UNIT_JET_BOMBER", "jet_bomber", "bomber"),
+        ("UNIT_NUCLEAR_SUBMARINE", "nuclear_submarine", "submarine"),
+        ("UNIT_LINE_INFANTRY", "line_infantry", "infantry"),
+        ("UNIT_ROCKET_ARTILLERY", "rocket_artillery", "artillery"),
+        (
+            "UNIT_MECHANIZED_INFANTRY",
+            "mechanized_infantry",
+            "infantry",
+        ),
+    ] {
+        let mut rules = crate::rules::Rules::embedded();
+        assert!(rules.units.remove(exact).is_some());
+        assert!(rules.units.contains_key(tail));
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, host),
+            None,
+            "a missing exact row must be reported for {host}, not mapped to {tail}"
+        );
+    }
+
+    assert_eq!(
+        resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_ROMAN_LEGION").as_deref(),
+        Some("legion"),
+        "the same fallback remains valid for a ruleset-declared unique"
+    );
+    assert_eq!(
+        resolved_civvis_unit_name(
+            &crate::rules::Rules::embedded(),
+            "UNIT_EGYPTIAN_CHARIOT_ARCHER"
+        )
+        .as_deref(),
+        Some("maryannu_chariot_archer"),
+        "the noun suffix fallback remains valid for an epithet unique"
     );
 }
 
@@ -5431,6 +5496,80 @@ fn the_hosts_climate_level_is_the_boards_phase_and_floods_the_bands_it_names() {
     assert!(bare.game.observed_climate.is_none());
 }
 
+/// City facts and climate must be in place before host-to-model yield
+/// calibration. A fresh rebuild initially gives the first planted city the
+/// Palace, while the host can name a later city as capital; the same rebuild
+/// can flood a lowland city centre when it applies the host climate phase.
+#[test]
+fn city_yield_calibration_follows_capital_and_climate_state() {
+    let mut first = plot(5, 4, "TERRAIN_PLAINS");
+    first.o = 0;
+    let mut capital = plot(8, 4, "TERRAIN_PLAINS");
+    capital.o = 0;
+    capital.cl = 1;
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 30,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![first, capital],
+    }]);
+    let host_yields = crate::rules::Yields {
+        food: 7.0,
+        production: 6.0,
+        gold: 4.0,
+        science: 3.0,
+        culture: 2.0,
+        faith: 1.0,
+    };
+    let state = StateSnapshot {
+        turn: 30,
+        climate: Some(StateClimate {
+            level: 2,
+            ..StateClimate::default()
+        }),
+        cities: vec![
+            StateCity {
+                id: 10,
+                name: "First City".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                capital: false,
+                yields: Some(crate::rules::Yields::default()),
+                ..StateCity::default()
+            },
+            StateCity {
+                id: 11,
+                name: "Moved Palace".to_string(),
+                x: 8,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                capital: true,
+                yields: Some(host_yields),
+                ..StateCity::default()
+            },
+        ],
+        ..StateSnapshot::default()
+    };
+
+    let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    let city = recon
+        .game
+        .cities
+        .values()
+        .find(|city| city.name == "Moved Palace")
+        .expect("the moved capital is mirrored");
+    assert!(city.is_capital);
+    assert!(
+        recon.game.map.get(city.pos).unwrap().flooded,
+        "the host climate phase is applied before calibration"
+    );
+    assert_eq!(recon.game.city_yields(city.id), host_yields);
+}
+
 /// The board rolled its own quest for every pair from a hash; the host's
 /// actual request never crossed. Now it seats on the pair where
 /// `city_state_quest` and the `quest-*` genes read it.
@@ -7260,6 +7399,7 @@ fn a_barbarian_that_appears_after_construction_reaches_the_board() {
         x: 5,
         y: 6,
         hp: 35.0,
+        max_moves: Some(3.0),
         fortified: true,
         fortify_turns: 1,
         ..StateUnit::default()
@@ -7286,6 +7426,11 @@ fn a_barbarian_that_appears_after_construction_reaches_the_board() {
     assert_eq!(
         hostile.hp, 35,
         "a visible hostile's damage is useful combat state"
+    );
+    assert_eq!(
+        mirror.game.unit_max_moves(hostile.id),
+        3.0,
+        "a visible hostile's fresh-turn movement comes from the host export"
     );
     assert!(hostile.fortified);
     assert_eq!(hostile.fortify_turns, 1);
@@ -10873,23 +11018,34 @@ fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
         width: 12,
         height: 12,
         chunk: 1,
-        plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(6, 5, "TERRAIN_GRASS")],
     }]);
     let state = StateSnapshot {
         turn: 93,
-        units: vec![StateUnit {
-            id: 91,
-            kind: "UNIT_APOSTLE".to_string(),
-            x: 5,
-            y: 5,
-            xp: Some(37),
-            level: Some(2),
-            promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
-            build_charges: Some(0),
-            spread_charges: Some(2),
-            religion: Some("RELIGION_CATHOLICISM".to_string()),
-            ..StateUnit::default()
-        }],
+        units: vec![
+            StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                xp: Some(37),
+                level: Some(2),
+                promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
+                build_charges: Some(0),
+                spread_charges: Some(2),
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                ..StateUnit::default()
+            },
+            StateUnit {
+                id: 92,
+                kind: "UNIT_BUILDER".to_string(),
+                x: 6,
+                y: 5,
+                build_charges: Some(0),
+                spread_charges: Some(0),
+                ..StateUnit::default()
+            },
+        ],
         ..StateSnapshot::default()
     };
 
@@ -10911,6 +11067,16 @@ fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
             .map(|promotion| (*promotion).as_str())
             .collect::<Vec<_>>(),
         vec!["translator"]
+    );
+    let builder = mirror
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "builder")
+        .expect("the zero-charge Builder is mirrored");
+    assert_eq!(
+        builder.charges, 0,
+        "a host-reported zero must clear the builder's default charges"
     );
 }
 
@@ -12231,6 +12397,7 @@ fn host_state_step_list_is_the_recorded_order() {
             "strategic_stockpiles",
             "player_ages",
             "host_congress",
+            "host_climate",
             "observed_host_metrics",
             "loyalty_doomed_sites",
         ]
@@ -12249,12 +12416,13 @@ fn host_state_step_list_is_the_recorded_order() {
             "strategic_stockpiles",
             "player_ages",
             "host_congress",
+            "host_climate",
             "observed_host_metrics",
             "loyalty_doomed_sites",
         ]
     );
 
-    let finish = ["player_ages", "host_climate", "record_host_observed"];
+    let finish = ["player_ages", "record_host_observed"];
     assert_eq!(rebuild(HostPhase::Finish), finish);
     assert_eq!(sync(HostPhase::Finish), finish);
 }

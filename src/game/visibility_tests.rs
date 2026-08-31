@@ -36,6 +36,28 @@ fn along(game: &Game, origin: Pos, distance: i32) -> Pos {
     hex::canon((origin.0 + distance, origin.1), game.map.width)
 }
 
+/// A visibility ray on a cylindrical world already picks the same shortest
+/// path as `Game::wdist`; reuse that winning comparison instead of measuring
+/// all three wrapped images a second time. This exhausts one small world so a
+/// seam tie cannot quietly make the fast adjacent-ray path differ.
+#[test]
+fn unwrapped_cylinder_ray_distance_matches_world_distance() {
+    let (game, _) = controlled_game(63_097);
+    assert!(game.map.sphere().is_none());
+    assert!(game.map.topology.wraps_east_west());
+    let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    for from in &positions {
+        for to in &positions {
+            let (_, unwrapped_distance) = game.unwrapped_toward(*from, *to);
+            assert_eq!(
+                unwrapped_distance,
+                game.wdist(*from, *to),
+                "the cylindrical seam must choose the same distance from {from:?} to {to:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
     let (mut game, center) = controlled_game(63_099);

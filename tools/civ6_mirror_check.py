@@ -118,8 +118,12 @@ MIRRORED_WONDERS = set(json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "wonders.json").read_text()
 ))
 UNIT_MODEL_FALLBACKS = {
-    # Firaxis's barbarian Horse Archer shares the modeled Saka role; the host
-    # implementation prefix is removed before this table is consulted.
+    # These two host-only variants now have exact CIVVIS specs, so their
+    # implementation prefix must stay intact in the audit. Other barbarian
+    # variants still fall through to the ordinary stock role below.
+    "barbarian_horseman": "barbarian_horseman",
+    "barbarian_horse_archer": "barbarian_horse_archer",
+    # Firaxis's Scythian Horse Archer shares the modeled Saka role.
     "horse_archer": "saka_horse_archer",
     # Exact stock roles from Firaxis's UnitReplaces table. CIVVIS does not yet
     # carry these unique specifications, but it must not erase the visible unit.
@@ -557,7 +561,16 @@ def minor_fact_mismatches(state, board, top):
             mismatches.append(f"missing minor actor {want or source.get('player')}")
             continue
         for key in ("score", "military"):
-            expected, got = source.get(key), player.get(key)
+            expected = source.get(key)
+            # `military` is the model's max(observed host strength, visible
+            # unit sum).  That distinction matters for city-states too: their
+            # units are often fully visible, so the reconstructed sum can be
+            # higher than the host's public ribbon value.  Compare the
+            # host-only field when the current board exports it, while keeping
+            # the old `military` fallback for boards built before that field
+            # existed.
+            board_key = "observed_military" if key == "military" else key
+            got = player.get(board_key, player.get(key))
             if isinstance(expected, (int, float)) and expected >= 0 \
                     and (not isinstance(got, (int, float)) or abs(got - expected) > 0.51):
                 mismatches.append(f"{want} {key} Civ6={expected:g} CIVVIS={got!r}")
@@ -715,22 +728,27 @@ def city_fact_mismatches(state, board, top):
 
 def visible_exported_units(state, board, top):
     """Yield every currently visible unit with its compact CIVVIS owner seat."""
+    visible = {tuple(pos) for pos in board.get("visible") or []}
+
+    def is_visible(unit):
+        return axial(unit.get("x", 0), top - unit.get("y", 0)) in visible
+
     yield from ((board.get("view_player", 0), unit)
                 for unit in state.get("units") or [])
     for seat, rival in enumerate(state.get("rivals") or [], start=1):
-        yield from ((seat, unit) for unit in rival.get("units") or [])
+        yield from ((seat, unit) for unit in rival.get("units") or []
+                    if is_visible(unit))
     for minor in mirrored_minor_sources(state):
-        yield from ((None, unit) for unit in minor.get("units") or [])
-    # Unlike the actor rosters above, `hostiles` is the planner's threat list and
-    # is deliberately not fog-gated in the Firaxis export. The seated board must
-    # never reveal those private contacts, so only compare hostiles standing on a
-    # tile the viewer can currently see. The dedicated HOSTILES check below uses
-    # the same boundary.
-    visible = {tuple(pos) for pos in board.get("visible") or []}
+        yield from ((None, unit) for unit in minor.get("units") or []
+                    if is_visible(unit))
+    # `hostiles` is the planner's threat list and is deliberately not fog-gated
+    # in the Firaxis export. The seated board must never reveal those private
+    # contacts, so only compare hostiles standing on a tile the viewer can
+    # currently see. The dedicated HOSTILES check below uses the same boundary.
     yield from (
         (None, unit)
         for unit in state.get("hostiles") or []
-        if axial(unit.get("x", 0), top - unit.get("y", 0)) in visible
+        if is_visible(unit)
     )
 
 
@@ -755,11 +773,10 @@ def unit_fact_mismatches(state, board, top):
         pos = axial(source.get("x", 0), top - source.get("y", 0))
         raw_kind = civ6_id(exported_unit_kind(source), "UNIT_")
         kind = IDENTIFIER_ALIASES.get(raw_kind, raw_kind)
-        if kind.startswith("barbarian_"):
+        if kind.startswith("barbarian_") and kind not in UNIT_MODEL_FALLBACKS:
             kind = kind.removeprefix("barbarian_")
-        # Apply aliases after removing Firaxis's barbarian implementation
-        # prefix too: BARBARIAN_HORSE_ARCHER is the same modelled Saka horse
-        # archer as SCYTHIAN_HORSE_ARCHER, not an absent `horse_archer` type.
+        # Apply aliases after the host-only exact variants have been preserved;
+        # an older ordinary barbarian prefix still resolves to its stock role.
         kind = IDENTIFIER_ALIASES.get(kind, kind)
         kind = UNIT_MODEL_FALLBACKS.get(kind, kind)
         # ⚠⚠ AND THE BASE THE EXPORT ITSELF HANDS US, because the mirror
@@ -788,7 +805,11 @@ def unit_fact_mismatches(state, board, top):
         accepted = {kind} | ({base_kind} if base_kind else set())
         candidates = [unit for unit in by_pos.get(pos, [])
                       if str(unit.get("type") or "").lower() in accepted
-                      and (owner is None or unit.get("owner") == owner)]
+                      and (
+                          unit.get("owner") != board.get("view_player", 0)
+                          if owner is None
+                          else unit.get("owner") == owner
+                      )]
         if len(candidates) != len(sources):
             if not all(unmodelled_great_person(exported_unit_kind(source)) for source in sources):
                 mismatches.append(

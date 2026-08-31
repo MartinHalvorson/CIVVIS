@@ -10,17 +10,17 @@
     "withholdable": 40
   },
   "derived": {
-    "firaxis_only_count": 30,
-    "live_bridge_count": 70,
+    "firaxis_only_count": 31,
+    "live_bridge_count": 71,
     "native_engine_repair_count": 40,
     "withholdable_live_count": 40
   },
   "genome_coverage": {
-    "capability_toggles": 246,
+    "capability_toggles": 252,
     "measured_by_a_screen": 73,
-    "reachable_as_a_gene": 207,
+    "reachable_as_a_gene": 212,
     "resolved_by_a_screen": 16,
-    "unreachable_by_any_screen": 39,
+    "unreachable_by_any_screen": 40,
     "unreachable_toggles": [
       "bank_envoys",
       "camp_bounty",
@@ -47,6 +47,7 @@
       "live_bridge_universe",
       "live_formationless_settler_shadow",
       "live_motion_turn_accounting",
+      "live_move_refusal_break",
       "live_religious_purchase_guard",
       "live_settler_capture_lessons",
       "live_trader_route_adapter",
@@ -223,7 +224,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 30,
+      "declared_count": 31,
       "items": [
         "live-trader-route",
         "live-religious-purchase",
@@ -254,11 +255,12 @@
         "opening-settler-waits",
         "escort-patience-runs-out",
         "live-barbarian-scouts-capture",
-        "live-settler-capture-lessons"
+        "live-settler-capture-lessons",
+        "live-move-refusal-break"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 70,
+      "declared_count": 71,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -329,7 +331,8 @@
         "threatened-city-reserve",
         "enter-the-prophet-race",
         "live-barbarian-scouts-capture",
-        "live-settler-capture-lessons"
+        "live-settler-capture-lessons",
+        "live-move-refusal-break"
       ]
     }
   },

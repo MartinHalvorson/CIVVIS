@@ -232,6 +232,8 @@ def start_supervisor(script: Path | None = None, runner=None) -> tuple[bool, str
     is newly launched. The process is still a real Terminal child and retains
     the App Management grant that the game requires.
     """
+    if (intent := gamelock.verification_intent_description()) is not None:
+        return False, intent
     runner = runner or subprocess.run
     script = script or SUPERVISOR_SCRIPT
     command = ["open", "-a", "Terminal"]
@@ -277,9 +279,9 @@ def stand_down(args: argparse.Namespace, problem: str, standing: str) -> int:
     the keeper's job is to name the cause and stand down, so the silence is a
     reported decision rather than an outage nobody attributed.
     """
-    log(args.log, f"HELD {problem} — {standing}. A restart cannot play "
-                  f"against a held game; not starting or stopping "
-                  f"anything. Release the hold to resume.")
+    log(args.log, f"HELD {problem} — {standing}. A restart cannot act "
+                  f"without explicit verification authorization; not starting "
+                  f"or stopping anything.")
     return 2
 
 
@@ -306,6 +308,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="report the decision, change nothing")
     args = parser.parse_args(argv)
+
+    # The halt marker protects a currently stopped lane, but clearing it is not
+    # itself permission to run unattended. `civvis-games on` is the only
+    # command that records the separate running intent. Check it before reading
+    # the ledger or inspecting a supervisor so a stopped lane is completely
+    # side-effect free, including no SIGTERM of a process left by an older
+    # bypass.
+    if (intent := gamelock.verification_intent_description()) is not None:
+        return stand_down(args, "verification is not authorized", intent)
 
     runs = args.runs if args.runs is not None else civ6_ladder.RUNS_DEFAULT
     ledger = runs / "ladder.json"

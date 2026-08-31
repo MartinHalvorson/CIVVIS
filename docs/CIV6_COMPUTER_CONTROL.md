@@ -271,14 +271,13 @@ the site is legal far more often than not, and that is where the settler
 stands when the found runs first).
 The `seat` event advertises `order_queue`, and `civvis_orders` sends a unit's
 whole sequence only when it does. `orders` gains `queued` and
-`explore_guarded`; a per-turn `orders_queue` event carries `applied`,
+`unmentioned_held`; a per-turn `orders_queue` event carries `applied`,
 `refused`, `refusals`, `strikes_planned`, `strikes_landed` and `waited`.
 `--no-order-queue` restores the one-order-per-unit rule for an A/B.
 
-Two related rules: an unmentioned combat unit within `ExploreGuardRadius` of
-a visible hostile combat unit or an at-war city is held rather than handed to
-`UNITOPERATION_AUTOMATE_EXPLORE`, and `UNITOPERATION_PILLAGE` is resolved so
-`Action::Pillage` crosses. See `docs/LIVE_TACTICS.md`.
+Two related rules: every unit CIVVIS does not mention is held rather than
+delegated to a host-selected route, and `UNITOPERATION_PILLAGE` is resolved
+so `Action::Pillage` crosses. See `docs/LIVE_TACTICS.md`.
 
 ### A move is this turn's leg (2026-08-19)
 
@@ -307,7 +306,7 @@ turn ends as before. The order channel gained a `frame` column (rows of frame
 N sit at seq 10000·N; one `ready` row per turn names the newest frame; a
 database from before the column is migrated in place); the mod's readers
 select by frame and read a column-less channel as frame 0. On a frame no
-unit is handed to explore automation and no `turn` record is written. Units
+extra unmentioned-unit disposition is issued and no `turn` record is written. Units
 export `attacks_remaining`. Default **off** until one live run has been read
 (`docs/LIVE_TACTICS.md` §8).
 
@@ -548,8 +547,8 @@ frame rate a loaded machine was managing, not drift.
   problem: orders resolve over several frames, so a single pass at the bottom
   of the turn could not end a turn even if the update did fire.
 - **`UnitOperationTypes` is not the list of unit operations.** It is a
-  convenience table and it is incomplete: on this build it has no `SKIP_TURN`,
-  no `SLEEP` and no `AUTOMATE_EXPLORE`, while the database defines all three.
+  convenience table and it is incomplete: on this build it has no `SKIP_TURN`
+  or `SLEEP`, while the database defines both.
   Reading a missing name off the enum yields `nil`, the guarded call refuses
   the order, and a unit that could have been told to skip blocks the end of the
   turn instead. Operations and commands are looked up through
@@ -635,7 +634,7 @@ is set after a declaration, the governor holds the seat, the research, civic,
 government, pantheon and policy deck read back, and so on. Kinds the frame
 cannot answer are listed with a reason in `UNVERIFIABLE_ORDER_KINDS` and
 `UNVERIFIABLE_UNIT_VERBS` (`produce_next`, `delegation`, `aid_gift`, `levy`;
-`SKIP_TURN`, `SLEEP`, `ALERT`, `HEAL`, `AUTOMATE_EXPLORE`, `SPY_*`), and a
+`SKIP_TURN`, `SLEEP`, `ALERT`, `HEAL`, `SPY_*`), and a
 test refuses any order kind that is neither checked nor listed.
 
 The verdicts ride back through the orders channel as rows of kind

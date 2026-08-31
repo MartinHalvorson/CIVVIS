@@ -1456,6 +1456,20 @@ class LatestCodeGuarantee(LedgerCase):
                 "last_error": "cargo build failed (101): expected `;`"}
         self.assertIn("cargo build failed", self.heartbeat_problem(beat))
 
+    def test_a_disabled_refresh_stamp_never_ages_into_an_alarm(self):
+        """The live loop runs `--github-refresh-seconds 0` and stamps the
+        heartbeat as deliberately silent; before the stamp the check alarmed
+        on the last enabled run's frozen file forever (from 2026-08-19), and
+        an alarm that always fires catches nothing."""
+        beat = {"utc": "2026-08-19T00:00:00Z", "refresh": "disabled",
+                "last_error": ""}
+        self.assertIsNone(self.heartbeat_problem(beat))
+
+    def test_a_disabled_stamp_still_surfaces_a_recorded_error(self):
+        beat = {"utc": "2026-08-19T00:00:00Z", "refresh": "disabled",
+                "last_error": "cargo build failed (101): expected `;`"}
+        self.assertIn("cargo build failed", self.heartbeat_problem(beat))
+
 
 class TheHealthFloorStaysFalsifiable(LedgerCase):
     """A gap in measurement is not a gap in attempts.
@@ -1752,16 +1766,13 @@ class PublishRunTests(unittest.TestCase):
 
 
 class TheRowSaysWhoDroveTheSeat(unittest.TestCase):
-    """⭐ It never did, and the project's first premise is that CIVVIS drives.
+    """The row preserves historic host movement and verifies current ownership.
 
-    `ExploreUnassigned` (on by default) hands every unit CIVVIS gave no order
-    to over to Civilization VI's own `AUTOMATE_EXPLORE`. The mod counts that
-    separately so it is never mistaken for CIVVIS's work — and the count
-    stopped at `events.jsonl`. Measured on the live Settler run of
-    2026-08-28: 270 unit orders authored by CIVVIS against 144 unit-turns
-    handed to the engine, a 65 % share, invisible on the row.
+    Current mods explicitly hold every unit CIVVIS leaves unmentioned, so a
+    current event carries `explored: 0`. Older run records still carry their
+    host-selected movement so their summaries remain honest.
 
-    ⚠⚠ The first version divided by `by.unit`, which the mod increments only on
+    ⚠⚠ The numerator must be `seen_by.unit`, not `by.unit`, which increments only on
     the APPLIED path — so the share silently answered `applied_pct`'s question
     and moved with actuation quality. `seen_by.unit` is the authored count
     (applied plus refused). On that run the two read 0.6522 and 0.5623.

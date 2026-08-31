@@ -151,6 +151,74 @@ class QualityHelpersTests(unittest.TestCase):
             with patch.object(quality, "run", return_value=fail):
                 self.assertEqual(quality.merge_base(repo, "tip", "head"), "tip")
 
+    def test_merge_base_finds_main_whichever_parent_it_is(self):
+        """⚠⚠ The parent order flips between the CI and the local merge shape.
+
+        GitHub's pull_request head merges the branch INTO main, so `^1` is main.
+        A developer clearing a conflict with `git merge origin/main` on their own
+        branch produces the reverse, and reading `^1` there compares the merge
+        against the branch's own pre-merge tip — the diff holds only the conflict
+        resolution and the gate passes having checked nothing. That is a false
+        GREEN, so this is built on a real repository rather than mocks: the bug
+        it guards lived under mocks that asserted the CI shape alone.
+        """
+        import subprocess
+
+        def git(repo, *args):
+            subprocess.run(
+                ["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
+                cwd=repo, check=True, capture_output=True, text=True,
+            )
+
+        def sha(repo, rev):
+            return subprocess.run(
+                ["git", "rev-parse", rev], cwd=repo, check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            git(repo, "init", "-q", "-b", "main")
+            (repo / "a.txt").write_text("base\n")
+            git(repo, "add", "a.txt")
+            git(repo, "commit", "-qm", "base")
+
+            git(repo, "checkout", "-q", "-b", "feature")
+            (repo / "b.txt").write_text("branch work\n")
+            git(repo, "add", "b.txt")
+            git(repo, "commit", "-qm", "branch work")
+            branch_tip = sha(repo, "HEAD")
+
+            git(repo, "checkout", "-q", "main")
+            (repo / "c.txt").write_text("someone else\n")
+            git(repo, "add", "c.txt")
+            git(repo, "commit", "-qm", "someone else")
+            main_tip = sha(repo, "HEAD")
+            git(repo, "update-ref", "refs/remotes/origin/main", main_tip)
+
+            # The LOCAL shape: main merged into the branch, so `^1` is the
+            # branch. This is the one that used to pass having checked nothing.
+            git(repo, "checkout", "-q", "feature")
+            git(repo, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+            local_merge = sha(repo, "HEAD")
+            self.assertEqual(sha(repo, "HEAD^1"), branch_tip, "^1 is the branch")
+            self.assertEqual(sha(repo, "HEAD^2"), main_tip, "^2 is main")
+            self.assertEqual(
+                quality.merge_base(repo, branch_tip, local_merge), main_tip,
+                "a local `git merge origin/main` must still be read against main",
+            )
+
+            # The CI shape: the branch merged into main, so `^1` is main. The
+            # answer is the same commit, reached through the other parent.
+            git(repo, "checkout", "-q", "main")
+            git(repo, "merge", "-q", "--no-ff", "-m", "test merge", branch_tip)
+            ci_merge = sha(repo, "HEAD")
+            self.assertEqual(sha(repo, "HEAD^1"), main_tip, "^1 is main")
+            self.assertEqual(
+                quality.merge_base(repo, main_tip, ci_merge), main_tip,
+                "GitHub's test merge is still read against the main it used",
+            )
+
     def test_rustfmt_abort_is_a_skip_not_a_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

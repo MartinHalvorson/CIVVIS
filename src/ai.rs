@@ -58,6 +58,19 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// goal is written off as ground the host will not walk it to. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_STUCK_TURNS: u32 = 2;
+
+/// Consecutive turns the same issued step must be seen untaken before
+/// `live-move-refusal-break` bars it. One refused turn is a report, not a
+/// verdict — the trade-route block set's rule — and the second identical ask
+/// against an unmoved unit is the host answering the same question the same
+/// way twice.
+const MOVE_REFUSAL_STRIKES: u8 = 2;
+
+/// Standard turns a proved-refused step stays barred. Long enough for the
+/// blocker the host saw — a unit in the way, a border, an embark rule the
+/// mirror mis-guessed — to change, short enough that a transient one does not
+/// disfigure routes for an era.
+const MOVE_REFUSAL_BLOCK_TURNS: u32 = 8;
 /// How long a written-off exploration goal stays retired. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
@@ -178,6 +191,12 @@ const BARBARIAN_RETURN_RADIUS: i32 = BARBARIAN_RAID_RADIUS + 2;
 /// Trade is held while a real raider or camp is this close to one of our
 /// cities. A barbarian Scout is an information unit, not a combat threat.
 pub(crate) const BARBARIAN_TRADE_RISK_RADIUS: i32 = 7;
+/// A nearby barbarian army must be materially better than our best land unit
+/// before it can displace a victory or economy research lane. Aggregate
+/// military power is deliberately not used here: ten Archers do not answer a
+/// Crossbowman or Man-at-Arms at the city they are supposed to protect.
+const BARBARIAN_MILITARY_GAP_RATIO: f64 = 1.25;
+const BARBARIAN_MILITARY_GAP_MARGIN: f64 = 5.0;
 /// A city with this many local barbarian pressure points must produce a
 /// defender even when it is not formally at war with a major civilization.
 const BARBARIAN_LOCAL_DEFENDER_RADIUS: i32 = 3;
@@ -510,7 +529,8 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 /// off — a setting that is serialized and restored from saves. Without the
 /// bound such a game runs past its limit forever. With score enabled the bound
 /// never fires first, because `set_winner` runs inside `do_end_turn` before
-/// this condition is tested again.
+/// this condition is tested again. A score-disabled world is recorded as a
+/// draw when the bounded loop reaches its cap, matching the server stepper.
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
     // A headless rollout never serializes a player observation between
     // actions. Explored ground, contacts and Natural-Wonder discovery remain
@@ -531,6 +551,7 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
             let _ = g.apply(pid, &Action::EndTurn);
         }
     }
+    g.finish_at_turn_limit();
 }
 
 // ----------------------------------------------------------------- RandomAi
@@ -2923,6 +2944,22 @@ pub struct BasicAi {
     /// whereabouts are remembered here, and a unit found circling is priced
     /// out of the tiles it has already proved are worthless.
     unit_motion: BTreeMap<u32, UnitMotion>,
+    /// `live-move-refusal-break` (HostOnly): the host refuses ~14% of MOVE_TO
+    /// orders as `did_not_move` and the refusal event carries no destination,
+    /// so the same refused move was re-issued for up to eleven straight turns
+    /// (run civvis-20260830T095742Z: a settler ordered to the identical tile
+    /// on turns 36–39 with movement in hand, never moving, captured on t47).
+    /// The livelock detector cannot see this — `UnitMotion::circling`
+    /// deliberately excludes a footprint of one, because a unit that has
+    /// STOPPED is normally a unit that chose to. These three maps close the
+    /// carve-out for units the controller keeps ordering to move: the step
+    /// each unit was issued this turn, consecutive turns it was seen not to
+    /// have taken it, and the step it is barred from re-proposing while the
+    /// bar lasts. All three are inert with the gene off.
+    move_refusal_break: bool,
+    move_refusal_watch: RefCell<HashMap<u32, (u32, Pos, Pos)>>,
+    move_refusal_strikes: HashMap<u32, (Pos, Pos, u8)>,
+    move_refusal_blocks: HashMap<u32, (Pos, u32)>,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -2984,6 +3021,13 @@ pub struct BasicAi {
     /// handoff; this flag keeps the governor that actually queues Settlers in
     /// step with it.
     pub(crate) rapid_city_expansion: bool,
+    /// `capital-settler-after-completion`: once the capital is population two
+    /// and has no queued work, start a legal Settler instead of letting the
+    /// ordinary force or infrastructure ranking fill that opening. The city
+    /// target, normal settlement window, site search, and all earlier
+    /// emergency choices remain authoritative. Set through
+    /// `AdvancedAi::enable_capital_settler_after_completion`.
+    pub(crate) capital_settler_after_completion: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -3479,6 +3523,152 @@ impl BasicAi {
                     .iter()
                     .any(|parent| Self::tech_leads_to(g, candidate, parent))
             })
+    }
+
+    /// Whether a visible barbarian combat unit near one of our cities is
+    /// materially stronger than our best land unit. This is intentionally a
+    /// quality alarm, not a headcount alarm: the ordinary barbarian defense
+    /// branch already handles how many bodies a city needs, while this one
+    /// decides whether research must retire obsolete bodies.
+    fn barbarian_strength_gap(g: &Game, pid: usize) -> Option<(f64, f64)> {
+        let barb_pid = g.barb_pid?;
+        let player = g.players.get(pid)?;
+        if player.is_minor || player.is_barbarian || barb_pid == pid {
+            return None;
+        }
+        let cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| city.pos)
+            .collect();
+        if cities.is_empty() {
+            return None;
+        }
+        let near_home = |position: Pos| {
+            cities
+                .iter()
+                .any(|city| g.wdist(position, *city) <= HOME_THREAT_RADIUS)
+        };
+        let combat_power = |kind: Name| {
+            let spec = &g.rules.units[kind];
+            spec.strength.max(spec.ranged_attack_strength())
+        };
+        let strongest_barbarian = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == barb_pid
+                    && Self::is_barbarian_raider(g, unit)
+                    && near_home(unit.pos)
+                    && g.player_can_see(pid, unit.pos)
+            })
+            .map(|unit| combat_power(unit.kind))
+            .fold(0.0, f64::max);
+        if strongest_barbarian <= 0.0 {
+            return None;
+        }
+        let strongest_own = g
+            .units
+            .values()
+            .filter(|unit| {
+                if unit.owner != pid {
+                    return false;
+                }
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military" && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+            .map(|unit| combat_power(unit.kind))
+            .fold(0.0, f64::max);
+        (strongest_barbarian
+            > strongest_own * BARBARIAN_MILITARY_GAP_RATIO + BARBARIAN_MILITARY_GAP_MARGIN)
+            .then_some((strongest_barbarian, strongest_own))
+    }
+
+    /// The technology whose absence strands the largest share of the current
+    /// land army behind a nearby barbarian's quality. The returned goal may be
+    /// several prerequisites away; `research_step_toward` turns it into the
+    /// cheapest legal next step. Resource-gated successors with no stockpile
+    /// are skipped so the AI does not beeline toward a unit it cannot field.
+    pub(crate) fn barbarian_military_research_goal(g: &Game, pid: usize) -> Option<String> {
+        Self::barbarian_strength_gap(g, pid)?;
+        let player = &g.players[pid];
+        let mut goals: BTreeMap<Name, (f64, f64, usize)> = BTreeMap::new();
+        for unit in g.units.values().filter(|unit| {
+            if unit.owner != pid {
+                return false;
+            }
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military" && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        }) {
+            let mut current = unit.kind;
+            let mut visited = BTreeSet::new();
+            loop {
+                if !visited.insert(current) {
+                    break;
+                }
+                let Some(held) = g.rules.units.get(&current) else {
+                    break;
+                };
+                let Some(generic_target) = held.upgrade_to else {
+                    break;
+                };
+                let target_kind = g.player_unit_replacement(pid, generic_target);
+                let Some(target) = g.rules.units.get(&target_kind) else {
+                    break;
+                };
+                if target.class != "military"
+                    || matches!(target.domain.as_deref(), Some("sea" | "air"))
+                    || !target.buildable
+                {
+                    break;
+                }
+                if target.requires_resource.is_some_and(|resource| {
+                    target.resource_cost > 0.0
+                        && g.strategic_stockpile(pid, resource) + f64::EPSILON
+                            < target.resource_cost
+                }) {
+                    break;
+                }
+                let tech_known = target.tech.is_none_or(|tech| player.techs.contains(&tech));
+                let civic_known = target
+                    .civic
+                    .is_none_or(|civic| player.civics.contains(&civic));
+                if !tech_known {
+                    let Some(tech) = target.tech else {
+                        break;
+                    };
+                    let held_power = held.strength.max(held.ranged_attack_strength());
+                    let target_power = target.strength.max(target.ranged_attack_strength());
+                    let gain = (target_power - held_power).max(0.0);
+                    if gain > 0.0 {
+                        let entry = goals.entry(tech).or_insert((0.0, 0.0, 0));
+                        entry.0 += gain;
+                        entry.1 = entry.1.max(target_power);
+                        entry.2 += 1;
+                    }
+                    break;
+                }
+                if !civic_known {
+                    break;
+                }
+                current = target_kind;
+            }
+        }
+        goals
+            .into_iter()
+            .max_by(|(left_name, left), (right_name, right)| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then(left.1.total_cmp(&right.1))
+                    .then(left.2.cmp(&right.2))
+                    .then(left_name.cmp(right_name))
+            })
+            .map(|(tech, _)| tech.to_string())
+    }
+
+    pub(crate) fn barbarian_military_gap(g: &Game, pid: usize) -> bool {
+        Self::barbarian_strength_gap(g, pid).is_some()
     }
 
     fn civic_leads_to(g: &Game, candidate: &str, target: &str) -> bool {
@@ -4612,6 +4802,10 @@ impl BasicAi {
             naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
+            move_refusal_break: false,
+            move_refusal_watch: RefCell::new(HashMap::new()),
+            move_refusal_strikes: HashMap::new(),
+            move_refusal_blocks: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -4619,6 +4813,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -4662,6 +4857,16 @@ impl BasicAi {
     /// Disable the baseline half of the native rapid-city-expansion gene.
     pub(crate) fn disable_rapid_city_expansion(&mut self) {
         self.rapid_city_expansion = false;
+    }
+
+    /// Enable the baseline half of the capital-settler-after-completion gene.
+    pub(crate) fn enable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = true;
+    }
+
+    /// Disable the baseline half of the capital-settler-after-completion gene.
+    pub(crate) fn disable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = false;
     }
 
     /// Lead the pantheon prefix with the two that found a city (see
@@ -5032,6 +5237,10 @@ impl BasicAi {
             naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
+            move_refusal_break: false,
+            move_refusal_watch: RefCell::new(HashMap::new()),
+            move_refusal_strikes: HashMap::new(),
+            move_refusal_blocks: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -5039,6 +5248,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -5239,14 +5449,21 @@ impl BasicAi {
         g: &Game,
         pid: usize,
     ) -> std::sync::Arc<AttackEnvelopes> {
-        let key = (
-            g.turn,
-            pid,
-            Self::attack_envelope_fingerprint(
-                g,
-                self.envelope_cache_across_own_moves.then_some(pid),
-            ),
-        );
+        // The evaluator deliberately uses an incomplete key, so preserve its
+        // old hit path. Production's key is complete and can double as the
+        // raw-reach key on a miss instead of hashing every unit a second time.
+        let (key, production_reach_key) = if self.envelope_cache_across_own_moves {
+            (
+                (g.turn, pid, Self::attack_envelope_fingerprint(g, Some(pid))),
+                None,
+            )
+        } else {
+            let full_fingerprint = Self::attack_envelope_fingerprint(g, None);
+            (
+                (g.turn, pid, full_fingerprint),
+                Some((g.turn, full_fingerprint)),
+            )
+        };
         // A poisoned lock only means another worker panicked mid-store; the
         // value inside is a complete entry or `None`, either of which is safe
         // to read.
@@ -5275,9 +5492,15 @@ impl BasicAi {
         // under it, and this one is opened over `&Game`: nothing inside can
         // mutate it. It is dropped before this function returns, so no caller
         // inherits it.
+        // The raw reaches always need the complete board key, even while the
+        // evaluator prices stale own moves. Production already formed that
+        // exact key above; reusing it removes one complete roster hash per
+        // outer-cache miss.
+        let reach_key = production_reach_key
+            .unwrap_or_else(|| (g.turn, Self::attack_envelope_fingerprint(g, None)));
         let envelopes = std::sync::Arc::new({
             let _memo = g.query_memo();
-            self.compute_enemy_attack_envelopes(g, pid)
+            self.compute_enemy_attack_envelopes(g, pid, reach_key)
         });
         let mut slot = self
             .attack_envelope_cache
@@ -5346,21 +5569,6 @@ impl BasicAi {
         self.envelope_cache_across_own_moves = true;
     }
 
-    /// The largest number of tiles an enemy's next-turn reach can span.
-    ///
-    /// ★★★★★ SOUNDNESS LIVES HERE. The neighbourhood key below is only valid
-    /// if nothing outside this radius can change the envelope, so the bound
-    /// must be an over-estimate of what `attack_reach` can span and never an
-    /// estimate of what it usually does.
-    ///
-    /// `flow_past` spends `unit_max_moves` and pays `unit_step_cost` per tile.
-    /// Terrain defaults to 1 MP and every feature that declares a cost adds 1,
-    /// so a step off a route is never cheaper than 1; a route flattens terrain
-    /// to 1 and the shipped ladder then discounts it to 0.75, 0.5 and — on a
-    /// Railroad — [`MIN_STEP_COST`] 0.25, which is the floor. One extra tile
-    /// for the free first step a full-movement unit always gets, and then the
-    /// attack itself: `unit_attack_range` for a ranged unit, one tile for a
-    /// melee one.
     /// The tiles a board change must touch before an envelope is worth
     /// recomputing: the unit's movement flood and every neighbour of it.
     fn envelope_sensitive_tiles(
@@ -5635,13 +5843,12 @@ impl BasicAi {
         hash
     }
 
-    fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
-        // `attack_envelope_cache` may intentionally omit this seat while the
-        // evaluator prices the stale-own-moves treatment. The raw reach is
-        // not allowed to do that: another unit's position can stop an enemy
-        // in zone of control, so every controller must share only a key over
-        // the complete board.
-        let reach_key = (g.turn, Self::attack_envelope_fingerprint(g, None));
+    fn compute_enemy_attack_envelopes(
+        &self,
+        g: &Game,
+        pid: usize,
+        reach_key: (u32, u64),
+    ) -> AttackEnvelopes {
         let mut store = self
             .enemy_envelope_cache
             .lock()
@@ -6421,6 +6628,9 @@ impl BasicAi {
         self.settler_targets.clear();
         self.unit_memories.get_mut().clear();
         self.unit_motion.clear();
+        self.move_refusal_watch.get_mut().clear();
+        self.move_refusal_strikes.clear();
+        self.move_refusal_blocks.clear();
         self.explore_last.get_mut().clear();
         self.explore_dead.get_mut().clear();
         self.explore_goal.get_mut().clear();
@@ -6473,6 +6683,23 @@ impl BasicAi {
             .iter()
             .filter_map(|(uid, motion)| map.get(uid).map(|new| (*new, motion.clone())))
             .collect();
+        // ⚠ Remapped, not cleared: the watch is judged on the turn AFTER it
+        // was written, and on the live bridge the board (and every unit id)
+        // is rebuilt in between — clearing here would mean no issued step
+        // ever survives to be judged and the gene could never fire.
+        let watch = std::mem::take(self.move_refusal_watch.get_mut());
+        *self.move_refusal_watch.get_mut() = watch
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        self.move_refusal_strikes = std::mem::take(&mut self.move_refusal_strikes)
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        self.move_refusal_blocks = std::mem::take(&mut self.move_refusal_blocks)
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
         // ⚠ Cleared, not remapped. It records "this unit took a step FROM here on
         // THIS turn", and the turn is over by the time a board is rebuilt, so every
         // entry in it is already stale.
@@ -6503,6 +6730,87 @@ impl BasicAi {
         self.patrol_posts_by_class.clear();
         self.refresh_unit_memories(g, pid);
         self.observe_unit_motion(g, pid);
+        self.judge_move_refusals(g, pid);
+    }
+
+    /// `live-move-refusal-break`: judge last turn's issued steps against where
+    /// each unit actually stands, which on the live bridge is the host's own
+    /// answer. A unit that was issued the same step on
+    /// [`MOVE_REFUSAL_STRIKES`] consecutive turns and never left its tile has
+    /// been refused by the host (`did_not_move` — 13.9% of all orders in the
+    /// 08-30 measurement, the largest single failure), and the refusal event
+    /// carries no destination for a block set to learn from. The proof here
+    /// needs no new channel: the intended step is ours, and the fresh mirror
+    /// shows the unit did not take it. The proved step is barred for
+    /// [`MOVE_REFUSAL_BLOCK_TURNS`] standard turns so the pathing must choose
+    /// differently; one refused turn stays a report, not a verdict, matching
+    /// the trade-route rule that "a verdict needs two".
+    fn judge_move_refusals(&mut self, g: &Game, pid: usize) {
+        if !self.move_refusal_break {
+            return;
+        }
+        self.move_refusal_blocks.retain(|uid, (_, until)| {
+            g.units.get(uid).is_some_and(|unit| unit.owner == pid) && g.turn < *until
+        });
+        self.move_refusal_strikes
+            .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
+        let watch = std::mem::take(&mut *self.move_refusal_watch.borrow_mut());
+        let mut keep: HashMap<u32, (u32, Pos, Pos)> = HashMap::new();
+        let mut blocked: Vec<(u32, Pos, Pos, String)> = Vec::new();
+        for (uid, (turn, from, step)) in watch {
+            if turn == g.turn {
+                // A same-turn replan re-reads the board mid-turn; the host has
+                // not answered yet, so this entry is not yet judgeable.
+                keep.insert(uid, (turn, from, step));
+                continue;
+            }
+            if turn + 1 != g.turn {
+                continue;
+            }
+            let Some(unit) = g.units.get(&uid).filter(|unit| unit.owner == pid) else {
+                continue;
+            };
+            if unit.pos != from {
+                // It moved; whatever held it is gone, so the slate is clean
+                // and the next refusal starts a fresh count.
+                self.move_refusal_strikes.remove(&uid);
+                continue;
+            }
+            let strikes = match self.move_refusal_strikes.get(&uid) {
+                Some((f, s, n)) if *f == from && *s == step => n + 1,
+                _ => 1,
+            };
+            if strikes >= MOVE_REFUSAL_STRIKES {
+                self.move_refusal_strikes.remove(&uid);
+                self.move_refusal_blocks.insert(
+                    uid,
+                    (step, g.turn + g.standard_duration(MOVE_REFUSAL_BLOCK_TURNS)),
+                );
+                blocked.push((uid, from, step, unit.kind.to_string()));
+            } else {
+                self.move_refusal_strikes.insert(uid, (from, step, strikes));
+            }
+        }
+        *self.move_refusal_watch.borrow_mut() = keep;
+        for (uid, from, step, kind) in blocked {
+            think!(self.journal, Military, Detail,
+                   "{kind} {uid} stops re-asking a move the host keeps refusing";
+                   "ordered from {from:?} to {step:?} on {MOVE_REFUSAL_STRIKES} straight turns \
+                    without moving; that step is barred for {MOVE_REFUSAL_BLOCK_TURNS} standard \
+                    turns so the route must change";
+                   from);
+        }
+    }
+
+    /// Whether `live-move-refusal-break` currently bars a step for this unit.
+    /// `AdvancedAi` reads it to retire a frozen Settler's destination through
+    /// the dead-site machinery as well, rather than only bending its route.
+    pub(crate) fn move_refusal_blocked(&self, g: &Game, uid: u32) -> bool {
+        self.move_refusal_break
+            && self
+                .move_refusal_blocks
+                .get(&uid)
+                .is_some_and(|(_, until)| g.turn < *until)
     }
 
     pub(crate) fn unit_plan_state(&self, uid: u32) -> BasicUnitPlanState {
@@ -7152,6 +7460,11 @@ impl BasicAi {
         if g.players[pid].research.is_none() {
             let avail = g.available_techs(pid);
             if !avail.is_empty() {
+                let barbarian_goal = if self.barbarian_tactics {
+                    Self::barbarian_military_research_goal(g, pid)
+                } else {
+                    None
+                };
                 let great_person_goal = Self::live_great_person_tech_goal(g, pid);
                 let great_person_pick =
                     Self::research_step_toward(g, &avail, great_person_goal.as_deref());
@@ -7159,7 +7472,8 @@ impl BasicAi {
                     Self::research_step_toward(g, &avail, Self::water_research_goal(g, pid));
                 let economic_pick =
                     Self::research_step_toward(g, &avail, Self::economic_research_goal(g, pid));
-                let pick = great_person_pick
+                let pick = Self::research_step_toward(g, &avail, barbarian_goal.as_deref())
+                    .or(great_person_pick)
                     .or(water_pick)
                     .or(economic_pick)
                     .or_else(|| {
@@ -8612,6 +8926,47 @@ impl BasicAi {
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
+            // The normal production picker sits after the scripted opening
+            // book. Let `capital-settler-after-completion` reserve the first
+            // newly empty capital queue once it reaches population two,
+            // rather than letting that book immediately fill it again. The
+            // picker remains the authority on whether a Settler is presently
+            // safe and useful, and the untouched book resumes after this
+            // one production decision.
+            if self.capital_settler_after_completion
+                && !self.minor
+                && !self.barb
+                && g.cities[cid].is_capital
+                && g.cities[cid].pop >= 2
+                && self.book_pos < 4
+            {
+                let opening_item = self.pick_item(
+                    g,
+                    pid,
+                    *cid,
+                    n_cities,
+                    settlers,
+                    builders,
+                    traders,
+                    siege_support,
+                    military,
+                    melee,
+                    ranged,
+                );
+                if matches!(
+                    &opening_item,
+                    Some(Item::Unit { unit }) if unit == "settler"
+                ) {
+                    let item = opening_item.expect("the matched opening item is a Settler");
+                    if g.apply(pid, &Action::Produce { city: *cid, item }).is_ok() {
+                        settlers += 1;
+                        think!(self.journal, Cities, Decision,
+                               "{} starts a Settler after completing its prior production", g.cities[cid].name;
+                               "the capital is population two with an empty queue; the capital-settler-after-completion gene reserves this next build while preserving the rest of the opening book");
+                        continue;
+                    }
+                }
+            }
             // The live land-grab policy already opens two Settler seats from
             // the first city, but the opening book used to spend its next
             // Builder/Warrior slot before `pick_item` could fill that second
@@ -8968,7 +9323,13 @@ impl BasicAi {
             .players
             .iter()
             .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
-        let floor = if at_war { 30.0 } else { 120.0 };
+        // Nearby barbarians do not create a diplomatic war, but a materially
+        // stronger raider creates the same immediate need to spend. Holding
+        // 120 Gold back in that state leaves a two-upgrade army fighting with
+        // the obsolete unit it already owns; keep only the wartime emergency
+        // reserve until the local quality gap closes.
+        let barbarian_gap = Self::barbarian_military_gap(g, pid);
+        let floor = if at_war || barbarian_gap { 30.0 } else { 120.0 };
         loop {
             let mut best: Option<(f64, f64, u32)> = None;
             for uid in g.player_unit_ids(pid) {
@@ -10672,6 +11033,38 @@ impl BasicAi {
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
         }
+        // `capital-settler-after-completion` opens one specific expansion
+        // window: when the capital's whole queue has drained and it has
+        // reached the engine's population-two floor, a Settler gets the next
+        // build. This deliberately comes after repairs, local defense, and
+        // economic recovery, and it declines during a major war. It also keeps
+        // the normal city target, time window, and practical-site gate, so it
+        // is an opening heuristic rather than an unbounded Settler order.
+        //
+        // The ordinary Settler arm below serializes the pipeline unless a
+        // different gene widens it. That is the ranking the live seat was
+        // observed to lose to an Archer despite a legal second settlement
+        // slot; this gene only changes that queue choice after the previous
+        // item has completed.
+        if self.capital_settler_after_completion
+            && !self.minor
+            && !self.barb
+            && !at_major_war
+            && !emergency_defense
+            && g.cities[&cid].is_capital
+            && g.cities[&cid].queue.is_empty()
+            && g.cities[&cid].pop >= 2
+            && ((n_cities + settlers) as f64) < self.w.city_target
+            && (g.turn as f64) < self.w.settler_stop_turn
+            && self.has_practical_settle_site(g, pid)
+        {
+            let settler = Item::Unit {
+                unit: crate::name!("settler"),
+            };
+            if g.can_produce(pid, cid, &settler) {
+                return Some(settler);
+            }
+        }
         let can_add_military = !self.minor || military < Self::minor_military_budget(g, pid);
         // An ancient rush needs a stack, not a garrison. While one is planned
         // the floor is the stack size rather than `mil_per_city * n_cities`,
@@ -11958,6 +12351,7 @@ impl BasicAi {
             return false;
         }
         self.record_path_step(g, uid, from);
+        self.record_move_refusal_watch(g, uid, from, to);
         true
     }
 
@@ -11986,7 +12380,24 @@ impl BasicAi {
             return false;
         }
         self.record_path_step(g, uid, from);
+        self.record_move_refusal_watch(g, uid, from, to);
         true
+    }
+
+    /// Remember the FIRST pathed step this unit was issued this turn, which is
+    /// the step the live bridge's coalesced `MOVE_TO` starts with and the one
+    /// a host `did_not_move` refusal falsifies. Later same-turn steps replan
+    /// from tiles the host never saw the unit on, so only the first is
+    /// evidence. Inert with `live-move-refusal-break` off.
+    fn record_move_refusal_watch(&self, g: &Game, uid: u32, from: Pos, to: Pos) {
+        if !self.move_refusal_break {
+            return;
+        }
+        let mut watch = self.move_refusal_watch.borrow_mut();
+        let entry = watch.entry(uid).or_insert((g.turn, from, to));
+        if entry.0 != g.turn {
+            *entry = (g.turn, from, to);
+        }
     }
 
     /// Every refusal a pathed move owes to the controller rather than to the
@@ -12012,6 +12423,19 @@ impl BasicAi {
             if from_home <= MINOR_DEFENSE_RADIUS && to_home > MINOR_DEFENSE_RADIUS {
                 return false;
             }
+        }
+        // `live-move-refusal-break`: a step this unit has provably been
+        // refused by the host — issued on consecutive turns while the unit
+        // never left its tile — is not proposed again until the bar expires,
+        // so the pathing picks a different step (or a different target)
+        // instead of freezing. See `judge_move_refusals`.
+        if self.move_refusal_break
+            && self
+                .move_refusal_blocks
+                .get(&uid)
+                .is_some_and(|(step, until)| *step == to && g.turn < *until)
+        {
+            return false;
         }
         // Shipped: only the step just taken is remembered, so `A -> B -> A` is
         // refused. With `whole_turn_backtrack_guard` on, every tile walked
@@ -17336,6 +17760,60 @@ mod tests {
         assert_eq!(g.units[&straggler].kind, "warrior");
     }
 
+    #[test]
+    fn a_nearby_advanced_barbarian_redirects_research_to_the_army_upgrade_path() {
+        let (mut g, city, raider) = barbarian_at_the_gates_game(91_501);
+        g.units.get_mut(&raider).unwrap().kind = crate::name!("crossbowman");
+        let center = g.cities[&city].pos;
+        for _ in 0..3 {
+            g.spawn_test_unit("archer", 0, center);
+        }
+
+        assert!(BasicAi::barbarian_military_gap(&g, 0));
+        assert_eq!(
+            BasicAi::barbarian_military_research_goal(&g, 0).as_deref(),
+            Some("machinery")
+        );
+
+        g.players[0].research = None;
+        BasicAi::new().research_with_government(&mut g, 0, false, None);
+        let selected = g.players[0]
+            .research
+            .as_deref()
+            .expect("the barbarian gap selects a research step");
+        assert!(
+            BasicAi::tech_leads_to(&g, selected, "machinery"),
+            "selected {selected} should be on the path to Machinery"
+        );
+    }
+
+    #[test]
+    fn a_barbarian_quality_gap_spends_the_upgrade_budget_before_the_peacetime_reserve() {
+        let (mut g, city, raider) = barbarian_at_the_gates_game(91_502);
+        g.units.get_mut(&raider).unwrap().kind = crate::name!("crossbowman");
+        g.players[0].techs.insert(crate::name!("machinery"));
+        let center = g.cities[&city].pos;
+        let archers: Vec<u32> = (0..2)
+            .map(|_| g.spawn_test_unit("archer", 0, center))
+            .collect();
+        g.players[0].gold = 10_000.0;
+        let cost = g
+            .unit_gold_upgrade_detail(0, archers[0])
+            .unwrap_or_else(|why| panic!("Machinery should expose an Archer upgrade: {why}"))
+            .1;
+        g.players[0].gold = cost * 2.0 + 40.0;
+
+        BasicAi::upgrade_units(&mut g, 0);
+
+        assert!(
+            archers
+                .iter()
+                .all(|unit| g.units[unit].kind == "crossbowman"),
+            "both affordable upgrades should be taken under the local gap"
+        );
+        assert_eq!(g.players[0].gold, 40.0);
+    }
+
     /// A Gold upgrade is only offered inside the borders, so an army that
     /// spends its life on frontier patrol or in no-man's-land can never take
     /// one however rich its owner is - the modernization pass simply never
@@ -18679,6 +19157,93 @@ mod tests {
         game.cities.get_mut(&capital).unwrap().pop = 2;
         treated.w.settler_min_pop = 1.5;
         assert!(matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"));
+    }
+
+    /// The capital-settler-after-completion gene acts only after the capital
+    /// has finished its queued work. It bypasses the ordinary one-walker
+    /// serialisation, but does not interrupt a current build or outgrow the
+    /// normal city target.
+    #[test]
+    fn capital_settler_after_completion_waits_for_an_empty_capital_queue() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("CAPITALSETTLER", 91_779),
+            250,
+            0,
+            false,
+        );
+        let founding = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: founding })
+            .unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        game.cities.get_mut(&capital).unwrap().pop = 2;
+        game.turn = 20;
+        // One walker fills the ordinary one-at-a-time pipeline. The Scout and
+        // Warrior keep unrelated early capability gaps out of this fixture.
+        game.spawn_unit("settler", 0, home);
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let ask =
+            |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, capital, 1, 1, 6, 2, 1, 20, 10, 10);
+
+        let mut stock = BasicAi::new();
+        stock.book_pos = 1;
+        stock.w.city_target = 4.0;
+        assert!(stock.has_practical_settle_site(&game, 0));
+        assert!(
+            !matches!(ask(&game, &stock), Some(Item::Unit { unit }) if unit == "settler"),
+            "the ordinary picker leaves the second walker to its one-at-a-time gate"
+        );
+
+        let mut treated = BasicAi::new();
+        treated.book_pos = 1;
+        treated.w.city_target = 4.0;
+        treated.enable_capital_settler_after_completion();
+        assert!(treated.capital_settler_after_completion);
+
+        // A queued Builder is left alone, even after the capital reaches the
+        // population floor: this is a next-build reservation, not preemption.
+        game.cities.get_mut(&capital).unwrap().queue = vec![builder.clone()];
+        assert!(
+            !matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the reservation requires a fully empty capital queue"
+        );
+        treated.cities(&mut game, 0);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+
+        // Once the current item has completed and the queue is empty, the
+        // legal population-two capital starts the next Settler immediately.
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        treated.cities(&mut game, 0);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&settler));
+        assert_eq!(
+            treated.book_pos, 1,
+            "the reservation takes one empty queue without consuming the rest of the opening book"
+        );
+
+        // The screenable wrapper remains off in every normal constructor until
+        // explicitly enabled; the registry invokes its toggle pair.
+        let mut strategic = AdvancedAi::new();
+        assert!(!strategic.capital_settler_after_completion);
+        assert!(!AdvancedAi::legacy().capital_settler_after_completion);
+        strategic.enable_capital_settler_after_completion();
+        assert!(strategic.capital_settler_after_completion);
+        strategic.disable_capital_settler_after_completion();
+        assert!(!strategic.capital_settler_after_completion);
     }
 
     /// The land grab's early Cities route: the pipeline is two walkers from
@@ -20150,6 +20715,120 @@ mod tests {
             "and a City Center the Warrior can reach this turn"
         );
         (game, ours, front, home)
+    }
+
+    /// A Quadrireme has one tile of ranged reach, not two, and must retain a
+    /// movement point to fire. A wounded land unit that has actually entered
+    /// that full envelope must recover away from the shore, rather than
+    /// fortifying for another naval volley.
+    #[test]
+    fn a_wounded_land_unit_leaves_a_coast_under_quadrireme_fire() {
+        let mut game = Game::new_full(2, 20, 14, 91_485, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.road = 0;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let shore = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.wdisk(*position, 4).len() == 61)
+            .expect("fixture needs an interior shore");
+        let water = game.nbrs(shore)[0];
+        let water_after_one_move = game
+            .nbrs(water)
+            .into_iter()
+            .find(|position| game.wdist(*position, shore) == 2)
+            .expect("fixture needs a coast one move out");
+        let water_after_two_moves = game
+            .nbrs(water_after_one_move)
+            .into_iter()
+            .find(|position| game.wdist(*position, shore) == 3)
+            .expect("fixture needs a coast two moves out");
+        for position in [water, water_after_one_move, water_after_two_moves] {
+            game.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("coast");
+        }
+        let inland = game
+            .nbrs(shore)
+            .into_iter()
+            .find(|position| {
+                *position != water
+                    && game
+                        .nbrs(*position)
+                        .into_iter()
+                        .all(|neighbor| !game.rules.is_water(&game.map.tiles[&neighbor]))
+            })
+            .expect("fixture needs a land step behind the shore");
+
+        let defender = game.spawn_test_unit("swordsman", 0, shore);
+        game.units.get_mut(&defender).unwrap().hp = 45;
+        // A friendly observer gives the controller sight of the ship even
+        // though its target is two sea steps beyond the wounded defender.
+        let observer = game
+            .nbrs(water_after_two_moves)
+            .into_iter()
+            .find(|position| {
+                *position != water_after_one_move && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .expect("fixture needs a land observer next to the ship");
+        game.spawn_test_unit("scout", 0, observer);
+        let quadrireme = game.spawn_test_unit("quadrireme", 1, water_after_two_moves);
+        assert_eq!(
+            game.unit_attack_range(quadrireme),
+            1,
+            "the shipped Quadrireme record has Range=1"
+        );
+        assert!(
+            game.attack_reach(quadrireme).contains(&shore),
+            "two sea moves leave the one point needed for its adjacent shot"
+        );
+        assert!(
+            !game.attack_reach(quadrireme).contains(&inland),
+            "the tile behind that shore is outside its actual firing envelope"
+        );
+
+        let probe = BasicAi::new();
+        let envelopes = probe.enemy_attack_envelopes(&game, 0);
+        let incoming = BasicAi::evacuation_incoming_damage(&game, 0, defender, shore, &envelopes);
+        assert!(
+            incoming > 0.0 && incoming < f64::from(game.units[&defender].hp),
+            "the current volley is harmful but not an average lethal pool: {incoming:.1}"
+        );
+
+        let mut ai = BasicAi::new();
+        assert_eq!(ai.healing_step(&mut game, 0, defender), Some(true));
+        let retreat = game.units[&defender].pos;
+        assert_ne!(
+            retreat, shore,
+            "the wounded unit does not fortify on the shore"
+        );
+        assert!(
+            game.nbrs(retreat)
+                .into_iter()
+                .all(|position| !game.rules.is_water(&game.map.tiles[&position])),
+            "the recovery step leaves the exposed coast"
+        );
+        let envelopes = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            envelopes.iter().all(|(_, reach)| !reach.contains(&retreat)),
+            "the recovery tile is outside every observed next-turn attack envelope"
+        );
     }
 
     /// ★★★ THE CASE BOTH EXISTING TESTS ABOVE MISS. `withdraw_hp` is 45 and

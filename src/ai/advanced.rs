@@ -115,6 +115,11 @@ const SCIENCE_SIEGE_RADIUS: i32 = 5;
 /// Number of visible major land combatants that turns a wartime contact into
 /// an immediate Science defense response before the first city hit.
 const SCIENCE_SIEGE_MIN_UNITS: usize = 2;
+/// Maximum ratio credit for a city whose health just fell. The turn-93 live
+/// siege had an overlapping undamaged city at 1.3982 pressure and the struck
+/// city at 1.2769; this covers that 0.1213 gap without allowing recency to
+/// override a materially worse emergency elsewhere.
+const FRESH_CITY_DAMAGE_PRIORITY: f64 = 0.15;
 /// Turn the ancient-rush window shuts, after which ordinary campaign rules
 /// resume. `rush_census` finds the first walled capital at turn 80 and 43% of
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
@@ -302,6 +307,11 @@ const SETTLER_RETREAT_LIMIT: u32 = 3;
 /// should yield the site to a safer alternative, even if it is not in the
 /// mirror's immediate -8-per-turn emergency.
 const SETTLE_TARGET_LOYALTY_RISK_TURNS: f64 = 40.0;
+/// A governed city with this many measured turns of Loyalty headroom is close
+/// enough to justify `praetorium`'s +2 Governor Loyalty. The live Arretium
+/// loss had roughly 17 turns at t168; waiting for the city to cross the old
+/// level alarm left no time for a policy swap to matter.
+const LOYALTY_POLICY_TRIGGER_TURNS: f64 = 20.0;
 /// How far from an own city a colony still holds on fogged ground. The
 /// loyalty model's citizens press out to nine tiles, but what a colony needs
 /// is enough of that pressure to outweigh rivals it cannot see: measured
@@ -636,6 +646,23 @@ const SCIENCE_OPENING_CITY_TARGET: usize = 2;
 /// infrastructure window rather than the generic expansion deadline.
 const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 60;
 
+/// `science-opening-band`: hold the expansion-first posture until the empire
+/// reaches the band every recorded live win opened from — four to six cities
+/// by turn 60 Online (9/9 wins inside it, 0/128 outside;
+/// `civvis-the-opening-band-every-win-came-from`). The first two live
+/// science-lane games handed the plan over at two cities (t44) and reached
+/// t150 at 0.31 and 0.36 of the leader's score, both abandoned; the same
+/// build's diplomatic games, which keep the generic t175 window, made eight
+/// to ten cities. The 250-turn self-play screen prefers the two-city opening
+/// (widening it there lost the one completing seed), so this is an opt-in
+/// live arm, not a new default: the live field and the mirror screen disagree
+/// and the live seat is the one this gene is for.
+const SCIENCE_OPENING_BAND_CITY_TARGET: usize = 5;
+
+/// The band gene's window: 100 standard turns is ~turn 67 at Online speed,
+/// just past the band's own measuring point.
+const SCIENCE_OPENING_BAND_STANDARD_TURNS: u32 = 100;
+
 /// Passable land per city the land grab prices the board at. Civilization VI
 /// packs cities four tiles apart (`CITY_MIN_RANGE` 3 plus the engine's own
 /// wdist ≥ 4 rule); a city works nineteen tiles at radius two, and the rivals
@@ -655,6 +682,34 @@ pub const LAND_GRAB_CITY_FLOOR: usize = 8;
 /// held on the seat's board at t250; the practical-site search and the
 /// payback deadline decide the rest. See `land_grab`.
 pub const LAND_GRAB_CITY_CEILING: usize = 16;
+
+/// How wide the SCIENCE lane's land grab may go while its cities can still
+/// mature. Live rows scale with final city count, but at FIXED count science
+/// goes as `pop^1.21` — growing an existing city is super-linear while adding
+/// one dilutes. Timing reconciles them: a city founded early matures into the
+/// super-linear term, one founded late only dilutes. So under
+/// `science-expansion-phase` the science lane widens past the shared ceiling
+/// ONLY while a new city can still mature, then reverts to
+/// [`LAND_GRAB_CITY_CEILING`] and grows what it holds.
+///
+/// The gene has two effects with one window: the land grab's ceiling rises
+/// to this constant, and [`SCIENCE_CITY_TARGET_CAP`] — the shipped Science
+/// contract, written after this idea — is deferred until the window closes,
+/// so the two hypotheses (cap early and grow, versus widen early then grow)
+/// disagree on the board and a screen can price the difference.
+///
+/// Live evidence so far is three patched 250-turn Settler games (653/13
+/// cities, 276/4, 1063/15) against one stock (963/8) — n is tiny against a
+/// ~398 score stdev, and the 1063 met the strongest rival field seen while
+/// the 963 met the weakest. That is why the gene ships OFF: the argument is
+/// the timing model above, and the screen prices it.
+pub const SCIENCE_EXPANSION_CITY_CEILING: usize = 24;
+
+/// When the science lane stops widening and starts growing, in STANDARD-speed
+/// turns (`Game::standard_duration` rescales: 188 standard is ~t125 Online —
+/// half way through the 250-turn ladder game). The switch is observable in
+/// `civvis_notes.jsonl` as desired_cities 24 -> 16.
+pub const SCIENCE_EXPANSION_UNTIL_TURN: u32 = 188;
 
 /// The rapid native expansion gene aims to own this many cities on a roomy
 /// board. The practical-site gate can stop it sooner, and the target derives
@@ -1566,6 +1621,14 @@ pub struct AdvancedAi {
     builder_targets: BTreeMap<u32, Pos>,
     /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
     commitments: commitments::CommitmentLedger,
+    /// `(last observed turn, consecutive idle-turn count)` for cities whose
+    /// strategic queue remained empty.  Host bridge calls can revisit one
+    /// turn several times while a blocking production prompt is settling, so
+    /// the turn stamp is part of the value rather than a separate global
+    /// counter.  The recovery is deliberately narrow: only an explicitly
+    /// targeted Science seat consumes it, and only after the second distinct
+    /// idle turn.
+    idle_production_streak: BTreeMap<u32, (u32, u32)>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -3049,6 +3112,11 @@ pub struct AdvancedAi {
     /// Native and off by default until `gene_screen` prices it through
     /// `PRODUCTION_OPT_INS` as `rapid-city-expansion`.
     pub rapid_city_expansion: bool,
+    /// `capital-settler-after-completion`: after its queue drains, the capital
+    /// starts a legal Settler at population two rather than letting the
+    /// ordinary ranking fill the opening. The baseline governor owns the
+    /// choice; this flag makes it a screenable AdvancedAI gene.
+    pub capital_settler_after_completion: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -4996,6 +5064,15 @@ pub struct AdvancedAi {
     eureka_chasing_production: bool,
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
+    /// `first-luxury-first`: an improvement that opens a luxury the empire
+    /// holds NO copy of outranks ordinary ground, priced by the Amenities
+    /// the empire is short; a duplicate copy keeps the shipped flat +14.
+    /// See `advanced/first_luxury.rs`.
+    first_luxury_first: bool,
+    /// The seat-turn memo `first-luxury-first` prices its premium from; the
+    /// empire's Amenity deficit. Zero-valued with the gene off, because
+    /// nothing asks for it. See `advanced/first_luxury.rs`.
+    first_luxury_frame: RefCell<first_luxury::AmenityDeficitFrame>,
     // ---- append: g-k ------------------------------------------------
     /// `hostile-memory`: the civilian capture envelope counts every at-war
     /// owner (barbarians, Free Cities and a major at war alike) and keeps
@@ -5120,6 +5197,17 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// The host refuses ~14% of MOVE_TO orders as `did_not_move`, the refusal
+    /// event carries no destination, and the verdicts are ledger-only — so
+    /// the same refused move was re-issued for up to eleven straight turns
+    /// while the livelock detector's footprint-of-one carve-out looked away.
+    /// `BasicAi` owns the machinery (watch, strikes, per-unit step bar; see
+    /// `judge_move_refusals`); this flag mirrors the gene so the Advanced
+    /// settler layer can also retire a frozen Settler's destination through
+    /// the dead-site machinery. HostOnly: the simulator applies every move,
+    /// so the proof — an issued step the fresh board shows untaken — cannot
+    /// exist off the live bridge. Gene `live-move-refusal-break`.
+    live_move_refusal_break: bool,
     /// The host's barbarian scouts capture civilians — run
     /// civvis-20260828T122324Z lost four settlers to ONE scout that every
     /// capture model exempted — so on the live seat a barbarian recon unit
@@ -5408,6 +5496,17 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// While a founded city can still mature, the science lane's land grab
+    /// widens to [`SCIENCE_EXPANSION_CITY_CEILING`] and the Science
+    /// contract's `SCIENCE_CITY_TARGET_CAP` is deferred; both revert when the
+    /// window closes. Opt-in gene `science-expansion-phase`; the timing
+    /// argument is on the constant.
+    science_expansion_phase: bool,
+    /// `science-opening-band`: the assigned Science lane keeps the
+    /// expansion-first posture until `SCIENCE_OPENING_BAND_CITY_TARGET`
+    /// cities or `SCIENCE_OPENING_BAND_STANDARD_TURNS`, instead of the
+    /// stock two-city opening.
+    science_opening_band: bool,
     /// `settler-backlog-brake`: no Settler starts while one stands parked
     /// (empire of three cities or more). See `BasicAi::settler_backlog_brake`
     /// and `settler_in_flight_allowed`.
@@ -5416,6 +5515,10 @@ pub struct AdvancedAi {
     /// leaves the board can be told from one that founded. Recorded only
     /// under `live_settler_capture_lessons`.
     settler_last_seen: BTreeMap<u32, Pos>,
+    /// The turn a guard was summoned onto each settler's tile, so the pair
+    /// does not march on in the same turn: on the live seat the guard's
+    /// second order that turn never lands (run civvis-20260829T040648Z t43).
+    summoned_guard_turn: BTreeMap<u32, u32>,
     /// Last positions of settlers that left the board since the last turn,
     /// awaiting `resolve_vanished_settlers`.
     settler_vanished: Vec<Pos>,
@@ -5514,6 +5617,11 @@ pub struct AdvancedAi {
     /// runs the race, two pads by the Earth Satellite. Opt-in gene
     /// `science-victory-drive`; see `advanced/science_victory_drive.rs`.
     science_victory_drive: bool,
+    /// Version 2 of `science_victory_drive`: preserve the measured first
+    /// implementation while separately pricing the continuation planner's
+    /// stronger lead gate, legal-pad routing, research funnel, and live
+    /// launch-chain estimate. Opt-in gene `science-victory-drive-2`.
+    science_victory_drive_2: bool,
     /// `science_victory_drive`'s state while the seat is driving: since
     /// when, the last reading of the field, and the launch city.
     science_drive: Option<ScienceDrive>,
@@ -6134,6 +6242,11 @@ mod early_archers;
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
 
+/// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
+/// luxury ahead of an ordinary tile, priced by the Amenities the empire is
+/// short. One opt-in gene; see `advanced/first_luxury.rs`.
+mod first_luxury;
+
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -6430,6 +6543,9 @@ impl AdvancedAi {
     /// different unit than it did last turn.
     pub fn forget_unit_memory(&mut self) {
         self.base.forget_unit_memory();
+        // A missing previous board can also mean that a new live game is
+        // starting. Do not carry a city's old idle debt into that game.
+        self.idle_production_streak.clear();
         self.settler_targets.clear();
         self.settler_stalls.clear();
         self.escort_march.clear();
@@ -6441,6 +6557,7 @@ impl AdvancedAi {
         self.settler_dead_sites.clear();
         self.settler_last_seen.clear();
         self.settler_vanished.clear();
+        self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
@@ -6476,6 +6593,11 @@ impl AdvancedAi {
                 .map(|(_, pos)| *pos),
         );
         self.settler_last_seen = remap(&self.settler_last_seen);
+        self.summoned_guard_turn = self
+            .summoned_guard_turn
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
         self.builder_targets = remap(&self.builder_targets);
         self.builder_avoid = self
             .builder_avoid
@@ -6597,6 +6719,7 @@ impl AdvancedAi {
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
             commitments: commitments::CommitmentLedger::default(),
+            idle_production_streak: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -6714,6 +6837,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -6854,6 +6978,8 @@ impl AdvancedAi {
             eureka_chasing_builder: false,
             eureka_chasing_production: false,
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
+            first_luxury_first: false,
+            first_luxury_frame: RefCell::new(first_luxury::AmenityDeficitFrame::default()),
 
             // ---- append: g-k ----------------------------------------
             hostile_memory: false,
@@ -6869,6 +6995,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            live_move_refusal_break: false,
             live_barbarian_scouts_capture: false,
             live_settler_capture_lessons: false,
             moksha_defends_the_faithless: false,
@@ -6899,8 +7026,11 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_expansion_phase: false,
+            science_opening_band: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
+            summoned_guard_turn: BTreeMap::new(),
             settler_vanished: Vec::new(),
             settler_capture_scars: BTreeMap::new(),
             settler_never_idles: false,
@@ -6912,6 +7042,7 @@ impl AdvancedAi {
             settler_screen: false,
             settler_second_look: false,
             science_victory_drive: false,
+            science_victory_drive_2: false,
             science_drive: None,
             settler_guard_holds_2: false,
             settler_target_hysteresis_2: false,
@@ -8911,9 +9042,21 @@ impl AdvancedAi {
                 // tactical contact, not an empire-wide emergency. Recovery is
                 // reserved for a locally competitive force or a damaged city
                 // whose remaining defenders cannot safely absorb another hit.
-                let critical =
-                    danger >= 0.90 || (danger >= 0.45 && (breached || (recently_hit && damaged)));
+                let fresh_damage = recently_hit && damaged;
+                let critical = danger >= 0.90 || (danger >= 0.45 && (breached || fresh_damage));
+                let priority = danger
+                    + if fresh_damage {
+                        FRESH_CITY_DAMAGE_PRIORITY
+                    } else {
+                        0.0
+                    };
                 critical.then_some((
+                    // A city that just lost health is the one the enemy is
+                    // actually shooting. A bounded recency credit lets that
+                    // evidence outrank a modestly higher radius ratio at an
+                    // undamaged neighbour, while a much more dangerous city
+                    // still wins the emergency selection.
+                    priority,
                     danger,
                     (200 - city.hp).max(0) + (wall_max - city.wall_hp).max(0),
                     cid,
@@ -8922,10 +9065,11 @@ impl AdvancedAi {
             .max_by(|left, right| {
                 left.0
                     .total_cmp(&right.0)
-                    .then_with(|| left.1.cmp(&right.1))
-                    .then_with(|| right.2.cmp(&left.2))
+                    .then_with(|| left.1.total_cmp(&right.1))
+                    .then_with(|| left.2.cmp(&right.2))
+                    .then_with(|| right.3.cmp(&left.3))
             })
-            .map(|(_, _, cid)| cid)
+            .map(|(_, _, _, cid)| cid)
     }
 
     fn religious_opening_rank(g: &Game, pid: usize) -> Option<(u8, f64, f64)> {
@@ -10270,8 +10414,19 @@ impl AdvancedAi {
             } else {
                 land
             };
-            (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING)
+            // The science lane widens while a founded city can still mature
+            // into the super-linear pop term; see
+            // `SCIENCE_EXPANSION_CITY_CEILING`. Every other lane, and the
+            // science lane's second half, keep the shared ceiling.
+            let ceiling = if self.science_expansion_phase
+                && science_targeted
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN)
+            {
+                SCIENCE_EXPANSION_CITY_CEILING
+            } else {
+                LAND_GRAB_CITY_CEILING
+            };
+            (2 + land / LAND_GRAB_TILES_PER_CITY).clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
             (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
         };
@@ -10309,7 +10464,14 @@ impl AdvancedAi {
         // Science seat still settles enough productive cities to scale its
         // Campuses, then stops treating open land as the main objective. Never
         // lower the target beneath an empire that already exceeded the cap.
-        let desired_cities = if science_targeted {
+        // `science-expansion-phase` is the standing counter-hypothesis: while
+        // a founded city can still mature into the super-linear pop term the
+        // contract is deferred — the widened land-grab ceiling above sets the
+        // window's target — and the cap resumes when the window closes.
+        let desired_cities = if science_targeted
+            && !(self.science_expansion_phase
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN))
+        {
             desired_cities
                 .min(SCIENCE_CITY_TARGET_CAP)
                 .max(cities.len())
@@ -10449,7 +10611,10 @@ impl AdvancedAi {
                 && g.turn < g.standard_duration(175)
                 && (!science_targeted
                     || (cities.len() < SCIENCE_OPENING_CITY_TARGET
-                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS)))
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS))
+                    || (self.science_opening_band
+                        && cities.len() < SCIENCE_OPENING_BAND_CITY_TARGET
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_BAND_STANDARD_TURNS)))
             {
                 (
                     GrandStrategy::Expansion,
@@ -12486,6 +12651,11 @@ impl AdvancedAi {
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid);
+            let barbarian_military_goal = if self.base.barbarian_tactics_enabled() {
+                BasicAi::barbarian_military_research_goal(g, pid)
+            } else {
+                None
+            };
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -12533,6 +12703,12 @@ impl AdvancedAi {
                 {
                     Some("horseback_riding")
                 }
+                // A nearby barbarian with a materially stronger unit is an
+                // immediate modernization problem, even when the empire is
+                // pursuing Science or another peaceful victory. The goal is
+                // the strongest upgrade supported by the army already in the
+                // field; `goal_pick` below walks its prerequisites.
+                _ if barbarian_military_goal.is_some() => barbarian_military_goal.as_deref(),
                 // `enter-the-prophet-race`: Astrology is a dead-end branch no
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
@@ -12632,11 +12808,18 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            format!(
-                                "the cheapest step toward {}, which {} needs",
-                                plain(goal),
-                                objective.as_str()
-                            )
+                            if barbarian_military_goal.as_deref() == Some(goal) {
+                                format!(
+                                    "the cheapest step toward {}, needed to catch a nearby barbarian army",
+                                    plain(goal)
+                                )
+                            } else {
+                                format!(
+                                    "the cheapest step toward {}, which {} needs",
+                                    plain(goal),
+                                    objective.as_str()
+                                )
+                            }
                         }
                         _ => {
                             let runner_up = available
@@ -13487,6 +13670,20 @@ impl AdvancedAi {
         overflow + wildcard <= slots.wildcard
     }
 
+    /// Whether the live bridge has a governed city whose measured Loyalty
+    /// decline is close enough to warrant the Governor-specific policy card.
+    /// Frozen controllers do not have the host rate signal and therefore keep
+    /// the recorded policy deck exactly as it was.
+    fn loyalty_policy_needed(&self, g: &Game, pid: usize) -> bool {
+        self.base.loyalty_rate_alarm
+            && g.player_city_ids(pid).into_iter().any(|city| {
+                self.base
+                    .loyalty_emergency(g, city)
+                    .is_some_and(|turns| turns.is_finite() && turns <= LOYALTY_POLICY_TRIGGER_TURNS)
+                    && g.governor_effect(pid, city, "loyalty") > 0.0
+            })
+    }
+
     /// Reassess policy cards as the civic tree advances instead of treating
     /// the first cards which filled a government as permanent.  Each plan has
     /// a complete late-game portfolio, while temporary Dark Age cards are
@@ -13649,6 +13846,15 @@ impl AdvancedAi {
         // production and maintenance cards displace the peaceful portfolio.
         // The helper is an exact no-op when its opt-in gene is off.
         self.prioritize_surprise_defense_policies(g, pid, &mut desired);
+
+        // A Governor already in a city is the one place where Praetorium's
+        // effect can apply. Put it ahead of the ordinary victory portfolio
+        // only for a live, measured decline with a short runway; a healthy
+        // governed city must not trade away a lane card for a merely
+        // hypothetical loyalty benefit.
+        if self.loyalty_policy_needed(g, pid) {
+            desired.insert(0, "praetorium");
+        }
 
         // ⚠ FRONT of the list, not appended: these portfolios are preference
         // ordered and the military slot is contested from the ancient era, which is
@@ -13921,11 +14127,12 @@ impl AdvancedAi {
         {
             temporary.push("robber_barons");
         }
-        // ★★★★★ CITIES BLEEDING LOYALTY HAVE ONE LEVER AND FIVE UNUSED ONES.
+        // ★★★★★ CITIES BLEEDING LOYALTY HAD ONE LEVER AND NO POLICY RESPONSE.
         //
-        // `loyalty_emergency` reads the RATE (that is what #981 fixed) but its only
-        // consumer is `reassign_governor_for_loyalty`, so moving a governor is the
-        // entire response and it is capped by how many governors exist.
+        // `loyalty_emergency` reads the RATE (that is what #981 fixed). The
+        // inherited governor pass can move one established Governor, while the
+        // live policy response below can add a small Loyalty buffer when that
+        // move cannot reach an already governed city.
         //
         // Measured over 117 city losses in 91 runs: **47 were revolts**, and they died
         // at loyalty 0.1-1.9 carrying -13 to -22 a turn. The warning is long and
@@ -13938,9 +14145,11 @@ impl AdvancedAi {
         //
         // Five policy cards carry loyalty effects and every one is already honoured by
         // `Game::city_loyalty_per_turn`. **Across those 91 runs only COLONIAL_OFFICES
-        // was ever slotted, in 5 of them; the other four never once** — including
-        // `limitanei`, which needs only `early_empire`, an ancient civic reached in
-        // essentially every game, and sits in a MILITARY slot nothing competes for.
+        // was ever slotted, in 5 of them; the remaining direct loyalty cards were
+        // absent from the ordinary deck** — including `limitanei`, which needs only
+        // `early_empire`, an ancient civic reached in essentially every game, and
+        // sits in a MILITARY slot nothing competes for. The live emergency arm now
+        // names `praetorium` when a governed city has a short measured runway.
         //
         // ★ This is also what makes a garrison worth anything. Garrisoning has measured
         // null as a military mechanism (~2pp, parity), but with Limitanei slotted the
@@ -16582,6 +16791,7 @@ impl AdvancedAi {
                 && self.war_plan.is_none()
                 && plan.strategy != GrandStrategy::Conquest
                 && plan.threatened_city.is_some()
+                && my_power < g.military_power(*other) * 0.85
                 && g.peace_available_at(pid, *other).is_none();
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
@@ -18397,6 +18607,35 @@ impl AdvancedAi {
             }
         }
         counts
+    }
+
+    /// Record one empty production turn without counting repeated bridge
+    /// observations of the same host turn.  A gap or a rewind breaks the
+    /// streak: a city that built something in between must not inherit an old
+    /// idle debt when its next queue completes.
+    fn science_idle_production_recovery_due(&mut self, cid: u32, turn: u32) -> bool {
+        const RECOVERY_AFTER_IDLE_TURNS: u32 = 2;
+        let streak = match self.idle_production_streak.get_mut(&cid) {
+            Some((last_turn, count)) if *last_turn == turn => *count,
+            Some((last_turn, count)) if last_turn.checked_add(1) == Some(turn) => {
+                *last_turn = turn;
+                *count = count.saturating_add(1);
+                *count
+            }
+            Some(entry) => {
+                *entry = (turn, 1);
+                1
+            }
+            None => {
+                self.idle_production_streak.insert(cid, (turn, 1));
+                1
+            }
+        };
+        streak >= RECOVERY_AFTER_IDLE_TURNS
+    }
+
+    fn clear_idle_production_streak(&mut self, cid: u32) {
+        self.idle_production_streak.remove(&cid);
     }
 
     fn religious_production(&self, g: &mut Game, pid: usize) {
@@ -21134,6 +21373,18 @@ impl AdvancedAi {
         }
     }
 
+    /// A damaged outer wall is a better emergency queue than recruiting a
+    /// defender when Firaxis's three-turn post-attack cooldown has expired.
+    /// Keep the host's legality test authoritative: during an active attack
+    /// the repair project is not available and the siege picker must still
+    /// choose a unit or a wall upgrade instead.
+    fn outer_defense_repair_item(g: &Game, pid: usize, city: u32) -> Option<Item> {
+        let repair = Item::Project {
+            project: Name::new("repair_outer_defenses"),
+        };
+        g.can_produce(pid, city, &repair).then_some(repair)
+    }
+
     /// The normal siege picker waits for damage before returning a queue item.
     /// That is correct for a passing patrol, but a plan that has already named
     /// this city while a major war is active has stronger evidence: the contact
@@ -21227,23 +21478,28 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let Some(defence) = self
-                .base
-                .besieged_city_item(g, pid, city)
-                .or_else(|| self.native_emergency_item(g, pid, city))
-                .or_else(|| self.science_siege_defense_item(g, pid, city))
-                .or_else(|| {
-                    self.preemptive_major_war_defense_item(
-                        g,
-                        pid,
-                        city,
-                        threatened_city,
-                        active_major_war,
-                    )
-                })
+            let siege_defence = self.base.besieged_city_item(g, pid, city);
+            let native_defence = self.native_emergency_item(g, pid, city);
+            let science_defence = self.science_siege_defense_item(g, pid, city);
+            let preemptive_defence = self.preemptive_major_war_defense_item(
+                g,
+                pid,
+                city,
+                threatened_city,
+                active_major_war,
+            );
+            let Some(defence) = siege_defence
+                .or(native_defence)
+                .or(science_defence)
+                .or(preemptive_defence)
             else {
                 continue;
             };
+            // `besieged_city_item` intentionally answers with a defender once
+            // walls already exist. A wounded wall is the shorter local rescue
+            // when its repair project is legal, so put that answer ahead of a
+            // multi-turn unit without weakening the evidence gate above.
+            let defence = Self::outer_defense_repair_item(g, pid, city).unwrap_or(defence);
             let damage = CITY_MAX_HP.saturating_sub(g.cities[&city].hp);
             let wall_damage = g
                 .city_max_wall_hp(&g.cities[&city])
@@ -22105,6 +22361,95 @@ impl AdvancedAi {
         }
     }
 
+    /// The promoted baseline governor knows when a city should choose an
+    /// Entertainment Complex, but targeted production never calls that
+    /// governor's menu. Keep that policy reachable for the live constructor
+    /// without turning the unresolved amenity genes on: one legal district,
+    /// one idle and unthreatened city, and one reservation per turn.
+    fn baseline_amenity_repair_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        city_ids: &[u32],
+    ) -> Option<(u32, Item, i64)> {
+        if self.base.minor
+            || !self.base.amenity_districts
+            || plan.strategy == GrandStrategy::Recovery
+        {
+            return None;
+        }
+
+        let mut best: Option<(i64, f64, u32, String, Item)> = None;
+        for &cid in city_ids {
+            let city = &g.cities[&cid];
+            if !city.queue.is_empty()
+                || plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0
+                    && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || g.city_has_district_family(city, crate::name!("entertainment_complex"))
+                // Local defense has priority over an amenity repair. The
+                // production loop repeats the same check before it reaches
+                // this handoff, but filtering here keeps the one-turn claim
+                // from being consumed by a city with a failed defense apply.
+                || self.base.barbarian_defense_item(g, pid, cid).is_some()
+            {
+                continue;
+            }
+            let shortfall = (-g.city_amenity_surplus(city)).max(0);
+            let specialty = g.city_specialty_district_count(city);
+            if !BasicAi::amenity_repair_outranks_lane(shortfall as f64, specialty) {
+                continue;
+            }
+
+            // `producible_items` has already applied the complete host/model
+            // legality check, including a unique replacement such as the
+            // Hippodrome or Street Carnival. Choose the best legal plot using
+            // the same adjacency ordering as the baseline district picker.
+            let item = g
+                .producible_items(pid, cid)
+                .into_iter()
+                .filter(|item| {
+                    matches!(
+                        item,
+                        Item::District { district, .. }
+                            if g.district_family(*district) == "entertainment_complex"
+                    )
+                })
+                .max_by(|left, right| {
+                    let site_yields = |item: &Item| match item {
+                        Item::District { district, pos } => {
+                            g.district_yields(*district, *pos).total()
+                        }
+                        _ => 0.0,
+                    };
+                    site_yields(left)
+                        .total_cmp(&site_yields(right))
+                        .then_with(|| format!("{right:?}").cmp(&format!("{left:?}")))
+                });
+            let Some(item) = item else {
+                continue;
+            };
+            let turns = g.item_remaining_cost_for_city(pid, cid, &item)
+                / g.city_yields(cid).production.max(1.0);
+            let key = format!("{item:?}");
+            let replace =
+                best.as_ref()
+                    .is_none_or(|(old_shortfall, old_turns, old_city, old_key, _)| {
+                        shortfall > *old_shortfall
+                            || (shortfall == *old_shortfall
+                                && (turns + f64::EPSILON < *old_turns
+                                    || ((turns - *old_turns).abs() <= f64::EPSILON
+                                        && (cid, key.as_str()) < (*old_city, old_key.as_str()))))
+                    });
+            if replace {
+                best = Some((shortfall, turns, cid, key, item));
+            }
+        }
+
+        best.map(|(shortfall, _, cid, _, item)| (cid, item, shortfall))
+    }
+
     /// Run the strategic production governor. `adaptive_expansion_dispatch`
     /// names the one new route exposed by the experiment, so the census does
     /// not accidentally attribute Recovery or an explicitly targeted lane to
@@ -22123,6 +22468,14 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        // The baseline `amenity_districts` policy is otherwise unreachable
+        // from this targeted/science governor. Claim at most one legal,
+        // unthreatened repair before the generic scorer fills the queues.
+        let baseline_amenity_target = if !economic_recovery {
+            self.baseline_amenity_repair_target(g, pid, plan, &city_ids)
+        } else {
+            None
+        };
         for cid in city_ids {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
@@ -22136,6 +22489,9 @@ impl AdvancedAi {
                     let value = self.card_boosted_value(g, pid, cid, &item, value);
                     (value, item)
                 });
+            if committed.is_some() {
+                self.clear_idle_production_streak(cid);
+            }
             // The ordinary governor's recovery path only receives empty
             // queues. Preserve that contract even when an experimental
             // preemption margin is active: a banked unit can finish, but no
@@ -22167,6 +22523,7 @@ impl AdvancedAi {
                                 "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
                         }
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                     }
                 }
                 continue;
@@ -22211,6 +22568,7 @@ impl AdvancedAi {
                                 "the local camp/raider ring takes priority over economic production");
                         }
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22265,6 +22623,7 @@ impl AdvancedAi {
                     .is_ok()
                 {
                     counts.add_item(g, &builder);
+                    self.clear_idle_production_streak(cid);
                     continue;
                 }
             }
@@ -22295,6 +22654,7 @@ impl AdvancedAi {
                                 .is_ok()
                             {
                                 counts.add_item(g, &item);
+                                self.clear_idle_production_streak(cid);
                                 continue;
                             }
                         }
@@ -22332,6 +22692,7 @@ impl AdvancedAi {
                         .is_ok()
                     {
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22357,6 +22718,7 @@ impl AdvancedAi {
                         .is_ok()
                     {
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22383,7 +22745,35 @@ impl AdvancedAi {
                             "{gold_per_turn:.1} Gold/turn; a route-ready Trader compounds before ordinary production");
                     }
                     counts.add_item(g, &trader);
+                    self.clear_idle_production_streak(cid);
                     continue;
+                }
+            }
+            if committed.is_none() {
+                if let Some((_target, item, shortfall)) = baseline_amenity_target
+                    .as_ref()
+                    .filter(|(target, _, _)| *target == cid)
+                {
+                    let item = item.clone();
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} starts {} for a severe Amenity deficit", city_name, Self::plain_item(&item);
+                                "the promoted baseline repair was unreachable in strategic production; {} Amenities short",
+                                shortfall);
+                        }
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
                 }
             }
             // `order_retry`: the menu is RANKED rather than reduced to its
@@ -22488,18 +22878,26 @@ impl AdvancedAi {
                 chosen
             };
             // See `never_an_empty_queue`: nothing cleared the bar, so this city
-            // is about to spend the turn producing nothing at all. Take the
-            // best REAL candidate instead — anything the scorer did not veto
-            // outright — which is the least-bad build rather than no build.
+            // is about to spend the turn producing nothing at all. A targeted
+            // Science seat gets the same least-bad civilian answer after two
+            // distinct idle turns. That turns a persistent queue stall into a
+            // bounded one-turn delay without making every ordinary refusal a
+            // new unit-maintenance bill.
+            let persistent_science_idle = chosen.is_none()
+                && committed.is_none()
+                && science_targeted
+                && self.science_idle_production_recovery_due(cid, g.turn);
             let chosen = match chosen {
                 Some(found) => Some(found),
-                None if (self.never_an_empty_queue || self.never_an_empty_queue_2)
+                None if (self.never_an_empty_queue
+                    || self.never_an_empty_queue_2
+                    || persistent_science_idle)
                     && committed.is_none() =>
                 {
                     // See `never_an_empty_queue_2`: version two will not answer
                     // an idle turn with a soldier the empire did not want and
                     // then owes upkeep on, and would rather stay idle.
-                    let civilian_only = self.never_an_empty_queue_2;
+                    let civilian_only = self.never_an_empty_queue_2 || persistent_science_idle;
                     let fallback = {
                         let _memo = g.query_memo();
                         let items = g.producible_items(pid, cid);
@@ -22555,12 +22953,19 @@ impl AdvancedAi {
                 // menu broke, and nothing was written. Ravenna in run
                 // civvis-20260829T062155Z sat idle from t131 to t171 with
                 // eighteen items buildable and appeared in the journal once,
-                // at its founding. The fallback above answers it only under
-                // `never-an-empty-queue` / `-2`; off, this line is the only
-                // trace the idle turn leaves.
-                think!(self.journal(), Cities, Detail,
-                       "{} builds nothing", g.cities[&cid].name;
-                       "every candidate scored under the veto bar and no idle-queue gene is on");
+                // at its founding. The fallback above answers it under either
+                // idle-queue gene, or after the targeted Science recovery
+                // streak; otherwise this line is the only trace the idle
+                // turn leaves.
+                if persistent_science_idle {
+                    think!(self.journal(), Cities, Detail,
+                           "{} builds nothing", g.cities[&cid].name;
+                           "two distinct idle turns reached, but no civilian candidate cleared the hard veto");
+                } else {
+                    think!(self.journal(), Cities, Detail,
+                           "{} builds nothing", g.cities[&cid].name;
+                           "every candidate scored under the veto bar and no idle-queue gene is on");
+                }
             }
             if let Some((score, item)) = chosen {
                 {
@@ -22611,6 +23016,7 @@ impl AdvancedAi {
                     }
                     let is_settler = matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
+                    self.clear_idle_production_streak(cid);
                     if adaptive_expansion_dispatch {
                         self.expansion_census.dispatch_productions += 1;
                         if is_settler {
@@ -25339,18 +25745,8 @@ impl AdvancedAi {
         completion_discount * raw / divisor
     }
 
-    fn settlement_base_housing(g: &Game, pos: Pos) -> f64 {
-        let fresh = g.map.tiles[&pos].has_river()
-            || g.nbrs(pos).iter().any(|neighbor| {
-                g.map.get(*neighbor).is_some_and(|tile| {
-                    tile.terrain == "lake" || tile.feature.as_deref() == Some("oasis")
-                })
-            });
-        let coastal = g.nbrs(pos).iter().any(|neighbor| {
-            g.map
-                .get(*neighbor)
-                .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
-        });
+    fn settlement_base_housing(g: &Game, pid: usize, pos: Pos) -> f64 {
+        let (fresh, coastal) = g.city_site_water(pid, pos);
         if fresh {
             5.0
         } else if coastal {
@@ -25419,7 +25815,7 @@ impl AdvancedAi {
     fn settlement_growth_forecast_from_positions(
         &self,
         g: &Game,
-        _pid: usize,
+        pid: usize,
         pos: Pos,
         positions: &[Pos],
     ) -> SettlementGrowthForecast {
@@ -25476,7 +25872,7 @@ impl AdvancedAi {
 
         let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
         let ring_two_at = g.standard_duration(SETTLEMENT_SECOND_RING_DELAY) as f64;
-        let housing = Self::settlement_base_housing(g, pos);
+        let housing = Self::settlement_base_housing(g, pid, pos);
         let mut beam = vec![SettlementForecastState {
             selected: [0; SETTLEMENT_FORECAST_POPULATION],
             selected_len: 0,
@@ -25659,7 +26055,7 @@ impl AdvancedAi {
     /// Order a global candidate scan before invoking the full growth,
     /// adjacency, and safety model. This deliberately uses only local yields
     /// and resources, so it is cheap and cannot observe hidden state.
-    fn settlement_prefilter_score(g: &Game, pos: Pos) -> f64 {
+    fn settlement_prefilter_score(g: &Game, pid: usize, pos: Pos) -> f64 {
         let value_of = |tile: &crate::world::Tile, weight: f64| {
             let yields = g.rules.tile_yields(tile);
             let resource = tile.resource.as_ref().map_or(0.0, |resource| {
@@ -25673,13 +26069,11 @@ impl AdvancedAi {
         };
         let tile = &g.map.tiles[&pos];
         let mut value = value_of(tile, 1.5);
-        let fresh = Self::settlement_prefilter_has_fresh_water(g, pos);
-        let mut coastal = false;
+        let (fresh, coastal) = g.city_site_water(pid, pos);
         for neighbor in g.nbrs(pos) {
             let Some(tile) = g.map.get(neighbor) else {
                 continue;
             };
-            coastal |= matches!(tile.terrain.as_str(), "coast" | "ocean");
             value += value_of(tile, 1.0);
         }
         value
@@ -25755,7 +26149,7 @@ impl AdvancedAi {
     fn settlement_static_value_uncached(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
         let positions = g.wdisk(pos, 2);
         let forecast = self.settlement_growth_forecast_from_positions(g, pid, pos, &positions);
-        let housing = Self::settlement_base_housing(g, pos);
+        let housing = Self::settlement_base_housing(g, pid, pos);
         let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
         let growth_readiness = forecast.turns_to_four.map_or_else(
             || {
@@ -25775,6 +26169,7 @@ impl AdvancedAi {
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
         value += self.wonder_footprint_value(g, &positions);
+        value += Self::early_city_water_adjustment(g, pid, pos);
         let enemy_distance = g
             .cities
             .values()
@@ -26955,7 +27350,7 @@ impl AdvancedAi {
                     .map(|_| {
                         // `contested_land_first`: a contested site is never
                         // cut before it is priced.
-                        self.settlement_prefilter_score_for(g, pos)
+                        self.settlement_prefilter_score_for(g, pid, pos)
                             + self.contested_land_credit(g, pid, pos)
                     })
                     .unwrap_or(0.0);
@@ -29302,11 +29697,17 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> Vec<Name> {
         let appeal = g.tile_appeal(pos).max(0) as f64;
+        // `first-luxury-first`: zero for every tile with the gene off, and
+        // zero for any improvement that does not open the empire's first copy
+        // of a luxury, so the ranking below is the shipped one until it fires.
+        // Priced on BOTH sides — a plantation already standing here is not an
+        // upgrade to itself — see `advanced/first_luxury.rs`.
         let current_value = g.map.tiles[&pos]
             .improvement
             .as_deref()
             .map(|improvement| {
                 self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
+                    + self.first_luxury_premium(g, pid, pos, improvement)
             })
             .unwrap_or(0.0);
         // Score each candidate once and sort the scores. The comparator used
@@ -29319,7 +29720,8 @@ impl AdvancedAi {
             .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
             .map(|improvement| {
                 let value =
-                    self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal);
+                    self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal)
+                        + self.first_luxury_premium(g, pid, pos, &improvement);
                 (value, improvement)
             })
             .filter(|(value, _)| *value > current_value + 0.5)
@@ -29627,7 +30029,7 @@ impl AdvancedAi {
                 self.chop_into_the_queue_value(g, pid, current, strategy, worked)
             {
                 let best_here = here.first().map_or(f64::MIN, |improvement| {
-                    self.improvement_value(g, current, improvement, strategy)
+                    self.improvement_value_for(g, pid, current, improvement, strategy)
                 });
                 if value > best_here {
                     self.builder_targets.remove(&uid);
@@ -29657,7 +30059,7 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail,
                        "Building a {} at {current:?}", plain(improvement);
                        "worth {:.1} to the {} plan, best of {} that fit this tile",
-                       self.improvement_value(g, current, improvement, strategy),
+                       self.improvement_value_for(g, pid, current, improvement, strategy),
                        strategy.as_str(), here.len(); current);
                 if g.apply(
                     pid,
@@ -29668,6 +30070,9 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
+                    // ⚠ Journal AFTER the engine answers. `first-luxury-first`
+                    // says nothing while it is off.
+                    self.note_first_luxury_opened(g, pid, current, improvement);
                     return true;
                 }
             }
@@ -29740,8 +30145,13 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.improvement_value(g, *pos, &improvement, strategy)
-                                    - g.wdist(current, *pos) as f64 * 0.7;
+                                let score = self.improvement_value_for(
+                                    g,
+                                    pid,
+                                    *pos,
+                                    &improvement,
+                                    strategy,
+                                ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
@@ -29812,7 +30222,7 @@ impl AdvancedAi {
                 }
                 let mut here: Option<f64> = None;
                 for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                    let score = self.improvement_value(g, *pos, &improvement, strategy)
+                    let score = self.improvement_value_for(g, pid, *pos, &improvement, strategy)
                         - g.wdist(current, *pos) as f64 * 0.7;
                     if here.is_none_or(|old| score > old) {
                         here = Some(score);
@@ -33549,6 +33959,8 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         });
+        let protect_threatened_rescue =
+            self.base.barbarian_settler_capture && holding_threatened_city;
         // A bound guard's first obligation is to rejoin its Settler.  The
         // default live shadow used to give this priority only while the pair
         // was already stacked; after a host frame separated them, recovery or
@@ -33600,8 +34012,13 @@ impl AdvancedAi {
         // tiles out is walked onto rather than watched. #2075 enabled the
         // flag and never called this from here, so on the live seat the
         // pursuit existed only in `BasicAi::military_step`, which a major
-        // does not run.
+        // does not run. A unit already assigned to a threatened city is the
+        // exception: the live t83–84 run peeled Warrior 57 from Antium's
+        // defense to chase a Barbarian Builder into the siege stack, then
+        // lost the Warrior. Immediate adjacent captures were handled above;
+        // this guard only refuses the multi-tile detour.
         if self.base.barbarian_settler_capture
+            && !holding_threatened_city
             && self
                 .base
                 .pursue_capturable_civilian(g, pid, uid, decline_settlers)
@@ -33843,6 +34260,16 @@ impl AdvancedAi {
             // wartime stand.
             if let Some(acted) = self.chokepoint_garrison_step(g, pid, uid) {
                 return acted;
+            }
+            // The advanced rescue gene is also present in the BasicAi fallback
+            // below. Once this plan has marked a nearby city as threatened,
+            // do not let that fallback reopen the same civilian detour after
+            // the advanced branches deliberately refused it. There is no
+            // visible combat target left in this branch, so holding the
+            // defender is the safe answer until the next frame refreshes the
+            // threat picture.
+            if protect_threatened_rescue {
+                return self.base.fortify_or_stop(g, pid, uid);
             }
             return self.base.military_step(g, pid, uid);
         }
@@ -34327,7 +34754,11 @@ impl AdvancedAi {
             let city = g.cities.get(&cid)?;
             g.units
                 .values()
-                .filter(|u| enemies.contains(&u.owner) && g.wdist(city.pos, u.pos) <= 7)
+                .filter(|u| {
+                    enemies.contains(&u.owner)
+                        && (!protect_threatened_rescue || g.rules.units[u.kind].class == "military")
+                        && g.wdist(city.pos, u.pos) <= 7
+                })
                 .min_by_key(|u| (g.wdist(unit.pos, u.pos), u.id))
                 .map(|u| u.pos)
         });
@@ -34342,7 +34773,27 @@ impl AdvancedAi {
                         .and_then(|cid| g.cities.get(&cid).map(|c| c.pos))
                 })
                 .or_else(|| self.base.capture_objective_target(g, pid, uid))
-                .or_else(|| self.base.nearest_enemy(g, pid, uid, &enemies))
+                .or_else(|| {
+                    // A threatened-city defender may still join a real fight,
+                    // but must not treat a nearby Barbarian Builder as a
+                    // combat objective after the dedicated rescue detour was
+                    // refused. The live t83–84 run selected exactly that
+                    // civilian through this fallback and lost Warrior 57.
+                    if protect_threatened_rescue {
+                        self.base
+                            .nearest_enemy(g, pid, uid, &enemies)
+                            .filter(|position| {
+                                g.city_at(*position).is_some()
+                                    || g.unit_ids_at(*position).iter().any(|other| {
+                                        let enemy = &g.units[other];
+                                        enemies.contains(&enemy.owner)
+                                            && g.rules.units[enemy.kind].class == "military"
+                                    })
+                            })
+                    } else {
+                        self.base.nearest_enemy(g, pid, uid, &enemies)
+                    }
+                })
         };
         // Rear reinforcements march before taking group orders: Hold is
         // correct for a front force that is locally outnumbered, and wrong
@@ -35391,6 +35842,44 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
+        // `live-move-refusal-break`: a Settler whose step the host has proved
+        // refused (see `BasicAi::judge_move_refusals`) does not merely bend
+        // its route — its destination goes through the same dead-site
+        // machinery a watchdog arrival uses, so the target chooser must pick
+        // a site the frozen approach does not serve. Bending alone can walk
+        // the same unreachable site from another angle for the whole bar.
+        self.retire_frozen_settler_targets(g);
+    }
+
+    /// `live-move-refusal-break`'s Settler half: a destination whose approach
+    /// the host has proved refused is set aside through the dead-site
+    /// machinery, exactly as a watchdog arrival is, so the target chooser
+    /// must pick a site the frozen approach does not serve.
+    fn retire_frozen_settler_targets(&mut self, g: &Game) {
+        if !self.live_move_refusal_break {
+            return;
+        }
+        let frozen: Vec<u32> = self
+            .settler_targets
+            .keys()
+            .copied()
+            .filter(|uid| self.base.move_refusal_blocked(g, *uid))
+            .collect();
+        for uid in frozen {
+            let Some(target) = self.settler_targets.remove(&uid) else {
+                continue;
+            };
+            self.settler_relaxed_targets.remove(&uid);
+            self.settler_dead_sites.entry(uid).or_default().insert(
+                target,
+                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+            );
+            think!(self.journal(), Expansion, Detail,
+                   "Settler retires a destination the host will not walk it toward";
+                   "its issued step was refused on consecutive turns without the unit \
+                    moving, so {target:?} is set aside and a fresh site is chosen";
+                   target);
+        }
     }
 
     /// Evaluate each legal city disposition on a cloned position, then play
@@ -36022,6 +36511,16 @@ impl AdvancedAi {
         // suppressed by an appointed war package. A defender that did not
         // choose the declaration timing gets the wartime upgrade pass now.
         self.surprise_defense_modernize(g, pid);
+        // A nearby barbarian quality gap is an undeclared war at home. Spend
+        // the upgrade budget before the strategic purchase portfolio can use
+        // it on a district or Great Person; the shared pass keeps its normal
+        // legality checks and only lowers the reserve for this emergency.
+        if self.war_plan.is_none()
+            && self.base.barbarian_tactics_enabled()
+            && BasicAi::barbarian_military_gap(g, pid)
+        {
+            BasicAi::upgrade_units(g, pid);
+        }
         // See `upgrade_the_garrison`: the same move as the line above, asked on
         // the plain condition instead of a six-turn casus-belli window. An
         // appointed package has its own bill and runs its own pass, so this
@@ -36049,6 +36548,13 @@ impl AdvancedAi {
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
+        // AdvancedAi owns its turn pipeline instead of delegating through
+        // BasicAi::take_turn, so explicitly retain the live-only governor
+        // emergency pass that protects an ungoverned city with a measured
+        // Loyalty collapse. The frozen controller keeps its old path.
+        if self.base.loyalty_rate_alarm {
+            self.base.reassign_governor_for_loyalty(g, pid);
+        }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
         self.base

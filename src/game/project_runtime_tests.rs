@@ -126,13 +126,22 @@ fn industrial_zone_logistics_supplies_full_power_without_burning_fuel() {
         .unwrap()
         .buildings
         .extend([crate::name!("factory"), crate::name!("research_lab")]);
+    let unpowered_science = game.city_yields(city).science;
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Project {
         project: crate::name!("industrial_zone_logistics"),
     }];
+    let running_science = game.city_yields(city).science;
     game.process_power(0);
     let demand = game.city_power_demand(&game.cities[&city]);
     assert!(demand > 0.0);
     assert_eq!(game.city_power_supply(&game.cities[&city]), demand);
+    assert!(game.city_is_powered(&game.cities[&city]));
+    assert!(
+        (running_science - unpowered_science - 5.0 * game.amenity_yield_mult(&game.cities[&city]))
+            .abs()
+            < 1e-9,
+        "a running full-power project must power building yields before turn processing"
+    );
     assert!(game.players[0].power_fuel_consumed.is_empty());
 
     game.map.tiles.get_mut(&positions[0]).unwrap().pillaged = true;

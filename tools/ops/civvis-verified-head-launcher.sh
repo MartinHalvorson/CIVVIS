@@ -16,8 +16,9 @@
 #     (civvis-install-host-automation.sh) makes that name a SYMLINK to this
 #     file, so a keeper-recovered loop is the operator's loop and not the
 #     tree's stock defaults;
-#   * `civvis-games on` and `civvis-games ensure`, the same way;
-#   * an operator, by hand:  open -g -j -a Terminal ~/civvis-verification-launch.command
+#   * `civvis-games on`, which records the explicit verification intent;
+#   * an operator, by hand, only after `civvis-games on` has authorized the lane:
+#       open -g -j -a Terminal ~/civvis-verification-launch.command
 #
 # ⚠ THE POLICY LIVES IN ONE FILE, ~/.civvis-verification-policy, NOT IN A SHELL
 # PROFILE. Before this file existed, the rung, the attempts per cycle and the
@@ -63,11 +64,46 @@ OPS=${0:A:h}
 LOG=${CIVVIS_LADDER_LOG:-$HOME/Library/Logs/civvis-ladder.log}
 PIN=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 POLICY=${CIVVIS_VERIFICATION_POLICY:-$HOME/.civvis-verification-policy}
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 # Tests point this at a stub. A host never needs to; the sibling is the launcher.
 LAUNCHER=${CIVVIS_LADDER_LAUNCHER:-$OPS/civvis-ladder-terminal-launcher.sh}
 mkdir -p "${LOG:h}"
 
 say() { print -r -- "[verified-head] $(date -u +%FT%TZ) $*" >> "$LOG" }
+
+# This wrapper can refuse before it execs the ladder launcher (notably when an
+# automatic caller lacks the required verification intent). Terminal keeps
+# that rejected document window unless the outermost entry point reaps it.
+# Schedule a delayed, title-scoped cleanup rather than closing the current tab:
+# a manually typed command returns to a busy normal shell and is left alone.
+WINDOW_REAPER_SCHEDULED=0
+schedule_idle_window_reap() {
+  (( WINDOW_REAPER_SCHEDULED )) && return 0
+  WINDOW_REAPER_SCHEDULED=1
+  [[ -z ${CIVVIS_LADDER_KEEP_WINDOW:-} ]] || return 0
+  local own_tty=${TTY:-}
+  [[ "$own_tty" == /dev/tty* ]] || return 0
+  (
+    /usr/bin/nohup /usr/bin/osascript >>"$LOG" 2>&1 <<'APPLESCRIPT'
+delay 1
+set reaped to 0
+tell application "Terminal"
+  repeat with i from (count of windows) to 1 by -1
+    try
+      set w to item i of windows
+      if (busy of w) is false and (((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher")) then
+        close w
+        set reaped to reaped + 1
+      end if
+    end try
+  end repeat
+end tell
+return "window cleanup: reaped " & reaped & " idle managed window(s)"
+APPLESCRIPT
+  ) &
+  say "window cleanup: scheduled idle managed-window reaper"
+}
+trap 'schedule_idle_window_reap || true' EXIT
 
 # ⚠ A refusal is LOGGED, not merely printed. The window this runs in is
 # minimised by the launcher and gone once the shell exits — that is the whole
@@ -79,6 +115,13 @@ refuse() {
   print -u2 -r -- "civvis-verified-head-launcher: REFUSING launch: $*"
   exit "${REFUSE_STATUS:-64}"
 }
+
+# Clearing the low-level gamelock halt is not authorization to run this
+# unattended chain. Only `civvis-games on` writes the exact `running` value;
+# missing, unreadable, or any other value is a hard refusal.
+if [[ ! -r "$INTENTFILE" || "$(<"$INTENTFILE")" != running ]]; then
+  refuse "verification intent is not running at $INTENTFILE; run civvis-games on to authorize automatic verification"
+fi
 
 typeset -A policy
 policy=(

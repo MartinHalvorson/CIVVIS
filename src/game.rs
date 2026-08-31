@@ -6116,10 +6116,11 @@ pub struct Game {
     /// the public information without inventing hidden unit positions.
     #[serde(default)]
     pub observed_military_power: Arc<BTreeMap<usize, f64>>,
-    /// Per-unit facts an authoritative host exported about the mirrored
-    /// seat's units — the upgrade verdict and bill, the per-type upkeep, the
-    /// movement allowance, a Spy's operation and menu. See [`HostUnitFacts`]
-    /// for which decision reads each. Empty in native games.
+    /// Per-unit facts an authoritative host exported about units in a live
+    /// mirror — the upgrade verdict and bill, the per-type upkeep, the movement
+    /// allowance, a Spy's operation and menu. Own units and visible foreign
+    /// units may carry different subsets. See [`HostUnitFacts`] for which
+    /// decision reads each. Empty in native games.
     #[serde(default)]
     pub host_unit_facts: Arc<BTreeMap<u32, HostUnitFacts>>,
     /// The host treasury's bill by source for mirrored seats, read by
@@ -18510,15 +18511,17 @@ impl Game {
             .max(self.unit_bombard_strength(u))
     }
 
-    /// Whether the city centre stands on fresh water, and whether it is
-    /// coastal. Both decide the housing floor, and an Aqueduct's whole worth
-    /// is the gap between the two floors — so the test lives in one place and
-    /// `city_housing` and `aqueduct_housing_gain` read it from here.
-    fn city_water(&self, city: &City) -> (bool, bool) {
-        let center = &self.map.tiles[&city.pos];
-        let fresh = self.grants_city_state_unique_bonus(city.owner, "Mohenjo-Daro")
+    /// Whether an existing or prospective city centre stands on fresh water,
+    /// and whether it is coastal.
+    ///
+    /// Both decide the housing floor. Keeping this at a position instead of
+    /// only on [`City`] lets settlement scoring ask the same question before
+    /// founding, including the host's observed `Plot:IsFreshWater()` result.
+    pub(crate) fn city_site_water(&self, pid: usize, pos: Pos) -> (bool, bool) {
+        let center = &self.map.tiles[&pos];
+        let fresh = self.grants_city_state_unique_bonus(pid, "Mohenjo-Daro")
             || center.has_river()
-            || self.nbrs(city.pos).iter().any(|n| {
+            || self.nbrs(pos).iter().any(|n| {
                 self.map
                     .get(*n)
                     .is_some_and(|t| t.terrain == "lake" || t.feature.as_deref() == Some("oasis"))
@@ -18528,16 +18531,83 @@ impl Game {
         // lake the export names `TERRAIN_COAST` is one the derivation misses.
         let fresh = self
             .observed_fresh_water
-            .get(&city.pos)
+            .get(&pos)
             .copied()
             .unwrap_or(fresh);
-        let coastal = self.nbrs(city.pos).iter().any(|n| {
+        let coastal = self.nbrs(pos).iter().any(|n| {
             self.map
                 .get(*n)
                 .map(|t| matches!(t.terrain.as_str(), "coast" | "ocean"))
                 .unwrap_or(false)
         });
         (fresh, coastal)
+    }
+
+    /// Whether the city centre stands on fresh water, and whether it is
+    /// coastal. Both decide the housing floor, and an Aqueduct's whole worth
+    /// is the gap between the two floors — so the test lives in one place and
+    /// `city_housing` and `aqueduct_housing_gain` read it from here.
+    fn city_water(&self, city: &City) -> (bool, bool) {
+        self.city_site_water(city.owner, city.pos)
+    }
+
+    /// The model-side Gold quote for buying a Granary in a newly founded city.
+    ///
+    /// Before a city exists the live host has no city-specific purchase menu to
+    /// query. A fresh city has no district discount, buildings, queue, or
+    /// production block, however, so its standard quote is exact once Pottery
+    /// and the empire-wide purchase rules permit it. `None` is deliberately
+    /// conservative when a future city could not have the Granary immediately.
+    pub(crate) fn new_city_granary_gold_purchase_cost(&self, pid: usize) -> Option<f64> {
+        let granary = crate::name!("granary");
+        let spec = self.rules.buildings.get(&granary)?;
+        let item = Item::Building { building: granary };
+        let city_center = spec
+            .district
+            .is_none_or(|district| self.district_family(district) == "city_center");
+        let unavailable = self.is_arena()
+            || !self.unlocked(pid, &spec.tech, &spec.civic)
+            || !spec.buildable
+            || spec.purchase_only
+            || !city_center
+            || !spec.requires.is_empty()
+            || !spec.requires_any.is_empty()
+            || spec.wonder
+            || spec.outer_defense > 0
+            || spec.coastal
+            || spec
+                .effects
+                .get("requires_river_city")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+            || spec
+                .effects
+                .get("requires_fresh_water_city")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+            || spec
+                .unique_to
+                .as_deref()
+                .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
+            || self.rules.buildings.values().any(|candidate| {
+                candidate.replaces == Some(granary)
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
+            })
+            || self.congress_effect_active("urban_development_treaty", "B", "city_center")
+            || self.congress_effect_active("global_energy_treaty", "B", "granary");
+        if unavailable {
+            return None;
+        }
+        let discount = self
+            .gov_effects(pid)
+            .gold_purchase_discount_pct
+            .clamp(0.0, 100.0);
+        Some(self.item_cost(&item) * 4.0 * (1.0 - discount / 100.0))
     }
 
     /// The housing a city centre carries before any building, improvement or
@@ -19358,6 +19428,14 @@ impl Game {
     }
 
     pub fn city_power_supply(&self, city: &City) -> f64 {
+        // Industrial Zone Logistics (and any future project with the same
+        // ruleset flag) fully powers its city while it is running.  The turn
+        // processor records that in `city_power`, but mirror and planning
+        // queries can run before `process_power` has populated that cache.
+        // Keep the direct query on the same truth as turn processing.
+        if self.city_project_fully_powers(city) {
+            return self.city_power_demand(city);
+        }
         self.players[city.owner]
             .city_power
             .get(&city.id)
@@ -19368,6 +19446,20 @@ impl Game {
     pub fn city_is_powered(&self, city: &City) -> bool {
         let demand = self.city_power_demand(city);
         demand <= 0.0 || self.city_power_supply(city) + 1e-9 >= demand
+    }
+
+    /// Whether an active project provides full Power independently of the
+    /// empire's fuel and renewable allocation.  This is shared by the turn
+    /// processor and read-only yield queries so a project cannot be powered in
+    /// one path and unpowered in the other.
+    fn city_project_fully_powers(&self, city: &City) -> bool {
+        let Some(Item::Project { project }) = city.queue.first() else {
+            return false;
+        };
+        let Some(spec) = self.rules.projects.get(project) else {
+            return false;
+        };
+        spec.full_power_while_active && self.project_has_active_district(city, spec)
     }
 
     /// Stock fuel conversion and emissions read from the power-plant data.
@@ -19419,14 +19511,7 @@ impl Game {
             let city = &self.cities[&city_id];
             let demand = self.city_power_demand(city);
             let mut supply = self.city_renewable_power(city);
-            let project_fully_powers = city.queue.first().is_some_and(|item| {
-                let Item::Project { project } = item else {
-                    return false;
-                };
-                self.rules.projects.get(project).is_some_and(|spec| {
-                    spec.full_power_while_active && self.project_has_active_district(city, spec)
-                })
-            });
+            let project_fully_powers = self.city_project_fully_powers(city);
             if project_fully_powers {
                 self.players[pid]
                     .city_power
@@ -23169,15 +23254,20 @@ impl Game {
             .map_or(0, |feature| feature.sight_through)
     }
 
-    /// The nearest unwrapped image of `to`, so a ray across the seam is drawn
-    /// as the short way round rather than back across the whole cylinder.
-    fn unwrapped_toward(&self, from: Pos, to: Pos) -> Pos {
+    /// The nearest unwrapped image of `to`, plus its distance from `from`, so
+    /// a ray across the seam is drawn as the short way round rather than back
+    /// across the whole cylinder. The ray consumes both values, and retaining
+    /// the winning comparison avoids measuring the same three images again.
+    fn unwrapped_toward(&self, from: Pos, to: Pos) -> (Pos, i32) {
         let width = self.map.width;
         [-width, 0, width]
             .into_iter()
-            .map(|shift| (to.0 + shift, to.1))
-            .min_by_key(|candidate| hex::distance(from, *candidate))
-            .unwrap_or(to)
+            .map(|shift| {
+                let candidate = (to.0 + shift, to.1);
+                (candidate, hex::distance(from, candidate))
+            })
+            .min_by_key(|(_, distance)| *distance)
+            .unwrap_or_else(|| (to, hex::distance(from, to)))
     }
 
     /// Walk one hex corridor from `from` to `to`, checking every tile strictly
@@ -23335,10 +23425,16 @@ impl Game {
         viewer_height: i32,
         see_through_woods: bool,
     ) -> bool {
-        if self.wdist(from, to) <= 1 {
+        let sphere = self.map.sphere().is_some();
+        let wraps = self.map.topology.wraps_east_west();
+        // On a cylinder `unwrapped_toward` chooses the same minimum as
+        // `wdist`; let its retained distance answer this fast path below.
+        // A globe does not have a cube ray and an arena must keep its
+        // non-wrapping distance, so both retain the original check.
+        if (sphere || !wraps) && self.wdist(from, to) <= 1 {
             return true;
         }
-        if self.map.sphere().is_some() {
+        if sphere {
             let target_height = self.sight_height_via(heights, to);
             return self.arc_is_clear(
                 heights,
@@ -23349,9 +23445,8 @@ impl Game {
                 see_through_woods,
             );
         }
-        let unwrapped = self.unwrapped_toward(from, to);
-        let distance = hex::distance(from, unwrapped);
-        if distance == 0 {
+        let (unwrapped, distance) = self.unwrapped_toward(from, to);
+        if distance == 0 || (wraps && distance == 1) {
             return true;
         }
         let target_height = self.sight_height_via(heights, to);
@@ -25706,6 +25801,58 @@ impl Game {
 
     pub fn can_move(&self, uid: u32, pos: Pos) -> bool {
         self.can_move_step(uid, pos, true)
+    }
+
+    /// Whether `uid` could finish one observed host step from `from` at `to`.
+    ///
+    /// A live-state export can be older than an input event, so a conformance
+    /// audit cannot assume that the unit still stands at the position in its
+    /// latest mirror frame.  This creates an isolated branch, places the
+    /// moving formation at the host-reported source, and grants it a fresh
+    /// movement allowance.  The answer therefore covers structural movement
+    /// legality (terrain, borders, stacking, hostile units, and zone of
+    /// control) without treating previously spent movement as a disagreement.
+    ///
+    /// `None` means the observation cannot be represented by this board: the
+    /// unit or either endpoint is absent, or the event is not one map edge.
+    /// The authoritative game is never changed.
+    pub fn can_move_observed_step(&self, uid: u32, from: Pos, to: Pos) -> Option<bool> {
+        if !self.units.contains_key(&uid)
+            || !self.map.tiles.contains_key(&from)
+            || !self.map.tiles.contains_key(&to)
+            || self.wdist(from, to) != 1
+        {
+            return None;
+        }
+
+        let mut probe = self.clone();
+        // A linked support unit shares its leader's tile and movement test.
+        // Rebase both halves so a state frame from before the formation moved
+        // does not manufacture a false formation mismatch.
+        let mut movers = vec![uid];
+        if let Some(peer) = probe.units[&uid]
+            .linked_to
+            .filter(|peer| probe.units.contains_key(peer))
+        {
+            movers.push(peer);
+        }
+        for mover in movers {
+            probe.relocate(mover, from);
+            let attacks = probe.unit_max_attacks(mover);
+            let unit = probe.units.get_mut(&mover).expect("checked above");
+            unit.moves_left = 1_000.0;
+            unit.attacks_left = attacks;
+            unit.moved = false;
+            unit.acted = false;
+            unit.zoc_stopped = false;
+            unit.fortified = false;
+            unit.fortify_turns = 0;
+            // This host reading is tied to its old coordinate.  At a replayed
+            // source, let the board's terrain rule decide embarkation instead.
+            unit.host_embarked = None;
+            unit.started_turn_in_zoc = false;
+        }
+        Some(probe.can_move(uid, to))
     }
 
     /// `can_move` for a hex in the middle of a longer walk, where the unit is
@@ -34594,6 +34741,42 @@ impl Game {
     /// still recover the game settings that created this one.
     pub fn turn_limit(&self) -> Option<u32> {
         (!self.played_on()).then_some(self.max_turns)
+    }
+
+    /// Finish an over-cap world when Score is not one of its enabled victory
+    /// lanes. The normal end-turn path always tries the score tiebreak at the
+    /// cap, but `set_winner` correctly refuses a disabled lane; an unattended
+    /// server would otherwise keep stepping the same world forever.
+    ///
+    /// Returns `true` when this call made the world terminal. A played-on
+    /// world has no cap, and a Score-enabled world is left to the ordinary
+    /// tiebreak in [`Self::do_end_turn`].
+    pub(crate) fn finish_at_turn_limit(&mut self) -> bool {
+        if self.is_finished()
+            || self.played_on()
+            || self.turn <= self.max_turns
+            || self.victory_lane_open("score")
+        {
+            return false;
+        }
+        if self.is_arena() {
+            return self.declare_draw();
+        }
+
+        self.victory_type = Some(DRAW_RESULT.to_string());
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!(
+                    "The game reached its turn limit ({}) without an enabled victory",
+                    self.max_turns
+                ),
+                None,
+            );
+        }
+        true
     }
 
     /// The turn this world is reported on.

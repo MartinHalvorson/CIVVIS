@@ -315,17 +315,12 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
 
 
 def seat_autonomy(events_path: Path) -> dict | None:
-    """Who actually drove the units: CIVVIS, or Civilization VI's own explore.
+    """Who drove unit movement, including historical host-selected routes.
 
-    ⭐ THE LADDER HAS NEVER SAID WHAT SHARE OF THE SEAT CIVVIS DROVE, and the
-    project's first premise is that it drives all of it. `ExploreUnassigned`
-    (on by default, `civ6_play.py --no-explore-unassigned`) hands every unit
-    CIVVIS gave no order to over to `UNITOPERATION_AUTOMATE_EXPLORE`. That is a
-    deliberate policy and the mod already counts it separately "so it is never
-    mistaken for CIVVIS's work" — but the count stopped at `events.jsonl`.
-    Nothing carried it to the summary, so every ladder row credited CIVVIS for
-    a game it may only have half-played, and the only way to find out was to
-    hand-parse the events.
+    Current mods never hand an unmentioned unit to the host for route choice:
+    they issue an explicit hold and emit ``explored: 0``.  Keep the historical
+    `explored` ledger, however, so an older run that did delegate movement does
+    not retrospectively look fully CIVVIS-driven.
 
     ⚠⚠ THE NUMERATOR IS `seen_by`, NOT `by`, AND THE FIRST VERSION OF THIS
     FUNCTION GOT IT WRONG. In `CivvisControlAgent.lua`, `byKind` increments only
@@ -337,21 +332,9 @@ def seat_autonomy(events_path: Path) -> dict | None:
     the share stopped measuring authorship the moment any order was refused.
     On the full Settler run of 2026-08-28 the two read 0.5623 and 0.6522.
 
-    Measured on that run: **270 unit orders authored by CIVVIS against 144
-    unit-turns handed to the engine** — a 65% share, with 185 of the 270
-    applied. Whole turns passed with `by: {produce_next: 1}` and nine units on
-    the board.
-
-    Civilians are never in this number: the mod excludes Settler, Builder,
-    Trader and Great People from the hand-off ("a settler that wanders is a
-    settler that never founds"), and `explored` counts only hand-offs the
-    engine accepted. So this is the ARMY and the scouts, which is exactly the
-    half a victory lane is decided by.
-
-    `explore_guarded` is the opposite sign and belongs beside it: units held
-    back from exploring because they are in contact. `None` when the run's mod
-    emitted no `orders` event at all, which is a different statement from a run
-    whose every unit CIVVIS ordered.
+    `explore_guarded` remains in the output only for historical event records.
+    `None` means the run's mod emitted no `orders` event at all, which differs
+    from a current run whose bridge held every unmentioned unit.
     """
     if not events_path.is_file():
         return None
@@ -475,6 +458,12 @@ def open_events(events_path: Path):
 #: `orders` event: the count is on the ledger, the kind is not.
 UNATTRIBUTED = "unattributed"
 
+#: Where a postcondition verdict lands when an older control mod omitted the
+#: original order kind.  Keep this distinct from ``UNATTRIBUTED`` above: an
+#: old ``orders`` event can lack per-kind *refusal* data while still carrying
+#: a fully useful per-kind postcondition verdict, and vice versa.
+POSTCONDITION_UNATTRIBUTED = "unattributed_postcondition"
+
 
 def orders_by_kind(events_path: Path) -> dict | None:
     """Actuation per order kind, summed from the run's own `orders` events:
@@ -545,6 +534,61 @@ def orders_by_kind(events_path: Path) -> dict | None:
                     orphan["seen"] += int(n or 0)
                     orphan["refused"][str(reason)] = (
                         orphan["refused"].get(str(reason), 0) + int(n or 0))
+    return kinds if counted else None
+
+
+def postconditions_by_kind(events_path: Path) -> dict | None:
+    """Postcondition outcomes per order kind from a live event stream.
+
+    ``orders_by_kind`` deliberately answers a narrower question: which
+    requests the Lua actuator accepted or refused.  An accepted request is not
+    proof that Civilization VI changed state.  The decider checks the next
+    exported frame and the control mod writes those results as
+    ``order_verified`` and ``order_failed`` events, each with ``order_kind``
+    and, for failures, a named reason.  This function makes that receiving-side
+    evidence reusable by operational tools without pretending that it is a
+    host-return-code rate.
+
+    It returns ``{kind: {verified, failed, reasons}}`` with a ``"*"`` total
+    row.  A legacy verdict without a usable ``order_kind`` is retained under
+    :data:`POSTCONDITION_UNATTRIBUTED`; callers must not manufacture a
+    per-kind floor from it.  ``turn_verified`` is intentionally not used here:
+    its tally includes unverifiable orders but cannot associate them with a
+    kind.  Tolerant of a truncated tail line and gzip-compressed ledger runs.
+    """
+    if not events_path.is_file():
+        return None
+    kinds: dict[str, dict] = {}
+
+    def row(kind: str) -> dict:
+        return kinds.setdefault(kind, {"verified": 0, "failed": 0, "reasons": {}})
+
+    counted = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            event_kind = event.get("kind")
+            if event_kind not in ("order_verified", "order_failed"):
+                continue
+            counted = True
+            order_kind = event.get("order_kind")
+            if not isinstance(order_kind, str) or not order_kind or order_kind == "*":
+                order_kind = POSTCONDITION_UNATTRIBUTED
+            rows = [row("*"), row(order_kind)]
+            for target in rows:
+                if event_kind == "order_verified":
+                    target["verified"] += 1
+                    continue
+                target["failed"] += 1
+                reason = event.get("reason")
+                if not isinstance(reason, str) or not reason:
+                    reason = "unknown"
+                target["reasons"][reason] = target["reasons"].get(reason, 0) + 1
     return kinds if counted else None
 
 
@@ -760,6 +804,13 @@ def runtime_heartbeat_problem(heartbeat: Path, max_minutes: float,
     nobody's problem; a cache directory with a missing, stale, or erroring
     heartbeat means the verification game may be silently playing old code —
     the exact silence this check exists to make loud.
+
+    A heartbeat that says ``"refresh": "disabled"`` is the one deliberate
+    silence: the live loop launched with ``--github-refresh-seconds 0`` and
+    stamped it, so no age can accrue meaning — the binary's freshness is the
+    supervisor's per-cycle checkout's contract instead. Before the stamp
+    existed this check alarmed on the last enabled run's frozen file forever
+    (from 2026-08-19), and an alarm that always fires catches nothing.
     """
     if not heartbeat.parent.is_dir():
         return None
@@ -770,6 +821,11 @@ def runtime_heartbeat_problem(heartbeat: Path, max_minutes: float,
         beat = json.loads(heartbeat.read_text())
     except (OSError, json.JSONDecodeError) as exc:
         return f"unreadable runtime heartbeat {heartbeat}: {exc}"
+    if beat.get("refresh") == "disabled":
+        error = (beat.get("last_error") or "").strip()
+        if error:
+            return f"runtime refresh is failing: {error[:200]}"
+        return None
     now = now or datetime.now(timezone.utc)
     stamp = beat.get("utc")
     try:
@@ -970,10 +1026,9 @@ def entry_from(summary: dict) -> dict:
         "abandoned": summary.get("abandoned"),
         # ⭐ WHO DROVE THE UNITS. `applied_pct` below says how much of what
         # CIVVIS asked for the engine did; this says how much of the seat
-        # CIVVIS asked about at all. See `seat_autonomy`: units CIVVIS gives no
-        # order to are handed to Civilization VI's own explore automation, and
-        # a row that does not carry the share credits CIVVIS for a game it may
-        # only have half-played.
+        # CIVVIS asked about at all. See `seat_autonomy`: current mods hold
+        # every unmentioned unit, while the field still exposes a historic run
+        # whose host selected movement.
         "seat_autonomy": summary.get("seat_autonomy"),
         "civvis_unit_share": (summary.get("seat_autonomy") or {}).get(
             "civvis_unit_share"),

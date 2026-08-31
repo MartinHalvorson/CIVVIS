@@ -55,10 +55,11 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
 
 /// Direct invocations without `--victory` must agree with the high-level
-/// launchers' one central default. The launcher chain selected Diplomacy after
-/// deployment-shaped evidence; keeping a named mirror here prevents a bare
+/// launchers' one central default. The launch chain aims at Science on the
+/// operator's 2026-08-30 instruction (see `civ6_play.DEFAULT_CIVVIS_VICTORY`
+/// for the evidence trail); keeping a named mirror here prevents a bare
 /// recovery or manual invocation from silently reviving an old lane.
-const DEFAULT_VICTORY: &str = "diplomatic";
+const DEFAULT_VICTORY: &str = "science";
 
 /// Build the agent for a `--victory` lane, or `None` if the name is not one.
 ///
@@ -378,6 +379,29 @@ fn civ6_civic_name(civvis: &str) -> String {
     format!("CIVIC_{}", civvis.to_ascii_uppercase())
 }
 
+/// The CIVVIS dedication ids are the stable names used by the rules, while
+/// Civilization VI exposes the same choices as `COMMEMORATION_*` operation
+/// values. Keep the inverse of `mirror::civvis_dedication_name` explicit: the
+/// two vocabularies are not a prefix transform (`free_inquiry` is
+/// `COMMEMORATION_SCIENTIFIC`, for example).
+fn civ6_dedication_name(civvis: &str) -> Option<&'static str> {
+    Some(match civvis {
+        "monumentality" => "COMMEMORATION_INFRASTRUCTURE",
+        "pen_brush_and_voice" => "COMMEMORATION_CULTURAL",
+        "free_inquiry" => "COMMEMORATION_SCIENTIFIC",
+        "exodus_of_the_evangelists" => "COMMEMORATION_RELIGIOUS",
+        "hic_sunt_dracones" => "COMMEMORATION_EXPLORATION",
+        "reform_the_coinage" => "COMMEMORATION_ECONOMIC",
+        "to_arms" => "COMMEMORATION_MILITARY",
+        "heartbeat_of_steam" => "COMMEMORATION_INDUSTRIAL",
+        "bodyguard_of_lies" => "COMMEMORATION_ESPIONAGE",
+        "sky_and_stars" => "COMMEMORATION_AERONAUTICAL",
+        "wish_you_were_here" => "COMMEMORATION_TOURISM",
+        "automaton_warfare" => "COMMEMORATION_AUTOMATON",
+        _ => return None,
+    })
+}
+
 /// CIVVIS mostly uses Firaxis promotion identifiers without their prefix. Keep the
 /// few deliberate vocabulary contractions explicit in both directions rather than
 /// asking Lua to guess from localized display names.
@@ -446,6 +470,59 @@ fn host_production_finishes_this_turn(city: &mirror::StateCity) -> bool {
         && city.production_progress >= 0.0
         && (city.production_turns >= 0.0 && city.production_turns <= 1.0 + f64::EPSILON
             || city.production_progress + city.production + f64::EPSILON >= city.production_cost)
+}
+
+/// The control mod may replace CIVVIS's requested queue with Walls when an
+/// unwalled city is damaged or has a visible major-enemy unit within its
+/// emergency radius.  That replacement is authoritative host state, but the
+/// original request remains in `ours` unless the bridge reconciles it.  Without
+/// this lease, the next fresh-board decision clears the wall queue and repeats
+/// the same Campus/Archer request on every frame while the city is under threat.
+/// Keep this predicate identical to the Lua emergency-wall gate: no walls,
+/// actual damage or a visible unit from a rival we are at war with nearby.
+const EMERGENCY_WALL_RADIUS: i32 = 3;
+
+fn host_emergency_wall_is_active(
+    state: &civvis::mirror::StateSnapshot,
+    city: &civvis::mirror::StateCity,
+) -> bool {
+    if city.producing.as_deref() != Some("BUILDING_WALLS")
+        || !city.max_wall_damage.is_finite()
+        || city.max_wall_damage > 0.0
+    {
+        return false;
+    }
+    let damaged = city.damage.is_finite() && city.damage > 0.0;
+    let nearby_enemy = state
+        .rivals
+        .iter()
+        .filter(|rival| rival.at_war)
+        .flat_map(|rival| rival.units.iter())
+        .any(|unit| offset_distance((city.x, city.y), (unit.x, unit.y)) <= EMERGENCY_WALL_RADIUS);
+    damaged || nearby_enemy
+}
+
+/// Adopt only the host's bounded emergency-wall replacement on every decision.
+/// Ordinary host queues remain self-limiting: they are adopted on a decider
+/// restart, while a CIVVIS choice already in `ours` is allowed to be replaced
+/// normally.  The emergency response is different because releasing it during
+/// the same threat window removes the host's safety action before the next
+/// production callback can complete it.
+fn adopt_emergency_wall_production(
+    ours: &mut std::collections::BTreeMap<i64, String>,
+    state: &civvis::mirror::StateSnapshot,
+) -> usize {
+    let mut adopted = 0;
+    for city in &state.cities {
+        if !host_emergency_wall_is_active(state, city) {
+            continue;
+        }
+        if ours.get(&city.id).map(String::as_str) != Some("BUILDING_WALLS") {
+            ours.insert(city.id, "BUILDING_WALLS".to_string());
+            adopted += 1;
+        }
+    }
+    adopted
 }
 
 /// Firaxis remembers a submitted peace offer per target for five turns.
@@ -810,6 +887,20 @@ impl HostCityStrikes {
 /// traversable, and every path — exploration, settlers, the army — routes
 /// around it. Revealed terrain is never overridden: once the plot is seen, its
 /// real terrain governs.
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct HostUnitOrderKey {
+    verb: String,
+    pos: Option<(i32, i32)>,
+}
+
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct HostDealOrderKey {
+    kind: &'static str,
+    subject: Option<i64>,
+    verb: Option<String>,
+    pos: Option<(i32, i32)>,
+}
+
 #[derive(Default)]
 struct HostMoveRefusals {
     /// The last `MOVE_TO` sent per host unit: where it stood, the long
@@ -820,6 +911,16 @@ struct HostMoveRefusals {
     pending_probes: std::collections::BTreeMap<i64, HostFrontierProbe>,
     /// Speculative plots proved unwalkable, in host offset coordinates.
     dead: std::collections::BTreeSet<(i32, i32)>,
+    /// Unit orders already emitted during the current turn, keyed by host unit.
+    /// Same-turn frames can still carry the previous frame's positions, so an
+    /// identical movement command is a replay of a request the host has already
+    /// consumed rather than a new route decision.
+    same_turn_orders: std::collections::BTreeMap<i64, std::collections::BTreeSet<HostUnitOrderKey>>,
+    /// The diplomacy arm also has one working deal per rival and keeps an ask
+    /// pending or cooling down across same-turn frames. An identical
+    /// `sell`/`buy` in a later frame therefore cannot be a new deal request.
+    same_turn_deal_orders: std::collections::BTreeSet<HostDealOrderKey>,
+    same_turn: Option<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -841,6 +942,68 @@ struct HostFrontierProbe {
 }
 
 impl HostMoveRefusals {
+    /// Drop exact, non-tactical unit and deal replays from later frames of one
+    /// turn.
+    ///
+    /// The host may apply a queued move before the next exported frame catches
+    /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
+    /// again; the host records that as `from == destination` / `move_refused`.
+    /// Waiting for the next turn is the only useful retry because this frame has
+    /// no newer authoritative position. FORTIFY and civilian CAPTURE have the
+    /// same stale-state failure mode. The diplomacy arm has the same shape:
+    /// its pending/cooldown guards mean a repeated deal order can only be
+    /// refused again. Attack orders are deliberately excluded: a fresh combat
+    /// frame may legitimately finish the same target.
+    fn suppress_same_turn_replays(
+        &mut self,
+        orders: &mut Vec<Order>,
+        state: &civvis::mirror::StateSnapshot,
+    ) -> usize {
+        if self.same_turn != Some(state.turn) {
+            self.same_turn = Some(state.turn);
+            self.same_turn_orders.clear();
+            self.same_turn_deal_orders.clear();
+        }
+        let frame = state.frame;
+        let mut dropped = 0;
+        orders.retain(|order| {
+            let Some(unit) = order.subject else {
+                return true;
+            };
+            let Some(verb) = order.verb.as_deref() else {
+                return true;
+            };
+            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
+                let key = HostUnitOrderKey {
+                    verb: verb.to_string(),
+                    pos: order.pos,
+                };
+                let seen = self.same_turn_orders.entry(unit).or_default();
+                let duplicate = !seen.insert(key);
+                if frame > 0 && duplicate {
+                    dropped += 1;
+                    return false;
+                }
+            }
+
+            if matches!(order.kind, "sell" | "buy") {
+                let key = HostDealOrderKey {
+                    kind: order.kind,
+                    subject: order.subject,
+                    verb: order.verb.clone(),
+                    pos: order.pos,
+                };
+                let duplicate = !self.same_turn_deal_orders.insert(key);
+                if frame > 0 && duplicate {
+                    dropped += 1;
+                    return false;
+                }
+            }
+            true
+        });
+        dropped
+    }
+
     /// Compare this turn's positions with last turn's orders.
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
         let sent = std::mem::take(&mut self.sent);
@@ -3033,8 +3196,15 @@ fn withholdable_treatments() -> String {
 /// universe — seating one is an addition, and it is the only route a gene
 /// priced on the arena has to the live board before the whole-game screen
 /// answers (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
+///
+/// A caller can also name a treatment that already ships in deployment. That
+/// is an idempotent part of a wider profile, not a reason to kill the live
+/// decider: retain only the rows that actually change the genome. A list made
+/// entirely of deployed rows remains an error, since it is a mislabeled
+/// no-op arm rather than a force-on experiment.
 fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
     let mut selected = Vec::new();
+    let mut already_deployed = Vec::new();
     for treatment in forced {
         let tag = match civvis::ai::GENES
             .iter()
@@ -3048,10 +3218,16 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
                 tag
             }
             Some(tag) => {
+                if civvis::ai::gene_ledger::deployment_treatments().contains(&tag) {
+                    if !already_deployed.contains(&tag) {
+                        already_deployed.push(tag);
+                    }
+                    continue;
+                }
                 return Err(format!(
-                    "--with treatment {treatment:?} already ships in the deployment genome \
-                     (tag {tag:?}); only a ledger-held live treatment or a held-off opt-in \
-                     forms a distinct arm"
+                    "--with treatment {treatment:?} is not a ledger-held live treatment or \
+                     held-off opt-in (tag {tag:?}); this binary can force: {}",
+                    forceable_live_treatments()
                 ));
             }
             None => {
@@ -3064,6 +3240,17 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
         if !selected.contains(&tag) {
             selected.push(tag);
         }
+    }
+    if selected.is_empty() && !already_deployed.is_empty() {
+        return Err(format!(
+            "--with treatment(s) {} already ship in the deployment genome; name at least one \
+             ledger-held live treatment or held-off opt-in to form a distinct arm",
+            already_deployed
+                .iter()
+                .map(|tag| format!("{tag:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     Ok(selected)
 }
@@ -3135,6 +3322,7 @@ fn decide(
         eprintln!("civvis-orders: {why}");
         std::process::exit(2);
     }
+    let emergency_wall_adoptions = adopt_emergency_wall_production(ours, state);
     let (production_hints_consumed, production_hints_expired) =
         settle_deferred_production_hints(ours, state);
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
@@ -3486,6 +3674,11 @@ fn decide(
     if released > 0 {
         note_bits.push(format!("released={released}"));
     }
+    if emergency_wall_adoptions > 0 {
+        note_bits.push(format!(
+            "emergency_wall_production_adopted={emergency_wall_adoptions}"
+        ));
+    }
 
     if let Some(report) = &plan {
         note_bits.push(format!(
@@ -3675,6 +3868,15 @@ fn decide(
         host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
     if host_frontier_probes > 0 {
         note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
+    }
+
+    // A same-turn replan can still be based on the previous frame's unit tile.
+    // Do this after frontier capping so a newly requested exact probe remains a
+    // real change, while an identical stale MOVE_TO/CAPTURE/FORTIFY is not sent
+    // twice to the host. Strike retries stay enabled; see the method comment.
+    let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state);
+    if same_turn_replays > 0 {
+        note_bits.push(format!("same_turn_replays={same_turn_replays}"));
     }
 
     // Remember where each move sends which host unit, so next turn's positions
@@ -4448,6 +4650,12 @@ fn translate(
             verb: Some(format!("BELIEF_{}", belief.as_str().to_ascii_uppercase())),
             pos: None,
         }),
+        Action::ChooseDedication { dedication } => Some(Order {
+            kind: "dedication",
+            subject: None,
+            verb: Some(civ6_dedication_name(dedication.as_str())?.to_string()),
+            pos: None,
+        }),
         Action::AppointGovernor { governor, city } => {
             let governor = mirror::civ6_governor_name(governor.as_str())?;
             host_city_target(mirror_state, state, *city).map(|(city, owner)| Order {
@@ -4825,6 +5033,9 @@ const EVIDENCE_KINDS: &[&str] = &[
     "deal_session",
     "peace_response",
     "improved",
+    // The host safety pass may replace the planner's Settler destination. Its
+    // `sent` plot is the postcondition the ordinary distance check cannot see.
+    "settler_capture_escape",
     // ⭐ THE HOST ALREADY SAID WHY THE STEP DID NOT HAPPEN. The mod has
     // emitted `move_refused` — with the destination, whether it is water,
     // whether it is impassable and who owns it — since the order channel
@@ -4894,6 +5105,81 @@ fn later_fortified_units(
         .filter(|unit| unit.fortified || unit.fortify_turns > 0)
         .map(|unit| unit.id)
         .collect()
+}
+
+/// Subjects the decider gave a MOVE_TO in a LATER frame of the same turn.
+///
+/// ⚠⚠⚠ A FORTIFY THE DECIDER ITSELF OVERRODE IS NOT A BRIDGE FAILURE.
+/// `not_fortified` is the second-largest failure reason on the ledger — 3124 of
+/// 5193 FORTIFY orders over the runs of 2026-08-30, 60% — and **95% of them had
+/// a MOVE_TO for the same unit in the same turn**. Splitting by order:
+///
+///     42%  FORTIFY then MOVE   (the later move clears the fortification)
+///     19%  moves both before and after the fortify
+///     39%  MOVE then FORTIFY   (should have stuck; a real question)
+///
+/// So roughly three fifths of the second-biggest "failure" is CIVVIS asking a
+/// unit to dig in and then walking it away. The verdict is mechanically right —
+/// the unit did not end up fortified — but reading it as `not_fortified` sends
+/// anyone auditing bridge health after an actuation bug that is not there.
+///
+/// Named separately, it stays out of the applied count (it genuinely did not
+/// apply) while saying whose decision it was.
+fn later_moved_units(
+    frames: &[PendingOrders],
+    turn: u32,
+    frame: u32,
+) -> std::collections::BTreeSet<i64> {
+    frames
+        .iter()
+        .filter(|pending| pending.turn == turn && pending.frame > frame)
+        .flat_map(|pending| pending.orders.iter())
+        .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+        .filter_map(|order| order.subject)
+        .collect()
+}
+
+/// Whether a policy-deck order's requested cards are present in the state.
+///
+/// The planner emits the complete active deck, but the host may expose an
+/// additional slot on the answering frame after a civic completes. The
+/// postcondition therefore keeps the existing subset semantics: every card
+/// requested by the order must be present, while unrelated extra cards do not
+/// make an otherwise successful replacement fail.
+fn policy_deck_cards_present(order: &IssuedOrder, state: &civvis::mirror::StateSnapshot) -> bool {
+    if order.kind != "policy_deck" {
+        return false;
+    }
+    let requested: Vec<&str> = order
+        .verb
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter(|policy| !policy.is_empty())
+        .collect();
+    !requested.is_empty()
+        && requested
+            .iter()
+            .all(|policy| state.policies.iter().any(|have| have == policy))
+}
+
+/// A later same-turn policy replacement landed in the final answering state.
+///
+/// In that case an earlier deck can be absent for the healthy reason that the
+/// decider replaced it before the turn ended. Keep that case distinct from a
+/// host refusing the only policy transaction, just as later MOVE_TO orders are
+/// distinct from a failed FORTIFY.
+fn later_policy_deck_matches(
+    frames: &[PendingOrders],
+    turn: u32,
+    frame: u32,
+    after: &civvis::mirror::StateSnapshot,
+) -> bool {
+    frames
+        .iter()
+        .filter(|pending| pending.turn == turn && pending.frame > frame)
+        .flat_map(|pending| pending.orders.iter())
+        .any(|order| policy_deck_cards_present(order, after))
 }
 
 fn offset_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
@@ -5015,6 +5301,33 @@ fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> 
     })
 }
 
+/// Whether the host deliberately rewrote this Settler leg to an escape plot.
+/// The safety pass can replace the planner's destination after the order has
+/// already entered the ledger; the event is the bridge's proof of the actual
+/// destination, so a farther final position is not a failed MOVE_TO.
+fn settler_capture_escape_reached(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    unit: i64,
+    want: (i32, i32),
+    reached: (i32, i32),
+) -> bool {
+    let point = |event: &serde_json::Value, key: &str| {
+        let values = event.get(key)?.as_array()?;
+        Some((
+            values.first()?.as_i64()? as i32,
+            values.get(1)?.as_i64()? as i32,
+        ))
+    };
+    evidence.iter().any(|event| {
+        event.get("kind").and_then(|kind| kind.as_str()) == Some("settler_capture_escape")
+            && event.get("turn").and_then(|value| value.as_u64()) == Some(u64::from(turn))
+            && event.get("settler").and_then(|value| value.as_i64()) == Some(unit)
+            && point(event, "want") == Some(want)
+            && point(event, "sent") == Some(reached)
+    })
+}
+
 fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
     evidence.iter().any(|event| {
         event.get("kind").and_then(|k| k.as_str()) == Some("combat")
@@ -5104,6 +5417,17 @@ fn production_unit_appearance_conflicts_with_purchase(
         })
 }
 
+/// What later frames of the same turn say about a unit, for verdicts that a
+/// single frame cannot settle. Bundled rather than passed as loose flags so
+/// `verify_unit_order` stays inside clippy's argument limit.
+#[derive(Clone, Copy, Default)]
+struct LaterFrames {
+    /// The unit was fortified on a later frame, so a FORTIFY did land.
+    fortified: bool,
+    /// The decider moved it on a later frame, overriding its own FORTIFY.
+    moved: bool,
+}
+
 fn verify_unit_order(
     order: &IssuedOrder,
     turn: u32,
@@ -5111,7 +5435,7 @@ fn verify_unit_order(
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
-    later_fortified: bool,
+    later: LaterFrames,
 ) -> Verdict {
     let Some(id) = order.subject else {
         return Verdict::Failed("no_subject".to_string());
@@ -5134,9 +5458,12 @@ fn verify_unit_order(
                 // A unit first seen on a combat frame has no baseline to move from.
                 (None, Some(_)) => Verdict::Unverifiable,
                 (Some(was), Some(now)) => {
+                    let reached = (now.x, now.y);
+                    let safety_rewrite = was.kind == "UNIT_SETTLER"
+                        && settler_capture_escape_reached(evidence, turn, id, want, reached);
                     let start = offset_distance((was.x, was.y), want);
-                    let end = offset_distance((now.x, now.y), want);
-                    if start == 0 || end < start {
+                    let end = offset_distance(reached, want);
+                    if safety_rewrite || start == 0 || end < start {
                         Verdict::Verified
                     } else if end == start {
                         // The host's own reason when it gave one; see
@@ -5201,12 +5528,15 @@ fn verify_unit_order(
             // eligible on the decision frame so a newly appearing id or a
             // refused repeat on an already-fortified unit cannot be credited.
             let was_eligible = was.is_some_and(|unit| !unit.fortified && unit.fortify_turns <= 0);
-            if later_fortified && was_eligible {
+            if later.fortified && was_eligible {
                 Verdict::Verified
             } else {
                 match now {
                     None => gone(),
                     Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
+                    // See `later_moved_units`: the decider walked this unit away
+                    // after asking it to dig in. Not the bridge's doing.
+                    Some(_) if later.moved => Verdict::Failed("superseded_by_move".to_string()),
                     Some(_) => Verdict::Failed("not_fortified".to_string()),
                 }
             }
@@ -5336,6 +5666,12 @@ fn verify_unit_order(
 struct VerificationContext<'a> {
     same_turn_orders: &'a [IssuedOrder],
     later_fortified: bool,
+    /// The decider moved this unit in a later frame of the same turn, so any
+    /// FORTIFY it issued earlier was overridden by its own next decision.
+    later_moved: bool,
+    /// A later policy-deck replacement in this turn matches the final state,
+    /// so this order was superseded by the decider's own re-plan.
+    later_policy_deck: bool,
 }
 
 /// The next frame's verdict on one order issued on `turn`.
@@ -5361,7 +5697,10 @@ fn verify_order_with_context(
             after,
             tiles,
             evidence,
-            context.later_fortified,
+            LaterFrames {
+                fortified: context.later_fortified,
+                moved: context.later_moved,
+            },
         ),
         "produce" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
@@ -5515,6 +5854,8 @@ fn verify_order_with_context(
                 .collect();
             if missing.is_empty() {
                 Verdict::Verified
+            } else if context.later_policy_deck {
+                failed("superseded_by_policy_deck".to_string())
             } else {
                 failed(format!("missing={}", missing.join("+")))
             }
@@ -5536,6 +5877,13 @@ fn verify_order_with_context(
                 failed("no_pantheon".to_string())
             }
         }
+        "dedication" => match after.dedications.as_ref() {
+            Some(dedications) if dedications.iter().any(|dedication| dedication == verb) => {
+                Verdict::Verified
+            }
+            Some(_) => failed("not_dedicated".to_string()),
+            None => Verdict::Unverifiable,
+        },
         "religion" => {
             let beliefs_held = verb
                 .split(',')
@@ -5597,6 +5945,8 @@ fn verify_order(
         VerificationContext {
             same_turn_orders: &[],
             later_fortified: false,
+            later_moved: false,
+            later_policy_deck: false,
         },
     )
 }
@@ -5616,18 +5966,28 @@ fn verify_orders(
         tiles,
         evidence,
         same_turn_orders,
-        &std::collections::BTreeSet::new(),
+        LaterOrderEvidence {
+            fortified: &std::collections::BTreeSet::new(),
+            moved: &std::collections::BTreeSet::new(),
+            policy_deck: false,
+        },
     )
 }
 
 /// Verify pending orders with positive evidence from later same-turn frames.
+struct LaterOrderEvidence<'a> {
+    fortified: &'a std::collections::BTreeSet<i64>,
+    moved: &'a std::collections::BTreeSet<i64>,
+    policy_deck: bool,
+}
+
 fn verify_orders_with_later_fortifications(
     pending: &PendingOrders,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
     same_turn_orders: &[IssuedOrder],
-    later_fortified: &std::collections::BTreeSet<i64>,
+    later: LaterOrderEvidence<'_>,
 ) -> Vec<OrderCheck> {
     pending
         .orders
@@ -5644,7 +6004,9 @@ fn verify_orders_with_later_fortifications(
                     same_turn_orders,
                     later_fortified: order
                         .subject
-                        .is_some_and(|id| later_fortified.contains(&id)),
+                        .is_some_and(|id| later.fortified.contains(&id)),
+                    later_moved: order.subject.is_some_and(|id| later.moved.contains(&id)),
+                    later_policy_deck: later.policy_deck,
                 },
             ),
             order: order.clone(),
@@ -5750,6 +6112,9 @@ fn settle_pending_orders(
             .get(&frame.turn)
             .map_or(&[][..], Vec::as_slice);
         let later_fortified = later_fortified_units(&states, frame.turn, frame.frame);
+        let later_moved = later_moved_units(&answered, frame.turn, frame.frame);
+        let later_policy_replan =
+            later_policy_deck_matches(&answered, frame.turn, frame.frame, after);
         by_turn
             .entry(frame.turn)
             .or_default()
@@ -5759,7 +6124,11 @@ fn settle_pending_orders(
                 tiles,
                 &evidence,
                 context,
-                &later_fortified,
+                LaterOrderEvidence {
+                    fortified: &later_fortified,
+                    moved: &later_moved,
+                    policy_deck: later_policy_replan,
+                },
             ));
     }
     for (turn, checks) in by_turn {
@@ -5876,6 +6245,43 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             .or_default()
             .extend(orders.iter().cloned());
     }
+    // Precomputed because the loop below consumes `by_frame`: for each frame,
+    // the units the decider moved in a LATER frame of the same turn. See
+    // `later_moved_units` for why a FORTIFY they overrode is not a bridge
+    // failure.
+    let later_moved_by_frame: std::collections::BTreeMap<
+        (u32, u32),
+        std::collections::BTreeSet<i64>,
+    > = by_frame
+        .keys()
+        .map(|&(turn, frame)| {
+            let moved = by_frame
+                .iter()
+                .filter(|((t, f), _)| *t == turn && *f > frame)
+                .flat_map(|(_, orders)| orders.iter())
+                .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+                .filter_map(|order| order.subject)
+                .collect();
+            ((turn, frame), moved)
+        })
+        .collect();
+    // A later policy deck is only useful as supersession evidence when the
+    // final answering frame contains its requested cards. This mirrors the
+    // live settlement path while keeping the replay loop free to consume
+    // `by_frame` below.
+    let later_policy_deck_by_frame: std::collections::BTreeMap<(u32, u32), bool> = by_frame
+        .keys()
+        .map(|&(turn, frame)| {
+            let matched = frames.get(&(turn + 1)).is_some_and(|after| {
+                by_frame
+                    .iter()
+                    .filter(|((t, f), _)| *t == turn && *f > frame)
+                    .flat_map(|(_, orders)| orders.iter())
+                    .any(|order| policy_deck_cards_present(order, after))
+            });
+            ((turn, frame), matched)
+        })
+        .collect();
     for ((turn, frame), orders) in by_frame {
         let Some(before) = frame_states
             .get(&(turn, frame))
@@ -5911,13 +6317,25 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         };
         let context = same_turn_orders.get(&turn).map_or(&[][..], Vec::as_slice);
         let later_fortified = later_fortified_units(&all_states, turn, frame);
+        let later_moved = later_moved_by_frame
+            .get(&(turn, frame))
+            .cloned()
+            .unwrap_or_default();
+        let later_policy_replan = later_policy_deck_by_frame
+            .get(&(turn, frame))
+            .copied()
+            .unwrap_or(false);
         for check in verify_orders_with_later_fortifications(
             &pending,
             after,
             &tiles,
             &window,
             context,
-            &later_fortified,
+            LaterOrderEvidence {
+                fortified: &later_fortified,
+                moved: &later_moved,
+                policy_deck: later_policy_replan,
+            },
         ) {
             let label = match check.order.kind.as_str() {
                 "unit" => check
@@ -5969,6 +6387,327 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         })
     );
 }
+
+/// One movement edge the host actually completed.  Unlike an outbound order,
+/// this is evidence in the reverse direction: Civilization VI admitted the
+/// step, so the reconstructed board must be able to admit it too.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ObservedHostMove {
+    turn: u32,
+    unit: i64,
+    from: (i32, i32),
+    to: (i32, i32),
+}
+
+/// The outcome of asking the reconstructed board about one host-observed step.
+/// `Unverifiable` is deliberately distinct from agreement: a move that crossed
+/// ground the mirror never received cannot validate either engine.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum HostMoveAuditVerdict {
+    ModelAllowed,
+    ModelRefused(String),
+    Unverifiable(String),
+}
+
+fn observed_host_move(event: &serde_json::Value) -> Option<ObservedHostMove> {
+    if event.get("kind").and_then(|kind| kind.as_str()) != Some("host_move") {
+        return None;
+    }
+    let nonnegative = |key: &str| {
+        event
+            .get(key)
+            .and_then(|value| value.as_i64())
+            .filter(|value| *value >= 0 && *value <= i64::from(i32::MAX))
+            .map(|value| value as i32)
+    };
+    let turn = nonnegative("turn")? as u32;
+    Some(ObservedHostMove {
+        turn,
+        unit: event.get("unit")?.as_i64()?,
+        from: (nonnegative("from_x")?, nonnegative("from_y")?),
+        to: (nonnegative("x")?, nonnegative("y")?),
+    })
+}
+
+/// Advance the audit's local state shadow after a host-observed movement edge.
+/// State exports are periodic while `UnitMoved` can fire several times between
+/// them; without this, a unit that has already vacated a tile remains an
+/// invented blocker for the next observed edge.
+fn advance_observed_host_position(
+    state: &mut civvis::mirror::StateSnapshot,
+    observed: &ObservedHostMove,
+) -> bool {
+    let Some(unit) = state.units.iter_mut().find(|unit| unit.id == observed.unit) else {
+        return false;
+    };
+    unit.x = observed.to.0;
+    unit.y = observed.to.1;
+    true
+}
+
+/// A `unit_lost` ledger row is explicitly one of our units, so it only affects
+/// the local unit list.  Keeping it in the shadow would make a later observed
+/// move into its former tile look like a false stacking mismatch.
+fn remove_observed_local_unit(state: &mut civvis::mirror::StateSnapshot, unit: i64) -> bool {
+    let before = state.units.len();
+    state.units.retain(|candidate| candidate.id != unit);
+    state.units.len() != before
+}
+
+/// Remove a known foreign combat casualty without confusing equal per-player
+/// Civilization VI unit ids.  The combat ledger gives the owner, while each
+/// foreign export stores units under that owner (or gives a hostile its player).
+/// An old hostile row without an owner is intentionally retained rather than
+/// guessing that an equally numbered casualty was it.
+fn remove_observed_foreign_unit(
+    state: &mut civvis::mirror::StateSnapshot,
+    player: i64,
+    unit: i64,
+) -> bool {
+    let mut removed = false;
+    for rival in &mut state.rivals {
+        if rival.player as i64 != player {
+            continue;
+        }
+        let before = rival.units.len();
+        rival.units.retain(|candidate| candidate.id != unit);
+        removed |= rival.units.len() != before;
+    }
+    for minor in &mut state.minors {
+        if minor.player as i64 != player {
+            continue;
+        }
+        let before = minor.units.len();
+        minor.units.retain(|candidate| candidate.id != unit);
+        removed |= minor.units.len() != before;
+    }
+    let before = state.hostiles.len();
+    state
+        .hostiles
+        .retain(|candidate| candidate.id != unit || candidate.player != player);
+    removed || state.hostiles.len() != before
+}
+
+/// Reconcile combat casualties that arrive between two state exports.  `combat`
+/// names both component type and owner, so this never treats a city/district
+/// id as a unit or removes another player's equally numbered unit.
+fn advance_observed_combat_deaths(
+    state: &mut civvis::mirror::StateSnapshot,
+    event: &serde_json::Value,
+) {
+    for (side, killed, local) in [
+        ("attacker", "attacker_killed", "ours"),
+        ("defender", "defender_killed", "against_us"),
+    ] {
+        if event.get(killed).and_then(|value| value.as_bool()) != Some(true) {
+            continue;
+        }
+        let Some(participant) = event.get(side) else {
+            continue;
+        };
+        if participant.get("type").and_then(|value| value.as_str()) != Some("unit") {
+            continue;
+        }
+        let (Some(player), Some(unit)) = (
+            participant.get("player").and_then(|value| value.as_i64()),
+            participant.get("id").and_then(|value| value.as_i64()),
+        ) else {
+            continue;
+        };
+        if event.get(local).and_then(|value| value.as_bool()) == Some(true) {
+            remove_observed_local_unit(state, unit);
+        } else {
+            remove_observed_foreign_unit(state, player, unit);
+        }
+    }
+}
+
+/// Give a model refusal the most immediate visible explanation.  This is an
+/// audit label, never a replacement for the host's own operation-result
+/// reason: the mirror can prove that a blocker is present, but not that it was
+/// the first check the host would have made.
+fn model_move_refusal_reason(game: &civvis::game::Game, uid: u32, to: civvis::Pos) -> String {
+    let Some(mover) = game.units.get(&uid) else {
+        return "unit_gone".to_string();
+    };
+    let occupants = game.unit_ids_at(to).to_vec();
+    let own: Vec<u32> = occupants
+        .iter()
+        .copied()
+        .filter(|other| game.units[other].owner == mover.owner)
+        .collect();
+    if !own.is_empty() {
+        return "own_unit".to_string();
+    }
+    let foreign: Vec<u32> = occupants
+        .iter()
+        .copied()
+        .filter(|other| game.units[other].owner != mover.owner)
+        .collect();
+    if !foreign.is_empty() {
+        return "foreign_unit".to_string();
+    }
+    let Some(tile) = game.map.get(to) else {
+        return "unmapped_destination".to_string();
+    };
+    if !game.rules.is_passable(tile) {
+        return "terrain".to_string();
+    }
+    if game.closed_borders.contains(&to) {
+        return "border".to_string();
+    }
+    if game.in_enemy_zoc(mover.owner, to) {
+        return "zoc".to_string();
+    }
+    "model_refused".to_string()
+}
+
+/// Replay one host-observed adjacent step against the mirror reconstructed from
+/// the state that preceded it.  A probe copy of the unit starts at the host's
+/// `from` coordinate with ample movement: this tests structural legality
+/// (terrain, borders, stacking and foreign units), not whether an earlier host
+/// action had already spent its movement allowance.
+fn audit_host_move(
+    snapshot: &civvis::mirror::Snapshot,
+    state: &civvis::mirror::StateSnapshot,
+    fallback_players: usize,
+    fallback_turns: u32,
+    frontier: u32,
+    observed: &ObservedHostMove,
+) -> HostMoveAuditVerdict {
+    let from = civvis::hex::offset_to_axial(observed.from.0, observed.from.1);
+    let to = civvis::hex::offset_to_axial(observed.to.0, observed.to.1);
+    let (players, turns) = mirror_setup(state, fallback_players, fallback_turns);
+    let mirror = civvis::mirror::LiveMirror::new(snapshot, state, players, 1, turns, frontier);
+    if !mirror.game.map.tiles.contains_key(&from) || !mirror.game.map.tiles.contains_key(&to) {
+        return HostMoveAuditVerdict::Unverifiable("unrevealed_ground".to_string());
+    }
+    if mirror.game.wdist(from, to) != 1 {
+        return HostMoveAuditVerdict::Unverifiable("non_adjacent_event".to_string());
+    }
+    let Some(uid) = mirror.uid_of.get(&observed.unit).copied() else {
+        return HostMoveAuditVerdict::Unverifiable("unit_unmapped".to_string());
+    };
+    match mirror.game.can_move_observed_step(uid, from, to) {
+        Some(true) => HostMoveAuditVerdict::ModelAllowed,
+        Some(false) => {
+            HostMoveAuditVerdict::ModelRefused(model_move_refusal_reason(&mirror.game, uid, to))
+        }
+        None => HostMoveAuditVerdict::Unverifiable("unit_missing".to_string()),
+    }
+}
+
+/// Audit every `host_move` event in a recorded run.  The mod only emits one
+/// after it knows both endpoints, and this command preserves the remaining
+/// uncertainty as a count instead of silently calling it agreement.
+fn audit_host_moves(events: &Path, fallback_players: usize, fallback_turns: u32, frontier: u32) {
+    let Ok(raw) = std::fs::read_to_string(events) else {
+        eprintln!("civvis-orders: cannot read {}", events.display());
+        return;
+    };
+    let mut snapshots: std::collections::BTreeMap<u32, civvis::mirror::Snapshot> =
+        Default::default();
+    let mut current: Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> = None;
+    let mut observed = 0usize;
+    let mut comparable = 0usize;
+    let mut model_allowed = 0usize;
+    let mut model_refused = 0usize;
+    let mut unverifiable: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut mismatches: Vec<serde_json::Value> = Vec::new();
+
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        match event.get("kind").and_then(|kind| kind.as_str()) {
+            Some("state") => {
+                let Ok(state) = serde_json::from_value::<civvis::mirror::StateSnapshot>(event)
+                else {
+                    continue;
+                };
+                let snapshot = snapshots
+                    .entry(state.turn)
+                    .or_insert_with(|| {
+                        civvis::mirror::snapshot_from_events_at(events, Some(state.turn))
+                            .unwrap_or_default()
+                    })
+                    .clone();
+                current = Some((snapshot, state));
+            }
+            Some("host_move") => {
+                observed += 1;
+                let Some(host_move) = observed_host_move(&event) else {
+                    *unverifiable
+                        .entry("malformed_event".to_string())
+                        .or_default() += 1;
+                    continue;
+                };
+                let Some((snapshot, state)) = current.as_mut() else {
+                    *unverifiable
+                        .entry("no_prior_state".to_string())
+                        .or_default() += 1;
+                    continue;
+                };
+                match audit_host_move(
+                    snapshot,
+                    state,
+                    fallback_players,
+                    fallback_turns,
+                    frontier,
+                    &host_move,
+                ) {
+                    HostMoveAuditVerdict::ModelAllowed => {
+                        comparable += 1;
+                        model_allowed += 1;
+                    }
+                    HostMoveAuditVerdict::ModelRefused(reason) => {
+                        comparable += 1;
+                        model_refused += 1;
+                        mismatches.push(serde_json::json!({
+                            "turn": host_move.turn,
+                            "unit": host_move.unit,
+                            "from": host_move.from,
+                            "to": host_move.to,
+                            "reason": reason,
+                        }));
+                    }
+                    HostMoveAuditVerdict::Unverifiable(reason) => {
+                        *unverifiable.entry(reason).or_default() += 1;
+                    }
+                }
+                // Later host moves in this state interval must see the earlier
+                // mover at its observed destination, even if this particular
+                // edge was not comparable because the mirror lacked some fact.
+                advance_observed_host_position(state, &host_move);
+            }
+            Some("unit_lost") | Some("unit_captured") => {
+                if let (Some((_, state)), Some(unit)) = (
+                    current.as_mut(),
+                    event.get("unit").and_then(|value| value.as_i64()),
+                ) {
+                    remove_observed_local_unit(state, unit);
+                }
+            }
+            Some("combat") => {
+                if let Some((_, state)) = current.as_mut() {
+                    advance_observed_combat_deaths(state, &event);
+                }
+            }
+            _ => {}
+        }
+    }
+    println!(
+        "{}",
+        serde_json::json!({
+            "observed": observed,
+            "comparable": comparable,
+            "model_allowed": model_allowed,
+            "model_refused": model_refused,
+            "unverifiable": unverifiable,
+            "mismatches": mismatches,
+        })
+    );
+}
 /// `--strategy` named a league genome for this seat to play. The league is
 /// retired (#2357): the live seat plays the deployment genome — `AdvancedAi`
 /// with the gene ledger applied — and the gene screen prices everything else.
@@ -5988,7 +6727,10 @@ fn refuse_retired_strategy_flag(args: &[String]) {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(dir) = arg_text(&args, "--mirror") else {
-        eprintln!("usage: civvis-orders --mirror <run-dir> [--turn N] [--serve] [--audit-orders <orders.jsonl>]");
+        eprintln!(
+            "usage: civvis-orders --mirror <run-dir> [--turn N] [--serve] \\
+             [--audit-orders <orders.jsonl>] [--audit-host-moves]"
+        );
         std::process::exit(2);
     };
     let players: usize = arg_text(&args, "--players")
@@ -6158,6 +6900,14 @@ fn main() {
     // Offline: replay a recorded run's orders through the postcondition checks.
     if let Some(orders_path) = arg_text(&args, "--audit-orders") {
         audit_orders(&events, Path::new(&orders_path));
+        return;
+    }
+    // Offline behavioural conformance: every host-observed unit step is checked
+    // against the preceding reconstructed board, including moves not proposed by
+    // CIVVIS.  This is the reverse direction the outbound order verifier cannot
+    // see on its own.
+    if args.iter().any(|arg| arg == "--audit-host-moves") {
+        audit_host_moves(&events, players, max_turns, frontier);
         return;
     }
     let serve = args.iter().any(|a| a == "--serve");
@@ -7236,15 +7986,20 @@ mod tests {
         );
     }
 
+    /// A bare `civvis_orders` must resolve the launcher chain's lane to a real
+    /// target — not merely name it. Three of the six spellings resolved to
+    /// nothing until 2026-08-17, which is why this asserts the resolution and
+    /// not just the string.
+    ///
     #[test]
     fn direct_default_uses_the_safe_launcher_lane() {
-        assert_eq!(super::DEFAULT_VICTORY, "diplomatic");
+        assert_eq!(super::DEFAULT_VICTORY, "science");
         assert!(super::VICTORY_LANES
             .split('|')
             .any(|lane| lane == super::DEFAULT_VICTORY));
         assert_eq!(
             super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
-            Some(civvis::ai::VictoryTarget::Diplomacy)
+            Some(civvis::ai::VictoryTarget::Science)
         );
     }
 
@@ -7566,10 +8321,14 @@ mod tests {
             super::EVIDENCE_KINDS.contains(&"move_refused"),
             "the reader has to be asked for the kind before it can read it"
         );
+        assert!(
+            super::EVIDENCE_KINDS.contains(&"settler_capture_escape"),
+            "a safety rewrite must reach the postcondition verifier"
+        );
     }
 
     #[test]
-    fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
+    fn a_live_arm_forces_held_treatments_and_tolerates_deployment_members() {
         // The exact held live genes move with the deployment selection.
         let held_live = civvis::ai::gene_ledger::ledger_held_live_treatments()
             .first()
@@ -7601,7 +8360,19 @@ mod tests {
 
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
             .expect_err("a treatment already in the live genome cannot form a force-on arm");
-        assert!(host_only.contains("already ships"), "{host_only}");
+        assert!(host_only.contains("deployment genome"), "{host_only}");
+
+        let mixed = super::forced_live_treatments(&[
+            "science-victory-drive".to_string(),
+            held_live.to_string(),
+            "science-victory-drive".to_string(),
+        ])
+        .expect("a wider profile may repeat a gene deployment already supplies");
+        assert_eq!(mixed, vec![held_live]);
+        assert!(
+            civvis::ai::gene_ledger::deployment_treatments().contains(&"science-victory-drive"),
+            "the regression needs a deployment-provided member alongside the held treatment"
+        );
 
         // A held-off opt-in is the other thing an arm may name: it is the
         // only route a gene priced on the arena has to the live board
@@ -8415,6 +9186,146 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_same_turn_replan_drops_stale_unit_replays_but_keeps_new_tactics() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 42;
+        state.frame = 0;
+        let mut refusals = HostMoveRefusals::default();
+        let mut first = vec![
+            unit_order(7, "MOVE_TO", Some((3, 3))),
+            unit_order(7, "FORTIFY", None),
+            unit_order(8, "CAPTURE", Some((4, 4))),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut first, &state),
+            0,
+            "the first frame is allowed to issue its complete plan"
+        );
+        assert_eq!(first.len(), 3);
+
+        state.frame = 1;
+        let mut replan = vec![
+            unit_order(7, "MOVE_TO", Some((3, 3))),
+            unit_order(7, "FORTIFY", None),
+            unit_order(8, "CAPTURE", Some((4, 4))),
+            // A combat frame may legitimately need another strike at the same
+            // target, so attack verbs are intentionally outside the filter.
+            unit_order(9, "ATTACK", Some((5, 5))),
+            // A changed destination is a new route decision and must survive.
+            unit_order(7, "MOVE_TO", Some((3, 4))),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state),
+            3,
+            "only exact stale MOVE_TO/CAPTURE/FORTIFY replays are removed"
+        );
+        assert_eq!(replan.len(), 2);
+        assert!(replan.iter().any(|order| {
+            order.subject == Some(9)
+                && order.verb.as_deref() == Some("ATTACK")
+                && order.pos == Some((5, 5))
+        }));
+        assert!(replan.iter().any(|order| {
+            order.subject == Some(7)
+                && order.verb.as_deref() == Some("MOVE_TO")
+                && order.pos == Some((3, 4))
+        }));
+
+        // The suppression scope is one turn. A fresh turn may retry the old
+        // destination using the newly authoritative host state.
+        state.turn = 43;
+        state.frame = 0;
+        let mut next_turn = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            0
+        );
+        assert_eq!(next_turn.len(), 1);
+    }
+
+    #[test]
+    fn a_same_turn_replan_drops_exact_deal_replays_but_keeps_changed_offers() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 44;
+        state.frame = 0;
+        let mut refusals = HostMoveRefusals::default();
+        let mut first = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((200, 0)),
+            },
+            Order {
+                kind: "buy",
+                subject: Some(3),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((60, 0)),
+            },
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut first, &state),
+            0,
+            "the first frame is allowed to issue its complete deal plan"
+        );
+
+        state.frame = 1;
+        let mut replan = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((200, 0)),
+            },
+            Order {
+                kind: "buy",
+                subject: Some(3),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((60, 0)),
+            },
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((220, 0)),
+            },
+            // Non-deal orders retain their existing same-turn semantics.
+            Order {
+                kind: "research",
+                subject: None,
+                verb: Some("TECH_WRITING".to_string()),
+                pos: None,
+            },
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state),
+            2,
+            "only exact sell/buy replays are removed"
+        );
+        assert_eq!(replan.len(), 2);
+        assert!(replan.iter().any(|order| {
+            order.kind == "sell" && order.subject == Some(2) && order.pos == Some((220, 0))
+        }));
+        assert!(replan.iter().any(|order| {
+            order.kind == "research" && order.verb.as_deref() == Some("TECH_WRITING")
+        }));
+
+        state.turn = 45;
+        state.frame = 0;
+        let mut next_turn = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("RESOURCE_HORSES=10".to_string()),
+            pos: Some((200, 0)),
+        }];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            0,
+            "a fresh turn may retry the old offer after the host's cooldown"
+        );
+    }
+
     fn production_board() -> (Snapshot, StateSnapshot) {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 1,
@@ -8704,6 +9615,53 @@ mod tests {
         let mut ours = std::collections::BTreeMap::new();
         assert_eq!(adopt_host_production(&mut ours, &state), 0);
         assert!(ours.is_empty());
+    }
+
+    #[test]
+    fn an_emergency_wall_replacement_overrides_stale_production_ownership() {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].producing = Some("BUILDING_WALLS".to_string());
+        state.cities[0].max_wall_damage = 0.0;
+        state.rivals = vec![StateRival {
+            player: 3,
+            at_war: true,
+            units: vec![StateUnit {
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 5,
+                y: 4,
+                ..StateUnit::default()
+            }],
+            ..StateRival::default()
+        }];
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+        let mut ours = std::collections::BTreeMap::from([(7_i64, "DISTRICT_CAMPUS".to_string())]);
+
+        assert_eq!(adopt_emergency_wall_production(&mut ours, &state), 1);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("BUILDING_WALLS"));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0,
+            "the host's emergency queue must not be cleared by the stale Campus lease"
+        );
+        assert!(
+            !planned.cities[&cid].queue.is_empty(),
+            "the threatened city's wall queue remains available to finish"
+        );
+    }
+
+    #[test]
+    fn an_unthreatened_wall_queue_does_not_capture_civvis_ownership() {
+        let (_snapshot, mut state) = production_board();
+        state.cities[0].producing = Some("BUILDING_WALLS".to_string());
+        state.cities[0].max_wall_damage = 0.0;
+        let mut ours = std::collections::BTreeMap::from([(7_i64, "DISTRICT_CAMPUS".to_string())]);
+        assert_eq!(adopt_emergency_wall_production(&mut ours, &state), 0);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("DISTRICT_CAMPUS"));
     }
 
     /// A city building nothing has nothing to hand back, and must not be counted.
@@ -9110,20 +10068,36 @@ mod tests {
         warrior.x = 5;
         warrior.y = 4;
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[], false),
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &arrived,
+                &tiles,
+                &[],
+                LaterFrames::default()
+            ),
             Verdict::Verified
         ));
 
         let mut gone = before.clone();
         gone.hostiles.clear();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &gone, &tiles, &[], false),
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &gone,
+                &tiles,
+                &[],
+                LaterFrames::default()
+            ),
             Verdict::Verified
         ));
 
         let stood = before.clone();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], false),
+            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], LaterFrames::default()),
             Verdict::Failed(reason) if reason == "not_captured"
         ));
     }
@@ -10803,6 +11777,62 @@ mod tests {
         .expect("a faith patronage translates");
         assert_eq!(faith.kind, "gp_patronize_faith");
         assert_eq!(faith.verb.as_deref(), Some("GREAT_PERSON_CLASS_GENERAL"));
+    }
+
+    #[test]
+    fn dedication_choices_cross_with_firaxis_commemoration_names() {
+        use civvis::name::Name;
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+
+        for (civvis, firaxis) in [
+            ("monumentality", "COMMEMORATION_INFRASTRUCTURE"),
+            ("pen_brush_and_voice", "COMMEMORATION_CULTURAL"),
+            ("free_inquiry", "COMMEMORATION_SCIENTIFIC"),
+            ("exodus_of_the_evangelists", "COMMEMORATION_RELIGIOUS"),
+            ("hic_sunt_dracones", "COMMEMORATION_EXPLORATION"),
+            ("reform_the_coinage", "COMMEMORATION_ECONOMIC"),
+            ("to_arms", "COMMEMORATION_MILITARY"),
+            ("heartbeat_of_steam", "COMMEMORATION_INDUSTRIAL"),
+            ("bodyguard_of_lies", "COMMEMORATION_ESPIONAGE"),
+            ("sky_and_stars", "COMMEMORATION_AERONAUTICAL"),
+            ("wish_you_were_here", "COMMEMORATION_TOURISM"),
+            ("automaton_warfare", "COMMEMORATION_AUTOMATON"),
+        ] {
+            let order = translate(
+                &Action::ChooseDedication {
+                    dedication: Name::new(civvis),
+                },
+                &mirror,
+                &state,
+            )
+            .expect("a known dedication translates");
+            assert_eq!(order.kind, "dedication");
+            assert_eq!(order.subject, None);
+            assert_eq!(order.verb.as_deref(), Some(firaxis));
+            assert_eq!(order.pos, None);
+        }
+        assert!(translate(
+            &Action::ChooseDedication {
+                dedication: Name::new("not_a_dedication"),
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
     }
 
     #[test]
@@ -12565,6 +13595,222 @@ mod tests {
     }
 
     #[test]
+    fn a_host_accepted_edge_replays_from_its_reported_source() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 7,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 7,
+            cities: vec![StateCity {
+                id: 1,
+                name: "Rome".to_string(),
+                x: 1,
+                y: 1,
+                pop: 3,
+                capital: true,
+                ..StateCity::default()
+            }],
+            units: vec![StateUnit {
+                id: 42,
+                kind: "UNIT_WARRIOR".to_string(),
+                // The last state can be stale; the observed source below is
+                // deliberately a different, adjacent host coordinate.
+                x: 2,
+                y: 3,
+                hp: 100.0,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let observed = ObservedHostMove {
+            turn: 7,
+            unit: 42,
+            from: (3, 3),
+            to: (4, 3),
+        };
+
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &observed),
+            HostMoveAuditVerdict::ModelAllowed,
+            "the host source, not the old state position, is replayed"
+        );
+
+        state.units.push(StateUnit {
+            id: 43,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 4,
+            y: 3,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &observed),
+            HostMoveAuditVerdict::ModelRefused("own_unit".to_string()),
+            "a host-accepted edge exposes a model stacking disagreement"
+        );
+    }
+
+    #[test]
+    fn successive_host_moves_do_not_leave_vacated_units_as_audit_blockers() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            cities: vec![StateCity {
+                id: 1,
+                name: "Rome".to_string(),
+                x: 0,
+                y: 0,
+                pop: 3,
+                capital: true,
+                ..StateCity::default()
+            }],
+            units: vec![
+                StateUnit {
+                    id: 42,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 2,
+                    y: 3,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 43,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 1,
+                    y: 3,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let first = ObservedHostMove {
+            turn: 8,
+            unit: 42,
+            from: (2, 3),
+            to: (3, 3),
+        };
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &first),
+            HostMoveAuditVerdict::ModelAllowed
+        );
+        assert!(advance_observed_host_position(&mut state, &first));
+
+        let second = ObservedHostMove {
+            turn: 8,
+            unit: 43,
+            from: (1, 3),
+            to: (2, 3),
+        };
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &second),
+            HostMoveAuditVerdict::ModelAllowed,
+            "the first mover has already vacated this destination in the shadow"
+        );
+        assert!(advance_observed_host_position(&mut state, &second));
+        assert_eq!(state.units[0].x, 3);
+        assert_eq!(state.units[1].x, 2);
+    }
+
+    #[test]
+    fn combat_shadow_removes_only_the_named_foreign_unit() {
+        let mut state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 7,
+                kind: "UNIT_WARRIOR".to_string(),
+                ..StateUnit::default()
+            }],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    units: vec![StateUnit {
+                        id: 7,
+                        kind: "UNIT_WARRIOR".to_string(),
+                        ..StateUnit::default()
+                    }],
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 3,
+                    units: vec![StateUnit {
+                        id: 7,
+                        kind: "UNIT_WARRIOR".to_string(),
+                        ..StateUnit::default()
+                    }],
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        advance_observed_combat_deaths(
+            &mut state,
+            &serde_json::json!({
+                "kind": "combat", "defender_killed": true, "against_us": false,
+                "defender": {"type": "unit", "player": 2, "id": 7},
+            }),
+        );
+        assert_eq!(state.units.len(), 1, "our same-numbered unit remains");
+        assert!(
+            state.rivals[0].units.is_empty(),
+            "the dead defender is gone"
+        );
+        assert_eq!(
+            state.rivals[1].units.len(),
+            1,
+            "a different player's same-numbered unit remains"
+        );
+
+        assert!(remove_observed_local_unit(&mut state, 7));
+        assert!(
+            state.units.is_empty(),
+            "local removal uses the local roster only"
+        );
+    }
+
+    #[test]
+    fn host_move_events_require_complete_nonnegative_coordinates() {
+        let event = serde_json::json!({
+            "kind": "host_move", "turn": 7, "unit": 42,
+            "from_x": 3, "from_y": 3, "x": 4, "y": 3,
+        });
+        assert_eq!(
+            observed_host_move(&event),
+            Some(ObservedHostMove {
+                turn: 7,
+                unit: 42,
+                from: (3, 3),
+                to: (4, 3),
+            })
+        );
+        assert!(
+            observed_host_move(&serde_json::json!({
+                "kind": "host_move", "turn": 7, "unit": 42,
+                "from_x": -1, "from_y": 3, "x": 4, "y": 3,
+            }))
+            .is_none(),
+            "an absent source must stay uncomparable"
+        );
+        assert!(
+            observed_host_move(&serde_json::json!({"kind": "move_refused"})).is_none(),
+            "outbound refusal telemetry is not reverse-legality evidence"
+        );
+    }
+
+    #[test]
     fn deciding_does_not_mutate_the_authoritative_live_mirror() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 4,
@@ -13160,6 +14406,24 @@ mod order_postcondition_tests {
     }
 
     #[test]
+    fn a_settler_safety_rewrite_verifies_the_host_sent_leg() {
+        let mut before = frame(50);
+        before.units = vec![unit(7, "UNIT_SETTLER", 21, 21)];
+        let walk = order("unit", Some(7), Some("MOVE_TO"), Some((21, 20)));
+
+        let mut after = frame(51);
+        after.units = vec![unit(7, "UNIT_SETTLER", 22, 22)];
+        let evidence = vec![event(
+            r#"{"kind":"settler_capture_escape","turn":50,"settler":7,"want":[21,20],"sent":[22,22]}"#,
+        )];
+        assert_eq!(
+            check(&walk, &before, &after, &evidence),
+            Verdict::Verified,
+            "the bridge's safety rewrite is successful actuation even when it retreats"
+        );
+    }
+
+    #[test]
     fn a_settler_consumed_by_its_own_founding_verifies_both_orders() {
         let mut before = frame(30);
         before.units = vec![unit(7, "UNIT_SETTLER", 12, 19)];
@@ -13326,7 +14590,11 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &pending.orders,
-            &later,
+            LaterOrderEvidence {
+                fortified: &later,
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: false,
+            },
         );
         assert_eq!(checks[0].verdict, Verdict::Verified);
 
@@ -13353,9 +14621,131 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &repeated.orders,
-            &later,
+            LaterOrderEvidence {
+                fortified: &later,
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: false,
+            },
         );
         assert_eq!(checks[0].verdict, failed("not_fortified"));
+
+        // ⚠⚠ A FORTIFY THE DECIDER ITSELF OVERRODE IS NOT A BRIDGE FAILURE.
+        // `not_fortified` is the second-largest failure reason on the ledger —
+        // 3124 of 5193 FORTIFY orders over the runs of 2026-08-30 — and 95% of
+        // them had a MOVE_TO for the same unit in the same turn, 61% of those
+        // issued AFTER the fortify. Reading that as `not_fortified` sends an
+        // auditor after an actuation bug that is not there.
+        let mut movable = frame(30);
+        movable.units = vec![unit(7, "UNIT_WARRIOR", 20, 20)];
+        let overridden = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![order("unit", Some(7), Some("FORTIFY"), None)],
+            before: movable,
+        };
+        let mut walked_away = std::collections::BTreeSet::new();
+        walked_away.insert(7);
+        let checks = verify_orders_with_later_fortifications(
+            &overridden,
+            &after,
+            &no_tiles(),
+            &[],
+            &overridden.orders,
+            LaterOrderEvidence {
+                fortified: &std::collections::BTreeSet::new(),
+                moved: &walked_away,
+                policy_deck: false,
+            },
+        );
+        assert_eq!(
+            checks[0].verdict,
+            failed("superseded_by_move"),
+            "the decider walked this unit away after asking it to dig in"
+        );
+    }
+
+    #[test]
+    fn a_later_same_turn_policy_replan_is_not_a_missing_card_failure() {
+        let before = frame(64);
+        let mut after = frame(65);
+        after.policies = vec![
+            "POLICY_CHARISMATIC_LEADER".to_string(),
+            "POLICY_COLONIZATION".to_string(),
+            "POLICY_FEUDAL_CONTRACT".to_string(),
+            "POLICY_URBAN_PLANNING".to_string(),
+        ];
+        let earlier = order(
+            "policy_deck",
+            None,
+            Some(
+                "POLICY_CHARISMATIC_LEADER,POLICY_COLONIZATION,POLICY_GOD_KING,POLICY_URBAN_PLANNING",
+            ),
+            None,
+        );
+        let later = order(
+            "policy_deck",
+            None,
+            Some(
+                "POLICY_CHARISMATIC_LEADER,POLICY_COLONIZATION,POLICY_FEUDAL_CONTRACT,POLICY_URBAN_PLANNING",
+            ),
+            None,
+        );
+        let pending = PendingOrders {
+            turn: 64,
+            frame: 0,
+            orders: vec![earlier.clone()],
+            before: before.clone(),
+        };
+        let later_pending = PendingOrders {
+            turn: 64,
+            frame: 2,
+            orders: vec![later.clone()],
+            before,
+        };
+
+        assert_eq!(
+            check(&earlier, &pending.before, &after, &[]),
+            failed("missing=POLICY_GOD_KING"),
+            "without same-turn context, the final state correctly lacks the old card"
+        );
+        assert!(later_policy_deck_matches(
+            &[later_pending],
+            64,
+            pending.frame,
+            &after
+        ));
+        let checks = verify_orders_with_later_fortifications(
+            &pending,
+            &after,
+            &no_tiles(),
+            &[],
+            &pending.orders,
+            LaterOrderEvidence {
+                fortified: &std::collections::BTreeSet::new(),
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: true,
+            },
+        );
+        assert_eq!(checks[0].verdict, failed("superseded_by_policy_deck"));
+
+        // A later deck that did not land must not hide a genuine missing card.
+        let mut unchanged = after.clone();
+        unchanged.policies = vec![
+            "POLICY_CHARISMATIC_LEADER".to_string(),
+            "POLICY_COLONIZATION".to_string(),
+            "POLICY_URBAN_PLANNING".to_string(),
+        ];
+        assert!(!later_policy_deck_matches(
+            &[PendingOrders {
+                turn: 64,
+                frame: 2,
+                orders: vec![later],
+                before: pending.before.clone(),
+            }],
+            64,
+            pending.frame,
+            &unchanged
+        ));
     }
 
     #[test]
@@ -13557,6 +14947,7 @@ mod order_postcondition_tests {
         after.civics = vec!["CIVIC_CODE_OF_LAWS".to_string()];
         after.government = Some("GOVERNMENT_CHIEFDOM".to_string());
         after.pantheon = Some("BELIEF_GOD_OF_THE_SEA".to_string());
+        after.dedications = Some(vec!["COMMEMORATION_SCIENTIFIC".to_string()]);
         after.policies = vec!["POLICY_DISCIPLINE".to_string(), "POLICY_SURVEY".to_string()];
         after.units = vec![StateUnit {
             id: 55,
@@ -13587,6 +14978,19 @@ mod order_postcondition_tests {
             (
                 order("pantheon", None, Some("BELIEF_GOD_OF_THE_SEA"), None),
                 Verdict::Verified,
+            ),
+            (
+                order("dedication", None, Some("COMMEMORATION_SCIENTIFIC"), None),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "dedication",
+                    None,
+                    Some("COMMEMORATION_INFRASTRUCTURE"),
+                    None,
+                ),
+                failed("not_dedicated"),
             ),
             (
                 order(
@@ -13778,10 +15182,23 @@ mod order_postcondition_tests {
             }
             let probe = if kind == "unit" {
                 order("unit", Some(1), Some("MOVE_TO"), Some((1, 1)))
+            } else if kind == "dedication" {
+                order(
+                    kind,
+                    Some(1),
+                    Some("COMMEMORATION_SCIENTIFIC"),
+                    Some((1, 1)),
+                )
             } else {
                 order(kind, Some(1), Some(""), Some((1, 1)))
             };
-            let verdict = check(&probe, &before, &after, &[]);
+            let verdict = if kind == "dedication" {
+                let mut dedication_after = after.clone();
+                dedication_after.dedications = Some(vec!["COMMEMORATION_SCIENTIFIC".to_string()]);
+                check(&probe, &before, &dedication_after, &[])
+            } else {
+                check(&probe, &before, &after, &[])
+            };
             assert!(
                 (verdict != Verdict::Unverifiable) != unverifiable_kind(kind),
                 "order kind {kind:?} is neither checked by `verify_order` nor listed in \

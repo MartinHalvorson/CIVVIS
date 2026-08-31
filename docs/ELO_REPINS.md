@@ -1882,3 +1882,25 @@ Because the restoration returns the shared rules to v26's effective values, the
 anchor returns to **18,515 decisions and `0x04f5_da2a_c86b_099c`**. The Bireme
 addition remains in the current rules fingerprint, which is
 `fnv1a64:627c58933728c2f1`.
+
+## v29 (2026-08-31) — usable ground before district specialists
+
+The citizen governor compared every workable tile and every district
+specialist in one yield-value ranking. A high science or production appetite
+could therefore assign a young city's citizen to a specialist while a useful
+owned tile sat idle. That is especially harmful in a size-three capital: the
+city loses both the tile's output and the growth opportunity that the housing
+and amenity checks had already identified.
+
+The planner now uses employment tiers: growth-capable food tiles first, other
+usable tiles next, specialists after usable ground, and barren plots last. It
+still assigns specialists when a city has no productive ground, and it may
+break the tier order when a nutrition swap is required. A focused regression
+keeps three productive plots ahead of a high-value Campus specialist while the
+existing barren-city tests preserve specialist employment as the fallback.
+
+This is a shared citizen-planning change, not a controller treatment that can
+be hidden behind a gene: every simulated seat uses the same assignment logic.
+The anchor therefore moves from v28's 18,515 decisions and
+`0x04f5_da2a_c86b_099c` to **18,508 and `0x66d9_754b_9443_6085`** across its
+five profiles. The shipped ruleset fingerprint does not move.

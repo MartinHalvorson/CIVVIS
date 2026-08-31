@@ -23,9 +23,12 @@ PLAY_LOGS=$BASE/civvis-climb-logs
 AUDIT_LOG=$BASE/civvis-civ6-runs/overnight_audit.log
 HOST_LAUNCHER=${CIVVIS_HOST_LAUNCHER:-$SELF_DIR/civvis-ladder-terminal-launcher.sh}
 MIRROR_KEEPER=${CIVVIS_MIRROR_KEEPER:-$SELF_DIR/civvis-mirror-keeper.sh}
-DISPLAY_KEEPER=${CIVVIS_DISPLAY_KEEPER:-$BASE/civvis-display-keeper.mjs}
+# The keeper is tracked beside this script now; the old home-directory copy
+# was an untracked deployment that outlived every teardown.
+DISPLAY_KEEPER=${CIVVIS_DISPLAY_KEEPER:-$SELF_DIR/civvis-display-keeper.mjs}
 SUPERVISOR_LOCK=${CIVVIS_SUPERVISOR_LOCK:-$BASE/.civvis-game-supervisor.lock}
 SUPERVISOR_PID_FILE=$SUPERVISOR_LOCK/pid
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$BASE/.civvis-operator-intent}}
 JQ=/opt/homebrew/bin/jq
 [[ -x "$JQ" ]] || JQ=$(command -v jq 2>/dev/null || true)
 EVENT_FRESH_S=${CIVVIS_OVERNIGHT_EVENT_FRESH_S:-180}
@@ -41,6 +44,10 @@ HANDOFF_GRACE_S=${CIVVIS_OVERNIGHT_HANDOFF_GRACE_S:-900}
 
 say() { print -r -- "[overnight-audit] $(date -u +%FT%TZ) $*" >> "$AUDIT_LOG"; }
 
+verification_intent_running() {
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+}
+
 first_pid() {
   /usr/bin/pgrep -f "$1" 2>/dev/null | /usr/bin/head -n 1 || true
 }
@@ -53,12 +60,14 @@ newest_events() {
 }
 
 start_host() {
+  verification_intent_running || return 1
   # Only the host needs Terminal's App Management grant. `-g -j` avoids
   # stealing Civ VI's foreground or leaving a recovery window in the way.
   /usr/bin/open -g -j -a Terminal "$HOST_LAUNCHER" >/dev/null 2>&1
 }
 
 start_mirror_keeper() {
+  verification_intent_running || return 1
   # The keeper may need to restore Chrome through AppleScript, so it needs
   # Terminal's GUI grant. Keep that recovery hidden and out of Civ VI's
   # foreground rather than opening an ordinary Terminal window.
@@ -66,6 +75,7 @@ start_mirror_keeper() {
 }
 
 start_display_keeper() {
+  verification_intent_running || return 1
   # This Node keeper needs no Accessibility grant; detach it directly instead
   # of creating another visible shell solely to hold it.
   /usr/bin/nohup /opt/homebrew/bin/node "$DISPLAY_KEEPER" \
@@ -140,6 +150,26 @@ collect_display_page() {
 typeset -a warnings actions
 warnings=()
 actions=()
+
+# The explicit verification intent is the outer gate. This audit's whole job is
+# restarting pieces of the game stack that have gone missing, so it must not
+# become the thing that starts a lane while the operator has not authorized a
+# verification session. Missing intent is stopped.
+if ! verification_intent_running; then
+  say "verification intent is not running; auditing nothing and starting nothing"
+  exit 0
+fi
+
+# The durable operator halt (`gamelock.py --halt`). This audit's whole job is
+# restarting pieces of the game stack that have gone missing — host, mirror
+# keeper, display keeper — which is exactly what must NOT happen while the
+# operator has the machine's games stopped. Every keeper it would revive is a
+# window or an input driver over whatever the operator is doing instead.
+operator_halt=${CIVVIS_OPERATOR_HALT_FILE:-$HOME/.civvis-operator-halt.json}
+if [[ -e "$operator_halt" ]]; then
+  say "operator halt in force; auditing nothing and starting nothing"
+  exit 0
+fi
 
 host_pid=$(first_pid '[c]ivvis-interactive-host\.sh')
 supervisor_pid=$(live_supervisor_pid || true)

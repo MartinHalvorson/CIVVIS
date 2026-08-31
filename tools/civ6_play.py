@@ -137,7 +137,20 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 # ⚠ Rows either side of this change are NOT comparable, and `code_rev` is what
 # separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
 # untargeted `civvis` the batch loop used to hard-code.
-DEFAULT_CIVVIS_VICTORY = "diplomatic"
+#
+# 2026-08-30: SCIENCE AGAIN, on the operator's standing instruction — improve
+# the science-victory strategies until a live King game is won by science —
+# which sits above the measured-default rule the same way the leader pin below
+# does. The 08-17 numbers stay above because they were true of that binary;
+# rerun 2026-08-31 on main `1473eba2` at the same profile and seeds, after
+# #2435 `science-victory-drive` rewrote the launch machinery they measured:
+# targeted profile still 0/16, deployment profile **1/16** (seed 21000005,
+# t233, 77/77 techs, 336 science/turn, distance 50/50) — the first science
+# completion ever recorded inside the ladder's clock. The failures split into
+# "tree unfinished" (47-65/77 techs) and "launched too late" (projects done,
+# 0-33 light-years at t250), which is the improvement queue, not a reason to
+# keep aiming at a lane the operator has not asked for.
+DEFAULT_CIVVIS_VICTORY = "science"
 # The operator's standing instruction is unambiguous: every live game plays
 # Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
 # not merely in a launcher default, so a direct ``civ6_play.py --leader ...``
@@ -692,10 +705,6 @@ def build_config(args: argparse.Namespace) -> dict:
         # fire once the game's Game Core thread parks, because the polls it
         # counts are driven by that thread. See the mod for the measurement.
         "CivvisDecides": args.civvis_decides,
-        # Hand units CIVVIS gave no order to over to the game's own explore
-        # automation. A policy, and counted separately as `explored` so it is never
-        # mistaken for CIVVIS's work — see the note in the mod.
-        "ExploreUnassigned": args.explore_unassigned,
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
@@ -729,13 +738,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # settled; the brain sends the whole sequence only when the mod's `seat`
         # event says it can (`order_queue`), so an old mod keeps the old rule.
         # `OrderQueueMaxTicks` is the floor: past it the rest is refused as
-        # `queue_stalled` and the turn ends. `ExploreGuardRadius` keeps an
-        # unordered soldier off the host's explore automation while a hostile
-        # stands that close — a held unit stays held. See docs/LIVE_TACTICS.md.
+        # `queue_stalled` and the turn ends. Every unit not named by CIVVIS is
+        # explicitly held by the mod; the host never chooses its route.
         "OrderQueue": args.order_queue,
         "OrderQueueMaxTicks": args.order_queue_max_ticks,
-        "ExploreGuard": args.explore_guard,
-        "ExploreGuardRadius": args.explore_guard_radius,
         # The ledger's per-strike host preview (`CombatManager.SimulateAttackInto`)
         # is one host call per strike; this switch exists so a run can be played
         # without it if the call ever proves unsafe, and so the ledger can say
@@ -1284,6 +1290,16 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
 #: bounded recovery path one more chance before setup refuses to click blind.
 SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0, 4.0)
 CAPTURE_ACCESS_POLL_SECONDS = 10.0
+# Setup's screen readers already sit inside `_poll_screen` (and the enclosing
+# bootstrap attempt) which retries a missing frame over time.  Spending the
+# entire five-capture native retry schedule inside each of those polls made a
+# transient ScreenCaptureKit miss cost several minutes before the next safe OCR
+# attempt: six unreadable menu polls on civvis-20260831T152158Z took roughly
+# six minutes before the seventh frame arrived.  One native attempt per setup
+# poll keeps the same no-blind-click rule while letting the outer bounded poll
+# provide the recovery window.  Ordinary diagnostic/stall shots retain the
+# full schedule above.
+SETUP_SCREENSHOT_ATTEMPTS = 1
 
 
 def wait_for_safe_screen_capture(poll_s: float = CAPTURE_ACCESS_POLL_SECONDS) -> None:
@@ -1318,7 +1334,7 @@ def wait_for_safe_screen_capture(poll_s: float = CAPTURE_ACCESS_POLL_SECONDS) ->
         time.sleep(poll_s)
 
 
-def screenshot(path: Path) -> bool:
+def screenshot(path: Path, *, attempts: int | None = None) -> bool:
     """Keep a picture of the screen. A misclick is a visual failure and the
     log cannot describe it; the shot is what says which row was hit.
 
@@ -1352,7 +1368,15 @@ def screenshot(path: Path) -> bool:
         print(f"[shot] display geometry is unreadable for {path.name}; treating this poll as "
               "unreadable", flush=True)
         return False
-    for attempt in range(1, len(SHOT_BACKOFF_SECONDS) + 2):
+    if attempts is None:
+        attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
+    else:
+        try:
+            attempt_limit = max(1, int(attempts))
+        except (TypeError, ValueError):
+            attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
+        attempt_limit = min(attempt_limit, len(SHOT_BACKOFF_SECONDS) + 1)
+    for attempt in range(1, attempt_limit + 1):
         path.unlink(missing_ok=True)
         try:
             macos_capture.capture_region((0, 0, *size), path)
@@ -1370,10 +1394,10 @@ def screenshot(path: Path) -> bool:
                 return True
         except OSError:
             pass
-        if attempt <= len(SHOT_BACKOFF_SECONDS):
+        if attempt < attempt_limit:
             time.sleep(SHOT_BACKOFF_SECONDS[attempt - 1])
     print(f"[shot] native capture wrote nothing for {path.name} after "
-          f"{len(SHOT_BACKOFF_SECONDS) + 1} attempts; treating this poll as "
+          f"{attempt_limit} attempts; treating this poll as "
           "unreadable", flush=True)
     return False
 
@@ -1728,6 +1752,14 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                       flush=True)
                 return True
 
+            # OCR and screen capture do not preserve the key application.  If
+            # another window became frontmost, the first click on Civ VI only
+            # activates it and the dropdown stays closed; the post-click frame
+            # then looks exactly like a missed coordinate.  Raise the game at
+            # the same boundary used for the final Start Game click.  The
+            # click helper's existing move/settle delay gives the raise time to
+            # take effect without changing the measured setup geometry.
+            focus_game(GAME_SIDE, GAME_FRACTION)
             click_at(*current_point)
             park_setup_pointer(bounds)
             time.sleep(1.2)
@@ -1738,6 +1770,9 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                   flush=True)
             continue
 
+        # The option click is a separate input event and needs the same
+        # foreground guarantee as the click that opened the list.
+        focus_game(GAME_SIDE, GAME_FRACTION)
         click_at(*target)
         park_setup_pointer(bounds)
         time.sleep(1.2)
@@ -1961,6 +1996,10 @@ def _leader_observation(observations: list[dict], label: str,
             continue
         px, py = point[0] * screen_w, point[1] * screen_h
         rx, ry = (px - x) / w, (py - y) / h
+        # The selected leader row shifts a few points lower on the half-height
+        # recording layout (Trajan measured at ry=0.312 on 2026-08-31).  Keep
+        # the band narrow enough to identify the field, but include that
+        # verified layout instead of rejecting a correctly selected Rome.
         if 0.40 <= rx <= 0.62 and (
             0.23 <= ry <= 0.34 if selected else 0.30 <= ry <= 0.76
         ):
@@ -2462,7 +2501,8 @@ def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
     return _main_menu_visible(shot)
 
 
-def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float):
+def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
+                   bounds: tuple[int, int, int, int] | None = None):
     """Answer "is the game still somewhere other than the main menu?".
 
     The startup gate needs to tell a slow map generation from a click that did
@@ -2475,6 +2515,28 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float):
     caller was about to make anyway, and a false "not menu" costs one more
     budget. Each call keeps its screenshot, numbered by the wait it belongs to,
     so a run that dies here can be looked at afterwards.
+
+    ⚠⚠ A MISSED CLICK HAS A SECOND RESTING PLACE, and the sentence above missed
+    it. Setup does not return to Single Player when `Start Game` fails to take
+    -- it stays on the CREATE GAME page, which is neither the main menu nor a
+    game, so the menu read above says "not menu" and the caller waits out its
+    whole budget on a screen that will never change on its own.
+
+    Observed 2026-08-31 on run `civvis-20260831T025125Z`, the FIRST science-lane
+    attempt after the goal was set. Every value was selected and verified --
+
+        [setup] difficulty: selected and verified King
+        [setup] leader:     selected and verified Trajan (LEADER_TRAJAN)
+
+    -- and then 480s of "silent, but the main menu is gone" while two desktop
+    captures eight minutes apart both show Create Game with `Start Game` still
+    sitting there unpressed, and 60 leader-intro frames looking for a modal that
+    cannot open. The attempt cost ~15 minutes and 207 screenshots to produce
+    nothing.
+
+    So the page is proved the same way the launch click was licensed: by reading
+    `Start Game` where it lives. `bounds` is optional only so an old call site
+    keeps working; without it this degrades to the main-menu read alone.
 
     ``patience`` is spent from ONE pool shared by every attempt, because the
     per-wait hard bound alone does not bound the bootstrap: 16 attempts each
@@ -2492,6 +2554,14 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float):
         if _main_menu_visible(shot):
             print(f"attempt {attempt}: the main menu is back after "
                   f"{looks['n']} silent wait(s) -- the launch did not take",
+                  file=sys.stderr)
+            return False
+        if bounds is not None and _observed_label_point(
+                shot, "Start Game", bounds, strip=START_GAME_STRIP) is not None:
+            # Still on Create Game: the launch click did not take. Waiting
+            # cannot fix this -- the page does not advance by itself.
+            print(f"attempt {attempt}: still on the Create Game page after "
+                  f"{looks['n']} silent wait(s) -- Start Game did not take",
                   file=sys.stderr)
             return False
         if patience["left"] < grant:
@@ -2680,7 +2750,11 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         menushot = run_dir / f"menu-attempt{attempt}.png"
 
         def read_top_menu():
-            screenshot(menushot)
+            # `_poll_screen` is the retry loop for this reader.  A full native
+            # retry schedule here can consume the whole screen budget before
+            # the outer loop gets a second frame, turning a transient capture
+            # miss into minutes of setup latency.
+            screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)
             point = _main_menu_point(menushot, bounds)
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
@@ -2753,7 +2827,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         submenu = run_dir / f"submenu-attempt{attempt}.png"
 
         def read_submenu():
-            screenshot(submenu)
+            screenshot(submenu, attempts=SETUP_SCREENSHOT_ATTEMPTS)
             found = _observed_label_point(submenu, "Create Game", bounds)
             seen = (vision.submenu_rows(submenu, bounds, near=sp_y, pitch=pitch)
                     if vision.available() else [])
@@ -2831,7 +2905,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             # event that may not arrive until the brain has that state.
             return True
         if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
-                                                          patience, verify_s)):
+                                                          patience, verify_s,
+                                                          bounds)):
             return True
         if not env.game_pids():
             print("the game exited while starting", file=sys.stderr)
@@ -3036,7 +3111,8 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         if yes is not None:
             click_at(*yes)
         if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
-                                                          patience, verify_s)):
+                                                          patience, verify_s,
+                                                          bounds)):
             return True
         if not env.game_pids():
             return False
@@ -3275,7 +3351,8 @@ def play(args: argparse.Namespace) -> int:
     hold_macos_awake()
     wait_for_unlocked_session()
     wait_for_safe_screen_capture()
-    if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
+    if not gamelock.acquire(args.tag, wait_s=args.lock_wait,
+                            require_verification_intent=True):
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",
               file=sys.stderr)
@@ -3538,6 +3615,22 @@ def _play(args: argparse.Namespace) -> int:
     # Covers KeyboardInterrupt and unexpected exceptions between the explicit
     # cleanup sites below. Calling it again after a normal run is harmless.
     atexit.register(stop_brain)
+
+    # The control mod is a per-run installation, not a standing feature of the
+    # player's Civ6.app. Left behind, it loads into MANUAL games: measured
+    # 2026-08-31, a hand-started game opened on turn 2 under the leftover
+    # agent, and restarting under the broken bundle seal crashed the game.
+    # Registered beside `stop_brain`, so the SIGTERM SystemExit below runs it
+    # on the supervisor's ordinary teardown too; the next verification run
+    # reinstalls at startup, so removal costs nothing but the file writes.
+    def _uninstall_mod():
+        try:
+            if modinstall.uninstall():
+                print("uninstalled the control mod; Civ6.app is vanilla again")
+        except Exception as error:  # noqa: BLE001 - an exit path must not raise
+            print(f"control mod uninstall failed (remove by hand): {error}")
+
+    atexit.register(_uninstall_mod)
 
     # ⚠ atexit does NOT run on SIGTERM. CPython's default SIGTERM disposition
     # terminates the process outright, so `stop_brain` above never fires and the
@@ -4223,7 +4316,6 @@ def _play(args: argparse.Namespace) -> int:
             # §9). Each is an A/B axis: a row that does not say which were on
             # cannot be compared with one that does.
             "OrderQueue": args.order_queue,
-            "ExploreGuard": args.explore_guard,
             "CapMovesToReach": args.cap_moves_to_reach,
             "SettlerEscortCapSync": args.settler_escort_cap_sync,
             "CancelQueuedPaths": args.cancel_queued_paths,
@@ -4254,11 +4346,9 @@ def _play(args: argparse.Namespace) -> int:
         by_kind = civ6_ladder.orders_by_kind(run_dir / "events.jsonl")
         if by_kind:
             summary["orders"] = by_kind
-        # ⭐ And WHO DROVE THE UNITS. `ExploreUnassigned` hands every unit
-        # CIVVIS gave no order to over to Civilization VI's own explore
-        # automation; the mod counts that separately so it is never mistaken
-        # for CIVVIS's work, and until now the count stopped at events.jsonl.
-        # See `civ6_ladder.seat_autonomy`.
+        # Who drove unit movement. Current mods hold unmentioned units and
+        # emit `explored: 0`; `seat_autonomy` retains the historical field so
+        # old runs with host-selected routes remain distinguishable.
         autonomy = civ6_ladder.seat_autonomy(run_dir / "events.jsonl")
         if autonomy:
             summary["seat_autonomy"] = autonomy
@@ -4504,9 +4594,11 @@ def main(argv: list[str] | None = None) -> int:
                          "defaults to <run-dir>/orders.sqlite")
     ap.add_argument("--tile-export-every", type=int, default=25,
                     help="turns between map exports (turn 1 always exports)")
-    ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
-                    action="store_false", default=True,
-                    help="leave units CIVVIS did not order standing still")
+    # Kept as a harmless compatibility spelling for existing launcher scripts.
+    # The behavior it selected is now unconditional: the bridge holds every
+    # unmentioned unit and never delegates a route to the host.
+    ap.add_argument("--no-explore-unassigned", action="store_true",
+                    help="deprecated; unmentioned units are always held")
     ap.add_argument("--no-great-people", dest="great_people",
                     action="store_false", default=True,
                     help="leave earned Great People standing instead of "
@@ -4607,13 +4699,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--order-queue-max-ticks", type=int, default=240,
                     help="ticks the turn is held for queued unit orders before the "
                          "rest are refused as queue_stalled")
-    ap.add_argument("--no-explore-guard", dest="explore_guard",
-                    action="store_false", default=True,
-                    help="hand every unordered combat unit to explore automation, "
-                         "even one standing beside a hostile (the pre-guard rule)")
-    ap.add_argument("--explore-guard-radius", type=int, default=4,
-                    help="an unordered combat unit this close to a visible hostile "
-                         "or an at-war city is held, not handed to explore automation")
     ap.add_argument("--no-strike-preview", dest="strike_preview",
                     action="store_false", default=True,
                     help="do not ask the host for its combat preview before a strike "

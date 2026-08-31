@@ -33,6 +33,44 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("production_progress = prodProgress", exporter)
         self.assertIn("production_cost = prodCost", exporter)
 
+    def test_unit_activity_export_names_every_stock_enum(self) -> None:
+        """A known Civ6 activity must never cross as its numeric hash.
+
+        The shipped UnitActivities.artdef contains more than the four states
+        the exporter originally named. In particular, sentry frames were
+        crossing as -793848223, which made the mirror describe a real
+        defensive action as an unknown activity. Keep the complete stock enum
+        list in the source-level install test so a future addition cannot
+        silently restore that mismatch.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        activity = source.split("-- Activity:", 1)[1].split("-- Spy:", 1)[0]
+
+        for label in (
+            "SLEEP",
+            "HOLD",
+            "OPERATION",
+            "AWAKE",
+            "HEAL",
+            "SENTRY",
+            "INTERCEPT",
+            "NO_ACTIVITY",
+            "BUILD",
+            "DIG",
+            "CUT",
+            "REPAIR",
+            "SPREAD_RELIGION",
+            "LAUNCH_INQUISITION",
+            "EVANGELIZE_BELIEF",
+            "EXCAVATE",
+            "DESIGNATE_PARK",
+            "FOUND_RELIGION",
+        ):
+            self.assertIn(f'"{label}"', activity)
+        self.assertIn("ActivityTypes.NO_ACTIVITY", activity)
+        self.assertIn("if enum ~= nil and enum == kind", activity)
+        self.assertIn("return tostring(kind);", activity)
+
     def test_state_export_has_fog_safe_public_empire_totals_for_every_major(self) -> None:
         """A standings row needs empire totals even when its cities are unseen.
 
@@ -182,6 +220,27 @@ class ProtectedInstallTest(unittest.TestCase):
         )
         self.assertIn(
             'refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],', source
+        )
+
+        # The war-assault fallback must preflight a ranged attack with the
+        # target parameters. A parameterless CanStartOperation asks a
+        # different question and can discard a legal city shot before the
+        # request reaches the host.
+        self.assertIn(
+            'if operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then',
+            source,
+        )
+        self.assertNotIn(
+            'if canOperate(unit, OP["UNITOPERATION_RANGE_ATTACK"])', source
+        )
+
+        # Target-specific host refusals need a point-in-time explanation; the
+        # aggregate orders refusal is not enough to distinguish LOS from a
+        # stale or malformed request.
+        self.assertIn('emit("range_attack_refused", {', source)
+        self.assertIn(
+            'refusalReason(unit, OP["UNITOPERATION_RANGE_ATTACK"], params)',
+            source,
         )
         self.assertEqual(
             source.count("UnitManager.CanStartOperation(\n\t\t\t\t\tunit, operation"),
@@ -931,6 +990,26 @@ class ProtectedInstallTest(unittest.TestCase):
         # `unit_lost` stays: the capture event is a second witness, not a replacement.
         self.assertIn('emit("unit_lost", {', source)
 
+    def test_great_person_activation_marks_consumed_unit_removal(self) -> None:
+        """Activation consumes a host unit and must not look like a battlefield loss."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("expected_gp_activation = {}", source)
+
+        removal = source.split("CivvisLedger.onUnitRemoved = function", 1)[1].split(
+            "-- One of OUR units was TAKEN", 1
+        )[0]
+        self.assertIn("local activationTurn = CivvisLedger.expected_gp_activation[key];", removal)
+        self.assertIn("CivvisLedger.expected_gp_activation[key] = nil;", removal)
+        self.assertIn('cause = activationTurn == turn and "great_person_activation" or nil,', removal)
+
+        activation = source.split(
+            'local activationKey = tostring(id);', 1
+        )[1].split("gpPending[id] = nil;", 1)[0]
+        self.assertIn(
+            'CivvisLedger.expected_gp_activation[activationKey] = turn;',
+            activation,
+        )
+
     def test_settler_combat_hold_checks_the_hostile_units_full_capture_reach(self) -> None:
         """A combat unit's capture reach is wider than destination adjacency."""
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
@@ -1313,6 +1392,28 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("religion_founding_failed", source)
         self.assertIn("religion_founded", source)
 
+    def test_civvis_dedication_orders_select_the_named_offered_commemoration(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split('if kind == "dedication" then', 1)[1].split(
+            'if kind == "pantheon" then', 1
+        )[0]
+
+        self.assertIn("PlayerOperations.PARAM_COMMEMORATION_TYPE", handler)
+        self.assertIn("PlayerOperations.COMMEMORATE", handler)
+        self.assertIn("GetPlayerNumAllowedCommemorations(pid)", handler)
+        self.assertIn("GetPlayerCommemorateChoices(pid)", handler)
+        self.assertIn("GameInfo.CommemorationTypes[choice]", handler)
+        self.assertIn("if choiceName == verb then", handler)
+        self.assertIn("params[param] = selected", handler)
+        self.assertIn("UI.RequestPlayerOperation(pid, operation, params)", handler)
+        self.assertIn("dedication_not_offered_", handler)
+        self.assertIn(
+            'ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = "dedication"', source
+        )
+        self.assertIn(
+            "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = true", source
+        )
+
     def test_religious_units_export_progress_and_actuate_direct_operations(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         progress = source.split("local function unitProgress", 1)[1].split(
@@ -1613,6 +1714,11 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
       of three unit blockers is up -- it calls `UI.SelectNextReadyUnit()` --
       so the plain request at the bottom of `tick` is refused. Only the
       `{ REASON = "UserForced" }` form (the shipped SHIFT+ENTER path) ends it.
+
+    Run civvis-20260831T080154Z reproduced the same shape after the parking
+    repair: turn 99 answered `civvis_complete+parked:15`, then the Game Core
+    stopped publishing before a second sighting could reach the forfeit. The
+    first CIVVIS unit answer therefore has to dismiss and force in that pass.
     """
 
     def setUp(self) -> None:
@@ -1634,6 +1740,19 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertIn("parkReadyUnits(player)", self.escalation)
         self.assertIn("dismissBlocker(pid, blocker)", self.escalation)
         self.assertIn('REASON = "UserForced"', self.escalation)
+
+    def test_the_first_civvis_units_answer_forces_before_waiting_for_a_resighting(self) -> None:
+        """A quiet Game Core cannot be expected to publish sighting two."""
+        units = self.source.split('answered = "civvis_complete";', 1)[1].split(
+            "-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.", 1
+        )[0]
+        parked = units.index("parkReadyUnits(player)")
+        dismissed = units.index("dismissBlocker(pid, blocker)")
+        forced = units.index('REASON = "UserForced"')
+        self.assertLess(parked, dismissed)
+        self.assertLess(dismissed, forced)
+        self.assertIn("same_pass_forced = true", units)
+        self.assertIn("and not same_pass_forced", self.escalation)
 
     def test_forcing_is_reserved_for_the_three_blockers_the_engine_refuses(self) -> None:
         """The trio `ActionPanel.DoEndTurn` special-cases, and only those.
@@ -2018,3 +2137,63 @@ class TheLeaderIsMeasuredAgainstTheWholeField(unittest.TestCase):
         rule = play.split("def below_leader_score_reading", 1)[1][:1200]
         self.assertIn('event.get("rival_best")', rule)
         self.assertNotIn("rival_best_all", rule)
+
+
+class TheHaltHandsBackAVanillaApp(unittest.TestCase):
+    """`gamelock.py --halt` removes the control mod along with stopping games.
+
+    The mod is a per-run installation: left behind after 2026-08-31's halt it
+    loaded into the operator's MANUAL Civilization VI session, opened their
+    hand-started game on turn 2, and crashed it on restart. The halt is the
+    'a human wants the machine' signal, so it restores the vanilla bundle;
+    `civ6_play` reinstalls at the next verification run.
+    """
+
+    def test_halt_uninstalls_the_installed_mod(self) -> None:
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            planted = root / "install" / "DLC" / install.MOD_NAME
+            planted.mkdir(parents=True)
+            (planted / "config.json").write_text("{}\n")
+            halt_marker = root / "halt.json"
+            env = dict(
+                os.environ,
+                CIV6_INSTALL=str(root / "install"),
+                CIVVIS_OPERATOR_HALT_FILE=str(halt_marker),
+            )
+            done = subprocess.run(
+                [sys.executable,
+                 str(Path(__file__).resolve().parent / "civ6_control" / "gamelock.py"),
+                 "--halt", "--reason", "test"],
+                env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(done.returncode, 0, done.stderr or done.stdout)
+            self.assertTrue(halt_marker.is_file(), "the halt marker must persist")
+            self.assertFalse(
+                planted.is_dir(),
+                "the halt must remove the installed control mod: "
+                + done.stdout + done.stderr)
+            self.assertIn("vanilla", done.stdout)
+
+    def test_halt_stands_when_there_is_nothing_to_uninstall(self) -> None:
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "install").mkdir()
+            halt_marker = root / "halt.json"
+            env = dict(
+                os.environ,
+                CIV6_INSTALL=str(root / "install"),
+                CIVVIS_OPERATOR_HALT_FILE=str(halt_marker),
+            )
+            done = subprocess.run(
+                [sys.executable,
+                 str(Path(__file__).resolve().parent / "civ6_control" / "gamelock.py"),
+                 "--halt", "--reason", "test"],
+                env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(done.returncode, 0, done.stderr or done.stdout)
+            self.assertTrue(halt_marker.is_file())

@@ -5916,27 +5916,35 @@ fn civvis_unit_name(civ6: &str) -> String {
         .strip_prefix("UNIT_")
         .unwrap_or(civ6)
         .to_ascii_lowercase();
-    // ★★★ CIVILIZATION VI'S BARBARIAN VARIANTS ARE THE ORDINARY UNIT WITH A PREFIX.
+    // ★★★ BARBARIAN CAVALRY ARE NOT THE ORDINARY UNITS WITH A PREFIX.
     //
-    // `UNIT_BARBARIAN_HORSEMAN` is a Horseman and `UNIT_BARBARIAN_HORSE_ARCHER` is a
-    // horse archer; CIVVIS models `horseman` and `saka_horse_archer` but neither
-    // `barbarian_horseman` nor `barbarian_horse_archer`, so both were dropped from the
-    // board entirely — 276 sightings across tonight's runs, every one a raider CIVVIS
-    // could not see while its settlers walked past.
-    //
-    // ⚠ This is a rename, not a substitution: the barbarian variants ARE these units
-    // in the shipped database. Where the stripped name is not modelled either it still
-    // falls through to `dropped_units` as untranslatable rather than being guessed at —
-    // `horse_archer` has no plain entry, so it resolves to the closest CIVVIS actually
-    // has rather than inventing one.
-    let base = base
-        .strip_prefix("barbarian_")
-        .map(str::to_string)
-        .unwrap_or(base);
+    // The installed game's Units.xml gives `UNIT_BARBARIAN_HORSEMAN` BaseMoves=3 /
+    // Combat=20 and `UNIT_BARBARIAN_HORSE_ARCHER` BaseMoves=3 / Combat=10 /
+    // RangedCombat=15. Ordinary Horsemen are BaseMoves=4 / Combat=36, while the
+    // modeled Saka Horse Archer is BaseMoves=4 / Combat=20 / RangedCombat=25.
+    // Collapsing the names therefore made the threat flood both too fast and too
+    // strong. Keep exact CIVVIS specs for these two host-only variants; the other
+    // barbarian-prefixed stock units still use their ordinary CIVVIS counterpart.
+    let base = if matches!(
+        base.as_str(),
+        "barbarian_horseman" | "barbarian_horse_archer"
+    ) {
+        base
+    } else {
+        base.strip_prefix("barbarian_")
+            .map(str::to_string)
+            .unwrap_or(base)
+    };
     match base.as_str() {
         // Firaxis's Scythian type name includes the civilization, whereas
         // CIVVIS stores the unit by its actual Saka name.
         "horse_archer" | "scythian_horse_archer" => "saka_horse_archer".to_string(),
+        // Keep this in lockstep with `civ6_unit_type`: the host calls Pitati
+        // Archers `NUBIAN_PITATI`, not `NUBIAN_PITATI_ARCHER`.
+        "nubian_pitati" => "pitati_archer".to_string(),
+        // Nihang is a Lahore suzerain unit rather than a civilization-unique
+        // unit, so its CIVVIS row cannot be discovered through `unique_to`.
+        "lahore_nihang" => "nihang".to_string(),
         // Firaxis retained Poland's implementation id after the unit's display
         // name became Winged Hussar.
         "polish_hussar" => "winged_hussar".to_string(),
@@ -6027,11 +6035,11 @@ fn class_representative(class: &str, rules: &crate::rules::Rules) -> Option<&'st
 /// unit, silently, with **no entry in `dropped_units`**. That is strictly worse than
 /// dropping it, because the drop detector is the only thing that would have caught it.
 ///
-/// A full guard needs an adjective map: `data/civs.json` is keyed by display name
-/// (`Rome`, `Aztec`), so `aztec` needs a case-insensitive match and `roman`/`nubian`
-/// need the adjectival form. What is certain under any casing is that **`great` is not
-/// a civilization**, and that is the one prefix measured doing this — see
-/// [`GREAT_PERSON_PREFIX`].
+/// This is a syntax-only candidate. `resolved_civvis_unit_name` applies the
+/// ruleset guard: the stripped destination must be a unit marked `unique_to`.
+/// That is stronger than trusting the first token to be a civilization adjective
+/// and prevents a trimmed or modded ruleset from turning `UNIT_JET_FIGHTER` into
+/// the ordinary `fighter`, while keeping the known unique-unit spellings alive.
 fn civvis_unit_name_unqualified(civ6: &str) -> Option<String> {
     let base = civ6.strip_prefix("UNIT_")?.to_ascii_lowercase();
     let (qualifier, rest) = base.split_once('_')?;
@@ -6050,10 +6058,12 @@ fn resolved_civvis_unit_name(rules: &crate::rules::Rules, civ6: &str) -> Option<
         return Some(direct);
     }
     let bare = civvis_unit_name_unqualified(civ6);
-    if let Some(bare) = bare
-        .as_deref()
-        .filter(|bare| rules.units.contains_key(bare))
-    {
+    if let Some(bare) = bare.as_deref().filter(|bare| {
+        rules
+            .units
+            .get(bare)
+            .is_some_and(|unit| unit.unique_to.is_some())
+    }) {
         return Some(bare.to_string());
     }
     // ⚠ A UNIQUE UNIT WHOSE CIVVIS NAME CARRIES AN EPITHET.
@@ -6084,7 +6094,13 @@ fn resolved_civvis_unit_name(rules: &crate::rules::Rules, civ6: &str) -> Option<
     let mut matches = rules
         .units
         .keys()
-        .filter(|name| name.as_str().ends_with(suffix.as_str()));
+        .filter(|name| name.as_str().ends_with(suffix.as_str()))
+        .filter(|name| {
+            rules
+                .units
+                .get(name.as_str())
+                .is_some_and(|unit| unit.unique_to.is_some())
+        });
     let only = matches.next()?;
     matches.next().is_none().then(|| only.to_string())
 }
@@ -6887,11 +6903,12 @@ fn civvis_spy_mission_kind(operation: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Record what the host said about one of our units under the board's unit
-/// id — see `Game::host_unit_facts` for who reads which. A unit that carries
-/// none of the keys (an older mod) leaves no entry, so every reader falls back
-/// to the board's own rule; a unit that carries any of them gets an entry whose
-/// absent members are real absences — no successor, no operation.
+/// Record what the host said about one visible unit under the board's unit id —
+/// see `Game::host_unit_facts` for who reads which. A unit that carries none of
+/// the keys (an older mod) leaves no entry, so every reader falls back to the
+/// board's own rule; a unit that carries any of them gets an entry whose absent
+/// members are real absences — no successor, no operation. Foreign units use
+/// this primarily for the host's movement allowance in threat floods.
 fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
     let finite = |value: Option<f64>| value.filter(|value| value.is_finite());
     let exported = unit.upgrade_to.is_some()
@@ -8751,11 +8768,15 @@ fn apply_unit_observation(
     if let Some(religion) = progress.religion {
         live.religion = Some(religion);
     }
+    // Zero is an authoritative observation: a Builder or religious unit that
+    // spent its final charge must not regain the ruleset default on a fresh
+    // rebuild, or retain the previous turn's charge count on sync. Negative
+    // values remain the mod's "could not read" sentinel.
     let observed_charges = state
         .build_charges
         .into_iter()
         .chain(state.spread_charges)
-        .filter(|charges| *charges > 0)
+        .filter(|charges| *charges >= 0)
         .max();
     if let Some(charges) = observed_charges {
         live.charges = charges;
@@ -9453,6 +9474,57 @@ fn apply_observed_city_economy(
     }
 }
 
+/// Apply city facts that affect `city_yields_model` before deriving the
+/// host-to-model correction. A fresh reconstruction initially marks the first
+/// planted city as the capital; the host can have moved its Palace elsewhere.
+/// Population, loyalty and pillage state also affect the modeled total.
+fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot) {
+    // Which seats the export names a capital for. A record that flags none
+    // (an older export, or a fixture) keeps `place_city`'s own choice rather
+    // than clearing every flag and leaving the seat capital-less.
+    let flagged_capitals: std::collections::BTreeSet<usize> = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
+        .filter(|observed| observed.capital)
+        .filter_map(|observed| {
+            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
+                .map(|cid| game.cities[&cid].owner)
+        })
+        .collect();
+    let cities = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
+    for observed in cities {
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else {
+            continue;
+        };
+        // Population drives Loyalty pressure in a nine-tile radius. Rival and
+        // city-state cities are planted at population one, so this has to land
+        // before any yield or pressure correction is measured.
+        if observed.pop > 0 {
+            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
+        }
+        // `city_has_palace` reads this positional fact; do not leave the
+        // reconstruction's first planted city capital after a Palace move.
+        if flagged_capitals.contains(&game.cities[&cid].owner) {
+            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
+        }
+        apply_city_health(game, cid, observed);
+        if observed.loyalty_per_turn.is_finite() {
+            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
+                .insert(cid, observed.loyalty_per_turn);
+        }
+        if observed.defense.is_finite() && observed.defense >= 0.0 {
+            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
+        }
+    }
+}
+
 fn apply_observed_host_metrics(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -9497,6 +9569,9 @@ fn apply_observed_host_metrics(
             .map(|value| value as usize);
     }
 
+    // These fields participate in the model itself, so settle them before
+    // measuring the host-to-model city correction.
+    apply_observed_city_facts(game, state);
     apply_observed_city_economy(game, state, snapshot, unmapped);
 
     let mut derived = crate::rules::Yields::default();
@@ -9547,63 +9622,6 @@ fn apply_observed_host_metrics(
     {
         Arc::make_mut(&mut game.observed_yield_adjustments).insert(0, adjustment);
     }
-    // Which seats the export names a capital for. A record that flags none
-    // (an older export, or a fixture) keeps `place_city`'s own choice rather
-    // than clearing every flag and leaving the seat capital-less.
-    let flagged_capitals: std::collections::BTreeSet<usize> = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
-        .filter(|observed| observed.capital)
-        .filter_map(|observed| {
-            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
-                .map(|cid| game.cities[&cid].owner)
-        })
-        .collect();
-    let cities = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
-    for observed in cities {
-        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
-        let Some(cid) = game.city_at(pos) else {
-            continue;
-        };
-        // Population drives Loyalty pressure in a nine-tile radius. The own-city
-        // rebuild copied it earlier, but visible rival and city-state cities stayed
-        // at `place_city`'s population-one default. In the live Cumae failure that
-        // made population-six Stirling exert one sixth of the pressure Firaxis was
-        // applying, so a forecast built on this otherwise exact board was safe only
-        // because the most important input had been dropped.
-        if observed.pop > 0 {
-            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
-        }
-        // ★★★★ WHERE THE PALACE IS. `place_city` flags the first city it seats
-        // for a player as the capital, so a seat that lost its founding city
-        // kept its Palace on whichever city the export happened to list first.
-        // Measured on run civvis-20260816T040537Z: Rome fell at t79, the host
-        // moved the Palace to Aquileia (`capital: true`), and the model paid it
-        // in Antium instead — Aquileia short 5 Gold, 2 Production, 2 Science
-        // and 1 Culture every turn to the end of the game while Antium was
-        // over by the same, the single largest persistent gap of the run. The
-        // host's `IsCapital` is the current capital, exactly what
-        // `city_has_palace` reads; every mirrored city takes it, rivals and
-        // city-states included, so their Palaces sit where the host's do.
-        if flagged_capitals.contains(&game.cities[&cid].owner) {
-            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
-        }
-        apply_city_health(game, cid, observed);
-        if observed.loyalty_per_turn.is_finite() {
-            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
-                .insert(cid, observed.loyalty_per_turn);
-        }
-        if observed.defense.is_finite() && observed.defense >= 0.0 {
-            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
-        }
-    }
-
     // ★★★★★ THE RIVALS' SEATS LAST, AFTER THEIR CITIES ARE FINISHED.
     //
     // A correction is `host − model`, and the model of a rival city moves
@@ -10234,6 +10252,10 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
             ("player_ages", BOTH, step_player_ages),
             ("host_congress", BOTH, step_host_congress),
+            // Climate changes the yields of flooded plots. It must be applied
+            // before host-to-model city and empire calibration below, or a
+            // later flood invalidates the correction measured on the old map.
+            ("host_climate", BOTH, step_host_climate),
             ("observed_host_metrics", BOTH, step_observed_host_metrics),
             ("loyalty_doomed_sites", BOTH, step_loyalty_doomed_sites),
         ],
@@ -10242,7 +10264,6 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
         HostPhase::Finish,
         &[
             ("player_ages", BOTH, step_player_ages),
-            ("host_climate", BOTH, step_host_climate),
             ("record_host_observed", BOTH, step_record_host_observed),
         ],
     ),
@@ -11341,6 +11362,7 @@ pub fn rebuild_from_state(
             if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
                 foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
+                record_host_unit_facts(&mut game, uid, unit);
             }
         }
     }
@@ -11407,6 +11429,7 @@ pub fn rebuild_from_state(
             if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
                 foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
+                record_host_unit_facts(&mut game, uid, unit);
             }
         }
     }
@@ -11480,6 +11503,7 @@ pub fn rebuild_from_state(
         if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
             foreign_unit_ids.insert(unit.id, uid);
             placed_rival_units += 1;
+            record_host_unit_facts(&mut game, uid, unit);
             if game.players[owner].is_free_city {
                 game.players[owner].alive = true;
             }
@@ -13273,6 +13297,7 @@ impl LiveMirror {
                 self.hostile_units.push(uid);
                 self.foreign_uid_of.insert(unit.id, uid);
             }
+            record_host_unit_facts(&mut self.game, uid, unit);
         }
 
         for (index, rival) in state.rivals.iter().enumerate() {
@@ -13413,6 +13438,7 @@ impl LiveMirror {
                     self.rival_units.push(uid);
                     self.foreign_uid_of.insert(unit.id, uid);
                 }
+                record_host_unit_facts(&mut self.game, uid, unit);
             }
         }
 
@@ -13542,6 +13568,7 @@ impl LiveMirror {
                     self.rival_units.push(uid);
                     self.foreign_uid_of.insert(unit.id, uid);
                 }
+                record_host_unit_facts(&mut self.game, uid, unit);
             }
         }
         for &(minor, owner) in &minor_assignments {

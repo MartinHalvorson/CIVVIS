@@ -6,9 +6,9 @@
 //! does not license.
 //!
 //! ```bash
-//! cargo run --release --bin battle_bench -- --a advanced --b basic --games 200
-//! cargo run --release --bin battle_bench -- --a advanced --b advanced --games 60   # control
-//! cargo run --release --bin battle_bench -- --army warrior,warrior,archer,archer --turns 30
+//! cargo run --release --features developer-tools --bin battle_bench -- --a advanced --b basic --games 200
+//! cargo run --release --features developer-tools --bin battle_bench -- --a advanced --b advanced --games 60   # control
+//! cargo run --release --features developer-tools --bin battle_bench -- --army warrior,warrior,archer,archer --turns 30
 //! ```
 //!
 //! Run the control. `--a advanced --b advanced` must report a paired mean of

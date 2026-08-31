@@ -1342,6 +1342,20 @@ impl AdvancedAi {
         self.base.disable_rapid_city_expansion();
     }
 
+    /// After its current production completes, let a population-two capital
+    /// start the next legal Settler before ordinary production ranking. The
+    /// baseline governor retains the city-target, site, and emergency gates.
+    pub fn enable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = true;
+        self.base.enable_capital_settler_after_completion();
+    }
+
+    /// The twin of [`AdvancedAi::enable_capital_settler_after_completion`].
+    pub fn disable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = false;
+        self.base.disable_capital_settler_after_completion();
+    }
+
     /// Take the pantheon that founds cities and keep the God-King card until
     /// its Faith is paid. Sets both halves: the strategic portfolio's God-King
     /// want, and `BasicAi`'s pantheon prefix.
@@ -1994,6 +2008,34 @@ impl AdvancedAi {
         self.surprise_war_mobilization = false;
     }
 
+    /// Widen the science lane's land grab, deferring its city cap, while a
+    /// founded city can still mature; then revert and grow.
+    /// Opt-in gene `science-expansion-phase`; the timing argument is on
+    /// `SCIENCE_EXPANSION_CITY_CEILING`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_expansion_phase(&mut self) {
+        self.science_expansion_phase = true;
+    }
+
+    /// Keep the Science lane expanding first until five cities or 100 standard
+    /// turns, the band live wins open from. Opt-in gene `science-opening-band`;
+    /// the live-versus-screen disagreement is argued on
+    /// `SCIENCE_OPENING_BAND_CITY_TARGET`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_opening_band(&mut self) {
+        self.science_opening_band = true;
+    }
+
+    /// The twin of `enable_science_opening_band`.
+    pub fn disable_science_opening_band(&mut self) {
+        self.science_opening_band = false;
+    }
+
+    /// The twin of `enable_science_expansion_phase`.
+    pub fn disable_science_expansion_phase(&mut self) {
+        self.science_expansion_phase = false;
+    }
+
     /// Open the settler pipeline by the shortfall while the opening is behind
     /// the four-cities-by-turn-sixty pace every recorded win came from.
     /// Opt-in gene `expansion-schedule`; see
@@ -2098,6 +2140,21 @@ impl AdvancedAi {
     /// The twin of `enable_science_victory_drive`.
     pub fn disable_science_victory_drive(&mut self) {
         self.science_victory_drive = false;
+    }
+
+    /// Version 2 of `science_victory_drive`: the original planner remains a
+    /// separately measurable family member, while this continuation uses a
+    /// meaningful lead, legal launch sites, a research funnel, and an estimate
+    /// that can keep a live chain moving. One version of the family plays, so
+    /// this turns version 1 off. Opt-in gene `science-victory-drive-2`.
+    pub fn enable_science_victory_drive_2(&mut self) {
+        self.science_victory_drive = false;
+        self.science_victory_drive_2 = true;
+    }
+
+    /// The twin of `enable_science_victory_drive_2`.
+    pub fn disable_science_victory_drive_2(&mut self) {
+        self.science_victory_drive_2 = false;
     }
 
     /// Let a Builder whose nearest improvable tile cannot be routed to try the
@@ -3261,6 +3318,33 @@ impl AdvancedAi {
     /// The twin of `enable_hostile_memory`.
     pub fn disable_hostile_memory(&mut self) {
         self.hostile_memory = false;
+    }
+
+    pub fn enable_first_luxury_first(&mut self) {
+        self.first_luxury_first = true;
+    }
+
+    pub fn disable_first_luxury_first(&mut self) {
+        self.first_luxury_first = false;
+    }
+
+    /// `live-move-refusal-break` (HostOnly): stop re-issuing a move the host
+    /// keeps refusing. `BasicAi` records the first pathed step issued to each
+    /// unit per turn; a unit seen on the same tile two judged turns running
+    /// with the same issued step gets that step barred for eight standard
+    /// turns (`judge_move_refusals`), and a frozen Settler additionally has
+    /// its destination retired through the dead-site machinery. Measured
+    /// motive: 13.9% of all orders were `did_not_move`, with one settler
+    /// re-ordered to the identical tile eleven straight turns before capture.
+    pub fn enable_live_move_refusal_break(&mut self) {
+        self.live_move_refusal_break = true;
+        self.base.move_refusal_break = true;
+    }
+
+    /// Withholding twin for `enable_live_move_refusal_break`.
+    pub fn disable_live_move_refusal_break(&mut self) {
+        self.live_move_refusal_break = false;
+        self.base.move_refusal_break = false;
     }
 
     // ---- append: a-b ------------------------------------------------
