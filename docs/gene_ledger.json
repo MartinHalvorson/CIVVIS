@@ -1442,6 +1442,17 @@
           "power-the-laboratory-2": null
         }
       },
+      "science-victory-drive": {
+        "rule_on": [
+          "science-victory-drive"
+        ],
+        "head": null,
+        "ships": "science-victory-drive",
+        "versions": {
+          "science-victory-drive": null,
+          "science-victory-drive-2": null
+        }
+      },
       "settler-guard-holds": {
         "rule_on": [
           "settler-guard-holds"

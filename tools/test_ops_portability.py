@@ -405,13 +405,20 @@ class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
         nothing and the window would keep covering the game. Compiling it is the
         check that a green run cannot hide.
         """
-        text = self.LAUNCHER.read_text()
-        script = text.split("<<'APPLESCRIPT'\n", 1)[1].split("\nAPPLESCRIPT", 1)[0]
-        with TemporaryDirectory() as raw:
-            done = subprocess.run(
-                ["osacompile", "-o", str(Path(raw) / "x.scpt"), "-"],
-                input=script, capture_output=True, text=True, timeout=60)
-        self.assertEqual(done.returncode, 0, done.stderr)
+        sources = (self.LAUNCHER, OPS / "civvis-verified-head-launcher.sh")
+        for source in sources:
+            scripts = source.read_text().split("<<'APPLESCRIPT'\n")[1:]
+            expected = 2 if source == self.LAUNCHER else 1
+            self.assertGreaterEqual(
+                len(scripts), expected,
+                f"{source.name} is missing its Terminal window cleanup")
+            for index, chunk in enumerate(scripts):
+                script = chunk.split("\nAPPLESCRIPT", 1)[0]
+                with self.subTest(source=source.name, script=index), TemporaryDirectory() as raw:
+                    done = subprocess.run(
+                        ["osacompile", "-o", str(Path(raw) / "x.scpt"), "-"],
+                        input=script, capture_output=True, text=True, timeout=60)
+                self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_the_window_it_calls_its_own_must_have_a_live_shell(self):
         """A tty is not an identity once its shell has exited.
@@ -424,6 +431,23 @@ class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
         """
         text = self.LAUNCHER.read_text()
         self.assertIn("(tty of t) is myTty and (busy of w) is true", text)
+
+    def test_the_reaper_knows_the_operator_wrapper_title(self):
+        """Terminal keeps the name of the opened wrapper after its hand-off."""
+        text = self.LAUNCHER.read_text()
+        self.assertIn('contains "civvis-ladder-terminal-launcher"', text)
+        self.assertIn('contains "civvis-verified-head-launcher"', text)
+
+    def test_completion_and_outer_refusal_schedule_idle_only_cleanup(self):
+        """A closing shell is not safely identifiable by its old tty."""
+        for source in (self.LAUNCHER, OPS / "civvis-verified-head-launcher.sh"):
+            with self.subTest(source=source.name):
+                text = source.read_text()
+                self.assertIn("schedule_idle_window_reap()", text)
+                self.assertIn("/usr/bin/nohup /usr/bin/osascript", text)
+                self.assertIn("delay 1", text)
+                self.assertIn("(busy of w) is false", text)
+                self.assertIn("trap 'schedule_idle_window_reap || true' EXIT", text)
 
     def test_the_loops_stdout_and_stderr_land_in_the_file(self):
         with TemporaryDirectory() as raw:
