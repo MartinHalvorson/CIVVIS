@@ -4896,6 +4896,38 @@ fn later_fortified_units(
         .collect()
 }
 
+/// Subjects the decider gave a MOVE_TO in a LATER frame of the same turn.
+///
+/// ⚠⚠⚠ A FORTIFY THE DECIDER ITSELF OVERRODE IS NOT A BRIDGE FAILURE.
+/// `not_fortified` is the second-largest failure reason on the ledger — 3124 of
+/// 5193 FORTIFY orders over the runs of 2026-08-30, 60% — and **95% of them had
+/// a MOVE_TO for the same unit in the same turn**. Splitting by order:
+///
+///     42%  FORTIFY then MOVE   (the later move clears the fortification)
+///     19%  moves both before and after the fortify
+///     39%  MOVE then FORTIFY   (should have stuck; a real question)
+///
+/// So roughly three fifths of the second-biggest "failure" is CIVVIS asking a
+/// unit to dig in and then walking it away. The verdict is mechanically right —
+/// the unit did not end up fortified — but reading it as `not_fortified` sends
+/// anyone auditing bridge health after an actuation bug that is not there.
+///
+/// Named separately, it stays out of the applied count (it genuinely did not
+/// apply) while saying whose decision it was.
+fn later_moved_units(
+    frames: &[PendingOrders],
+    turn: u32,
+    frame: u32,
+) -> std::collections::BTreeSet<i64> {
+    frames
+        .iter()
+        .filter(|pending| pending.turn == turn && pending.frame > frame)
+        .flat_map(|pending| pending.orders.iter())
+        .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+        .filter_map(|order| order.subject)
+        .collect()
+}
+
 fn offset_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
     civvis::hex::distance(
         civvis::hex::offset_to_axial(a.0, a.1),
@@ -5112,6 +5144,7 @@ fn verify_unit_order(
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
     later_fortified: bool,
+    later_moved: bool,
 ) -> Verdict {
     let Some(id) = order.subject else {
         return Verdict::Failed("no_subject".to_string());
@@ -5207,6 +5240,11 @@ fn verify_unit_order(
                 match now {
                     None => gone(),
                     Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
+                    // See `later_moved_units`: the decider walked this unit away
+                    // after asking it to dig in. Not the bridge's doing.
+                    Some(_) if later_moved => {
+                        Verdict::Failed("superseded_by_move".to_string())
+                    }
                     Some(_) => Verdict::Failed("not_fortified".to_string()),
                 }
             }
@@ -5336,6 +5374,9 @@ fn verify_unit_order(
 struct VerificationContext<'a> {
     same_turn_orders: &'a [IssuedOrder],
     later_fortified: bool,
+    /// The decider moved this unit in a later frame of the same turn, so any
+    /// FORTIFY it issued earlier was overridden by its own next decision.
+    later_moved: bool,
 }
 
 /// The next frame's verdict on one order issued on `turn`.
@@ -5362,6 +5403,7 @@ fn verify_order_with_context(
             tiles,
             evidence,
             context.later_fortified,
+            context.later_moved,
         ),
         "produce" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
@@ -5597,6 +5639,7 @@ fn verify_order(
         VerificationContext {
             same_turn_orders: &[],
             later_fortified: false,
+            later_moved: false,
         },
     )
 }
@@ -5617,6 +5660,7 @@ fn verify_orders(
         evidence,
         same_turn_orders,
         &std::collections::BTreeSet::new(),
+        &std::collections::BTreeSet::new(),
     )
 }
 
@@ -5628,6 +5672,7 @@ fn verify_orders_with_later_fortifications(
     evidence: &[serde_json::Value],
     same_turn_orders: &[IssuedOrder],
     later_fortified: &std::collections::BTreeSet<i64>,
+    later_moved: &std::collections::BTreeSet<i64>,
 ) -> Vec<OrderCheck> {
     pending
         .orders
@@ -5645,6 +5690,9 @@ fn verify_orders_with_later_fortifications(
                     later_fortified: order
                         .subject
                         .is_some_and(|id| later_fortified.contains(&id)),
+                    later_moved: order
+                        .subject
+                        .is_some_and(|id| later_moved.contains(&id)),
                 },
             ),
             order: order.clone(),
@@ -5750,6 +5798,7 @@ fn settle_pending_orders(
             .get(&frame.turn)
             .map_or(&[][..], Vec::as_slice);
         let later_fortified = later_fortified_units(&states, frame.turn, frame.frame);
+        let later_moved = later_moved_units(&answered, frame.turn, frame.frame);
         by_turn
             .entry(frame.turn)
             .or_default()
@@ -5760,6 +5809,7 @@ fn settle_pending_orders(
                 &evidence,
                 context,
                 &later_fortified,
+                &later_moved,
             ));
     }
     for (turn, checks) in by_turn {
@@ -5876,6 +5926,26 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             .or_default()
             .extend(orders.iter().cloned());
     }
+    // Precomputed because the loop below consumes `by_frame`: for each frame,
+    // the units the decider moved in a LATER frame of the same turn. See
+    // `later_moved_units` for why a FORTIFY they overrode is not a bridge
+    // failure.
+    let later_moved_by_frame: std::collections::BTreeMap<
+        (u32, u32),
+        std::collections::BTreeSet<i64>,
+    > = by_frame
+        .keys()
+        .map(|&(turn, frame)| {
+            let moved = by_frame
+                .iter()
+                .filter(|((t, f), _)| *t == turn && *f > frame)
+                .flat_map(|(_, orders)| orders.iter())
+                .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+                .filter_map(|order| order.subject)
+                .collect();
+            ((turn, frame), moved)
+        })
+        .collect();
     for ((turn, frame), orders) in by_frame {
         let Some(before) = frame_states
             .get(&(turn, frame))
@@ -5911,6 +5981,10 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         };
         let context = same_turn_orders.get(&turn).map_or(&[][..], Vec::as_slice);
         let later_fortified = later_fortified_units(&all_states, turn, frame);
+        let later_moved = later_moved_by_frame
+            .get(&(turn, frame))
+            .cloned()
+            .unwrap_or_default();
         for check in verify_orders_with_later_fortifications(
             &pending,
             after,
@@ -5918,6 +5992,7 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             &window,
             context,
             &later_fortified,
+            &later_moved,
         ) {
             let label = match check.order.kind.as_str() {
                 "unit" => check
@@ -9110,20 +9185,20 @@ mod tests {
         warrior.x = 5;
         warrior.y = 4;
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[], false),
+            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[], false, false),
             Verdict::Verified
         ));
 
         let mut gone = before.clone();
         gone.hostiles.clear();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &gone, &tiles, &[], false),
+            verify_unit_order(&order, 30, &before, &gone, &tiles, &[], false, false),
             Verdict::Verified
         ));
 
         let stood = before.clone();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], false),
+            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], false, false),
             Verdict::Failed(reason) if reason == "not_captured"
         ));
     }
@@ -13327,6 +13402,7 @@ mod order_postcondition_tests {
             &[],
             &pending.orders,
             &later,
+            &std::collections::BTreeSet::new(),
         );
         assert_eq!(checks[0].verdict, Verdict::Verified);
 
@@ -13354,8 +13430,40 @@ mod order_postcondition_tests {
             &[],
             &repeated.orders,
             &later,
+            &std::collections::BTreeSet::new(),
         );
         assert_eq!(checks[0].verdict, failed("not_fortified"));
+
+        // ⚠⚠ A FORTIFY THE DECIDER ITSELF OVERRODE IS NOT A BRIDGE FAILURE.
+        // `not_fortified` is the second-largest failure reason on the ledger —
+        // 3124 of 5193 FORTIFY orders over the runs of 2026-08-30 — and 95% of
+        // them had a MOVE_TO for the same unit in the same turn, 61% of those
+        // issued AFTER the fortify. Reading that as `not_fortified` sends an
+        // auditor after an actuation bug that is not there.
+        let mut movable = frame(30);
+        movable.units = vec![unit(7, "UNIT_WARRIOR", 20, 20)];
+        let overridden = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![order("unit", Some(7), Some("FORTIFY"), None)],
+            before: movable,
+        };
+        let mut walked_away = std::collections::BTreeSet::new();
+        walked_away.insert(7);
+        let checks = verify_orders_with_later_fortifications(
+            &overridden,
+            &after,
+            &no_tiles(),
+            &[],
+            &overridden.orders,
+            &std::collections::BTreeSet::new(),
+            &walked_away,
+        );
+        assert_eq!(
+            checks[0].verdict,
+            failed("superseded_by_move"),
+            "the decider walked this unit away after asking it to dig in"
+        );
     }
 
     #[test]
