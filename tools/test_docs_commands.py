@@ -107,7 +107,6 @@ REMOVED_TOOLING = {
     "age_census": "#1278",
     "ai_eval": "#2351",
     "evolve_probe": "#1278",
-    "leader_census": "#1278",
     "policy_eval": "#1278",
 }
 
