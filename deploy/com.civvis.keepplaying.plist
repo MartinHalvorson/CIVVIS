@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   com.civvis.keepplaying — the operator's standing intent, checked every five
-  minutes. `civvis-games ensure` clears a forgotten halt and restarts the
-  ladder chain when nothing is playing, but only while
-  ~/.civvis-operator-intent says `running` (`civvis-games off` writes `stopped`).
+  minutes. `civvis-games ensure` recovers a missing ladder chain only while
+  ~/.civvis-operator-intent says `running` (`civvis-games off` writes
+  `stopped`). It never clears a halt: only the explicit `civvis-games on`
+  command may authorize and resume the lanes.
 
   This is a TEMPLATE. tools/ops/civvis-install-host-automation.sh renders the
   two placeholders (__HOME__, __OPS__ = the tracked tools/ops directory) and
