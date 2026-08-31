@@ -907,6 +907,10 @@ LEADER_PICKER_OFFSET = 0.056
 LEADER_SCROLL_STEPS = 40
 LEADER_SCROLL_RESET = 20
 LEADER_SCROLL_AMOUNT = -2
+# ScreenCaptureKit and Vision can disagree for one frame immediately after a
+# picker row closes.  Re-read the already-clicked selection without sending
+# another input event; a failed read is not evidence that the click missed.
+LEADER_SELECTION_RECHECK_DELAYS = (0.0, 0.8, 1.6, 3.0)
 # Where the picker found the requested leader last game, kept beside the run
 # directories so every game on a seat shares it. The roster resets to Random
 # Leader on every new game, so the picker is walked every time; walking the
@@ -1958,7 +1962,7 @@ def _leader_observation(observations: list[dict], label: str,
         px, py = point[0] * screen_w, point[1] * screen_h
         rx, ry = (px - x) / w, (py - y) / h
         if 0.40 <= rx <= 0.62 and (
-            0.23 <= ry <= 0.31 if selected else 0.30 <= ry <= 0.76
+            0.23 <= ry <= 0.34 if selected else 0.30 <= ry <= 0.76
         ):
             return observation
     return None
@@ -2283,16 +2287,30 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
                 # Use the stable centre of the picker column and only OCR's row.
                 click_at(int(x + w * SETUP_X), int(point[1] * screen[1]))
                 time.sleep(1.2)
-                selected_shot = run_dir / "leader-selected.png"
-                screenshot(selected_shot)
-                selected = _leader_ocr(selected_shot, bounds, top=0.20, bottom=0.36)
-                if _leader_observation(selected, label, bounds, selected=True) is not None:
-                    write_leader_hint(hint_dir, leader, scroll_step)
-                    if panel_out is not None:
-                        panel_out["shot"] = selected_shot
-                    print(f"[setup] leader: selected and verified {label} ({leader})",
-                          flush=True)
-                    return True
+                for recheck, delay in enumerate(LEADER_SELECTION_RECHECK_DELAYS):
+                    if delay:
+                        time.sleep(delay)
+                    selected_shot = run_dir / (
+                        "leader-selected.png" if recheck == 0 else
+                        f"leader-selected-recheck{recheck}.png"
+                    )
+                    if not screenshot(selected_shot):
+                        continue
+                    selected = _leader_ocr(
+                        selected_shot, bounds, top=0.20, bottom=0.36)
+                    if _leader_observation(selected, label, bounds,
+                                           selected=True) is not None:
+                        write_leader_hint(hint_dir, leader, scroll_step)
+                        if panel_out is not None:
+                            panel_out["shot"] = selected_shot
+                        if recheck:
+                            print(f"[setup] leader: selected and verified {label} "
+                                  f"({leader}) after OCR recheck {recheck}",
+                                  flush=True)
+                        else:
+                            print(f"[setup] leader: selected and verified {label} "
+                                  f"({leader})", flush=True)
+                        return True
                 print(f"[setup] leader click did not select {label}", flush=True)
                 return False
             step_wheel()

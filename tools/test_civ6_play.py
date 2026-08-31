@@ -763,6 +763,39 @@ class Civ6PlayTest(unittest.TestCase):
         ))
         self.assertEqual(click.call_count, 2)
 
+    def test_leader_picker_rechecks_a_transient_selected_ocr_miss(self) -> None:
+        """One missing post-click frame must not throw away a valid setup."""
+        bounds = (756, 33, 756, 480)
+        row = {"text": "Jadwiga", "x": 0.73, "y": 0.29,
+               "width": 0.04, "height": 0.02}
+        selected = {"text": "Jadwiga", "x": 0.73, "y": 0.155,
+                    "width": 0.04, "height": 0.02}
+        # The row is found, then two transient reads miss it before Vision
+        # recognizes the same rendered selection on the third frame.
+        reads = iter([[row], [], [], [selected]])
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot",
+                          side_effect=lambda p: Path(p).write_bytes(b"x") or True) as shot, \
+             patch.object(civ6_play, "_leader_picker_open", return_value=True), \
+             patch.object(
+                 civ6_play, "_setup_current_leader",
+                 return_value=("Random Leader", (1134, 140))), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "_leader_ocr",
+                          side_effect=lambda *args, **kwargs: next(reads)), \
+             patch.object(civ6_play.macos_input, "move"), \
+             patch.object(civ6_play.macos_input, "scroll"), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            found = civ6_play.select_requested_leader(
+                bounds, "LEADER_JADWIGA", Path(temporary)
+            )
+
+        self.assertTrue(found)
+        self.assertEqual(click.call_count, 2)
+        self.assertEqual(shot.call_count, 6)
+
     @needs_pillow
     def test_leader_picker_retries_an_unreadable_open_frame(self) -> None:
         """A recording-time capture miss is not evidence that the list stayed closed."""
