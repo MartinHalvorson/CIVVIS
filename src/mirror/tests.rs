@@ -9018,6 +9018,79 @@ fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
     assert_eq!(plain.religion_turns, 0);
 }
 
+#[test]
+fn an_actionable_conversion_clock_warns_without_inventing_a_majority() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 30,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![
+            plot(5, 5, "TERRAIN_GRASS"),
+            plot(10, 5, "TERRAIN_GRASS"),
+            plot(15, 5, "TERRAIN_GRASS"),
+        ],
+    }]);
+    let state = StateSnapshot {
+        turn: 30,
+        cities: vec![
+            StateCity {
+                id: 1,
+                name: "Faithless".to_string(),
+                x: 5,
+                y: 5,
+                pop: 4,
+                religion_next: Some("RELIGION_BUDDHISM".to_string()),
+                religion_turns: 20,
+                ..StateCity::default()
+            },
+            StateCity {
+                id: 2,
+                name: "Catholic".to_string(),
+                x: 10,
+                y: 5,
+                pop: 4,
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                religion_next: Some("RELIGION_BUDDHISM".to_string()),
+                religion_turns: 20,
+                ..StateCity::default()
+            },
+            StateCity {
+                id: 3,
+                name: "Distant".to_string(),
+                x: 15,
+                y: 5,
+                pop: 4,
+                religion_next: Some("RELIGION_HINDUISM".to_string()),
+                religion_turns: 21,
+                ..StateCity::default()
+            },
+        ],
+        ..StateSnapshot::default()
+    };
+    let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    let city = |name: &str| {
+        rebuilt
+            .game
+            .cities
+            .values()
+            .find(|city| city.name == name)
+            .unwrap_or_else(|| panic!("missing mirrored city {name}"))
+    };
+
+    let faithless = city("Faithless");
+    assert_eq!(faithless.pressure.get("Buddhism").copied(), Some(1.0));
+    assert_eq!(rebuilt.game.city_religion(faithless), None);
+
+    let catholic = city("Catholic");
+    assert_eq!(catholic.pressure.get("Catholicism").copied(), Some(100.0));
+    assert_eq!(catholic.pressure.get("Buddhism").copied(), Some(60.0));
+    assert_eq!(rebuilt.game.city_religion(catholic), Some("Catholicism"));
+
+    let distant = city("Distant");
+    assert!(!distant.pressure.contains_key("Hinduism"));
+}
+
 /// ★★★★ A border that grows after the mirror is built must still be learned.
 ///
 /// `apply_territory` ran only in `rebuild_from_state`, which a persistent mirror
