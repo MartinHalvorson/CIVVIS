@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Two pull requests each adding a treatment have to merge, so this merges them.
+"""Concurrent treatment and gene pull requests have to merge, so this merges them.
 
 Adding a treatment appends to several shared anchors — the flag field on
 `AdvancedAi`, its initialiser in `fn configured`, the `enable_*`/`disable_*`
@@ -22,10 +22,10 @@ Each anchor therefore carries a run of markers, one per range of first letters:
     // ---- append: a-b ------------------------------------------------
 
 ⚠⚠ AND THAT IS A CONVENTION, WHICH THIS REPOSITORY HAS LEARNED IS NOT A CHECK.
-So this suite does not assert that two treatment pull requests merge. It builds
-two of them with git plumbing and merges them, and it builds two that break the
-rule and requires those to conflict — a test that cannot fail is the defect,
-not the reassurance.
+So this suite does not assert that two treatment or gene pull requests merge.
+It builds them with git plumbing and merges them, and it builds two that break
+the rule and requires those to conflict — a test that cannot fail is the
+defect, not the reassurance.
 
 The anchors are DISCOVERED by globbing the tracked sources for the marker, never
 listed: a hand-written list of anchors is complete on the day it is written and
@@ -53,6 +53,9 @@ RANGES = [("a", "b"), ("c", "d"), ("e", "f"), ("g", "k"),
 #: Below this the glob has broken or the markers have been deleted. Pinned as a
 #: floor rather than an exact count so that adding an anchor is not a failure.
 MIN_ANCHORS = 2
+
+GENE_PATH = "src/ai/advanced/genes.rs"
+GENE_TAG = re.compile(r'Gene\s*\{\s*tag:\s*"([^"]+)"')
 
 
 #: ⚠ A CI RUNNER HAS NO GIT IDENTITY AND THIS SUITE WRITES COMMITS.
@@ -136,6 +139,37 @@ def _treatment_pr(rev: str, name: str, under: tuple[str, str] | None = None
     return out
 
 
+def _gene_tags(text: str) -> list[str]:
+    """The registry tags in source order, without mistaking verdict rows for genes."""
+    return GENE_TAG.findall(text)
+
+
+def _gene_with_entry(text: str, name: str,
+                     under: tuple[str, str] | None = None) -> str:
+    """`text` with one realistic registry row under its range's tail marker."""
+    want = under or bucket(name)
+    lines = text.splitlines(True)
+    found = [(number, span) for number, span in marks(
+        [line.rstrip("\n") for line in lines]) if span == want]
+    if len(found) != 1:
+        raise AssertionError(f"expected one {want[0]}-{want[1]} gene marker, found {found}")
+    number, _ = found[0]
+    indent = MARKER.match(lines[number].rstrip("\n")).group(1)
+    field = name.replace("-", "_")
+    lines.insert(
+        number + 1,
+        f'{indent}Gene {{ tag: "{name}", field: "{field}", kind: Kind::OptIn, '
+        f'enable: AdvancedAi::enable_{field}, disable: AdvancedAi::disable_{field} }},\n',
+    )
+    return "".join(lines)
+
+
+def _gene_pr(rev: str, name: str, under: tuple[str, str] | None = None
+             ) -> dict[str, str]:
+    """One branch adding a real-looking row to the positional gene registry."""
+    return {GENE_PATH: _gene_with_entry(_blob(rev, GENE_PATH), name, under)}
+
+
 def _commit(rev: str, files: dict[str, str], message: str) -> str:
     """A commit on `rev` carrying those file contents, built with plumbing."""
     index = Path(git("rev-parse", "--absolute-git-dir").strip()) / f"ix-{message}"
@@ -192,6 +226,8 @@ class AFlagIsFiledUnderItsOwnRange(unittest.TestCase):
 
     def test_every_entry_matches_the_marker_above_it(self):
         for path, found in anchors().items():
+            if path == GENE_PATH:
+                continue  # Gene rows have their own positional parser below.
             lines = (REPO / path).read_text(encoding="utf-8").splitlines()
             bounds = [number for number, _ in found] + [len(lines)]
             for (start, span), stop in zip(found, bounds[1:]):
@@ -284,6 +320,72 @@ class TwoTreatmentPullRequestsMerge(unittest.TestCase):
             _merge(one, other), "",
             "two treatments in one range merged, so this suite is not "
             "measuring the append point at all")
+
+
+class GeneRegistryAppendPoints(unittest.TestCase):
+    """The registry's markers must append rows without renumbering old genes."""
+
+    SAMPLES = (
+        "alpha-probe", "copper-probe", "ember-probe", "gale-probe",
+        "lilac-probe", "prism-probe", "sage-probe", "zephyr-probe",
+    )
+
+    def test_the_registry_carries_one_complete_marker_run(self):
+        found = marks((REPO / GENE_PATH).read_text(encoding="utf-8").splitlines())
+        self.assertEqual([span for _, span in found], RANGES)
+
+    def test_every_marker_appends_without_renumbering_existing_genes(self):
+        source = (REPO / GENE_PATH).read_text(encoding="utf-8")
+        before = _gene_tags(source)
+        self.assertGreater(len(before), 90, "the registry scrape found almost nothing")
+        for tag in self.SAMPLES:
+            with self.subTest(tag=tag):
+                after = _gene_tags(_gene_with_entry(source, tag))
+                self.assertEqual(after[:len(before)], before)
+                self.assertEqual(after[len(before):], [tag])
+
+    def test_every_gene_row_below_a_marker_matches_that_marker(self):
+        lines = (REPO / GENE_PATH).read_text(encoding="utf-8").splitlines(True)
+        found = marks([line.rstrip("\n") for line in lines])
+        bounds = [number for number, _ in found] + [len(lines)]
+        for (start, span), stop in zip(found, bounds[1:]):
+            for tag in _gene_tags("".join(lines[start + 1:stop])):
+                with self.subTest(tag=tag, span=span):
+                    self.assertEqual(bucket(tag), span)
+
+
+class TwoGenePullRequestsMerge(unittest.TestCase):
+    """The positional registry's claim, merged with actual Gene rows."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base = _commit(
+            git("rev-parse", "HEAD").strip(),
+            {GENE_PATH: (REPO / GENE_PATH).read_text(encoding="utf-8")},
+            "gene-append-base")
+
+    def test_two_genes_in_different_ranges_merge(self):
+        one = _commit(self.base, _gene_pr(self.base, "alpha-probe"), "gene-a")
+        other = _commit(self.base, _gene_pr(self.base, "zephyr-probe"), "gene-z")
+        self.assertEqual(_merge(one, other), "")
+
+    def test_two_adjacent_gene_ranges_merge(self):
+        for first, second in (("alpha-probe", "copper-probe"),
+                              ("copper-probe", "ember-probe"),
+                              ("gale-probe", "lilac-probe"),
+                              ("prism-probe", "sage-probe"),
+                              ("sage-probe", "terrain-probe")):
+            with self.subTest(first=first, second=second):
+                one = _commit(self.base, _gene_pr(self.base, first), "gene-one")
+                other = _commit(self.base, _gene_pr(self.base, second), "gene-two")
+                self.assertEqual(_merge(one, other), "")
+
+    def test_two_genes_in_the_same_range_still_conflict(self):
+        one = _commit(self.base, _gene_pr(self.base, "alpha-probe"), "gene-same-a")
+        other = _commit(self.base, _gene_pr(self.base, "beacon-probe"), "gene-same-b")
+        self.assertNotEqual(
+            _merge(one, other), "",
+            "two genes in one range merged, so this suite is not measuring the marker")
 
 
 if __name__ == "__main__":
