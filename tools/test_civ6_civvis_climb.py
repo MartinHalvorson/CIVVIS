@@ -1662,14 +1662,16 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                          without(second, "--tag", "--orders-db", "--load-save"))
 
     def test_the_resume_budget_is_bounded_and_the_last_freeze_is_the_row(self):
-        # ⚠ The budget is THREE — a game can park more than once at DIFFERENT
+        # ⚠ The budget is SIX — a game can park more than once at DIFFERENT
         # turns (run civvis-20260830T223229Z parked at t66, was rescued one turn
-        # back, played 27 more turns, then parked again at t93). So this needs a
-        # fourth verdict to prove the fourth attempt is refused. The save list is
-        # long because autosaves accumulate one per turn and the resume floor is
-        # t20; a short list would force the stride to clamp onto a board that
-        # just failed.
-        verdicts = ["frozen", "frozen", "frozen", "frozen"]
+        # back, played 27 more turns, then parked again at t93; run
+        # civvis-20260831T140630Z parked FOUR times by t118 and was killed at
+        # 0.589 of the leader when the old budget of three ran dry). So this
+        # needs a seventh verdict to prove the seventh attempt is refused. The
+        # save list is long because autosaves accumulate one per turn and the
+        # resume floor is t20; a short list would force the stride to clamp
+        # onto a board that just failed.
+        verdicts = ["frozen"] * 7
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
@@ -1679,7 +1681,8 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         try:
             code, rows = self.climb_with(
                 [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151},
-                 {"last_turn": 158}],
+                 {"last_turn": 158}, {"last_turn": 159}, {"last_turn": 160},
+                 {"last_turn": 160}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
@@ -1687,16 +1690,19 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         row = rows[0]
-        self.assertEqual(row["last_turn"], 158)
+        self.assertEqual(row["last_turn"], 160)
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
-        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140, 151])
+        self.assertEqual([r["from_turn"] for r in row["resumes"]],
+                         [102, 140, 151, 158, 159, 160])
         # One back, four back, nine back — RESUME_STEPS = (0, 3, 8) against the
-        # list with the parked turn's own save removed. Each attempt reaches a
-        # board the last one did not.
+        # list with the parked turn's own save removed; every resume past the
+        # third keeps the widest stride. Each of the first three attempts
+        # reaches a board the last one did not.
         self.assertEqual([r["save"] for r in row["resumes"]],
                          ["AutoSave_0160.Civ6Save", "AutoSave_0157.Civ6Save",
-                          "AutoSave_0152.Civ6Save"])
-        self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont3"))
+                          "AutoSave_0152.Civ6Save", "AutoSave_0151.Civ6Save",
+                          "AutoSave_0151.Civ6Save", "AutoSave_0151.Civ6Save"])
+        self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont6"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
         verdicts = ["frozen", "exited"]
