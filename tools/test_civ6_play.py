@@ -2562,11 +2562,15 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
             ("GAMESPEED_ONLINE", (700, 300)),     # second look: it took
         ])
         out: dict = {}
+        input_order = []
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_setup_current_value", side_effect=lambda *a: next(reads)), \
              patch.object(civ6_play, "_observed_label_point", return_value=(700, 340)), \
-             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play, "focus_game",
+                          side_effect=lambda *_args: input_order.append("focus")), \
+             patch.object(civ6_play, "click_at",
+                          side_effect=lambda *_args: input_order.append("click")) as click, \
              patch.object(civ6_play.macos_input, "move") as move, \
              patch.object(civ6_play.time, "sleep"):
             ok = civ6_play.set_dropdown((0, 0, 756, 480), "speed", "GAMESPEED_ONLINE",
@@ -2576,6 +2580,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertTrue(ok)
         # One click on the closed row, one on the option -- the list was NOT reopened.
         self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(input_order, ["focus", "click", "focus", "click"])
         self.assertEqual(move.call_args_list, [call(113, 408), call(113, 408)])
         self.assertEqual(screenshot.call_args_list[-1], call(again))
         self.assertEqual(out["shot"], again)
