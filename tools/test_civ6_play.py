@@ -152,17 +152,11 @@ class Civ6PlayTest(unittest.TestCase):
         # mocked display result.
         civ6_play._desktop_size_cache = None
 
-    def test_supervised_defaults_are_stock_and_take_the_chains_one_value(self) -> None:
+    def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
         """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
-        which holds the evidence both times it has moved. This asserts only that
-        the supervised worker takes the chain's one default and stock weights, so
-        a second copy cannot appear here.
-
-        ⚠ Renamed from `..._aim_at_a_lane_that_lands`: the aim is `science` by
-        operator directive as of 2026-08-31, and science is precisely the lane
-        that has not landed. The real contract here was always "one value, not a
-        second copy"; the old name asserted something this test never checked.
-        """
+        which also holds the evidence trail for the lane. This asserts
+        only that the supervised worker takes the chain's one default and stock
+        weights, so a second copy cannot appear here."""
         self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
         self.assertEqual(civ6_play.DEFAULT_CIVVIS_STRATEGY, "")
 
@@ -2051,8 +2045,6 @@ class VictoryLaneListTests(unittest.TestCase):
         match = re.search(r'const DEFAULT_VICTORY: &str = "([^"]+)";', binary)
         self.assertIsNotNone(match, "civvis_orders.rs has no named default")
         self.assertEqual(match.group(1), civ6_play.DEFAULT_CIVVIS_VICTORY)
-        # Science by operator directive, 2026-08-31; the argued pin and the
-        # evidence live in `test_ops_ladder_objective`.
         self.assertEqual(match.group(1), "science")
         self.assertIn(
             "unwrap_or_else(|| DEFAULT_VICTORY.to_string())",

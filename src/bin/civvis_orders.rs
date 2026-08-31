@@ -55,16 +55,10 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
 
 /// Direct invocations without `--victory` must agree with the high-level
-/// launchers' one central default. Keeping a named mirror here prevents a bare
+/// launchers' one central default. The launch chain aims at Science on the
+/// operator's 2026-08-30 instruction (see `civ6_play.DEFAULT_CIVVIS_VICTORY`
+/// for the evidence trail); keeping a named mirror here prevents a bare
 /// recovery or manual invocation from silently reviving an old lane.
-///
-/// ⚠ Science by operator directive, 2026-08-31 ("focus on winning a science
-/// victory"), moved from Diplomacy. The evidence that had pointed the other way
-/// stands and is written out in `civ6_play.DEFAULT_CIVVIS_VICTORY` and
-/// `test_ops_ladder_objective.test_the_default_is_the_measured_one`: science
-/// completes 0/16 in `victory_eval`. ⭐ That was measured with this very flag
-/// off, which is what gates the AI's own science support
-/// (`active_victory_target == Some(VictoryTarget::Science)` below).
 const DEFAULT_VICTORY: &str = "science";
 
 /// Build the agent for a `--victory` lane, or `None` if the name is not one.
@@ -7335,11 +7329,8 @@ mod tests {
     /// nothing until 2026-08-17, which is why this asserts the resolution and
     /// not just the string.
     ///
-    /// ⚠ Renamed from `..._the_safe_launcher_lane`: the lane is `science` by
-    /// operator directive as of 2026-08-31, and science is the lane recorded as
-    /// completing 0/16. "Safe" was never what this test checked.
     #[test]
-    fn direct_default_resolves_the_launcher_lane_to_a_target() {
+    fn direct_default_uses_the_safe_launcher_lane() {
         assert_eq!(super::DEFAULT_VICTORY, "science");
         assert!(super::VICTORY_LANES
             .split('|')
