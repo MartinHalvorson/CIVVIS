@@ -3535,6 +3535,22 @@ def _play(args: argparse.Namespace) -> int:
     # cleanup sites below. Calling it again after a normal run is harmless.
     atexit.register(stop_brain)
 
+    # The control mod is a per-run installation, not a standing feature of the
+    # player's Civ6.app. Left behind, it loads into MANUAL games: measured
+    # 2026-08-31, a hand-started game opened on turn 2 under the leftover
+    # agent, and restarting under the broken bundle seal crashed the game.
+    # Registered beside `stop_brain`, so the SIGTERM SystemExit below runs it
+    # on the supervisor's ordinary teardown too; the next verification run
+    # reinstalls at startup, so removal costs nothing but the file writes.
+    def _uninstall_mod():
+        try:
+            if modinstall.uninstall():
+                print("uninstalled the control mod; Civ6.app is vanilla again")
+        except Exception as error:  # noqa: BLE001 - an exit path must not raise
+            print(f"control mod uninstall failed (remove by hand): {error}")
+
+    atexit.register(_uninstall_mod)
+
     # ⚠ atexit does NOT run on SIGTERM. CPython's default SIGTERM disposition
     # terminates the process outright, so `stop_brain` above never fires and the
     # brain outlives the harness — and an orphaned brain is not harmless. The
