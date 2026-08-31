@@ -58,6 +58,19 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// goal is written off as ground the host will not walk it to. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_STUCK_TURNS: u32 = 2;
+
+/// Consecutive turns the same issued step must be seen untaken before
+/// `live-move-refusal-break` bars it. One refused turn is a report, not a
+/// verdict — the trade-route block set's rule — and the second identical ask
+/// against an unmoved unit is the host answering the same question the same
+/// way twice.
+const MOVE_REFUSAL_STRIKES: u8 = 2;
+
+/// Standard turns a proved-refused step stays barred. Long enough for the
+/// blocker the host saw — a unit in the way, a border, an embark rule the
+/// mirror mis-guessed — to change, short enough that a transient one does not
+/// disfigure routes for an era.
+const MOVE_REFUSAL_BLOCK_TURNS: u32 = 8;
 /// How long a written-off exploration goal stays retired. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
@@ -2923,6 +2936,22 @@ pub struct BasicAi {
     /// whereabouts are remembered here, and a unit found circling is priced
     /// out of the tiles it has already proved are worthless.
     unit_motion: BTreeMap<u32, UnitMotion>,
+    /// `live-move-refusal-break` (HostOnly): the host refuses ~14% of MOVE_TO
+    /// orders as `did_not_move` and the refusal event carries no destination,
+    /// so the same refused move was re-issued for up to eleven straight turns
+    /// (run civvis-20260830T095742Z: a settler ordered to the identical tile
+    /// on turns 36–39 with movement in hand, never moving, captured on t47).
+    /// The livelock detector cannot see this — `UnitMotion::circling`
+    /// deliberately excludes a footprint of one, because a unit that has
+    /// STOPPED is normally a unit that chose to. These three maps close the
+    /// carve-out for units the controller keeps ordering to move: the step
+    /// each unit was issued this turn, consecutive turns it was seen not to
+    /// have taken it, and the step it is barred from re-proposing while the
+    /// bar lasts. All three are inert with the gene off.
+    move_refusal_break: bool,
+    move_refusal_watch: RefCell<HashMap<u32, (u32, Pos, Pos)>>,
+    move_refusal_strikes: HashMap<u32, (Pos, Pos, u8)>,
+    move_refusal_blocks: HashMap<u32, (Pos, u32)>,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -4612,6 +4641,10 @@ impl BasicAi {
             naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
+            move_refusal_break: false,
+            move_refusal_watch: RefCell::new(HashMap::new()),
+            move_refusal_strikes: HashMap::new(),
+            move_refusal_blocks: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -5032,6 +5065,10 @@ impl BasicAi {
             naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
+            move_refusal_break: false,
+            move_refusal_watch: RefCell::new(HashMap::new()),
+            move_refusal_strikes: HashMap::new(),
+            move_refusal_blocks: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -6421,6 +6458,9 @@ impl BasicAi {
         self.settler_targets.clear();
         self.unit_memories.get_mut().clear();
         self.unit_motion.clear();
+        self.move_refusal_watch.get_mut().clear();
+        self.move_refusal_strikes.clear();
+        self.move_refusal_blocks.clear();
         self.explore_last.get_mut().clear();
         self.explore_dead.get_mut().clear();
         self.explore_goal.get_mut().clear();
@@ -6473,6 +6513,23 @@ impl BasicAi {
             .iter()
             .filter_map(|(uid, motion)| map.get(uid).map(|new| (*new, motion.clone())))
             .collect();
+        // ⚠ Remapped, not cleared: the watch is judged on the turn AFTER it
+        // was written, and on the live bridge the board (and every unit id)
+        // is rebuilt in between — clearing here would mean no issued step
+        // ever survives to be judged and the gene could never fire.
+        let watch = std::mem::take(self.move_refusal_watch.get_mut());
+        *self.move_refusal_watch.get_mut() = watch
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        self.move_refusal_strikes = std::mem::take(&mut self.move_refusal_strikes)
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        self.move_refusal_blocks = std::mem::take(&mut self.move_refusal_blocks)
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
         // ⚠ Cleared, not remapped. It records "this unit took a step FROM here on
         // THIS turn", and the turn is over by the time a board is rebuilt, so every
         // entry in it is already stale.
@@ -6503,6 +6560,87 @@ impl BasicAi {
         self.patrol_posts_by_class.clear();
         self.refresh_unit_memories(g, pid);
         self.observe_unit_motion(g, pid);
+        self.judge_move_refusals(g, pid);
+    }
+
+    /// `live-move-refusal-break`: judge last turn's issued steps against where
+    /// each unit actually stands, which on the live bridge is the host's own
+    /// answer. A unit that was issued the same step on
+    /// [`MOVE_REFUSAL_STRIKES`] consecutive turns and never left its tile has
+    /// been refused by the host (`did_not_move` — 13.9% of all orders in the
+    /// 08-30 measurement, the largest single failure), and the refusal event
+    /// carries no destination for a block set to learn from. The proof here
+    /// needs no new channel: the intended step is ours, and the fresh mirror
+    /// shows the unit did not take it. The proved step is barred for
+    /// [`MOVE_REFUSAL_BLOCK_TURNS`] standard turns so the pathing must choose
+    /// differently; one refused turn stays a report, not a verdict, matching
+    /// the trade-route rule that "a verdict needs two".
+    fn judge_move_refusals(&mut self, g: &Game, pid: usize) {
+        if !self.move_refusal_break {
+            return;
+        }
+        self.move_refusal_blocks.retain(|uid, (_, until)| {
+            g.units.get(uid).is_some_and(|unit| unit.owner == pid) && g.turn < *until
+        });
+        self.move_refusal_strikes
+            .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
+        let watch = std::mem::take(&mut *self.move_refusal_watch.borrow_mut());
+        let mut keep: HashMap<u32, (u32, Pos, Pos)> = HashMap::new();
+        let mut blocked: Vec<(u32, Pos, Pos, String)> = Vec::new();
+        for (uid, (turn, from, step)) in watch {
+            if turn == g.turn {
+                // A same-turn replan re-reads the board mid-turn; the host has
+                // not answered yet, so this entry is not yet judgeable.
+                keep.insert(uid, (turn, from, step));
+                continue;
+            }
+            if turn + 1 != g.turn {
+                continue;
+            }
+            let Some(unit) = g.units.get(&uid).filter(|unit| unit.owner == pid) else {
+                continue;
+            };
+            if unit.pos != from {
+                // It moved; whatever held it is gone, so the slate is clean
+                // and the next refusal starts a fresh count.
+                self.move_refusal_strikes.remove(&uid);
+                continue;
+            }
+            let strikes = match self.move_refusal_strikes.get(&uid) {
+                Some((f, s, n)) if *f == from && *s == step => n + 1,
+                _ => 1,
+            };
+            if strikes >= MOVE_REFUSAL_STRIKES {
+                self.move_refusal_strikes.remove(&uid);
+                self.move_refusal_blocks.insert(
+                    uid,
+                    (step, g.turn + g.standard_duration(MOVE_REFUSAL_BLOCK_TURNS)),
+                );
+                blocked.push((uid, from, step, unit.kind.to_string()));
+            } else {
+                self.move_refusal_strikes.insert(uid, (from, step, strikes));
+            }
+        }
+        *self.move_refusal_watch.borrow_mut() = keep;
+        for (uid, from, step, kind) in blocked {
+            think!(self.journal, Military, Detail,
+                   "{kind} {uid} stops re-asking a move the host keeps refusing";
+                   "ordered from {from:?} to {step:?} on {MOVE_REFUSAL_STRIKES} straight turns \
+                    without moving; that step is barred for {MOVE_REFUSAL_BLOCK_TURNS} standard \
+                    turns so the route must change";
+                   from);
+        }
+    }
+
+    /// Whether `live-move-refusal-break` currently bars a step for this unit.
+    /// `AdvancedAi` reads it to retire a frozen Settler's destination through
+    /// the dead-site machinery as well, rather than only bending its route.
+    pub(crate) fn move_refusal_blocked(&self, g: &Game, uid: u32) -> bool {
+        self.move_refusal_break
+            && self
+                .move_refusal_blocks
+                .get(&uid)
+                .is_some_and(|(_, until)| g.turn < *until)
     }
 
     pub(crate) fn unit_plan_state(&self, uid: u32) -> BasicUnitPlanState {
@@ -11958,6 +12096,7 @@ impl BasicAi {
             return false;
         }
         self.record_path_step(g, uid, from);
+        self.record_move_refusal_watch(g, uid, from, to);
         true
     }
 
@@ -11986,7 +12125,24 @@ impl BasicAi {
             return false;
         }
         self.record_path_step(g, uid, from);
+        self.record_move_refusal_watch(g, uid, from, to);
         true
+    }
+
+    /// Remember the FIRST pathed step this unit was issued this turn, which is
+    /// the step the live bridge's coalesced `MOVE_TO` starts with and the one
+    /// a host `did_not_move` refusal falsifies. Later same-turn steps replan
+    /// from tiles the host never saw the unit on, so only the first is
+    /// evidence. Inert with `live-move-refusal-break` off.
+    fn record_move_refusal_watch(&self, g: &Game, uid: u32, from: Pos, to: Pos) {
+        if !self.move_refusal_break {
+            return;
+        }
+        let mut watch = self.move_refusal_watch.borrow_mut();
+        let entry = watch.entry(uid).or_insert((g.turn, from, to));
+        if entry.0 != g.turn {
+            *entry = (g.turn, from, to);
+        }
     }
 
     /// Every refusal a pathed move owes to the controller rather than to the
@@ -12012,6 +12168,19 @@ impl BasicAi {
             if from_home <= MINOR_DEFENSE_RADIUS && to_home > MINOR_DEFENSE_RADIUS {
                 return false;
             }
+        }
+        // `live-move-refusal-break`: a step this unit has provably been
+        // refused by the host — issued on consecutive turns while the unit
+        // never left its tile — is not proposed again until the bar expires,
+        // so the pathing picks a different step (or a different target)
+        // instead of freezing. See `judge_move_refusals`.
+        if self.move_refusal_break
+            && self
+                .move_refusal_blocks
+                .get(&uid)
+                .is_some_and(|(step, until)| *step == to && g.turn < *until)
+        {
+            return false;
         }
         // Shipped: only the step just taken is remembered, so `A -> B -> A` is
         // refused. With `whole_turn_backtrack_guard` on, every tile walked

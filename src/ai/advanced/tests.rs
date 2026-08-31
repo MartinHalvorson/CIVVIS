@@ -39702,3 +39702,157 @@ fn the_builder_opens_the_empires_first_luxury_before_the_iron() {
     ai.disable_first_luxury_first();
     assert!(!ai.first_luxury_first);
 }
+
+/// `live-move-refusal-break`: an issued step seen untaken on two judged turns
+/// is barred, the pathing gate refuses it, any other step stays open, and the
+/// bar expires. The proof needs no host channel — the step is ours and the
+/// board shows the unit never took it.
+#[test]
+fn a_twice_refused_step_is_barred_and_the_route_must_change() {
+    let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
+    g.current = 0;
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_move_refusal_break();
+    let uid = g.player_unit_ids(0)[0];
+    let from = g.units[&uid].pos;
+    let mut steps = g.wdisk(from, 1).into_iter().filter(|pos| *pos != from);
+    let refused = steps.next().expect("a neighboring tile");
+    let elsewhere = steps.next().expect("a second neighboring tile");
+
+    ai.base.record_move_refusal_watch(&g, uid, from, refused);
+    g.turn += 1;
+    ai.base.judge_move_refusals(&g, 0);
+    assert!(
+        !ai.base.move_refusal_blocked(&g, uid),
+        "one refused turn is a report, not a verdict"
+    );
+
+    ai.base.record_move_refusal_watch(&g, uid, from, refused);
+    g.turn += 1;
+    ai.base.judge_move_refusals(&g, 0);
+    assert!(ai.base.move_refusal_blocked(&g, uid));
+    assert!(
+        !ai.base.path_step_allowed(&g, uid, from, refused, false),
+        "the proved-refused step must not be proposed while barred"
+    );
+    assert!(
+        ai.base.path_step_allowed(&g, uid, from, elsewhere, false),
+        "only the refused step is barred; the route may bend anywhere else"
+    );
+
+    g.turn += g.standard_duration(crate::ai::MOVE_REFUSAL_BLOCK_TURNS) + 1;
+    assert!(
+        !ai.base.move_refusal_blocked(&g, uid),
+        "a barred step is a lesson with an expiry, not a scar"
+    );
+}
+
+/// A unit that actually moved wipes the slate: whatever held it is gone, and
+/// the next refusal must build its own two-turn proof from scratch.
+#[test]
+fn a_unit_that_moved_wipes_the_refusal_slate() {
+    let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
+    g.current = 0;
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_move_refusal_break();
+    let uid = g.player_unit_ids(0)[0];
+    let here = g.units[&uid].pos;
+    let step = g
+        .wdisk(here, 1)
+        .into_iter()
+        .find(|pos| *pos != here)
+        .expect("a neighboring tile");
+
+    // Strike one on the true tile, then a watch entry recorded from a tile
+    // the unit is no longer on — the judged turn sees it moved.
+    ai.base.record_move_refusal_watch(&g, uid, here, step);
+    g.turn += 1;
+    ai.base.judge_move_refusals(&g, 0);
+    let elsewhere = g
+        .wdisk(here, 2)
+        .into_iter()
+        .find(|pos| *pos != here && *pos != step)
+        .expect("a distinct origin");
+    ai.base.record_move_refusal_watch(&g, uid, elsewhere, step);
+    g.turn += 1;
+    ai.base.judge_move_refusals(&g, 0);
+
+    // The old strike must not survive the observed movement: one more
+    // identical ask is a fresh first strike, not the second of two.
+    ai.base.record_move_refusal_watch(&g, uid, here, step);
+    g.turn += 1;
+    ai.base.judge_move_refusals(&g, 0);
+    assert!(
+        !ai.base.move_refusal_blocked(&g, uid),
+        "movement clears the count; a stale strike must not complete a bar"
+    );
+}
+
+/// Off, every touched path is byte-identical: nothing is recorded and nothing
+/// is barred. The registry hygiene suite exercises enable/disable; this pins
+/// the inertness the HostOnly contract promises the simulator.
+#[test]
+fn the_move_refusal_break_gene_off_records_and_bars_nothing() {
+    let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
+    g.current = 0;
+    let ai = AdvancedAi::new();
+    let uid = g.player_unit_ids(0)[0];
+    let from = g.units[&uid].pos;
+    let step = g
+        .wdisk(from, 1)
+        .into_iter()
+        .find(|pos| *pos != from)
+        .expect("a neighboring tile");
+    ai.base.record_move_refusal_watch(&g, uid, from, step);
+    assert!(
+        ai.base.move_refusal_watch.borrow().is_empty(),
+        "with the gene off the watch must stay empty"
+    );
+    g.turn += 1;
+    assert!(!ai.base.move_refusal_blocked(&g, uid));
+}
+
+/// The Settler half: a frozen Settler does not merely bend its route — its
+/// destination is retired through the same dead-site machinery a watchdog
+/// arrival uses, so the chooser must pick a site the refused approach does
+/// not serve.
+#[test]
+fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
+    let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
+    g.current = 0;
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_move_refusal_break();
+    let settler = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| g.units[uid].kind == "settler")
+        .expect("a starting settler");
+    let here = g.units[&settler].pos;
+    let step = g
+        .wdisk(here, 1)
+        .into_iter()
+        .find(|pos| *pos != here)
+        .expect("a neighboring tile");
+    let target = g
+        .wdisk(here, 5)
+        .into_iter()
+        .find(|pos| g.wdist(*pos, here) >= 4)
+        .expect("a distant destination");
+    ai.settler_targets.insert(settler, target);
+    ai.base
+        .move_refusal_blocks
+        .insert(settler, (step, g.turn + 10));
+
+    ai.retire_frozen_settler_targets(&g);
+
+    assert!(
+        ai.settler_targets.get(&settler).is_none(),
+        "the frozen destination must be dropped"
+    );
+    assert!(
+        ai.settler_dead_sites
+            .get(&settler)
+            .is_some_and(|sites| sites.contains_key(&target)),
+        "the destination goes through the dead-site machinery, not into the void"
+    );
+}

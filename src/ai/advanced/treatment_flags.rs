@@ -3299,6 +3299,25 @@ impl AdvancedAi {
         self.first_luxury_first = false;
     }
 
+    /// `live-move-refusal-break` (HostOnly): stop re-issuing a move the host
+    /// keeps refusing. `BasicAi` records the first pathed step issued to each
+    /// unit per turn; a unit seen on the same tile two judged turns running
+    /// with the same issued step gets that step barred for eight standard
+    /// turns (`judge_move_refusals`), and a frozen Settler additionally has
+    /// its destination retired through the dead-site machinery. Measured
+    /// motive: 13.9% of all orders were `did_not_move`, with one settler
+    /// re-ordered to the identical tile eleven straight turns before capture.
+    pub fn enable_live_move_refusal_break(&mut self) {
+        self.live_move_refusal_break = true;
+        self.base.move_refusal_break = true;
+    }
+
+    /// Withholding twin for `enable_live_move_refusal_break`.
+    pub fn disable_live_move_refusal_break(&mut self) {
+        self.live_move_refusal_break = false;
+        self.base.move_refusal_break = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
