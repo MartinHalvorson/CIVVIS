@@ -27667,15 +27667,19 @@ impl AdvancedAi {
         if let Some(why) = self.settle_site_frontier_loyalty_verdict(g, pid, site) {
             return Some(why);
         }
-        // `exhaustion-loyalty-guard`: the forecast below sums the rival
-        // cities the mirror can see, and under-reads the ones it cannot.
+        // `exhaustion-loyalty-guard` and an explicit Science lane: the
+        // forecast below sums the rival cities the mirror can see, and
+        // under-reads the ones it cannot.
         // Run civvis-20260829T090147Z founded Arretium at t29 four tiles from
         // a visible Mongolian city and five from Rome; the forecast passed it,
         // the engine read −7.2 Loyalty a turn from the first turn, and the
         // city flipped at t42 in peacetime. The exhaustion search's sieve
         // (`inside_rival_sphere`) already refuses such a plot; the preferred
         // search now asks the same question first.
-        if self.exhaustion_loyalty_guard && Self::inside_rival_sphere(g, pid, site) {
+        if (self.exhaustion_loyalty_guard
+            || self.active_victory_target(g) == Some(VictoryTarget::Science))
+            && Self::inside_rival_sphere(g, pid, site)
+        {
             return Some(
                 "it stands nearer a visible rival major's city than any of ours, inside that \
                  city's nine-tile Loyalty reach, and the forecast under-reads the rival cities \
@@ -28241,7 +28245,9 @@ impl AdvancedAi {
         // the exact immediate Loyalty collapse the guard exists to prevent.
         // Either guard also owns safe exhaustion below, so `BasicAi` cannot
         // immediately reselect a site this controller just retired.
-        let loyalty_guard_active = self.base.loyalty_rate_alarm || self.frontier_loyalty;
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        let loyalty_guard_active =
+            self.base.loyalty_rate_alarm || self.frontier_loyalty || science_targeted;
         // See `settler_target_hysteresis`: a cached site the validation just
         // dropped stays out of the next picks, so a threat flickering at the
         // edge of sight cannot flip the settler between two sites every frame.
@@ -28332,7 +28338,7 @@ impl AdvancedAi {
                 let Some((pos, _)) = candidate else {
                     break None;
                 };
-                let verdict = if self.base.loyalty_rate_alarm {
+                let verdict = if self.base.loyalty_rate_alarm || science_targeted {
                     self.settle_site_loyalty_verdict(g, pid, pos)
                 } else {
                     self.settle_site_frontier_loyalty_verdict(g, pid, pos)
@@ -28401,11 +28407,11 @@ impl AdvancedAi {
             // make the loss irreversible.
             let relaxed = self.settler_never_idles
                 && self.settler_relaxed_targets.get(&uid) == Some(&current);
-            let arrival_verdict = if relaxed {
+            let arrival_verdict = if relaxed && !science_targeted {
                 // See `relaxed_arrival_verdict`: a site the exhaustion search
                 // chose is judged at arrival by the rule that chose it.
                 Self::relaxed_arrival_verdict(g, pid, current)
-            } else if self.base.loyalty_rate_alarm {
+            } else if self.base.loyalty_rate_alarm || science_targeted {
                 self.settle_site_loyalty_verdict(g, pid, current)
             } else {
                 self.settle_site_frontier_loyalty_verdict(g, pid, current)
@@ -28735,10 +28741,12 @@ impl AdvancedAi {
             return false;
         }
         // A stalled route may reach a tile that the ordinary target loop had
-        // already rejected. Keep the fallback behind the same live-only
-        // Loyalty protections as target selection and arrival: the optional
-        // rate forecast, plus the always-shipped frontier guard.
-        let loyalty_verdict = if self.base.loyalty_rate_alarm {
+        // already rejected. Keep the fallback behind the same Loyalty
+        // protections as target selection and arrival: the optional rate
+        // forecast, plus the always-shipped frontier guard. An explicit
+        // Science lane opts into the full verdict as well.
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        let loyalty_verdict = if self.base.loyalty_rate_alarm || science_targeted {
             self.settle_site_loyalty_verdict(g, pid, here)
         } else {
             self.settle_site_frontier_loyalty_verdict(g, pid, here)

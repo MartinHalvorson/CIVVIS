@@ -42,10 +42,11 @@
 //!    wider questions before it stands still: the advanced ranking with the
 //!    same retired-site, threat-deferral and peer-reservation guards, refusing
 //!    only a *concrete* revolt inside [`STRANDED_SITE_MIN_HOLD_TURNS`] (twenty)
-//!    (`settler_exhaustion_target`, tier 2); then any legal reachable site at
-//!    all, nearest first (tier 3). Failing both it founds where it stands if
-//!    the engine allows, and otherwise says so in the journal — a Settler that
-//!    holds is never silent.
+//!    (`settler_exhaustion_target`, tier 2). An explicit Science lane keeps the
+//!    full growth-horizon Loyalty guard instead of accepting that compromise.
+//!    Then any legal reachable site at all, nearest first (tier 3). Failing
+//!    both it founds where it stands if the engine allows, and otherwise says
+//!    so in the journal — a Settler that holds is never silent.
 //! 2. **A watchdog bounds every other hold.** A Settler that has stood on
 //!    the same tile for [`SETTLER_IDLE_PATIENCE`] turns stops trusting the
 //!    branch that held it and marches on one rule only: never end the turn
@@ -62,7 +63,10 @@
 //! Off, every touched path is byte-identical to before.
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
-use super::{AdvancedAi, SETTLEMENT_GLOBAL_PREFILTER_LIMIT, SETTLER_STEP_RISK_LIMIT};
+use super::{
+    AdvancedAi, VictoryTarget, SETTLEMENT_GLOBAL_PREFILTER_LIMIT, SETTLER_DEAD_SITE_AVOID_TURNS,
+    SETTLER_STEP_RISK_LIMIT,
+};
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};
 use crate::think;
@@ -149,6 +153,23 @@ impl AdvancedAi {
             })
     }
 
+    /// An explicit Science lane cannot spend a Settler on a city that is
+    /// already forecast to revolt. Other lanes retain the never-idles
+    /// contract's bounded twenty-turn exception: a colony that holds for a
+    /// while can still be better than a Settler standing still forever.
+    fn science_targeted(&self, g: &Game) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Science)
+    }
+
+    /// Apply the exhaustion lane's Loyalty floor, with the stricter Science
+    /// contract. `settle_site_forecast_revolt` already limits the result to
+    /// the ordinary forty-turn growth horizon, so Science refuses every
+    /// forecasted revolt while other lanes only refuse the urgent half.
+    fn exhaustion_site_revolt(&self, g: &Game, pid: usize, site: Pos) -> Option<(f64, f64)> {
+        Self::settle_site_forecast_revolt(g, pid, site)
+            .filter(|(_, turns)| self.science_targeted(g) || *turns < STRANDED_SITE_MIN_HOLD_TURNS)
+    }
+
     /// Why the exhaustion search may not take `site` under
     /// `exhaustion-loyalty-guard`. The preferred search refuses a site within
     /// five tiles of a met major's border whose city it has not seen
@@ -159,11 +180,11 @@ impl AdvancedAi {
     /// of 2026-08-27..29, six revolted (24%, against 2 of 387 preferred
     /// foundings), three of them at −22 Loyalty a turn from their first
     /// reading — the settler handed a city to the rival that pressed it.
-    /// `None` with the gene off, with `frontier-loyalty` off, or when no
-    /// border hides a city.
+    /// `None` with the relevant guard off, with `frontier-loyalty` off, or
+    /// when no border hides a city.
     pub(super) fn exhaustion_site_unpriceable(&self, g: &Game, site: Pos) -> Option<&'static str> {
-        (self.exhaustion_loyalty_guard
-            && self.frontier_loyalty
+        (self.frontier_loyalty
+            && (self.exhaustion_loyalty_guard || self.science_targeted(g))
             && Self::beside_unresolved_major_border(g, site))
         .then_some("a rival border within five tiles may hide the city that would press it")
     }
@@ -197,9 +218,10 @@ impl AdvancedAi {
 
     /// Drop the sites `exhaustion_site_unpriceable` refuses, and the sites
     /// inside a rival major's sphere, from a candidate list, saying so once.
-    /// Nothing is dropped with the gene off.
+    /// Unassigned lanes drop nothing; the explicit Science contract also
+    /// enables this sieve when the optional exhaustion gene is off.
     fn set_aside_unpriceable_sites(&self, g: &Game, pid: usize, candidates: &mut Vec<(Pos, f64)>) {
-        if !self.exhaustion_loyalty_guard {
+        if !self.exhaustion_loyalty_guard && !self.science_targeted(g) {
             return;
         }
         let before = candidates.len();
@@ -229,8 +251,10 @@ impl AdvancedAi {
     /// Settler's retired sites, hysteresis avoidance, the empire's threat
     /// deferrals and the fog guesses set aside; a candidate is refused only
     /// when the engine's own Loyalty calculation of a city founded there
-    /// revolts inside [`STRANDED_SITE_MIN_HOLD_TURNS`]. Tier 3: any legal
-    /// reachable site, nearest first, with the same per-Settler exclusions.
+    /// revolts inside [`STRANDED_SITE_MIN_HOLD_TURNS`]. An explicit Science
+    /// lane refuses every forecasted revolt in the normal growth horizon.
+    /// Tier 3: any legal reachable site, nearest first, with the same
+    /// per-Settler exclusions.
     /// `None` when the map holds nothing this Settler can reach.
     pub(super) fn settler_exhaustion_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         let from = g.units[&uid].pos;
@@ -272,8 +296,8 @@ impl AdvancedAi {
             let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, &ranked) else {
                 break;
             };
-            match Self::settle_site_forecast_revolt(g, pid, site) {
-                Some((per_turn, turns)) if turns < STRANDED_SITE_MIN_HOLD_TURNS => {
+            match self.exhaustion_site_revolt(g, pid, site) {
+                Some((per_turn, turns)) => {
                     think!(self.journal(), Expansion, Detail,
                            "Settler skips a doomed site at {site:?}";
                            "stranded, it would still take a site the forecast set aside — but this \
@@ -299,8 +323,9 @@ impl AdvancedAi {
         // fallback, while keeping the historical nearest-site behavior for
         // native/evaluator controllers.
         let live_fallback_safety = self.live_settler_capture_lessons && self.settlement_safety;
-        let live_fallback_loyalty =
-            live_fallback_safety && (self.base.loyalty_rate_alarm || self.frontier_loyalty);
+        let science_targeted = self.science_targeted(g);
+        let live_fallback_loyalty = science_targeted
+            || (live_fallback_safety && (self.base.loyalty_rate_alarm || self.frontier_loyalty));
         let visible = live_fallback_safety.then(|| self.battlefront_visibility(g, pid));
         let mut legal: Vec<(Pos, f64)> = g
             .wdisk(from, radius)
@@ -316,6 +341,9 @@ impl AdvancedAi {
             })
             .filter_map(|pos| {
                 if !live_fallback_safety {
+                    if science_targeted && self.settle_site_loyalty_verdict(g, pid, pos).is_some() {
+                        return None;
+                    }
                     return Some((pos, -(g.wdist(from, pos) as f64)));
                 }
                 let visible = visible
@@ -356,7 +384,7 @@ impl AdvancedAi {
             .collect();
         legal.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         self.set_aside_unpriceable_sites(g, pid, &mut legal);
-        if self.exhaustion_loyalty_guard {
+        if self.exhaustion_loyalty_guard || science_targeted {
             // This tier ran no forecast at all: of the sixteen nearest-legal
             // foundings in the King runs of 2026-08-27..29, six read a
             // negative Loyalty rate at their first reading and three
@@ -365,8 +393,8 @@ impl AdvancedAi {
             // is named by `settler_stranded`.
             for _ in 0..=STRANDED_FORECAST_RETRIES {
                 let (site, _) = BasicAi::first_reachable_settle_site(g, uid, &legal)?;
-                match Self::settle_site_forecast_revolt(g, pid, site) {
-                    Some((per_turn, turns)) if turns < STRANDED_SITE_MIN_HOLD_TURNS => {
+                match self.exhaustion_site_revolt(g, pid, site) {
+                    Some((per_turn, turns)) => {
                         think!(self.journal(), Expansion, Detail,
                                "Settler skips a doomed nearest site at {site:?}";
                                "no ranked site is reachable and the nearest legal one would be \
@@ -416,14 +444,15 @@ impl AdvancedAi {
     /// would hold, else say so. Never silent.
     pub(super) fn settler_stranded(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let here = g.units[&uid].pos;
+        let science_targeted = self.science_targeted(g);
         self.settler_targets.remove(&uid);
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
         if g.can_found_city(uid)
             && self.exhaustion_site_unpriceable(g, here).is_none()
-            && !(self.exhaustion_loyalty_guard && Self::inside_rival_sphere(g, pid, here))
-            && !Self::settle_site_forecast_revolt(g, pid, here)
-                .is_some_and(|(_, turns)| turns < STRANDED_SITE_MIN_HOLD_TURNS)
+            && !((self.exhaustion_loyalty_guard || science_targeted)
+                && Self::inside_rival_sphere(g, pid, here))
+            && self.exhaustion_site_revolt(g, pid, here).is_none()
         {
             let worth = self.settle_value(g, pid, here);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
@@ -555,6 +584,21 @@ impl AdvancedAi {
             },
         };
         if target == current {
+            if self.science_targeted(g) {
+                if let Some(why) = self.settle_site_loyalty_verdict(g, pid, current) {
+                    think!(self.journal(), Expansion, Detail,
+                           "Settler abandons loyalty-doomed watchdog arrival at {current:?}";
+                           "{why}, so the Science lane retires the site before founding";
+                           current);
+                    self.settler_dead_sites.entry(uid).or_default().insert(
+                        current,
+                        g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                    );
+                    self.settler_targets.remove(&uid);
+                    self.settler_relaxed_targets.remove(&uid);
+                    return false;
+                }
+            }
             let worth = self.settle_value(g, pid, current);
             self.settler_targets.remove(&uid);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
@@ -1011,6 +1055,108 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Science cannot use the never-idles tier's twenty-turn compromise. A
+    /// colony forecast to revolt in the ordinary growth horizon is still a
+    /// lost science city, even when it would survive longer than the generic
+    /// exhaustion floor. The cached watchdog path must honor the same rule.
+    #[test]
+    fn an_explicit_science_lane_rejects_a_slow_exhaustion_revolt() {
+        let mut g = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        g.current = 0;
+        for pid in 0..2 {
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| g.units[unit].kind == "settler")
+                .expect("a starting settler");
+            let pos = g.units[&settler].pos;
+            g.remove_unit(settler);
+            g.found_city_for(pid, pos, None);
+        }
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+        let ours = g.player_city_ids(0)[0];
+        let theirs = g.player_city_ids(1)[0];
+        let home = g.cities[&ours].pos;
+        let rival = g.cities[&theirs].pos;
+        assert!(g.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for position in &positions {
+            let tile = g.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            g.players[0].explored.insert(*position);
+        }
+        g.cities.get_mut(&ours).unwrap().pop = 6;
+        let probe = AdvancedAi::new();
+        let mut moderate = None;
+        for rival_pop in 2..=12 {
+            g.cities.get_mut(&theirs).unwrap().pop = rival_pop;
+            for pos in &positions {
+                if g.wdist(*pos, home) > STRANDED_SITE_RADIUS
+                    || !probe.base.valid_settle_site(&g, 0, *pos)
+                {
+                    continue;
+                }
+                if let Some((per_turn, turns)) =
+                    AdvancedAi::settle_site_forecast_revolt(&g, 0, *pos)
+                {
+                    if turns >= STRANDED_SITE_MIN_HOLD_TURNS {
+                        moderate = Some((*pos, rival_pop, per_turn, turns));
+                        break;
+                    }
+                }
+            }
+            if moderate.is_some() {
+                break;
+            }
+        }
+        let (site, rival_pop, per_turn, turns) =
+            moderate.expect("fixture needs a revolt forecast between twenty and forty turns");
+        g.cities.get_mut(&theirs).unwrap().pop = rival_pop;
+        assert!(per_turn < 0.0);
+        assert!(turns >= STRANDED_SITE_MIN_HOLD_TURNS);
+
+        let start = g
+            .nbrs(site)
+            .into_iter()
+            .find(|pos| g.map.tiles.contains_key(pos) && g.wdist(*pos, rival) >= 4)
+            .expect("a reachable tile beside the test site");
+        let settler = g.spawn_test_unit("settler", 0, start);
+        g.units.get_mut(&settler).expect("settler").moves_left = 20.0;
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_engine_repairs();
+        ai.enable_settler_never_idles();
+        ai.attach_journal(Journal::recording());
+        let retired = ai.settler_dead_sites.entry(settler).or_default();
+        for pos in &positions {
+            if *pos != site {
+                retired.insert(*pos, g.turn + 1000);
+            }
+        }
+        assert_eq!(
+            ai.settler_exhaustion_target(&g, 0, settler),
+            None,
+            "Science rejects a revolt inside the normal growth horizon"
+        );
+
+        g.units.get_mut(&settler).expect("settler").pos = site;
+        g.units.get_mut(&settler).expect("settler").moves_left = 2.0;
+        ai.settler_targets.insert(settler, site);
+        assert!(!ai.settler_watchdog_step(&mut g, 0, settler));
+        assert_eq!(
+            g.player_city_ids(0).len(),
+            1,
+            "the Science watchdog does not found the doomed cached site"
+        );
     }
 
     /// A Settler that never moves counts up; one that moves resets; a
