@@ -34,10 +34,14 @@ def setUpModule() -> None:
     """
     sandbox = Path(_SANDBOX.name)
     halt, lock = sandbox / "operator-halt.json", sandbox / "civ6-game.lock"
+    intent = sandbox / "operator-intent"
+    intent.write_text("running\n")
     os.environ["CIVVIS_OPERATOR_HALT_FILE"] = str(halt)
     os.environ["CIVVIS_GAME_LOCK_DIR"] = str(lock)
+    os.environ["CIVVIS_OPERATOR_INTENT_FILE"] = str(intent)
     supervisor.gamelock.OPERATOR_HALT = halt
     supervisor.gamelock.LOCK = lock
+    supervisor.gamelock.OPERATOR_INTENT = intent
 
 
 class OperatorHaltTests(unittest.TestCase):
@@ -54,7 +58,7 @@ class OperatorHaltTests(unittest.TestCase):
             supervisor.wait_for_operator_resume(0.25)
 
         logged.assert_called_once_with(
-            "operator halt active; no spectator will start: operator pause"
+            "verification not authorized; no spectator will start: operator pause"
         )
         self.assertEqual(slept.call_args_list, [((0.25,), {}), ((0.25,), {})])
 
@@ -94,6 +98,21 @@ class OperatorHaltTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 supervisor.OperatorHaltRequested, "operator pause"
+            ):
+                supervisor.start_server(8766, {"players": 4}, False)
+
+        spawned.assert_not_called()
+
+    def test_server_launch_boundary_refuses_without_verification_intent(self):
+        with (
+            patch.object(supervisor.gamelock, "operator_halt_description",
+                         return_value=None),
+            patch.object(supervisor.gamelock, "verification_intent_description",
+                         return_value="verification intent is stopped"),
+            patch.object(supervisor.subprocess, "Popen") as spawned,
+        ):
+            with self.assertRaisesRegex(
+                supervisor.VerificationIntentDisabled, "intent is stopped"
             ):
                 supervisor.start_server(8766, {"players": 4}, False)
 
@@ -2740,6 +2759,12 @@ class TheSuiteReadsASandboxNotThisMachine(unittest.TestCase):
         self.assertEqual(os.environ.get("CIVVIS_OPERATOR_HALT_FILE"),
                          str(supervisor.gamelock.OPERATOR_HALT),
                          "a subprocess a test spawns must inherit the same sandbox")
+        self.assertTrue(
+            supervisor.gamelock.OPERATOR_INTENT.is_relative_to(sandbox),
+            "gamelock.OPERATOR_INTENT is outside the test sandbox")
+        self.assertEqual(os.environ.get("CIVVIS_OPERATOR_INTENT_FILE"),
+                         str(supervisor.gamelock.OPERATOR_INTENT),
+                         "a subprocess a test spawns must inherit the intent sandbox")
 
 
 if __name__ == "__main__":
