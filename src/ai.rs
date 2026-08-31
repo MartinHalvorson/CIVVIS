@@ -283,6 +283,13 @@ const VILLAGE_SEEK_RADIUS: i32 = 6;
 /// arm or pulling it away from its actual job.
 const VILLAGE_MILITARY_SEEK_RADIUS: i32 = 4;
 
+/// A meteor site is not an ordinary tribal-village roll: its one-entry table
+/// grants a free, most-advanced Heavy Cavalry unit. Four turns is still a
+/// bounded errand, but gives the nearby army a real chance to deny this rare
+/// prize to a rival.
+const METEOR_SEEK_RADIUS: i32 = 12;
+const METEOR_MILITARY_SEEK_RADIUS: i32 = 8;
+
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
 /// instead of letting an idle Engineer pave the stockpile down to zero.
@@ -14629,12 +14636,16 @@ impl BasicAi {
         )
     }
 
+    fn is_meteor_site(g: &Game, pos: Pos) -> bool {
+        g.map.get(pos).and_then(|tile| tile.improvement.as_deref()) == Some("meteor_goody")
+    }
+
     /// A village is an explorer's prize first. A nearby ordinary military unit
     /// may collect one only as a bounded fallback, and never while escorting a
     /// civilian. Settlers, Builders, and every other civilian role are absent
     /// by construction: their dedicated movement must not turn into a distant
     /// goody-hut chase.
-    fn village_collector_role(g: &Game, pid: usize, uid: u32) -> Option<(u8, i32)> {
+    fn village_collector_role(g: &Game, pid: usize, uid: u32) -> Option<u8> {
         let unit = g.units.get(&uid)?;
         let spec = &g.rules.units[unit.kind];
         if unit.owner != pid
@@ -14645,88 +14656,133 @@ impl BasicAi {
         {
             return None;
         }
-        Some(if Self::unit_doctrine(g, uid) == UnitDoctrine::Recon {
-            (0, VILLAGE_SEEK_RADIUS)
-        } else {
-            (1, VILLAGE_MILITARY_SEEK_RADIUS)
-        })
+        Some(u8::from(Self::unit_doctrine(g, uid) != UnitDoctrine::Recon))
+    }
+
+    fn village_seek_radius(role: u8, meteor: bool) -> i32 {
+        match (role, meteor) {
+            (0, false) => VILLAGE_SEEK_RADIUS,
+            (0, true) => METEOR_SEEK_RADIUS,
+            (_, false) => VILLAGE_MILITARY_SEEK_RADIUS,
+            (_, true) => METEOR_MILITARY_SEEK_RADIUS,
+        }
     }
 
     /// Deterministic ownership of a longer village errand. Recon has first
-    /// claim, then the closest eligible unit of that role; the ID only settles
-    /// an exact tie. A unit that has already spent its movement cannot keep a
-    /// live collector from taking the prize now.
+    /// claim to an ordinary village, while a meteor goes to the closest
+    /// eligible military unit: its guaranteed free unit is too valuable to
+    /// leave for a farther Scout. The ID only settles an exact tie. A unit
+    /// that has already spent its movement cannot keep a live collector from
+    /// taking the prize now.
     fn village_collector_rank(
         g: &Game,
         pid: usize,
         uid: u32,
         village: Pos,
     ) -> Option<(u8, i32, u32)> {
-        let (role, radius) = Self::village_collector_role(g, pid, uid)?;
+        let role = Self::village_collector_role(g, pid, uid)?;
+        let meteor = Self::is_meteor_site(g, village);
+        let radius = Self::village_seek_radius(role, meteor);
         let distance = g.wdist(g.units[&uid].pos, village);
-        (distance > 0 && distance <= radius && g.unit_can_traverse(uid, village))
-            .then_some((role, distance, uid))
+        (distance > 0 && distance <= radius && g.unit_can_traverse(uid, village)).then_some((
+            if meteor { 0 } else { role },
+            distance,
+            uid,
+        ))
+    }
+
+    fn village_collector_owns(g: &Game, pid: usize, uid: u32, village: Pos) -> bool {
+        let Some(own) = Self::village_collector_rank(g, pid, uid, village) else {
+            return false;
+        };
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|other| Self::village_collector_rank(g, pid, other, village))
+            .min()
+            == Some(own)
     }
 
     /// Return the village this military unit should collect now. A reachable,
-    /// actually seen village is taken immediately by whichever unit can enter
-    /// it; for a longer detour, a Scout wins the claim and an ordinary military
-    /// unit is used only when no suitable Scout can do so.
+    /// actually seen site is taken immediately by whichever unit can enter it.
+    /// For a longer detour, a Scout wins ordinary villages, while a meteor
+    /// outranks them and goes to the closest eligible military collector.
     fn village_collection_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         if self.minor || self.barb || g.players[pid].is_barbarian {
             return None;
         }
-        let (_, radius) = Self::village_collector_role(g, pid, uid)?;
+        let role = Self::village_collector_role(g, pid, uid)?;
         let origin = g.units[&uid].pos;
-        let known_villages: Vec<Pos> = g
-            .wdisk(origin, radius)
-            .into_iter()
-            .filter(|pos| *pos != origin)
-            .filter(|pos| g.players[pid].explored.contains(pos))
-            .filter(|pos| Self::is_village(g, *pos))
-            .collect();
-
-        // Production has charted the target already, so do not clone player
-        // vision for every military unit with no local village. The legacy
-        // immediate-pickup arms still use current sight below, preserving the
-        // old information boundary when bounded seeking is off.
-        if self.village_seeking && !known_villages.is_empty() {
-            if let Some(village) = g
-                .reachable(uid)
-                .into_iter()
-                .filter(|pos| known_villages.contains(pos))
-                .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
-            {
-                return Some(village);
+        if !self.village_seeking {
+            if !self.hut_collection {
+                return None;
             }
-        } else if self.hut_collection {
             let visible = g.player_vision_frame(pid);
-            if let Some(village) = g
+            return g
                 .reachable(uid)
                 .into_iter()
                 .filter(|pos| g.sees(&visible, *pos))
                 .filter(|pos| Self::is_village(g, *pos))
-                .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+                .min_by_key(|pos| (!Self::is_meteor_site(g, *pos), g.wdist(origin, *pos), *pos));
+        }
+        let known_sites: Vec<(Pos, bool)> = g
+            .wdisk(origin, Self::village_seek_radius(role, true))
+            .into_iter()
+            .filter(|pos| *pos != origin)
+            .filter(|pos| g.players[pid].explored.contains(pos))
+            .filter(|pos| Self::is_village(g, *pos))
+            .map(|pos| (pos, Self::is_meteor_site(g, pos)))
+            .collect();
+        let known_meteors: Vec<Pos> = known_sites
+            .iter()
+            .filter_map(|(pos, meteor)| (*meteor).then_some(*pos))
+            .collect();
+        let known_villages: Vec<Pos> = known_sites
+            .into_iter()
+            .filter(|(pos, meteor)| {
+                !meteor && g.wdist(origin, *pos) <= Self::village_seek_radius(role, false)
+            })
+            .map(|(pos, _)| pos)
+            .collect();
+
+        // Production has charted the target already, so do not clone player
+        // vision for every military unit with no local site. A meteor takes
+        // precedence even over a reachable ordinary village: the former is a
+        // guaranteed free advanced unit, while the latter is a random roll.
+        // The legacy immediate-pickup arm still uses current sight below,
+        // preserving its information boundary when bounded seeking is off.
+        let reachable = g.reachable(uid);
+        if let Some(meteor) = known_meteors
+            .into_iter()
+            .filter(|pos| {
+                reachable.contains(pos) || Self::village_collector_owns(g, pid, uid, *pos)
+            })
+            .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+        {
+            return Some(meteor);
+        }
+        if let Some(village) = reachable
+            .iter()
+            .copied()
+            .filter(|pos| known_villages.contains(pos))
+            .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+        {
+            return Some(village);
+        }
+        if self.hut_collection {
+            let visible = g.player_vision_frame(pid);
+            if let Some(village) = reachable
+                .into_iter()
+                .filter(|pos| g.sees(&visible, *pos))
+                .filter(|pos| Self::is_village(g, *pos))
+                .min_by_key(|pos| (!Self::is_meteor_site(g, *pos), g.wdist(origin, *pos), *pos))
             {
                 return Some(village);
             }
         }
 
-        if !self.village_seeking {
-            return None;
-        }
-
         known_villages
             .into_iter()
-            .filter(|pos| Self::village_collector_rank(g, pid, uid, *pos).is_some())
-            .filter(|pos| {
-                let own = Self::village_collector_rank(g, pid, uid, *pos);
-                g.player_unit_ids(pid)
-                    .into_iter()
-                    .filter_map(|other| Self::village_collector_rank(g, pid, other, *pos))
-                    .min()
-                    == own
-            })
+            .filter(|pos| Self::village_collector_owns(g, pid, uid, *pos))
             .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
     }
 
@@ -22935,6 +22991,90 @@ mod tests {
         yielding.village_seeking = true;
         assert!(!yielding.explore_step(&mut crowded, 0, scout));
         assert_eq!(crowded.units[&scout].pos, origin);
+    }
+
+    #[test]
+    fn a_meteor_ruin_outranks_a_nearer_village_and_uses_the_closest_collector() {
+        let mut g = Game::new_full(1, 48, 32, 38_007, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.map.clear_rivers();
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let (meteor, scout_origin, hut, warrior_origin) = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find_map(|meteor| {
+                let scout_origin = g
+                    .wdisk(meteor, METEOR_SEEK_RADIUS)
+                    .into_iter()
+                    .filter(|pos| g.wdist(meteor, *pos) == METEOR_SEEK_RADIUS)
+                    .min()?;
+                let warrior_origin = g
+                    .wdisk(meteor, METEOR_MILITARY_SEEK_RADIUS)
+                    .into_iter()
+                    .filter(|pos| g.wdist(meteor, *pos) == METEOR_MILITARY_SEEK_RADIUS)
+                    .min()?;
+                let hut = g
+                    .nbrs(scout_origin)
+                    .into_iter()
+                    .filter(|pos| *pos != meteor && *pos != warrior_origin)
+                    .min()?;
+                Some((meteor, scout_origin, hut, warrior_origin))
+            })
+            .expect("test map needs a meteor ring wider than an ordinary village chase");
+        g.map.tiles.get_mut(&meteor).unwrap().improvement = Some(crate::name!("meteor_goody"));
+        g.map.tiles.get_mut(&hut).unwrap().improvement = Some(crate::name!("goody_hut"));
+        let scout = g.spawn_test_unit("scout", 0, scout_origin);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+
+        assert!(g.reachable(scout).contains(&hut));
+        assert!(!g.reachable(scout).contains(&meteor));
+        assert!(
+            g.wdist(scout_origin, meteor) > VILLAGE_SEEK_RADIUS,
+            "the meteor must be beyond the ordinary village horizon"
+        );
+
+        let mut ai = BasicAi::new();
+        ai.village_seeking = true;
+        assert_eq!(
+            ai.village_collection_target(&g, 0, scout),
+            Some(meteor),
+            "the guaranteed free Heavy Cavalry should outrank the adjacent random village"
+        );
+        let mut scout_board = g.clone();
+        assert!(ai.village_collection_step(&mut scout_board, 0, scout));
+        assert!(
+            scout_board.wdist(scout_board.units[&scout].pos, meteor)
+                < scout_board.wdist(scout_origin, meteor),
+            "the Scout must close on the distant meteor instead of taking the nearer hut"
+        );
+
+        let warrior = g.spawn_test_unit("warrior", 0, warrior_origin);
+        assert_eq!(
+            ai.village_collection_target(&g, 0, warrior),
+            Some(meteor),
+            "a nearby field unit should chase the meteor within its extended horizon"
+        );
+        assert_eq!(
+            ai.village_collection_target(&g, 0, scout),
+            Some(hut),
+            "the farther Scout should release the meteor to the closer Warrior"
+        );
+        let before = g.wdist(warrior_origin, meteor);
+        assert!(ai.village_collection_step(&mut g, 0, warrior));
+        assert!(
+            g.wdist(g.units[&warrior].pos, meteor) < before,
+            "the field unit must close on the meteor"
+        );
     }
 
     #[test]
