@@ -20,7 +20,7 @@
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
     "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one source, (win_on - 1/players) * 10000; last, prior and third are the three most recent sources that priced the gene, newest first, so a new source shifts last to prior and prior to third; they are published evidence - the default reads batch_columns, not these",
     "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its on-arm seats - the ranking's `Diff`, the whole on-off difference",
-    "default_on": "operator-retained-selection: each selected gene beat its baseline (`win_delta_pp > 0`) in each of the three latest reporting batches and has a positive displayed pooled Diff; every other screenable gene is off; exactly the tags in deployment_genome are on, and a reporting-only batch refresh retains that selected set while its batch columns remain published evidence",
+    "default_on": "operator-retained-selection: each selected gene averages at least +5 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off; exactly the tags in deployment_genome are on, and a reporting-only batch refresh retains that selected set while its batch columns remain published evidence",
     "batch_rule": "read over the reporting batches that priced the gene, newest first, at most batch_rule_window of them, each reading the ranking's wins +- per 10,000 total seats: (1) three batches all below batch_rule_remove_below -> remove the gene from the pool; (2) two or three batches negative -> off; (3) three batches all positive -> on; (4) three batches, exactly two positive, mean > batch_rule_average -> on; (5) one or two batches, exactly one positive, mean > batch_rule_average -> on; (6) two batches both positive -> on; (7) otherwise off - no batch, or a zero, is neither positive nor negative",
     "batch_rule_window": 3,
     "batch_rule_average": 7,
@@ -1296,44 +1296,75 @@
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
     "deployment_policy": "operator-retained-selection",
     "deployment_genome": [
+      "age-closer",
+      "amenity-project-preemption-2",
       "apostle-promotion-by-role",
       "army-target-weighs-enemy",
+      "barbarian-bargain",
+      "barbarian-ranged-answer",
       "barbarian-settler-capture",
       "blind-objective-strength",
-      "buildings-before-projects",
+      "buy-what-cards-cannot-boost",
+      "campaign-pillage",
       "campus-adjacency-threshold",
       "chokepoint-siting",
+      "civilian-out-of-reach",
+      "come-ashore",
+      "congress-counter-leader",
+      "connect-the-luxury",
+      "deals-at-the-ceiling",
       "defensible-sites",
+      "district-coverage",
       "district-planning",
+      "domination-city-count",
       "early-archers",
       "elective-war-yields-to-a-lane",
       "engine-faith-price",
       "escort-unstick",
+      "first-district-first",
+      "first-luxury-first",
       "frontier-massing-alarm",
       "government-capacity-fallback",
       "government-ladder-2",
       "great-person-housing",
       "loyalty-rate-alarm",
+      "maintenance-aware-deck",
+      "missionary-evades-raiders",
       "opportunistic-war",
       "overseas-settlement",
+      "pantheon-board",
+      "peace-when-the-war-does-not-pay",
       "peacetime-deterrence",
       "price-the-suzerainty",
+      "quest-camp-errand",
+      "raid-pillage-prizes",
+      "relief-targets-the-siege",
+      "religion-sues-peace",
+      "religious-defence-scales",
       "religious-veto-defence",
       "science-victory-drive",
+      "settlement-gap-target",
       "settler-guard-holds",
+      "settler-target-hysteresis-2",
       "solvency-first-trade-slot",
       "stranded-settler-discount",
-      "surprise-war-mobilization",
       "treasury-at-work-2",
+      "unchosen-war-keeps-the-lane",
       "unit-objective-memory",
-      "wide-map-capacity"
+      "war-economy",
+      "war-reinforcement",
+      "wide-map-capacity",
+      "wonder-adjacent-sites",
+      "wonder-score-tally"
     ],
     "versions": "every version's batch-rule reading remains recorded on its own row; this reporting-only rotation retains the already selected version, one per family, while a family still holds at most 3 versions and a fourth requires a cull of the third-best",
     "family_heads": {
       "amenity-project-preemption": {
-        "rule_on": [],
+        "rule_on": [
+          "amenity-project-preemption-2"
+        ],
         "head": "amenity-project-preemption",
-        "ships": null,
+        "ships": "amenity-project-preemption-2",
         "versions": {
           "amenity-project-preemption": -0.037946,
           "amenity-project-preemption-2": null
@@ -1387,9 +1418,11 @@
         }
       },
       "district-coverage": {
-        "rule_on": [],
+        "rule_on": [
+          "district-coverage"
+        ],
         "head": "district-coverage",
-        "ships": null,
+        "ships": "district-coverage",
         "versions": {
           "district-coverage": 0.008266,
           "district-coverage-2": null
@@ -1465,9 +1498,11 @@
         }
       },
       "settler-target-hysteresis": {
-        "rule_on": [],
+        "rule_on": [
+          "settler-target-hysteresis-2"
+        ],
         "head": "settler-target-hysteresis",
-        "ships": null,
+        "ships": "settler-target-hysteresis-2",
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
@@ -1496,9 +1531,11 @@
         }
       },
       "wonder-adjacent-sites": {
-        "rule_on": [],
+        "rule_on": [
+          "wonder-adjacent-sites"
+        ],
         "head": null,
-        "ships": null,
+        "ships": "wonder-adjacent-sites",
         "versions": {
           "wonder-adjacent-sites": null,
           "wonder-adjacent-sites-2": null
@@ -1509,7 +1546,7 @@
       "standard",
       "legacy"
     ],
-    "deployment_policy_meaning": "a reporting-only table refresh retains the preceding deployment_genome; each selected gene beat its baseline (`win_delta_pp > 0`) in each of the three latest reporting batches and has a positive displayed pooled Diff; every other screenable gene is off. The new batch columns are evidence and cannot change a default"
+    "deployment_policy_meaning": "a reporting-only table refresh retains the preceding deployment_genome; each selected gene averages at least +5 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off. The new batch columns are evidence and cannot change a default"
   },
   "sources": [
     {
@@ -1881,7 +1918,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 31
+    "default_on": 60
   },
   "genes": [
     {
@@ -2112,7 +2149,7 @@
     {
       "tag": "barbarian-bargain",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 22,
       "wins_prior_10k": 10,
       "wins_third_10k": 5,
@@ -2157,7 +2194,7 @@
     {
       "tag": "barbarian-ranged-answer",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -2,
       "wins_prior_10k": 17,
       "wins_third_10k": 14,
@@ -2427,7 +2464,7 @@
     {
       "tag": "buildings-before-projects",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 13,
       "wins_prior_10k": 61,
       "wins_third_10k": -2,
@@ -2562,7 +2599,7 @@
     {
       "tag": "come-ashore",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -3,
       "wins_prior_10k": 5,
       "wins_third_10k": 11,
@@ -2742,7 +2779,7 @@
     {
       "tag": "district-coverage",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": -22,
       "wins_third_10k": 32,
@@ -3552,7 +3589,7 @@
     {
       "tag": "maintenance-aware-deck",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 61,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -3777,7 +3814,7 @@
     {
       "tag": "pantheon-board",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 5,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -4002,7 +4039,7 @@
     {
       "tag": "raid-pillage-prizes",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 43,
       "wins_prior_10k": 53,
       "wins_third_10k": 30,
@@ -4137,7 +4174,7 @@
     {
       "tag": "relief-targets-the-siege",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 18,
       "wins_prior_10k": 6,
       "wins_third_10k": 14,
@@ -4182,7 +4219,7 @@
     {
       "tag": "religion-sues-peace",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 5,
       "wins_prior_10k": -18,
       "wins_third_10k": 6,
@@ -4227,7 +4264,7 @@
     {
       "tag": "religious-defence-scales",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 12,
       "wins_prior_10k": -8,
       "wins_third_10k": null,
@@ -4497,7 +4534,7 @@
     {
       "tag": "settlement-gap-target",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -4992,7 +5029,7 @@
     {
       "tag": "war-economy",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 46,
       "wins_prior_10k": 118,
       "wins_third_10k": 38,
@@ -5037,7 +5074,7 @@
     {
       "tag": "war-reinforcement",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 0,
       "wins_prior_10k": 34,
       "wins_third_10k": 3,

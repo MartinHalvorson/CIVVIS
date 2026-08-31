@@ -521,15 +521,19 @@ DEPLOYMENT_POLICY = "batch-rule+operator-pins"
 #: rotation retain the already selected genome; the batch rows remain evidence
 #: but cannot silently flip treatments while a historical batch is published.
 RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
-#: The operator's explicit selection rule for the retained 2026-08-28 genome.
+#: The operator's explicit selection rule for the retained 2026-08-31 genome.
 #: It is checked from the recorded reports in `tools/test_genes.py`, while the
 #: retained policy keeps later evidence rotations from silently reselecting it.
+#: The threshold is in the ranking's wins per 10,000 *total* seats, not the
+#: pooled on/off percentage-point Diff.
+RETAINED_SELECTION_MIN_AVERAGE = 5
 RETAINED_SELECTION_RULE = (
-    "each selected gene beat its baseline (`win_delta_pp > 0`) in each of the "
-    "three latest reporting batches and has a positive displayed pooled Diff; "
-    "every other screenable gene is off"
+    "each selected gene averages at least +5 wins per 10,000 total seats over "
+    "its available readings from the latest three reporting batches; when "
+    "multiple versions of one gene qualify, only the version with the higher "
+    "such average ships; every other screenable gene is off"
 )
-#: ⭐ THE OPERATOR'S PINS. The explicit 2026-08-28 selection contains no
+#: ⭐ THE OPERATOR'S PINS. The explicit 2026-08-31 selection contains no
 #: exceptions: every deployed gene must earn its place from the three latest
 #: batches, so this list stays empty.
 OPERATOR_DEFAULT_ON = ()
@@ -827,6 +831,20 @@ def batch_columns(batches: list, tag: str) -> list:
         for batch in batches
     ]
     return (columns + [None] * BATCH_RULE_WINDOW)[:BATCH_RULE_WINDOW]
+
+
+def retained_selection_average(columns: list[int | None]) -> float | None:
+    """The retained-selection mean over the readings a gene actually has.
+
+    The deployment directive is deliberately inclusive at
+    ``RETAINED_SELECTION_MIN_AVERAGE`` (+5 wins per 10,000 total seats), and
+    a gene added after an older reporting batch is judged from its one or two
+    displayed readings rather than being treated as a zero. A gene with no
+    reading remains off.
+    """
+    readings = [int(column) for column in columns[:BATCH_RULE_WINDOW]
+                if column is not None]
+    return sum(readings) / len(readings) if readings else None
 
 
 def named_defaults(names: tuple[str, ...], pinnable: set[str], strict: bool,
@@ -1565,6 +1583,34 @@ def resolve_family_heads(rule_on: tuple[str, ...], tags: list[str],
     return tuple(sorted(chosen)), record
 
 
+def retained_deployment_genome_from_batches(batches: list,
+                                            tags: list[str]) -> tuple[str, ...]:
+    """The current explicit retained selection from the displayed batches.
+
+    A tag qualifies when the arithmetic mean of its available entries in the
+    newest three ranking columns reaches +5 wins per 10,000 total seats. The
+    deployment model allows one active version per family, so a qualifying
+    family selects the member with the higher directive mean (ties go to the
+    higher version, matching ``family_head``). This is intentionally separate
+    from ``batch_rule``: the latter stays recorded as evidence while the
+    retained policy carries this explicit selection across table rotations.
+    """
+    averages = {
+        tag: average
+        for tag in tags
+        if (average := retained_selection_average(batch_columns(batches, tag))) is not None
+        and average >= RETAINED_SELECTION_MIN_AVERAGE
+    }
+    selected = set(averages)
+    for family in families_of(tags):
+        qualifying = [tag for tag in family if tag in averages]
+        if len(qualifying) < 2:
+            continue
+        selected.difference_update(qualifying)
+        selected.add(max(qualifying, key=lambda tag: (averages[tag], family.index(tag))))
+    return tuple(sorted(selected))
+
+
 def tracked_wins(gene: dict) -> float:
     """A version's tracked wins: the ledger's pooled on−off win difference over
     every screen that priced it (`win_diff_pp`, the ranking's *Diff*) — the
@@ -2008,8 +2054,8 @@ def render_rust(ledger: dict) -> str:
     provenance = (
         [
             "// together; this reporting-only publication retains `DEPLOYMENT_GENOME`.",
-            "// Every selected tag beat its baseline in all three latest batches and has a",
-            "// positive displayed Diff; `BATCH_COLUMNS` remain published evidence thereafter.",
+            "// Each selected tag averages at least +5 wins/10k total seats across its",
+            "// available latest-three `BATCH_COLUMNS`; one higher-average version ships per family.",
         ]
         if retained else
         [
@@ -2020,9 +2066,9 @@ def render_rust(ledger: dict) -> str:
     )
     genome_description = (
         [
-            "/// The screenable genes whose on arm beat its baseline in each of the",
-            "/// three latest batches and whose displayed pooled Diff is positive; every",
-            "/// other screenable gene is off. One version ships per family.",
+            "/// The screenable genes averaging at least +5 wins per 10,000 total seats",
+            "/// over their available latest-three batch readings; every other screenable",
+            "/// gene is off. One higher-average version ships per family.",
         ]
         if retained else
         [
@@ -2034,7 +2080,7 @@ def render_rust(ledger: dict) -> str:
     pin_description = (
         [
             "/// No manual on overrides: every deployed gene meets the published",
-            "/// three-positive-baseline-batches and positive-Diff criterion.",
+            "/// available-latest-three-batches average-at-least-+5 criterion.",
         ]
         if retained else
         [
@@ -2812,10 +2858,11 @@ def evidence_sections(ledger: dict, measured: dict[str, list[dict]],
                else "## Evidence beside the batch rule")
     policy_explanation = (
         "This is a reporting-only publication: the selected deployment genome contains exactly "
-        "the genes that beat their baseline (`win_delta_pp > 0`) in each of the three latest "
-        "reporting batches and have a positive displayed pooled *Diff*; every other screenable "
-        "gene is off. Later table rotations retain that explicit selection while refreshing "
-        "evidence, so a historical batch cannot silently rewrite the live genome."
+        "the genes whose available readings in the latest three reporting batches average at "
+        "least +5 wins per 10,000 total seats; when versions of the same gene both qualify, "
+        "only the higher-average version ships. Every other screenable gene is off. Later table "
+        "rotations retain that explicit selection while refreshing evidence, so a historical "
+        "batch cannot silently rewrite the live genome."
         if retained else
         "The deployment genome follows the batch rule (operator, 2026-08-25): a gene's three "
         "batch columns in `GENE_HEURISTIC_RANKING.md` decide its default — all three positive, "
@@ -3086,15 +3133,17 @@ def render_parts(ledger: dict) -> tuple[str, str]:
     if retained:
         default_authority = (
             "the explicit retained selection (`docs/gene_ledger.json`, "
-            "`rules.deployment_genome`): a gene is on only when its on arm beat the "
-            "baseline in each of the three latest reporting batches and its displayed "
-            "pooled *Diff* is positive; every other screenable gene is off."
+            "`rules.deployment_genome`): a gene is on only when its available readings "
+            "in the latest three reporting batches average at least +5 wins per 10,000 "
+            "total seats; qualifying versions compete by that average and every other "
+            "screenable gene is off."
         )
         pins_reference = (
             "**Selected defaults.** No named overrides remain: the deployed set is exactly "
-            "the three-positive-baseline-batches plus positive-*Diff* selection. The legacy "
-            "batch-rule readings remain visible in `rules.batch_decisions`, but do not "
-            "change a default during table rotation."
+            "the available-latest-three-batches average-at-least-+5 selection, with the "
+            "higher-average version winning any family collision. The legacy batch-rule "
+            "readings remain visible in `rules.batch_decisions`, but do not change a default "
+            "during table rotation."
         )
         versioned_reference = (
             "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
