@@ -31,6 +31,9 @@
 --      exposed Settler until the later Settler safety row is actuated.
 --  15. An exposed Settler can retreat two host-reachable hexes when every
 --      adjacent escape is covered.
+--  16. A Builder cannot enter visible barbarian capture reach without a
+--      proven escort; an exposed travelling Builder gets the same bounded
+--      escape treatment, and a safe escort preserves the move.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -731,6 +734,69 @@ applyOrders(player, PID, 7, { row(34, "MOVE_TO", 1, 2) })
 check("proven escort: guard shares exposed leg", ops(35), "UNITOPERATION_MOVE_TO@1,2")
 check("proven escort: setter still moves", ops(34), "UNITOPERATION_MOVE_TO@1,2")
 check("proven escort: no scout capture hold", lastEvent("settler_scout_capture_hold"), nil)
+
+-- Builders are civilians too.  A Builder leaving a city for a tile inside a
+-- visible barbarian combat unit's next-turn reach must not be accepted merely
+-- because the host can execute the MOVE_TO.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[60] = { id = 60, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.barbarians[106] = { id = 106, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 2 }
+host.paths["60:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(60, "MOVE_TO", 1, 2) })
+check("visible combat: builder stays out of capture leg", ops(60), "")
+check("visible combat: builder hold names the hostile", has(lastEvent("builder_barbarian_capture_hold"),
+	'"builder":60') and has(lastEvent("builder_barbarian_capture_hold"), '"hostile":106'), true)
+check("visible combat: builder hold is an explicit refusal", has(lastEvent("orders"),
+	'builder_barbarian_capture_hold'), true)
+check("visible combat: builder hold is counted", has(lastEvent("orders"),
+	'"builder_barbarian_capture_held":1'), true)
+
+-- A later replan frame must not bypass a hold established by the first row
+-- for the same Builder.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[64] = { id = 64, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.barbarians[109] = { id = 109, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 2 }
+host.paths["64:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(64, "MOVE_TO", 1, 2), row(64, "MOVE_TO", 1, 2) })
+check("duplicate builder frame: every exposed row stays held", ops(64), "")
+check("duplicate builder frame: both rows are refused", has(lastEvent("orders"),
+	'"refused":2') and has(lastEvent("orders"), '"builder_barbarian_capture_hold":1')
+	and has(lastEvent("orders"), '"queue_prior_refused":1'), true)
+
+-- A travelling Builder already inside a visible combat envelope can retreat
+-- when the host proves a safe two-move answer, rather than waiting in place.
+reset()
+host.units[61] = { id = 61, kind = "UNIT_BUILDER", x = 1, y = 2, moves = 2 }
+host.barbarians[107] = { id = 107, kind = "UNIT_WARRIOR", x = 1, y = 4, moves = 0 }
+host.paths["61:" .. plotIndex(1, 3)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 3) }, turns = { 0, 1 } }
+host.paths["61:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(61, "MOVE_TO", 1, 3) })
+check("exposed builder retreats to a safe neighbour", ops(61), "UNITOPERATION_MOVE_TO@1,1")
+check("exposed builder escape keeps the original target", has(lastEvent("builder_capture_escape"),
+	'"want":[1,3]') and has(lastEvent("builder_capture_escape"), '"sent":[1,1]'), true)
+check("exposed builder escape is not counted as a hold", has(lastEvent("orders"),
+	'"builder_barbarian_capture_held":0'), true)
+
+-- A host-proven co-located combat escort keeps an otherwise exposed Builder
+-- mobile; the bridge must not turn a safe explicit escort into a freeze.
+reset()
+host.units[62] = { id = 62, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.units[63] = { id = 63, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[108] = { id = 108, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 2 }
+host.paths["62:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+host.paths["63:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(62, "MOVE_TO", 1, 2), row(63, "MOVE_TO", 1, 2) })
+check("proven builder escort: builder still moves", ops(62), "UNITOPERATION_MOVE_TO@1,2")
+check("proven builder escort: guard still moves", ops(63), "UNITOPERATION_MOVE_TO@1,2")
+check("proven builder escort: no hold", lastEvent("builder_barbarian_capture_hold"), nil)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
