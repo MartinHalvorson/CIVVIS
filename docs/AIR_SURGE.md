@@ -180,7 +180,7 @@ off.
 ## Measuring it
 
 ```bash
-cargo run --release --bin gene_screen -- --genes air-surge
+cargo run --release --features developer-tools --bin gene_screen -- --genes air-surge
 # the lane's own census, on four deployment-shape games:
 cargo test --lib --profile ci air_surge_census_at_deployment_scale -- --ignored --nocapture
 # and on games long enough to reach the air at all:

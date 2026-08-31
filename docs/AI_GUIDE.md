@@ -219,7 +219,7 @@ victory checks directly. It exits nonzero if the resulting victory type does
 not exactly match the requested target:
 
 ```bash
-cargo run --release --bin victory_eval -- --target all --games 3 \
+cargo run --release --features developer-tools --bin victory_eval -- --target all --games 3 \
   --start-seed 9000 --players 2
 ```
 
@@ -511,8 +511,8 @@ draws its own random genome and each gene is read as seats-on against
 seats-off (`docs/GENE_SCREEN.md`, `GENE_HEURISTIC_RANKING.md`):
 
 ```bash
-cargo run --release --bin gene_screen -- --games 600 --jobs 8 --out screen.jsonl
-cargo run --release --bin gene_screen -- --analyze screen.jsonl --json screen.json
+cargo run --release --features developer-tools --bin gene_screen -- --games 600 --jobs 8 --out screen.jsonl
+cargo run --release --features developer-tools --bin gene_screen -- --analyze screen.jsonl --json screen.json
 ```
 
 ```rust
