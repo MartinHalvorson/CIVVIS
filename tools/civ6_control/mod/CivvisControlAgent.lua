@@ -15268,19 +15268,40 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
--- Cancel queued paths on combat units at the start of our turn, and report
--- how many units entered the turn with one at all.
-CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
-	local found, cancelled = 0, 0;
+-- Cancel stale host movement on combat units before the board owns them.
+--
+-- `GetQueuedDestination` catches an ordinary multi-turn MOVE_TO, but it is
+-- deliberately nil while the host is running `AUTOMATE_EXPLORE`: the unit
+-- exports as `activity = "operation"` instead.  That left a second driver on
+-- a unit CIVVIS had just planned.  In run civvis-20260831T195447Z the Slinger
+-- was sent to (38,14) on replan frame 1, the operation instead walked it to
+-- (38,11), and a later frame had no movement left to leave a Spearman plus
+-- Quadrireme envelope.  `UNITCOMMAND_CANCEL` is the host's in-place cancel
+-- command (UnitCommands.xml:36); use it for either stale shape.
+--
+-- `only` narrows a mid-turn reconciliation to units CIVVIS actually named.
+-- Start-of-turn callers omit it so a leftover operation can never walk a
+-- tactical unit before the next board export.
+CivvisBoard.cancelQueuedPaths = function(player, pid, turn, only)
+	local found, cancelled, activeOperations = 0, 0, 0;
 	eachUnit(player, function(unit)
+		local id = try(function() return unit:GetID(); end, -1);
+		if only ~= nil and not only[id] then return; end
 		local queued = try(function() return UnitManager.GetQueuedDestination(unit); end, nil);
-		if queued == nil then return; end
-		found = found + 1;
+		if queued ~= nil then found = found + 1; end
 		local combat = try(function()
 			local row = GameInfo.Units[unit:GetUnitType()];
 			return row ~= nil and ((row.Combat or 0) > 0 or (row.RangedCombat or 0) > 0);
 		end, false) == true;
 		if not combat then return; end
+		local activeOperation = try(function()
+			return ActivityTypes ~= nil
+				and ActivityTypes.ACTIVITY_OPERATION ~= nil
+				and UnitManager.GetActivityType(unit) == ActivityTypes.ACTIVITY_OPERATION;
+		end, false) == true;
+		if queued == nil and not activeOperation then return; end
+		if queued == nil then found = found + 1; end
+		if activeOperation then activeOperations = activeOperations + 1; end
 		local hash = CMD["UNITCOMMAND_CANCEL"];
 		if hash == nil then return; end
 		local ok = try(function()
@@ -15291,7 +15312,10 @@ CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
 		end
 	end);
 	if found > 0 then
-		emit("queued_paths", { turn = turn, found = found, cancelled = cancelled });
+		emit("queued_paths", {
+			turn = turn, found = found, cancelled = cancelled,
+			active_operations = activeOperations,
+		});
 	end
 end;
 
@@ -15435,6 +15459,22 @@ local function applyOrders(player, pid, turn, rows)
 		local perKind = refusedByKind[kind];
 		if perKind == nil then perKind = {}; refusedByKind[kind] = perKind; end
 		perKind[why] = (perKind[why] or 0) + 1;
+	end
+	-- The board may answer an intra-turn replan while a previous fallback
+	-- `AUTOMATE_EXPLORE` is still active.  Preempt that host operation before
+	-- applying an order for the same combat unit; otherwise the request can be
+	-- accepted and still lose the race to the host's explorer.  Do not scan
+	-- unmentioned units here: their disposition remains the opening-frame
+	-- fallback below, while named units are unequivocally CIVVIS's to drive.
+	if cfg.CancelQueuedPaths ~= false then
+		local named = {};
+		for _, row in ipairs(rows) do
+			if tostring(row.kind or "") == "unit" then
+				local subject = tonumber(row.subject);
+				if subject ~= nil then named[subject] = true; end
+			end
+		end
+		if next(named) ~= nil then CivvisBoard.cancelQueuedPaths(player, pid, turn, named); end
 	end
 	-- Match the guard to the settler's actual host leg before either row is
 	-- applied.  A host-only shadow row is deliberately outside the CIVVIS order
@@ -15707,8 +15747,9 @@ local function applyOrders(player, pid, turn, rows)
 	-- that an idle unit should be doing something. Every unit CIVVIS actually assigns is
 	-- untouched, and the count is reported separately as `explored` so a run's telemetry
 	-- never presents this as CIVVIS's work.
-	local explored, guarded = 0, 0;
+	local explored, guarded, rangedProtected = 0, 0, 0;
 	local guardedHeld = 0;
+	local rangedProtectedHeld = 0;
 	local civiliansSkipped = 0;
 	-- ⚠ NEVER on a combat frame: every unit not named by the frame's answer
 	-- was ordered by the opening board and is exactly where CIVVIS left it.
@@ -15746,6 +15787,26 @@ local function applyOrders(player, pid, turn, rows)
 					or (gp ~= nil and try(function() return gp:IsGreatPerson(); end, false)) then
 				if operate(unit, OP["UNITOPERATION_SKIP_TURN"], {}) then
 					civiliansSkipped = civiliansSkipped + 1;
+				end
+				return;
+			end
+			-- A ranged unit is a tactical asset, not a safe generic explorer.
+			-- The host's automation consumes its whole move before CIVVIS receives
+			-- the revealed board, which is exactly how the live Slinger reached a
+			-- combined lethal envelope with `moves = 0`.  The Rust controller owns
+			-- ranged movement already and sums every visible attack source before
+			-- it chooses a retreat; keep the unit available for that decision until
+			-- it explicitly assigns one.  Scouts and melee units retain the
+			-- peacetime exploration fallback below.
+			local ranged = try(function()
+				local row = GameInfo.Units[unit:GetUnitType()];
+				return row ~= nil and (row.RangedCombat or 0) > 0;
+			end, false) == true;
+			if ranged then
+				rangedProtected = rangedProtected + 1;
+				if firstOperation(unit, { "UNITOPERATION_FORTIFY",
+						"UNITOPERATION_ALERT", "UNITOPERATION_SKIP_TURN" }) then
+					rangedProtectedHeld = rangedProtectedHeld + 1;
 				end
 				return;
 			end
@@ -15804,6 +15865,11 @@ local function applyOrders(player, pid, turn, rows)
 		-- for. A gap between these two is a unit that can still block
 		-- the end of the turn.
 		explore_guarded_held = guardedHeld,
+		-- Ranged combat units that were not handed to the host's autonomous
+		-- explorer.  They are held so a newly visible combined threat is still
+		-- evaluated with their movement available on the next CIVVIS board.
+		explore_ranged_protected = rangedProtected,
+		explore_ranged_protected_held = rangedProtectedHeld,
 		-- Unmentioned civilians told to skip so the turn can end. They are
 		-- never explored (see the branch): this is only the difference
 		-- between "idle" and "idle and blocking".
