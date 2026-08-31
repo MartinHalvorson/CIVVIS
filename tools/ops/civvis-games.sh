@@ -6,7 +6,7 @@
 #   civvis-games off [reason]   stop both lanes NOW and keep them stopped
 #   civvis-games status         what is running, and why
 #   civvis-games wins [n]       the last n live-game wins from the ladder ledger
-#   civvis-games ensure         make the world match the operator's standing intent
+#   civvis-games ensure         recover only an explicitly authorized lane
 #
 # This is the TRACKED copy. `civvis-install-host-automation.sh` makes
 # ~/bin/civvis-games a symlink to it, so every host runs the same switch and a
@@ -47,6 +47,7 @@ WRAPPER=${CIVVIS_LADDER_WRAPPER:-$HOME/civvis-verification-launch.command}
 UID_N=$(id -u)
 LADDER_JOB=com.civvis.ladder-watchdog
 SPECTATOR_JOB=com.civvis.spectator
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 
 say() { print -r -- "$*" }
 
@@ -210,36 +211,18 @@ version_report() {
   [[ -n $withheld ]] && say "  ⚠ withheld  $withheld"
 }
 
-# ⚠⚠ THE OPERATOR'S STANDING INTENT, which is NOT the same thing as the halt
-# marker. The halt is a lock any session (or any script) can take; on
-# 2026-08-21 a sibling session halted the lane to "stage latest origin/main",
-# never resumed, and the games stayed down for over an hour with nothing
-# reporting it — the ladder watchdog does exactly what it is designed to do
-# against a halt, which is stand down. The operator's instruction is that games
-# run continuously unless THEY stop them, so that intent has to outlive any one
-# session and be checked by something. This file is that intent; `ensure` is the
-# something (com.civvis.keepplaying runs it every five minutes).
-INTENTFILE=${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}
-# A halt younger than this is left alone, so a legitimate short staging halt by
-# another session still works. Older than this, with intent=running, is a
-# forgotten halt and gets cleared.
-HALT_GRACE_S=${CIVVIS_HALT_GRACE_S:-600}
-
 set_intent() { print -r -- "$1" > "$INTENTFILE" }
 
-halt_age_s() {   # prints the halt's age in seconds, or nothing when not halted
-  python3 - <<'PYEOF'
-import json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-marker = Path.home() / ".civvis-operator-halt.json"
-try:
-    since = json.loads(marker.read_text()).get("since")
-    stamp = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    print(int((datetime.now(timezone.utc) - stamp).total_seconds()))
-except Exception:
-    pass
-PYEOF
+intent_is_running() {
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+}
+
+intent_report() {
+  if [[ -r "$INTENTFILE" ]]; then
+    print -r -- "$(<"$INTENTFILE")"
+  else
+    print -r -- "missing"
+  fi
 }
 
 relaunch_ladder() {
@@ -258,17 +241,9 @@ case ${1:-status} in
 on)
   reason=${2:-"operator: run both lanes indefinitely"}
   say "== turning the game lanes ON =="
-  python3 "$GAMELOCK" --resume >/dev/null 2>&1
-  set_intent running
-  say "  operator halt cleared (${reason}); standing intent recorded: running"
-  say "  services:"
-  ensure_job "$LADDER_JOB"
-  ensure_job "$SPECTATOR_JOB"
-  # Turning the lane on must never silently resume a tree-pinned or dead-pin
-  # batch: the operator asked for games on the latest GitHub CIVVIS, always.
-  # Do this BEFORE opening Terminal.  The verified-head wrapper refuses an
-  # absent or non-head pin, and starting it first would leave `on` reporting
-  # success while its just-opened window immediately exits.
+  # Pin the version before granting authorization. A watchdog tick that lands
+  # between these steps can therefore only start the exact head the operator
+  # just requested, never an old tree-pinned batch.
   pin_now=$(cat "$PINFILE" 2>/dev/null || true)
   if [[ $pin_now == head ]]; then
     say "  version:   pin already tracks origin/main"
@@ -280,6 +255,21 @@ on)
       say "  version:   pin was absent — wrote head so batches track origin/main"
     fi
   fi
+  if ! python3 "$GAMELOCK" --resume >/dev/null 2>&1; then
+    set_intent stopped
+    say "  refusing: could not clear the operator halt; intent remains stopped"
+    exit 1
+  fi
+  set_intent running
+  if ! intent_is_running; then
+    python3 "$GAMELOCK" --halt --reason "civvis-games on could not record verification intent" >/dev/null 2>&1 || true
+    say "  refusing: could not record running intent at $INTENTFILE"
+    exit 1
+  fi
+  say "  operator halt cleared (${reason}); explicit verification intent recorded: running"
+  say "  services:"
+  ensure_job "$LADDER_JOB"
+  ensure_job "$SPECTATOR_JOB"
   relaunch_ladder
   say "  spectator: KeepAlive brings it back within ~60s"
   say ""
@@ -290,6 +280,11 @@ on)
 
 retire)
   reason=${2:-"operator: retire current verification game"}
+  if ! intent_is_running; then
+    say "== refusing retirement =="
+    say "  verification intent is $(intent_report); use civvis-games on before requesting a replacement"
+    exit 2
+  fi
   # A retirement replaces one live game; it is not an alternate spelling of
   # `off`.  Refuse an explicitly halted lane so the command cannot claim that a
   # successor will arrive when the operator has told all supervisors to stop.
@@ -305,10 +300,6 @@ retire)
   if (( retire_status != 0 )); then
     exit "$retire_status"
   fi
-  # A live game can outlast an accidentally stale intent file.  Only set it
-  # after the request has safely bound to one real harness, so a typo does not
-  # cause an idle host to start playing by itself.
-  set_intent running
   say "  requested Civilization VI's native Retire action; no process was stopped"
   say "  lane remains ON; after operator_retired is recorded, the supervisor starts the next game"
   ;;
@@ -316,9 +307,12 @@ retire)
 off)
   reason=${2:-"operator: stop the game lanes"}
   say "== turning the game lanes OFF =="
-  python3 "$GAMELOCK" --halt --reason "$reason" >/dev/null 2>&1
+  # Close the authorization first. Even if writing the halt marker or the
+  # process teardown takes time, no keeper may interpret the gap as permission
+  # to start a replacement.
   set_intent stopped
-  say "  operator halt set — no boundary will start new work; standing intent: stopped"
+  python3 "$GAMELOCK" --halt --reason "$reason" >/dev/null 2>&1
+  say "  operator halt set — no boundary will start new work; verification intent: stopped"
   # Youngest first: the climb TERMs what it can, then anything it orphaned.
   term_wait "climb"           'civ6_civvis_clim[b]\.py'        30
   term_wait "play harness"    'civ6_pla[y]\.py'                80
@@ -345,31 +339,25 @@ off)
   ;;
 
 ensure)
-  # Idempotent keeper: make the world match the operator's standing intent.
-  intent=$(cat "$INTENTFILE" 2>/dev/null || print -r -- running)
-  if [[ $intent != running ]]; then
-    say "intent=stopped — leaving the lanes down"
+  # Idempotent recovery, never an authorization mechanism. Missing intent is
+  # stopped, and a halt is never aged out: only `civvis-games on` may clear it.
+  if ! intent_is_running; then
+    say "verification intent=$(intent_report) — leaving the lanes down"
     exit 0
   fi
-  age=$(halt_age_s)
-  if [[ -n $age ]]; then
-    if (( age >= HALT_GRACE_S )); then
-      say "intent=running but a halt has stood ${age}s (>= ${HALT_GRACE_S}s grace) — clearing it"
-      python3 "$GAMELOCK" --resume >/dev/null 2>&1
-      relaunch_ladder
-    else
-      say "intent=running; halt is only ${age}s old — inside the grace, leaving it"
-      exit 0
-    fi
+  if halt=$(python3 "$GAMELOCK" --halt-status 2>&1); then
+    say "verification intent=running but explicit halt is active — leaving the lanes down: $halt"
+    exit 0
   fi
   if [[ -z $(pids_for 'civ6_pla[y]\.py') && -z $(pids_for 'civvis-interactive-hos[t]\.sh') ]]; then
-    say "intent=running but no ladder chain is up — starting it"
+    say "verification intent=running and no ladder chain is up — recovering it"
     relaunch_ladder
   fi
   ;;
 
 status)
   say "== civvis game lanes =="
+  say "intent:    $(intent_report) at ${INTENTFILE/#$HOME/~} (only exact 'running' authorizes recovery)"
   if halt=$(python3 "$GAMELOCK" --halt-status 2>&1); then
     say "switch:    OFF — ${halt}"
   else

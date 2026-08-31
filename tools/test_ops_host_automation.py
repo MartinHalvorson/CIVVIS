@@ -136,6 +136,8 @@ class _Host:
         self.tree = make_tree(self.home / "tree")
         self.pin = self.home / "pin"
         self.pin.write_text("head\n")
+        self.intent = self.home / ".civvis-operator-intent"
+        self.intent.write_text("running\n")
         self.policy = self.home / "policy"
         self.log = self.home / "ladder.log"
         self.out = self.home / "stub-env"
@@ -152,6 +154,7 @@ class _Host:
                         CIVVIS_VERIFICATION_POLICY=str(self.policy),
                         CIVVIS_LADDER_LOG=str(self.log),
                         CIVVIS_LADDER_LAUNCHER=str(self.stub),
+                        CIVVIS_OPERATOR_INTENT_FILE=str(self.intent),
                         CIVVIS_FOREGROUND_GUARD="0",
                         STUB_OUT=str(self.out))
         env.update(extra)
@@ -319,6 +322,16 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
                       text)
         self.assertIn('exec /bin/zsh "$LAUNCHER"', text)
 
+    def test_missing_intent_refuses_before_running_the_launcher(self):
+        with TemporaryDirectory() as raw:
+            host = _Host(raw)
+            host.write_policy()
+            host.intent.unlink()
+            done = zsh(WRAPPER, env=host.env())
+            self.assertEqual(done.returncode, 64, done.stdout + done.stderr)
+            self.assertFalse(host.out.exists())
+            self.assertIn("verification intent is not running", host.logged())
+
 
 @unittest.skipUnless(HAS_ZSH, "the installer is zsh; this runner has no zsh")
 class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
@@ -471,8 +484,9 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
         retire = text[start:end]
         self.assertIn("operator_retire.py", retire)
         self.assertIn("--runs-root \"$RUN_ROOT\"", retire)
-        self.assertIn("set_intent running", retire)
+        self.assertIn("intent_is_running", retire)
         self.assertIn("no process was stopped", retire)
+        self.assertNotIn("set_intent running", retire)
         self.assertNotIn("term_wait", retire)
         self.assertNotIn("--halt --reason", retire)
 
@@ -491,6 +505,7 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
             python.chmod(0o755)
             base = clean_env(HOME=str(home), CIVVIS_REPO=str(REPO),
                              PATH=str(fake_bin) + os.pathsep + os.environ["PATH"])
+            (home / ".civvis-operator-intent").write_text("running\n")
 
             done = zsh(SWITCH, "retire", env=base)
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
@@ -499,9 +514,20 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
 
             (home / ".civvis-operator-intent").unlink()
             refused = zsh(SWITCH, "retire", env={**base, "RETIRE_EXIT": "7"})
-            self.assertEqual(refused.returncode, 7, refused.stdout + refused.stderr)
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
             self.assertFalse((home / ".civvis-operator-intent").exists(),
-                             "a failed binding cannot start an idle lane")
+                             "a stopped lane must not authorize a replacement")
+
+    def test_ensure_never_clears_a_halt_or_defaults_missing_intent_to_running(self):
+        text = SWITCH.read_text()
+        start = text.index("ensure)\n")
+        end = text.index("\nstatus)\n", start)
+        ensure = text[start:end]
+        self.assertNotIn("HALT_GRACE_S", ensure)
+        self.assertNotIn("halt_age_s", ensure)
+        self.assertNotIn('GAMELOCK\" --resume', ensure)
+        self.assertIn("intent_is_running", ensure)
+        self.assertIn('halt-status', ensure)
 
     def test_turning_on_writes_a_head_pin_before_starting_terminal(self):
         """A wrapper refuses anything but `head`, so its launch must see it.
