@@ -5006,6 +5006,15 @@ pub struct AdvancedAi {
     eureka_chasing_production: bool,
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
+    /// `first-luxury-first`: an improvement that opens a luxury the empire
+    /// holds NO copy of outranks ordinary ground, priced by the Amenities
+    /// the empire is short; a duplicate copy keeps the shipped flat +14.
+    /// See `advanced/first_luxury.rs`.
+    first_luxury_first: bool,
+    /// The seat-turn memo `first-luxury-first` prices its premium from; the
+    /// empire's Amenity deficit. Zero-valued with the gene off, because
+    /// nothing asks for it. See `advanced/first_luxury.rs`.
+    first_luxury_frame: RefCell<first_luxury::AmenityDeficitFrame>,
     // ---- append: g-k ------------------------------------------------
     /// `hostile-memory`: the civilian capture envelope counts every at-war
     /// owner (barbarians, Free Cities and a major at war alike) and keeps
@@ -6154,6 +6163,11 @@ mod early_archers;
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
 
+/// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
+/// luxury ahead of an ordinary tile, priced by the Amenities the empire is
+/// short. One opt-in gene; see `advanced/first_luxury.rs`.
+mod first_luxury;
+
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -6880,6 +6894,8 @@ impl AdvancedAi {
             eureka_chasing_builder: false,
             eureka_chasing_production: false,
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
+            first_luxury_first: false,
+            first_luxury_frame: RefCell::new(first_luxury::AmenityDeficitFrame::default()),
 
             // ---- append: g-k ----------------------------------------
             hostile_memory: false,
@@ -28998,11 +29014,17 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> Vec<Name> {
         let appeal = g.tile_appeal(pos).max(0) as f64;
+        // `first-luxury-first`: zero for every tile with the gene off, and
+        // zero for any improvement that does not open the empire's first copy
+        // of a luxury, so the ranking below is the shipped one until it fires.
+        // Priced on BOTH sides — a plantation already standing here is not an
+        // upgrade to itself — see `advanced/first_luxury.rs`.
         let current_value = g.map.tiles[&pos]
             .improvement
             .as_deref()
             .map(|improvement| {
                 self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
+                    + self.first_luxury_premium(g, pid, pos, improvement)
             })
             .unwrap_or(0.0);
         // Score each candidate once and sort the scores. The comparator used
@@ -29015,7 +29037,8 @@ impl AdvancedAi {
             .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
             .map(|improvement| {
                 let value =
-                    self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal);
+                    self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal)
+                        + self.first_luxury_premium(g, pid, pos, &improvement);
                 (value, improvement)
             })
             .filter(|(value, _)| *value > current_value + 0.5)
@@ -29323,7 +29346,7 @@ impl AdvancedAi {
                 self.chop_into_the_queue_value(g, pid, current, strategy, worked)
             {
                 let best_here = here.first().map_or(f64::MIN, |improvement| {
-                    self.improvement_value(g, current, improvement, strategy)
+                    self.improvement_value_for(g, pid, current, improvement, strategy)
                 });
                 if value > best_here {
                     self.builder_targets.remove(&uid);
@@ -29353,7 +29376,7 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail,
                        "Building a {} at {current:?}", plain(improvement);
                        "worth {:.1} to the {} plan, best of {} that fit this tile",
-                       self.improvement_value(g, current, improvement, strategy),
+                       self.improvement_value_for(g, pid, current, improvement, strategy),
                        strategy.as_str(), here.len(); current);
                 if g.apply(
                     pid,
@@ -29364,6 +29387,9 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
+                    // ⚠ Journal AFTER the engine answers. `first-luxury-first`
+                    // says nothing while it is off.
+                    self.note_first_luxury_opened(g, pid, current, improvement);
                     return true;
                 }
             }
@@ -29436,8 +29462,13 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.improvement_value(g, *pos, &improvement, strategy)
-                                    - g.wdist(current, *pos) as f64 * 0.7;
+                                let score = self.improvement_value_for(
+                                    g,
+                                    pid,
+                                    *pos,
+                                    &improvement,
+                                    strategy,
+                                ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
@@ -29508,7 +29539,7 @@ impl AdvancedAi {
                 }
                 let mut here: Option<f64> = None;
                 for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                    let score = self.improvement_value(g, *pos, &improvement, strategy)
+                    let score = self.improvement_value_for(g, pid, *pos, &improvement, strategy)
                         - g.wdist(current, *pos) as f64 * 0.7;
                     if here.is_none_or(|old| score > old) {
                         here = Some(score);
