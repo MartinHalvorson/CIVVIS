@@ -1,0 +1,222 @@
+{
+  "abandoned": null,
+  "cities_at_60": null,
+  "city_two_turn": null,
+  "configured": true,
+  "deals": {
+    "closed": 0,
+    "declined": 1,
+    "expired": 0,
+    "peace_accepted": 0,
+    "peace_refused": 0,
+    "sessions_answered": 1,
+    "sessions_opened": 1,
+    "sessions_unanswered": 0,
+    "stood_down": false
+  },
+  "decider_binaries": [
+    {
+      "binary_revision": "e9c4bc6f8c5fe990859b2acb990d3f19c88e0e01",
+      "binary_sha256": "8ead6e6b268fc71040a8b530c9ecff82cdfa438545d8a5f9b6cf13644c0fd259",
+      "binary_source": "binary-checkout",
+      "revision": "e9c4bc6f8c5fe990859b2acb990d3f19c88e0e01",
+      "source": "binary-checkout"
+    }
+  ],
+  "decider_revisions": [
+    "e9c4bc6f8c5fe990859b2acb990d3f19c88e0e01"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-31T20:44:22Z",
+  "forced": [],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 218,
+  "last_turn": 70,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "operator_retire": {
+    "detail": "the control mod acknowledged Civilization VI ACTION_RETIRE",
+    "harness_pid": 276,
+    "reason": "operator: restart current King/Rome game with science victory",
+    "requested_utc": "2026-08-31T20:44:16Z",
+    "retired_utc": "2026-08-31T20:44:17Z",
+    "state": "retired",
+    "tag": "civvis-20260831T195447Z-cont1"
+  },
+  "orders": {
+    "*": {
+      "applied": 47,
+      "refused": {
+        "MOVE_TO": 1,
+        "move_no_moves_this_turn": 3,
+        "obsolete_POLICY_GOD_KING": 1,
+        "obsolete_POLICY_ILKUM": 1
+      },
+      "seen": 54
+    },
+    "buy": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "civic": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "envoy": {
+      "applied": 5,
+      "refused": {},
+      "seen": 5
+    },
+    "governor_promote": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "policy_deck": {
+      "applied": 3,
+      "refused": {
+        "obsolete_POLICY_GOD_KING": 1,
+        "obsolete_POLICY_ILKUM": 1
+      },
+      "seen": 5
+    },
+    "produce": {
+      "applied": 14,
+      "refused": {},
+      "seen": 14
+    },
+    "produce_next": {
+      "applied": 20,
+      "refused": {},
+      "seen": 20
+    },
+    "research": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "unit": {
+      "applied": 19,
+      "refused": {
+        "MOVE_TO": 1,
+        "move_no_moves_this_turn": 3
+      },
+      "seen": 23
+    }
+  },
+  "orders_applied": 38,
+  "orders_seen": 3,
+  "outcome": null,
+  "reason": "operator_retired",
+  "retire_confirmed": null,
+  "retire_requested": null,
+  "rival_best": 260,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260831T195447Z-cont1",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seat_autonomy": {
+    "civvis_unit_share": 0.2396,
+    "engine_explored": 73,
+    "explore_guarded": 2,
+    "unit_orders": 23,
+    "unit_orders_applied": 19
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260831T195447Z-cont1",
+  "victory_target": "science",
+  "withheld": []
+}
