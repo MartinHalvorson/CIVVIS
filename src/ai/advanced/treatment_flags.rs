@@ -2003,6 +2003,20 @@ impl AdvancedAi {
         self.science_expansion_phase = true;
     }
 
+    /// Keep the Science lane expanding first until five cities or 100 standard
+    /// turns, the band live wins open from. Opt-in gene `science-opening-band`;
+    /// the live-versus-screen disagreement is argued on
+    /// `SCIENCE_OPENING_BAND_CITY_TARGET`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_opening_band(&mut self) {
+        self.science_opening_band = true;
+    }
+
+    /// The twin of `enable_science_opening_band`.
+    pub fn disable_science_opening_band(&mut self) {
+        self.science_opening_band = false;
+    }
+
     /// The twin of `enable_science_expansion_phase`.
     pub fn disable_science_expansion_phase(&mut self) {
         self.science_expansion_phase = false;
