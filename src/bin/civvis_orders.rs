@@ -4921,6 +4921,9 @@ const EVIDENCE_KINDS: &[&str] = &[
     "deal_session",
     "peace_response",
     "improved",
+    // The host safety pass may replace the planner's Settler destination. Its
+    // `sent` plot is the postcondition the ordinary distance check cannot see.
+    "settler_capture_escape",
     // ⭐ THE HOST ALREADY SAID WHY THE STEP DID NOT HAPPEN. The mod has
     // emitted `move_refused` — with the destination, whether it is water,
     // whether it is impassable and who owns it — since the order channel
@@ -5143,6 +5146,33 @@ fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> 
     })
 }
 
+/// Whether the host deliberately rewrote this Settler leg to an escape plot.
+/// The safety pass can replace the planner's destination after the order has
+/// already entered the ledger; the event is the bridge's proof of the actual
+/// destination, so a farther final position is not a failed MOVE_TO.
+fn settler_capture_escape_reached(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    unit: i64,
+    want: (i32, i32),
+    reached: (i32, i32),
+) -> bool {
+    let point = |event: &serde_json::Value, key: &str| {
+        let values = event.get(key)?.as_array()?;
+        Some((
+            values.first()?.as_i64()? as i32,
+            values.get(1)?.as_i64()? as i32,
+        ))
+    };
+    evidence.iter().any(|event| {
+        event.get("kind").and_then(|kind| kind.as_str()) == Some("settler_capture_escape")
+            && event.get("turn").and_then(|value| value.as_u64()) == Some(u64::from(turn))
+            && event.get("settler").and_then(|value| value.as_i64()) == Some(unit)
+            && point(event, "want") == Some(want)
+            && point(event, "sent") == Some(reached)
+    })
+}
+
 fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
     evidence.iter().any(|event| {
         event.get("kind").and_then(|k| k.as_str()) == Some("combat")
@@ -5273,9 +5303,12 @@ fn verify_unit_order(
                 // A unit first seen on a combat frame has no baseline to move from.
                 (None, Some(_)) => Verdict::Unverifiable,
                 (Some(was), Some(now)) => {
+                    let reached = (now.x, now.y);
+                    let safety_rewrite = was.kind == "UNIT_SETTLER"
+                        && settler_capture_escape_reached(evidence, turn, id, want, reached);
                     let start = offset_distance((was.x, was.y), want);
-                    let end = offset_distance((now.x, now.y), want);
-                    if start == 0 || end < start {
+                    let end = offset_distance(reached, want);
+                    if safety_rewrite || start == 0 || end < start {
                         Verdict::Verified
                     } else if end == start {
                         // The host's own reason when it gave one; see
@@ -7749,6 +7782,10 @@ mod tests {
         assert!(
             super::EVIDENCE_KINDS.contains(&"move_refused"),
             "the reader has to be asked for the kind before it can read it"
+        );
+        assert!(
+            super::EVIDENCE_KINDS.contains(&"settler_capture_escape"),
+            "a safety rewrite must reach the postcondition verifier"
         );
     }
 
@@ -13497,6 +13534,24 @@ mod order_postcondition_tests {
         let mut stood = frame(43);
         stood.units = vec![unit(7, "UNIT_SETTLER", 13, 11)];
         assert_eq!(check(&walk, &before, &stood, &[]), failed("did_not_move"));
+    }
+
+    #[test]
+    fn a_settler_safety_rewrite_verifies_the_host_sent_leg() {
+        let mut before = frame(50);
+        before.units = vec![unit(7, "UNIT_SETTLER", 21, 21)];
+        let walk = order("unit", Some(7), Some("MOVE_TO"), Some((21, 20)));
+
+        let mut after = frame(51);
+        after.units = vec![unit(7, "UNIT_SETTLER", 22, 22)];
+        let evidence = vec![event(
+            r#"{"kind":"settler_capture_escape","turn":50,"settler":7,"want":[21,20],"sent":[22,22]}"#,
+        )];
+        assert_eq!(
+            check(&walk, &before, &after, &evidence),
+            Verdict::Verified,
+            "the bridge's safety rewrite is successful actuation even when it retreats"
+        );
     }
 
     #[test]
