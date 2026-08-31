@@ -3582,9 +3582,7 @@ impl BasicAi {
     /// cheapest legal next step. Resource-gated successors with no stockpile
     /// are skipped so the AI does not beeline toward a unit it cannot field.
     pub(crate) fn barbarian_military_research_goal(g: &Game, pid: usize) -> Option<String> {
-        if Self::barbarian_strength_gap(g, pid).is_none() {
-            return None;
-        }
+        Self::barbarian_strength_gap(g, pid)?;
         let player = &g.players[pid];
         let mut goals: BTreeMap<Name, (f64, f64, usize)> = BTreeMap::new();
         for unit in g.units.values().filter(|unit| {
