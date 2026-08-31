@@ -146,6 +146,21 @@ assert(agentSrc:find("if UNIT_BLOCKERS%[name%] then%s+local parked = parkReadyUn
 	"the units blocker must park ready units before answering civvis_complete")
 assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+parked:"%s*%.%.%s*parked'),
 	"a parked answer must be distinguishable from a bare civvis_complete")
+local unitsStart = agentSrc:find('answered = "civvis_complete";', 1, true)
+local policyStart = agentSrc:find(
+	"-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.",
+	unitsStart or 1, true)
+assert(unitsStart and policyStart and policyStart > unitsStart,
+	"the first CIVVIS units answer arm was not found")
+local unitsAnswer = agentSrc:sub(unitsStart, policyStart)
+local parkedAt = unitsAnswer:find("parkReadyUnits(player)", 1, true)
+local dismissedAt = unitsAnswer:find("dismissBlocker(pid, blocker)", 1, true)
+local forcedAt = unitsAnswer:find('REASON = "UserForced"', 1, true)
+assert(parkedAt and dismissedAt and forcedAt
+	and parkedAt < dismissedAt and dismissedAt < forcedAt,
+	"the first CIVVIS units answer must park, dismiss, and force in one pass")
+assert(unitsAnswer:find("same_pass_forced = true", 1, true),
+	"a same-pass forced units answer must skip the ordinary end-turn request")
 -- Parking must never be a MOVE: that is what the branch's own comment forbids,
 -- after the legacy AI walked a Settler into a barbarian capture zone.
 local idle = agentSrc:match("local function orderIdle%(unit%)(.-)\nend")
