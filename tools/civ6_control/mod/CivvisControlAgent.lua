@@ -17123,6 +17123,7 @@ local function tick()
 		-- the value of one decision; waiting loses the whole game.
 		local blocker = currentBlocker(pid);
 		local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
+		local same_pass_forced = false;
 		if blocker ~= nil and blocker ~= none then
 			local name = blockerName(blocker);
 			attempts = attempts + 1;
@@ -17180,6 +17181,22 @@ local function tick()
 						if parked > 0 then
 							answered = answered .. "+parked:" .. parked;
 						end
+						-- A parked answer can leave the Game Core waiting without publishing
+						-- the second sighting that the bounded forfeit below used to need.
+						-- Dismiss and force now, after the position-preserving parking pass;
+						-- this is the same accepted SHIFT+ENTER request used by the later
+						-- forfeit, and it keeps a quiet first response from wedging the turn.
+						local dropped = dismissBlocker(pid, blocker);
+						answered = answered .. "+forced";
+						emit("dismissed", { turn = turn, blocker = name,
+						                    dismissed = dropped, attempts = attempts,
+						                    answered = answered, parked = parked,
+						                    forfeit = 0, forced = true, same_pass = true });
+						same_pass_forced = true;
+						pcall(function()
+							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							                 { REASON = "UserForced" });
+						end);
 					end
 					-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.
 					-- Parking the ready units repaired it for `ENDTURN_BLOCKING_UNITS`;
@@ -17276,10 +17293,11 @@ local function tick()
 			else
 				answered = answerBlocker(player, pid, blocker, turn);
 			end
-			if attempts == 1 or attempts % (cfg.BlockerReportEvery or 25) == 0 then
-				emit("blocked", { turn = turn, blocker = name,
-				                  attempts = attempts, answered = answered });
-			end
+				if attempts == 1 or attempts % (cfg.BlockerReportEvery or 25) == 0 then
+					emit("blocked", { turn = turn, blocker = name,
+					                  attempts = attempts, answered = answered });
+				end
+				if same_pass_forced then attempts = 0; end
 			-- ★★★ A SOFT BLOCKER THAT SURVIVES ITS ANSWER IS FORFEITED EARLY,
 			-- not left to the MaxBlockedAttempts hammer below. Run
 			-- civvis-20260807T190903Z (issue #1374), turn 39:
@@ -17334,7 +17352,8 @@ local function tick()
 			-- under `cfg.CivvisDecides`, so non-decider runs are untouched, and
 			-- `UNIT_BLOCKERS[name]` stays false for these two so they are
 			-- dismissed without the unit-parking pass or the forced end-turn.
-			if SOFT_BLOCKERS[name] or answered == "civvis_complete" then
+			if (SOFT_BLOCKERS[name] or answered == "civvis_complete")
+				and not same_pass_forced then
 				local seen = softSeen[name] or { sightings = 0, forfeits = 0 };
 				softSeen[name] = seen;
 				seen.sightings = seen.sightings + 1;
@@ -17515,12 +17534,14 @@ local function tick()
 			end
 		end
 
-		pcall(function()
-			if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
-				UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
-			end
-			UI.RequestAction(ActionTypes.ACTION_ENDTURN);
-		end);
+		if not same_pass_forced then
+			pcall(function()
+				if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
+					UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
+				end
+				UI.RequestAction(ActionTypes.ACTION_ENDTURN);
+			end);
+		end
 	end);
 	inTick = false;
 	if not ok then emit("error", { where = "tick", error = tostring(err) }); end
