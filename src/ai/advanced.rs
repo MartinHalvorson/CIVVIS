@@ -107,6 +107,14 @@ const PEACETIME_DETERRENCE_CEILING: f64 = 1.5;
 /// Radius `threatened_city` scores hostiles in. A group already inside it is
 /// part of the defence rather than a column marching to it.
 const THREAT_RELIEF_RADIUS: i32 = 6;
+/// A targeted Science seat treats two visible major-civilization land units
+/// inside this ring as a real siege contact. The ordinary garrison repair
+/// waits for city damage; a Science race cannot afford to spend those turns
+/// watching a catapult and its escort walk into the capital.
+const SCIENCE_SIEGE_RADIUS: i32 = 5;
+/// Number of visible major land combatants that turns a wartime contact into
+/// an immediate Science defense response before the first city hit.
+const SCIENCE_SIEGE_MIN_UNITS: usize = 2;
 /// Turn the ancient-rush window shuts, after which ordinary campaign rules
 /// resume. `rush_census` finds the first walled capital at turn 80 and 43% of
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
@@ -17350,6 +17358,71 @@ impl AdvancedAi {
         actions
     }
 
+    /// A targeted Science seat must notice the attack before city health is
+    /// the only proof left. The generic siege picker is intentionally
+    /// damage-gated because a passing patrol should not interrupt a city, but
+    /// two visible major-civilization land units in the city's five-tile ring
+    /// are not a patrol. A siege unit alone is also enough: it is the piece
+    /// that turns a healthy walled city into a capture countdown.
+    fn science_siege_pressure(&self, g: &Game, pid: usize, cid: u32) -> Option<(usize, f64)> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Science) {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        if city.owner != pid {
+            return None;
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        let mut count = 0;
+        let mut strength = 0.0;
+        let mut has_siege = false;
+        for unit in g.units.values().filter(|unit| {
+            unit.owner != pid
+                && g.is_at_war(pid, unit.owner)
+                && g.players
+                    .get(unit.owner)
+                    .is_some_and(|player| player.alive && !player.is_minor && !player.is_barbarian)
+                && (!self.battlefront_observation
+                    || (g.sees(&visible, unit.pos)
+                        && self.battlefront_unit_visible(g, pid, unit.id)))
+                && g.wdist(city.pos, unit.pos) <= SCIENCE_SIEGE_RADIUS
+        }) {
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+                continue;
+            }
+            count += 1;
+            strength += crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+            has_siege |= spec.siege && g.wdist(city.pos, unit.pos) <= 3;
+        }
+        let damaged = city.hp < CITY_MAX_HP || city.wall_hp < g.city_max_wall_hp(city);
+        let capital_contact = city.is_capital && count > 0;
+        (has_siege || count >= SCIENCE_SIEGE_MIN_UNITS || (damaged && count > 0) || capital_contact)
+            .then_some((count, strength))
+    }
+
+    /// The immediate local answer to a real major-army contact in an explicit
+    /// Science game. Walls remain the best queue answer when they are legal;
+    /// once Walls already stand, a land melee body is the only unit that can
+    /// actually occupy the city and stop a capture.
+    fn science_siege_defense_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        self.science_siege_pressure(g, pid, cid)?;
+        for building in ["walls", "medieval_walls", "renaissance_walls"] {
+            let wall = Item::Building {
+                building: Name::new(building),
+            };
+            if g.can_produce(pid, cid, &wall) {
+                return Some(wall);
+            }
+        }
+        self.base
+            .best_military(g, pid, cid, Some(false))
+            .or_else(|| self.base.best_military(g, pid, cid, None))
+            .map(|unit| Item::Unit {
+                unit: Name::new(&unit),
+            })
+    }
+
     /// Spend Gold on the one thing that can still keep a besieged city alive
     /// before upgrades, patronage, or the ordinary strategic purchaser can
     /// compare it with development.
@@ -17373,8 +17446,12 @@ impl AdvancedAi {
     ) -> bool {
         // `native_emergency_purchase`: the live gate stays as it is; the gene
         // adds a native signal (a bleeding, recently struck city with a
-        // hostile near) that a headless board can see.
-        if !self.base.garrison_under_fire && !self.native_emergency_purchase {
+        // hostile near) that a headless board can see. An explicit Science
+        // seat also owns the pre-damage major-siege signal below.
+        if !self.base.garrison_under_fire
+            && !self.native_emergency_purchase
+            && self.active_victory_target(g) != Some(VictoryTarget::Science)
+        {
             return false;
         }
 
@@ -17387,6 +17464,7 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city_id)
                 .or_else(|| self.native_emergency_item(g, pid, city_id))
+                .or_else(|| self.science_siege_defense_item(g, pid, city_id))
             else {
                 continue;
             };
@@ -21073,7 +21151,10 @@ impl AdvancedAi {
         pid: usize,
         threatened_city: Option<u32>,
     ) {
-        if !self.base.garrison_under_fire && !self.native_emergency_purchase {
+        if !self.base.garrison_under_fire
+            && !self.native_emergency_purchase
+            && self.active_victory_target(g) != Some(VictoryTarget::Science)
+        {
             return;
         }
 
@@ -21097,6 +21178,7 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city)
                 .or_else(|| self.native_emergency_item(g, pid, city))
+                .or_else(|| self.science_siege_defense_item(g, pid, city))
                 .or_else(|| {
                     self.preemptive_major_war_defense_item(
                         g,
@@ -31115,7 +31197,26 @@ impl AdvancedAi {
             self.base.come_ashore && g.rules.units[unit.kind].domain.as_deref() != Some("sea");
         let role = Self::force_role(g, uid);
         let spec = &g.rules.units[unit.kind];
+        // A weak force that is holding because one of our cities is under a
+        // real major siege must hold at that city, not at the force's old
+        // anchor. The generic relief repair is optional for adaptive seats;
+        // an explicit Science contract cannot leave the capital waiting for
+        // a group that is already nearby to decide to come home.
+        let science_home_defense = if self.active_victory_target(g) == Some(VictoryTarget::Science)
+        {
+            self.plan
+                .as_ref()
+                .and_then(|plan| plan.threatened_city)
+                .and_then(|cid| g.cities.get(&cid).map(|city| city.pos))
+        } else {
+            None
+        };
         let target = match group.posture {
+            ForcePosture::Muster | ForcePosture::Hold | ForcePosture::Recover
+                if science_home_defense.is_some() =>
+            {
+                science_home_defense.expect("checked above")
+            }
             ForcePosture::Hold if self.relief_column_marches => {
                 self.relief_hold_point(g, group).unwrap_or(group.anchor)
             }
@@ -36107,6 +36208,12 @@ impl AdvancedAi {
                     self.reserve_science_border_walls(g, pid);
                 }
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
+                // The strategic governor may have reclaimed or refilled a
+                // queue after the first defense handoff. Re-read an actual
+                // Science siege after that pass so the final city queue is
+                // still a wall or local defender, never a commercial or
+                // civilian commitment in the attacker's ring.
+                self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
             }
             // Strategic production may have just refilled an idle city with a
             // repeatable Research Grant. Run this handoff afterwards so its

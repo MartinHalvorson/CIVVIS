@@ -719,6 +719,63 @@ fn major_war_threat_preempts_an_undamaged_settler_queue() {
 }
 
 #[test]
+fn explicit_science_reacts_to_a_pre_damage_major_siege_without_a_war_gene() {
+    // A Science target owns its survival contract. Two major land units at a
+    // capital's ring are enough evidence to reserve the city before the first
+    // hit, even when the optional live garrison gene is not enabled.
+    let (mut game, city, home) = empire_with_a_capital(71_146);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    let first = clear_land_at(&game, home, 2, &[], 0);
+    let second =
+        game.wdisk(home, 2)
+            .into_iter()
+            .filter(|position| {
+                *position != first
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+            })
+            .next()
+            .expect("the capital ring needs a second clear land tile");
+    game.spawn_test_unit("warrior", 1, first);
+    game.spawn_test_unit("warrior", 1, second);
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.battlefront_observation = false;
+    assert!(!science.base.garrison_under_fire);
+    assert_eq!(game.cities[&city].hp, CITY_MAX_HP);
+    assert_eq!(
+        science.science_siege_defense_item(&game, 0, city),
+        Some(Item::Building {
+            building: crate::name!("walls")
+        }),
+        "the pre-damage Science contact should choose Walls"
+    );
+
+    let unsafe_queue = Item::Building {
+        building: crate::name!("monument"),
+    };
+    game.cities.get_mut(&city).unwrap().queue = vec![unsafe_queue.clone()];
+    science.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("walls")
+        }),
+        "the explicit Science lane must reclaim the queue before damage"
+    );
+    assert_eq!(
+        science
+            .science_siege_pressure(&game, 0, city)
+            .map(|(count, _)| count),
+        Some(2),
+        "both major units remain part of the visible siege signal"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy
