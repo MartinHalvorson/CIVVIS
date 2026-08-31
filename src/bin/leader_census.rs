@@ -147,6 +147,12 @@ fn median(values: &mut [i64]) -> Option<i64> {
     Some(values[values.len() / 2])
 }
 
+/// A declaration is the observable follow-through expected from this counter.
+/// The other strategies have their own economic, religious, or Congress paths.
+fn military_counter(counter: GrandStrategy) -> bool {
+    counter == GrandStrategy::Conquest
+}
+
 fn major_players(game: &Game) -> Vec<usize> {
     game.players
         .iter()
@@ -236,7 +242,7 @@ fn run_map(options: &Options, offset: usize) -> MapReading {
             named_pairs.insert((observer, target));
             let track = tracks.get_mut(&target).expect("denial only names majors");
             note(&mut track.first_named, turn);
-            if counter == GrandStrategy::Conquest {
+            if military_counter(counter) {
                 military_pairs.insert((observer, target));
                 note(&mut track.first_military_named, turn);
             }
@@ -421,6 +427,24 @@ mod tests {
         let mut values = vec![9, 1, 5];
         assert_eq!(median(&mut values), Some(5));
         assert_eq!(values, vec![1, 5, 9]);
+    }
+
+    #[test]
+    fn only_conquest_is_counted_as_a_missing_war_when_unfinished() {
+        assert!(military_counter(GrandStrategy::Conquest));
+        for counter in [
+            GrandStrategy::Science,
+            GrandStrategy::Culture,
+            GrandStrategy::Religion,
+            GrandStrategy::Diplomacy,
+            GrandStrategy::Recovery,
+            GrandStrategy::Expansion,
+        ] {
+            assert!(
+                !military_counter(counter),
+                "{counter:?} must not be scored as a missing declaration"
+            );
+        }
     }
 
     #[test]

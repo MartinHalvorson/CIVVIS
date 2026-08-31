@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every `--bin NAME` a document tells you to run must be a binary this tree ships.
+"""Every documented binary command must name a shipped, enabled target.
 
 ⚠⚠ THIS CLASS OF DEFECT HAS ALREADY COST A SESSION. #1278 removed 31 binaries
 for having "zero tests and zero invocations". The audit's question — who calls
@@ -29,11 +29,16 @@ DOCS = REPO / "docs"
 
 # `cargo run ... --bin NAME` and bare `--bin NAME` inside a command line.
 BIN_FLAG = re.compile(r"--bin\s+([A-Za-z_][A-Za-z0-9_]*)")
+FEATURE_FLAG = re.compile(r"--features(?:\s+|=)([A-Za-z0-9_,-]+)")
 
 # A binary a doc may name without shipping a source file for it: the ones
 # `Cargo.toml` declares with an explicit path, and the feature-gated closed
 # experiments, which are deliberately outside `src/bin`.
 BIN_TABLE = re.compile(r'^\s*name\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+REQUIRED_FEATURES = re.compile(r"^\s*required-features\s*=\s*\[([^]]*)\]", re.MULTILINE)
+
+DEVELOPER_TOOLS_FEATURE = "developer-tools"
+PRODUCTION_BINARIES = {"civvis_orders"}
 
 
 def shipped_binaries() -> set[str]:
@@ -50,15 +55,42 @@ def shipped_binaries() -> set[str]:
     return names
 
 
-def documented_binaries() -> dict[str, list[str]]:
-    """Binary names appearing in a `--bin` command, mapped to where."""
-    found: dict[str, list[str]] = {}
+def manifest_bin_features() -> dict[str, set[str]]:
+    """The feature set explicitly required by each manifest binary target."""
+    manifest = (REPO / "Cargo.toml").read_text(encoding="utf-8")
+    targets = {}
+    for block in manifest.split("[[bin]]")[1:]:
+        name = BIN_TABLE.search(block)
+        if name is None:
+            continue
+        features = REQUIRED_FEATURES.search(block)
+        targets[name.group(1)] = (
+            set(re.findall(r'"([^"]+)"', features.group(1))) if features else set()
+        )
+    return targets
+
+
+def developer_binaries() -> set[str]:
+    """Auto-discovered source bins that are not part of the deployed product."""
+    return {path.stem for path in (REPO / "src" / "bin").glob("*.rs")} - PRODUCTION_BINARIES
+
+
+def documented_bin_commands() -> list[tuple[str, str, str]]:
+    """Each documented `--bin` command as (name, location, command line)."""
+    found = []
     for doc in sorted(DOCS.rglob("*.md")):
         for number, line in enumerate(
                 doc.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             for name in BIN_FLAG.findall(line):
-                found.setdefault(name, []).append(
-                    f"{doc.relative_to(REPO)}:{number}")
+                found.append((name, f"{doc.relative_to(REPO)}:{number}", line))
+    return found
+
+
+def documented_binaries() -> dict[str, list[str]]:
+    """Binary names appearing in a `--bin` command, mapped to where."""
+    found: dict[str, list[str]] = {}
+    for name, location, _line in documented_bin_commands():
+        found.setdefault(name, []).append(location)
     return found
 
 
@@ -80,6 +112,22 @@ REMOVED_TOOLING = {
 
 
 class DocsNameOnlyBinariesThatExist(unittest.TestCase):
+    def test_source_bins_are_explicit_and_developer_bins_are_gated(self):
+        """A new command line tool must deliberately choose its build surface."""
+        features = manifest_bin_features()
+        source_bins = {path.stem for path in (REPO / "src" / "bin").glob("*.rs")}
+        undeclared = sorted(source_bins - set(features))
+        self.assertEqual(
+            undeclared, [],
+            "src/bin targets must be explicit because Cargo auto-discovery is disabled")
+        missing_gate = sorted(
+            name for name in developer_binaries()
+            if DEVELOPER_TOOLS_FEATURE not in features.get(name, set()))
+        self.assertEqual(
+            missing_gate, [],
+            "developer binaries must opt into the developer-tools feature")
+        self.assertEqual(features.get("civvis_orders"), set())
+
     def test_every_documented_bin_command_can_actually_run(self):
         shipped = shipped_binaries()
         missing = {
@@ -95,6 +143,21 @@ class DocsNameOnlyBinariesThatExist(unittest.TestCase):
             "was measured instead of instructing a run, or add it to "
             "REMOVED_TOOLING with the PR that removed it and a warning in the "
             "document itself.")
+
+    def test_documented_developer_commands_enable_their_feature(self):
+        missing = {
+            location: name
+            for name, location, line in documented_bin_commands()
+            if name in developer_binaries()
+            and DEVELOPER_TOOLS_FEATURE not in {
+                feature
+                for group in FEATURE_FLAG.findall(line)
+                for feature in group.split(",")
+            }
+        }
+        self.assertEqual(
+            missing, {},
+            "documented developer binaries must include --features developer-tools")
 
     def test_a_waived_command_warns_the_reader_in_its_own_document(self):
         """The waiver buys nothing if the reader still meets the command first."""

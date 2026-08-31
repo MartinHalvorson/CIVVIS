@@ -315,17 +315,12 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
 
 
 def seat_autonomy(events_path: Path) -> dict | None:
-    """Who actually drove the units: CIVVIS, or Civilization VI's own explore.
+    """Who drove unit movement, including historical host-selected routes.
 
-    ⭐ THE LADDER HAS NEVER SAID WHAT SHARE OF THE SEAT CIVVIS DROVE, and the
-    project's first premise is that it drives all of it. `ExploreUnassigned`
-    (on by default, `civ6_play.py --no-explore-unassigned`) hands every unit
-    CIVVIS gave no order to over to `UNITOPERATION_AUTOMATE_EXPLORE`. That is a
-    deliberate policy and the mod already counts it separately "so it is never
-    mistaken for CIVVIS's work" — but the count stopped at `events.jsonl`.
-    Nothing carried it to the summary, so every ladder row credited CIVVIS for
-    a game it may only have half-played, and the only way to find out was to
-    hand-parse the events.
+    Current mods never hand an unmentioned unit to the host for route choice:
+    they issue an explicit hold and emit ``explored: 0``.  Keep the historical
+    `explored` ledger, however, so an older run that did delegate movement does
+    not retrospectively look fully CIVVIS-driven.
 
     ⚠⚠ THE NUMERATOR IS `seen_by`, NOT `by`, AND THE FIRST VERSION OF THIS
     FUNCTION GOT IT WRONG. In `CivvisControlAgent.lua`, `byKind` increments only
@@ -337,21 +332,9 @@ def seat_autonomy(events_path: Path) -> dict | None:
     the share stopped measuring authorship the moment any order was refused.
     On the full Settler run of 2026-08-28 the two read 0.5623 and 0.6522.
 
-    Measured on that run: **270 unit orders authored by CIVVIS against 144
-    unit-turns handed to the engine** — a 65% share, with 185 of the 270
-    applied. Whole turns passed with `by: {produce_next: 1}` and nine units on
-    the board.
-
-    Civilians are never in this number: the mod excludes Settler, Builder,
-    Trader and Great People from the hand-off ("a settler that wanders is a
-    settler that never founds"), and `explored` counts only hand-offs the
-    engine accepted. So this is the ARMY and the scouts, which is exactly the
-    half a victory lane is decided by.
-
-    `explore_guarded` is the opposite sign and belongs beside it: units held
-    back from exploring because they are in contact. `None` when the run's mod
-    emitted no `orders` event at all, which is a different statement from a run
-    whose every unit CIVVIS ordered.
+    `explore_guarded` remains in the output only for historical event records.
+    `None` means the run's mod emitted no `orders` event at all, which differs
+    from a current run whose bridge held every unmentioned unit.
     """
     if not events_path.is_file():
         return None
@@ -1043,10 +1026,9 @@ def entry_from(summary: dict) -> dict:
         "abandoned": summary.get("abandoned"),
         # ⭐ WHO DROVE THE UNITS. `applied_pct` below says how much of what
         # CIVVIS asked for the engine did; this says how much of the seat
-        # CIVVIS asked about at all. See `seat_autonomy`: units CIVVIS gives no
-        # order to are handed to Civilization VI's own explore automation, and
-        # a row that does not carry the share credits CIVVIS for a game it may
-        # only have half-played.
+        # CIVVIS asked about at all. See `seat_autonomy`: current mods hold
+        # every unmentioned unit, while the field still exposes a historic run
+        # whose host selected movement.
         "seat_autonomy": summary.get("seat_autonomy"),
         "civvis_unit_share": (summary.get("seat_autonomy") or {}).get(
             "civvis_unit_share"),
