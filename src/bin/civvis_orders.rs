@@ -472,6 +472,59 @@ fn host_production_finishes_this_turn(city: &mirror::StateCity) -> bool {
             || city.production_progress + city.production + f64::EPSILON >= city.production_cost)
 }
 
+/// The control mod may replace CIVVIS's requested queue with Walls when an
+/// unwalled city is damaged or has a visible major-enemy unit within its
+/// emergency radius.  That replacement is authoritative host state, but the
+/// original request remains in `ours` unless the bridge reconciles it.  Without
+/// this lease, the next fresh-board decision clears the wall queue and repeats
+/// the same Campus/Archer request on every frame while the city is under threat.
+/// Keep this predicate identical to the Lua emergency-wall gate: no walls,
+/// actual damage or a visible unit from a rival we are at war with nearby.
+const EMERGENCY_WALL_RADIUS: i32 = 3;
+
+fn host_emergency_wall_is_active(
+    state: &civvis::mirror::StateSnapshot,
+    city: &civvis::mirror::StateCity,
+) -> bool {
+    if city.producing.as_deref() != Some("BUILDING_WALLS")
+        || !city.max_wall_damage.is_finite()
+        || city.max_wall_damage > 0.0
+    {
+        return false;
+    }
+    let damaged = city.damage.is_finite() && city.damage > 0.0;
+    let nearby_enemy = state
+        .rivals
+        .iter()
+        .filter(|rival| rival.at_war)
+        .flat_map(|rival| rival.units.iter())
+        .any(|unit| offset_distance((city.x, city.y), (unit.x, unit.y)) <= EMERGENCY_WALL_RADIUS);
+    damaged || nearby_enemy
+}
+
+/// Adopt only the host's bounded emergency-wall replacement on every decision.
+/// Ordinary host queues remain self-limiting: they are adopted on a decider
+/// restart, while a CIVVIS choice already in `ours` is allowed to be replaced
+/// normally.  The emergency response is different because releasing it during
+/// the same threat window removes the host's safety action before the next
+/// production callback can complete it.
+fn adopt_emergency_wall_production(
+    ours: &mut std::collections::BTreeMap<i64, String>,
+    state: &civvis::mirror::StateSnapshot,
+) -> usize {
+    let mut adopted = 0;
+    for city in &state.cities {
+        if !host_emergency_wall_is_active(state, city) {
+            continue;
+        }
+        if ours.get(&city.id).map(String::as_str) != Some("BUILDING_WALLS") {
+            ours.insert(city.id, "BUILDING_WALLS".to_string());
+            adopted += 1;
+        }
+    }
+    adopted
+}
+
 /// Firaxis remembers a submitted peace offer per target for five turns.
 ///
 /// `CivvisControlAgent.lua` rejects another offer while
@@ -3245,6 +3298,7 @@ fn decide(
         eprintln!("civvis-orders: {why}");
         std::process::exit(2);
     }
+    let emergency_wall_adoptions = adopt_emergency_wall_production(ours, state);
     let (production_hints_consumed, production_hints_expired) =
         settle_deferred_production_hints(ours, state);
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
@@ -3595,6 +3649,11 @@ fn decide(
     // not taking and the refusal ledger is the place to look.
     if released > 0 {
         note_bits.push(format!("released={released}"));
+    }
+    if emergency_wall_adoptions > 0 {
+        note_bits.push(format!(
+            "emergency_wall_production_adopted={emergency_wall_adoptions}"
+        ));
     }
 
     if let Some(report) = &plan {
@@ -9520,6 +9579,53 @@ mod tests {
         let mut ours = std::collections::BTreeMap::new();
         assert_eq!(adopt_host_production(&mut ours, &state), 0);
         assert!(ours.is_empty());
+    }
+
+    #[test]
+    fn an_emergency_wall_replacement_overrides_stale_production_ownership() {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].producing = Some("BUILDING_WALLS".to_string());
+        state.cities[0].max_wall_damage = 0.0;
+        state.rivals = vec![StateRival {
+            player: 3,
+            at_war: true,
+            units: vec![StateUnit {
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 5,
+                y: 4,
+                ..StateUnit::default()
+            }],
+            ..StateRival::default()
+        }];
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+        let mut ours = std::collections::BTreeMap::from([(7_i64, "DISTRICT_CAMPUS".to_string())]);
+
+        assert_eq!(adopt_emergency_wall_production(&mut ours, &state), 1);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("BUILDING_WALLS"));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0,
+            "the host's emergency queue must not be cleared by the stale Campus lease"
+        );
+        assert!(
+            !planned.cities[&cid].queue.is_empty(),
+            "the threatened city's wall queue remains available to finish"
+        );
+    }
+
+    #[test]
+    fn an_unthreatened_wall_queue_does_not_capture_civvis_ownership() {
+        let (_snapshot, mut state) = production_board();
+        state.cities[0].producing = Some("BUILDING_WALLS".to_string());
+        state.cities[0].max_wall_damage = 0.0;
+        let mut ours = std::collections::BTreeMap::from([(7_i64, "DISTRICT_CAMPUS".to_string())]);
+        assert_eq!(adopt_emergency_wall_production(&mut ours, &state), 0);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("DISTRICT_CAMPUS"));
     }
 
     /// A city building nothing has nothing to hand back, and must not be counted.

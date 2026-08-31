@@ -12,7 +12,7 @@
 #        any CIVVIS_* policy exports in the calling shell (a ~/.zprofile setup
 #        migrates itself); see the wrapper for the keys
 #   ~/Library/LaunchAgents/com.civvis.keepplaying.plist  `civvis-games ensure` every 5 min
-#   ~/Library/LaunchAgents/com.civvis.run-prune.plist    civvis-run-prune.sh daily at 03:17
+#   ~/Library/LaunchAgents/com.civvis.run-prune.plist    civvis-run-prune.sh hourly
 # and retires the pre-repo labels com.martbot.civvis-keepplaying and
 # com.martbot.civvis-run-prune (their plists are kept as *.retired-<stamp>).
 #
