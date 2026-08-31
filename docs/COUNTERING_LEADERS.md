@@ -32,10 +32,15 @@ Three diagnostic seams on `AdvancedAi` (`rival_pressure`, `denial_target`,
 second implementation of "who is about to win" is how a HUD and an AI end up
 disagreeing, which is the thing #291 landed `victory_races` to prevent.
 
-⚠ `leader_census` was removed in #1278 as an unreferenced binary. The command below is kept as the record of how this was measured — it does not run against this tree. Restoring it follows the pattern in #1876: bring the source back with tests, so the audit's question and the real one agree.
+`leader_census` was removed in #1278 as an unreferenced binary, leaving the
+published method impossible to rerun. #2897 restores it as a tested,
+developer-only audit. It now reports the response selected for every actionable
+target and counts war follow-through only for Conquest responses; Religion,
+Culture, and Diplomacy are valid non-military answers rather than failed war
+declarations.
 
 ```
-cargo run --profile ci --bin leader_census -- \
+cargo run --features developer-tools --profile ci --bin leader_census -- \
   --players 6 --maps 16 --width 74 --height 46 --city-states 9 \
   --turns 400 --seed 940000 --jobs 6
 ```
@@ -475,7 +480,10 @@ does have one piece of evidence behind it that the AI-side conclusions do not:
 it does not depend on any response working, so none of the six nulls above bear
 on it.
 
-`leader_census --arm ship` reproduces the table.
+The command above reruns the same audit against the current controller. The
+table remains the historical reading from the recorded revision; a fresh run is
+evidence about the current response, not a claim that an evolving controller
+must reproduce old counts exactly.
 
 ### What this does not license
 

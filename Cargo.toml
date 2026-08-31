@@ -53,6 +53,11 @@ path = "src/bin/gene_screen.rs"
 required-features = ["developer-tools"]
 
 [[bin]]
+name = "leader_census"
+path = "src/bin/leader_census.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
 name = "leader_study"
 path = "src/bin/leader_study.rs"
 required-features = ["developer-tools"]
