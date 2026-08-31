@@ -186,6 +186,7 @@ learned by getting them wrong:
 | tile yield signs | `tools/civ6_yield_icons.py` | `TEXTURE_YieldOverlayAtlas` |
 | unit flag plates | `tools/civ6_unit_flag_plates.py` | `BLPs/UI/InWorld.blp` |
 | unit glyphs | `tools/civ6_unit_glyphs.py` | `ICON_ATLAS_*_UNITS` in 8 `Icons.blp` |
+| city-banner wall shields | `tools/civ6_city_banner_art.py` | `Banner_StrengthIcon_Shields` in `BLPs/UI/InWorld.blp` |
 | district colours | inline in `web/assets/app.js` | `Base/Assets/UI/Civ6_ColorAtlas.xml` |
 
 Every mark CIVVIS draws is now cut, not imitated and not scraped.
