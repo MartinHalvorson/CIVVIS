@@ -19359,6 +19359,14 @@ impl Game {
     }
 
     pub fn city_power_supply(&self, city: &City) -> f64 {
+        // Industrial Zone Logistics (and any future project with the same
+        // ruleset flag) fully powers its city while it is running.  The turn
+        // processor records that in `city_power`, but mirror and planning
+        // queries can run before `process_power` has populated that cache.
+        // Keep the direct query on the same truth as turn processing.
+        if self.city_project_fully_powers(city) {
+            return self.city_power_demand(city);
+        }
         self.players[city.owner]
             .city_power
             .get(&city.id)
@@ -19369,6 +19377,20 @@ impl Game {
     pub fn city_is_powered(&self, city: &City) -> bool {
         let demand = self.city_power_demand(city);
         demand <= 0.0 || self.city_power_supply(city) + 1e-9 >= demand
+    }
+
+    /// Whether an active project provides full Power independently of the
+    /// empire's fuel and renewable allocation.  This is shared by the turn
+    /// processor and read-only yield queries so a project cannot be powered in
+    /// one path and unpowered in the other.
+    fn city_project_fully_powers(&self, city: &City) -> bool {
+        let Some(Item::Project { project }) = city.queue.first() else {
+            return false;
+        };
+        let Some(spec) = self.rules.projects.get(project) else {
+            return false;
+        };
+        spec.full_power_while_active && self.project_has_active_district(city, spec)
     }
 
     /// Stock fuel conversion and emissions read from the power-plant data.
@@ -19420,14 +19442,7 @@ impl Game {
             let city = &self.cities[&city_id];
             let demand = self.city_power_demand(city);
             let mut supply = self.city_renewable_power(city);
-            let project_fully_powers = city.queue.first().is_some_and(|item| {
-                let Item::Project { project } = item else {
-                    return false;
-                };
-                self.rules.projects.get(project).is_some_and(|spec| {
-                    spec.full_power_while_active && self.project_has_active_district(city, spec)
-                })
-            });
+            let project_fully_powers = self.city_project_fully_powers(city);
             if project_fully_powers {
                 self.players[pid]
                     .city_power
