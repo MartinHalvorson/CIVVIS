@@ -2597,6 +2597,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
                           side_effect=lambda *a: next(reads)), \
              patch.object(civ6_play, "_observed_label_point",
                           side_effect=[None, (700, 340)]) as observed, \
+             patch.object(civ6_play, "focus_game"), \
              patch.object(civ6_play, "click_at") as click, \
              patch.object(civ6_play.macos_input, "move") as move, \
              patch.object(civ6_play.time, "sleep") as sleep:
