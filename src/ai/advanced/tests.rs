@@ -1430,6 +1430,71 @@ fn a_weak_seat_that_cannot_buy_its_defender_produces_it() {
 }
 
 #[test]
+fn an_explicit_science_lane_walls_a_border_campus_before_the_generic_queue() {
+    let (mut game, city, home) = empire_with_a_capital(91_777);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    game.players[0].met.insert(1);
+    game.players[1].met.insert(0);
+    let rival_anchor = game.cities[&city].pos;
+    let _second_city = found_nearby_test_city(&mut game, 0, rival_anchor);
+    let rival_position =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                (4..=SCIENCE_BORDER_DEFENSE_RADIUS).contains(&game.wdist(rival_anchor, *position))
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game
+                        .cities
+                        .values()
+                        .all(|other| game.wdist(other.pos, *position) >= 4)
+            })
+            .min_by_key(|position| (game.wdist(rival_anchor, *position), *position))
+            .expect("fixture needs a legal nearby rival city site");
+    let rival_city = game.found_city_for(1, rival_position, None);
+    assert!(
+        game.wdist(game.cities[&city].pos, game.cities[&rival_city].pos)
+            <= SCIENCE_BORDER_DEFENSE_RADIUS,
+        "fixture: the rival city is in the border-defense ring"
+    );
+    install_ai_test_district(&mut game, city, "campus");
+    game.players[0]
+        .techs
+        .extend([crate::name!("writing"), crate::name!("masonry")]);
+    game.turn = SCIENCE_BORDER_DEFENSE_START;
+    game.current = 0;
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    assert!(game.can_produce(0, city, &library));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: library.clone(),
+        },
+    )
+    .expect("queue the non-defensive research building");
+
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(ai.reserve_science_border_walls(&mut game, 0));
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("walls")
+        }),
+        "the exposed Campus city pauses the generic queue for Walls"
+    );
+    assert_eq!(game.cities[&city].pos, home);
+}
+
+#[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
     // was far behind Kongo at t113, but an empty Ostia still began a
@@ -2603,6 +2668,17 @@ fn timed_war_chooser_appoints_the_earliest_excellent_unlock() {
         game.rules.units[plan.assault_unit].strength
             < game.rules.units["giant_death_robot"].strength,
         "the chooser minimizes the qualifying research path instead of naming the end-tree maximum"
+    );
+}
+
+#[test]
+fn an_explicit_science_lane_never_appoints_an_offensive_timed_war() {
+    let (game, _, _) = timed_war_fixture(940_013);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.timed_war = true;
+    assert!(
+        ai.choose_war_plan(&game, 0).is_none(),
+        "a named Science seat must reserve its timed-war machinery for the space race"
     );
 }
 

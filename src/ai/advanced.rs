@@ -361,6 +361,16 @@ const CHEAPEST_WONDER_LANE_MAX_TURNS: f64 = 25.0;
 /// tiles of the declarer's; eight is the reach a Warrior stack covers in
 /// three turns.
 const BORDER_PARITY_CONTACT_RADIUS: i32 = 8;
+/// A named Science seat has no use for an exposed Campus city without outer
+/// defenses. Keep the same eight-tile contact envelope as the peacetime
+/// parity treatment: a major with a city inside this ring can put a field
+/// army at the Campus before a normal wall queue finishes.
+const SCIENCE_BORDER_DEFENSE_RADIUS: i32 = BORDER_PARITY_CONTACT_RADIUS;
+/// Do not let the border-wall reserve consume the opening Settler/Campus
+/// turns. Once the second city exists, the seat has enough of a research
+/// economy that surviving the first surprise war is worth one defensive
+/// queue.
+const SCIENCE_BORDER_DEFENSE_START: u32 = 45;
 /// The share of the strongest bordering major's military power the seat
 /// keeps in peacetime. Twelve of fourteen city losses came at ratios under
 /// 0.8; at 0.8–1.0 one city was lost, at parity or above one.
@@ -7885,6 +7895,15 @@ impl AdvancedAi {
     }
 
     fn choose_war_plan(&self, g: &Game, pid: usize) -> Option<WarPlan> {
+        // An explicit Science seat must spend its timed-war machinery on the
+        // research and launch chain, not appoint an offensive package that
+        // can seize the strategy or keep the economy on a conquest track.
+        // Defensive wars remain handled by `maintain_war_plan` and the
+        // ordinary emergency/peace paths; this veto only blocks a package the
+        // seat would choose itself.
+        if self.active_victory_target(g) == Some(VictoryTarget::Science) {
+            return None;
+        }
         let selective_target = if self.selective_timed_war {
             self.selective_timed_war_target()
         } else {
@@ -16555,7 +16574,6 @@ impl AdvancedAi {
                 && self.war_plan.is_none()
                 && plan.strategy != GrandStrategy::Conquest
                 && plan.threatened_city.is_some()
-                && my_power < g.military_power(*other) * 0.85
                 && g.peace_available_at(pid, *other).is_none();
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
@@ -17611,6 +17629,112 @@ impl AdvancedAi {
                 "{spent:.0} Gold: {ours:.0} power against their {theirs:.0}, and every war declared \
                  on this seat before turn 100 came from the strongest bordering major at about \
                  four fifths of its power");
+        }
+        true
+    }
+
+    /// Reserve one border Campus city for Walls before a surprise war can
+    /// turn a healthy research settlement into an exposed capture. The
+    /// peacetime parity purchase compares empire-wide power, which is useful
+    /// for buying a unit but can miss the local failure mode: in the live
+    /// Science retry, our global power was close to Phoenicia's while its
+    /// stack reached Aquileia's undefended city in four turns. A wall is the
+    /// cheaper persistent answer, and a single queue per turn keeps this a
+    /// survival reserve rather than a blanket militarization.
+    ///
+    /// The reserve is explicit-Science-only. It starts after the opening
+    /// expansion window, requires a completed Campus, and never interrupts an
+    /// existing wall, repair, or non-siege land defender. A nearly completed
+    /// queue is allowed to finish; otherwise the exposed city pauses its
+    /// civilian, district, or project and starts Walls immediately.
+    fn reserve_science_border_walls(&self, g: &mut Game, pid: usize) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Science)
+            || g.turn < g.standard_duration(SCIENCE_BORDER_DEFENSE_START)
+            || g.player_city_ids(pid).len() < 2
+        {
+            return false;
+        }
+
+        let mut candidate: Option<(i32, u32, usize)> = None;
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            if !city.districts.contains_key(crate::name!("campus"))
+                || city.buildings.iter().any(|building| {
+                    matches!(
+                        building.as_str(),
+                        "walls" | "medieval_walls" | "renaissance_walls"
+                    )
+                })
+                || city
+                    .queue
+                    .first()
+                    .is_some_and(|item| Self::active_queue_is_defensive(g, item))
+            {
+                continue;
+            }
+            let Some((distance, rival)) = g
+                .cities
+                .values()
+                .filter(|rival_city| rival_city.owner != pid)
+                .filter_map(|rival_city| {
+                    let rival = &g.players[rival_city.owner];
+                    (rival.alive
+                        && !rival.is_minor
+                        && !rival.is_barbarian
+                        && !g.same_team(pid, rival_city.owner)
+                        && g.has_met(pid, rival_city.owner))
+                    .then_some((g.wdist(city.pos, rival_city.pos), rival_city.owner))
+                })
+                .min_by_key(|(distance, owner)| (*distance, *owner))
+            else {
+                continue;
+            };
+            if distance > SCIENCE_BORDER_DEFENSE_RADIUS {
+                continue;
+            }
+            // Let a queue within three of its current production finish. This
+            // reserve is aimed at the exposed cities that would otherwise be
+            // naked for many turns, not at throwing away a completed Library
+            // or University on the last turn before it lands.
+            if let Some(item) = city.queue.first() {
+                let remaining = g.item_remaining_cost_for_city(pid, cid, item);
+                let production = g.city_yields(cid).production.max(1.0);
+                if remaining <= production * 3.0 + f64::EPSILON {
+                    continue;
+                }
+            }
+            let replace = candidate.is_none_or(|(old_distance, old_city, _)| {
+                distance < old_distance || (distance == old_distance && cid < old_city)
+            });
+            if replace {
+                candidate = Some((distance, cid, rival));
+            }
+        }
+
+        let Some((distance, city, rival)) = candidate else {
+            return false;
+        };
+        let walls = Item::Building {
+            building: crate::name!("walls"),
+        };
+        if !g.can_produce(pid, city, &walls)
+            || g.apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: walls.clone(),
+                },
+            )
+            .is_err()
+        {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let city_name = g.cities[&city].name.clone();
+            think!(self.journal(), Military, Decision,
+                "{} reserves Walls for the Science border", city_name;
+                "a met major is {distance} tiles away; {} remains outside the frontier until the Campus city is defended",
+                g.players[rival].civ);
         }
         true
     }
@@ -35976,6 +36100,12 @@ impl AdvancedAi {
             // re-add a Conquest routing here without a mechanism the
             // three removed gates did not have.
             {
+                if active_victory_target == Some(VictoryTarget::Science) {
+                    // A border Campus is the one peaceful defense that must
+                    // land before the generic Science queue can spend the
+                    // city on another district or repeatable project.
+                    self.reserve_science_border_walls(g, pid);
+                }
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }
             // Strategic production may have just refilled an idle city with a
