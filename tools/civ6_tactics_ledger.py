@@ -144,24 +144,33 @@ def _own_units(state: dict[str, Any]) -> dict[int, dict[str, Any]]:
 
 
 def _hostile_plots(state: dict[str, Any]) -> list[tuple[int, int]]:
-    """Visible hostile combat units and at-war rival cities, as offset plots."""
+    """Visible hostile combat units and at-war actor cities, as offset plots.
+
+    The host exports major civilizations in ``rivals`` and city-states in
+    ``minors``.  Both lists carry the local player's ``at_war`` relation, while
+    ``hostiles`` is reserved for barbarians and Free Cities.  Omitting minors
+    made a city-state army disappear from the loss/hover context even though
+    the same units were visible to the controller's contact guard.
+    """
     plots: list[tuple[int, int]] = []
     for hostile in state.get("hostiles") or []:
         combat = hostile.get("combat") or 0
         ranged = hostile.get("ranged") or 0
         if (combat or ranged) and isinstance(hostile.get("x"), int):
             plots.append((hostile["x"], hostile["y"]))
-    for rival in state.get("rivals") or []:
-        if not rival.get("at_war"):
-            continue
-        for unit in rival.get("units") or []:
-            if ((unit.get("combat") or 0) or (unit.get("ranged") or 0)) and isinstance(
-                unit.get("x"), int
-            ):
-                plots.append((unit["x"], unit["y"]))
-        for city in rival.get("cities") or []:
-            if isinstance(city.get("x"), int):
-                plots.append((city["x"], city["y"]))
+
+    for actor_group in ("rivals", "minors"):
+        for actor in state.get(actor_group) or []:
+            if not actor.get("at_war"):
+                continue
+            for unit in actor.get("units") or []:
+                if ((unit.get("combat") or 0) or (unit.get("ranged") or 0)) and isinstance(
+                    unit.get("x"), int
+                ):
+                    plots.append((unit["x"], unit["y"]))
+            for city in actor.get("cities") or []:
+                if isinstance(city.get("x"), int):
+                    plots.append((city["x"], city["y"]))
     return plots
 
 
