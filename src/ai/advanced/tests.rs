@@ -838,6 +838,74 @@ fn explicit_science_reacts_to_a_pre_damage_barbarian_siege() {
 }
 
 #[test]
+fn explicit_science_keeps_the_opening_settler_ahead_of_pre_damage_barbarians() {
+    // The failed Science opening made a Warrior at t9 rather than its second
+    // Settler because a healthy, one-city Rome saw nearby barbarians.  The
+    // live opening book already makes the Settler legal at population two;
+    // retain that exact queue through the pre-damage contact, then hand the
+    // capital back to the emergency path after a real hit.
+    let (mut game, city, home) = empire_with_a_capital(71_148);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&city).expect("capital exists").pop = 2;
+    let barb = 1;
+    game.players[barb].is_barbarian = true;
+    game.barb_pid = Some(barb);
+    game.at_war.remove(&(0, barb));
+    game.at_war.remove(&(barb, 0));
+    let first = clear_land_at(&game, home, 2, &[], 0);
+    let second = clear_land_at(&game, home, 2, &[(first, 1)], 0);
+    game.spawn_test_unit("warrior", barb, first);
+    game.spawn_test_unit("warrior", barb, second);
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.battlefront_observation = false;
+    science.enable_opening_settler_waits();
+    science.base.book_pos = 1; // the first Warrior completed; slot two is Settler.
+    assert!(science.opening_settler_has_priority(&game, 0, city));
+    assert_eq!(
+        science.science_siege_pressure(&game, 0, city),
+        None,
+        "an undamaged opening capital keeps its expansion slot"
+    );
+
+    science.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
+    assert!(
+        game.cities[&city].queue.is_empty(),
+        "the pre-damage responder must not fill the Settler slot with a Warrior"
+    );
+    science.base.cities(&mut game, 0);
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&settler),
+        "the opening book starts the second Settler before military filler"
+    );
+
+    science.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&settler),
+        "the same healthy contact cannot cancel an already-started opening Settler"
+    );
+
+    game.cities.get_mut(&city).unwrap().hp = CITY_MAX_HP - 1;
+    assert!(
+        science.science_siege_pressure(&game, 0, city).is_some(),
+        "actual city damage releases the queue to the emergency response"
+    );
+    science.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("walls")
+        }),
+        "once damaged, the capital may replace the Settler with its legal wall defense"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy

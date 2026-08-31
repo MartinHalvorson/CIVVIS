@@ -5,7 +5,7 @@
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{
     Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, UnitMemory,
-    WarPlanReport, Weights, BUILDER_ROUTE_ATTEMPTS,
+    WarPlanReport, Weights, BUILDER_ROUTE_ATTEMPTS, OPENING_MENU,
 };
 use crate::belief::{BeliefState, CitySighting};
 use crate::game::{
@@ -17358,6 +17358,45 @@ impl AdvancedAi {
         actions
     }
 
+    /// Whether the active capital is still owed the opening book's first
+    /// expansion Settler.  The live bridge's population floor can delay that
+    /// book slot, but once it is legal the slot must not be repeatedly traded
+    /// for Warriors merely because a non-siege barbarian party has appeared.
+    ///
+    /// This is deliberately the book's exact next choice, not a generic
+    /// preference for Settlers: after the book has moved on, or if its next
+    /// item is not a Settler, ordinary siege response remains authoritative.
+    fn opening_settler_has_priority(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        if !self.base.opening_settler_waits
+            || !city.is_capital
+            || self.base.book_pos >= 4
+            || self.base.minor
+            || self.base.barb
+        {
+            return false;
+        }
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        if matches!(city.queue.first(), Some(Item::Unit { unit }) if unit == "settler") {
+            return true;
+        }
+        if !city.queue.is_empty() || !g.can_produce(pid, cid, &settler) {
+            return false;
+        }
+        let opening_gene = [
+            self.base.w.open0,
+            self.base.w.open1,
+            self.base.w.open2,
+            self.base.w.open3,
+        ][self.base.book_pos];
+        let opening = OPENING_MENU.get(opening_gene.max(0.0) as usize);
+        opening == Some(&"settler") && self.base.has_practical_settle_site(g, pid)
+    }
+
     /// A targeted Science seat must notice the attack before city health is
     /// the only proof left. The generic siege picker is intentionally
     /// damage-gated because a passing patrol should not interrupt a city, but
@@ -17400,8 +17439,18 @@ impl AdvancedAi {
             has_siege |= spec.siege && g.wdist(city.pos, unit.pos) <= 3;
         }
         let damaged = city.hp < CITY_MAX_HP || city.wall_hp < g.city_max_wall_hp(city);
-        let capital_contact = city.is_capital && count > 0;
-        (has_siege || count >= SCIENCE_SIEGE_MIN_UNITS || (damaged && count > 0) || capital_contact)
+        // The first expansion is the opening's pace contract.  On the failed
+        // live Science opening, a healthy capital saw one Spearman at range
+        // four, then a couple of Warriors, and the broad capital-contact arm
+        // cancelled its t9 Settler with another Warrior every turn through
+        // t26.  A real siege piece may still interrupt before the first hit;
+        // otherwise let this exact opening Settler start and finish until the
+        // city has taken damage, when the normal wall/defender response owns
+        // the queue again.
+        if !damaged && !has_siege && self.opening_settler_has_priority(g, pid, cid) {
+            return None;
+        }
+        (has_siege || count >= SCIENCE_SIEGE_MIN_UNITS || (damaged && count > 0))
             .then_some((count, strength))
     }
 
