@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  com.civvis.run-prune — daily retention for ~/civvis-civ6-runs/control.
-  Runs tools/ops/civvis-run-prune.sh at 03:17: run directories older than 48 h
-  are removed (operator rule, 2026-08-27), never the ledgers beside them, never
-  a run a process has open, never the newest run. Read the script's header
+  com.civvis.run-prune — hourly retention for ~/civvis-civ6-runs/control.
+  Runs tools/ops/civvis-run-prune.sh every hour: run directories older than 24 h
+  are removed (operator rule, 2026-08-31), never the ledgers beside them or a
+  run a process has open. Read the script's header
   before installing it on a host that keeps event streams for analysis.
 
   This is a TEMPLATE. tools/ops/civvis-install-host-automation.sh renders the
@@ -27,13 +27,8 @@
 		<key>PATH</key>
 		<string>/usr/bin:/bin:/usr/sbin:/sbin</string>
 	</dict>
-	<key>StartCalendarInterval</key>
-	<dict>
-		<key>Hour</key>
-		<integer>3</integer>
-		<key>Minute</key>
-		<integer>17</integer>
-	</dict>
+	<key>StartInterval</key>
+	<integer>3600</integer>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>LowPriorityIO</key>
