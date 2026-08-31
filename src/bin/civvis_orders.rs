@@ -3196,8 +3196,15 @@ fn withholdable_treatments() -> String {
 /// universe — seating one is an addition, and it is the only route a gene
 /// priced on the arena has to the live board before the whole-game screen
 /// answers (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
+///
+/// A caller can also name a treatment that already ships in deployment. That
+/// is an idempotent part of a wider profile, not a reason to kill the live
+/// decider: retain only the rows that actually change the genome. A list made
+/// entirely of deployed rows remains an error, since it is a mislabeled
+/// no-op arm rather than a force-on experiment.
 fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
     let mut selected = Vec::new();
+    let mut already_deployed = Vec::new();
     for treatment in forced {
         let tag = match civvis::ai::GENES
             .iter()
@@ -3211,10 +3218,16 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
                 tag
             }
             Some(tag) => {
+                if civvis::ai::gene_ledger::deployment_treatments().contains(&tag) {
+                    if !already_deployed.contains(&tag) {
+                        already_deployed.push(tag);
+                    }
+                    continue;
+                }
                 return Err(format!(
-                    "--with treatment {treatment:?} already ships in the deployment genome \
-                     (tag {tag:?}); only a ledger-held live treatment or a held-off opt-in \
-                     forms a distinct arm"
+                    "--with treatment {treatment:?} is not a ledger-held live treatment or \
+                     held-off opt-in (tag {tag:?}); this binary can force: {}",
+                    forceable_live_treatments()
                 ));
             }
             None => {
@@ -3227,6 +3240,17 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
         if !selected.contains(&tag) {
             selected.push(tag);
         }
+    }
+    if selected.is_empty() && !already_deployed.is_empty() {
+        return Err(format!(
+            "--with treatment(s) {} already ship in the deployment genome; name at least one \
+             ledger-held live treatment or held-off opt-in to form a distinct arm",
+            already_deployed
+                .iter()
+                .map(|tag| format!("{tag:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     Ok(selected)
 }
@@ -8304,7 +8328,7 @@ mod tests {
     }
 
     #[test]
-    fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
+    fn a_live_arm_forces_held_treatments_and_tolerates_deployment_members() {
         // The exact held live genes move with the deployment selection.
         let held_live = civvis::ai::gene_ledger::ledger_held_live_treatments()
             .first()
@@ -8336,7 +8360,19 @@ mod tests {
 
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
             .expect_err("a treatment already in the live genome cannot form a force-on arm");
-        assert!(host_only.contains("already ships"), "{host_only}");
+        assert!(host_only.contains("deployment genome"), "{host_only}");
+
+        let mixed = super::forced_live_treatments(&[
+            "science-victory-drive".to_string(),
+            held_live.to_string(),
+            "science-victory-drive".to_string(),
+        ])
+        .expect("a wider profile may repeat a gene deployment already supplies");
+        assert_eq!(mixed, vec![held_live]);
+        assert!(
+            civvis::ai::gene_ledger::deployment_treatments().contains(&"science-victory-drive"),
+            "the regression needs a deployment-provided member alongside the held treatment"
+        );
 
         // A held-off opt-in is the other thing an arm may name: it is the
         // only route a gene priced on the arena has to the live board
