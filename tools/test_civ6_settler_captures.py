@@ -231,6 +231,23 @@ class DetectionTest(unittest.TestCase):
         subjects = {o.get("subject") or o.get("settler") for o in capture["orders"]}
         self.assertEqual(subjects, {GUARD, SETTLER})
 
+    def test_a_nearby_guard_replaces_a_stale_named_escort(self):
+        nearby_guard = unit(9003, "UNIT_WARRIOR", 6, 5, moves=0, combat=20, hp=100)
+        stale_guard = unit(GUARD, "UNIT_ARCHER", 10, 5, moves=0, combat=15, hp=81)
+        events = [
+            state(8, [unit(SETTLER, "UNIT_SETTLER", 5, 5), stale_guard]),
+            state(9, [unit(SETTLER, "UNIT_SETTLER", 5, 5), stale_guard]),
+            state(10, [unit(SETTLER, "UNIT_SETTLER", 5, 5), stale_guard, nearby_guard]),
+            {"kind": "escort_cap_synced", "turn": 8, "settler": SETTLER, "guard": GUARD},
+            {"kind": "unit_lost", "turn": 10, "unit": SETTLER, "unit_kind": "UNIT_SETTLER"},
+        ]
+        run = make_run(self.root, "civvis-replaced-guard", events)
+        capture = captures.detect_captures(run)[0]
+        self.assertEqual(capture["guard"]["id"], 9003)
+        self.assertEqual(capture["guard"]["named_by"], "proximity")
+        self.assertEqual(capture["guard"]["distance"], 1)
+        self.assertEqual(capture["guard"]["assigned_guard"]["id"], GUARD)
+
     def test_a_site_beside_a_hostile_seen_this_week_is_a_nest(self):
         # The journal names the target; a spearman stood two tiles from it
         # five turns ago and has not been seen since.

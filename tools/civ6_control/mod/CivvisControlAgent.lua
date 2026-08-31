@@ -7772,6 +7772,11 @@ local function exportState(player, pid, turn, frame)
 						free = isFree or nil,
 						hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 						moves = try(function() return unit:GetMovesRemaining(); end, -1),
+						-- Foreign units use the same fresh-turn movement fact as
+						-- our own units.  The mirror's threat flood must not infer
+						-- a barbarian's allowance from an ordinary stock unit when
+						-- the host has already answered it.
+						max_moves = try(function() return unit:GetMaxMoves(); end, nil),
 						xp = progress.xp, level = progress.level,
 						promotions = progress.promotions,
 						build_charges = progress.build_charges,
@@ -14370,28 +14375,49 @@ end;
 
 -- When a visible hostile already covers a Settler's CURRENT tile, merely
 -- refusing its planned leg is not a safety action: the hostile phase still
--- captures the stationary civilian.  Find a one-step destination that the
--- host can actually execute this turn and that every supplied hostile cannot
--- reach under the same conservative host-side predicate.  The caller owns
--- the threat predicate because scouts use their measured geometric floor,
--- while combat units prefer their path query and then a BaseMoves fallback.
+-- captures the stationary civilian.  Find a destination within two hexes that
+-- the host can actually execute this turn and that every supplied hostile cannot
+-- reach under the same conservative host-side predicate.  Two hexes is the
+-- ordinary Settler allowance; the host path query remains the authority, so a
+-- blocked second step is simply ignored.  The caller owns the threat predicate
+-- because scouts use their measured geometric floor, while combat units prefer
+-- their path query and then a BaseMoves fallback.
 CivvisBoard.findSettlerCaptureEscape = function(settler, fromX, fromY, wantX, wantY,
 		threats, threatReaches)
 	local candidates = {};
-	for _, plot in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
-		if CivvisBoard.reachesThisTurn(settler, plot.x, plot.y) then
-			local safe = true;
-			for _, threat in ipairs(threats) do
-				local reaches = threatReaches(threat, plot.x, plot.y);
-				if reaches then safe = false; break; end
-			end
-			if safe then
-				local distance = tonumber(try(function()
-					return Map.GetPlotDistance(plot.x, plot.y, wantX, wantY);
-				end, 9999)) or 9999;
-				candidates[#candidates + 1] = { x = plot.x, y = plot.y, distance = distance };
+	local frontier = { { x = fromX, y = fromY } };
+	local seen = { [fromX .. ":" .. fromY] = true };
+	-- Keep this bounded. Enumerating the whole map through GetMoveToPathEx on
+	-- every safety pass would make a rare emergency expensive, while two rings
+	-- cover a normal Settler's full fresh-turn movement and the live failure that
+	-- exposed this gap.
+	for _ = 1, 2 do
+		local nextFrontier = {};
+		for _, origin in ipairs(frontier) do
+			for _, plot in ipairs(CivvisBoard.adjacentPlots(origin.x, origin.y)) do
+				local key = plot.x .. ":" .. plot.y;
+				if not seen[key] then
+					seen[key] = true;
+					nextFrontier[#nextFrontier + 1] = plot;
+					if CivvisBoard.reachesThisTurn(settler, plot.x, plot.y) then
+						local safe = true;
+						for _, threat in ipairs(threats) do
+							local reaches = threatReaches(threat, plot.x, plot.y);
+							if reaches then safe = false; break; end
+						end
+						if safe then
+							local distance = tonumber(try(function()
+								return Map.GetPlotDistance(plot.x, plot.y, wantX, wantY);
+							end, 9999)) or 9999;
+							candidates[#candidates + 1] = {
+								x = plot.x, y = plot.y, distance = distance,
+							};
+						end
+					end
+				end
 			end
 		end
+		frontier = nextFrontier;
 	end
 	table.sort(candidates, function(a, b)
 		if a.distance ~= b.distance then return a.distance < b.distance; end
@@ -17097,6 +17123,7 @@ local function tick()
 		-- the value of one decision; waiting loses the whole game.
 		local blocker = currentBlocker(pid);
 		local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
+		local same_pass_forced = false;
 		if blocker ~= nil and blocker ~= none then
 			local name = blockerName(blocker);
 			attempts = attempts + 1;
@@ -17154,6 +17181,22 @@ local function tick()
 						if parked > 0 then
 							answered = answered .. "+parked:" .. parked;
 						end
+						-- A parked answer can leave the Game Core waiting without publishing
+						-- the second sighting that the bounded forfeit below used to need.
+						-- Dismiss and force now, after the position-preserving parking pass;
+						-- this is the same accepted SHIFT+ENTER request used by the later
+						-- forfeit, and it keeps a quiet first response from wedging the turn.
+						local dropped = dismissBlocker(pid, blocker);
+						answered = answered .. "+forced";
+						emit("dismissed", { turn = turn, blocker = name,
+						                    dismissed = dropped, attempts = attempts,
+						                    answered = answered, parked = parked,
+						                    forfeit = 0, forced = true, same_pass = true });
+						same_pass_forced = true;
+						pcall(function()
+							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							                 { REASON = "UserForced" });
+						end);
 					end
 					-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.
 					-- Parking the ready units repaired it for `ENDTURN_BLOCKING_UNITS`;
@@ -17250,10 +17293,11 @@ local function tick()
 			else
 				answered = answerBlocker(player, pid, blocker, turn);
 			end
-			if attempts == 1 or attempts % (cfg.BlockerReportEvery or 25) == 0 then
-				emit("blocked", { turn = turn, blocker = name,
-				                  attempts = attempts, answered = answered });
-			end
+				if attempts == 1 or attempts % (cfg.BlockerReportEvery or 25) == 0 then
+					emit("blocked", { turn = turn, blocker = name,
+					                  attempts = attempts, answered = answered });
+				end
+				if same_pass_forced then attempts = 0; end
 			-- ★★★ A SOFT BLOCKER THAT SURVIVES ITS ANSWER IS FORFEITED EARLY,
 			-- not left to the MaxBlockedAttempts hammer below. Run
 			-- civvis-20260807T190903Z (issue #1374), turn 39:
@@ -17308,7 +17352,8 @@ local function tick()
 			-- under `cfg.CivvisDecides`, so non-decider runs are untouched, and
 			-- `UNIT_BLOCKERS[name]` stays false for these two so they are
 			-- dismissed without the unit-parking pass or the forced end-turn.
-			if SOFT_BLOCKERS[name] or answered == "civvis_complete" then
+			if (SOFT_BLOCKERS[name] or answered == "civvis_complete")
+				and not same_pass_forced then
 				local seen = softSeen[name] or { sightings = 0, forfeits = 0 };
 				softSeen[name] = seen;
 				seen.sightings = seen.sightings + 1;
@@ -17489,12 +17534,14 @@ local function tick()
 			end
 		end
 
-		pcall(function()
-			if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
-				UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
-			end
-			UI.RequestAction(ActionTypes.ACTION_ENDTURN);
-		end);
+		if not same_pass_forced then
+			pcall(function()
+				if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
+					UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
+				end
+				UI.RequestAction(ActionTypes.ACTION_ENDTURN);
+			end);
+		end
 	end);
 	inTick = false;
 	if not ok then emit("error", { where = "tick", error = tostring(err) }); end

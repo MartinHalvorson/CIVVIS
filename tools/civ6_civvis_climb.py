@@ -1644,7 +1644,37 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     # board known to fail. That is half of a two-resume budget: the same game
     # then parked again at t112 and had nothing left to recover with.
     saves = [save for save in saves if _autosave_turn(save) != turn]
-    return saves[resumes_so_far] if resumes_so_far < len(saves) else None
+    step = RESUME_STEPS[min(resumes_so_far, len(RESUME_STEPS) - 1)]
+    index = min(step, len(saves) - 1)
+    return saves[index] if 0 <= index < len(saves) else None
+
+
+# How far back each successive resume reaches, as an index into the autosaves
+# (newest first, with the parked turn's own save already removed). So the first
+# attempt reloads ONE turn back and the second FOUR.
+#
+# ⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK. Walking back one save at
+# a time samples a board that is nearly identical, and the park is deterministic
+# enough to survive that. Measured over three parks on 2026-08-30:
+#
+#     t44   -> t43 ESCAPED, played on to t112 with 8 cities
+#     t62   -> t61 parked again at t62
+#     t136  -> t135 parked again at t136, then t134 parked again at t136
+#
+# One escape in three, and the t136 game spent BOTH attempts on boards one turn
+# apart. A wider second step costs only the few turns it replays and samples a
+# genuinely different trajectory — different unit positions, different decisions
+# — which is the only thing that has ever broken a park.
+#
+# ⚠ n=3. If a later run escapes at two-back this stride is wrong; the number to
+# watch is which index the escaping resume used.
+#
+# The third step (nine back) exists because the budget rose to three: a game can
+# park more than once. Run `civvis-20260830T223229Z` parked at t66, was rescued
+# ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
+# deadlock, not a replay of the first. Without a distinct third index the extra
+# attempt would reload the same save as the second.
+RESUME_STEPS: tuple[int, ...] = (0, 3, 8)
 
 
 def _autosave_turn(save: Path) -> int | None:
@@ -1660,6 +1690,61 @@ def _autosave_turn(save: Path) -> int | None:
 def _recent_autosaves(newer_than: float | None = None) -> list[Path]:
     import civ6_play  # noqa: PLC0415 — the play harness owns the save folder
     return civ6_play.recent_autosaves(newer_than=newer_than)
+
+
+#: The operator's standing victory lane, re-read ONCE PER GAME from a one-line
+#: file. Absent (the normal case) changes nothing and the flag or the tree's
+#: declared default stands.
+#:
+#: ⚠⚠ WHY THIS EXISTS, and why it beats the flag. The lane the supervisor passes
+#: comes from `CIVVIS_VICTORY`, read once at `civvis-game-supervisor.sh` start.
+#: That supervisor is a single long-running process — measured 2026-08-31 still
+#: holding the environment it inherited on **Aug 28**, three days earlier — so a
+#: lane exported into the keeper's login shell pins every game the ladder plays
+#: from then on, and no merge to `main` can change it. On 2026-08-31 the ladder
+#: launched a game on a tree whose `DEFAULT_CIVVIS_VICTORY` read `science` while
+#: still passing `--victory diplomatic`, and the operator's standing goal was a
+#: science victory.
+#:
+#: ⚠ Clearing that environment means restarting the host, and the host must be
+#: Terminal-hosted: macOS grants writing inside `Civ6.app` to Terminal and not
+#: to launchd (see `civvis-ladder-terminal-launcher.sh`). Restarting it from an
+#: automation context risks leaving the ladder down for good. A file the climb
+#: re-reads per game changes the lane without touching that process at all, the
+#: same way `~/.civvis-play-pin` switches the played tree mid-loop.
+#:
+#: ⚠ An unreadable or unknown lane is IGNORED with a warning, never fatal. This
+#: is the opposite of `~/.civvis-live-force-on`, which refuses a batch outright
+#: — correct there, wrong here: a typo must not stop an unattended ladder.
+VICTORY_LANE_FILE = Path(
+    os.environ.get("CIVVIS_VICTORY_LANE_FILE", "")
+    or Path.home() / ".civvis-victory-lane"
+)
+
+
+def operator_victory_lane(requested: str, path: Path | None = None,
+                          warn=None) -> str:
+    """The lane to play: the operator's file when it names one, else `requested`."""
+    path = VICTORY_LANE_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (FileNotFoundError, NotADirectoryError):
+        return requested
+    except OSError as exc:
+        warn(f"victory lane file {path} is unreadable ({exc}); "
+             f"keeping {requested}")
+        return requested
+    lane = text.strip()
+    if not lane:
+        return requested
+    if lane not in VICTORY_LANES:
+        warn(f"victory lane file {path} names {lane!r}, which is not one of "
+             f"{'|'.join(VICTORY_LANES)}; keeping {requested}")
+        return requested
+    if lane != requested:
+        warn(f"victory lane file {path} pins {lane!r}; overriding {requested!r}")
+    return lane
 
 
 def main() -> int:
@@ -1796,7 +1881,7 @@ def main() -> int:
     # ★★★★ A FROZEN GAME IS RESUMED, NOT SCORED. See `resume_from_autosave`:
     # three leading games died on the clock in one day, each with a
     # turn-fresh autosave on disk.
-    ap.add_argument("--max-resumes", type=int, default=2,
+    ap.add_argument("--max-resumes", type=int, default=3,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
                          "as it stands (0 disables)")
@@ -1943,6 +2028,9 @@ def main() -> int:
                          "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
     args.leader = enforce_roman_leader(args.leader, caller="civ6_civvis_climb")
+    # Re-read per game, so the lane can be changed without restarting a
+    # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
+    args.victory = operator_victory_lane(args.victory)
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
     logs.mkdir(parents=True, exist_ok=True)

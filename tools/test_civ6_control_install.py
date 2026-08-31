@@ -1613,6 +1613,11 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
       of three unit blockers is up -- it calls `UI.SelectNextReadyUnit()` --
       so the plain request at the bottom of `tick` is refused. Only the
       `{ REASON = "UserForced" }` form (the shipped SHIFT+ENTER path) ends it.
+
+    Run civvis-20260831T080154Z reproduced the same shape after the parking
+    repair: turn 99 answered `civvis_complete+parked:15`, then the Game Core
+    stopped publishing before a second sighting could reach the forfeit. The
+    first CIVVIS unit answer therefore has to dismiss and force in that pass.
     """
 
     def setUp(self) -> None:
@@ -1634,6 +1639,19 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertIn("parkReadyUnits(player)", self.escalation)
         self.assertIn("dismissBlocker(pid, blocker)", self.escalation)
         self.assertIn('REASON = "UserForced"', self.escalation)
+
+    def test_the_first_civvis_units_answer_forces_before_waiting_for_a_resighting(self) -> None:
+        """A quiet Game Core cannot be expected to publish sighting two."""
+        units = self.source.split('answered = "civvis_complete";', 1)[1].split(
+            "-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.", 1
+        )[0]
+        parked = units.index("parkReadyUnits(player)")
+        dismissed = units.index("dismissBlocker(pid, blocker)")
+        forced = units.index('REASON = "UserForced"')
+        self.assertLess(parked, dismissed)
+        self.assertLess(dismissed, forced)
+        self.assertIn("same_pass_forced = true", units)
+        self.assertIn("and not same_pass_forced", self.escalation)
 
     def test_forcing_is_reserved_for_the_three_blockers_the_engine_refuses(self) -> None:
         """The trio `ActionPanel.DoEndTurn` special-cases, and only those.

@@ -94,6 +94,8 @@ behaviour changes under them.
 
 The first capture recorded after the treatments shipped (`civvis-20260829T022749Z`, t104) was a repeat of that run's t78 loss on the **same site**: the guard was released at t103 on the tile of the t78 capture ("no visible hostile within 8 tiles"), and the next settler was taken two tiles short. Two more rules under `live-settler-capture-lessons`: **(5)** a guard is not released while the settler stands on scarred ground, at either release site; **(6)** the route step onto scarred ground is refused alone — a guard is summoned and walks in stacked, else the settler sidesteps onto unscarred ground, else it waits ("Settler will not cross the ground that took a settler alone"). Tests: `a_guard_is_not_released_on_ground_that_took_a_settler`, `a_settler_does_not_cross_scarred_ground_alone`.
 
+The next capture after those rules shipped (`civvis-20260829T040648Z`, t43) came through rule (6) itself: the brain called an archer onto the settler's tile and marched the pair on **in the same turn**, trusting the guard to follow — the mirror credits the guard the movement, but the host lands one order per unit per frame, so the follow never landed and the settler ended the turn alone in reach. **(7)** the turn a guard is called onto the settler's tile is spent standing together ("Settler waits with the guard it just called"); the pair marches the next turn. Test: `a_settler_waits_the_turn_its_guard_is_called`.
+
 Tests: `a_barbarian_scout_is_a_capture_threat_on_the_live_seat`,
 `a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons`,
 `a_lost_settler_retires_the_ground_around_it_for_every_settler`,

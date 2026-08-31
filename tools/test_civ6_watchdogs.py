@@ -44,6 +44,24 @@ class DroppedUnitTest(unittest.TestCase):
         self.assertEqual(report["by_reason"], {"untranslatable": 1})
         self.assertEqual(report["bridge_managed_great_person_observations"], 1)
 
+    def test_stock_role_approximation_is_not_reported_as_a_missing_unit(self) -> None:
+        report = self.report([
+            "dropped_units=3 [UNIT_HUNGARY_BLACK_ARMY@18,22:approximated_as_courser "
+            "UNIT_HUNGARY_HUSZAR@18,27:approximated_as_cavalry "
+            "UNIT_GREAT_ARTIST@18,25:great_person]"
+        ])
+
+        self.assertEqual(report["turns_with_drops"], 0)
+        self.assertEqual(report["worst_on_one_turn"], 0)
+        self.assertEqual(report["by_reason"], {})
+        self.assertEqual(report["approximation_turns"], 1)
+        self.assertEqual(report["approximated_units"], 2)
+        self.assertEqual(
+            report["approximated_by_reason"],
+            {"approximated_as_courser": 1, "approximated_as_cavalry": 1},
+        )
+        self.assertEqual(report["bridge_managed_great_person_observations"], 1)
+
 
 class IdleStackTest(unittest.TestCase):
     def test_bridge_managed_great_people_do_not_inflate_ordinary_stack_metrics(self) -> None:

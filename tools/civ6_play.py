@@ -137,7 +137,20 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 # ⚠ Rows either side of this change are NOT comparable, and `code_rev` is what
 # separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
 # untargeted `civvis` the batch loop used to hard-code.
-DEFAULT_CIVVIS_VICTORY = "diplomatic"
+#
+# 2026-08-30: SCIENCE AGAIN, on the operator's standing instruction — improve
+# the science-victory strategies until a live King game is won by science —
+# which sits above the measured-default rule the same way the leader pin below
+# does. The 08-17 numbers stay above because they were true of that binary;
+# rerun 2026-08-31 on main `1473eba2` at the same profile and seeds, after
+# #2435 `science-victory-drive` rewrote the launch machinery they measured:
+# targeted profile still 0/16, deployment profile **1/16** (seed 21000005,
+# t233, 77/77 techs, 336 science/turn, distance 50/50) — the first science
+# completion ever recorded inside the ladder's clock. The failures split into
+# "tree unfinished" (47-65/77 techs) and "launched too late" (projects done,
+# 0-33 light-years at t250), which is the improvement queue, not a reason to
+# keep aiming at a lane the operator has not asked for.
+DEFAULT_CIVVIS_VICTORY = "science"
 # The operator's standing instruction is unambiguous: every live game plays
 # Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
 # not merely in a launcher default, so a direct ``civ6_play.py --leader ...``
@@ -1724,6 +1737,14 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                       flush=True)
                 return True
 
+            # OCR and screen capture do not preserve the key application.  If
+            # another window became frontmost, the first click on Civ VI only
+            # activates it and the dropdown stays closed; the post-click frame
+            # then looks exactly like a missed coordinate.  Raise the game at
+            # the same boundary used for the final Start Game click.  The
+            # click helper's existing move/settle delay gives the raise time to
+            # take effect without changing the measured setup geometry.
+            focus_game(GAME_SIDE, GAME_FRACTION)
             click_at(*current_point)
             park_setup_pointer(bounds)
             time.sleep(1.2)
@@ -1734,6 +1755,9 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                   flush=True)
             continue
 
+        # The option click is a separate input event and needs the same
+        # foreground guarantee as the click that opened the list.
+        focus_game(GAME_SIDE, GAME_FRACTION)
         click_at(*target)
         park_setup_pointer(bounds)
         time.sleep(1.2)
@@ -2444,7 +2468,8 @@ def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
     return _main_menu_visible(shot)
 
 
-def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float):
+def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
+                   bounds: tuple[int, int, int, int] | None = None):
     """Answer "is the game still somewhere other than the main menu?".
 
     The startup gate needs to tell a slow map generation from a click that did
@@ -2457,6 +2482,28 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float):
     caller was about to make anyway, and a false "not menu" costs one more
     budget. Each call keeps its screenshot, numbered by the wait it belongs to,
     so a run that dies here can be looked at afterwards.
+
+    ⚠⚠ A MISSED CLICK HAS A SECOND RESTING PLACE, and the sentence above missed
+    it. Setup does not return to Single Player when `Start Game` fails to take
+    -- it stays on the CREATE GAME page, which is neither the main menu nor a
+    game, so the menu read above says "not menu" and the caller waits out its
+    whole budget on a screen that will never change on its own.
+
+    Observed 2026-08-31 on run `civvis-20260831T025125Z`, the FIRST science-lane
+    attempt after the goal was set. Every value was selected and verified --
+
+        [setup] difficulty: selected and verified King
+        [setup] leader:     selected and verified Trajan (LEADER_TRAJAN)
+
+    -- and then 480s of "silent, but the main menu is gone" while two desktop
+    captures eight minutes apart both show Create Game with `Start Game` still
+    sitting there unpressed, and 60 leader-intro frames looking for a modal that
+    cannot open. The attempt cost ~15 minutes and 207 screenshots to produce
+    nothing.
+
+    So the page is proved the same way the launch click was licensed: by reading
+    `Start Game` where it lives. `bounds` is optional only so an old call site
+    keeps working; without it this degrades to the main-menu read alone.
 
     ``patience`` is spent from ONE pool shared by every attempt, because the
     per-wait hard bound alone does not bound the bootstrap: 16 attempts each
@@ -2474,6 +2521,14 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float):
         if _main_menu_visible(shot):
             print(f"attempt {attempt}: the main menu is back after "
                   f"{looks['n']} silent wait(s) -- the launch did not take",
+                  file=sys.stderr)
+            return False
+        if bounds is not None and _observed_label_point(
+                shot, "Start Game", bounds, strip=START_GAME_STRIP) is not None:
+            # Still on Create Game: the launch click did not take. Waiting
+            # cannot fix this -- the page does not advance by itself.
+            print(f"attempt {attempt}: still on the Create Game page after "
+                  f"{looks['n']} silent wait(s) -- Start Game did not take",
                   file=sys.stderr)
             return False
         if patience["left"] < grant:
@@ -2813,7 +2868,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             # event that may not arrive until the brain has that state.
             return True
         if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
-                                                          patience, verify_s)):
+                                                          patience, verify_s,
+                                                          bounds)):
             return True
         if not env.game_pids():
             print("the game exited while starting", file=sys.stderr)
@@ -3018,7 +3074,8 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         if yes is not None:
             click_at(*yes)
         if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
-                                                          patience, verify_s)):
+                                                          patience, verify_s,
+                                                          bounds)):
             return True
         if not env.game_pids():
             return False

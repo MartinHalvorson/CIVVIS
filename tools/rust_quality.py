@@ -60,6 +60,43 @@ def revision(repo: Path, value: str | None, fallback: str) -> str:
     return fallback_checked.stdout.strip()
 
 
+def merge_parent_on_trunk(repo: Path, head: str, trunk: str | None = None) -> str | None:
+    """Whichever parent of a merge head is the trunk side, or None if unclear.
+
+    ⚠⚠ THE PARENT ORDER IS NOT STABLE, and reading `^1` as "main" silently
+    inverts. GitHub's pull_request head is a synthetic merge of the branch INTO
+    main, so `^1` is main and `^2` is the branch. A developer who resolves a
+    conflict with `git merge origin/main` on their own branch produces the exact
+    opposite: `^1` is the branch, `^2` is main.
+
+    Taking `^1` on that second shape compares the merge against the branch's own
+    pre-merge tip, so the diff holds only the conflict resolution and the gate
+    passes having checked almost nothing. Observed 2026-08-31 on #2826: four
+    rustfmt diffs in this branch's own new lines passed locally twice and failed
+    on CI, because CI supplies `QUALITY_BASE` and the local run derived `^1`.
+
+    A false GREEN is the dangerous direction — it is the reason this is worth a
+    discriminator rather than a comment. The trunk side is the parent that is an
+    ancestor of `origin/main`: on the CI shape that is `^1` (main's tip at the
+    time, already merged), on the local shape `^2` (origin/main itself). When
+    neither or both qualify — a shallow clone with no `origin/main`, or a merge
+    of two merged branches — this returns None and the caller keeps `^1`, which
+    is the behaviour that shipped before.
+    """
+    trunk = trunk or os.environ.get("QUALITY_TRUNK") or "origin/main"
+    if run(repo, ["git", "rev-parse", "--verify", trunk]).returncode != 0:
+        return None
+    on_trunk = []
+    for parent in (f"{head}^1", f"{head}^2"):
+        resolved = run(repo, ["git", "rev-parse", "--verify", parent])
+        if resolved.returncode != 0:
+            return None
+        sha = resolved.stdout.strip()
+        if run(repo, ["git", "merge-base", "--is-ancestor", sha, trunk]).returncode == 0:
+            on_trunk.append(sha)
+    return on_trunk[0] if len(on_trunk) == 1 else None
+
+
 def merge_base(repo: Path, base: str, head: str) -> str:
     """The revision this head's changes should be read against.
 
@@ -75,8 +112,13 @@ def merge_base(repo: Path, base: str, head: str) -> str:
     falls back to the merge base with the supplied revision, and a clone
     that can answer neither keeps the supplied base unchanged.
     """
-    first_parent = run(repo, ["git", "rev-parse", "--verify", f"{head}^2"])
-    if first_parent.returncode == 0:
+    if run(repo, ["git", "rev-parse", "--verify", f"{head}^2"]).returncode == 0:
+        trunk_side = merge_parent_on_trunk(repo, head)
+        if trunk_side is not None:
+            return trunk_side
+        # Trunk side unknown: keep the first parent, exactly as before the
+        # discriminator existed. This is the CI shape's right answer and the
+        # only one a clone without `origin/main` can give.
         merged_against = run(repo, ["git", "rev-parse", "--verify", f"{head}^1"])
         if merged_against.returncode == 0:
             return merged_against.stdout.strip()

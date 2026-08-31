@@ -107,6 +107,11 @@ const PEACETIME_DETERRENCE_CEILING: f64 = 1.5;
 /// Radius `threatened_city` scores hostiles in. A group already inside it is
 /// part of the defence rather than a column marching to it.
 const THREAT_RELIEF_RADIUS: i32 = 6;
+/// Maximum ratio credit for a city whose health just fell. The turn-93 live
+/// siege had an overlapping undamaged city at 1.3982 pressure and the struck
+/// city at 1.2769; this covers that 0.1213 gap without allowing recency to
+/// override a materially worse emergency elsewhere.
+const FRESH_CITY_DAMAGE_PRIORITY: f64 = 0.15;
 /// Turn the ancient-rush window shuts, after which ordinary campaign rules
 /// resume. `rush_census` finds the first walled capital at turn 80 and 43% of
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
@@ -618,6 +623,23 @@ const SCIENCE_OPENING_CITY_TARGET: usize = 2;
 /// infrastructure window rather than the generic expansion deadline.
 const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 60;
 
+/// `science-opening-band`: hold the expansion-first posture until the empire
+/// reaches the band every recorded live win opened from — four to six cities
+/// by turn 60 Online (9/9 wins inside it, 0/128 outside;
+/// `civvis-the-opening-band-every-win-came-from`). The first two live
+/// science-lane games handed the plan over at two cities (t44) and reached
+/// t150 at 0.31 and 0.36 of the leader's score, both abandoned; the same
+/// build's diplomatic games, which keep the generic t175 window, made eight
+/// to ten cities. The 250-turn self-play screen prefers the two-city opening
+/// (widening it there lost the one completing seed), so this is an opt-in
+/// live arm, not a new default: the live field and the mirror screen disagree
+/// and the live seat is the one this gene is for.
+const SCIENCE_OPENING_BAND_CITY_TARGET: usize = 5;
+
+/// The band gene's window: 100 standard turns is ~turn 67 at Online speed,
+/// just past the band's own measuring point.
+const SCIENCE_OPENING_BAND_STANDARD_TURNS: u32 = 100;
+
 /// Passable land per city the land grab prices the board at. Civilization VI
 /// packs cities four tiles apart (`CITY_MIN_RANGE` 3 plus the engine's own
 /// wdist ≥ 4 rule); a city works nineteen tiles at radius two, and the rivals
@@ -637,6 +659,34 @@ pub const LAND_GRAB_CITY_FLOOR: usize = 8;
 /// held on the seat's board at t250; the practical-site search and the
 /// payback deadline decide the rest. See `land_grab`.
 pub const LAND_GRAB_CITY_CEILING: usize = 16;
+
+/// How wide the SCIENCE lane's land grab may go while its cities can still
+/// mature. Live rows scale with final city count, but at FIXED count science
+/// goes as `pop^1.21` — growing an existing city is super-linear while adding
+/// one dilutes. Timing reconciles them: a city founded early matures into the
+/// super-linear term, one founded late only dilutes. So under
+/// `science-expansion-phase` the science lane widens past the shared ceiling
+/// ONLY while a new city can still mature, then reverts to
+/// [`LAND_GRAB_CITY_CEILING`] and grows what it holds.
+///
+/// The gene has two effects with one window: the land grab's ceiling rises
+/// to this constant, and [`SCIENCE_CITY_TARGET_CAP`] — the shipped Science
+/// contract, written after this idea — is deferred until the window closes,
+/// so the two hypotheses (cap early and grow, versus widen early then grow)
+/// disagree on the board and a screen can price the difference.
+///
+/// Live evidence so far is three patched 250-turn Settler games (653/13
+/// cities, 276/4, 1063/15) against one stock (963/8) — n is tiny against a
+/// ~398 score stdev, and the 1063 met the strongest rival field seen while
+/// the 963 met the weakest. That is why the gene ships OFF: the argument is
+/// the timing model above, and the screen prices it.
+pub const SCIENCE_EXPANSION_CITY_CEILING: usize = 24;
+
+/// When the science lane stops widening and starts growing, in STANDARD-speed
+/// turns (`Game::standard_duration` rescales: 188 standard is ~t125 Online —
+/// half way through the 250-turn ladder game). The switch is observable in
+/// `civvis_notes.jsonl` as desired_cities 24 -> 16.
+pub const SCIENCE_EXPANSION_UNTIL_TURN: u32 = 188;
 
 /// The rapid native expansion gene aims to own this many cities on a roomy
 /// board. The practical-site gate can stop it sooner, and the target derives
@@ -1548,6 +1598,14 @@ pub struct AdvancedAi {
     builder_targets: BTreeMap<u32, Pos>,
     /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
     commitments: commitments::CommitmentLedger,
+    /// `(last observed turn, consecutive idle-turn count)` for cities whose
+    /// strategic queue remained empty.  Host bridge calls can revisit one
+    /// turn several times while a blocking production prompt is settling, so
+    /// the turn stamp is part of the value rather than a separate global
+    /// counter.  The recovery is deliberately narrow: only an explicitly
+    /// targeted Science seat consumes it, and only after the second distinct
+    /// idle turn.
+    idle_production_streak: BTreeMap<u32, (u32, u32)>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -4978,6 +5036,15 @@ pub struct AdvancedAi {
     eureka_chasing_production: bool,
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
+    /// `first-luxury-first`: an improvement that opens a luxury the empire
+    /// holds NO copy of outranks ordinary ground, priced by the Amenities
+    /// the empire is short; a duplicate copy keeps the shipped flat +14.
+    /// See `advanced/first_luxury.rs`.
+    first_luxury_first: bool,
+    /// The seat-turn memo `first-luxury-first` prices its premium from; the
+    /// empire's Amenity deficit. Zero-valued with the gene off, because
+    /// nothing asks for it. See `advanced/first_luxury.rs`.
+    first_luxury_frame: RefCell<first_luxury::AmenityDeficitFrame>,
     // ---- append: g-k ------------------------------------------------
     /// `hostile-memory`: the civilian capture envelope counts every at-war
     /// owner (barbarians, Free Cities and a major at war alike) and keeps
@@ -5390,6 +5457,17 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// While a founded city can still mature, the science lane's land grab
+    /// widens to [`SCIENCE_EXPANSION_CITY_CEILING`] and the Science
+    /// contract's `SCIENCE_CITY_TARGET_CAP` is deferred; both revert when the
+    /// window closes. Opt-in gene `science-expansion-phase`; the timing
+    /// argument is on the constant.
+    science_expansion_phase: bool,
+    /// `science-opening-band`: the assigned Science lane keeps the
+    /// expansion-first posture until `SCIENCE_OPENING_BAND_CITY_TARGET`
+    /// cities or `SCIENCE_OPENING_BAND_STANDARD_TURNS`, instead of the
+    /// stock two-city opening.
+    science_opening_band: bool,
     /// `settler-backlog-brake`: no Settler starts while one stands parked
     /// (empire of three cities or more). See `BasicAi::settler_backlog_brake`
     /// and `settler_in_flight_allowed`.
@@ -5398,6 +5476,10 @@ pub struct AdvancedAi {
     /// leaves the board can be told from one that founded. Recorded only
     /// under `live_settler_capture_lessons`.
     settler_last_seen: BTreeMap<u32, Pos>,
+    /// The turn a guard was summoned onto each settler's tile, so the pair
+    /// does not march on in the same turn: on the live seat the guard's
+    /// second order that turn never lands (run civvis-20260829T040648Z t43).
+    summoned_guard_turn: BTreeMap<u32, u32>,
     /// Last positions of settlers that left the board since the last turn,
     /// awaiting `resolve_vanished_settlers`.
     settler_vanished: Vec<Pos>,
@@ -6116,6 +6198,11 @@ mod early_archers;
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
 
+/// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
+/// luxury ahead of an ordinary tile, priced by the Amenities the empire is
+/// short. One opt-in gene; see `advanced/first_luxury.rs`.
+mod first_luxury;
+
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -6412,6 +6499,9 @@ impl AdvancedAi {
     /// different unit than it did last turn.
     pub fn forget_unit_memory(&mut self) {
         self.base.forget_unit_memory();
+        // A missing previous board can also mean that a new live game is
+        // starting. Do not carry a city's old idle debt into that game.
+        self.idle_production_streak.clear();
         self.settler_targets.clear();
         self.settler_stalls.clear();
         self.escort_march.clear();
@@ -6423,6 +6513,7 @@ impl AdvancedAi {
         self.settler_dead_sites.clear();
         self.settler_last_seen.clear();
         self.settler_vanished.clear();
+        self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
@@ -6458,6 +6549,11 @@ impl AdvancedAi {
                 .map(|(_, pos)| *pos),
         );
         self.settler_last_seen = remap(&self.settler_last_seen);
+        self.summoned_guard_turn = self
+            .summoned_guard_turn
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
         self.builder_targets = remap(&self.builder_targets);
         self.builder_avoid = self
             .builder_avoid
@@ -6579,6 +6675,7 @@ impl AdvancedAi {
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
             commitments: commitments::CommitmentLedger::default(),
+            idle_production_streak: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -6836,6 +6933,8 @@ impl AdvancedAi {
             eureka_chasing_builder: false,
             eureka_chasing_production: false,
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
+            first_luxury_first: false,
+            first_luxury_frame: RefCell::new(first_luxury::AmenityDeficitFrame::default()),
 
             // ---- append: g-k ----------------------------------------
             hostile_memory: false,
@@ -6881,8 +6980,11 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_expansion_phase: false,
+            science_opening_band: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
+            summoned_guard_turn: BTreeMap::new(),
             settler_vanished: Vec::new(),
             settler_capture_scars: BTreeMap::new(),
             settler_never_idles: false,
@@ -8884,9 +8986,21 @@ impl AdvancedAi {
                 // tactical contact, not an empire-wide emergency. Recovery is
                 // reserved for a locally competitive force or a damaged city
                 // whose remaining defenders cannot safely absorb another hit.
-                let critical =
-                    danger >= 0.90 || (danger >= 0.45 && (breached || (recently_hit && damaged)));
+                let fresh_damage = recently_hit && damaged;
+                let critical = danger >= 0.90 || (danger >= 0.45 && (breached || fresh_damage));
+                let priority = danger
+                    + if fresh_damage {
+                        FRESH_CITY_DAMAGE_PRIORITY
+                    } else {
+                        0.0
+                    };
                 critical.then_some((
+                    // A city that just lost health is the one the enemy is
+                    // actually shooting. A bounded recency credit lets that
+                    // evidence outrank a modestly higher radius ratio at an
+                    // undamaged neighbour, while a much more dangerous city
+                    // still wins the emergency selection.
+                    priority,
                     danger,
                     (200 - city.hp).max(0) + (wall_max - city.wall_hp).max(0),
                     cid,
@@ -8895,10 +9009,11 @@ impl AdvancedAi {
             .max_by(|left, right| {
                 left.0
                     .total_cmp(&right.0)
-                    .then_with(|| left.1.cmp(&right.1))
-                    .then_with(|| right.2.cmp(&left.2))
+                    .then_with(|| left.1.total_cmp(&right.1))
+                    .then_with(|| left.2.cmp(&right.2))
+                    .then_with(|| right.3.cmp(&left.3))
             })
-            .map(|(_, _, cid)| cid)
+            .map(|(_, _, _, cid)| cid)
     }
 
     fn religious_opening_rank(g: &Game, pid: usize) -> Option<(u8, f64, f64)> {
@@ -10243,8 +10358,20 @@ impl AdvancedAi {
             } else {
                 land
             };
+            // The science lane widens while a founded city can still mature
+            // into the super-linear pop term; see
+            // `SCIENCE_EXPANSION_CITY_CEILING`. Every other lane, and the
+            // science lane's second half, keep the shared ceiling.
+            let ceiling = if self.science_expansion_phase
+                && science_targeted
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN)
+            {
+                SCIENCE_EXPANSION_CITY_CEILING
+            } else {
+                LAND_GRAB_CITY_CEILING
+            };
             (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING)
+                .clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
             (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
         };
@@ -10282,7 +10409,14 @@ impl AdvancedAi {
         // Science seat still settles enough productive cities to scale its
         // Campuses, then stops treating open land as the main objective. Never
         // lower the target beneath an empire that already exceeded the cap.
-        let desired_cities = if science_targeted {
+        // `science-expansion-phase` is the standing counter-hypothesis: while
+        // a founded city can still mature into the super-linear pop term the
+        // contract is deferred — the widened land-grab ceiling above sets the
+        // window's target — and the cap resumes when the window closes.
+        let desired_cities = if science_targeted
+            && !(self.science_expansion_phase
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN))
+        {
             desired_cities
                 .min(SCIENCE_CITY_TARGET_CAP)
                 .max(cities.len())
@@ -10422,7 +10556,10 @@ impl AdvancedAi {
                 && g.turn < g.standard_duration(175)
                 && (!science_targeted
                     || (cities.len() < SCIENCE_OPENING_CITY_TARGET
-                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS)))
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS))
+                    || (self.science_opening_band
+                        && cities.len() < SCIENCE_OPENING_BAND_CITY_TARGET
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_BAND_STANDARD_TURNS)))
             {
                 (
                     GrandStrategy::Expansion,
@@ -18144,6 +18281,35 @@ impl AdvancedAi {
         counts
     }
 
+    /// Record one empty production turn without counting repeated bridge
+    /// observations of the same host turn.  A gap or a rewind breaks the
+    /// streak: a city that built something in between must not inherit an old
+    /// idle debt when its next queue completes.
+    fn science_idle_production_recovery_due(&mut self, cid: u32, turn: u32) -> bool {
+        const RECOVERY_AFTER_IDLE_TURNS: u32 = 2;
+        let streak = match self.idle_production_streak.get_mut(&cid) {
+            Some((last_turn, count)) if *last_turn == turn => *count,
+            Some((last_turn, count)) if last_turn.checked_add(1) == Some(turn) => {
+                *last_turn = turn;
+                *count = count.saturating_add(1);
+                *count
+            }
+            Some(entry) => {
+                *entry = (turn, 1);
+                1
+            }
+            None => {
+                self.idle_production_streak.insert(cid, (turn, 1));
+                1
+            }
+        };
+        streak >= RECOVERY_AFTER_IDLE_TURNS
+    }
+
+    fn clear_idle_production_streak(&mut self, cid: u32) {
+        self.idle_production_streak.remove(&cid);
+    }
+
     fn religious_production(&self, g: &mut Game, pid: usize) {
         let city_ids = g.player_city_ids(pid);
         let has_holy_site = city_ids.iter().any(|cid| {
@@ -21874,6 +22040,9 @@ impl AdvancedAi {
                     let value = self.card_boosted_value(g, pid, cid, &item, value);
                     (value, item)
                 });
+            if committed.is_some() {
+                self.clear_idle_production_streak(cid);
+            }
             // The ordinary governor's recovery path only receives empty
             // queues. Preserve that contract even when an experimental
             // preemption margin is active: a banked unit can finish, but no
@@ -21905,6 +22074,7 @@ impl AdvancedAi {
                                 "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
                         }
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                     }
                 }
                 continue;
@@ -21949,6 +22119,7 @@ impl AdvancedAi {
                                 "the local camp/raider ring takes priority over economic production");
                         }
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22003,6 +22174,7 @@ impl AdvancedAi {
                     .is_ok()
                 {
                     counts.add_item(g, &builder);
+                    self.clear_idle_production_streak(cid);
                     continue;
                 }
             }
@@ -22033,6 +22205,7 @@ impl AdvancedAi {
                                 .is_ok()
                             {
                                 counts.add_item(g, &item);
+                                self.clear_idle_production_streak(cid);
                                 continue;
                             }
                         }
@@ -22070,6 +22243,7 @@ impl AdvancedAi {
                         .is_ok()
                     {
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22095,6 +22269,7 @@ impl AdvancedAi {
                         .is_ok()
                     {
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22121,6 +22296,7 @@ impl AdvancedAi {
                             "{gold_per_turn:.1} Gold/turn; a route-ready Trader compounds before ordinary production");
                     }
                     counts.add_item(g, &trader);
+                    self.clear_idle_production_streak(cid);
                     continue;
                 }
             }
@@ -22226,18 +22402,26 @@ impl AdvancedAi {
                 chosen
             };
             // See `never_an_empty_queue`: nothing cleared the bar, so this city
-            // is about to spend the turn producing nothing at all. Take the
-            // best REAL candidate instead — anything the scorer did not veto
-            // outright — which is the least-bad build rather than no build.
+            // is about to spend the turn producing nothing at all. A targeted
+            // Science seat gets the same least-bad civilian answer after two
+            // distinct idle turns. That turns a persistent queue stall into a
+            // bounded one-turn delay without making every ordinary refusal a
+            // new unit-maintenance bill.
+            let persistent_science_idle = chosen.is_none()
+                && committed.is_none()
+                && science_targeted
+                && self.science_idle_production_recovery_due(cid, g.turn);
             let chosen = match chosen {
                 Some(found) => Some(found),
-                None if (self.never_an_empty_queue || self.never_an_empty_queue_2)
+                None if (self.never_an_empty_queue
+                    || self.never_an_empty_queue_2
+                    || persistent_science_idle)
                     && committed.is_none() =>
                 {
                     // See `never_an_empty_queue_2`: version two will not answer
                     // an idle turn with a soldier the empire did not want and
                     // then owes upkeep on, and would rather stay idle.
-                    let civilian_only = self.never_an_empty_queue_2;
+                    let civilian_only = self.never_an_empty_queue_2 || persistent_science_idle;
                     let fallback = {
                         let _memo = g.query_memo();
                         let items = g.producible_items(pid, cid);
@@ -22293,12 +22477,19 @@ impl AdvancedAi {
                 // menu broke, and nothing was written. Ravenna in run
                 // civvis-20260829T062155Z sat idle from t131 to t171 with
                 // eighteen items buildable and appeared in the journal once,
-                // at its founding. The fallback above answers it only under
-                // `never-an-empty-queue` / `-2`; off, this line is the only
-                // trace the idle turn leaves.
-                think!(self.journal(), Cities, Detail,
-                       "{} builds nothing", g.cities[&cid].name;
-                       "every candidate scored under the veto bar and no idle-queue gene is on");
+                // at its founding. The fallback above answers it under either
+                // idle-queue gene, or after the targeted Science recovery
+                // streak; otherwise this line is the only trace the idle
+                // turn leaves.
+                if persistent_science_idle {
+                    think!(self.journal(), Cities, Detail,
+                           "{} builds nothing", g.cities[&cid].name;
+                           "two distinct idle turns reached, but no civilian candidate cleared the hard veto");
+                } else {
+                    think!(self.journal(), Cities, Detail,
+                           "{} builds nothing", g.cities[&cid].name;
+                           "every candidate scored under the veto bar and no idle-queue gene is on");
+                }
             }
             if let Some((score, item)) = chosen {
                 {
@@ -22349,6 +22540,7 @@ impl AdvancedAi {
                     }
                     let is_settler = matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
+                    self.clear_idle_production_streak(cid);
                     if adaptive_expansion_dispatch {
                         self.expansion_census.dispatch_productions += 1;
                         if is_settler {
@@ -29040,11 +29232,17 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> Vec<Name> {
         let appeal = g.tile_appeal(pos).max(0) as f64;
+        // `first-luxury-first`: zero for every tile with the gene off, and
+        // zero for any improvement that does not open the empire's first copy
+        // of a luxury, so the ranking below is the shipped one until it fires.
+        // Priced on BOTH sides — a plantation already standing here is not an
+        // upgrade to itself — see `advanced/first_luxury.rs`.
         let current_value = g.map.tiles[&pos]
             .improvement
             .as_deref()
             .map(|improvement| {
                 self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
+                    + self.first_luxury_premium(g, pid, pos, improvement)
             })
             .unwrap_or(0.0);
         // Score each candidate once and sort the scores. The comparator used
@@ -29057,7 +29255,8 @@ impl AdvancedAi {
             .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
             .map(|improvement| {
                 let value =
-                    self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal);
+                    self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal)
+                        + self.first_luxury_premium(g, pid, pos, &improvement);
                 (value, improvement)
             })
             .filter(|(value, _)| *value > current_value + 0.5)
@@ -29365,7 +29564,7 @@ impl AdvancedAi {
                 self.chop_into_the_queue_value(g, pid, current, strategy, worked)
             {
                 let best_here = here.first().map_or(f64::MIN, |improvement| {
-                    self.improvement_value(g, current, improvement, strategy)
+                    self.improvement_value_for(g, pid, current, improvement, strategy)
                 });
                 if value > best_here {
                     self.builder_targets.remove(&uid);
@@ -29395,7 +29594,7 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail,
                        "Building a {} at {current:?}", plain(improvement);
                        "worth {:.1} to the {} plan, best of {} that fit this tile",
-                       self.improvement_value(g, current, improvement, strategy),
+                       self.improvement_value_for(g, pid, current, improvement, strategy),
                        strategy.as_str(), here.len(); current);
                 if g.apply(
                     pid,
@@ -29406,6 +29605,9 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
+                    // ⚠ Journal AFTER the engine answers. `first-luxury-first`
+                    // says nothing while it is off.
+                    self.note_first_luxury_opened(g, pid, current, improvement);
                     return true;
                 }
             }
@@ -29478,8 +29680,13 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.improvement_value(g, *pos, &improvement, strategy)
-                                    - g.wdist(current, *pos) as f64 * 0.7;
+                                let score = self.improvement_value_for(
+                                    g,
+                                    pid,
+                                    *pos,
+                                    &improvement,
+                                    strategy,
+                                ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
@@ -29550,7 +29757,7 @@ impl AdvancedAi {
                 }
                 let mut here: Option<f64> = None;
                 for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                    let score = self.improvement_value(g, *pos, &improvement, strategy)
+                    let score = self.improvement_value_for(g, pid, *pos, &improvement, strategy)
                         - g.wdist(current, *pos) as f64 * 0.7;
                     if here.is_none_or(|old| score > old) {
                         here = Some(score);

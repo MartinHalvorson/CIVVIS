@@ -154,10 +154,10 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
         """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
-        which also holds the evidence that moved it off `science`. This asserts
+        which also holds the evidence trail for the lane. This asserts
         only that the supervised worker takes the chain's one default and stock
         weights, so a second copy cannot appear here."""
-        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "diplomatic")
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
         self.assertEqual(civ6_play.DEFAULT_CIVVIS_STRATEGY, "")
 
     def test_startup_ignores_auto_close_events_until_the_agent_is_loaded(self) -> None:
@@ -322,6 +322,59 @@ class Civ6PlayTest(unittest.TestCase):
             second = civ6_play._loading_probe(run_dir, 2, patience, 1.0)
             self.assertFalse(second(),
                              "a fresh attempt must not refill the pool")
+
+    def test_a_stranded_create_game_page_ends_the_wait(self) -> None:
+        """⚠⚠ A MISSED CLICK HAS A SECOND RESTING PLACE.
+
+        `Start Game` failing to take does NOT return to Single Player -- it
+        leaves the Create Game page up, which is neither the main menu nor a
+        game. The menu read therefore says "not menu" and the caller waits out
+        its entire budget on a screen that never changes on its own.
+
+        Observed 2026-08-31 on run `civvis-20260831T025125Z`, the first
+        science-lane attempt after the goal was set: every setup value selected
+        and verified, then 480s of "silent, but the main menu is gone" while two
+        desktop captures eight minutes apart both show Create Game with
+        `Start Game` still sitting there unpressed. ~15 minutes and 207
+        screenshots for nothing.
+        """
+        run_dir = Path(tempfile.mkdtemp())
+        patience = {"left": 600.0, "spent": 0.0}
+        bounds = (0, 0, 2880, 1864)
+        with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_observed_label_point",
+                               lambda *a, **k: (100, 200)):
+            probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0,
+                                             bounds)
+            self.assertFalse(probe(), "Create Game up means the click died")
+        self.assertEqual(patience["left"], 600.0,
+                         "a stranded setup page costs nothing but the shot")
+
+    def test_without_bounds_the_probe_keeps_its_old_behaviour(self) -> None:
+        """The Create Game read is additive; an old call site still waits."""
+        run_dir = Path(tempfile.mkdtemp())
+        patience = {"left": 600.0, "spent": 0.0}
+        with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_observed_label_point",
+                               lambda *a, **k: (100, 200)):
+            probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0)
+            self.assertTrue(probe(), "no bounds, no Create Game read")
+
+    def test_a_real_loading_screen_still_gets_its_patience(self) -> None:
+        """The whole point is not to give up on a map that IS generating."""
+        run_dir = Path(tempfile.mkdtemp())
+        patience = {"left": 600.0, "spent": 0.0}
+        bounds = (0, 0, 2880, 1864)
+        with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_observed_label_point",
+                               lambda *a, **k: None):
+            probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0,
+                                             bounds)
+            self.assertTrue(probe(), "neither menu nor setup page: keep waiting")
+        self.assertEqual(patience["left"], 480.0, "and it costs one grant")
 
     def test_a_visible_main_menu_ends_the_wait_without_spending_patience(self) -> None:
         """A dead click is cheap to diagnose and must stay cheap."""
@@ -2045,7 +2098,7 @@ class VictoryLaneListTests(unittest.TestCase):
         match = re.search(r'const DEFAULT_VICTORY: &str = "([^"]+)";', binary)
         self.assertIsNotNone(match, "civvis_orders.rs has no named default")
         self.assertEqual(match.group(1), civ6_play.DEFAULT_CIVVIS_VICTORY)
-        self.assertEqual(match.group(1), "diplomatic")
+        self.assertEqual(match.group(1), "science")
         self.assertIn(
             "unwrap_or_else(|| DEFAULT_VICTORY.to_string())",
             binary,
@@ -2562,11 +2615,15 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
             ("GAMESPEED_ONLINE", (700, 300)),     # second look: it took
         ])
         out: dict = {}
+        input_order = []
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_setup_current_value", side_effect=lambda *a: next(reads)), \
              patch.object(civ6_play, "_observed_label_point", return_value=(700, 340)), \
-             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play, "focus_game",
+                          side_effect=lambda *_args: input_order.append("focus")), \
+             patch.object(civ6_play, "click_at",
+                          side_effect=lambda *_args: input_order.append("click")) as click, \
              patch.object(civ6_play.macos_input, "move") as move, \
              patch.object(civ6_play.time, "sleep"):
             ok = civ6_play.set_dropdown((0, 0, 756, 480), "speed", "GAMESPEED_ONLINE",
@@ -2576,6 +2633,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertTrue(ok)
         # One click on the closed row, one on the option -- the list was NOT reopened.
         self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(input_order, ["focus", "click", "focus", "click"])
         self.assertEqual(move.call_args_list, [call(113, 408), call(113, 408)])
         self.assertEqual(screenshot.call_args_list[-1], call(again))
         self.assertEqual(out["shot"], again)
@@ -2592,6 +2650,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
                           side_effect=lambda *a: next(reads)), \
              patch.object(civ6_play, "_observed_label_point",
                           side_effect=[None, (700, 340)]) as observed, \
+             patch.object(civ6_play, "focus_game"), \
              patch.object(civ6_play, "click_at") as click, \
              patch.object(civ6_play.macos_input, "move") as move, \
              patch.object(civ6_play.time, "sleep") as sleep:

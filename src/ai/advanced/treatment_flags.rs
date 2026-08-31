@@ -1994,6 +1994,34 @@ impl AdvancedAi {
         self.surprise_war_mobilization = false;
     }
 
+    /// Widen the science lane's land grab, deferring its city cap, while a
+    /// founded city can still mature; then revert and grow.
+    /// Opt-in gene `science-expansion-phase`; the timing argument is on
+    /// `SCIENCE_EXPANSION_CITY_CEILING`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_expansion_phase(&mut self) {
+        self.science_expansion_phase = true;
+    }
+
+    /// Keep the Science lane expanding first until five cities or 100 standard
+    /// turns, the band live wins open from. Opt-in gene `science-opening-band`;
+    /// the live-versus-screen disagreement is argued on
+    /// `SCIENCE_OPENING_BAND_CITY_TARGET`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_opening_band(&mut self) {
+        self.science_opening_band = true;
+    }
+
+    /// The twin of `enable_science_opening_band`.
+    pub fn disable_science_opening_band(&mut self) {
+        self.science_opening_band = false;
+    }
+
+    /// The twin of `enable_science_expansion_phase`.
+    pub fn disable_science_expansion_phase(&mut self) {
+        self.science_expansion_phase = false;
+    }
+
     /// Open the settler pipeline by the shortfall while the opening is behind
     /// the four-cities-by-turn-sixty pace every recorded win came from.
     /// Opt-in gene `expansion-schedule`; see
@@ -3261,6 +3289,14 @@ impl AdvancedAi {
     /// The twin of `enable_hostile_memory`.
     pub fn disable_hostile_memory(&mut self) {
         self.hostile_memory = false;
+    }
+
+    pub fn enable_first_luxury_first(&mut self) {
+        self.first_luxury_first = true;
+    }
+
+    pub fn disable_first_luxury_first(&mut self) {
+        self.first_luxury_first = false;
     }
 
     // ---- append: a-b ------------------------------------------------

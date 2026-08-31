@@ -583,6 +583,9 @@ impl AdvancedAi {
             if arrived || under_way {
                 self.settler_guards.insert(settler, guard);
                 self.guard_wait.remove(&settler);
+                if arrived && before != pos && self.live_settler_capture_lessons {
+                    self.summoned_guard_turn.insert(settler, g.turn);
+                }
                 think!(self.journal(), Expansion, Detail, "A guard is called to the settler";
                        "sharing the tile blocks capture outright"; pos);
                 return arrived;
@@ -726,17 +729,30 @@ impl AdvancedAi {
         }
         // The route enters the reach alone: bring a guard onto this tile and
         // walk in together, else sidestep, else hold.
-        if self.summon_guard_to(g, pid, uid, current)
-            && self.guard_can_follow(g, pid, uid, current, next)
-        {
-            let moved = self.settler_step_toward_safe(g, pid, uid, target);
-            if moved {
-                let now = g.units[&uid].pos;
-                if now != current {
-                    self.pull_guard_along(g, pid, uid, current, now);
-                }
+        if self.summon_guard_to(g, pid, uid, current) {
+            // See `live_settler_capture_lessons`: the guard that just spent
+            // its move reaching this tile is not ordered again this turn. The
+            // mirror still credits it the movement to follow, but the host
+            // lands one order per unit per frame — run civvis-20260829T040648Z
+            // t43: archer called onto (23,27), settler marched on to (24,28)
+            // in the same turn, the follow never landed, taken that night.
+            if self.live_settler_capture_lessons
+                && self.summoned_guard_turn.get(&uid) == Some(&g.turn)
+            {
+                think!(self.journal(), Expansion, Detail, "Settler waits with the guard it just called";
+                       "the guard spent its move reaching this tile; the pair marches next turn"; current);
+                return false;
             }
-            return moved;
+            if self.guard_can_follow(g, pid, uid, current, next) {
+                let moved = self.settler_step_toward_safe(g, pid, uid, target);
+                if moved {
+                    let now = g.units[&uid].pos;
+                    if now != current {
+                        self.pull_guard_along(g, pid, uid, current, now);
+                    }
+                }
+                return moved;
+            }
         }
         let current_distance = g.wdist(current, target);
         let mut sidesteps: Vec<(i32, i32, Pos)> = g
