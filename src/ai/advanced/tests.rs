@@ -37410,7 +37410,10 @@ fn a_settler_does_not_cross_scarred_ground_alone() {
     );
     assert_eq!(game.units[&settler].pos, start, "it waits where it stands");
 
-    // A guard that can reach it this turn is summoned, and the pair walks in.
+    // A guard that can reach it this turn is summoned. The summon turn is
+    // spent standing together — run civvis-20260829T040648Z t43: the pair
+    // that marched the turn the guard arrived lost the guard's follow on the
+    // host, and the settler was taken.
     let beside = game
         .wdisk(start, 1)
         .into_iter()
@@ -37419,6 +37422,17 @@ fn a_settler_does_not_cross_scarred_ground_alone() {
         })
         .expect("a tile beside the settler, away from the site");
     let warrior = game.spawn_test_unit("warrior", 0, beside);
+    assert!(
+        !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "the summon turn is spent standing with the guard"
+    );
+    assert_eq!(game.units[&settler].pos, start, "the settler holds");
+    assert_eq!(game.units[&warrior].pos, start, "the guard arrived");
+
+    // Next turn the pair walks in together.
+    game.turn += 1;
+    game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+    game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
     assert!(
         live.settler_step_out_of_reach(&mut game, 0, settler, target),
         "with a guard it marches"
@@ -37434,4 +37448,58 @@ fn a_settler_does_not_cross_scarred_ground_alone() {
         game.units[&warrior].pos, now,
         "and the guard stands with it"
     );
+}
+
+/// Run civvis-20260829T040648Z, t43: the brain called an archer onto the
+/// settler's tile and marched the settler on in the same turn, trusting the
+/// guard to follow; the host gave the guard no second move, the settler ended
+/// the turn alone in reach and was taken. Under the lessons the turn a guard
+/// is called is spent standing with it — the same summon that fires when the
+/// route ahead is a raider's reach or the ground a capture scarred — and the
+/// memory of the summons follows the unit through the live bridge's id remap.
+#[test]
+fn a_settler_waits_the_turn_its_guard_is_called() {
+    let (mut game, _city, home) = barbarian_field(71_306);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let target = game
+        .wdisk(start, 3)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 3 && game.wdist(*pos, home) >= 4 && open_land(&game, *pos)
+        })
+        .expect("a site three tiles from the settler, away from home");
+    let beside = game
+        .wdisk(start, 1)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 1 && game.wdist(*pos, target) >= 3 && open_land(&game, *pos)
+        })
+        .expect("a tile beside the settler, away from the site");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let warrior = game.spawn_test_unit("warrior", 0, beside);
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let until = game.turn + 100;
+    for tile in game.wdisk(target, 3) {
+        live.settler_capture_scars.insert(tile, until);
+    }
+    assert!(
+        !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "the turn the guard is called is spent standing with it"
+    );
+    assert_eq!(game.units[&settler].pos, start);
+    assert_eq!(game.units[&warrior].pos, start, "the guard arrived");
+    assert_eq!(live.settler_guards.get(&settler), Some(&warrior), "and is bound");
+    assert_eq!(live.summoned_guard_turn.get(&settler), Some(&game.turn));
+
+    // A remap carries the memory with the unit; a fresh board drops it.
+    live.remap_unit_memory(&BTreeMap::from([(settler, settler + 1000), (warrior, warrior + 1000)]));
+    assert_eq!(live.summoned_guard_turn.get(&(settler + 1000)), Some(&game.turn));
+    live.forget_unit_memory();
+    assert!(live.summoned_guard_turn.is_empty());
 }
