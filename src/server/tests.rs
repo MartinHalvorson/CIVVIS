@@ -4016,6 +4016,30 @@ fn current() -> Params {
     }
 }
 
+#[test]
+fn spectator_turn_cap_draws_when_score_is_disabled() {
+    let mut params = current();
+    params.spectate = true;
+    params.max_turns = 3;
+    params.victory_conditions = VictoryConditions {
+        science: true,
+        culture: false,
+        religious: false,
+        diplomatic: false,
+        domination: true,
+        score: false,
+    };
+    let mut session = Session::new(params);
+    session.game.turn = 4;
+    let pid = session.game.current;
+
+    assert_eq!(session.step_quietly(), pid);
+    assert!(session.game.is_draw());
+    assert_eq!(session.game.victory_type.as_deref(), Some("draw"));
+    assert_eq!(session.game.reported_turn(), 3);
+    assert!(!session.game.finish_at_turn_limit());
+}
+
 /// A Civ 6 lobby asks two things this protocol could not carry: how hard
 /// the rivals play, and who the player is. Both are validated against the
 /// live ruleset — `Game::new_with` asserts on an unknown difficulty, and
