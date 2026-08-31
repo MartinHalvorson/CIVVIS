@@ -379,6 +379,29 @@ fn civ6_civic_name(civvis: &str) -> String {
     format!("CIVIC_{}", civvis.to_ascii_uppercase())
 }
 
+/// The CIVVIS dedication ids are the stable names used by the rules, while
+/// Civilization VI exposes the same choices as `COMMEMORATION_*` operation
+/// values. Keep the inverse of `mirror::civvis_dedication_name` explicit: the
+/// two vocabularies are not a prefix transform (`free_inquiry` is
+/// `COMMEMORATION_SCIENTIFIC`, for example).
+fn civ6_dedication_name(civvis: &str) -> Option<&'static str> {
+    Some(match civvis {
+        "monumentality" => "COMMEMORATION_INFRASTRUCTURE",
+        "pen_brush_and_voice" => "COMMEMORATION_CULTURAL",
+        "free_inquiry" => "COMMEMORATION_SCIENTIFIC",
+        "exodus_of_the_evangelists" => "COMMEMORATION_RELIGIOUS",
+        "hic_sunt_dracones" => "COMMEMORATION_EXPLORATION",
+        "reform_the_coinage" => "COMMEMORATION_ECONOMIC",
+        "to_arms" => "COMMEMORATION_MILITARY",
+        "heartbeat_of_steam" => "COMMEMORATION_INDUSTRIAL",
+        "bodyguard_of_lies" => "COMMEMORATION_ESPIONAGE",
+        "sky_and_stars" => "COMMEMORATION_AERONAUTICAL",
+        "wish_you_were_here" => "COMMEMORATION_TOURISM",
+        "automaton_warfare" => "COMMEMORATION_AUTOMATON",
+        _ => return None,
+    })
+}
+
 /// CIVVIS mostly uses Firaxis promotion identifiers without their prefix. Keep the
 /// few deliberate vocabulary contractions explicit in both directions rather than
 /// asking Lua to guess from localized display names.
@@ -4544,6 +4567,12 @@ fn translate(
             verb: Some(format!("BELIEF_{}", belief.as_str().to_ascii_uppercase())),
             pos: None,
         }),
+        Action::ChooseDedication { dedication } => Some(Order {
+            kind: "dedication",
+            subject: None,
+            verb: Some(civ6_dedication_name(dedication.as_str())?.to_string()),
+            pos: None,
+        }),
         Action::AppointGovernor { governor, city } => {
             let governor = mirror::civ6_governor_name(governor.as_str())?;
             host_city_target(mirror_state, state, *city).map(|(city, owner)| Order {
@@ -5765,6 +5794,13 @@ fn verify_order_with_context(
                 failed("no_pantheon".to_string())
             }
         }
+        "dedication" => match after.dedications.as_ref() {
+            Some(dedications) if dedications.iter().any(|dedication| dedication == verb) => {
+                Verdict::Verified
+            }
+            Some(_) => failed("not_dedicated".to_string()),
+            None => Verdict::Unverifiable,
+        },
         "religion" => {
             let beliefs_held = verb
                 .split(',')
@@ -11270,6 +11306,62 @@ mod tests {
     }
 
     #[test]
+    fn dedication_choices_cross_with_firaxis_commemoration_names() {
+        use civvis::name::Name;
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+
+        for (civvis, firaxis) in [
+            ("monumentality", "COMMEMORATION_INFRASTRUCTURE"),
+            ("pen_brush_and_voice", "COMMEMORATION_CULTURAL"),
+            ("free_inquiry", "COMMEMORATION_SCIENTIFIC"),
+            ("exodus_of_the_evangelists", "COMMEMORATION_RELIGIOUS"),
+            ("hic_sunt_dracones", "COMMEMORATION_EXPLORATION"),
+            ("reform_the_coinage", "COMMEMORATION_ECONOMIC"),
+            ("to_arms", "COMMEMORATION_MILITARY"),
+            ("heartbeat_of_steam", "COMMEMORATION_INDUSTRIAL"),
+            ("bodyguard_of_lies", "COMMEMORATION_ESPIONAGE"),
+            ("sky_and_stars", "COMMEMORATION_AERONAUTICAL"),
+            ("wish_you_were_here", "COMMEMORATION_TOURISM"),
+            ("automaton_warfare", "COMMEMORATION_AUTOMATON"),
+        ] {
+            let order = translate(
+                &Action::ChooseDedication {
+                    dedication: Name::new(civvis),
+                },
+                &mirror,
+                &state,
+            )
+            .expect("a known dedication translates");
+            assert_eq!(order.kind, "dedication");
+            assert_eq!(order.subject, None);
+            assert_eq!(order.verb.as_deref(), Some(firaxis));
+            assert_eq!(order.pos, None);
+        }
+        assert!(translate(
+            &Action::ChooseDedication {
+                dedication: Name::new("not_a_dedication"),
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+    }
+
+    #[test]
     fn a_city_strike_names_its_city_and_target() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 40,
@@ -14165,6 +14257,7 @@ mod order_postcondition_tests {
         after.civics = vec!["CIVIC_CODE_OF_LAWS".to_string()];
         after.government = Some("GOVERNMENT_CHIEFDOM".to_string());
         after.pantheon = Some("BELIEF_GOD_OF_THE_SEA".to_string());
+        after.dedications = Some(vec!["COMMEMORATION_SCIENTIFIC".to_string()]);
         after.policies = vec!["POLICY_DISCIPLINE".to_string(), "POLICY_SURVEY".to_string()];
         after.units = vec![StateUnit {
             id: 55,
@@ -14195,6 +14288,19 @@ mod order_postcondition_tests {
             (
                 order("pantheon", None, Some("BELIEF_GOD_OF_THE_SEA"), None),
                 Verdict::Verified,
+            ),
+            (
+                order("dedication", None, Some("COMMEMORATION_SCIENTIFIC"), None),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "dedication",
+                    None,
+                    Some("COMMEMORATION_INFRASTRUCTURE"),
+                    None,
+                ),
+                failed("not_dedicated"),
             ),
             (
                 order(
@@ -14386,10 +14492,23 @@ mod order_postcondition_tests {
             }
             let probe = if kind == "unit" {
                 order("unit", Some(1), Some("MOVE_TO"), Some((1, 1)))
+            } else if kind == "dedication" {
+                order(
+                    kind,
+                    Some(1),
+                    Some("COMMEMORATION_SCIENTIFIC"),
+                    Some((1, 1)),
+                )
             } else {
                 order(kind, Some(1), Some(""), Some((1, 1)))
             };
-            let verdict = check(&probe, &before, &after, &[]);
+            let verdict = if kind == "dedication" {
+                let mut dedication_after = after.clone();
+                dedication_after.dedications = Some(vec!["COMMEMORATION_SCIENTIFIC".to_string()]);
+                check(&probe, &before, &dedication_after, &[])
+            } else {
+                check(&probe, &before, &after, &[])
+            };
             assert!(
                 (verdict != Verdict::Unverifiable) != unverifiable_kind(kind),
                 "order kind {kind:?} is neither checked by `verify_order` nor listed in \

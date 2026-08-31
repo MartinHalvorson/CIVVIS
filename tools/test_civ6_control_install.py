@@ -1371,6 +1371,28 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("religion_founding_failed", source)
         self.assertIn("religion_founded", source)
 
+    def test_civvis_dedication_orders_select_the_named_offered_commemoration(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split('if kind == "dedication" then', 1)[1].split(
+            'if kind == "pantheon" then', 1
+        )[0]
+
+        self.assertIn("PlayerOperations.PARAM_COMMEMORATION_TYPE", handler)
+        self.assertIn("PlayerOperations.COMMEMORATE", handler)
+        self.assertIn("GetPlayerNumAllowedCommemorations(pid)", handler)
+        self.assertIn("GetPlayerCommemorateChoices(pid)", handler)
+        self.assertIn("GameInfo.CommemorationTypes[choice]", handler)
+        self.assertIn("if choiceName == verb then", handler)
+        self.assertIn("params[param] = selected", handler)
+        self.assertIn("UI.RequestPlayerOperation(pid, operation, params)", handler)
+        self.assertIn("dedication_not_offered_", handler)
+        self.assertIn(
+            'ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = "dedication"', source
+        )
+        self.assertIn(
+            "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = true", source
+        )
+
     def test_religious_units_export_progress_and_actuate_direct_operations(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         progress = source.split("local function unitProgress", 1)[1].split(
