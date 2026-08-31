@@ -811,6 +811,12 @@ impl HostCityStrikes {
 /// traversable, and every path — exploration, settlers, the army — routes
 /// around it. Revealed terrain is never overridden: once the plot is seen, its
 /// real terrain governs.
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct HostUnitOrderKey {
+    verb: String,
+    pos: Option<(i32, i32)>,
+}
+
 #[derive(Default)]
 struct HostMoveRefusals {
     /// The last `MOVE_TO` sent per host unit: where it stood, the long
@@ -825,8 +831,7 @@ struct HostMoveRefusals {
     /// Same-turn frames can still carry the previous frame's positions, so an
     /// identical movement command is a replay of a request the host has already
     /// consumed rather than a new route decision.
-    same_turn_orders:
-        std::collections::BTreeMap<i64, std::collections::BTreeSet<(String, Option<(i32, i32)>)>>,
+    same_turn_orders: std::collections::BTreeMap<i64, std::collections::BTreeSet<HostUnitOrderKey>>,
     same_turn: Option<u32>,
 }
 
@@ -879,7 +884,10 @@ impl HostMoveRefusals {
             if order.kind != "unit" || !matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
                 return true;
             }
-            let key = (verb.to_string(), order.pos);
+            let key = HostUnitOrderKey {
+                verb: verb.to_string(),
+                pos: order.pos,
+            };
             let seen = self.same_turn_orders.entry(unit).or_default();
             let duplicate = !seen.insert(key);
             if frame > 0 && duplicate {
