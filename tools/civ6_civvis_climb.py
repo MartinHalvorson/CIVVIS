@@ -1881,7 +1881,16 @@ def main() -> int:
     # ★★★★ A FROZEN GAME IS RESUMED, NOT SCORED. See `resume_from_autosave`:
     # three leading games died on the clock in one day, each with a
     # turn-fresh autosave on disk.
-    ap.add_argument("--max-resumes", type=int, default=3,
+    #
+    # ⚠ THE BUDGET IS PACED BY THE PARK RATE, AND THE PARK RATE ROSE. The
+    # default was 3 when a live game parked once or twice; on 2026-08-31 run
+    # civvis-20260831T140630Z parked FOUR times by t118 (t87, t112, t112,
+    # t118), ran out of budget mid-recovery, and was killed while standing at
+    # 0.589 of the leader — a game the abandon rule would have let play to its
+    # t150 verdict. Resumes past the third reuse the widest stride, so the
+    # extra budget costs only the ~13 minutes a genuinely dead park wastes per
+    # attempt, against losing a live game's whole remaining arc.
+    ap.add_argument("--max-resumes", type=int, default=6,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
                          "as it stands (0 disables)")
