@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -31,6 +31,10 @@ class MacOSCaptureTest(unittest.TestCase):
         self.assertIn("import ScreenCaptureKit", source)
         self.assertIn("SCScreenshotManager.captureImage(in: rect)", source)
         self.assertIn("if #available(macOS 15.0, *)", source)
+        self.assertIn('let fallbackMode = rawArguments.first == "--fallback"', source)
+        self.assertIn("image = screenCaptureKitImage()", source)
+        self.assertIn("image = windowListImage()", source)
+        self.assertIn("exit(signalFallback ? 78 : 1)", source)
         self.assertIn("CGPreflightScreenCaptureAccess()", source)
         self.assertNotIn("CGRequestScreenCaptureAccess", source)
 
@@ -50,6 +54,43 @@ class MacOSCaptureTest(unittest.TestCase):
             check=False,
             timeout=macos_capture.NATIVE_TIMEOUT_SECONDS,
         )
+
+    def test_capture_retries_in_a_fresh_window_list_helper_after_a_screen_capture_kit_miss(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "shot.png"
+            initial = subprocess.CompletedProcess(
+                ["/tmp/cgcapture"], macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED,
+                "", "ScreenCaptureKit returned no image",
+            )
+            def screen_capture_kit_then_window_list(arguments, **kwargs):
+                if "--fallback" in arguments:
+                    return completed(arguments, **kwargs)
+                return initial
+            with patch.object(macos_capture, "_native_binary",
+                              return_value=Path("/tmp/cgcapture")), \
+                 patch.object(macos_capture.subprocess, "run",
+                              side_effect=screen_capture_kit_then_window_list) as run:
+                macos_capture.capture_region((864, 33, 864, 542), output)
+
+        normal = ["/tmp/cgcapture", "864", "33", "864", "542", str(output)]
+        fallback = ["/tmp/cgcapture", "--fallback", "864", "33", "864", "542", str(output)]
+        expected = dict(capture_output=True, text=True, check=False,
+                        timeout=macos_capture.NATIVE_TIMEOUT_SECONDS)
+        self.assertEqual(run.call_args_list, [call(normal, **expected), call(fallback, **expected)])
+
+    def test_capture_does_not_compound_a_stalled_primary_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "shot.png"
+            timeout = subprocess.TimeoutExpired(["/tmp/cgcapture"],
+                                                macos_capture.NATIVE_TIMEOUT_SECONDS)
+            with patch.object(macos_capture, "_native_binary",
+                              return_value=Path("/tmp/cgcapture")), \
+                 patch.object(macos_capture.subprocess, "run",
+                              side_effect=timeout) as run:
+                with self.assertRaises(macos_capture.CaptureUnavailable):
+                    macos_capture.capture_region((864, 33, 864, 542), output)
+
+        self.assertEqual(run.call_count, 1)
 
     def test_preflight_reports_denial_without_attempting_a_capture(self) -> None:
         with patch.object(macos_capture, "_native_binary",
