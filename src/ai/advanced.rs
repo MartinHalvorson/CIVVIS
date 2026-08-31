@@ -34328,8 +34328,7 @@ impl AdvancedAi {
                 .values()
                 .filter(|u| {
                     enemies.contains(&u.owner)
-                        && (!protect_threatened_rescue
-                            || g.rules.units[u.kind].class == "military")
+                        && (!protect_threatened_rescue || g.rules.units[u.kind].class == "military")
                         && g.wdist(city.pos, u.pos) <= 7
                 })
                 .min_by_key(|u| (g.wdist(unit.pos, u.pos), u.id))
