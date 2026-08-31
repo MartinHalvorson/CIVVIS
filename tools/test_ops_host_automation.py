@@ -125,7 +125,8 @@ class NothingNamesAHome(unittest.TestCase):
         prune = plistlib.loads(TEMPLATES["com.civvis.run-prune"].read_text()
                                .replace("__HOME__", "/h").replace("__OPS__", "/o")
                                .encode("utf-8"))
-        self.assertEqual(prune["StartCalendarInterval"], {"Hour": 3, "Minute": 17})
+        self.assertEqual(prune["StartInterval"], 3600)
+        self.assertNotIn("StartCalendarInterval", prune)
 
 
 class _Host:
@@ -136,6 +137,8 @@ class _Host:
         self.tree = make_tree(self.home / "tree")
         self.pin = self.home / "pin"
         self.pin.write_text("head\n")
+        self.intent = self.home / ".civvis-operator-intent"
+        self.intent.write_text("running\n")
         self.policy = self.home / "policy"
         self.log = self.home / "ladder.log"
         self.out = self.home / "stub-env"
@@ -152,6 +155,7 @@ class _Host:
                         CIVVIS_VERIFICATION_POLICY=str(self.policy),
                         CIVVIS_LADDER_LOG=str(self.log),
                         CIVVIS_LADDER_LAUNCHER=str(self.stub),
+                        CIVVIS_OPERATOR_INTENT_FILE=str(self.intent),
                         CIVVIS_FOREGROUND_GUARD="0",
                         STUB_OUT=str(self.out))
         env.update(extra)
@@ -319,6 +323,16 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
                       text)
         self.assertIn('exec /bin/zsh "$LAUNCHER"', text)
 
+    def test_missing_intent_refuses_before_running_the_launcher(self):
+        with TemporaryDirectory() as raw:
+            host = _Host(raw)
+            host.write_policy()
+            host.intent.unlink()
+            done = zsh(WRAPPER, env=host.env())
+            self.assertEqual(done.returncode, 64, done.stdout + done.stderr)
+            self.assertFalse(host.out.exists())
+            self.assertIn("verification intent is not running", host.logged())
+
 
 @unittest.skipUnless(HAS_ZSH, "the installer is zsh; this runner has no zsh")
 class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
@@ -471,8 +485,9 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
         retire = text[start:end]
         self.assertIn("operator_retire.py", retire)
         self.assertIn("--runs-root \"$RUN_ROOT\"", retire)
-        self.assertIn("set_intent running", retire)
+        self.assertIn("intent_is_running", retire)
         self.assertIn("no process was stopped", retire)
+        self.assertNotIn("set_intent running", retire)
         self.assertNotIn("term_wait", retire)
         self.assertNotIn("--halt --reason", retire)
 
@@ -491,6 +506,7 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
             python.chmod(0o755)
             base = clean_env(HOME=str(home), CIVVIS_REPO=str(REPO),
                              PATH=str(fake_bin) + os.pathsep + os.environ["PATH"])
+            (home / ".civvis-operator-intent").write_text("running\n")
 
             done = zsh(SWITCH, "retire", env=base)
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
@@ -499,9 +515,20 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
 
             (home / ".civvis-operator-intent").unlink()
             refused = zsh(SWITCH, "retire", env={**base, "RETIRE_EXIT": "7"})
-            self.assertEqual(refused.returncode, 7, refused.stdout + refused.stderr)
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
             self.assertFalse((home / ".civvis-operator-intent").exists(),
-                             "a failed binding cannot start an idle lane")
+                             "a stopped lane must not authorize a replacement")
+
+    def test_ensure_never_clears_a_halt_or_defaults_missing_intent_to_running(self):
+        text = SWITCH.read_text()
+        start = text.index("ensure)\n")
+        end = text.index("\nstatus)\n", start)
+        ensure = text[start:end]
+        self.assertNotIn("HALT_GRACE_S", ensure)
+        self.assertNotIn("halt_age_s", ensure)
+        self.assertNotIn('GAMELOCK\" --resume', ensure)
+        self.assertIn("intent_is_running", ensure)
+        self.assertIn('halt-status', ensure)
 
     def test_turning_on_writes_a_head_pin_before_starting_terminal(self):
         """A wrapper refuses anything but `head`, so its launch must see it.
@@ -557,17 +584,20 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
 
 @unittest.skipUnless(HAS_ZSH, "the prune job is zsh; this runner has no zsh")
 class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
-    def test_old_runs_go_and_the_ledgers_the_newest_and_the_young_stay(self):
+    def test_every_old_run_goes_and_ledgers_and_young_runs_stay(self):
         with TemporaryDirectory() as raw:
             root = Path(raw) / "control"
             root.mkdir()
-            old, older, young = (root / f"civvis-{n}" for n in ("old", "older", "young"))
-            for run in (old, older, young):
+            old = root / "civvis-old"
+            legacy = root / "empire-wide-validation"
+            young = root / "civvis-young"
+            for run in (old, legacy, young):
                 run.mkdir()
                 (run / "events.jsonl").write_text('{"kind": "state"}\n')
             now = time.time()
-            os.utime(older, (now - 5 * 86400, now - 5 * 86400))
-            os.utime(old, (now - 3 * 86400, now - 3 * 86400))
+            os.utime(old, (now - 25 * 3600, now - 25 * 3600))
+            os.utime(legacy, (now - 26 * 3600, now - 26 * 3600))
+            os.utime(young, (now - 23 * 3600, now - 23 * 3600))
             for ledger in ("ladder.json", "civvis_ladder.jsonl"):
                 (root / ledger).write_text("{}")
                 os.utime(root / ledger, (now - 9 * 86400, now - 9 * 86400))
@@ -577,37 +607,45 @@ class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
             dry = zsh(PRUNE, "--dry-run", env=env)
             self.assertEqual(dry.returncode, 0, dry.stderr)
             self.assertIn("would prune", dry.stdout)
-            self.assertIn("civvis-older", dry.stdout)
             self.assertIn("civvis-old", dry.stdout)
+            self.assertIn("empire-wide-validation", dry.stdout)
             self.assertNotIn("civvis-young", dry.stdout)
-            self.assertTrue(older.is_dir() and old.is_dir(), "a dry run deletes nothing")
+            self.assertTrue(old.is_dir() and legacy.is_dir(), "a dry run deletes nothing")
             self.assertFalse(log.exists(), "a dry run writes no ledger line")
 
             done = zsh(PRUNE, env=env)
             self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertFalse(older.exists())
             self.assertFalse(old.exists())
+            self.assertFalse(legacy.exists())
             self.assertTrue(young.is_dir())
             for ledger in ("ladder.json", "civvis_ladder.jsonl"):
                 self.assertTrue((root / ledger).is_file(), f"{ledger} is the ladder's memory")
             self.assertIn("pruned 2 run dir(s)", log.read_text())
 
-    def test_the_newest_run_survives_whatever_its_age(self):
+    def test_an_open_old_run_is_skipped_until_it_is_safe_to_remove(self):
         with TemporaryDirectory() as raw:
             root = Path(raw) / "control"
             root.mkdir()
-            a, b = root / "civvis-a", root / "civvis-b"
-            a.mkdir()
-            b.mkdir()
+            in_use, closed = root / "civvis-in-use", root / "civvis-closed"
+            in_use.mkdir()
+            closed.mkdir()
             now = time.time()
-            os.utime(a, (now - 6 * 86400, now - 6 * 86400))
-            os.utime(b, (now - 4 * 86400, now - 4 * 86400))
+            os.utime(in_use, (now - 25 * 3600, now - 25 * 3600))
+            os.utime(closed, (now - 25 * 3600, now - 25 * 3600))
+            fake_bin = Path(raw) / "bin"
+            fake_bin.mkdir()
+            lsof = fake_bin / "lsof"
+            lsof.write_text("#!/bin/zsh\n[[ \"$*\" == *civvis-in-use* ]] && print -r -- 'nopen'\n")
+            lsof.chmod(0o755)
+            log = Path(raw) / "prune.log"
             env = clean_env(HOME=raw, CIVVIS_RUNS_ROOT=str(root),
-                            CIVVIS_RUN_PRUNE_LOG=str(Path(raw) / "prune.log"))
+                            CIVVIS_RUN_PRUNE_LOG=str(log),
+                            PATH=str(fake_bin) + os.pathsep + os.environ["PATH"])
             done = zsh(PRUNE, env=env)
             self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertFalse(a.exists())
-            self.assertTrue(b.is_dir(), "the newest run is never pruned")
+            self.assertTrue(in_use.is_dir(), "an open run is never pruned")
+            self.assertFalse(closed.exists())
+            self.assertIn("skip in-use", log.read_text())
 
     def test_an_absent_root_is_a_quiet_exit(self):
         with TemporaryDirectory() as raw:

@@ -44,6 +44,7 @@ spectator_src=${CIVVIS_SPECTATOR_SRC:-$HOME/civvis-spectator-src}
 supervisor="$spectator_src/tools/spectator_supervisor.py"
 supervisor_pid=""
 stopping=0
+intent_file=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 
 export CIVVIS_DEPLOY_ROOT="$deploy_root"
 
@@ -80,7 +81,23 @@ cd "$deploy_root" || exit 1
 # service, and exiting would just make launchd respawn-churn it.
 operator_halt=${CIVVIS_OPERATOR_HALT_FILE:-$HOME/.civvis-operator-halt.json}
 
+verification_intent_running() {
+  [[ -r "$intent_file" ]] && [[ "$(<"$intent_file")" == running ]]
+}
+
+intent_reason() {
+  if [[ -r "$intent_file" ]]; then
+    print -r -- "intent=$(<"$intent_file")"
+  else
+    print -r -- "intent=missing"
+  fi
+}
+
 while (( ! stopping )); do
+  if ! verification_intent_running; then
+    sleep 30
+    continue
+  fi
   if [[ -e "$operator_halt" ]]; then
     sleep 30
     continue
@@ -109,6 +126,9 @@ while (( ! stopping )); do
   # refuse the next one; a blocking `wait` would play the whole game out.
   while kill -0 "$supervisor_pid" 2>/dev/null; do
     if [[ -e "$operator_halt" ]]; then
+      kill -INT "$supervisor_pid" 2>/dev/null || true
+    elif ! verification_intent_running; then
+      print -r -- "verification intent is not running; stopping spectator: $(intent_reason)"
       kill -INT "$supervisor_pid" 2>/dev/null || true
     fi
     sleep 5

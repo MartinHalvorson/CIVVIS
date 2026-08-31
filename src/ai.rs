@@ -5428,14 +5428,21 @@ impl BasicAi {
         g: &Game,
         pid: usize,
     ) -> std::sync::Arc<AttackEnvelopes> {
-        let key = (
-            g.turn,
-            pid,
-            Self::attack_envelope_fingerprint(
-                g,
-                self.envelope_cache_across_own_moves.then_some(pid),
-            ),
-        );
+        // The evaluator deliberately uses an incomplete key, so preserve its
+        // old hit path. Production's key is complete and can double as the
+        // raw-reach key on a miss instead of hashing every unit a second time.
+        let (key, production_reach_key) = if self.envelope_cache_across_own_moves {
+            (
+                (g.turn, pid, Self::attack_envelope_fingerprint(g, Some(pid))),
+                None,
+            )
+        } else {
+            let full_fingerprint = Self::attack_envelope_fingerprint(g, None);
+            (
+                (g.turn, pid, full_fingerprint),
+                Some((g.turn, full_fingerprint)),
+            )
+        };
         // A poisoned lock only means another worker panicked mid-store; the
         // value inside is a complete entry or `None`, either of which is safe
         // to read.
@@ -5464,9 +5471,15 @@ impl BasicAi {
         // under it, and this one is opened over `&Game`: nothing inside can
         // mutate it. It is dropped before this function returns, so no caller
         // inherits it.
+        // The raw reaches always need the complete board key, even while the
+        // evaluator prices stale own moves. Production already formed that
+        // exact key above; reusing it removes one complete roster hash per
+        // outer-cache miss.
+        let reach_key = production_reach_key
+            .unwrap_or_else(|| (g.turn, Self::attack_envelope_fingerprint(g, None)));
         let envelopes = std::sync::Arc::new({
             let _memo = g.query_memo();
-            self.compute_enemy_attack_envelopes(g, pid)
+            self.compute_enemy_attack_envelopes(g, pid, reach_key)
         });
         let mut slot = self
             .attack_envelope_cache
@@ -5535,21 +5548,6 @@ impl BasicAi {
         self.envelope_cache_across_own_moves = true;
     }
 
-    /// The largest number of tiles an enemy's next-turn reach can span.
-    ///
-    /// ★★★★★ SOUNDNESS LIVES HERE. The neighbourhood key below is only valid
-    /// if nothing outside this radius can change the envelope, so the bound
-    /// must be an over-estimate of what `attack_reach` can span and never an
-    /// estimate of what it usually does.
-    ///
-    /// `flow_past` spends `unit_max_moves` and pays `unit_step_cost` per tile.
-    /// Terrain defaults to 1 MP and every feature that declares a cost adds 1,
-    /// so a step off a route is never cheaper than 1; a route flattens terrain
-    /// to 1 and the shipped ladder then discounts it to 0.75, 0.5 and — on a
-    /// Railroad — [`MIN_STEP_COST`] 0.25, which is the floor. One extra tile
-    /// for the free first step a full-movement unit always gets, and then the
-    /// attack itself: `unit_attack_range` for a ranged unit, one tile for a
-    /// melee one.
     /// The tiles a board change must touch before an envelope is worth
     /// recomputing: the unit's movement flood and every neighbour of it.
     fn envelope_sensitive_tiles(
@@ -5824,13 +5822,12 @@ impl BasicAi {
         hash
     }
 
-    fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
-        // `attack_envelope_cache` may intentionally omit this seat while the
-        // evaluator prices the stale-own-moves treatment. The raw reach is
-        // not allowed to do that: another unit's position can stop an enemy
-        // in zone of control, so every controller must share only a key over
-        // the complete board.
-        let reach_key = (g.turn, Self::attack_envelope_fingerprint(g, None));
+    fn compute_enemy_attack_envelopes(
+        &self,
+        g: &Game,
+        pid: usize,
+        reach_key: (u32, u64),
+    ) -> AttackEnvelopes {
         let mut store = self
             .enemy_envelope_cache
             .lock()

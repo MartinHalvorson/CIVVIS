@@ -619,7 +619,8 @@ class Civ6PlayTest(unittest.TestCase):
         hold_awake.assert_called_once_with()
         wait_capture.assert_called_once_with()
         sleep.assert_called_once_with(2.0)
-        acquire.assert_called_once_with("unlock-test", wait_s=0.0)
+        acquire.assert_called_once_with(
+            "unlock-test", wait_s=0.0, require_verification_intent=True)
         run.assert_called_once()
         stop.assert_called_once()
         release.assert_called_once()

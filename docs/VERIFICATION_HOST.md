@@ -20,11 +20,11 @@ had never been seen by a CI run. This page is how any Mac gets the same loop.
 
 | tracked file | installed as | job |
 | --- | --- | --- |
-| `tools/ops/civvis-games.sh` | `~/bin/civvis-games` (symlink) | `on` / `retire` / `off` / `status` / `wins` / `ensure` — the lane switch and the operator's standing intent |
+| `tools/ops/civvis-games.sh` | `~/bin/civvis-games` (symlink) | `on` / `retire` / `off` / `status` / `wins` / `ensure` — the lane switch and explicit verification authorization |
 | `tools/ops/civvis-verified-head-launcher.sh` | `~/civvis-verification-launch.command` (symlink) | the entry point every start goes through: fresh `origin/main`, deployment genome, this host's policy, nothing inherited from the window |
-| `tools/ops/civvis-run-prune.sh` | — | removes run directories older than 48 h; never the ledgers, an open run, or the newest run |
+| `tools/ops/civvis-run-prune.sh` | — | removes every run directory older than 24 h; never the ledgers or an open run |
 | `deploy/com.civvis.keepplaying.plist` | `~/Library/LaunchAgents/…` | `civvis-games ensure` every 5 min |
-| `deploy/com.civvis.run-prune.plist` | `~/Library/LaunchAgents/…` | `civvis-run-prune.sh` daily at 03:17 |
+| `deploy/com.civvis.run-prune.plist` | `~/Library/LaunchAgents/…` | `civvis-run-prune.sh` hourly |
 | `tools/ops/civvis-install-host-automation.sh` | — | wires all of the above, idempotently |
 
 Symlinks, never copies: a home copy of a tracked script is exactly what
@@ -111,11 +111,13 @@ civvis-games off        halt AND tear the live chain down, youngest first (TERM 
 civvis-games wins 20    the last twenty live-game wins from the ladder ledger
 ```
 
-`ensure` is what `com.civvis.keepplaying` runs: while the intent file says
-`running`, it clears a halt that has stood longer than ten minutes and restarts
-the chain when nothing is playing. `off` writes `stopped`, so nothing restarts
-until the operator says `on`. To end just the current game while continuing
-the indefinite lane, use `retire`, not `off`: it refuses setup/no-turn and
+`ensure` is what `com.civvis.keepplaying` runs: it recovers a missing chain only
+while the intent file says `running` and no explicit halt is present. It never
+clears a halt or turns a missing intent into permission; only `civvis-games on`
+records `running` and clears the halt. `off` writes `stopped`, so nothing
+restarts until the operator says `on`. A raw `gamelock.py --resume` clears only
+the low-level halt and does not authorize or start verification. To end just the
+current game while continuing the indefinite lane, use `retire`, not `off`: it refuses setup/no-turn and
 ambiguous harnesses, asks the installed control mod to invoke Civilization
 VI's native Retire action, waits for its `retired` acknowledgement, and leaves
 a durable request/status/result sidecar in that run.
