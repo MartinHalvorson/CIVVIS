@@ -1342,6 +1342,20 @@ impl AdvancedAi {
         self.base.disable_rapid_city_expansion();
     }
 
+    /// After its current production completes, let a population-two capital
+    /// start the next legal Settler before ordinary production ranking. The
+    /// baseline governor retains the city-target, site, and emergency gates.
+    pub fn enable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = true;
+        self.base.enable_capital_settler_after_completion();
+    }
+
+    /// The twin of [`AdvancedAi::enable_capital_settler_after_completion`].
+    pub fn disable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = false;
+        self.base.disable_capital_settler_after_completion();
+    }
+
     /// Take the pantheon that founds cities and keep the God-King card until
     /// its Faith is paid. Sets both halves: the strategic portfolio's God-King
     /// want, and `BasicAi`'s pantheon prefix.

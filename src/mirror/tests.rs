@@ -11018,23 +11018,34 @@ fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
         width: 12,
         height: 12,
         chunk: 1,
-        plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(6, 5, "TERRAIN_GRASS")],
     }]);
     let state = StateSnapshot {
         turn: 93,
-        units: vec![StateUnit {
-            id: 91,
-            kind: "UNIT_APOSTLE".to_string(),
-            x: 5,
-            y: 5,
-            xp: Some(37),
-            level: Some(2),
-            promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
-            build_charges: Some(0),
-            spread_charges: Some(2),
-            religion: Some("RELIGION_CATHOLICISM".to_string()),
-            ..StateUnit::default()
-        }],
+        units: vec![
+            StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                xp: Some(37),
+                level: Some(2),
+                promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
+                build_charges: Some(0),
+                spread_charges: Some(2),
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                ..StateUnit::default()
+            },
+            StateUnit {
+                id: 92,
+                kind: "UNIT_BUILDER".to_string(),
+                x: 6,
+                y: 5,
+                build_charges: Some(0),
+                spread_charges: Some(0),
+                ..StateUnit::default()
+            },
+        ],
         ..StateSnapshot::default()
     };
 
@@ -11056,6 +11067,16 @@ fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
             .map(|promotion| (*promotion).as_str())
             .collect::<Vec<_>>(),
         vec!["translator"]
+    );
+    let builder = mirror
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "builder")
+        .expect("the zero-charge Builder is mirrored");
+    assert_eq!(
+        builder.charges, 0,
+        "a host-reported zero must clear the builder's default charges"
     );
 }
 

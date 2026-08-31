@@ -3021,6 +3021,13 @@ pub struct BasicAi {
     /// handoff; this flag keeps the governor that actually queues Settlers in
     /// step with it.
     pub(crate) rapid_city_expansion: bool,
+    /// `capital-settler-after-completion`: once the capital is population two
+    /// and has no queued work, start a legal Settler instead of letting the
+    /// ordinary force or infrastructure ranking fill that opening. The city
+    /// target, normal settlement window, site search, and all earlier
+    /// emergency choices remain authoritative. Set through
+    /// `AdvancedAi::enable_capital_settler_after_completion`.
+    pub(crate) capital_settler_after_completion: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -4806,6 +4813,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -4849,6 +4857,16 @@ impl BasicAi {
     /// Disable the baseline half of the native rapid-city-expansion gene.
     pub(crate) fn disable_rapid_city_expansion(&mut self) {
         self.rapid_city_expansion = false;
+    }
+
+    /// Enable the baseline half of the capital-settler-after-completion gene.
+    pub(crate) fn enable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = true;
+    }
+
+    /// Disable the baseline half of the capital-settler-after-completion gene.
+    pub(crate) fn disable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = false;
     }
 
     /// Lead the pantheon prefix with the two that found a city (see
@@ -5230,6 +5248,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -8907,6 +8926,47 @@ impl BasicAi {
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
+            // The normal production picker sits after the scripted opening
+            // book. Let `capital-settler-after-completion` reserve the first
+            // newly empty capital queue once it reaches population two,
+            // rather than letting that book immediately fill it again. The
+            // picker remains the authority on whether a Settler is presently
+            // safe and useful, and the untouched book resumes after this
+            // one production decision.
+            if self.capital_settler_after_completion
+                && !self.minor
+                && !self.barb
+                && g.cities[cid].is_capital
+                && g.cities[cid].pop >= 2
+                && self.book_pos < 4
+            {
+                let opening_item = self.pick_item(
+                    g,
+                    pid,
+                    *cid,
+                    n_cities,
+                    settlers,
+                    builders,
+                    traders,
+                    siege_support,
+                    military,
+                    melee,
+                    ranged,
+                );
+                if matches!(
+                    &opening_item,
+                    Some(Item::Unit { unit }) if unit == "settler"
+                ) {
+                    let item = opening_item.expect("the matched opening item is a Settler");
+                    if g.apply(pid, &Action::Produce { city: *cid, item }).is_ok() {
+                        settlers += 1;
+                        think!(self.journal, Cities, Decision,
+                               "{} starts a Settler after completing its prior production", g.cities[cid].name;
+                               "the capital is population two with an empty queue; the capital-settler-after-completion gene reserves this next build while preserving the rest of the opening book");
+                        continue;
+                    }
+                }
+            }
             // The live land-grab policy already opens two Settler seats from
             // the first city, but the opening book used to spend its next
             // Builder/Warrior slot before `pick_item` could fill that second
@@ -10972,6 +11032,38 @@ impl BasicAi {
             return self
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
+        }
+        // `capital-settler-after-completion` opens one specific expansion
+        // window: when the capital's whole queue has drained and it has
+        // reached the engine's population-two floor, a Settler gets the next
+        // build. This deliberately comes after repairs, local defense, and
+        // economic recovery, and it declines during a major war. It also keeps
+        // the normal city target, time window, and practical-site gate, so it
+        // is an opening heuristic rather than an unbounded Settler order.
+        //
+        // The ordinary Settler arm below serializes the pipeline unless a
+        // different gene widens it. That is the ranking the live seat was
+        // observed to lose to an Archer despite a legal second settlement
+        // slot; this gene only changes that queue choice after the previous
+        // item has completed.
+        if self.capital_settler_after_completion
+            && !self.minor
+            && !self.barb
+            && !at_major_war
+            && !emergency_defense
+            && g.cities[&cid].is_capital
+            && g.cities[&cid].queue.is_empty()
+            && g.cities[&cid].pop >= 2
+            && ((n_cities + settlers) as f64) < self.w.city_target
+            && (g.turn as f64) < self.w.settler_stop_turn
+            && self.has_practical_settle_site(g, pid)
+        {
+            let settler = Item::Unit {
+                unit: crate::name!("settler"),
+            };
+            if g.can_produce(pid, cid, &settler) {
+                return Some(settler);
+            }
         }
         let can_add_military = !self.minor || military < Self::minor_military_budget(g, pid);
         // An ancient rush needs a stack, not a garrison. While one is planned
@@ -19065,6 +19157,93 @@ mod tests {
         game.cities.get_mut(&capital).unwrap().pop = 2;
         treated.w.settler_min_pop = 1.5;
         assert!(matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"));
+    }
+
+    /// The capital-settler-after-completion gene acts only after the capital
+    /// has finished its queued work. It bypasses the ordinary one-walker
+    /// serialisation, but does not interrupt a current build or outgrow the
+    /// normal city target.
+    #[test]
+    fn capital_settler_after_completion_waits_for_an_empty_capital_queue() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("CAPITALSETTLER", 91_779),
+            250,
+            0,
+            false,
+        );
+        let founding = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: founding })
+            .unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        game.cities.get_mut(&capital).unwrap().pop = 2;
+        game.turn = 20;
+        // One walker fills the ordinary one-at-a-time pipeline. The Scout and
+        // Warrior keep unrelated early capability gaps out of this fixture.
+        game.spawn_unit("settler", 0, home);
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let ask =
+            |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, capital, 1, 1, 6, 2, 1, 20, 10, 10);
+
+        let mut stock = BasicAi::new();
+        stock.book_pos = 1;
+        stock.w.city_target = 4.0;
+        assert!(stock.has_practical_settle_site(&game, 0));
+        assert!(
+            !matches!(ask(&game, &stock), Some(Item::Unit { unit }) if unit == "settler"),
+            "the ordinary picker leaves the second walker to its one-at-a-time gate"
+        );
+
+        let mut treated = BasicAi::new();
+        treated.book_pos = 1;
+        treated.w.city_target = 4.0;
+        treated.enable_capital_settler_after_completion();
+        assert!(treated.capital_settler_after_completion);
+
+        // A queued Builder is left alone, even after the capital reaches the
+        // population floor: this is a next-build reservation, not preemption.
+        game.cities.get_mut(&capital).unwrap().queue = vec![builder.clone()];
+        assert!(
+            !matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the reservation requires a fully empty capital queue"
+        );
+        treated.cities(&mut game, 0);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+
+        // Once the current item has completed and the queue is empty, the
+        // legal population-two capital starts the next Settler immediately.
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        treated.cities(&mut game, 0);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&settler));
+        assert_eq!(
+            treated.book_pos, 1,
+            "the reservation takes one empty queue without consuming the rest of the opening book"
+        );
+
+        // The screenable wrapper remains off in every normal constructor until
+        // explicitly enabled; the registry invokes its toggle pair.
+        let mut strategic = AdvancedAi::new();
+        assert!(!strategic.capital_settler_after_completion);
+        assert!(!AdvancedAi::legacy().capital_settler_after_completion);
+        strategic.enable_capital_settler_after_completion();
+        assert!(strategic.capital_settler_after_completion);
+        strategic.disable_capital_settler_after_completion();
+        assert!(!strategic.capital_settler_after_completion);
     }
 
     /// The land grab's early Cities route: the pipeline is two walkers from

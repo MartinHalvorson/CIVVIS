@@ -1450,11 +1450,20 @@ have resolved ±6.7 pp, and ~440 games are needed for ±5 pp before clustering.
 
 Every live run's `summary["orders"]` now carries seen, applied and the refusal
 reasons **per order kind** (`civ6_ladder.orders_by_kind`, from the mod's
-`seen_by`/`refused_by` on the `orders` event). `tools/live_actuation.py
-table|check|floors` prints kind × applied % × top reasons over the last runs
-and ratchets a per-kind applied-rate floor in `tools/actuation_floors.json`
-(floors only rise) — read it before calling a lane "decided badly" when it was
-in fact refused.
+`seen_by`/`refused_by` on the `orders` event). That is the issuing side only:
+an `applied` host call can still leave the board unchanged. The decider's next
+frame emits `order_verified` / `order_failed` events, and
+`civ6_ladder.postconditions_by_kind` keeps those receiving-side results by the
+original order kind and named failure reason.
+
+`tools/live_actuation.py table|check|floors` now prints both host acceptance
+and verified/checkable postcondition rate, with separate monotone floors in
+`tools/actuation_floors.json`. `tools/fidelity_queue.py` also queues a
+postcondition failure above its kind's configured share, so a no-op can no
+longer look healthy merely because its Lua call returned. A legacy verdict
+without an order kind remains explicitly unattributed and never creates a
+named-kind verification floor. Read both columns before calling a lane
+"decided badly" when it was in fact refused or silently failed to land.
 
 ## A rule error is invisible to every instrument here (2026-08-26)
 
