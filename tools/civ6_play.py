@@ -141,12 +141,15 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 # 2026-08-30: SCIENCE AGAIN, on the operator's standing instruction — improve
 # the science-victory strategies until a live King game is won by science —
 # which sits above the measured-default rule the same way the leader pin below
-# does. The 08-17 "0/16" reading above predates #2435 `science-victory-drive`
-# (merged 08-25), which rewrote the exact machinery that refused to launch
-# (`space_race_can_finish` priced the chain at raw production and never sited
-# the pad); rerun at the same profile and seeds on main `1473eba2`, the lane
-# now completes — see `victory_eval`'s module doc and PR #2824 for the fresh
-# table. The 08-17 numbers stay above because they were true of that binary.
+# does. The 08-17 numbers stay above because they were true of that binary;
+# rerun 2026-08-31 on main `1473eba2` at the same profile and seeds, after
+# #2435 `science-victory-drive` rewrote the launch machinery they measured:
+# targeted profile still 0/16, deployment profile **1/16** (seed 21000005,
+# t233, 77/77 techs, 336 science/turn, distance 50/50) — the first science
+# completion ever recorded inside the ladder's clock. The failures split into
+# "tree unfinished" (47-65/77 techs) and "launched too late" (projects done,
+# 0-33 light-years at t250), which is the improvement queue, not a reason to
+# keep aiming at a lane the operator has not asked for.
 DEFAULT_CIVVIS_VICTORY = "science"
 # The operator's standing instruction is unambiguous: every live game plays
 # Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
