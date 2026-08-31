@@ -268,8 +268,31 @@ def _site_from_why(data: RunData, turns: list[int], near, max_distance: int = 12
     return best[1] if best else None
 
 
+def _guard_record(unit: dict, pos, named_by: str, named_turn: int | None = None) -> dict:
+    record = {
+        "id": unit.get("id"), "type": _unit_kind(unit),
+        "combat": unit.get("combat"), "hp": unit.get("hp"),
+        "moves": unit.get("moves"), "pos": [unit.get("x"), unit.get("y")],
+        "named_by": named_by,
+    }
+    if named_turn is not None:
+        record["named_turn"] = named_turn
+    if pos is not None and unit.get("x") is not None and unit.get("y") is not None:
+        record["distance"] = hex_distance(pos, (unit["x"], unit["y"]))
+    else:
+        record["distance"] = None
+    return record
+
+
 def _guard_of(data: RunData, uid, turn: int, pos, state_before: dict | None) -> dict | None:
-    """The settler's guard: the escort the host named, else who stood with it."""
+    """Return the guard actually near the settler, retaining stale assignment metadata.
+
+    The host's escort event is an assignment, not a heartbeat. A later escort can
+    replace it, and the assigned unit can be several tiles away or gone by the
+    capture frame. Prefer a named escort only when it is still within the normal
+    two-tile protection radius; otherwise use a nearby military unit and preserve
+    the stale assignment as ``assigned_guard`` for the dossier.
+    """
     named = None
     for event in data.escort:
         if event.get("settler") != uid or event.get("guard") is None:
@@ -277,27 +300,35 @@ def _guard_of(data: RunData, uid, turn: int, pos, state_before: dict | None) -> 
         event_turn = _int(event.get("turn"), -1)
         if event_turn <= turn and (named is None or event_turn >= named[0]):
             named = (event_turn, event.get("guard"), event.get("kind"))
+    states = []
+    for state in (data.state_at(turn), state_before):
+        if state is not None and state not in states:
+            states.append(state)
     if named is not None:
-        guard_unit = _find_unit(state_before, named[1])
-        record = {"id": named[1], "named_by": named[2], "named_turn": named[0]}
-        if guard_unit is not None and pos is not None:
-            record.update({
-                "type": _unit_kind(guard_unit), "combat": guard_unit.get("combat"),
-                "hp": guard_unit.get("hp"), "moves": guard_unit.get("moves"),
-                "pos": [guard_unit.get("x"), guard_unit.get("y")],
-                "distance": hex_distance(pos, (guard_unit["x"], guard_unit["y"])),
-            })
-        else:
-            record["distance"] = None
-        return record
+        guard_unit = next((_find_unit(state, named[1]) for state in states
+                           if _find_unit(state, named[1]) is not None), None)
+        named_record = ({
+            "id": named[1], "named_by": named[2], "named_turn": named[0],
+            "distance": None,
+        } if guard_unit is None else
+            _guard_record(guard_unit, pos, named[2], named[0]))
+        if named_record.get("distance") is not None and named_record["distance"] <= 2:
+            return named_record
+    else:
+        named_record = None
     if pos is None:
-        return None
-    nearby = _friendly_military_near(state_before, pos, 2, uid)
+        return named_record
+    nearby = []
+    for state in states:
+        nearby.extend(_friendly_military_near(state, pos, 2, uid))
+    nearby.sort(key=lambda unit: (unit["distance"], -(unit.get("combat") or 0)))
     if nearby:
         record = dict(nearby[0])
         record["named_by"] = "proximity"
+        if named_record is not None and named_record.get("id") != record.get("id"):
+            record["assigned_guard"] = named_record
         return record
-    return None
+    return named_record
 
 
 def classify(frames: dict, why_before: list[str], guard: dict | None,
@@ -565,6 +596,9 @@ def render_markdown(run_name: str, captures: list[dict]) -> str:
         out.append(f"- mechanisms matched: {', '.join(capture['mechanisms']) or 'none'}")
         out.append(f"- nearest hostile: {_fmt_unit(capture.get('nearest_hostile'))}")
         out.append(f"- guard: {_fmt_unit(capture.get('guard'))}")
+        assigned_guard = (capture.get("guard") or {}).get("assigned_guard")
+        if assigned_guard:
+            out.append(f"- stale assigned escort: {_fmt_unit(assigned_guard)}")
         site = capture.get("site")
         if site:
             out.append(f"- site: ({site[0]},{site[1]}) — hostile seen within 3 in the last "
