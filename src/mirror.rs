@@ -5937,6 +5937,12 @@ fn civvis_unit_name(civ6: &str) -> String {
         // Firaxis's Scythian type name includes the civilization, whereas
         // CIVVIS stores the unit by its actual Saka name.
         "horse_archer" | "scythian_horse_archer" => "saka_horse_archer".to_string(),
+        // Keep this in lockstep with `civ6_unit_type`: the host calls Pitati
+        // Archers `NUBIAN_PITATI`, not `NUBIAN_PITATI_ARCHER`.
+        "nubian_pitati" => "pitati_archer".to_string(),
+        // Nihang is a Lahore suzerain unit rather than a civilization-unique
+        // unit, so its CIVVIS row cannot be discovered through `unique_to`.
+        "lahore_nihang" => "nihang".to_string(),
         // Firaxis retained Poland's implementation id after the unit's display
         // name became Winged Hussar.
         "polish_hussar" => "winged_hussar".to_string(),
@@ -6027,11 +6033,11 @@ fn class_representative(class: &str, rules: &crate::rules::Rules) -> Option<&'st
 /// unit, silently, with **no entry in `dropped_units`**. That is strictly worse than
 /// dropping it, because the drop detector is the only thing that would have caught it.
 ///
-/// A full guard needs an adjective map: `data/civs.json` is keyed by display name
-/// (`Rome`, `Aztec`), so `aztec` needs a case-insensitive match and `roman`/`nubian`
-/// need the adjectival form. What is certain under any casing is that **`great` is not
-/// a civilization**, and that is the one prefix measured doing this — see
-/// [`GREAT_PERSON_PREFIX`].
+/// This is a syntax-only candidate. `resolved_civvis_unit_name` applies the
+/// ruleset guard: the stripped destination must be a unit marked `unique_to`.
+/// That is stronger than trusting the first token to be a civilization adjective
+/// and prevents a trimmed or modded ruleset from turning `UNIT_JET_FIGHTER` into
+/// the ordinary `fighter`, while keeping the known unique-unit spellings alive.
 fn civvis_unit_name_unqualified(civ6: &str) -> Option<String> {
     let base = civ6.strip_prefix("UNIT_")?.to_ascii_lowercase();
     let (qualifier, rest) = base.split_once('_')?;
@@ -6050,10 +6056,12 @@ fn resolved_civvis_unit_name(rules: &crate::rules::Rules, civ6: &str) -> Option<
         return Some(direct);
     }
     let bare = civvis_unit_name_unqualified(civ6);
-    if let Some(bare) = bare
-        .as_deref()
-        .filter(|bare| rules.units.contains_key(bare))
-    {
+    if let Some(bare) = bare.as_deref().filter(|bare| {
+        rules
+            .units
+            .get(bare)
+            .is_some_and(|unit| unit.unique_to.is_some())
+    }) {
         return Some(bare.to_string());
     }
     // ⚠ A UNIQUE UNIT WHOSE CIVVIS NAME CARRIES AN EPITHET.
@@ -6084,7 +6092,13 @@ fn resolved_civvis_unit_name(rules: &crate::rules::Rules, civ6: &str) -> Option<
     let mut matches = rules
         .units
         .keys()
-        .filter(|name| name.as_str().ends_with(suffix.as_str()));
+        .filter(|name| name.as_str().ends_with(suffix.as_str()))
+        .filter(|name| {
+            rules
+                .units
+                .get(name.as_str())
+                .is_some_and(|unit| unit.unique_to.is_some())
+        });
     let only = matches.next()?;
     matches.next().is_none().then(|| only.to_string())
 }

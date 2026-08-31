@@ -332,7 +332,7 @@ class MirrorCheckTest(unittest.TestCase):
             "kind": "UNIT_MONGOLIAN_KESHIG", "x": 3, "y": 5,
             "hp": 72, "fortified": False, "fortify_turns": 0,
         }]}]}
-        board = {"view_player": 0, "units": []}
+        board = {"view_player": 0, "units": [], "visible": [[1, 5]]}
         mismatches = civ6_mirror_check.unit_fact_mismatches(state, board, 10)
         self.assertEqual(len(mismatches), 1)
         self.assertIn("Civ6=1 CIVVIS=0", mismatches[0])
@@ -342,6 +342,35 @@ class MirrorCheckTest(unittest.TestCase):
             "hp": 72, "fortified": False, "fortify_turns": 0,
         })
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+    def test_hidden_rival_unit_is_not_compared_to_the_seated_board(self) -> None:
+        state = {"rivals": [{"units": [{
+            "kind": "UNIT_KNIGHT", "x": 3, "y": 5,
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }]}]}
+        board = {"view_player": 0, "units": [], "visible": [[0, 0]]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+        board["visible"] = [[1, 5]]
+        mismatches = civ6_mirror_check.unit_fact_mismatches(state, board, 10)
+        self.assertEqual(len(mismatches), 1)
+        self.assertIn("UNIT_KNIGHT@(1, 5) count Civ6=1 CIVVIS=0", mismatches[0])
+
+    def test_hidden_minor_unit_is_not_compared_to_the_seated_board(self) -> None:
+        state = {"minors": [{
+            "player": 6, "civ": "CIVILIZATION_KABUL",
+            "units": [{
+                "kind": "UNIT_WARRIOR", "x": 3, "y": 5,
+                "hp": 100, "fortified": False, "fortify_turns": 0,
+            }],
+        }]}
+        board = {"view_player": 0, "units": [], "visible": [[0, 0]]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+        board["visible"] = [[1, 5]]
+        mismatches = civ6_mirror_check.unit_fact_mismatches(state, board, 10)
+        self.assertEqual(len(mismatches), 1)
+        self.assertIn("UNIT_WARRIOR@(1, 5) count Civ6=1 CIVVIS=0", mismatches[0])
 
     def test_unmodelled_unique_unit_uses_firaxis_replacement_role(self) -> None:
         state = {"rivals": [{"units": [{

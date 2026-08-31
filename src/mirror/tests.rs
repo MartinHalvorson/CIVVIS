@@ -418,6 +418,18 @@ fn a_civ_qualifier_is_stripped_and_great_is_not() {
         "Firaxis declares the Hwacha as Korea's Field Cannon replacement"
     );
     assert_eq!(
+        resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_NUBIAN_PITATI")
+            .as_deref(),
+        Some("pitati_archer"),
+        "the host's shortened Pitati type must round-trip to CIVVIS"
+    );
+    assert_eq!(
+        resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_LAHORE_NIHANG")
+            .as_deref(),
+        Some("nihang"),
+        "Nihang is a special suzerain unit, not a civilization-unique row"
+    );
+    assert_eq!(
         civvis_unit_name_unqualified("UNIT_GREAT_GENERAL"),
         None,
         "`great` is not a civilization, so there is no qualifier to remove"
@@ -426,6 +438,49 @@ fn a_civ_qualifier_is_stripped_and_great_is_not() {
         civvis_unit_name_unqualified("UNIT_SETTLER"),
         None,
         "a single-token name has no qualifier at all"
+    );
+}
+
+/// A stripped prefix is only a civilization qualifier when the destination
+/// rules row says it is a unique unit. Otherwise a missing exact row must not
+/// silently turn a modern host unit into an older ordinary unit.
+#[test]
+fn an_unmodelled_qualified_stock_unit_is_not_relabelled_as_its_tail() {
+    for (host, exact, tail) in [
+        ("UNIT_JET_FIGHTER", "jet_fighter", "fighter"),
+        ("UNIT_JET_BOMBER", "jet_bomber", "bomber"),
+        ("UNIT_NUCLEAR_SUBMARINE", "nuclear_submarine", "submarine"),
+        ("UNIT_LINE_INFANTRY", "line_infantry", "infantry"),
+        ("UNIT_ROCKET_ARTILLERY", "rocket_artillery", "artillery"),
+        (
+            "UNIT_MECHANIZED_INFANTRY",
+            "mechanized_infantry",
+            "infantry",
+        ),
+    ] {
+        let mut rules = crate::rules::Rules::embedded();
+        assert!(rules.units.remove(exact).is_some());
+        assert!(rules.units.contains_key(tail));
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, host),
+            None,
+            "a missing exact row must be reported for {host}, not mapped to {tail}"
+        );
+    }
+
+    assert_eq!(
+        resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_ROMAN_LEGION").as_deref(),
+        Some("legion"),
+        "the same fallback remains valid for a ruleset-declared unique"
+    );
+    assert_eq!(
+        resolved_civvis_unit_name(
+            &crate::rules::Rules::embedded(),
+            "UNIT_EGYPTIAN_CHARIOT_ARCHER"
+        )
+        .as_deref(),
+        Some("maryannu_chariot_archer"),
+        "the noun suffix fallback remains valid for an epithet unique"
     );
 }
 

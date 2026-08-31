@@ -3277,6 +3277,14 @@ impl AdvancedAi {
         self.hostile_memory = false;
     }
 
+    pub fn enable_first_luxury_first(&mut self) {
+        self.first_luxury_first = true;
+    }
+
+    pub fn disable_first_luxury_first(&mut self) {
+        self.first_luxury_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
