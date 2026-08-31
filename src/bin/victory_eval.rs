@@ -183,6 +183,18 @@ struct DenialPair {
     rival: VictoryTarget,
 }
 
+/// Static inputs shared by both legs of one matched-denial run. Keeping them
+/// together makes the identical-world invariant explicit at each call site.
+#[derive(Clone, Copy, Debug)]
+struct DenialRun {
+    players: usize,
+    width: i32,
+    height: i32,
+    speed: civvis::setup::GameSpeed,
+    turns: u32,
+    pair: DenialPair,
+}
+
 fn has_flag(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
 }
@@ -260,29 +272,27 @@ fn denial_fleet(game: &Game, pair: DenialPair, treatment: bool) -> Vec<AdvancedA
 /// defender immediately before each of its turns. `denial_target` is the
 /// exact actionable selector the planner will use, so counting it does not
 /// invent a second definition of "the treatment fired".
-fn run_denial_trial(
-    players: usize,
-    width: i32,
-    height: i32,
-    speed: civvis::setup::GameSpeed,
-    turns: u32,
-    seed: u64,
-    pair: DenialPair,
-    treatment: bool,
-) -> DenialTrial {
-    let city_states = if matches!(pair.defender, VictoryTarget::Diplomacy)
-        || matches!(pair.rival, VictoryTarget::Diplomacy)
+fn run_denial_trial(run: DenialRun, seed: u64, treatment: bool) -> DenialTrial {
+    let city_states = if matches!(run.pair.defender, VictoryTarget::Diplomacy)
+        || matches!(run.pair.rival, VictoryTarget::Diplomacy)
     {
-        (players + 1).max(3)
+        (run.players + 1).max(3)
     } else {
         0
     };
     let mut game = Game::new_with(civvis::game::GameOptions {
         barbarians: false,
-        speed: speed.id().to_string(),
-        ..civvis::game::GameOptions::new(players, width, height, seed, turns, city_states)
+        speed: run.speed.id().to_string(),
+        ..civvis::game::GameOptions::new(
+            run.players,
+            run.width,
+            run.height,
+            seed,
+            run.turns,
+            city_states,
+        )
     });
-    let mut ais = denial_fleet(&game, pair, treatment);
+    let mut ais = denial_fleet(&game, run.pair, treatment);
     // Keep the mechanics identical to `run_game`; the only addition is the
     // read-only diagnostic seam before the defender decides.
     game.set_fog_memory(false);
@@ -368,6 +378,14 @@ fn run_denial_pair(args: &[String], pair: DenialPair) -> Result<(), String> {
         .and_then(|index| args.get(index + 1))
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or_else(|| default_turn_limit(pair.defender).max(default_turn_limit(pair.rival)));
+    let run = DenialRun {
+        players,
+        width,
+        height,
+        speed,
+        turns,
+        pair,
+    };
     let started = Instant::now();
     let mut treatment_wins = 0;
     let mut control_wins = 0;
@@ -382,8 +400,8 @@ fn run_denial_pair(args: &[String], pair: DenialPair) -> Result<(), String> {
     );
     for game in 0..games {
         let seed = start_seed + game as u64;
-        let treatment = run_denial_trial(players, width, height, speed, turns, seed, pair, true);
-        let control = run_denial_trial(players, width, height, speed, turns, seed, pair, false);
+        let treatment = run_denial_trial(run, seed, true);
+        let control = run_denial_trial(run, seed, false);
         treatment_wins += usize::from(treatment.defender_won);
         control_wins += usize::from(control.defender_won);
         treatment_selections += treatment.selections;
@@ -921,8 +939,16 @@ mod tests {
             defender: VictoryTarget::Science,
             rival: VictoryTarget::Religion,
         };
-        let treatment = run_denial_trial(2, 24, 16, GameSpeed::Online, 200, 940_000, pair, true);
-        let control = run_denial_trial(2, 24, 16, GameSpeed::Online, 200, 940_000, pair, false);
+        let run = DenialRun {
+            players: 2,
+            width: 24,
+            height: 16,
+            speed: GameSpeed::Online,
+            turns: 200,
+            pair,
+        };
+        let treatment = run_denial_trial(run, 940_000, true);
+        let control = run_denial_trial(run, 940_000, false);
         assert!(
             treatment.selections > 0,
             "the documented smoke must reach the enabled denial branch: {treatment:?}"
