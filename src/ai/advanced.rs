@@ -4942,6 +4942,10 @@ pub struct AdvancedAi {
     /// is Ancient and Classical, and Archery chased until a city can train
     /// one. Opt-in gene `early-archers`; see `advanced/early_archers.rs`.
     early_archers: bool,
+    /// During the opening, reserve repeatable Great-Person projects for an
+    /// open Prophet race or a one-project claim on a high-impact Scientist.
+    /// Opt-in gene `early-project-restraint`.
+    early_project_restraint: bool,
     /// The turn's fire is planned once from the engine's arithmetic: the
     /// kills that can be finished, their shooters first in the unit order,
     /// each biased toward its planned target. Opt-in gene `fire-plan`; see
@@ -5599,10 +5603,6 @@ pub struct AdvancedAi {
     /// stronger lead gate, legal-pad routing, research funnel, and live
     /// launch-chain estimate. Opt-in gene `science-victory-drive-2`.
     science_victory_drive_2: bool,
-    /// During the opening, reserve repeatable Great-Person projects for an
-    /// open Prophet race or a one-project claim on a high-impact Scientist.
-    /// Opt-in gene `early-project-restraint`.
-    early_project_restraint: bool,
     /// `science_victory_drive`'s state while the seat is driving: since
     /// when, the last reading of the field, and the launch city.
     science_drive: Option<ScienceDrive>,
@@ -6954,6 +6954,7 @@ impl AdvancedAi {
             exhaustion_loyalty_guard: false,
             enter_the_prophet_race: false,
             early_archers: false,
+            early_project_restraint: false,
             fire_plan: false,
             fire_plan_orders: fire_plan::FirePlan::default(),
             escort_patience_runs_out: false,
@@ -7030,7 +7031,6 @@ impl AdvancedAi {
             settler_second_look: false,
             science_victory_drive: false,
             science_victory_drive_2: false,
-            early_project_restraint: false,
             science_drive: None,
             settler_guard_holds_2: false,
             settler_target_hysteresis_2: false,
