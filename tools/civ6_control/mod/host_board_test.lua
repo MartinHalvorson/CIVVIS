@@ -20,6 +20,8 @@
 --      count is reported;
 --  10. a refused settler move cannot draw its guard into a synthetic move;
 --  11. the `orders` event carries the cap and shadow counters.
+--  12. a rows-less asynchronous watch releases when the host lands the unit
+--      on a different plot, so the brain can re-plan from the actual board.
 --  13. an unguarded settler will not step into the measured two-plot reach of
 --      a visible barbarian scout; any settler leg reachable by a visible
 --      barbarian combat unit is held even with a synchronized single escort,
@@ -397,7 +399,17 @@ applyOrders(player, PID, 7, { row(23, "MOVE_TO", 2, 1) })
 check("blocked setter has no shadow injection", lastEvent("escort_shadow_injected"), nil)
 check("blocked setter does not synthesize a guard move", has(ops(24), "UNITOPERATION_MOVE_TO"), false)
 
--- 12. Queued paths: combat units cancelled, civilians kept, count reported.
+-- 12. A rows-less opening watch must release after an asynchronous host walk
+-- lands somewhere other than the requested coordinate.  The next brain frame
+-- needs the actual landing, not an expectation that can never become true.
+reset()
+host.units[25] = { id = 25, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+queue.watch(25, { x = 5, y = 5 }, { x = 1, y = 1 })
+host.units[25].x, host.units[25].y = 3, 2
+queue.drain(player, PID, 7)
+check("mismatched async landing releases its watch", queue.pendingCount(), 0)
+
+-- 13. Queued paths: combat units cancelled, civilians kept, count reported.
 reset()
 host.units[14] = { id = 14, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.units[15] = { id = 15, kind = "UNIT_SETTLER", x = 2, y = 2, moves = 2 }
@@ -410,7 +422,7 @@ check("it was the warrior, not the settler", host.cmds[1] and host.cmds[1].id, 1
 check("cancel used UNITCOMMAND_CANCEL", host.cmds[1] and host.cmds[1].cmd, "UNITCOMMAND_CANCEL")
 check("queued_paths reported", has(lastEvent("queued_paths"), '"found":2') and has(lastEvent("queued_paths"), '"cancelled":1'), true)
 
--- 13. The direct live-loss geometry is held: a new settler leaving a city for
+-- 14. The direct live-loss geometry is held: a new settler leaving a city for
 -- a tile within a barbarian scout's measured two-plot reach cannot spend its
 -- opening turn there without a guard.
 reset()

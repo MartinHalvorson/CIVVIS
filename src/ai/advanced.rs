@@ -599,6 +599,25 @@ const PANTHEON_FAITH_CARD_FLOOR: f64 = 1.0;
 /// reach. Those are different quantities and this is what the difference cost.
 pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
+/// A named Science seat needs enough cities to support several Campuses and a
+/// couple of launch pads, but the live land-grab ceiling is a different
+/// objective. Eight cities keeps the research base broad without asking a
+/// Science race to spend its opening on a sixteen-city settlement campaign.
+const SCIENCE_CITY_TARGET_CAP: usize = 8;
+
+/// A Science seat may take the first two cities before its lane owns the plan.
+/// This is the small opening economy that makes the target viable; after it,
+/// the research and space-race contract must be the active posture. A third
+/// city is welcome later when it is cheap, but it must not delay the first
+/// Campus chain when a hostile frontier has stalled the opening settler.
+const SCIENCE_OPENING_CITY_TARGET: usize = 2;
+
+/// If hostile land or a slow start prevents two cities, give the Science lane
+/// only this many standard turns to finish that opening before it takes over.
+/// At Online speed this is forty game turns, matching the first research
+/// infrastructure window rather than the generic expansion deadline.
+const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 60;
+
 /// Passable land per city the land grab prices the board at. Civilization VI
 /// packs cities four tiles apart (`CITY_MIN_RANGE` 3 plus the engine's own
 /// wdist ≥ 4 rule); a city works nineteen tiles at radius two, and the rivals
@@ -618,6 +637,34 @@ pub const LAND_GRAB_CITY_FLOOR: usize = 8;
 /// held on the seat's board at t250; the practical-site search and the
 /// payback deadline decide the rest. See `land_grab`.
 pub const LAND_GRAB_CITY_CEILING: usize = 16;
+
+/// How wide the SCIENCE lane's land grab may go while its cities can still
+/// mature. Live rows scale with final city count, but at FIXED count science
+/// goes as `pop^1.21` — growing an existing city is super-linear while adding
+/// one dilutes. Timing reconciles them: a city founded early matures into the
+/// super-linear term, one founded late only dilutes. So under
+/// `science-expansion-phase` the science lane widens past the shared ceiling
+/// ONLY while a new city can still mature, then reverts to
+/// [`LAND_GRAB_CITY_CEILING`] and grows what it holds.
+///
+/// The gene has two effects with one window: the land grab's ceiling rises
+/// to this constant, and [`SCIENCE_CITY_TARGET_CAP`] — the shipped Science
+/// contract, written after this idea — is deferred until the window closes,
+/// so the two hypotheses (cap early and grow, versus widen early then grow)
+/// disagree on the board and a screen can price the difference.
+///
+/// Live evidence so far is three patched 250-turn Settler games (653/13
+/// cities, 276/4, 1063/15) against one stock (963/8) — n is tiny against a
+/// ~398 score stdev, and the 1063 met the strongest rival field seen while
+/// the 963 met the weakest. That is why the gene ships OFF: the argument is
+/// the timing model above, and the screen prices it.
+pub const SCIENCE_EXPANSION_CITY_CEILING: usize = 24;
+
+/// When the science lane stops widening and starts growing, in STANDARD-speed
+/// turns (`Game::standard_duration` rescales: 188 standard is ~t125 Online —
+/// half way through the 250-turn ladder game). The switch is observable in
+/// `civvis_notes.jsonl` as desired_cities 24 -> 16.
+pub const SCIENCE_EXPANSION_UNTIL_TURN: u32 = 188;
 
 /// The rapid native expansion gene aims to own this many cities on a roomy
 /// board. The practical-site gate can stop it sooner, and the target derives
@@ -4799,6 +4846,12 @@ pub struct AdvancedAi {
     /// and in 81 % of those busy turns a district was placeable and lost to
     /// a Settler, Walls, an Archer, a Granary or a Builder.
     first_district_first: bool,
+    /// `escort-cap-holds`: the two-turn escort cap in `stacked_escort_pace`
+    /// releases the settler on time instead of being suspended by the one
+    /// predicate that reads only the visible frame, and a settler that is
+    /// already outside its own city and not stacked with anything marches on
+    /// quiet ground rather than fortifying bare. See `stacked_escort_pace`.
+    escort_cap_holds: bool,
     /// `first-granary-reserve`: a city grown to its housing builds its
     /// Granary ahead of the argmax, once. See `advanced_production`.
     first_granary_reserve: bool,
@@ -4963,6 +5016,17 @@ pub struct AdvancedAi {
     /// nothing asks for it. See `advanced/first_luxury.rs`.
     first_luxury_frame: RefCell<first_luxury::AmenityDeficitFrame>,
     // ---- append: g-k ------------------------------------------------
+    /// `hostile-memory`: the civilian capture envelope counts every at-war
+    /// owner (barbarians, Free Cities and a major at war alike) and keeps
+    /// pricing a hostile the seat has actually seen for
+    /// `civilian_safety::HOSTILE_MEMORY_TURNS` turns after it walks back into
+    /// the fog. See `AdvancedAi::barbarian_reach`.
+    hostile_memory: bool,
+    /// Where each at-war military unit was last seen, and on which turn —
+    /// written once a turn by `observe_turn_start_hostiles` while
+    /// `hostile_memory` is on, and read by nothing else. Empty otherwise, so
+    /// the reach behaves exactly as it did before the gene existed.
+    hostile_last_seen: BTreeMap<u32, (Pos, u32)>,
     /// `gold-income-floor`: Markets, Lighthouses, gold buildings and the
     /// Commercial Hub or Harbor are priced by the income the empire is
     /// short of the floor. See `advanced/yield_floors.rs`.
@@ -5363,6 +5427,12 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// While a founded city can still mature, the science lane's land grab
+    /// widens to [`SCIENCE_EXPANSION_CITY_CEILING`] and the Science
+    /// contract's `SCIENCE_CITY_TARGET_CAP` is deferred; both revert when the
+    /// window closes. Opt-in gene `science-expansion-phase`; the timing
+    /// argument is on the constant.
+    science_expansion_phase: bool,
     /// `settler-backlog-brake`: no Settler starts while one stands parked
     /// (empire of three cities or more). See `BasicAi::settler_backlog_brake`
     /// and `settler_in_flight_allowed`.
@@ -5371,6 +5441,10 @@ pub struct AdvancedAi {
     /// leaves the board can be told from one that founded. Recorded only
     /// under `live_settler_capture_lessons`.
     settler_last_seen: BTreeMap<u32, Pos>,
+    /// The turn a guard was summoned onto each settler's tile, so the pair
+    /// does not march on in the same turn: on the live seat the guard's
+    /// second order that turn never lands (run civvis-20260829T040648Z t43).
+    summoned_guard_turn: BTreeMap<u32, u32>,
     /// Last positions of settlers that left the board since the last turn,
     /// awaiting `resolve_vanished_settlers`.
     settler_vanished: Vec<Pos>,
@@ -6401,6 +6475,7 @@ impl AdvancedAi {
         self.settler_dead_sites.clear();
         self.settler_last_seen.clear();
         self.settler_vanished.clear();
+        self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
@@ -6436,6 +6511,11 @@ impl AdvancedAi {
                 .map(|(_, pos)| *pos),
         );
         self.settler_last_seen = remap(&self.settler_last_seen);
+        self.summoned_guard_turn = self
+            .summoned_guard_turn
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
         self.builder_targets = remap(&self.builder_targets);
         self.builder_avoid = self
             .builder_avoid
@@ -6798,6 +6878,7 @@ impl AdvancedAi {
 
             // ---- append: e-f ----------------------------------------
             first_district_first: false,
+            escort_cap_holds: false,
             first_granary_reserve: false,
             exhaustion_loyalty_guard: false,
             enter_the_prophet_race: false,
@@ -6817,6 +6898,8 @@ impl AdvancedAi {
             first_luxury_frame: RefCell::new(first_luxury::AmenityDeficitFrame::default()),
 
             // ---- append: g-k ----------------------------------------
+            hostile_memory: false,
+            hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
             government_ladder_2: false,
             government_capacity_fallback: false,
@@ -6858,8 +6941,10 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_expansion_phase: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
+            summoned_guard_turn: BTreeMap::new(),
             settler_vanished: Vec::new(),
             settler_capture_scars: BTreeMap::new(),
             settler_never_idles: false,
@@ -6920,6 +7005,16 @@ impl AdvancedAi {
     /// the live bridge calls it before its finishing volley, `take_turn`
     /// calls it as a fallback. A no-op unless `settler_stack_discipline`.
     pub fn observe_turn_start_hostiles(&mut self, g: &Game, pid: usize) {
+        // `hostile-memory` rides the same observation point and nothing else:
+        // this is the one call every seat makes before it has moved anything,
+        // so it is the only place on the board where "what the seat could see
+        // at the start of its turn" is still true. It is deliberately OUTSIDE
+        // the shadow's gate below — the shadow is a host-only treatment, while
+        // the memory feeds `barbarian_reach`, which a native board reaches
+        // through `civilian-out-of-reach`.
+        if self.hostile_memory {
+            self.remember_visible_hostiles(g, pid);
+        }
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
         {
             return;
@@ -6952,6 +7047,33 @@ impl AdvancedAi {
                     .max(1.0),
                 sea: spec.domain.as_deref() == Some("sea"),
             });
+        }
+    }
+
+    /// `hostile-memory`: remember where every at-war military unit the seat
+    /// can see right now is standing, and forget anything older than
+    /// [`civilian_safety::HOSTILE_MEMORY_TURNS`].
+    ///
+    /// The recorded fact is deliberately only what the seat SAW: the position
+    /// and the turn. `barbarian_reach` projects the envelope from that tile
+    /// and never asks the unit where it really is, which is the difference
+    /// between remembering a raider and reading the fog.
+    fn remember_visible_hostiles(&mut self, g: &Game, pid: usize) {
+        self.hostile_last_seen.retain(|_, (_, when)| {
+            *when <= g.turn && g.turn - *when <= civilian_safety::HOSTILE_MEMORY_TURNS
+        });
+        for unit in g.units.values() {
+            if unit.owner == pid
+                || !g.is_at_war(pid, unit.owner)
+                || !g.unit_visible_to(unit.id, pid)
+            {
+                continue;
+            }
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military" || spec.domain.as_deref() == Some("air") {
+                continue;
+            }
+            self.hostile_last_seen.insert(unit.id, (unit.pos, g.turn));
         }
     }
 
@@ -10112,6 +10234,8 @@ impl AdvancedAi {
                     && !player.is_barbarian
                     && player.religion.is_some()
             });
+        let active_victory_target = self.active_victory_target(g);
+        let science_targeted = active_victory_target == Some(VictoryTarget::Science);
         let map_capacity = if self.wide_map_capacity && !conversion_race_live {
             // Live-bridge pricing: one city per 45 passable tiles, ceiling
             // twelve. A fresh live mirror knows the world's dimensions but
@@ -10181,8 +10305,20 @@ impl AdvancedAi {
             } else {
                 land
             };
+            // The science lane widens while a founded city can still mature
+            // into the super-linear pop term; see
+            // `SCIENCE_EXPANSION_CITY_CEILING`. Every other lane, and the
+            // science lane's second half, keep the shared ceiling.
+            let ceiling = if self.science_expansion_phase
+                && science_targeted
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN)
+            {
+                SCIENCE_EXPANSION_CITY_CEILING
+            } else {
+                LAND_GRAB_CITY_CEILING
+            };
             (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING)
+                .clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
             (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
         };
@@ -10212,6 +10348,25 @@ impl AdvancedAi {
             // sits beside it -- unrepresentable rather than merely unlikely.
             let room = room.max(usize::from(has_site));
             desired_cities.min(cities.len() + room)
+        } else {
+            desired_cities
+        };
+        // `land_grab` is a useful generic deployment policy, but its sixteen
+        // city horizon is incompatible with an explicit Science contract. A
+        // Science seat still settles enough productive cities to scale its
+        // Campuses, then stops treating open land as the main objective. Never
+        // lower the target beneath an empire that already exceeded the cap.
+        // `science-expansion-phase` is the standing counter-hypothesis: while
+        // a founded city can still mature into the super-linear pop term the
+        // contract is deferred — the widened land-grab ceiling above sets the
+        // window's target — and the cap resumes when the window closes.
+        let desired_cities = if science_targeted
+            && !(self.science_expansion_phase
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN))
+        {
+            desired_cities
+                .min(SCIENCE_CITY_TARGET_CAP)
+                .max(cities.len())
         } else {
             desired_cities
         };
@@ -10249,7 +10404,6 @@ impl AdvancedAi {
         // victory denial. Build them once for the assessment instead of
         // repeating a whole-world tourism scan for every sort comparison.
         let rival_culture_pressures = self.rival_culture_pressures(g);
-        let active_victory_target = self.active_victory_target(g);
         let actionable_denial =
             self.actionable_victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures);
         let emergency_objective = g.emergency_objective(pid).cloned();
@@ -10338,7 +10492,12 @@ impl AdvancedAi {
                     GrandStrategy::Religion,
                     "the religion lane still needs a religion",
                 )
-            } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
+            } else if cities.len() < desired_cities
+                && has_site
+                && g.turn < g.standard_duration(175)
+                && (!science_targeted
+                    || (cities.len() < SCIENCE_OPENING_CITY_TARGET
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS)))
             {
                 (
                     GrandStrategy::Expansion,
@@ -11919,7 +12078,16 @@ impl AdvancedAi {
         }
         // ★★★★ THE CHEAP HALF OF A RESEARCH CITY BEFORE THE RACE IN IT. See
         // `buildings_before_projects`.
-        if self.buildings_before_projects && spec.repeatable {
+        // A named Science seat must not let a cheap Commercial Hub Investment
+        // (or any other repeatable project) outrank an available Library,
+        // University, Research Lab or Workshop merely because the deployment
+        // ledger withheld this independently screenable treatment. The
+        // treatment remains configurable for other lanes; Science gets the
+        // same invariant from its target contract.
+        if (self.buildings_before_projects
+            || self.active_victory_target(g) == Some(VictoryTarget::Science))
+            && spec.repeatable
+        {
             let waiting_for = BUILDINGS_BEFORE_PROJECTS.iter().chain(
                 CULTURE_BUILDINGS_BEFORE_PROJECTS
                     .iter()
@@ -20715,6 +20883,39 @@ impl AdvancedAi {
         }
     }
 
+    /// The normal siege picker waits for damage before returning a queue item.
+    /// That is correct for a passing patrol, but a plan that has already named
+    /// this city while a major war is active has stronger evidence: the contact
+    /// is a locally competitive hostile force, not merely a scout. Reuse the
+    /// same wall-first/local-land-defender order as the damage path so the
+    /// threatened city can reclaim a Settler before the first hit lands.
+    fn preemptive_major_war_defense_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        threatened_city: Option<u32>,
+        active_major_war: bool,
+    ) -> Option<Item> {
+        if !active_major_war || threatened_city != Some(city) {
+            return None;
+        }
+        for building in ["walls", "medieval_walls", "renaissance_walls"] {
+            let wall = Item::Building {
+                building: Name::new(building),
+            };
+            if g.can_produce(pid, city, &wall) {
+                return Some(wall);
+            }
+        }
+        self.base
+            .best_military(g, pid, city, Some(false))
+            .or_else(|| self.base.best_military(g, pid, city, None))
+            .map(|unit| Item::Unit {
+                unit: Name::new(&unit),
+            })
+    }
+
     /// Let a confirmed city-siege treatment interrupt one unsafe queue.
     /// `BasicAi::besieged_city_item` normally reaches only an empty queue
     /// through `pick_item`, while Recovery's strategic governor skips a
@@ -20776,6 +20977,15 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city)
                 .or_else(|| self.native_emergency_item(g, pid, city))
+                .or_else(|| {
+                    self.preemptive_major_war_defense_item(
+                        g,
+                        pid,
+                        city,
+                        threatened_city,
+                        active_major_war,
+                    )
+                })
             else {
                 continue;
             };
@@ -21654,6 +21864,7 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         for cid in city_ids {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
@@ -21867,7 +22078,13 @@ impl AdvancedAi {
                     }
                 }
             }
-            if committed.is_none() && self.first_research_building_reserve {
+            // An explicit Science target makes the same contract as the
+            // opt-in reserve: once a city has paid for a Campus, finish its
+            // cheapest owed Campus-family building before the generic scorer
+            // can spend the queue on a Theater Square or another unrelated
+            // item. Adaptive seats still need the independently screenable
+            // gene; only a named Science lane gets this invariant for free.
+            if committed.is_none() && (self.first_research_building_reserve || science_targeted) {
                 let owed = Self::first_owed_campus_building(g, pid, cid);
                 if let Some(building) = owed {
                     let item = Item::Building { building };
@@ -25444,7 +25661,18 @@ impl AdvancedAi {
     }
 
     fn settler_guard_holds_on(&self) -> bool {
-        self.settler_guard_holds || self.settler_guard_holds_2
+        self.settler_guard_holds
+            || self.settler_guard_holds_2
+            // The live bridge's capture-lessons treatment is HostOnly and is
+            // deliberately deployable even when the native guard-holds
+            // screen is withheld by the ledger.  Those lessons include the
+            // observed failure where a wounded or outmatched escort died in
+            // the hostile phase and the stacked Settler was captured next.
+            // Keeping the same survival predicate active for that bridge
+            // prevents the live safety layer from crediting a guard it has
+            // already proved cannot hold.  Native/evaluator controllers have
+            // neither live host lessons nor this implication.
+            || (self.live_settler_capture_lessons && self.settlement_safety)
     }
 
     /// The live bridge's host safety layer can refuse a Settler's next leg
@@ -27237,8 +27465,22 @@ impl AdvancedAi {
             waited.saturating_add(1)
         };
         self.guard_wait.insert(uid, (g.turn, waited));
+        // ⭐ `escort-cap-holds`: THE CAP IS THE WHOLE POINT OF THE CAP.
+        // `unstacked_settler_step_is_capturable` is the one predicate in this
+        // wait that reads the VISIBLE frame only, and in the opening a visible
+        // hostile near the next step is the weather rather than the exception,
+        // so the two-turn ceiling is suspended indefinitely by it. Measured on
+        // the live King seat (2026-08-29, twenty-eight settler losses in
+        // eleven runs): EIGHT settlers were captured while parked waiting for
+        // a guard, and the median settler was ten turns old at its loss. The
+        // wait it is paying for does not prevent that — a parked civilian is
+        // exactly what a raider walks onto — while the ten losses to a hostile
+        // that was not visible at all say the predicate suspending the cap
+        // cannot see the thing that kills the settler either. With the gene on
+        // the cap releases on schedule and the ordinary safe-step route, which
+        // still refuses a genuinely unsafe departure, gets the settler back.
         if waited > STACKED_ESCORT_PATIENCE
-            && !self.unstacked_settler_step_is_capturable(g, pid, uid)
+            && (self.escort_cap_holds || !self.unstacked_settler_step_is_capturable(g, pid, uid))
         {
             // The guard is livelocked or refused. It keeps chasing, but the
             // settler stops paying for it; the counter stays saturated until
@@ -27286,6 +27528,33 @@ impl AdvancedAi {
                 // from the capital, and the second city at t37 against t20 in
                 // the game before. Two or more tiles behind, or any visible
                 // risk, keeps the hold and the fallback exactly as they were.
+                self.guard_wait.remove(&uid);
+                return None;
+            } else if self.escort_cap_holds {
+                // ⭐ `escort-cap-holds`, second half: A ZERO RISK READING IS
+                // NOT QUIET GROUND, IT IS AN EMPTY VISION FRAME.
+                // `settlement_tile_risk` prices what the seat can SEE, and the
+                // branch above releases the settler only when its guard is
+                // already one tile behind. Everything else — a guard three
+                // tiles back, or one that will never arrive — fortifies in
+                // place on a bare tile outside any city, which is precisely
+                // the posture that lost eight of the twenty-eight settlers of
+                // 2026-08-29 and the posture ten more died in without a
+                // hostile visible anywhere near them the turn before. By this
+                // point the settler is provably not stacked (a stacked guard
+                // returned above) and provably not standing in one of our own
+                // cities (the city departure returned above), so there is
+                // nothing here to protect it. Hand it to the ordinary
+                // safe-step route, which prices the step it is about to take
+                // against `SETTLER_STEP_RISK_LIMIT` rather than against zero
+                // and can still refuse it — the guard stays assigned and keeps
+                // chasing either way.
+                think!(self.journal(), Expansion, Detail,
+                       "Settler marches while its guard catches up";
+                       "nothing visible can reach this tile and the guard is {} tiles \
+                        back — standing still on open ground outside a city is how eight \
+                        of the last twenty-eight settlers were taken",
+                       g.wdist(current, guard_pos); guard_pos);
                 self.guard_wait.remove(&uid);
                 return None;
             }
@@ -27620,8 +27889,14 @@ impl AdvancedAi {
         if self.formationless_settler_escort() && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
             // with any of our own military units (the assigned guard or not).
+            // `settler_guard_holds_on` also includes the live capture-lessons
+            // bridge.  The production ledger may withhold the screenable
+            // `settler-guard-holds` arm while that HostOnly repair is still
+            // active; computing visibility from the raw field here leaves
+            // `guard_outmatched_at` with `None` and panics exactly when a
+            // wounded escort has to be rejected.
             let visible_now = self
-                .settler_guard_holds
+                .settler_guard_holds_on()
                 .then(|| self.battlefront_visibility(g, pid));
             let guarded_here = g.city_at(current).is_some()
                 || g.unit_ids_at(current).iter().any(|other| {
@@ -33342,11 +33617,11 @@ impl AdvancedAi {
             // attack into that domain"), all of them scored in full first.
             //
             // ⚠ These are the engine's own predicates, not re-derivations of
-            // them. `unit_has_line_of_sight` is deliberately not the public
-            // `line_of_sight_from`: the tile version cannot know about the
-            // firing unit's `see_through_woods`, so gating with it would
-            // withhold a shot the engine would have allowed. Re-deriving any
-            // of the four here would be the same bug in a new place.
+            // them. `ranged_order_is_legal` is deliberately passed the
+            // hoisted frames: rebuilding them per tile made the first version
+            // of this guard slower. Its line-of-sight check also knows about
+            // the firing unit's `see_through_woods`, so re-deriving any part
+            // of the legality rule here would be the same bug in a new place.
             //
             // ⚠ This is a CORRECTNESS change and nothing else. Measured on
             // `tools/speed_ab.py`, 8 paired games at the deployment shape, it
@@ -33363,11 +33638,7 @@ impl AdvancedAi {
             // hoisted below for that reason. Do not inline them back.
             let frames = vision_frames
                 .get_or_insert_with(|| (g.player_vision_frame(pid), g.visibility_viewers(pid)));
-            if spec.has_ranged_attack()
-                && distance <= g.unit_attack_range(uid)
-                && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
-                && g.unit_has_line_of_sight(uid, pos)
-            {
+            if g.ranged_order_is_legal(pid, uid, pos, &frames.0, &frames.1) {
                 actions.push(Action::Ranged {
                     unit: uid,
                     target: pos,
@@ -35348,7 +35619,14 @@ impl AdvancedAi {
         if prophet_race_open || (self.enter_the_prophet_race && g.players[pid].religion.is_some()) {
             self.base.pursue_religion = true;
         }
-        self.base.science_building_first = self.science_building_first;
+        // An explicit Science target is a production contract, not only a
+        // research tie-break. The live genome may withhold the opt-in
+        // `science-building-first` treatment, but a targeted seat must still
+        // finish the Campus chain before spending its cities on unrelated
+        // buildings. Keep the opt-in available for adaptive seats while
+        // making the named Science lane self-consistent.
+        self.base.science_building_first =
+            self.science_building_first || active_victory_target == Some(VictoryTarget::Science);
         // One reading a turn: `Game::victory_races` walks every city of every
         // major, and `production_value` asks this question per item per city.
         self.lane_lost = self.assigned_lane_is_lost(g, pid);

@@ -68,7 +68,12 @@ from civ6_control import gamelock, install, launcher  # noqa: E402
 # The default is imported for the same reason the list is: this launcher used
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
-from civ6_play import VICTORY_LANES  # noqa: E402
+from civ6_play import ROMAN_LEADER, VICTORY_LANES, enforce_roman_leader  # noqa: E402
+# The run's supplied binary can come from another checkout than this bridge.
+# Reuse the same provenance and digest helpers the brain writes into
+# `runtime_updates.jsonl`, so the human-facing climb log and the durable dossier
+# cannot disagree about which program decided the game.
+from civ6_brain import binary_provenance, binary_sha256  # noqa: E402
 # The settler-capture detector: one module, imported here so the ladder row
 # and the per-run dossier count the same captures the CLI does.
 import civ6_settler_captures  # noqa: E402
@@ -155,6 +160,20 @@ def refresh_orders_binary(orders_bin: Path, enabled: bool = True) -> str:
         tail = ((proc.stderr or proc.stdout or "").strip().splitlines() or ["no output"])[-1]
         return f"decider: rebuild FAILED ({tail}); using the binary as it is"
     return f"decider: release build current for {code_state()}"
+
+
+def decider_provenance_line(orders_bin: Path) -> str:
+    """Describe the executable that the next attempt will actually run.
+
+    ``code_state()`` identifies this Python harness, not a ``--orders-bin``
+    supplied from another worktree.  Keep the old line for the harness pin, but
+    add the binary's source revision and digest after the last possible rebuild
+    so a climb log cannot attribute an experiment to the wrong checkout.
+    """
+    revision, source = binary_provenance(orders_bin)
+    digest = binary_sha256(orders_bin)
+    return (f"decider binary: revision={revision or 'unknown'} source={source} "
+            f"sha256={digest or 'unknown'} path={orders_bin}")
 
 
 def dismiss_crash_dialogs() -> None:
@@ -1059,7 +1078,28 @@ def outcome_of(tag: str) -> dict:
                 # The mod's terminal event is emitted by the game core BEFORE it
                 # halts, so unlike the end-screen autoclose below it actually
                 # arrives. See the note under `reached_end_screen`.
-                ended_on_screen = event
+                #
+                # ⚠⚠⚠ EXCEPT A RIVAL'S DEFEAT, WHICH IS AN ELIMINATION AND NOT AN
+                # ENDING. A rival's VICTORY does end the game — that is the
+                # deliberate choice explained below — but one civ being knocked
+                # out leaves the others playing. Run `civvis-20260830T104408Z`
+                # emitted
+                #
+                #     {"kind":"defeat","ours":false,"player":11,"turn":38}
+                #
+                # for a seat that was eliminated on turn 38, and then played on
+                # to turn 88. The row recorded `end_screen_turn = 38` for a game
+                # that ran fifty turns longer, and — because
+                # `resume_from_autosave` refuses a run that already reached an
+                # end screen — it blocked the reload of the FIRST wedge the
+                # handoff ever handed to the climb, with `AutoSave_0088.Civ6Save`
+                # sitting on disk.
+                #
+                # ⚠ Only an explicit `ours: false` is excluded: a `defeat` event
+                # from before the flag existed carries no opinion, and treating
+                # it as ours is what every older row already assumes.
+                if not (kind == "defeat" and event.get("ours") is False):
+                    ended_on_screen = event
             # ★★★★ A GAME THAT ENDED IS NOT A GAME THAT HUNG. Civilization VI's
             # end-game screen halts the game core, so the agent stops exporting and
             # the harness times out — and every such run was written down as
@@ -1271,6 +1311,23 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
         slice_started = time.time()
         try:
             play.wait(timeout=20.0)
+            # ⚠⚠ A PLAYER KILLED FROM OUTSIDE WHILE THE TURN WAS STALE IS A
+            # FROZEN ATTEMPT, NOT A FINISHED ONE — and only "frozen" reaches
+            # `resume_from_autosave`. The external wedge watchdog signals the
+            # player after five minutes of no synchronized progress, long
+            # before `frozen_s` (900 s) elapses here, so every wedge it caught
+            # was classified "exited" and the autosave on disk was discarded.
+            # Seven `-contN` runs exist, all from 08-17..19; NONE since the
+            # watchdog began signalling, which is exactly the window in which
+            # parked cores became the dominant way a run dies.
+            if (last_turn is not None
+                    and time.time() - last_turn_at > EXIT_WHILE_STALE_S):
+                print(f"[watchdog] the player exited with turn {last_turn} "
+                      f"stale for "
+                      f"{time.time() - last_turn_at:.0f}s; treating the "
+                      f"attempt as frozen so its autosave can be reloaded",
+                      flush=True)
+                return "frozen"
             return "exited"
         except subprocess.TimeoutExpired:
             pass
@@ -1347,6 +1404,13 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
                 play.kill()
             return "frozen"
     return "timeout"
+
+
+# How stale the turn must be when the player exits for the attempt to be read
+# as frozen rather than finished. The external wedge watchdog confirms a wedge
+# over five one-minute samples, so anything past four minutes of no new turn is
+# its signal arriving, not a game ending on its own.
+EXIT_WHILE_STALE_S = 240.0
 
 
 # A game frozen before this turn is redone from scratch faster than it is
@@ -1466,8 +1530,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--orders-db", str(orders_db),
          "--difficulty", args.difficulty,
          "--map-size", args.map_size,
-         "--speed", args.speed]
-        + (["--leader", args.leader] if args.leader else [])
+         "--speed", args.speed,
+         "--leader", ROMAN_LEADER]
         + (["--load-save", str(load_save)] if load_save is not None else [])
         + [
          "--max-turns", str(args.max_turns),
@@ -1540,6 +1604,12 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     """
     if why != "frozen" or resumes_so_far >= args.max_resumes:
         return None
+    # ⚠ An abandoned game must STAY abandoned. The operator rule retires a run
+    # that is under 60% of the leader at turn 150+, and a retirement leaves the
+    # turn stale while the end screens settle — which now reads as "frozen".
+    # Reloading it would restart the very game the rule just ended.
+    if record.get("retire_requested"):
+        return None
     turn = record.get("last_turn")
     if not isinstance(turn, int) or turn < args.resume_min_turn:
         return None
@@ -1555,12 +1625,126 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
         return latest(newer_than=started_at)
     finder = recent if recent is not None else _recent_autosaves
     saves = finder(newer_than=started_at)
-    return saves[resumes_so_far] if resumes_so_far < len(saves) else None
+    # ⚠⚠ NEVER RELOAD THE SAVE OF THE TURN THAT JUST PARKED. `saves` is newest
+    # first, so `saves[0]` is the autosave written AT `turn` — the very board
+    # that deadlocked. Reloading it replays the same turn from the same start
+    # and parks again, which is measured, twice:
+    #
+    #   2026-08-24: "reloading the exact same t181 save twice reproduced the
+    #               same engine-side PLEASE WAIT spin twice" — the observation
+    #               this rotation was built for.
+    #   2026-08-30: run civvis-20260830T131438Z parked at t44 on
+    #               ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN; `-cont1` reloaded
+    #               AutoSave_0044 and parked AT THE SAME TURN ON THE SAME
+    #               BLOCKER; `-cont2` reloaded AutoSave_0043 and played on to
+    #               turn 112 with 8 cities.
+    #
+    # The rotation already walks one save farther back per attempt; it simply
+    # started one step too late, so the FIRST attempt was always spent on the
+    # board known to fail. That is half of a two-resume budget: the same game
+    # then parked again at t112 and had nothing left to recover with.
+    saves = [save for save in saves if _autosave_turn(save) != turn]
+    step = RESUME_STEPS[min(resumes_so_far, len(RESUME_STEPS) - 1)]
+    index = min(step, len(saves) - 1)
+    return saves[index] if 0 <= index < len(saves) else None
+
+
+# How far back each successive resume reaches, as an index into the autosaves
+# (newest first, with the parked turn's own save already removed). So the first
+# attempt reloads ONE turn back and the second FOUR.
+#
+# ⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK. Walking back one save at
+# a time samples a board that is nearly identical, and the park is deterministic
+# enough to survive that. Measured over three parks on 2026-08-30:
+#
+#     t44   -> t43 ESCAPED, played on to t112 with 8 cities
+#     t62   -> t61 parked again at t62
+#     t136  -> t135 parked again at t136, then t134 parked again at t136
+#
+# One escape in three, and the t136 game spent BOTH attempts on boards one turn
+# apart. A wider second step costs only the few turns it replays and samples a
+# genuinely different trajectory — different unit positions, different decisions
+# — which is the only thing that has ever broken a park.
+#
+# ⚠ n=3. If a later run escapes at two-back this stride is wrong; the number to
+# watch is which index the escaping resume used.
+#
+# The third step (nine back) exists because the budget rose to three: a game can
+# park more than once. Run `civvis-20260830T223229Z` parked at t66, was rescued
+# ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
+# deadlock, not a replay of the first. Without a distinct third index the extra
+# attempt would reload the same save as the second.
+RESUME_STEPS: tuple[int, ...] = (0, 3, 8)
+
+
+def _autosave_turn(save: Path) -> int | None:
+    """The turn an `AutoSave_NNNN.Civ6Save` holds, or None if unreadable.
+
+    Unreadable means KEEP the save: a name this cannot parse is still a
+    candidate, and dropping it would be a worse failure than reloading it.
+    """
+    match = re.search(r"(\d+)", save.stem)
+    return int(match.group(1)) if match else None
 
 
 def _recent_autosaves(newer_than: float | None = None) -> list[Path]:
     import civ6_play  # noqa: PLC0415 — the play harness owns the save folder
     return civ6_play.recent_autosaves(newer_than=newer_than)
+
+
+#: The operator's standing victory lane, re-read ONCE PER GAME from a one-line
+#: file. Absent (the normal case) changes nothing and the flag or the tree's
+#: declared default stands.
+#:
+#: ⚠⚠ WHY THIS EXISTS, and why it beats the flag. The lane the supervisor passes
+#: comes from `CIVVIS_VICTORY`, read once at `civvis-game-supervisor.sh` start.
+#: That supervisor is a single long-running process — measured 2026-08-31 still
+#: holding the environment it inherited on **Aug 28**, three days earlier — so a
+#: lane exported into the keeper's login shell pins every game the ladder plays
+#: from then on, and no merge to `main` can change it. On 2026-08-31 the ladder
+#: launched a game on a tree whose `DEFAULT_CIVVIS_VICTORY` read `science` while
+#: still passing `--victory diplomatic`, and the operator's standing goal was a
+#: science victory.
+#:
+#: ⚠ Clearing that environment means restarting the host, and the host must be
+#: Terminal-hosted: macOS grants writing inside `Civ6.app` to Terminal and not
+#: to launchd (see `civvis-ladder-terminal-launcher.sh`). Restarting it from an
+#: automation context risks leaving the ladder down for good. A file the climb
+#: re-reads per game changes the lane without touching that process at all, the
+#: same way `~/.civvis-play-pin` switches the played tree mid-loop.
+#:
+#: ⚠ An unreadable or unknown lane is IGNORED with a warning, never fatal. This
+#: is the opposite of `~/.civvis-live-force-on`, which refuses a batch outright
+#: — correct there, wrong here: a typo must not stop an unattended ladder.
+VICTORY_LANE_FILE = Path(
+    os.environ.get("CIVVIS_VICTORY_LANE_FILE", "")
+    or Path.home() / ".civvis-victory-lane"
+)
+
+
+def operator_victory_lane(requested: str, path: Path | None = None,
+                          warn=None) -> str:
+    """The lane to play: the operator's file when it names one, else `requested`."""
+    path = VICTORY_LANE_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (FileNotFoundError, NotADirectoryError):
+        return requested
+    except OSError as exc:
+        warn(f"victory lane file {path} is unreadable ({exc}); "
+             f"keeping {requested}")
+        return requested
+    lane = text.strip()
+    if not lane:
+        return requested
+    if lane not in VICTORY_LANES:
+        warn(f"victory lane file {path} names {lane!r}, which is not one of "
+             f"{'|'.join(VICTORY_LANES)}; keeping {requested}")
+        return requested
+    if lane != requested:
+        warn(f"victory lane file {path} pins {lane!r}; overriding {requested!r}")
+    return lane
 
 
 def main() -> int:
@@ -1654,10 +1838,11 @@ def main() -> int:
     # consecutive rows comparable at all. Rows recorded before this change carry a
     # random seat and cannot be pooled with rows recorded after it.
     #
-    # Pass `--leader ""` to restore the old random deal deliberately.
-    ap.add_argument("--leader", default="LEADER_TRAJAN",
-                    help="Firaxis leader type to select and verify on the picker; "
-                         "empty string takes whatever the lobby deals")
+    # The operator has since made this an invariant rather than a launcher
+    # default: any explicit non-Roman value is recorded and coerced below.
+    ap.add_argument("--leader", default=ROMAN_LEADER,
+                    help="accepted for compatibility; live games always select "
+                         "Rome's Trajan")
     ap.add_argument("--timeout", type=float, default=5400.0)
     # ⚠⚠⚠ THE OUTER WATCHDOG MUST SIT ABOVE THE INNER CEILING, NOT ABOVE
     # `--timeout`, AND FOR TEN DAYS IT DID BOTH BECAUSE THEY WERE THE SAME
@@ -1696,7 +1881,7 @@ def main() -> int:
     # ★★★★ A FROZEN GAME IS RESUMED, NOT SCORED. See `resume_from_autosave`:
     # three leading games died on the clock in one day, each with a
     # turn-fresh autosave on disk.
-    ap.add_argument("--max-resumes", type=int, default=2,
+    ap.add_argument("--max-resumes", type=int, default=3,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
                          "as it stands (0 disables)")
@@ -1842,6 +2027,10 @@ def main() -> int:
                     help="allow the code to change mid-batch; rows stop being "
                          "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
+    args.leader = enforce_roman_leader(args.leader, caller="civ6_civvis_climb")
+    # Re-read per game, so the lane can be changed without restarting a
+    # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
+    args.victory = operator_victory_lane(args.victory)
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -1993,6 +2182,10 @@ def main() -> int:
             return 4
         # ★★★★ The program that will actually play: see `refresh_orders_binary`.
         print(refresh_orders_binary(orders_bin, args.build), flush=True)
+        # `code_rev` names the bridge tree.  A supplied binary may be built from
+        # a different worktree, so record its identity beside the attempt after
+        # any rebuild has completed.
+        print(decider_provenance_line(orders_bin), flush=True)
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
         # The database path is as much part of a run as its event log.  SQLite

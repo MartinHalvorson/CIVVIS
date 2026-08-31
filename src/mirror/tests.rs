@@ -3407,6 +3407,36 @@ fn supported_unique_improvements_and_city_religion_are_not_dropped() {
     assert_eq!(recon.game.city_religion(city), Some("Orthodoxy"));
 }
 
+#[test]
+fn gathering_storm_defender_of_faith_alias_reaches_the_model() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 30,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+    }]);
+    let state = StateSnapshot {
+        turn: 30,
+        founded_religion: Some("RELIGION_CATHOLICISM".to_string()),
+        religion_beliefs: vec!["BELIEF_DEFENDER_OF_FAITH".to_string()],
+        ..StateSnapshot::default()
+    };
+    let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    assert_eq!(
+        rebuilt.game.players[0].religion_beliefs,
+        vec!["defender_of_the_faith".to_string()]
+    );
+    assert!(
+        !rebuilt
+            .unmapped
+            .iter()
+            .any(|issue| issue == "BELIEF_DEFENDER_OF_FAITH:belief"),
+        "the installed XML spelling must not be reported as an unmapped belief: {:?}",
+        rebuilt.unmapped
+    );
+}
+
 /// Each founded religion's beliefs land on its founder's seat, and a city
 /// following that religion reads exactly those follower beliefs. Rome
 /// followed a Catholicism it did not found and read 23 Faith in the
@@ -4770,6 +4800,11 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
                 target: "0".to_string(),
             },
             StateResolution {
+                kind: "WC_RES_BORDER_CONTROL".to_string(),
+                option: 1,
+                target: "1".to_string(),
+            },
+            StateResolution {
                 kind: "WC_RES_LUXURY".to_string(),
                 option: 2,
                 target: "RESOURCE_SILK".to_string(),
@@ -4823,8 +4858,27 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
             }],
             ..StateRival::default()
         }],
+        congress_dvp: Some(StateCongressDvp {
+            turn: Some(90),
+            points: vec![
+                StateCongressDvpEntry {
+                    player: 0,
+                    points: 0,
+                },
+                StateCongressDvpEntry {
+                    player: 1,
+                    points: 1,
+                },
+                StateCongressDvpEntry {
+                    player: 3,
+                    points: 0,
+                },
+            ],
+        }),
         ..StateSnapshot::default()
     };
+    state.seat.local_player = 0;
+    state.seat.players = 4;
     let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
     let cumae = mirror.game.player_city_ids(0)[0];
     let auckland = mirror.game.player_city_ids(1)[0];
@@ -4849,8 +4903,11 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
     assert!(mirror
         .game
+        .congress_effect_active("border_control_treaty", "A", "2"));
+    assert!(mirror
+        .game
         .congress_effect_active("luxury_policy", "B", "silk"));
-    assert_eq!(mirror.game.active_congress_effects.len(), 2);
+    assert_eq!(mirror.game.active_congress_effects.len(), 3);
     assert_eq!(mirror.game.active_congress_effects[0].expires, 90 + 11 + 1);
     assert!(
         mirror
@@ -4967,11 +5024,27 @@ fn host_resolutions_translate_into_the_models_congress_vocabulary() {
         Some(("luxury_policy".into(), "A".into(), "whales".into()))
     );
     assert_eq!(
+        map("WC_RES_LUXURY", 2, "LOC_RESOURCE_TEA_NAME"),
+        Some(("luxury_policy".into(), "B".into(), "tea".into()))
+    );
+    assert_eq!(
         map("WC_RES_URBAN_DEVELOPMENT", 2, "DISTRICT_CAMPUS"),
         Some((
             "urban_development_treaty".into(),
             "B".into(),
             "campus".into()
+        ))
+    );
+    assert_eq!(
+        map(
+            "WC_RES_URBAN_DEVELOPMENT",
+            1,
+            "LOC_DISTRICT_GOVERNMENT_NAME"
+        ),
+        Some((
+            "urban_development_treaty".into(),
+            "A".into(),
+            "government_plaza".into()
         ))
     );
     assert_eq!(
@@ -4991,8 +5064,28 @@ fn host_resolutions_translate_into_the_models_congress_vocabulary() {
         Some(("military_advisory".into(), "B".into(), "melee".into()))
     );
     assert_eq!(
+        map(
+            "WC_RES_MILITARY_ADVISORY",
+            1,
+            "LOC_PROMOTION_CLASS_MELEE_NAME"
+        ),
+        Some(("military_advisory".into(), "A".into(), "melee".into()))
+    );
+    assert_eq!(
         map("WC_RES_ESPIONAGE_PACT", 1, "UNITOPERATION_SPY_SIPHON_FUNDS"),
         Some(("espionage_pact".into(), "A".into(), "siphon_funds".into()))
+    );
+    assert_eq!(
+        map(
+            "WC_RES_ESPIONAGE_PACT",
+            1,
+            "LOC_UNITOPERATION_SPY_NEUTRALIZE_GOVERNOR_DESCRIPTION"
+        ),
+        Some((
+            "espionage_pact".into(),
+            "A".into(),
+            "neutralize_governor".into()
+        ))
     );
     assert_eq!(
         map("WC_RES_HERITAGE_ORG", 1, "GREATWORKOBJECT_WRITING"),
@@ -5336,6 +5429,80 @@ fn the_hosts_climate_level_is_the_boards_phase_and_floods_the_bands_it_names() {
     assert_eq!(bare.game.climate_phase, 0);
     assert!(!flooded(&bare.game, 6, 7));
     assert!(bare.game.observed_climate.is_none());
+}
+
+/// City facts and climate must be in place before host-to-model yield
+/// calibration. A fresh rebuild initially gives the first planted city the
+/// Palace, while the host can name a later city as capital; the same rebuild
+/// can flood a lowland city centre when it applies the host climate phase.
+#[test]
+fn city_yield_calibration_follows_capital_and_climate_state() {
+    let mut first = plot(5, 4, "TERRAIN_PLAINS");
+    first.o = 0;
+    let mut capital = plot(8, 4, "TERRAIN_PLAINS");
+    capital.o = 0;
+    capital.cl = 1;
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 30,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![first, capital],
+    }]);
+    let host_yields = crate::rules::Yields {
+        food: 7.0,
+        production: 6.0,
+        gold: 4.0,
+        science: 3.0,
+        culture: 2.0,
+        faith: 1.0,
+    };
+    let state = StateSnapshot {
+        turn: 30,
+        climate: Some(StateClimate {
+            level: 2,
+            ..StateClimate::default()
+        }),
+        cities: vec![
+            StateCity {
+                id: 10,
+                name: "First City".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                capital: false,
+                yields: Some(crate::rules::Yields::default()),
+                ..StateCity::default()
+            },
+            StateCity {
+                id: 11,
+                name: "Moved Palace".to_string(),
+                x: 8,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                capital: true,
+                yields: Some(host_yields),
+                ..StateCity::default()
+            },
+        ],
+        ..StateSnapshot::default()
+    };
+
+    let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    let city = recon
+        .game
+        .cities
+        .values()
+        .find(|city| city.name == "Moved Palace")
+        .expect("the moved capital is mirrored");
+    assert!(city.is_capital);
+    assert!(
+        recon.game.map.get(city.pos).unwrap().flooded,
+        "the host climate phase is applied before calibration"
+    );
+    assert_eq!(recon.game.city_yields(city.id), host_yields);
 }
 
 /// The board rolled its own quest for every pair from a hash; the host's
@@ -7014,17 +7181,37 @@ fn the_economic_drift_is_reported_and_an_old_export_reads_as_unknown() {
 
     // ⚠⚠ PRODUCTION was exported by #845 and never deserialized, so it could not
     // appear here at all. It is the yield that decides what every city builds,
-    // and since #867 CIVVIS chooses that for every city every turn.
+    // and since #867 CIVVIS chooses that for every city every turn. The exact
+    // empire total is authoritative; the per-city `production` field is the
+    // build queue's whole-number accessor and must not be used as a yield total.
     assert!(
         !drift.contains("production"),
         "a city reporting no production figure must stay silent, not claim a \
              100% drift: {drift}"
     );
-    state.cities[0].production = 12.0;
+    state.cities[0].production = 99.0;
+    state.public_stats.production = Some(12.0);
     let drift = economy_drift(&recon.game, &state).expect("yields present");
     assert!(
         drift.contains("production 12.0/"),
-        "the game's own production leads, as science and culture do: {drift}"
+        "the exact empire production leads, as science and culture do: {drift}"
+    );
+    assert!(
+        !drift.contains("production 99.0/"),
+        "the queue production accessor must not masquerade as the city's yield: {drift}"
+    );
+
+    // Older exports may have exact city yields without the public aggregate.
+    // That fallback is valid only when every city is represented.
+    state.public_stats.production = None;
+    state.cities[0].yields = Some(crate::rules::Yields {
+        production: 12.0,
+        ..Default::default()
+    });
+    let drift = economy_drift(&recon.game, &state).expect("yields present");
+    assert!(
+        drift.contains("production 12.0/"),
+        "exact per-city yields are a safe fallback when the aggregate is absent: {drift}"
     );
 }
 
@@ -12118,6 +12305,7 @@ fn host_state_step_list_is_the_recorded_order() {
             "strategic_stockpiles",
             "player_ages",
             "host_congress",
+            "host_climate",
             "observed_host_metrics",
             "loyalty_doomed_sites",
         ]
@@ -12136,12 +12324,13 @@ fn host_state_step_list_is_the_recorded_order() {
             "strategic_stockpiles",
             "player_ages",
             "host_congress",
+            "host_climate",
             "observed_host_metrics",
             "loyalty_doomed_sites",
         ]
     );
 
-    let finish = ["player_ages", "host_climate", "record_host_observed"];
+    let finish = ["player_ages", "record_host_observed"];
     assert_eq!(rebuild(HostPhase::Finish), finish);
     assert_eq!(sync(HostPhase::Finish), finish);
 }

@@ -218,7 +218,8 @@ local function resolveActions()
 		-- `Base/Assets/UI/Panels/UnitPanel.lua:2518-2535` then takes its
 		-- "No mode needed, just do the operation" branch and calls
 		-- `UnitManager.RequestOperation(pSelectedUnit, actionHash)` with no
-		-- parameter table at all. That is why `{}` below is the whole request.
+		-- parameter table at all. The order layer may still use `{}` as its
+		-- empty logical parameter table; `operate` omits it at this host boundary.
 		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
 		"UNITOPERATION_RELIGIOUS_HEAL", "UNITOPERATION_CONVERT_BARBARIANS",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
@@ -944,19 +945,42 @@ end
 -- ⚠ Only civilizations we have MET. Reading the score of a civilization we have
 -- never encountered is knowledge the seat has not earned, and a decision taken on
 -- it would make the run worthless as a measurement.
+-- ⚠⚠⚠ `best` IS THE BEST RIVAL WE HAVE MET, NOT THE LEADER. The operator's
+-- abandon rule is "under 60% of the leader's score at turn 150 or later", and it
+-- reads this number — but a seat that has met two of five majors is being
+-- compared against the best of two. Measured over the twelve abandons of
+-- 2026-08-30, rivals MET at turn 150 were:
+--
+--     3, 2, 5, 2, 3, 4, 4, 4, 3, 2, 1, 2      (of five)
+--
+-- Exactly one run had met the whole field and one had met a single rival. So the
+-- rule is systematically LENIENT: the true leader is often unmet and uncounted,
+-- our recorded ratio flatters us, and games play on that the rule would have
+-- called. The error is in the safe direction — it never abandons a game it
+-- should not — but it is not what the rule says.
+--
+-- `allBest` is the same maximum over every alive major, met or not. It is
+-- REPORTING ONLY: nothing decides on it yet, and CIVVIS never sees it, so this
+-- cannot leak unmet-civ knowledge into gameplay. It exists so the gap between
+-- "the best we have met" and "the leader" can be measured before anyone changes
+-- a rule on top of it.
 local function rivalBest(player, pid)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
-	if diplomacy == nil then return nil, 0; end
+	if diplomacy == nil then return nil, 0, nil, 0; end
 	local best, met = nil, 0;
+	local allBest, majors = nil, 0;
 	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
-		if otherId ~= pid
-				and try(function() return diplomacy:HasMet(otherId); end, false) then
-			met = met + 1;
+		if otherId ~= pid then
+			majors = majors + 1;
 			local score = try(function() return Players[otherId]:GetScore(); end, -1) or -1;
-			if score >= 0 and (best == nil or score > best) then best = score; end
+			if score >= 0 and (allBest == nil or score > allBest) then allBest = score; end
+			if try(function() return diplomacy:HasMet(otherId); end, false) then
+				met = met + 1;
+				if score >= 0 and (best == nil or score > best) then best = score; end
+			end
 		end
 	end
-	return best, met;
+	return best, met, allBest, majors;
 end
 
 local function stackCensus(player)
@@ -1183,11 +1207,16 @@ end
 -- Without it a rejected order is indistinguishable from an accepted one, and
 -- that is how 518 `advance` orders were logged while the army stood still in
 -- its own city: `pcall` succeeded every time because the call did not throw,
--- and the engine quietly declined to move anything.
+-- and the engine quietly declined to move anything. Parameterless operations
+-- are a different overload: the shipped UnitPanel checks them with the strict
+-- five-argument form `(unit, hash, nil, false, false)`.
 local function canOperate(unit, hash, params)
 	if hash == nil then return false; end
 	local ok, result = pcall(function()
-		return UnitManager.CanStartOperation(unit, hash, nil, params or {});
+		if params == nil or next(params) == nil then
+			return UnitManager.CanStartOperation(unit, hash, nil, false, false);
+		end
+		return UnitManager.CanStartOperation(unit, hash, nil, params);
 	end);
 	return ok and result == true;
 end
@@ -1200,11 +1229,15 @@ end
 -- no-op into an observable refusal, so a fallback can actually run.
 local function operate(unit, hash, params)
 	if hash == nil then return false; end
-	params = params or {};
 	if not canOperate(unit, hash, params) then return false; end
-	return pcall(function()
-		UnitManager.RequestOperation(unit, hash, params);
-	end);
+	if params == nil or next(params) == nil then
+		-- UnitPanel.lua:2535 calls parameterless operations with exactly two
+		-- arguments. Passing `{}` as a third argument is not equivalent on the
+		-- live host: the request can return without throwing while FORTIFY,
+		-- SKIP_TURN and the other in-place operations never change the unit.
+		return pcall(function() UnitManager.RequestOperation(unit, hash); end);
+	end
+	return pcall(function() UnitManager.RequestOperation(unit, hash, params); end);
 end
 
 -- Same discipline as `operate`: ask whether the command can start before
@@ -13479,8 +13512,8 @@ local function applyOrder(player, pid, row, turn)
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
 		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
-		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- see the citation on
-		-- the `resolveActions` list for why `{}` is the whole request.
+		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- `operate` selects
+		-- the shipped UnitPanel's two-argument request for these.
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
 		-- ⚠ NAME THE REFUSAL, NOT THE VERB. This tail returned `verb` for BOTH
@@ -13493,8 +13526,8 @@ local function applyOrder(player, pid, row, turn)
 		-- it is a completely different repair from the request raising.
 		--
 		-- `operate` asks `canOperate` again on the line below; that is a cheap
-		-- repeat and deliberately not inlined, so the parameterless request
-		-- stays the single shape every other operation on this tail uses.
+		-- repeat and deliberately not inlined, so the parameterless request still
+		-- passes through the same signature-aware helper as every other operation.
 		if not canOperate(unit, hash, {}) then return false, "cannot_" .. verb; end
 		return operate(unit, hash, {}), verb;
 	end
@@ -13667,12 +13700,14 @@ end
 -- ⚠ BE HONEST ABOUT WHAT THIS IS: walking to a legal plot and pressing Activate
 -- is an actuation formality of Civilization VI — the same class as
 -- FOUND_CITY-before-MOVE_TO — because the decision (acquire this Great Person)
--- was already taken upstream. The legal plots are the ENGINE's own answer
--- (`GetActivationHighlightPlots`, the call the shipped SelectedUnit.lua shades
--- the map with), so this cannot invent a target the game would refuse, and the
--- engine is asked (`CanStartCommand`) before Activate is claimed. Counted apart
--- from `applied` (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never
--- presents it as CIVVIS's work.
+-- was already taken upstream. The legal activation plots are the ENGINE's own
+-- answer (`GetActivationHighlightPlots`, the call the shipped SelectedUnit.lua
+-- shades the map with), but that list is an eligibility highlight, not a
+-- route: the host can accept a MOVE_TO to a highlighted plot behind a closed
+-- border and leave the unit at its origin. The bridge therefore checks the
+-- host pathfinder before choosing a target. Counted apart from `applied`
+-- (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never presents it
+-- as CIVVIS's work.
 local gpPending = {};      -- unit id -> {x, y} last reported walk target
 local gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
 local gpApiMissing = false;
@@ -13775,6 +13810,30 @@ local function orderGreatPerson(player, unit, id, turn)
 		local ux = try(function() return unit:GetX(); end, nil);
 		local uy = try(function() return unit:GetY(); end, nil);
 		local bestX, bestY, bestD, bestRank = nil, nil, nil, nil;
+		-- `GetActivationHighlightPlots` is what the UI shades, not a promise that
+		-- this unit can walk to every highlighted tile. In particular, the nearest
+		-- natural-wonder tile may belong to a civilization with no Open Borders.
+		-- Return nil when the path API is unavailable so old hosts retain the
+		-- historical nearest-highlight behavior; return false only when the host
+		-- explicitly proves that the destination cannot be reached.
+		local function activationReachable(x, y)
+			local pathFinder = try(function() return UnitManager.GetMoveToPathEx; end, nil);
+			local plotIndexer = try(function() return Map.GetPlotIndex; end, nil);
+			if type(pathFinder) ~= "function" or type(plotIndexer) ~= "function" then
+				return nil;
+			end
+			local destination = try(function() return plotIndexer(x, y); end, nil);
+			if destination == nil then return false; end
+			local path = try(function() return pathFinder(unit, destination); end, nil);
+			if path == nil or type(path.plots) ~= "table" then return false; end
+			local n = 0;
+			for _ in pairs(path.plots) do n = n + 1; end
+			-- A one-entry path is the host's no-progress/no-route result. Also
+			-- require the endpoint to be the requested plot: a partial route or
+			-- stale path must not turn into another endless MOVE_TO.
+			if n <= 1 or path.plots[n] ~= destination then return false; end
+			return true;
+		end
 		for _, idx in ipairs(plots) do
 			local plot = try(function() return Map.GetPlotByIndex(idx); end, nil);
 			if plot ~= nil and ux ~= nil then
@@ -13789,12 +13848,14 @@ local function orderGreatPerson(player, unit, id, turn)
 				-- builds capacity. Fall through to the idle report instead.
 				if rank < 2 and (slotCount == nil or slotCount > 0) then
 					local px, py = plot:GetX(), plot:GetY();
-					local d = try(function()
-						return Map.GetPlotDistance(ux, uy, px, py);
-					end, 9999);
-					if bestRank == nil or rank < bestRank
-							or (rank == bestRank and d < bestD) then
-						bestX, bestY, bestD, bestRank = px, py, d, rank;
+					if activationReachable(px, py) ~= false then
+						local d = try(function()
+							return Map.GetPlotDistance(ux, uy, px, py);
+						end, 9999);
+						if bestRank == nil or rank < bestRank
+								or (rank == bestRank and d < bestD) then
+							bestX, bestY, bestD, bestRank = px, py, d, rank;
+						end
 					end
 				end
 			end
@@ -13953,10 +14014,12 @@ CivvisQueue.pendingCount = function() return CivvisQueue.count + CivvisQueue.wat
 -- A watch is a rows-less entry: it settles like any queued order
 -- (arrival, no movement left, the host's own event, or the grace period)
 -- and is dropped; it never issues anything and names no refusal.
-CivvisQueue.watch = function(subject, expect)
+CivvisQueue.watch = function(subject, expect, origin)
 	local q = CivvisQueue;
 	if q.pending[subject] ~= nil then return; end
-	q.pending[subject] = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
+	q.pending[subject] = {
+		rows = {}, next = 1, expect = expect, origin = origin, ready = false, wait = 0
+	};
 	q.order[#q.order + 1] = subject;
 	q.watching = q.watching + 1;
 end;
@@ -14027,7 +14090,20 @@ CivvisQueue.drain = function(player, pid, turn)
 				local arrived = entry.expect == nil
 					or (ux == entry.expect.x and uy == entry.expect.y);
 				local spent = moves ~= nil and moves <= 0;
-				local ready = entry.ready or arrived or spent or entry.wait >= grace;
+				-- A host operation can settle on a different plot than the
+				-- requested coordinate while an asynchronous walk is in flight.
+				-- The rows-less watch exists only to wait for that opening
+				-- operation; once the unit has demonstrably left its origin,
+				-- release the watch and let the brain re-plan from the actual
+				-- board instead of pinning the turn until the grace timeout.
+				-- Do not apply this to a real queued follow-up: its origin belongs
+				-- to the opening walk and must not make the next row run before its
+				-- own expectation settles.
+				local moved_from_origin = #entry.rows == 0
+					and entry.origin ~= nil
+					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
+				local ready = entry.ready or arrived or spent or moved_from_origin
+					or entry.wait >= grace;
 				if ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready then
@@ -15397,7 +15473,12 @@ local function applyOrders(player, pid, turn, rows)
 					-- Hold the turn until this walk lands (see CivvisQueue.watch);
 					-- a queued follow-up for the unit replaces the watch.
 					if queueOn and ok and firstRun[subject].expect ~= nil then
-						CivvisQueue.watch(subject, firstRun[subject].expect);
+						local watched = liveUnit(pid, subject);
+						local origin = watched ~= nil and {
+							x = tonumber(try(function() return watched:GetX(); end, -1)),
+							y = tonumber(try(function() return watched:GetY(); end, -1)),
+						} or nil;
+						CivvisQueue.watch(subject, firstRun[subject].expect, origin);
 					end
 					if queueOn and ok and foundRetry[subject] ~= nil
 							and tostring(row.verb or "") == "MOVE_TO" then
@@ -15616,7 +15697,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- turn, and the harness reads `turn` records as its clock.
 	if (awaiting.frame or 0) > 0 then return applied; end
 	local counts = countUnits(player);
-	local rivalTop, metCount = rivalBest(player, pid);
+	local rivalTop, metCount, rivalTopAll, majorCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	local cityCount = 0;
 	eachCity(player, function() cityCount = cityCount + 1; end);
@@ -15628,6 +15709,10 @@ local function applyOrders(player, pid, turn, rows)
 		score = ourScore,
 		rival_best = rivalTop,
 		met = metCount,
+		-- Reporting only; see `rivalBest`. The abandon rule still reads
+		-- `rival_best`, so this changes no decision.
+		rival_best_all = rivalTopAll,
+		majors = majorCount,
 		lead = (rivalTop ~= nil and ourScore >= 0) and (ourScore - rivalTop) or nil,
 		cities = cityCount,
 		units = counts.total or counts.military,
@@ -16318,7 +16403,7 @@ local function playTurn(player, pid, turn)
 			loyaltyWatch.worst_rate = perTurn;
 		end
 	end);
-	local rivalTop, metCount = rivalBest(player, pid);
+	local rivalTop, metCount, rivalTopAll, majorCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	emit("turn", {
 		policies = policies,
@@ -16328,6 +16413,10 @@ local function playTurn(player, pid, turn)
 		score = ourScore,
 		rival_best = rivalTop,
 		met = metCount,
+		-- Reporting only; see `rivalBest`. The abandon rule still reads
+		-- `rival_best`, so this changes no decision.
+		rival_best_all = rivalTopAll,
+		majors = majorCount,
 		-- Positive means we would win a score victory at the turn limit against
 		-- everyone we have met. This is the number that decides the reachable
 		-- victory, and until now the log showed only our own half of it.
@@ -16400,6 +16489,86 @@ local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
 	local ok, err = pcall(function()
+		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
+		--
+		-- Killing the harness leaves the game unfinished: no `TeamVictory`, no
+		-- defeat, and nothing for `tools/civ6_ladder.py` to record — an attempt
+		-- that was genuinely lost reads exactly like one that crashed. The
+		-- operator asked for the shipped Retire instead, and it is one call: the
+		-- stock `InGameTopOptionsMenu.lua` `OnReallyRetire` does exactly
+		-- `UI.RequestAction(ActionTypes.ACTION_RETIRE)`, and everything else in
+		-- that function closes its own menu and plays a sound. No pause menu and
+		-- no confirm dialog — which matters, because that dialog is a `PopupDialog`
+		-- this controller would then have to find and click blind.
+		--
+		-- ⚠ Polled here rather than handled in `applyOrder`. That only ever sees
+		-- the rows for the turn and frame the tick is fetching, so a request made
+		-- at a moment nobody scheduled would sit unread until a frame happened to
+		-- match. Matching on the run alone means one row anywhere is enough.
+		--
+		-- ⚠ Asked ONCE, latched on `CivvisBoard` rather than a new file-scope
+		-- local: this main chunk is at Civ 6's 200-register ceiling and three more
+		-- locals here stop the whole mod compiling. `RequestAction` is also
+		-- asynchronous, so the tick keeps running for a few frames afterwards and
+		-- re-asking would queue a pile of retires behind the first.
+		-- ⚠⚠⚠ SAY ONCE THAT THIS RAN, because three abandons in a row wrote the
+		-- row and got no answer, and nothing in the log could tell whether the
+		-- poll executed, whether the attach failed, or whether the query simply
+		-- found nothing. Every explanation was unfalsifiable — the same trap the
+		-- wedge sampler was added to close.
+		--
+		-- Measured 2026-08-30, run civvis-20260830T055337Z: abandoned at t150,
+		-- `retire_requested: true`, the row present as
+		-- `150|99000|retire|below_leader_score|990` with a run tag byte-identical
+		-- to the decider's own rows, and NO `retired` event. The mod was alive —
+		-- it emitted `orders` and `turn` for t150 — so it should have polled.
+		--
+		-- One event per game, on the first poll only: enough to separate "never
+		-- ran" from "ran and saw nothing", and cheap enough to keep afterwards.
+		if not CivvisBoard.retireAsked and attachOrders() then
+			-- ⚠⚠ ONCE PER GAME ANSWERED THE WRONG QUESTION. The first version
+			-- latched, so it said "retire_poll at turn 1" and nothing more —
+			-- proving only that the poll runs at game START. What matters is
+			-- whether it is still running at the moment the harness writes the
+			-- row, which is turn 150 or later, and the latch could never say.
+			--
+			-- That distinction is the whole question. A parked Game Core stops
+			-- publishing, and this poll runs on `GameCoreEventPublishComplete`,
+			-- so a game that parked BEFORE the abandon fired cannot answer a
+			-- retire row however correct the row is. Periodic reporting
+			-- distinguishes "the poll stopped when the game parked" from "the
+			-- poll was running and did not see the row".
+			--
+			-- Every 25 turns: about six lines a game, one of them near t150.
+			local pollTurn = try(function()
+				return Game.GetCurrentGameTurn();
+			end, -1);
+			if pollTurn >= 0 and CivvisBoard.retirePollAt ~= pollTurn
+					and (pollTurn % 25 == 0 or pollTurn == 1) then
+				CivvisBoard.retirePollAt = pollTurn;
+				emit("retire_poll", { turn = pollTurn });
+			end
+			local wanted = false;
+			pcall(function()
+				local rows = DB.Query(string.format(
+					"SELECT count(*) AS n FROM civvis.orders WHERE run = '%s' " ..
+					"AND kind = 'retire'", sqlSafe(cfg.RunTag)));
+				for _, row in ipairs(rows) do wanted = (tonumber(row.n) or 0) > 0; end
+			end);
+			if wanted then
+				CivvisBoard.retireAsked = true;
+				local action = try(function() return ActionTypes.ACTION_RETIRE; end);
+				if action == nil then
+					emit("retire_failed", { why = "no_action_type" });
+				else
+					local asked = pcall(function() UI.RequestAction(action); end);
+					emit(asked and "retired" or "retire_failed",
+					     { why = asked and "requested" or "refused" });
+				end
+				return;
+			end
+		end
+
 		-- ★★★★★ THE SEAT FORFEITED EVERY WORLD CONGRESS SESSION. The session is a
 		-- SOFT blocker, so the ladder below dismissed it: run
 		-- civvis-20260816T021044Z logged `dismissed … "forfeit": 1` for all
@@ -17006,6 +17175,66 @@ local function tick()
 						local filled = fillPolicies(player);
 						if filled then
 							answered = answered .. "+" .. tostring(filled);
+						end
+					end
+					-- ⚠⚠⚠ AND THE SAME THING AGAIN ON PRODUCTION, WHICH PARKS THE
+					-- WHOLE GAME RATHER THAN ONE TURN.
+					--
+					-- A city with nothing queued is something end-turn genuinely
+					-- requires, so `civvis_complete` — "CIVVIS has already decided
+					-- this board" — is a claim the engine does not accept. Unlike the
+					-- policy slot it is not merely re-raised: the Game Core stops
+					-- publishing while it waits, the agent is driven ONLY by
+					-- `GameCoreEventPublishComplete`, and so it never ticks again.
+					-- Nothing recovers that from inside or outside the process (see
+					-- `civ6_nudge_end_turn.py`: an external forced end turn was
+					-- measured and ignored, twice).
+					--
+					-- Measured 2026-08-30, run civvis-20260830T074021Z, parked at
+					-- t87 on `ENDTURN_BLOCKING_PRODUCTION` answered `civvis_complete`
+					-- at attempts=1 — the forfeit ladder never even ran. The last
+					-- board shows why:
+					--     Rome      producing BUILDING_PETRA        turns 11
+					--     Ravenna   producing nil                   turns -1
+					--     Lugdunum  producing BUILDING_CONSULATE    turns 18
+					-- One city with nothing to build ended the run.
+					--
+					-- `driveProduction` is the same call the ordinary production arm
+					-- makes; forced, so a city the ranking left empty gets something
+					-- rather than nothing. It returns how many cities it set, so a
+					-- board that was already complete costs one pass and says so.
+					if name == "ENDTURN_BLOCKING_PRODUCTION" then
+						local set = driveProduction(player, turn, true) or 0;
+						if set > 0 then
+							answered = answered .. "+produced:" .. set;
+						else
+							-- ⚠⚠⚠ THE REPAIR HAS NEVER ONCE FIRED, AND NOTHING SAID SO.
+							-- Measured over the twelve runs of 2026-08-30: 87
+							-- `ENDTURN_BLOCKING_PRODUCTION` blockers answered, **zero**
+							-- carrying `+produced:`, and **40 of them answered while a
+							-- city genuinely had an empty queue** (`producing_hash == 0`
+							-- in the same turn's exported state). Run
+							-- civvis-20260830T104408Z parked at t88 with Lugdunum on
+							-- `hash = 0`.
+							--
+							-- `set == 0` is the right answer on a board that is already
+							-- complete and the WRONG one on a board with an empty city,
+							-- and the ledger could not tell those apart — so the fix
+							-- above was unfalsifiable from the outside. Count what the
+							-- drive left behind and say it. Read-only: `+empty:N` beside
+							-- a `civvis_complete` on this blocker is the repair failing,
+							-- and its absence is a board that needed nothing.
+							local empty = 0;
+							eachCity(player, function(city)
+								local hash = try(function()
+									local queue = city:GetBuildQueue();
+									return queue and queue:GetCurrentProductionTypeHash() or 0;
+								end, 0);
+								if hash == nil or hash == 0 then empty = empty + 1; end
+							end);
+							if empty > 0 then
+								answered = answered .. "+empty:" .. empty;
+							end
 						end
 					end
 				else

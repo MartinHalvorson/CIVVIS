@@ -1994,6 +1994,20 @@ impl AdvancedAi {
         self.surprise_war_mobilization = false;
     }
 
+    /// Widen the science lane's land grab, deferring its city cap, while a
+    /// founded city can still mature; then revert and grow.
+    /// Opt-in gene `science-expansion-phase`; the timing argument is on
+    /// `SCIENCE_EXPANSION_CITY_CEILING`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_expansion_phase(&mut self) {
+        self.science_expansion_phase = true;
+    }
+
+    /// The twin of `enable_science_expansion_phase`.
+    pub fn disable_science_expansion_phase(&mut self) {
+        self.science_expansion_phase = false;
+    }
+
     /// Open the settler pipeline by the shortfall while the opening is behind
     /// the four-cities-by-turn-sixty pace every recorded win came from.
     /// Opt-in gene `expansion-schedule`; see
@@ -3235,6 +3249,32 @@ impl AdvancedAi {
 
     pub fn disable_walls_after_districts(&mut self) {
         self.walls_after_districts = false;
+    }
+
+    /// The two-turn escort cap releases the settler on schedule instead of
+    /// being suspended by a predicate that reads only the visible frame, and
+    /// a settler already outside its own city with no guard on its tile
+    /// marches on a zero risk reading rather than fortifying bare. See
+    /// `AdvancedAi::stacked_escort_pace`.
+    pub fn enable_escort_cap_holds(&mut self) {
+        self.escort_cap_holds = true;
+    }
+
+    /// The twin of `enable_escort_cap_holds`.
+    pub fn disable_escort_cap_holds(&mut self) {
+        self.escort_cap_holds = false;
+    }
+
+    /// The civilian capture envelope counts every at-war owner and keeps
+    /// pricing a hostile the seat has seen for a few turns after it walks
+    /// back into the fog. See `AdvancedAi::barbarian_reach`.
+    pub fn enable_hostile_memory(&mut self) {
+        self.hostile_memory = true;
+    }
+
+    /// The twin of `enable_hostile_memory`.
+    pub fn disable_hostile_memory(&mut self) {
+        self.hostile_memory = false;
     }
 
     pub fn enable_first_luxury_first(&mut self) {

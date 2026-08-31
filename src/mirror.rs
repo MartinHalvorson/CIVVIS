@@ -1811,7 +1811,8 @@ pub struct StateCity {
     /// Production already invested in `producing`.
     #[serde(default = "unknown_metric")]
     pub production_progress: f64,
-    /// ⚠⚠ THE CITY'S PRODUCTION YIELD PER TURN, AND IT WAS BEING THROWN AWAY.
+    /// ⚠⚠ THE PRODUCTION AVAILABLE TO THE CITY'S BUILD QUEUE, AND IT WAS BEING
+    /// THROWN AWAY.
     ///
     /// PR #845 added `production`, `production_cost` and `production_turns` to the
     /// export precisely because they are a DECISION input and not only a diagnostic,
@@ -1823,6 +1824,10 @@ pub struct StateCity {
     ///
     /// Live on run `civvis-20260802T083838Z`: `production: 11`, `production_cost: 60`,
     /// `production_turns: 3` for a Quadrireme at `production_progress: 27`.
+    /// This is the queue's whole-number production reading, not the exact
+    /// per-city yield used by `City:GetYield(YieldTypes.PRODUCTION)`. The latter
+    /// crosses in `yields.production` (and in `public_stats.production` for the
+    /// empire total) and is the value an economy comparison must use.
     ///
     /// ⚠ This matters far more since #867, which stopped CIVVIS deferring to the
     /// mod's ladder and made it choose production for every city every turn. Choosing
@@ -3950,7 +3955,9 @@ fn restore_rival_outgoing_routes(game: &mut crate::game::Game, rivals: &[StateRi
 /// its SEAT as a decimal string, a resource/district/building/feature/project
 /// its CIVVIS node name, and the class-like targets (Great Person class,
 /// promotion class, great-work object, spy operation, yield) the Firaxis
-/// suffix in lower case, which is what the engine keys them by.
+/// suffix in lower case, which is what the engine keys them by. The popup
+/// exports localized display keys (`LOC_*_NAME` / `LOC_*_DESCRIPTION`) for many non-player
+/// targets, so those wrappers are removed before the rule-node translation.
 fn civvis_congress_effect(
     rules: &crate::rules::Rules,
     resolution: &StateResolution,
@@ -3962,7 +3969,12 @@ fn civvis_congress_effect(
         2 => "B",
         _ => return None,
     };
-    let target = resolution.target.trim();
+    let raw_target = resolution.target.trim();
+    let localized_target = raw_target.strip_prefix("LOC_").unwrap_or(raw_target);
+    let target = localized_target
+        .strip_suffix("_NAME")
+        .or_else(|| localized_target.strip_suffix("_DESCRIPTION"))
+        .unwrap_or(localized_target);
     let seat = || {
         target
             .parse::<usize>()
@@ -4044,6 +4056,42 @@ fn civvis_congress_effect(
     })
 }
 
+/// Extend the ordinary host-player map with the anonymous major seats that a
+/// Congress table exposes even when the seat has not met those players.
+///
+/// `seat_of_host` intentionally contains only players whose identity is known
+/// to the mirror (plus mapped city-states). That is the right map for most
+/// host data, but it made a numeric Congress target such as `"1"` disappear
+/// even though the same Congress export had already listed player 1's
+/// standing. Use the same deterministic ascending-player assignment as
+/// [`apply_congress_dvp`], without changing the global map and accidentally
+/// assigning an unseen major to a city-state slot in unrelated systems.
+fn congress_seat_of_host(
+    state: &StateSnapshot,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+    seat_count: usize,
+) -> std::collections::BTreeMap<usize, usize> {
+    let mut congress_seats = seat_of_host.clone();
+    let Some(congress) = &state.congress_dvp else {
+        return congress_seats;
+    };
+    let ours = state.seat.local_player.max(0) as usize;
+    let major_seats = match state.seat.players {
+        0 => seat_count,
+        players => players.min(seat_count),
+    };
+    let mut unmet: Vec<&StateCongressDvpEntry> = congress
+        .points
+        .iter()
+        .filter(|entry| entry.player != ours && !congress_seats.contains_key(&entry.player))
+        .collect();
+    unmet.sort_by_key(|entry| entry.player);
+    for (seat, entry) in (state.rivals.len() + 1..major_seats).zip(unmet) {
+        congress_seats.insert(entry.player, seat);
+    }
+    congress_seats
+}
+
 /// Put the host's binding World Congress resolutions on the board.
 ///
 /// The model has its own Congress and simulates one when it plans ahead, but on
@@ -4072,8 +4120,9 @@ fn apply_host_congress(
         .unwrap_or_else(|| game.standard_duration(30));
     let expires = game.turn.saturating_add(turns_left).saturating_add(1);
     game.active_congress_effects.clear();
+    let congress_seat_of_host = congress_seat_of_host(state, seat_of_host, game.players.len());
     for resolution in resolutions {
-        match civvis_congress_effect(&game.rules, resolution, seat_of_host, expires) {
+        match civvis_congress_effect(&game.rules, resolution, &congress_seat_of_host, expires) {
             Some(effect) => game.active_congress_effects.push(effect),
             None => {
                 let issue = format!(
@@ -5743,6 +5792,7 @@ fn civvis_node_name<T>(
     // `civvis_orders` pins the round trip for every orderable name.
     if prefix == "UNIT_" {
         let alias = match base.as_str() {
+            "phoenicia_bireme" => Some("bireme"),
             "byzantine_tagma" => Some("tagma"),
             "roman_legion" => Some("legion"),
             "portuguese_nau" => Some("nau"),
@@ -7453,20 +7503,30 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     }
     // ★★★★ PRODUCTION BELONGS ON THIS LINE NOW, AND COULD NOT BEFORE.
     //
-    // Science and culture arrive as seat totals; production only ever existed
-    // per-city, and `StateCity` was not reading it (see the field). Summing the
-    // export's own per-city figure gives the same civ6-versus-CIVVIS comparison for
-    // the yield that decides what every city builds.
-    //
-    // ⚠ Only cities the export actually reported a figure for are summed, so an
-    // older mod reads as unknown rather than as zero — the same rule the seat totals
-    // follow. `unknown_metric` is negative, which is why the filter is `>= 0`.
-    let host_production: f64 = state
-        .cities
-        .iter()
-        .map(|city| city.production)
-        .filter(|value| *value >= 0.0)
-        .sum();
+    // Use the exact empire total first. `StateCity.production` is the
+    // BuildQueue's whole-number `GetProductionYield()` reading, not the city's
+    // exact `City:GetYield(YieldTypes.PRODUCTION)` value; summing it manufactured
+    // a recurring +3% drift on the live Science run even while the exact city
+    // yields and `public_stats.production` agreed. Fall back to exact per-city
+    // yields for exports that predate `public_stats`, but only when every city is
+    // present and has a finite reading so a partial export cannot look complete.
+    let host_production = state
+        .public_stats
+        .production
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .or_else(|| {
+            let values: Vec<f64> = state
+                .cities
+                .iter()
+                .filter_map(|city| city.yields.map(|yields| yields.production))
+                .collect();
+            (!values.is_empty()
+                && values.len() == state.cities.len()
+                && values
+                    .iter()
+                    .all(|value| value.is_finite() && *value >= 0.0))
+            .then(|| values.into_iter().sum())
+        });
     let pct = |ours: f64, theirs: f64| {
         if theirs.abs() < 1e-6 {
             return "n/a".to_string();
@@ -7517,14 +7577,14 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     };
     // Omitted rather than printed as 0.0/x when no city reported a figure, so an
     // older mod is silent here instead of claiming a 100% drift.
-    let production_part = match host_production > 0.0 {
-        true => format!(
+    let production_part = match host_production.filter(|value| *value > 0.0) {
+        Some(host_production) => format!(
             " production {:.1}/{:.1} {}",
             host_production,
             production,
             pct(production, host_production)
         ),
-        false => String::new(),
+        None => String::new(),
     };
     Some(format!(
         "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}{}",
@@ -8009,6 +8069,14 @@ fn civvis_belief_name(rules: &crate::rules::Rules, civ6: &str) -> Option<String>
         .strip_prefix("BELIEF_")
         .unwrap_or(civ6.trim())
         .to_ascii_lowercase();
+    // Gathering Storm's XML calls this `BELIEF_DEFENDER_OF_FAITH`, while the
+    // model keeps the unambiguous `defender_of_the_faith` node. The fidelity
+    // audit has the same shipped-data alias; the live mirror must use it too or
+    // the already-implemented combat bonus is silently absent in-game.
+    let name = match name.as_str() {
+        "defender_of_faith" => "defender_of_the_faith".to_string(),
+        _ => name,
+    };
     [
         &rules.beliefs.pantheon,
         &rules.beliefs.founder,
@@ -9385,6 +9453,57 @@ fn apply_observed_city_economy(
     }
 }
 
+/// Apply city facts that affect `city_yields_model` before deriving the
+/// host-to-model correction. A fresh reconstruction initially marks the first
+/// planted city as the capital; the host can have moved its Palace elsewhere.
+/// Population, loyalty and pillage state also affect the modeled total.
+fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot) {
+    // Which seats the export names a capital for. A record that flags none
+    // (an older export, or a fixture) keeps `place_city`'s own choice rather
+    // than clearing every flag and leaving the seat capital-less.
+    let flagged_capitals: std::collections::BTreeSet<usize> = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
+        .filter(|observed| observed.capital)
+        .filter_map(|observed| {
+            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
+                .map(|cid| game.cities[&cid].owner)
+        })
+        .collect();
+    let cities = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
+    for observed in cities {
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else {
+            continue;
+        };
+        // Population drives Loyalty pressure in a nine-tile radius. Rival and
+        // city-state cities are planted at population one, so this has to land
+        // before any yield or pressure correction is measured.
+        if observed.pop > 0 {
+            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
+        }
+        // `city_has_palace` reads this positional fact; do not leave the
+        // reconstruction's first planted city capital after a Palace move.
+        if flagged_capitals.contains(&game.cities[&cid].owner) {
+            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
+        }
+        apply_city_health(game, cid, observed);
+        if observed.loyalty_per_turn.is_finite() {
+            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
+                .insert(cid, observed.loyalty_per_turn);
+        }
+        if observed.defense.is_finite() && observed.defense >= 0.0 {
+            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
+        }
+    }
+}
+
 fn apply_observed_host_metrics(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -9429,6 +9548,9 @@ fn apply_observed_host_metrics(
             .map(|value| value as usize);
     }
 
+    // These fields participate in the model itself, so settle them before
+    // measuring the host-to-model city correction.
+    apply_observed_city_facts(game, state);
     apply_observed_city_economy(game, state, snapshot, unmapped);
 
     let mut derived = crate::rules::Yields::default();
@@ -9479,63 +9601,6 @@ fn apply_observed_host_metrics(
     {
         Arc::make_mut(&mut game.observed_yield_adjustments).insert(0, adjustment);
     }
-    // Which seats the export names a capital for. A record that flags none
-    // (an older export, or a fixture) keeps `place_city`'s own choice rather
-    // than clearing every flag and leaving the seat capital-less.
-    let flagged_capitals: std::collections::BTreeSet<usize> = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
-        .filter(|observed| observed.capital)
-        .filter_map(|observed| {
-            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
-                .map(|cid| game.cities[&cid].owner)
-        })
-        .collect();
-    let cities = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
-    for observed in cities {
-        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
-        let Some(cid) = game.city_at(pos) else {
-            continue;
-        };
-        // Population drives Loyalty pressure in a nine-tile radius. The own-city
-        // rebuild copied it earlier, but visible rival and city-state cities stayed
-        // at `place_city`'s population-one default. In the live Cumae failure that
-        // made population-six Stirling exert one sixth of the pressure Firaxis was
-        // applying, so a forecast built on this otherwise exact board was safe only
-        // because the most important input had been dropped.
-        if observed.pop > 0 {
-            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
-        }
-        // ★★★★ WHERE THE PALACE IS. `place_city` flags the first city it seats
-        // for a player as the capital, so a seat that lost its founding city
-        // kept its Palace on whichever city the export happened to list first.
-        // Measured on run civvis-20260816T040537Z: Rome fell at t79, the host
-        // moved the Palace to Aquileia (`capital: true`), and the model paid it
-        // in Antium instead — Aquileia short 5 Gold, 2 Production, 2 Science
-        // and 1 Culture every turn to the end of the game while Antium was
-        // over by the same, the single largest persistent gap of the run. The
-        // host's `IsCapital` is the current capital, exactly what
-        // `city_has_palace` reads; every mirrored city takes it, rivals and
-        // city-states included, so their Palaces sit where the host's do.
-        if flagged_capitals.contains(&game.cities[&cid].owner) {
-            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
-        }
-        apply_city_health(game, cid, observed);
-        if observed.loyalty_per_turn.is_finite() {
-            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
-                .insert(cid, observed.loyalty_per_turn);
-        }
-        if observed.defense.is_finite() && observed.defense >= 0.0 {
-            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
-        }
-    }
-
     // ★★★★★ THE RIVALS' SEATS LAST, AFTER THEIR CITIES ARE FINISHED.
     //
     // A correction is `host − model`, and the model of a rival city moves
@@ -10166,6 +10231,10 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
             ("player_ages", BOTH, step_player_ages),
             ("host_congress", BOTH, step_host_congress),
+            // Climate changes the yields of flooded plots. It must be applied
+            // before host-to-model city and empire calibration below, or a
+            // later flood invalidates the correction measured on the old map.
+            ("host_climate", BOTH, step_host_climate),
             ("observed_host_metrics", BOTH, step_observed_host_metrics),
             ("loyalty_doomed_sites", BOTH, step_loyalty_doomed_sites),
         ],
@@ -10174,7 +10243,6 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
         HostPhase::Finish,
         &[
             ("player_ages", BOTH, step_player_ages),
-            ("host_climate", BOTH, step_host_climate),
             ("record_host_observed", BOTH, step_record_host_observed),
         ],
     ),

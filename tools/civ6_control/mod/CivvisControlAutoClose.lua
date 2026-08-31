@@ -211,6 +211,77 @@ end
 if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
 if not haveScreen() then pcall(function() include(NAME); end); end
 
+-- A stock diplomacy context can be visible before its own InitializeView has
+-- completed. In that state CloseFocusedState() calls Close(), but the stock
+-- UninitializeView() returns before ContextPtr:SetHide(true), so every native
+-- close path can report success while the context remains over the map. This
+-- is not a dialogue to answer: the action view has no active session, and the
+-- deal view has no open session to reject. Prove both facts, give the shipped
+-- close path one last chance, then hide only that stale, session-less context.
+-- A failed state read is treated as unsafe and leaves the desktop backstop in
+-- charge; this must never become a blind click equivalent.
+local function closeStaleDiplomacyContext()
+	if NAME ~= "DiplomacyActionView" and NAME ~= "DiplomacyDealView" then
+		return false;
+	end
+
+	local visible = false;
+	if not pcall(function() visible = not ContextPtr:IsHidden(); end) or not visible then
+		return false;
+	end
+
+	local sessionOpen = false;
+	local sessionReadable = true;
+	if NAME == "DiplomacyActionView" then
+		sessionReadable = pcall(function() sessionOpen = ms_ActiveSessionID ~= nil; end);
+	elseif g_OtherPlayer ~= nil then
+		-- DiplomacyDealView keeps the other-player handle global. If it is not
+		-- present there is no deal session to close; if it is present, require
+		-- Firaxis' own session lookup to prove that the session is gone.
+		sessionReadable = pcall(function()
+			local sessionID = DiplomacyManager.FindOpenSessionID(
+				Game.GetLocalPlayer(), g_OtherPlayer:GetID());
+			sessionOpen = sessionID ~= nil;
+		end);
+	end
+	if not sessionReadable or sessionOpen then return false; end
+
+	-- A visible native popup is still an actionable state. Let its own ladder
+	-- consume it instead of hiding its parent context underneath it. The action
+	-- view's popup handle is global in the shipped script; the deal view keeps
+	-- its handle local, so its session check above is the available proof.
+	if NAME == "DiplomacyActionView" and m_PopupDialog ~= nil then
+		local popupOpen = false;
+		local popupReadable = pcall(function() popupOpen = m_PopupDialog:IsOpen(); end);
+		if not popupReadable or popupOpen then return false; end
+	end
+
+	local nativeClose = false;
+	if NAME == "DiplomacyActionView" and type(Close) == "function" then
+		nativeClose = pcall(Close);
+	elseif NAME == "DiplomacyDealView" and type(OnContinue) == "function" then
+		nativeClose = pcall(OnContinue);
+	else
+		return false;
+	end
+
+	local hidden = false;
+	local hiddenReadable = pcall(function() hidden = ContextPtr:IsHidden(); end);
+	if not hiddenReadable then return false; end
+	if hidden then return true; end
+
+	-- The native path above is deliberately first: this branch is only for the
+	-- stock uninitialized-context bug, where UninitializeView returned false.
+	local hideCalled = pcall(function() ContextPtr:SetHide(true); end);
+	local hiddenAfterFallback = false;
+	local fallbackReadable = pcall(function() hiddenAfterFallback = ContextPtr:IsHidden(); end);
+	if hideCalled and fallbackReadable and hiddenAfterFallback then
+		report("autoclose_stale_hide", string.format(',"native_close":%s', tostring(nativeClose)));
+		return true;
+	end
+	return false;
+end
+
 -- InGamePopup is the one context here that renders more than one kind of
 -- thing. Every generic in-game dialog goes through it: "your unit has been
 -- captured", which has a single button and asks nothing, and "raze or keep
@@ -410,6 +481,7 @@ local function endScreen(attempt)
 		OnAccept();
 		return true;
 	end
+	if closeStaleDiplomacyContext() then return true; end
 	-- ⚠ THE MEET-A-NEW-CIV SCREEN NEEDS ITS OWN EXIT.
 	--
 	-- `OnClose`/`Close` do not clear a leader conversation, and the operator saw
@@ -600,6 +672,8 @@ else
 	-- be permanent.
 	local reported = false;
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
+	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
+	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
 
 	-- ★★★★★ A DEAL SESSION CIVVIS OPENED IS NOT A SCREEN TO REFUSE. The
 	-- agent's sale, passage and peace arms now ask inside a `MAKE_DEAL`
@@ -626,6 +700,45 @@ else
 	-- How long to leave a screen alone once it has refused GIVE_UP_AFTER times.
 	-- Long enough not to hammer it, short enough that the map comes back on its
 	-- own if whatever held it goes away.
+	-- How often this context says it is alive. One a minute per armed screen
+	-- is enough to bracket a wedge (the outside watchdog allows five minutes)
+	-- without filling the log: a full 250-turn game adds a few hundred bytes.
+	-- ★★★★ ANSWERED, AND THE ANSWER IS NO: A HIDDEN CONTEXT DOES NOT TICK.
+	--
+	-- This was built to decide whether the UI thread outlives a parked Game
+	-- Core, because if it did, a nudge from this side could unpark a turn the
+	-- agent can no longer reach. Run civvis-20260829T194002Z settles it:
+	-- **two** heartbeats across 121 turns, both `"up":true`, both from the one
+	-- screen that was actually showing.
+	--
+	-- 600 frames took 5.0 seconds, so the game renders about 120fps. Were
+	-- `SetUpdate` running on hidden contexts, each of the two dozen armed
+	-- screens would have emitted one every five seconds — hundreds apiece over
+	-- a 35-minute game. So `ContextPtr:SetUpdate` runs only while its context
+	-- is visible, and there is NO always-on UI tick here.
+	--
+	-- ⚠ Do not rebuild the in-mod nudge on this: there is nothing to hang it
+	-- on. An EXTERNAL keystroke is a different path and is unaffected — the
+	-- harness sends SHIFT+RETURN through the OS into the app's event loop
+	-- rather than through any mod tick (`macos_input.press_key`, #2781). If a
+	-- parked turn is recoverable at all, that is where to try it.
+	--
+	-- The heartbeat stays because it still reports something real and cheap:
+	-- a screen that held the UI for five seconds or more, which is the shape a
+	-- stuck popup makes.
+	--
+	-- Counted in FRAMES, not seconds, and that is the whole point.
+	--
+	-- The first attempt accumulated `fDTime` to sixty seconds and emitted
+	-- NOTHING across a whole game, which looked like an answer and was not:
+	-- each popup context is only up for a second or two at a time, so a
+	-- per-context clock can never reach sixty however alive the thread is.
+	-- A frame counter climbs whenever `tick` is CALLED, which is exactly the
+	-- question — and carrying the seconds alongside it separates the two
+	-- remaining possibilities: frames climbing with seconds near zero means
+	-- the tick runs while hidden but `fDTime` is not meaningful there, and
+	-- no frames at all means `SetUpdate` does not run on a hidden context.
+	local HEARTBEAT_FRAMES = 600;
 	local RETRY_SECONDS = 30.0;
 	local DIALOGUE_READY_RETRY_SECONDS = 0.05;
 
@@ -686,6 +799,41 @@ else
 	end
 
 	local function tick(fDTime)
+		-- ★★★★ PROOF THAT THE UI THREAD IS STILL ALIVE WHILE THE GAME IS NOT.
+		--
+		-- The dominant way a run now dies is a parked Game Core: the agent reports
+		-- one blocker, then `GameCoreEventPublishComplete` stops firing and the
+		-- agent — which is driven ONLY by that event — never ticks again. Every
+		-- sampled thread sits in `__psynch_cvwait`; of 35 threads in the sample
+		-- from run civvis-20260829T163259Z exactly one had a non-idle frame, and
+		-- that was a single Metal sample. The game is computing nothing and
+		-- waiting for input only the controller can give.
+		--
+		-- Whether that is recoverable turns on one question this log could not
+		-- answer: is the UI thread still running? The agent's silence proves
+		-- nothing about it, and this context's silence proves nothing either,
+		-- because it only ever spoke when a screen was up. So say so once a
+		-- minute. `ContextPtr:SetUpdate` runs on the UI thread every frame even
+		-- while this screen is hidden — that is why `isUp()` is the first thing
+		-- below — so a heartbeat here is a heartbeat for the whole UI context.
+		--
+		-- ⚠ A per-frame `SetUpdate` is NOT available to the agent: it was tried
+		-- and does not run in a script-only in-game context (see the note beside
+		-- `onGameCoreTick`). That is exactly why the answer has to come from here.
+		--
+		-- Read it as: heartbeats continuing after the agent's last event means the
+		-- UI thread lives and a nudge from this side could unpark the turn;
+		-- heartbeats stopping too means the whole process is gone and only the
+		-- outside watchdog can help.
+		heartbeatFrames = heartbeatFrames + 1;
+		heartbeatSeconds = heartbeatSeconds + (tonumber(fDTime) or 0);
+		if heartbeatFrames >= HEARTBEAT_FRAMES then
+			report("ui_heartbeat", string.format(',"frames":%d,"seconds":%.1f,"up":%s',
+			                                     heartbeatFrames, heartbeatSeconds,
+			                                     tostring(isUp())));
+			heartbeatFrames = 0;
+			heartbeatSeconds = 0;
+		end
 		if not isUp() then
 			showing = false;
 			closes = 0;

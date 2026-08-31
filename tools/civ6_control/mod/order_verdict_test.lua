@@ -120,10 +120,13 @@ UnitManager = {
 		if host.refuse[id] and host.refuse[id][hash] then return false end
 		return true
 	end,
-	RequestOperation = function(unit, hash, params)
+	RequestOperation = function(...)
+		local argc = select("#", ...)
+		local unit, hash, params = ...
 		local u = host.units[unit.GetID()]
 		host.ops[#host.ops + 1] = { id = u.id, op = hash,
-			x = params and params.x or nil, y = params and params.y or nil }
+			argc = argc, x = params and params.x or nil,
+			y = params and params.y or nil }
 		if hash == "UNITOPERATION_MOVE_TO" then
 			-- Asynchronous, like the host: the unit arrives only when the
 			-- test says so (`host.arrive`), unless the walk was priced dead.
@@ -250,6 +253,8 @@ host.units[10] = { id = 10, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 -- 1. Turn 7: one order, applied by return code, named both ways.
 applyOrders(player, PID, 7, { row(10, "FORTIFY") })
 local turn7 = lastEvent("turn")
+check("t7 parameterless operation uses the UnitPanel signature",
+	host.ops[#host.ops].argc, 2)
 check("t7 orders_seen", field(turn7, "orders_seen"), 1)
 check("t7 orders_applied (return code)", field(turn7, "orders_applied"), 1)
 check("t7 orders_reported", field(turn7, "orders_reported"), 1)

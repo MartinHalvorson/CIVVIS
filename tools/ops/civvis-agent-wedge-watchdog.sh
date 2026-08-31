@@ -39,6 +39,18 @@ CONFIRM=${CIVVIS_WEDGE_CONFIRM:-2}
 # tried its bounded forfeit ladder; this separate guard keeps the unattended
 # lane from spending the rest of the timeout on that one board.
 BLOCKER_STREAK=${CIVVIS_WEDGE_BLOCKER_STREAK:-6}
+# ⭐⭐⭐ A DEEP WEDGED GAME IS HANDED TO THE CLIMB, NOT DESTROYED. Civ 6 writes
+# an autosave every turn and `civ6_civvis_climb.py` can reload one into a FRESH
+# Civ 6 (`resume_from_autosave` -> `civ6_play --load-save`), which is the only
+# thing that recovers a parked core: the deadlocked process is replaced and the
+# match is kept. Killing the climb here threw that away — 7 `-contN` runs exist,
+# all from 08-17..19, none since this watchdog began signalling. So past this
+# turn, signal ONLY the player and leave the climb alive to do the reload.
+RESUME_FLOOR=${CIVVIS_WEDGE_RESUME_MIN_TURN:-20}
+# Polls with no owned player after a handoff before the climb is presumed hung
+# and terminated after all. This watchdog exists for a climb that is itself
+# blocked, so the handoff must never become a way for one to sit forever.
+HANDOFF_GRACE=${CIVVIS_WEDGE_HANDOFF_GRACE:-12}
 # Consecutive one-minute samples with no synchronized game progress before a
 # clean recovery. Five means roughly five minutes after the first trustworthy
 # sample — shorter than the harness's eight-minute frozen-turn backstop, but
@@ -46,6 +58,22 @@ BLOCKER_STREAK=${CIVVIS_WEDGE_BLOCKER_STREAK:-6}
 PROGRESS_CONFIRM=${CIVVIS_WEDGE_PROGRESS_CONFIRM:-5}
 PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 SELF_DIR=${0:A:h}
+
+# ⚠⚠⚠ THIS PROCESS OUTLIVES ITS OWN SOURCE, AND THAT HAS COST REAL FIXES.
+#
+# zsh parses a function once; a long-running loop therefore keeps whatever the
+# file said when it started. The supervisor refreshes the mirror every cycle, so
+# a merged repair lands on disk while THIS process goes on running the old one —
+# and the ladder looks patched when it is not. It has happened three times in
+# this project (the mirror, the popup clearer, and this watchdog twice), and on
+# 2026-08-30 it delayed the parked-core repair across three consecutive wedges
+# until it was restarted by hand.
+#
+# So notice, and hand over. `exec` replaces this process in place, which keeps
+# the pid the interactive host adopted and the lock it already owns; the file is
+# re-read from scratch, so the next loop runs the new code.
+SELF_PATH=${0:A}
+SELF_STAMP=$(/usr/bin/stat -f '%m %z' "$SELF_PATH" 2>/dev/null || print -r -- "unknown")
 STATE_READER=${CIVVIS_WEDGE_STATE_READER:-${SELF_DIR}/civvis_watchdog_state.py}
 LOCK=${CIVVIS_WEDGE_LOCK:-$HOME/.civvis-agent-wedge-watchdog.lock}
 
@@ -120,8 +148,45 @@ player_uses_tag() {
 # cleanup runs before the player sees SIGINT; SIGTERM on civ6_play skips atexit
 # and can strand the run tag for the successor game.  Both PIDs were proven as
 # one climb-owned pair by owned_climb_and_player before this is called.
+# How long to let a forced end turn act before asking again whether the game
+# moved. Long enough for Civilization VI to process the keystroke and publish a
+# turn, short enough that a game which is truly gone is not held open: the
+# strikes that got here already cost five minutes.
+NUDGE_SETTLE_S=${CIVVIS_WEDGE_NUDGE_SETTLE_S:-25}
+
+# ⚠⚠ ONE FORCED END TURN, TRIED BEFORE THE KILL, because most games die here.
+#
+# Nine of twelve recent runs ended on a parked Game Core: the agent reports one
+# blocker, `GameCoreEventPublishComplete` stops firing, and the agent — driven
+# only by that event — never ticks again. The mod cannot reach the game from
+# inside, and there is no UI tick to borrow either, because
+# `ContextPtr:SetUpdate` runs only while its context is visible (#2784).
+#
+# An external keystroke is the one path left: it enters through the OS into the
+# application's event loop rather than through any mod tick. SHIFT+RETURN is
+# Civilization VI's forced end turn, the same action the mod issues as
+# `ACTION_ENDTURN` with `REASON = "UserForced"` when it can still run.
+#
+# ⚠ Safe ONLY here. A forced end turn on a healthy game would be a real hazard,
+# so this runs after the no-progress test has already condemned the run. Its
+# failure never blocks the restart.
+#
+# `SELF_DIR` is `${0:A:h}`, so the tool is found beside this script's own
+# checkout rather than through a named path — the rule the other ops scripts
+# follow, and why a symlinked copy still works.
+nudge_end_turn() {
+  local nudge_tool="$SELF_DIR/../civ6_nudge_end_turn.py"
+  [[ -r "$nudge_tool" ]] || return 1
+  if "${PYTHON:-python3}" "$nudge_tool" >/dev/null 2>&1; then
+    say "  sent SHIFT+RETURN to a parked game"
+    return 0
+  fi
+  say "  could not send SHIFT+RETURN"
+  return 1
+}
+
 restart_attempt() {
-  local reason="$1" climb="$2" play="$3" tag="$4"
+  local reason="$1" climb="$2" play="$3" tag="$4" turn="${5:-0}"
   if ! is_python_harness "$climb" "civ6_civvis_climb.py" \
       || ! player_uses_tag "$play" "$tag"; then
     say "$tag recovery target is no longer the proven owned pair; leaving it alone"
@@ -156,6 +221,16 @@ restart_attempt() {
   else
     say "  no Civ 6 process to sample; restarting without it"
   fi
+  if [[ "$turn" =~ '^[0-9]+$' ]] && (( turn >= RESUME_FLOOR )) \
+      && [[ "$tag" != "$handoff_tag" ]]; then
+    say "$reason; t${turn} is worth reloading, handing to the climb (INT civ6_play only)"
+    handoff_tag="$tag"
+    handoff_climb="$climb"
+    handoff_polls=0
+    player_uses_tag "$play" "$tag" \
+      && kill -INT "$play" 2>/dev/null && say "  INT civ6_play $play"
+    return 0
+  fi
   say "$reason; restarting (TERM climb, then INT civ6_play)"
   kill -TERM "$climb" 2>/dev/null && say "  TERM climb $climb"
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -187,10 +262,39 @@ strikes=0
 progress_strikes=0
 last_progress=""
 last_tag=""
+handoff_tag=""
+handoff_climb=""
+handoff_polls=0
 last_unowned_tag=""
 while true; do
   sleep "$POLL_S"
-  tag=$(ls -t "$RUNS" 2>/dev/null | grep '^civvis-' | head -1)
+  # Cheap: two numbers from one stat, once a minute. Deliberately mtime+size
+  # rather than a hash — a rewritten script always changes one of them, and a
+  # hash of a file being written mid-refresh could be read torn.
+  now_stamp=$(/usr/bin/stat -f '%m %z' "$SELF_PATH" 2>/dev/null || print -r -- "unknown")
+  if [[ "$now_stamp" != "unknown" && "$now_stamp" != "$SELF_STAMP" ]]; then
+    say "own script changed on disk; re-executing so the next loop runs it"
+    # ⚠⚠ RELEASE THE LOCK FIRST. `exec` keeps this pid, and the EXIT trap does
+    # not run when the image is replaced — so the new one would find the lock
+    # held by a pid that is very much alive (its own), log "another watchdog is
+    # alive" and exit 0. It would only come back because the interactive host
+    # restarts it seconds later, which is a long way round for something this
+    # loop can simply hand over.
+    rm -rf -- "$LOCK"
+    exec /bin/zsh "$SELF_PATH"
+  fi
+  # ⚠⚠ PICK THE RUN BY ITS events.jsonl, NOT BY ITS DIRECTORY. A directory's
+  # mtime changes whenever an entry is created or removed in it — and opening a
+  # run's `orders.sqlite`, even read-only, creates `-shm`/`-wal` beside it. So
+  # ANY analysis tool run against a finished game promotes that game to
+  # "newest", and the watchdog then reports "does not match the proven
+  # climb-owned player; leaving it alone" every poll while the LIVE game goes
+  # unguarded. Observed 2026-08-30: two runs from hours earlier were touched by
+  # a read-only query and the watchdog followed them instead of the live t57
+  # game. `events.jsonl` is appended by the mod itself, so its mtime is the
+  # game that is actually being played.
+  tag=$(ls -t "$RUNS"/civvis-*/events.jsonl 2>/dev/null | head -1)
+  tag=${tag:h:t}
   [[ -z "$tag" ]] && { strikes=0; reset_progress; continue }
   ownership=$(owned_climb_and_player || true)
   if [[ -z "$ownership" ]]; then
@@ -202,11 +306,23 @@ while true; do
       say "$tag has an unowned direct civ6_play; watchdog will not signal it"
       last_unowned_tag="$tag"
     fi
+    if [[ -n "$handoff_tag" ]]; then
+      handoff_polls=$(( handoff_polls + 1 ))
+      if (( handoff_polls >= HANDOFF_GRACE )); then
+        say "no player ${handoff_polls} poll(s) after handing $handoff_tag to the climb; TERM climb $handoff_climb"
+        kill -TERM "$handoff_climb" 2>/dev/null
+        handoff_tag=""; handoff_climb=""; handoff_polls=0
+      fi
+    fi
     strikes=0
     reset_progress
     continue
   fi
   read -r climb_pid play_pid <<< "$ownership"
+  if [[ -n "$handoff_tag" && "$tag" != "$handoff_tag" ]]; then
+    say "$tag is playing after the handoff of $handoff_tag; the reload recovered the match"
+    handoff_tag=""; handoff_climb=""; handoff_polls=0
+  fi
   if ! player_uses_tag "$play_pid" "$tag"; then
     say "$tag does not match the proven climb-owned player; leaving it alone"
     strikes=0
@@ -236,7 +352,7 @@ while true; do
       && [[ "$blocker_count" =~ '^[0-9]+$' ]] \
       && (( blocker_count >= BLOCKER_STREAK )); then
     restart_attempt "$tag repeating unit blocker ${blocker_name} at t${blocker_turn} (${blocker_count} sightings)" \
-      "$climb_pid" "$play_pid" "$tag"
+      "$climb_pid" "$play_pid" "$tag" "$blocker_turn"
     strikes=0
     reset_progress
     continue
@@ -271,8 +387,37 @@ PY
       progress_strikes=$(( progress_strikes + 1 ))
       say "$tag no synchronized progress (${progress_signal}) strike ${progress_strikes}/${PROGRESS_CONFIRM}"
       if (( progress_strikes >= PROGRESS_CONFIRM )); then
+        # ⚠⚠ THE NUDGE NEEDS TIME, OR IT IS A GESTURE.
+        #
+        # `restart_attempt` sends SHIFT+RETURN and then kills, and the first
+        # live firing showed both landing in the SAME SECOND
+        # (02:10:34 "sent SHIFT+RETURN", 02:10:34 "restarting"). A forced end
+        # turn cannot be observed to work if the game is destroyed before it
+        # can act on it, so the keystroke could never have demonstrated
+        # anything either way.
+        #
+        # So nudge FIRST, wait, then ask the progress question again. A turn
+        # that moved is a game recovered — the strikes reset and it plays on.
+        # One that did not is killed exactly as before, one wait later.
+        if nudge_end_turn; then
+          sleep "$NUDGE_SETTLE_S"
+          local after=""
+          if [[ -f "$STATE_READER" ]]; then
+            after=$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/status" 2>/dev/null \
+              | python3 "$STATE_READER" --progress "$RUNS/$tag/events.jsonl" \
+                  --max-turn-skew "$PROGRESS_TURN_SKEW" 2>/dev/null || true)
+          fi
+          if [[ -n "$after" && "$after" != "$progress_signal" ]]; then
+            say "$tag the forced end turn moved it (${progress_signal} -> ${after}); not restarting"
+            last_progress="$after"
+            progress_strikes=0
+            strikes=0
+            continue
+          fi
+          say "$tag the forced end turn changed nothing; restarting"
+        fi
         restart_attempt "$tag NO GAME PROGRESS confirmed at t${mirror_turn}" \
-          "$climb_pid" "$play_pid" "$tag"
+          "$climb_pid" "$play_pid" "$tag" "$mirror_turn"
         strikes=0
         reset_progress
         continue
@@ -291,7 +436,7 @@ PY
     strikes=$(( strikes + 1 ))
     say "$tag agent t${agent_turn} vs game t${mirror_turn} (gap ${gap}) strike ${strikes}/${CONFIRM}"
     if (( strikes >= CONFIRM )); then
-      restart_attempt "$tag DEAD AGENT confirmed" "$climb_pid" "$play_pid" "$tag"
+      restart_attempt "$tag DEAD AGENT confirmed" "$climb_pid" "$play_pid" "$tag" "$mirror_turn"
       strikes=0
       reset_progress
     fi

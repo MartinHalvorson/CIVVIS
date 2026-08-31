@@ -259,3 +259,137 @@ class HallOfFameTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheBoardIsReadAtTheStartOfTheTurn(unittest.TestCase):
+    """⚠⚠⚠ `_states` KEPT THE LAST FRAME OF EACH TURN, NOT THE FIRST.
+
+    137 of 150 turns in an ordinary run carry more than one `state` event — the
+    mid-turn replan and combat frames each export another. Every caller uses the
+    entry as the board an order was decided FROM, so the last frame is the board
+    AFTER that order already moved the unit.
+
+    `self_tile` counts a MOVE_TO whose destination equals the unit's position,
+    so judged against the last frame it counts every order that ARRIVED. On run
+    `civvis-20260830T121826Z`, 698 first-moves with both frames known: 574
+    self_tile (82%) against the last frame, ZERO against the first. And because
+    `self_tile` is skipped before the arrival verdict, the reported "arrived
+    16.8%" was computed after discarding 82% of the orders that had arrived —
+    correcting it moved the same run to 701 judged and **arrived 68.9%**.
+    """
+
+    def test_the_first_frame_of_a_turn_wins(self):
+        events = [
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 1, "y": 1}]},
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 2, "y": 1}]},
+            {"kind": "state", "turn": 5, "units": [{"id": 7, "x": 2, "y": 1}]},
+        ]
+        states = ledger._states(events)
+        self.assertEqual(states[4]["units"][0]["x"], 1,
+                         "the board an order was decided from, not the one it produced")
+        self.assertEqual(states[5]["units"][0]["x"], 2)
+
+    def test_a_move_that_arrived_is_not_counted_as_a_self_tile_order(self):
+        """The whole defect in one case: unit 7 is ordered from (1,1) to (2,1),
+        gets there, and a later frame in the same turn reports it at (2,1)."""
+        events = [
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 1, "y": 1, "kind": "warrior"}]},
+            {"kind": "state", "turn": 4, "units": [{"id": 7, "x": 2, "y": 1, "kind": "warrior"}]},
+            {"kind": "state", "turn": 5, "units": [{"id": 7, "x": 2, "y": 1, "kind": "warrior"}]},
+        ]
+        states = ledger._states(events)
+        before = states[4]["units"][0]
+        self.assertNotEqual((before["x"], before["y"]), (2, 1),
+                            "judged against the first frame it is a real move")
+
+
+class TheQueueIsReportedAgainstItsOwnStream(unittest.TestCase):
+    """⚠⚠⚠ TWO STREAMS PRINTED AS A RATIO READ AS AN 82% LOSS THAT DOES NOT EXIST.
+
+    `queued_followups` sums the `queued` field of `orders` events; `applied` and
+    `refused` come from the far rarer `orders_queue` drain events. On run
+    `civvis-20260830T121826Z` that was 410 `orders` events totalling 865 against
+    82 drains totalling 148 applied — printed side by side as "865 follow-ups
+    queued, 148 applied". Within the drain stream the same run is queued 159,
+    applied 148, refused 11: **93% applied**. The follow-up queue was working.
+    """
+
+    EVENTS = [
+        {"kind": "orders", "queued": 5},
+        {"kind": "orders", "queued": 4},
+        {"kind": "orders_queue", "queued": 3, "applied": 3, "refused": 0},
+        {"kind": "orders_queue", "queued": 2, "applied": 1, "refused": 1},
+    ]
+
+    def test_the_drain_carries_its_own_denominator(self):
+        queue = ledger.orders_section(self.EVENTS, [])["queue"]
+        self.assertEqual(queue["drained"], 5, "3 + 2 from the drain events")
+        self.assertEqual(queue["applied"], 4)
+        self.assertEqual(queue["refused"], 1)
+
+    def test_the_decider_side_total_is_kept_but_separate(self):
+        """Still reported — it is real — just never as this one's denominator."""
+        queue = ledger.orders_section(self.EVENTS, [])["queue"]
+        self.assertEqual(queue["queued_followups"], 9, "5 + 4 from the orders events")
+        self.assertNotEqual(queue["queued_followups"], queue["drained"])
+
+
+class HoldingGroundIsNotHovering(unittest.TestCase):
+    """⚠ A FORTIFIED UNIT THAT NEITHER MOVED NOR STRUCK IS DOING ITS JOB.
+
+    "Hovering" counts a military unit 2–4 tiles from a hostile that did not move
+    and did not attack — which is also the exact description of a defender under
+    orders, and run `civvis-20260830T121826Z` carries 333 FORTIFY orders. Of its
+    105 hovering unit-turns only 17 were fortified; the other 88 are unfortified
+    units standing near an enemy doing nothing, and that is the number worth
+    acting on.
+    """
+
+    def _events(self, fortified):
+        near = {"id": 1, "x": 5, "y": 5, "kind": "warrior", "class": "military",
+                "combat": 20, "fortified": fortified}
+        hostile = {"id": 99, "x": 8, "y": 5, "kind": "warrior", "class": "military",
+                   "combat": 20, "owner": 1}
+        return [
+            {"kind": "state", "turn": 1, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+            {"kind": "state", "turn": 2, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+        ]
+
+    def _events_hp(self, hp):
+        near = {"id": 1, "x": 5, "y": 5, "kind": "warrior", "class": "military",
+                "combat": 20, "fortified": False, "hp": hp}
+        hostile = {"id": 99, "x": 8, "y": 5, "kind": "warrior", "class": "military",
+                   "combat": 20, "owner": 1}
+        return [
+            {"kind": "state", "turn": 1, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+            {"kind": "state", "turn": 2, "units": [near], "rivals": [],
+             "hostiles": [hostile]},
+        ]
+
+    def test_the_split_accounts_for_every_hovering_unit_turn(self):
+        for fortified in (True, False):
+            section = ledger.hover_section(self._events(fortified), [])
+            total = section["hovering_unit_turns"]
+            self.assertEqual(
+                section["hovering_fortified"] + section["hovering_healing"]
+                + section["hovering_unexplained"], total,
+                "the three parts must account for every hovering unit-turn")
+            if total:
+                self.assertEqual(section["hovering_fortified"], 1 if fortified else 0)
+
+    def test_a_wounded_unit_resting_is_healing_not_loitering(self):
+        """⚠⚠ Civ 6 heals a unit that neither moves nor attacks, so "did nothing
+        beside an enemy" also describes a wounded unit doing the right thing. On
+        run civvis-20260830T121826Z these are 37 of 105 hovering unit-turns —
+        more than the fortified ones — and #2816 reported all 88 non-fortified as
+        "idle", overstating the defect by better than 2x."""
+        hurt = ledger.hover_section(self._events_hp(58), [])
+        whole = ledger.hover_section(self._events_hp(100), [])
+        if hurt["hovering_unit_turns"]:
+            self.assertEqual(hurt["hovering_healing"], 1)
+            self.assertEqual(hurt["hovering_unexplained"], 0)
+            self.assertEqual(whole["hovering_healing"], 0)
+            self.assertEqual(whole["hovering_unexplained"], 1)

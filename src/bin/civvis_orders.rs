@@ -55,10 +55,11 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
 
 /// Direct invocations without `--victory` must agree with the high-level
-/// launchers' one central default. The launcher chain selected Diplomacy after
-/// deployment-shaped evidence; keeping a named mirror here prevents a bare
+/// launchers' one central default. The launch chain aims at Science on the
+/// operator's 2026-08-30 instruction (see `civ6_play.DEFAULT_CIVVIS_VICTORY`
+/// for the evidence trail); keeping a named mirror here prevents a bare
 /// recovery or manual invocation from silently reviving an old lane.
-const DEFAULT_VICTORY: &str = "diplomatic";
+const DEFAULT_VICTORY: &str = "science";
 
 /// Build the agent for a `--victory` lane, or `None` if the name is not one.
 ///
@@ -139,6 +140,7 @@ fn quote(text: &str) -> String {
 /// a refusal rather than acted on.
 fn civ6_unit_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
+        "bireme" => "PHOENICIA_BIREME",
         "tagma" => "BYZANTINE_TAGMA",
         "legion" => "ROMAN_LEGION",
         "nau" => "PORTUGUESE_NAU",
@@ -809,6 +811,20 @@ impl HostCityStrikes {
 /// traversable, and every path — exploration, settlers, the army — routes
 /// around it. Revealed terrain is never overridden: once the plot is seen, its
 /// real terrain governs.
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct HostUnitOrderKey {
+    verb: String,
+    pos: Option<(i32, i32)>,
+}
+
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct HostDealOrderKey {
+    kind: &'static str,
+    subject: Option<i64>,
+    verb: Option<String>,
+    pos: Option<(i32, i32)>,
+}
+
 #[derive(Default)]
 struct HostMoveRefusals {
     /// The last `MOVE_TO` sent per host unit: where it stood, the long
@@ -819,6 +835,16 @@ struct HostMoveRefusals {
     pending_probes: std::collections::BTreeMap<i64, HostFrontierProbe>,
     /// Speculative plots proved unwalkable, in host offset coordinates.
     dead: std::collections::BTreeSet<(i32, i32)>,
+    /// Unit orders already emitted during the current turn, keyed by host unit.
+    /// Same-turn frames can still carry the previous frame's positions, so an
+    /// identical movement command is a replay of a request the host has already
+    /// consumed rather than a new route decision.
+    same_turn_orders: std::collections::BTreeMap<i64, std::collections::BTreeSet<HostUnitOrderKey>>,
+    /// The diplomacy arm also has one working deal per rival and keeps an ask
+    /// pending or cooling down across same-turn frames. An identical
+    /// `sell`/`buy` in a later frame therefore cannot be a new deal request.
+    same_turn_deal_orders: std::collections::BTreeSet<HostDealOrderKey>,
+    same_turn: Option<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -840,6 +866,68 @@ struct HostFrontierProbe {
 }
 
 impl HostMoveRefusals {
+    /// Drop exact, non-tactical unit and deal replays from later frames of one
+    /// turn.
+    ///
+    /// The host may apply a queued move before the next exported frame catches
+    /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
+    /// again; the host records that as `from == destination` / `move_refused`.
+    /// Waiting for the next turn is the only useful retry because this frame has
+    /// no newer authoritative position. FORTIFY and civilian CAPTURE have the
+    /// same stale-state failure mode. The diplomacy arm has the same shape:
+    /// its pending/cooldown guards mean a repeated deal order can only be
+    /// refused again. Attack orders are deliberately excluded: a fresh combat
+    /// frame may legitimately finish the same target.
+    fn suppress_same_turn_replays(
+        &mut self,
+        orders: &mut Vec<Order>,
+        state: &civvis::mirror::StateSnapshot,
+    ) -> usize {
+        if self.same_turn != Some(state.turn) {
+            self.same_turn = Some(state.turn);
+            self.same_turn_orders.clear();
+            self.same_turn_deal_orders.clear();
+        }
+        let frame = state.frame;
+        let mut dropped = 0;
+        orders.retain(|order| {
+            let Some(unit) = order.subject else {
+                return true;
+            };
+            let Some(verb) = order.verb.as_deref() else {
+                return true;
+            };
+            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
+                let key = HostUnitOrderKey {
+                    verb: verb.to_string(),
+                    pos: order.pos,
+                };
+                let seen = self.same_turn_orders.entry(unit).or_default();
+                let duplicate = !seen.insert(key);
+                if frame > 0 && duplicate {
+                    dropped += 1;
+                    return false;
+                }
+            }
+
+            if matches!(order.kind, "sell" | "buy") {
+                let key = HostDealOrderKey {
+                    kind: order.kind,
+                    subject: order.subject,
+                    verb: order.verb.clone(),
+                    pos: order.pos,
+                };
+                let duplicate = !self.same_turn_deal_orders.insert(key);
+                if frame > 0 && duplicate {
+                    dropped += 1;
+                    return false;
+                }
+            }
+            true
+        });
+        dropped
+    }
+
     /// Compare this turn's positions with last turn's orders.
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
         let sent = std::mem::take(&mut self.sent);
@@ -3676,6 +3764,15 @@ fn decide(
         note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
     }
 
+    // A same-turn replan can still be based on the previous frame's unit tile.
+    // Do this after frontier capping so a newly requested exact probe remains a
+    // real change, while an identical stale MOVE_TO/CAPTURE/FORTIFY is not sent
+    // twice to the host. Strike retries stay enabled; see the method comment.
+    let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state);
+    if same_turn_replays > 0 {
+        note_bits.push(format!("same_turn_replays={same_turn_replays}"));
+    }
+
     // Remember where each move sends which host unit, so next turn's positions
     // can prove a destination unwalkable. See `HostMoveRefusals`.
     host_move_refusals.record(&orders, state, &first_unknown_steps);
@@ -4753,6 +4850,10 @@ struct OrderCheck {
 /// Orders sent on one frame, held until a later turn's frame answers them.
 struct PendingOrders {
     turn: u32,
+    /// The mid-turn frame that supplied the board on which these orders were
+    /// decided. Frame 0 is the opening board; later frames are re-plans after
+    /// the host has drained some of the unit queue.
+    frame: u32,
     orders: Vec<IssuedOrder>,
     before: civvis::mirror::StateSnapshot,
 }
@@ -4831,7 +4932,7 @@ const EVIDENCE_KINDS: &[&str] = &[
     "move_refused",
 ];
 
-/// Ledger events of the evidence kinds stamped with one of `turns`.
+/// Ledger evidence and state frames stamped with one of `turns`.
 ///
 /// A rival answers a deal during its own part of the game turn, so the answer
 /// carries our turn; a callback that lands at the start of the next turn
@@ -4840,25 +4941,86 @@ const EVIDENCE_KINDS: &[&str] = &[
 /// ⚠ The relay re-encodes every line with `": "` spacing, so the cheap
 /// pre-filter looks for the quoted kind alone (as `state_from_events` does)
 /// and the parsed `kind` decides.
-fn ledger_evidence(path: &Path, turns: &[u32]) -> Vec<serde_json::Value> {
+fn ledger_evidence_and_states(
+    path: &Path,
+    turns: &[u32],
+) -> (Vec<serde_json::Value>, Vec<civvis::mirror::StateSnapshot>) {
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
-    raw.lines()
-        .filter(|line| {
-            EVIDENCE_KINDS
+    let mut evidence = Vec::new();
+    let mut states = Vec::new();
+    for line in raw.lines() {
+        if !line.contains("\"state\"")
+            && !EVIDENCE_KINDS
                 .iter()
-                .any(|k| line.contains(&format!("\"{k}\"")))
-        })
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|event| {
-            let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-            EVIDENCE_KINDS.contains(&kind)
-                && event
-                    .get("turn")
-                    .and_then(|t| t.as_u64())
-                    .is_some_and(|t| turns.iter().any(|want| u64::from(*want) == t))
-        })
+                .any(|kind| line.contains(&format!("\"{kind}\"")))
+        {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let turn = event.get("turn").and_then(|turn| turn.as_u64());
+        if !turn.is_some_and(|turn| turns.iter().any(|want| u64::from(*want) == turn)) {
+            continue;
+        }
+        let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+        if kind == "state" {
+            if let Ok(state) = serde_json::from_value(event) {
+                states.push(state);
+            }
+        } else if EVIDENCE_KINDS.contains(&kind) {
+            evidence.push(event);
+        }
+    }
+    (evidence, states)
+}
+
+/// Unit ids that were explicitly fortified on a later frame of this turn.
+fn later_fortified_units(
+    states: &[civvis::mirror::StateSnapshot],
+    turn: u32,
+    frame: u32,
+) -> std::collections::BTreeSet<i64> {
+    states
+        .iter()
+        .filter(|state| state.turn == turn && state.frame > frame)
+        .flat_map(|state| state.units.iter())
+        .filter(|unit| unit.fortified || unit.fortify_turns > 0)
+        .map(|unit| unit.id)
+        .collect()
+}
+
+/// Subjects the decider gave a MOVE_TO in a LATER frame of the same turn.
+///
+/// ⚠⚠⚠ A FORTIFY THE DECIDER ITSELF OVERRODE IS NOT A BRIDGE FAILURE.
+/// `not_fortified` is the second-largest failure reason on the ledger — 3124 of
+/// 5193 FORTIFY orders over the runs of 2026-08-30, 60% — and **95% of them had
+/// a MOVE_TO for the same unit in the same turn**. Splitting by order:
+///
+///     42%  FORTIFY then MOVE   (the later move clears the fortification)
+///     19%  moves both before and after the fortify
+///     39%  MOVE then FORTIFY   (should have stuck; a real question)
+///
+/// So roughly three fifths of the second-biggest "failure" is CIVVIS asking a
+/// unit to dig in and then walking it away. The verdict is mechanically right —
+/// the unit did not end up fortified — but reading it as `not_fortified` sends
+/// anyone auditing bridge health after an actuation bug that is not there.
+///
+/// Named separately, it stays out of the applied count (it genuinely did not
+/// apply) while saying whose decision it was.
+fn later_moved_units(
+    frames: &[PendingOrders],
+    turn: u32,
+    frame: u32,
+) -> std::collections::BTreeSet<i64> {
+    frames
+        .iter()
+        .filter(|pending| pending.turn == turn && pending.frame > frame)
+        .flat_map(|pending| pending.orders.iter())
+        .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+        .filter_map(|order| order.subject)
         .collect()
 }
 
@@ -5049,6 +5211,38 @@ fn unit_appeared_at_city(
     })
 }
 
+/// A newly visible unit can prove either a completed production order or a
+/// purchase made in the same turn. When both orders ask the same city for the
+/// same unit, the next frame cannot attribute the appearance to production.
+/// Keep that ambiguity from turning a refused queue replacement into a false
+/// `order_verified` row.
+fn production_unit_appearance_conflicts_with_purchase(
+    order: &IssuedOrder,
+    same_turn_orders: &[IssuedOrder],
+) -> bool {
+    order.kind == "produce"
+        && order
+            .verb
+            .as_deref()
+            .is_some_and(|verb| verb.starts_with("UNIT_"))
+        && same_turn_orders.iter().any(|other| {
+            matches!(other.kind.as_str(), "purchase" | "purchase_faith")
+                && other.subject == order.subject
+                && other.verb == order.verb
+        })
+}
+
+/// What later frames of the same turn say about a unit, for verdicts that a
+/// single frame cannot settle. Bundled rather than passed as loose flags so
+/// `verify_unit_order` stays inside clippy's argument limit.
+#[derive(Clone, Copy, Default)]
+struct LaterFrames {
+    /// The unit was fortified on a later frame, so a FORTIFY did land.
+    fortified: bool,
+    /// The decider moved it on a later frame, overriding its own FORTIFY.
+    moved: bool,
+}
+
 fn verify_unit_order(
     order: &IssuedOrder,
     turn: u32,
@@ -5056,6 +5250,7 @@ fn verify_unit_order(
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    later: LaterFrames,
 ) -> Verdict {
     let Some(id) = order.subject else {
         return Verdict::Failed("no_subject".to_string());
@@ -5138,11 +5333,26 @@ fn verify_unit_order(
                 Verdict::Failed("target_unharmed".to_string())
             }
         }
-        "FORTIFY" => match now {
-            None => gone(),
-            Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
-            Some(_) => Verdict::Failed("not_fortified".to_string()),
-        },
+        "FORTIFY" => {
+            // Fortify is a transient host state: a later same-turn queued move
+            // can clear it before the next turn's opening frame, even though
+            // the FORTIFY operation did land. Require the unit to have been
+            // eligible on the decision frame so a newly appearing id or a
+            // refused repeat on an already-fortified unit cannot be credited.
+            let was_eligible = was.is_some_and(|unit| !unit.fortified && unit.fortify_turns <= 0);
+            if later.fortified && was_eligible {
+                Verdict::Verified
+            } else {
+                match now {
+                    None => gone(),
+                    Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
+                    // See `later_moved_units`: the decider walked this unit away
+                    // after asking it to dig in. Not the bridge's doing.
+                    Some(_) if later.moved => Verdict::Failed("superseded_by_move".to_string()),
+                    Some(_) => Verdict::Failed("not_fortified".to_string()),
+                }
+            }
+        }
         "UPGRADE" => match (was, now) {
             // The host may hand the upgraded unit a new id: a different kind
             // standing where this one stood, unseen before, is the upgrade.
@@ -5265,14 +5475,23 @@ fn verify_unit_order(
     }
 }
 
+struct VerificationContext<'a> {
+    same_turn_orders: &'a [IssuedOrder],
+    later_fortified: bool,
+    /// The decider moved this unit in a later frame of the same turn, so any
+    /// FORTIFY it issued earlier was overridden by its own next decision.
+    later_moved: bool,
+}
+
 /// The next frame's verdict on one order issued on `turn`.
-fn verify_order(
+fn verify_order_with_context(
     order: &IssuedOrder,
     turn: u32,
     before: &civvis::mirror::StateSnapshot,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    context: VerificationContext<'_>,
 ) -> Verdict {
     if unverifiable_kind(&order.kind) {
         return Verdict::Unverifiable;
@@ -5280,16 +5499,32 @@ fn verify_order(
     let verb = order.verb.as_deref().unwrap_or("");
     let failed = |why: String| Verdict::Failed(why);
     match order.kind.as_str() {
-        "unit" => verify_unit_order(order, turn, before, after, tiles, evidence),
+        "unit" => verify_unit_order(
+            order,
+            turn,
+            before,
+            after,
+            tiles,
+            evidence,
+            LaterFrames {
+                fortified: context.later_fortified,
+                moved: context.later_moved,
+            },
+        ),
         "produce" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
                 return failed("city_gone".to_string());
             };
+            let unit_appeared = unit_appeared_at_city(before, after, city, verb);
+            let purchase_conflict =
+                production_unit_appearance_conflicts_with_purchase(order, context.same_turn_orders);
             if city.producing.as_deref() == Some(verb)
                 || city_holds(city, verb)
-                || unit_appeared_at_city(before, after, city, verb)
+                || (unit_appeared && !purchase_conflict)
             {
                 Verdict::Verified
+            } else if unit_appeared && purchase_conflict {
+                failed("unit_appearance_ambiguous_purchase".to_string())
             } else {
                 failed(format!(
                     "producing={}",
@@ -5488,18 +5723,82 @@ fn verify_order(
     }
 }
 
+/// Verify one order without sibling-order context. The single-order helper
+/// remains useful for focused postcondition tests; live settlement supplies
+/// the full turn context through `verify_orders` below.
+#[cfg(test)]
+fn verify_order(
+    order: &IssuedOrder,
+    turn: u32,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+) -> Verdict {
+    verify_order_with_context(
+        order,
+        turn,
+        before,
+        after,
+        tiles,
+        evidence,
+        VerificationContext {
+            same_turn_orders: &[],
+            later_fortified: false,
+            later_moved: false,
+        },
+    )
+}
+
 /// Every order in `pending` against the frame that followed it.
+#[cfg(test)]
 fn verify_orders(
     pending: &PendingOrders,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    same_turn_orders: &[IssuedOrder],
+) -> Vec<OrderCheck> {
+    verify_orders_with_later_fortifications(
+        pending,
+        after,
+        tiles,
+        evidence,
+        same_turn_orders,
+        &std::collections::BTreeSet::new(),
+        &std::collections::BTreeSet::new(),
+    )
+}
+
+/// Verify pending orders with positive evidence from later same-turn frames.
+fn verify_orders_with_later_fortifications(
+    pending: &PendingOrders,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+    same_turn_orders: &[IssuedOrder],
+    later_fortified: &std::collections::BTreeSet<i64>,
+    later_moved: &std::collections::BTreeSet<i64>,
 ) -> Vec<OrderCheck> {
     pending
         .orders
         .iter()
         .map(|order| OrderCheck {
-            verdict: verify_order(order, pending.turn, &pending.before, after, tiles, evidence),
+            verdict: verify_order_with_context(
+                order,
+                pending.turn,
+                &pending.before,
+                after,
+                tiles,
+                evidence,
+                VerificationContext {
+                    same_turn_orders,
+                    later_fortified: order
+                        .subject
+                        .is_some_and(|id| later_fortified.contains(&id)),
+                    later_moved: order.subject.is_some_and(|id| later_moved.contains(&id)),
+                },
+            ),
             order: order.clone(),
         })
         .collect()
@@ -5587,14 +5886,35 @@ fn settle_pending_orders(
         return Vec::new();
     }
     let turns: Vec<u32> = answered.iter().flat_map(|p| [p.turn, p.turn + 1]).collect();
-    let evidence = ledger_evidence(events, &turns);
+    let (evidence, states) = ledger_evidence_and_states(events, &turns);
     let mut rows = Vec::new();
+    let mut same_turn_orders: std::collections::BTreeMap<u32, Vec<IssuedOrder>> =
+        Default::default();
+    for frame in &answered {
+        same_turn_orders
+            .entry(frame.turn)
+            .or_default()
+            .extend(frame.orders.iter().cloned());
+    }
     let mut by_turn: std::collections::BTreeMap<u32, Vec<OrderCheck>> = Default::default();
     for frame in &answered {
+        let context = same_turn_orders
+            .get(&frame.turn)
+            .map_or(&[][..], Vec::as_slice);
+        let later_fortified = later_fortified_units(&states, frame.turn, frame.frame);
+        let later_moved = later_moved_units(&answered, frame.turn, frame.frame);
         by_turn
             .entry(frame.turn)
             .or_default()
-            .extend(verify_orders(frame, after, tiles, &evidence));
+            .extend(verify_orders_with_later_fortifications(
+                frame,
+                after,
+                tiles,
+                &evidence,
+                context,
+                &later_fortified,
+                &later_moved,
+            ));
     }
     for (turn, checks) in by_turn {
         rows.extend(verdict_rows(turn, &checks));
@@ -5605,7 +5925,8 @@ fn settle_pending_orders(
 /// Replay a recorded run's orders against its own frames.
 ///
 /// `orders_path` holds the rows the brain wrote to `orders.sqlite`, one JSON
-/// object per line (`turn`, `kind`, `subject`, `verb`, `x`, `y`); the frames
+/// object per line (`turn`, `kind`, `subject`, `verb`, `x`, `y`, and optionally
+/// `frame`); the frames
 /// and the evidence come from the run's `events.jsonl`. Prints one JSON line:
 /// what the checks verified, what failed and why, and the mod's own
 /// `orders_reported` for the same turns, so the gap can be measured on a run
@@ -5613,7 +5934,7 @@ fn settle_pending_orders(
 /// the plot-bound checks (`buy_plot`, `PILLAGE`, `REPAIR`) are counted apart
 /// as `plot_bound` rather than as failures.
 fn audit_orders(events: &Path, orders_path: &Path) {
-    let mut by_turn: std::collections::BTreeMap<u32, Vec<IssuedOrder>> = Default::default();
+    let mut by_frame: std::collections::BTreeMap<(u32, u32), Vec<IssuedOrder>> = Default::default();
     for line in std::fs::read_to_string(orders_path)
         .unwrap_or_default()
         .lines()
@@ -5624,6 +5945,10 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         let Some(turn) = row.get("turn").and_then(|t| t.as_u64()) else {
             continue;
         };
+        let frame = row
+            .get("frame")
+            .and_then(|frame| frame.as_u64())
+            .unwrap_or(0);
         let kind = row
             .get("kind")
             .and_then(|k| k.as_str())
@@ -5634,19 +5959,25 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         }
         let x = row.get("x").and_then(|v| v.as_i64());
         let y = row.get("y").and_then(|v| v.as_i64());
-        by_turn.entry(turn as u32).or_default().push(IssuedOrder {
-            kind,
-            subject: row.get("subject").and_then(|v| v.as_i64()),
-            verb: row.get("verb").and_then(|v| v.as_str()).map(str::to_string),
-            pos: match (x, y) {
-                (Some(x), Some(y)) => Some((x as i32, y as i32)),
-                _ => None,
-            },
-        });
+        by_frame
+            .entry((turn as u32, frame as u32))
+            .or_default()
+            .push(IssuedOrder {
+                kind,
+                subject: row.get("subject").and_then(|v| v.as_i64()),
+                verb: row.get("verb").and_then(|v| v.as_str()).map(str::to_string),
+                pos: match (x, y) {
+                    (Some(x), Some(y)) => Some((x as i32, y as i32)),
+                    _ => None,
+                },
+            });
     }
     let raw = std::fs::read_to_string(events).unwrap_or_default();
     let mut frames: std::collections::BTreeMap<u32, civvis::mirror::StateSnapshot> =
         Default::default();
+    let mut frame_states: std::collections::BTreeMap<(u32, u32), civvis::mirror::StateSnapshot> =
+        Default::default();
+    let mut all_states: Vec<civvis::mirror::StateSnapshot> = Vec::new();
     let mut reported: std::collections::BTreeMap<u32, (i64, i64)> = Default::default();
     let mut evidence: Vec<serde_json::Value> = Vec::new();
     for line in raw.lines() {
@@ -5658,7 +5989,11 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             // The opening board of each turn: the one the orders were decided on.
             match serde_json::from_value::<civvis::mirror::StateSnapshot>(event) {
                 Ok(state) => {
-                    frames.entry(state.turn).or_insert(state);
+                    frame_states
+                        .entry((state.turn, state.frame))
+                        .or_insert_with(|| state.clone());
+                    frames.entry(state.turn).or_insert_with(|| state.clone());
+                    all_states.push(state);
                 }
                 Err(why) => eprintln!("audit: state frame skipped: {why}"),
             }
@@ -5686,14 +6021,52 @@ fn audit_orders(events: &Path, orders_path: &Path) {
     let (mut seen, mut ok) = (0i64, 0i64);
     let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
     let mut by_kind: std::collections::BTreeMap<String, [usize; 3]> = Default::default();
-    for (turn, orders) in by_turn {
-        let (Some(before), Some(after)) = (frames.get(&turn), frames.get(&(turn + 1))) else {
+    let mut counted_reported_turns = std::collections::BTreeSet::new();
+    let mut same_turn_orders: std::collections::BTreeMap<u32, Vec<IssuedOrder>> =
+        Default::default();
+    for ((turn, _frame), orders) in &by_frame {
+        same_turn_orders
+            .entry(*turn)
+            .or_default()
+            .extend(orders.iter().cloned());
+    }
+    // Precomputed because the loop below consumes `by_frame`: for each frame,
+    // the units the decider moved in a LATER frame of the same turn. See
+    // `later_moved_units` for why a FORTIFY they overrode is not a bridge
+    // failure.
+    let later_moved_by_frame: std::collections::BTreeMap<
+        (u32, u32),
+        std::collections::BTreeSet<i64>,
+    > = by_frame
+        .keys()
+        .map(|&(turn, frame)| {
+            let moved = by_frame
+                .iter()
+                .filter(|((t, f), _)| *t == turn && *f > frame)
+                .flat_map(|(_, orders)| orders.iter())
+                .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+                .filter_map(|order| order.subject)
+                .collect();
+            ((turn, frame), moved)
+        })
+        .collect();
+    for ((turn, frame), orders) in by_frame {
+        let Some(before) = frame_states
+            .get(&(turn, frame))
+            .or_else(|| frames.get(&turn))
+        else {
             unframed += orders.len();
             continue;
         };
-        if let Some((s, a)) = reported.get(&turn) {
-            seen += s;
-            ok += a;
+        let Some(after) = frames.get(&(turn + 1)) else {
+            unframed += orders.len();
+            continue;
+        };
+        if counted_reported_turns.insert(turn) {
+            if let Some((s, a)) = reported.get(&turn) {
+                seen += s;
+                ok += a;
+            }
         }
         let window: Vec<serde_json::Value> = evidence
             .iter()
@@ -5706,10 +6079,25 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             .collect();
         let pending = PendingOrders {
             turn,
+            frame,
             orders,
             before: before.clone(),
         };
-        for check in verify_orders(&pending, after, &tiles, &window) {
+        let context = same_turn_orders.get(&turn).map_or(&[][..], Vec::as_slice);
+        let later_fortified = later_fortified_units(&all_states, turn, frame);
+        let later_moved = later_moved_by_frame
+            .get(&(turn, frame))
+            .cloned()
+            .unwrap_or_default();
+        for check in verify_orders_with_later_fortifications(
+            &pending,
+            after,
+            &tiles,
+            &window,
+            context,
+            &later_fortified,
+            &later_moved,
+        ) {
             let label = match check.order.kind.as_str() {
                 "unit" => check
                     .order
@@ -6855,6 +7243,7 @@ fn main() {
                 host_city_strikes.observe(state.turn, &orders);
                 pending_orders.push(PendingOrders {
                     turn: state.turn,
+                    frame: state.frame,
                     orders,
                     before: state.clone(),
                 });
@@ -7026,15 +7415,20 @@ mod tests {
         );
     }
 
+    /// A bare `civvis_orders` must resolve the launcher chain's lane to a real
+    /// target — not merely name it. Three of the six spellings resolved to
+    /// nothing until 2026-08-17, which is why this asserts the resolution and
+    /// not just the string.
+    ///
     #[test]
     fn direct_default_uses_the_safe_launcher_lane() {
-        assert_eq!(super::DEFAULT_VICTORY, "diplomatic");
+        assert_eq!(super::DEFAULT_VICTORY, "science");
         assert!(super::VICTORY_LANES
             .split('|')
             .any(|lane| lane == super::DEFAULT_VICTORY));
         assert_eq!(
             super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
-            Some(civvis::ai::VictoryTarget::Diplomacy)
+            Some(civvis::ai::VictoryTarget::Science)
         );
     }
 
@@ -8205,6 +8599,146 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_same_turn_replan_drops_stale_unit_replays_but_keeps_new_tactics() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 42;
+        state.frame = 0;
+        let mut refusals = HostMoveRefusals::default();
+        let mut first = vec![
+            unit_order(7, "MOVE_TO", Some((3, 3))),
+            unit_order(7, "FORTIFY", None),
+            unit_order(8, "CAPTURE", Some((4, 4))),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut first, &state),
+            0,
+            "the first frame is allowed to issue its complete plan"
+        );
+        assert_eq!(first.len(), 3);
+
+        state.frame = 1;
+        let mut replan = vec![
+            unit_order(7, "MOVE_TO", Some((3, 3))),
+            unit_order(7, "FORTIFY", None),
+            unit_order(8, "CAPTURE", Some((4, 4))),
+            // A combat frame may legitimately need another strike at the same
+            // target, so attack verbs are intentionally outside the filter.
+            unit_order(9, "ATTACK", Some((5, 5))),
+            // A changed destination is a new route decision and must survive.
+            unit_order(7, "MOVE_TO", Some((3, 4))),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state),
+            3,
+            "only exact stale MOVE_TO/CAPTURE/FORTIFY replays are removed"
+        );
+        assert_eq!(replan.len(), 2);
+        assert!(replan.iter().any(|order| {
+            order.subject == Some(9)
+                && order.verb.as_deref() == Some("ATTACK")
+                && order.pos == Some((5, 5))
+        }));
+        assert!(replan.iter().any(|order| {
+            order.subject == Some(7)
+                && order.verb.as_deref() == Some("MOVE_TO")
+                && order.pos == Some((3, 4))
+        }));
+
+        // The suppression scope is one turn. A fresh turn may retry the old
+        // destination using the newly authoritative host state.
+        state.turn = 43;
+        state.frame = 0;
+        let mut next_turn = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            0
+        );
+        assert_eq!(next_turn.len(), 1);
+    }
+
+    #[test]
+    fn a_same_turn_replan_drops_exact_deal_replays_but_keeps_changed_offers() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 44;
+        state.frame = 0;
+        let mut refusals = HostMoveRefusals::default();
+        let mut first = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((200, 0)),
+            },
+            Order {
+                kind: "buy",
+                subject: Some(3),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((60, 0)),
+            },
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut first, &state),
+            0,
+            "the first frame is allowed to issue its complete deal plan"
+        );
+
+        state.frame = 1;
+        let mut replan = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((200, 0)),
+            },
+            Order {
+                kind: "buy",
+                subject: Some(3),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((60, 0)),
+            },
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((220, 0)),
+            },
+            // Non-deal orders retain their existing same-turn semantics.
+            Order {
+                kind: "research",
+                subject: None,
+                verb: Some("TECH_WRITING".to_string()),
+                pos: None,
+            },
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state),
+            2,
+            "only exact sell/buy replays are removed"
+        );
+        assert_eq!(replan.len(), 2);
+        assert!(replan.iter().any(|order| {
+            order.kind == "sell" && order.subject == Some(2) && order.pos == Some((220, 0))
+        }));
+        assert!(replan.iter().any(|order| {
+            order.kind == "research" && order.verb.as_deref() == Some("TECH_WRITING")
+        }));
+
+        state.turn = 45;
+        state.frame = 0;
+        let mut next_turn = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("RESOURCE_HORSES=10".to_string()),
+            pos: Some((200, 0)),
+        }];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            0,
+            "a fresh turn may retry the old offer after the host's cooldown"
+        );
+    }
+
     fn production_board() -> (Snapshot, StateSnapshot) {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 1,
@@ -8900,20 +9434,36 @@ mod tests {
         warrior.x = 5;
         warrior.y = 4;
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[]),
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &arrived,
+                &tiles,
+                &[],
+                LaterFrames::default()
+            ),
             Verdict::Verified
         ));
 
         let mut gone = before.clone();
         gone.hostiles.clear();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &gone, &tiles, &[]),
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &gone,
+                &tiles,
+                &[],
+                LaterFrames::default()
+            ),
             Verdict::Verified
         ));
 
         let stood = before.clone();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &stood, &tiles, &[]),
+            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], LaterFrames::default()),
             Verdict::Failed(reason) if reason == "not_captured"
         ));
     }
@@ -13048,6 +13598,140 @@ mod order_postcondition_tests {
     }
 
     #[test]
+    fn a_purchased_unit_cannot_verify_a_same_turn_production_order() {
+        let mut before = frame(30);
+        before.cities = vec![city(65_536, 20, 20, Some("UNIT_SETTLER"))];
+
+        let mut after = frame(31);
+        after.cities = before.cities.clone();
+        after.units = vec![unit(8, "UNIT_WARRIOR", 20, 20)];
+
+        let produce = order("produce", Some(65_536), Some("UNIT_WARRIOR"), None);
+        let purchase = order(
+            "purchase",
+            Some(65_536),
+            Some("UNIT_WARRIOR"),
+            Some((0, -1)),
+        );
+        let pending = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![produce.clone(), purchase.clone()],
+            before: before.clone(),
+        };
+
+        // Without a sibling purchase, the new unit remains valid completion
+        // evidence for the production postcondition.
+        assert_eq!(check(&produce, &before, &after, &[]), Verdict::Verified);
+
+        let checks = verify_orders(&pending, &after, &no_tiles(), &[], &pending.orders);
+        assert_eq!(checks[0].order, produce);
+        assert_eq!(
+            checks[0].verdict,
+            failed("unit_appearance_ambiguous_purchase")
+        );
+        assert_eq!(checks[1].order, purchase);
+        assert_eq!(checks[1].verdict, Verdict::Verified);
+    }
+
+    #[test]
+    fn a_later_same_turn_fortify_frame_proves_a_transient_fortify() {
+        let mut before = frame(30);
+        before.units = vec![unit(7, "UNIT_WARRIOR", 20, 20)];
+
+        // The next turn has already cleared the transient fortified state by
+        // moving this unit, so the ordinary next-turn postcondition alone
+        // would report `not_fortified`.
+        let mut after = frame(31);
+        after.units = vec![unit(7, "UNIT_WARRIOR", 21, 20)];
+
+        // Frame 1 is emitted after frame 0's FORTIFY has reached the host.
+        let mut same_turn = frame(30);
+        same_turn.frame = 1;
+        let mut fortified = unit(7, "UNIT_WARRIOR", 20, 20);
+        fortified.fortified = true;
+        fortified.fortify_turns = 1;
+        same_turn.units = vec![fortified];
+
+        let pending = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![order("unit", Some(7), Some("FORTIFY"), None)],
+            before,
+        };
+        let later = later_fortified_units(&[same_turn.clone()], 30, pending.frame);
+        let checks = verify_orders_with_later_fortifications(
+            &pending,
+            &after,
+            &no_tiles(),
+            &[],
+            &pending.orders,
+            &later,
+            &std::collections::BTreeSet::new(),
+        );
+        assert_eq!(checks[0].verdict, Verdict::Verified);
+
+        // Evidence from the frame on which the order was issued is not enough
+        // to prove that the host accepted it.
+        assert!(later_fortified_units(&[same_turn], 30, 1).is_empty());
+
+        // A repeat FORTIFY issued after the unit was already fortified remains
+        // a failure even if that old state is visible on a later frame.
+        let mut already_fortified = frame(30);
+        let mut old = unit(7, "UNIT_WARRIOR", 20, 20);
+        old.fortified = true;
+        old.fortify_turns = 1;
+        already_fortified.units = vec![old];
+        let repeated = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![order("unit", Some(7), Some("FORTIFY"), None)],
+            before: already_fortified,
+        };
+        let checks = verify_orders_with_later_fortifications(
+            &repeated,
+            &after,
+            &no_tiles(),
+            &[],
+            &repeated.orders,
+            &later,
+            &std::collections::BTreeSet::new(),
+        );
+        assert_eq!(checks[0].verdict, failed("not_fortified"));
+
+        // ⚠⚠ A FORTIFY THE DECIDER ITSELF OVERRODE IS NOT A BRIDGE FAILURE.
+        // `not_fortified` is the second-largest failure reason on the ledger —
+        // 3124 of 5193 FORTIFY orders over the runs of 2026-08-30 — and 95% of
+        // them had a MOVE_TO for the same unit in the same turn, 61% of those
+        // issued AFTER the fortify. Reading that as `not_fortified` sends an
+        // auditor after an actuation bug that is not there.
+        let mut movable = frame(30);
+        movable.units = vec![unit(7, "UNIT_WARRIOR", 20, 20)];
+        let overridden = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![order("unit", Some(7), Some("FORTIFY"), None)],
+            before: movable,
+        };
+        let mut walked_away = std::collections::BTreeSet::new();
+        walked_away.insert(7);
+        let checks = verify_orders_with_later_fortifications(
+            &overridden,
+            &after,
+            &no_tiles(),
+            &[],
+            &overridden.orders,
+            &std::collections::BTreeSet::new(),
+            &walked_away,
+        );
+        assert_eq!(
+            checks[0].verdict,
+            failed("superseded_by_move"),
+            "the decider walked this unit away after asking it to dig in"
+        );
+    }
+
+    #[test]
     fn a_bought_plot_is_verified_by_its_owner_on_the_board() {
         let mut before = frame(20);
         before.seat.local_player = 4;
@@ -13551,6 +14235,7 @@ mod order_postcondition_tests {
         before.units = vec![unit(7, "UNIT_WARRIOR", 1, 1)];
         let mut pending = vec![PendingOrders {
             turn: 42,
+            frame: 0,
             orders: vec![
                 order("unit", Some(7), Some("MOVE_TO"), Some((3, 1))),
                 order("sell", Some(2), Some("FAVOR=10"), Some((60, 0))),

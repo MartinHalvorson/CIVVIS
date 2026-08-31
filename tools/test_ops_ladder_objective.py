@@ -79,8 +79,15 @@ class TheDefaultObjectiveHasOneHome(unittest.TestCase):
         floor rather than Diplomacy's strength.
 
         Moving this is allowed and is meant to cost one deliberate edit here.
+
+        Moved 2026-08-30, the deliberate edit: the operator's standing
+        instruction (win a science victory on King, live) aims the ladder at
+        Science, and #2435 `science-victory-drive` (merged 08-25) rewrote the
+        launch machinery the 08-17 0/16 reading measured. The fresh
+        `victory_eval` table at the same profile and seeds is beside the value
+        in `civ6_play.py` and in PR #2824.
         """
-        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "diplomatic")
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
 
     def test_the_help_text_does_not_restate_the_value(self):
         """The help said "defaults to Science" for as long as the value was
@@ -576,6 +583,23 @@ class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
         self.assertEqual(missing, [], "\n".join(
             ["a loop that writes ladder rows cannot ask for an axis the ladder "
              "records, so no row can ever carry a different value:"] + missing))
+
+    def test_each_one_explicitly_plays_rome(self):
+        """A launcher default is not an invariant for a comparable ladder.
+
+        Rome's Trajan is the operator's standing seat.  The climb also defaults
+        to Trajan, but a production loop that relies on that default changes
+        civilization the moment the CLI default changes.  Read the actual
+        invocation rather than accepting a nearby comment or provenance line.
+        """
+        missing = []
+        for script in self.ladder_loops():
+            command = self._invocation(script.read_text(encoding="utf-8"))
+            if "--leader LEADER_TRAJAN" not in command:
+                missing.append(f"{script.name}: does not explicitly select Rome / Trajan")
+        self.assertEqual(missing, [], "\n".join(
+            ["every production ladder loop must explicitly play Rome / Trajan:"]
+            + missing))
 
     def test_neither_axis_is_written_as_a_literal(self):
         """A pinned rung is the same defect as a pinned lane, one axis over."""

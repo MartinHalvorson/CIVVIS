@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -47,10 +48,14 @@ class AWedgeRestartLeavesEvidence(unittest.TestCase):
     def test_a_failed_sample_never_blocks_the_restart(self):
         """Evidence is worth having, never worth an outage."""
         source = self._source()
+        # ⚠ The boundary is the first `say "$reason` — the end of the SAMPLE
+        # handling — not the `kill`. A deliberate recovery that returns instead
+        # of killing now sits between the two (the deep-game handoff below), and
+        # slicing to the kill made this read as the very defect it guards.
         block = source[source.index("game_pid=$(pgrep -x Civ6_Exe_Child"):
-                       source.index('kill -TERM "$climb"')]
+                       source.index('say "$reason;')]
         self.assertIn("restarting without it", block)
-        # No `return` or `exit` may sit between the sample and the kill.
+        # No `return` or `exit` may sit inside the sample handling itself.
         self.assertNotIn("return", block)
         self.assertNotIn("exit", block)
 
@@ -102,5 +107,106 @@ class AWedgeRestartLeavesEvidence(unittest.TestCase):
             self.assertIn("Call graph", written.read_text(errors="replace"))
 
 
+
+
+class DeepWedgeIsHandedToTheClimb(unittest.TestCase):
+    """⭐⭐⭐ A DEEP WEDGED GAME IS RELOADED, NOT THROWN AWAY.
+
+    Civ 6 autosaves every turn and `civ6_civvis_climb.py` can reload one into a
+    FRESH Civ 6 — the only thing that recovers a parked core, whose own process
+    answers no input at all (an external SHIFT+RETURN was measured and ignored
+    in two clean trials). That path runs only while the CLIMB is alive, and this
+    watchdog killed the climb first: seven `<tag>-contN` runs exist, all from
+    08-17..19, none since it began signalling. Games as deep as t179 with 15
+    cities at 0.763 of the leader were discarded with their save on disk.
+    """
+
+    def _source(self) -> str:
+        return WATCHDOG.read_text(encoding="utf-8")
+
+    def test_a_deep_game_signals_the_player_and_leaves_the_climb(self):
+        source = self._source()
+        handoff = source.index('t${turn} is worth reloading')
+        killed = source.index('kill -TERM "$climb"')
+        self.assertLess(handoff, killed,
+                        "the handoff must be considered before the kill")
+        block = source[handoff:killed]
+        self.assertIn('kill -INT "$play"', block)
+        self.assertNotIn('kill -TERM', block)
+        self.assertIn("return 0", block)
+
+    def test_the_floor_matches_the_climbs_own_resume_floor(self):
+        """Below it the climb redoes the game from scratch anyway, so handing
+        one over would only cost the reload."""
+        self.assertIn("RESUME_FLOOR=${CIVVIS_WEDGE_RESUME_MIN_TURN:-20}",
+                      self._source())
+        climb = (WATCHDOG.parent.parent / "civ6_civvis_climb.py").read_text(
+            encoding="utf-8")
+        self.assertIn("RESUME_MIN_TURN = 20", climb)
+
+    def test_a_second_wedge_on_the_same_tag_is_not_handed_over_again(self):
+        """One reload attempt per run. If the game wedges again under the same
+        tag the handoff did not take, and the climb is killed as before."""
+        self.assertIn('[[ "$tag" != "$handoff_tag" ]]', self._source())
+
+    def test_a_climb_that_never_reloads_is_terminated_after_all(self):
+        """⚠ This watchdog exists for a climb that is ITSELF blocked, so the
+        handoff must never become a way for one to sit forever."""
+        source = self._source()
+        self.assertIn("HANDOFF_GRACE=${CIVVIS_WEDGE_HANDOFF_GRACE:-12}", source)
+        self.assertIn('kill -TERM "$handoff_climb"', source)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
+    """⚠⚠ A READ-ONLY QUERY MUST NOT REDIRECT THE WATCHDOG.
+
+    The run was chosen by directory mtime. A directory's mtime changes whenever
+    an entry is created in it, and opening a run's `orders.sqlite` — even
+    read-only — creates `-shm`/`-wal` beside it. So any analysis tool run
+    against a FINISHED game promoted that game to "newest", and the watchdog
+    spent every poll saying "does not match the proven climb-owned player;
+    leaving it alone" while the live game went unguarded.
+
+    Observed 2026-08-30: two runs from hours earlier were touched by a
+    read-only query and the watchdog followed them instead of the live t57
+    game. `events.jsonl` is appended by the mod itself, so its mtime is the
+    game actually being played.
+    """
+
+    def _source(self) -> str:
+        return WATCHDOG.read_text(encoding="utf-8")
+
+    def test_the_tag_comes_from_the_newest_events_file(self):
+        source = self._source()
+        self.assertIn('tag=$(ls -t "$RUNS"/civvis-*/events.jsonl', source)
+        self.assertIn("tag=${tag:h:t}", source)
+
+    def test_the_directory_listing_is_gone(self):
+        """The old form promoted whichever run directory was touched last."""
+        self.assertNotIn("""ls -t "$RUNS" 2>/dev/null | grep '^civvis-'""",
+                         self._source())
+
+    def test_it_picks_the_appended_run_over_a_touched_one(self):
+        """The behaviour itself, through the same zsh the watchdog runs."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live, stale = root / "civvis-live", root / "civvis-stale"
+            for d in (live, stale):
+                d.mkdir()
+                (d / "events.jsonl").write_text("{}\n")
+            # The stale run's DIRECTORY is touched after the live run's events
+            # — exactly what a read-only sqlite open does.
+            os.utime(live / "events.jsonl", (2_000_000_000, 2_000_000_000))
+            (stale / "orders.sqlite-wal").write_text("")
+            os.utime(stale / "events.jsonl", (1_000_000_000, 1_000_000_000))
+            picked = subprocess.run(
+                ["zsh", "-c",
+                 f'tag=$(ls -t {root}/civvis-*/events.jsonl 2>/dev/null | head -1); print "${{tag:h:t}}"'],
+                capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(picked, "civvis-live")

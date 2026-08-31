@@ -464,6 +464,45 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
         self.assertIn('open -g -j -a Terminal "$(launcher)"', text)
         self.assertNotIn("$HOME/CIVVIS", text, "no named checkout")
 
+    def test_retire_is_a_recorded_one_game_exit_not_the_off_teardown(self):
+        text = SWITCH.read_text()
+        start = text.index("retire)\n")
+        end = text.index("\noff)\n", start)
+        retire = text[start:end]
+        self.assertIn("operator_retire.py", retire)
+        self.assertIn("--runs-root \"$RUN_ROOT\"", retire)
+        self.assertIn("set_intent running", retire)
+        self.assertIn("no process was stopped", retire)
+        self.assertNotIn("term_wait", retire)
+        self.assertNotIn("--halt --reason", retire)
+
+    def test_retire_keeps_the_lane_intent_only_after_a_real_request(self):
+        with TemporaryDirectory() as raw:
+            home = Path(raw) / "home"
+            home.mkdir()
+            fake_bin = home / "fake-bin"
+            fake_bin.mkdir()
+            python = fake_bin / "python3"
+            python.write_text(
+                "#!/bin/zsh\n"
+                "if [[ \"$1\" == *gamelock.py && \"$2\" == --halt-status ]]; then exit 1; fi\n"
+                "if [[ \"$1\" == *operator_retire.py ]]; then exit ${RETIRE_EXIT:-0}; fi\n"
+                "exit 0\n")
+            python.chmod(0o755)
+            base = clean_env(HOME=str(home), CIVVIS_REPO=str(REPO),
+                             PATH=str(fake_bin) + os.pathsep + os.environ["PATH"])
+
+            done = zsh(SWITCH, "retire", env=base)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual((home / ".civvis-operator-intent").read_text(), "running\n")
+            self.assertIn("no process was stopped", done.stdout)
+
+            (home / ".civvis-operator-intent").unlink()
+            refused = zsh(SWITCH, "retire", env={**base, "RETIRE_EXIT": "7"})
+            self.assertEqual(refused.returncode, 7, refused.stdout + refused.stderr)
+            self.assertFalse((home / ".civvis-operator-intent").exists(),
+                             "a failed binding cannot start an idle lane")
+
     def test_turning_on_writes_a_head_pin_before_starting_terminal(self):
         """A wrapper refuses anything but `head`, so its launch must see it.
 

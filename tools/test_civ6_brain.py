@@ -197,6 +197,88 @@ class GitHubRuntimeUpdaterTest(unittest.TestCase):
         )
         self.assertEqual(command[command.index("--run-dir") + 1], "/run")
 
+    def test_supplied_binary_uses_its_nearest_worktree_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary) / "decider-checkout"
+            binary = checkout / "target" / "release" / "civvis_orders"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"worktree binary")
+            (checkout / ".git").mkdir()
+
+            with mock.patch.object(
+                civ6_brain, "local_revision", return_value=self.NEW
+            ) as revision:
+                self.assertEqual(
+                    civ6_brain.launch_provenance(
+                        binary, None, Path("/bridge-checkout")
+                    ),
+                    (self.NEW, "binary-checkout"),
+                )
+            revision.assert_called_once_with(checkout.resolve())
+
+    def test_unverified_binary_does_not_fall_back_to_the_bridge_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "civvis_orders"
+            binary.write_bytes(b"unpackaged binary")
+
+            with mock.patch.object(
+                civ6_brain, "local_revision", return_value=self.NEW
+            ) as revision:
+                self.assertEqual(
+                    civ6_brain.launch_provenance(
+                        binary, None, Path("/bridge-checkout")
+                    ),
+                    (None, "unverified-binary"),
+                )
+            revision.assert_not_called()
+
+    def test_published_runtime_path_carries_its_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = (Path(temporary) / "published" / self.NEW
+                      / "civvis_orders")
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"published binary")
+
+            self.assertEqual(
+                civ6_brain.binary_provenance(binary),
+                (self.NEW, "published-path"),
+            )
+
+    def test_runtime_event_records_binary_revision_source_and_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout = root / "decider-checkout"
+            binary = checkout / "target" / "release" / "civvis_orders"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"exact executable bytes")
+            (checkout / ".git").mkdir()
+            runtime = civ6_brain.LiveRuntime(
+                revision=self.NEW,
+                binary=binary,
+                brain=checkout / "tools" / "civ6_brain.py",
+            )
+            run = root / "run"
+            run.mkdir()
+
+            with mock.patch.object(
+                civ6_brain, "local_revision", return_value=self.NEW
+            ):
+                civ6_brain.record_runtime_event(
+                    run, "start", None, None, runtime,
+                    source="binary-checkout",
+                )
+
+            event = json.loads(
+                (root / "run" / "runtime_updates.jsonl").read_text()
+            )
+            self.assertEqual(event["source"], "binary-checkout")
+            self.assertEqual(event["binary_revision"], self.NEW)
+            self.assertEqual(event["binary_source"], "binary-checkout")
+            self.assertEqual(
+                event["binary_sha256"],
+                "135a9af43260004bfc617b97f806fcc6600e211fe0219d6c4311ef8cc6d59b48",
+            )
+
     def test_decider_drops_its_old_process_before_using_the_new_binary(self) -> None:
         decider = civ6_brain.Decider(
             Path("/old/civvis_orders"), Path("/run"), "science"
