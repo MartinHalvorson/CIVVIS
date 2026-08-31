@@ -625,6 +625,29 @@ class Civ6PlayTest(unittest.TestCase):
         stop.assert_called_once()
         release.assert_called_once()
 
+    def test_play_reports_an_explicit_operator_halt_instead_of_free_lock(self) -> None:
+        halt = ("the game is explicitly halted since 2026-08-31T23:16:59Z "
+                "(reason: protected run); run gamelock.py --resume before "
+                "starting another game")
+        error = io.StringIO()
+        with patch.object(civ6_play.vision, "available", return_value=True), \
+             patch.object(civ6_play, "hold_macos_awake"), \
+             patch.object(civ6_play, "wait_for_unlocked_session"), \
+             patch.object(civ6_play, "wait_for_safe_screen_capture"), \
+             patch.object(civ6_play.gamelock, "acquire", return_value=False), \
+             patch.object(civ6_play.gamelock, "operator_halt_description",
+                          return_value=halt), \
+             patch.object(civ6_play.gamelock, "foreign_run") as foreign, \
+             patch.object(civ6_play.gamelock, "describe") as describe, \
+             patch.object(civ6_play.sys, "stderr", error):
+            result = civ6_play.play(args(tag="halt-test", lock_wait=0.0))
+
+        self.assertEqual(result, 6)
+        self.assertIn(f"game start blocked: {halt}", error.getvalue())
+        self.assertNotIn("another run holds the game: free", error.getvalue())
+        foreign.assert_not_called()
+        describe.assert_not_called()
+
     def test_world_congress_fallback_clicks_the_shipped_close_control(self) -> None:
         with patch.object(civ6_play, "focus_game") as focus, \
              patch.object(civ6_play, "game_window", return_value=(756, 33, 756, 480)), \

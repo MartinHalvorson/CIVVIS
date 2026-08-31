@@ -508,6 +508,21 @@ class DeciderProvenanceTests(unittest.TestCase):
         self.assertIn(str(binary), line)
 
 
+class BlockedReasonTests(unittest.TestCase):
+    def test_explicit_operator_halt_is_reported_before_launcher_checks(self):
+        halt = ("the game is explicitly halted since 2026-08-31T23:16:59Z "
+                "(reason: protected run); run gamelock.py --resume before "
+                "starting another game")
+        with mock.patch.object(climb.gamelock, "operator_halt_description",
+                               return_value=halt), \
+             mock.patch.object(climb.launcher, "steam_running") as steam, \
+             mock.patch.object(climb.launcher, "game_binary") as binary:
+            self.assertEqual(climb.blocked_reason(), halt)
+
+        steam.assert_not_called()
+        binary.assert_not_called()
+
+
 class ClimbBudgetTests(_Harness, unittest.TestCase):
     # ---- the regression itself -------------------------------------------------
 

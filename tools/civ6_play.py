@@ -3335,6 +3335,10 @@ def play(args: argparse.Namespace) -> int:
     wait_for_safe_screen_capture()
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait,
                             require_verification_intent=True):
+        halt = gamelock.operator_halt_description()
+        if halt is not None:
+            print(f"game start blocked: {halt}", file=sys.stderr)
+            return 6
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",
               file=sys.stderr)
