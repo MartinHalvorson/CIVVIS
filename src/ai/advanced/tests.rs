@@ -37435,3 +37435,71 @@ fn a_settler_does_not_cross_scarred_ground_alone() {
         "and the guard stands with it"
     );
 }
+
+/// Run civvis-20260829T040648Z, t43: the brain called an archer onto the
+/// settler's tile and marched the settler on in the same turn, trusting the
+/// guard to follow; the host gave the guard no second move, the settler ended
+/// the turn alone in reach and was taken. Under the lessons the turn a guard is
+/// called is spent standing with it.
+#[test]
+fn a_settler_waits_the_turn_its_guard_is_called() {
+    let (mut game, _city, home) = barbarian_field(71_307);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let raider_at = game
+        .wdisk(start, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 2 && game.wdist(*pos, home) == 2 && open_land(&game, *pos)
+        })
+        .expect("a raider post two tiles from the settler, in the capital's sight");
+    let target = game
+        .wdisk(start, 4)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 4 && game.wdist(*pos, raider_at) >= 5 && open_land(&game, *pos)
+        })
+        .expect("a site four tiles away on the far side of the raider");
+    let beside = game
+        .wdisk(start, 1)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 1 && game.wdist(*pos, raider_at) >= 3 && open_land(&game, *pos)
+        })
+        .expect("a tile beside the settler, away from the raider");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let warrior = game.spawn_test_unit("warrior", 0, beside);
+
+    let mut native = AdvancedAi::new();
+    native.enable_civilian_out_of_reach();
+    let mut rehearsal = game.clone();
+    assert!(
+        native.settler_step_out_of_reach(&mut rehearsal, 0, settler, target),
+        "native: the guard is called and the pair walks in the same turn"
+    );
+    assert!(rehearsal.units[&settler].pos != start);
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    // Host-only: the ledger withholds what no screen can price, so the bridge
+    // alone leaves the lessons off; deployment arms them by the force file.
+    live.enable_live_settler_capture_lessons();
+    assert!(
+        !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "live: the turn the guard is called is spent standing with it"
+    );
+    assert_eq!(game.units[&settler].pos, start);
+    assert_eq!(game.units[&warrior].pos, start, "the guard arrived");
+    assert_eq!(live.settler_guards.get(&settler), Some(&warrior), "and is bound");
+    assert_eq!(live.summoned_guard_turn.get(&settler), Some(&game.turn));
+
+    // Next turn the pair marches; a remap carries the memory with the unit.
+    live.remap_unit_memory(&BTreeMap::from([(settler, settler + 1000), (warrior, warrior + 1000)]));
+    assert_eq!(live.summoned_guard_turn.get(&(settler + 1000)), Some(&game.turn));
+    live.forget_unit_memory();
+    assert!(live.summoned_guard_turn.is_empty());
+}

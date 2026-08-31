@@ -5265,6 +5265,10 @@ pub struct AdvancedAi {
     /// leaves the board can be told from one that founded. Recorded only
     /// under `live_settler_capture_lessons`.
     settler_last_seen: BTreeMap<u32, Pos>,
+    /// The turn a guard was summoned onto each settler's tile, so the pair
+    /// does not march on in the same turn: on the live seat the guard's
+    /// second order that turn never lands (run civvis-20260829T040648Z t43).
+    summoned_guard_turn: BTreeMap<u32, u32>,
     /// Last positions of settlers that left the board since the last turn,
     /// awaiting `resolve_vanished_settlers`.
     settler_vanished: Vec<Pos>,
@@ -6283,6 +6287,7 @@ impl AdvancedAi {
         self.settler_dead_sites.clear();
         self.settler_last_seen.clear();
         self.settler_vanished.clear();
+        self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
@@ -6318,6 +6323,11 @@ impl AdvancedAi {
                 .map(|(_, pos)| *pos),
         );
         self.settler_last_seen = remap(&self.settler_last_seen);
+        self.summoned_guard_turn = self
+            .summoned_guard_turn
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
         self.builder_targets = remap(&self.builder_targets);
         self.builder_avoid = self
             .builder_avoid
@@ -6731,6 +6741,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             settler_last_seen: BTreeMap::new(),
+            summoned_guard_turn: BTreeMap::new(),
             settler_vanished: Vec::new(),
             settler_capture_scars: BTreeMap::new(),
             settler_never_idles: false,
