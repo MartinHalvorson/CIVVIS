@@ -34612,6 +34612,42 @@ impl Game {
         (!self.played_on()).then_some(self.max_turns)
     }
 
+    /// Finish an over-cap world when Score is not one of its enabled victory
+    /// lanes. The normal end-turn path always tries the score tiebreak at the
+    /// cap, but `set_winner` correctly refuses a disabled lane; an unattended
+    /// server would otherwise keep stepping the same world forever.
+    ///
+    /// Returns `true` when this call made the world terminal. A played-on
+    /// world has no cap, and a Score-enabled world is left to the ordinary
+    /// tiebreak in [`Self::do_end_turn`].
+    pub(crate) fn finish_at_turn_limit(&mut self) -> bool {
+        if self.is_finished()
+            || self.played_on()
+            || self.turn <= self.max_turns
+            || self.victory_lane_open("score")
+        {
+            return false;
+        }
+        if self.is_arena() {
+            return self.declare_draw();
+        }
+
+        self.victory_type = Some(DRAW_RESULT.to_string());
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!(
+                    "The game reached its turn limit ({}) without an enabled victory",
+                    self.max_turns
+                ),
+                None,
+            );
+        }
+        true
+    }
+
     /// The turn this world is reported on.
     ///
     /// A score victory or Tactics draw is settled on the wrap out of the final
