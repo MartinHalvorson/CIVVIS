@@ -931,6 +931,26 @@ class ProtectedInstallTest(unittest.TestCase):
         # `unit_lost` stays: the capture event is a second witness, not a replacement.
         self.assertIn('emit("unit_lost", {', source)
 
+    def test_great_person_activation_marks_consumed_unit_removal(self) -> None:
+        """Activation consumes a host unit and must not look like a battlefield loss."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("expected_gp_activation = {}", source)
+
+        removal = source.split("CivvisLedger.onUnitRemoved = function", 1)[1].split(
+            "-- One of OUR units was TAKEN", 1
+        )[0]
+        self.assertIn("local activationTurn = CivvisLedger.expected_gp_activation[key];", removal)
+        self.assertIn("CivvisLedger.expected_gp_activation[key] = nil;", removal)
+        self.assertIn('cause = activationTurn == turn and "great_person_activation" or nil,', removal)
+
+        activation = source.split(
+            'local activationKey = tostring(id);', 1
+        )[1].split("gpPending[id] = nil;", 1)[0]
+        self.assertIn(
+            'CivvisLedger.expected_gp_activation[activationKey] = turn;',
+            activation,
+        )
+
     def test_settler_combat_hold_checks_the_hostile_units_full_capture_reach(self) -> None:
         """A combat unit's capture reach is wider than destination adjacency."""
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

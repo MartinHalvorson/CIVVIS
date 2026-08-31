@@ -10151,7 +10151,9 @@ end
 -- ⚠ Handles are never cached across events (see the SIGSEGV note on
 -- `applyOrder`); every read re-resolves through `UnitManager.GetUnit`.
 -- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
-CivvisLedger = { open = {}, damage = {}, pending = {}, kinds = {} };
+CivvisLedger = {
+	open = {}, damage = {}, pending = {}, kinds = {}, expected_gp_activation = {}
+};
 
 CivvisLedger.componentKey = function(id)
 	if id == nil then return nil; end
@@ -10452,15 +10454,22 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 	});
 end;
 
--- One of OUR units left the map — combat, disband, capture, deletion. Named
--- with the kind the last export knew, and with the treasury, so a bankruptcy
--- disband and a battlefield loss are one field apart.
+-- One of OUR units left the map — combat, disband, capture, deletion, or a
+-- successful Great Person activation. Named with the kind the last export
+-- knew, and with the treasury, so a bankruptcy disband and a battlefield loss
+-- are one field apart. Activation consumes the physical Great Person unit;
+-- keep the historical `unit_lost` witness, but mark that non-loss disposition
+-- so a ledger cannot mistake a successful science/culture action for a kill.
 CivvisLedger.onUnitRemoved = function(player, unitId)
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	if tonumber(player) ~= pid then return; end
+	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
+	local key = tostring(unitId);
+	local activationTurn = CivvisLedger.expected_gp_activation[key];
+	CivvisLedger.expected_gp_activation[key] = nil;
 	emit("unit_lost", {
-		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
-		unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[tostring(unitId)],
+		turn = turn, unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[key],
+		cause = activationTurn == turn and "great_person_activation" or nil,
 		gold = tonumber(try(function()
 			return math.floor(Players[pid]:GetTreasury():GetGoldBalance());
 		end, nil)),
@@ -13804,6 +13813,11 @@ local function orderGreatPerson(player, unit, id, turn)
 		return "idle";
 	end
 	-- 1. If the engine will take Activate here and now, press it.
+	-- UnitRemovedFromMap is the host's completion witness for this command;
+	-- retain the turn BEFORE requesting it because a host event may fire
+	-- synchronously inside commandUnit.
+	local activationKey = tostring(id);
+	CivvisLedger.expected_gp_activation[activationKey] = turn;
 	if commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
 		gpPending[id] = nil;
 		emit("gp", { turn = turn, unit = id, individual = individual,
@@ -13812,6 +13826,7 @@ local function orderGreatPerson(player, unit, id, turn)
 			y = try(function() return unit:GetY(); end, -1) });
 		return "activated";
 	end
+	CivvisLedger.expected_gp_activation[activationKey] = nil;
 	-- 2. Otherwise walk toward the nearest plot where the work can actually
 	-- land. ⚠ THE ENGINE'S HIGHLIGHT IS A PLACE, NOT A PROMISE:
 	-- `GetActivationHighlightPlots` names a cultural person's districts
