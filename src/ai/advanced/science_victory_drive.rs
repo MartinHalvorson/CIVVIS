@@ -1001,7 +1001,7 @@ impl AdvancedAi {
                 .total_cmp(&left.1)
                 .then_with(|| left.0.cmp(&right.0))
         });
-        pad_sites.truncate(desired_pads.max(1).min(3));
+        pad_sites.truncate(desired_pads.clamp(1, 3));
 
         // A first pad blocks all launch projects. Later pads can be built in
         // parallel by other cities, so they join the critical path only until
