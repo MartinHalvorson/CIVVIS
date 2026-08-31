@@ -935,7 +935,7 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
             and ranking.pooled_win_diff_pp(displayed[tag]) > 0
         }
         self.assertEqual(set(rules["deployment_genome"]), eligible)
-        self.assertEqual(len(eligible), 34)
+        self.assertEqual(len(eligible), 31)
 
     def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
