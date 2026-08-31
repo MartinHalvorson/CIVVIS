@@ -54,6 +54,7 @@ def setUpModule() -> None:
     halt, lock = sandbox / "operator-halt.json", sandbox / "civ6-game.lock"
     os.environ["CIVVIS_OPERATOR_HALT_FILE"] = str(halt)
     os.environ["CIVVIS_GAME_LOCK_DIR"] = str(lock)
+    os.environ["CIVVIS_OPERATOR_INTENT_FILE"] = str(sandbox / "operator-intent")
     ladder_watchdog.gamelock.OPERATOR_HALT = halt
     ladder_watchdog.gamelock.LOCK = lock
 
@@ -142,6 +143,20 @@ class KeeperTestCase(unittest.TestCase):
 
 
 class WhenNoLoopIsRunning(KeeperTestCase):
+    def test_a_stopped_operator_intent_prevents_a_terminal_start(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            intent = tmp / "intent"
+            intent.write_text("stopped\n")
+            log = tmp / "log"
+            code = ladder_watchdog.main([
+                "--runs", str(ledger_with(tmp, [14.3])), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"), "--intent-file", str(intent),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            self.assertEqual(code, 0)
+            self.assertEqual(self.starts, [])
+            self.assertIn("operator intent is stopped", log.read_text())
+
     def test_the_loop_is_started_through_terminal(self):
         """Not `zsh script`. A LaunchAgent's child cannot install the mod.
 

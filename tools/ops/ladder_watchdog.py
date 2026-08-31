@@ -94,6 +94,7 @@ SUPERVISOR_LOCK = Path.home() / ".civvis-game-supervisor.lock"
 INTERACTIVE_HOST_LOCK = Path.home() / ".civvis-interactive-host.lock"
 SUPERVISOR_SCRIPT = (Path(__file__).resolve().parent
                      / "civvis-ladder-terminal-launcher.sh")
+INTENT_ENV = "CIVVIS_OPERATOR_INTENT_FILE"
 
 
 def log(path: Path, message: str) -> None:
@@ -131,6 +132,24 @@ def write_state(path: Path, state: dict) -> None:
         os.replace(tmp, path)
     except OSError:
         pass
+
+
+def operator_intent(path: Path) -> str:
+    """Return the durable operator intent, preserving the legacy default.
+
+    The game switch records `running` or `stopped` in this file.  A missing
+    file predates that switch and therefore retains the watchdog's historical
+    running behavior; an empty, unreadable, or unknown value is deliberately
+    treated as stopped, because it must never turn an ambiguous instruction
+    into a new Terminal-hosted game session.
+    """
+    try:
+        intent = path.read_text().strip()
+    except FileNotFoundError:
+        return "running"
+    except (OSError, UnicodeError):
+        return "stopped"
+    return intent if intent == "running" else "stopped"
 
 
 #: How long the newest run may go without writing an event before this tool is
@@ -301,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="the interactive host's lock directory")
     parser.add_argument("--runs", type=Path, default=None,
                         help="runs directory the live ledger sits beside")
+    parser.add_argument("--intent-file", type=Path, default=None,
+                        help="durable running/stopped operator intent file")
     parser.add_argument("--state", type=Path, default=STATE_DEFAULT)
     parser.add_argument("--log", type=Path, default=LOG_DEFAULT)
     parser.add_argument("--dry-run", action="store_true",
@@ -308,6 +329,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     runs = args.runs if args.runs is not None else civ6_ladder.RUNS_DEFAULT
+    intent_file = args.intent_file or Path(
+        os.environ.get(INTENT_ENV, Path.home() / ".civvis-operator-intent"))
+    intent = operator_intent(intent_file)
+    if intent != "running":
+        log(args.log, "OFF operator intent is stopped; not starting or "
+                      "stopping anything")
+        return 0
     ledger = runs / "ladder.json"
     now = datetime.now(timezone.utc)
     alive = supervisor_pid(args.lock)
