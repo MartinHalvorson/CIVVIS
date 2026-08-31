@@ -5253,9 +5253,7 @@ fn verify_unit_order(
                     Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
                     // See `later_moved_units`: the decider walked this unit away
                     // after asking it to dig in. Not the bridge's doing.
-                    Some(_) if later.moved => {
-                        Verdict::Failed("superseded_by_move".to_string())
-                    }
+                    Some(_) if later.moved => Verdict::Failed("superseded_by_move".to_string()),
                     Some(_) => Verdict::Failed("not_fortified".to_string()),
                 }
             }
@@ -5703,9 +5701,7 @@ fn verify_orders_with_later_fortifications(
                     later_fortified: order
                         .subject
                         .is_some_and(|id| later_fortified.contains(&id)),
-                    later_moved: order
-                        .subject
-                        .is_some_and(|id| later_moved.contains(&id)),
+                    later_moved: order.subject.is_some_and(|id| later_moved.contains(&id)),
                 },
             ),
             order: order.clone(),
@@ -9203,14 +9199,30 @@ mod tests {
         warrior.x = 5;
         warrior.y = 4;
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[], LaterFrames::default()),
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &arrived,
+                &tiles,
+                &[],
+                LaterFrames::default()
+            ),
             Verdict::Verified
         ));
 
         let mut gone = before.clone();
         gone.hostiles.clear();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &gone, &tiles, &[], LaterFrames::default()),
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &gone,
+                &tiles,
+                &[],
+                LaterFrames::default()
+            ),
             Verdict::Verified
         ));
 
