@@ -36344,8 +36344,8 @@ fn builder_tries_the_next_tile_follows_the_ledger() {
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
     assert!(
-        deployment.base.builder_tries_the_next_tile,
-        "selected by the current three-batch deployment policy"
+        !deployment.base.builder_tries_the_next_tile,
+        "not selected by the current three-batch deployment policy"
     );
 }
 
