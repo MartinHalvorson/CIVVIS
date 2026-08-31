@@ -8720,6 +8720,95 @@ fn recovery_requires_material_local_danger_and_ends_when_it_clears() {
 }
 
 #[test]
+fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
+    let (mut game, recent, enemy_city) = timed_war_fixture(7_220);
+    let quiet = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|city| *city != recent)
+        .expect("the fixture has a second home city");
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.turn = 90;
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+
+    let recent_pos = game.cities[&recent].pos;
+    let quiet_pos = game.cities[&quiet].pos;
+    assert_ne!(recent_pos, quiet_pos);
+    let attack_pos =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.wdist(recent_pos, *position) <= 6
+                    && game.wdist(quiet_pos, *position) <= 6
+            })
+            .expect("the two home cities share a visible pressure radius");
+    let observer_pos =
+        game.nbrs(attack_pos)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the staged army has an adjacent observation tile");
+    game.spawn_test_unit("scout", 0, observer_pos);
+    assert!(game.player_can_see(0, attack_pos));
+
+    for _ in 0..4 {
+        game.spawn_test_unit("modern_armor", 1, attack_pos);
+    }
+    // Use the host-observed city strengths to reproduce the live shape: the
+    // recently hit city can have more local support while an undamaged
+    // neighbour has the worse raw hostile/friendly ratio.
+    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(recent, 200.0);
+    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(quiet, 190.0);
+    game.cities.get_mut(&recent).unwrap().hp = 180;
+    game.cities.get_mut(&recent).unwrap().last_attacked = game.turn;
+
+    let recent_pressure = AdvancedAi::city_pressure(&game, 0, recent);
+    let quiet_pressure = AdvancedAi::city_pressure(&game, 0, quiet);
+    assert!(
+        recent_pressure < quiet_pressure,
+        "the raw radius ratio must reproduce the live overlap: recent {recent_pressure:.3}, quiet {quiet_pressure:.3}"
+    );
+    assert!(recent_pressure >= 0.90 && quiet_pressure >= 0.90);
+    assert!(
+        quiet_pressure - recent_pressure < FRESH_CITY_DAMAGE_PRIORITY,
+        "the recency credit must only cover a modest overlap: recent {recent_pressure:.3}, quiet {quiet_pressure:.3}"
+    );
+    assert!(game.cities.contains_key(&enemy_city));
+    assert_eq!(
+        AdvancedAi::new().threatened_city(&game, 0),
+        Some(recent),
+        "a fresh city hit must outrank a slightly worse ratio at an undamaged neighbour"
+    );
+
+    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(quiet, 20.0);
+    let overwhelming_quiet_pressure = AdvancedAi::city_pressure(&game, 0, quiet);
+    assert!(
+        overwhelming_quiet_pressure - recent_pressure >= FRESH_CITY_DAMAGE_PRIORITY,
+        "the quiet city must be materially more dangerous in the guard case: recent {recent_pressure:.3}, quiet {overwhelming_quiet_pressure:.3}"
+    );
+    assert_eq!(
+        AdvancedAi::new().threatened_city(&game, 0),
+        Some(quiet),
+        "recency must not override an overwhelmingly more dangerous city"
+    );
+}
+
+#[test]
 fn religious_denial_triggers_with_one_unconverted_civilization() {
     let mut game = Game::new_full(4, 30, 18, 7_215, 300, 0, false);
     for pid in 0..4 {
