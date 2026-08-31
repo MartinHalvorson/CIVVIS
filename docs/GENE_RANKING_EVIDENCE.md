@@ -179,6 +179,14 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | off | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | off | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version \| Total versions |
+|---|---|---|---:|
+| `science-victory-drive-2` | off (unmeasured) | Version 2 of `science_victory_drive`: the original planner remains a separately measurable family member, while this continuation uses a meaningful lead, legal launch sites, a research funnel, and an estimate that can keep a live chain moving. | 1 \| 2 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:

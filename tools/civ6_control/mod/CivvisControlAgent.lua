@@ -6823,16 +6823,22 @@ local function exportState(player, pid, turn, frame)
 				end, nil);
 			end
 		end
-		CivvisLedger.kinds[tostring(try(function() return unit:GetID(); end, -1))] = name;
+		local unitId = try(function() return unit:GetID(); end, -1);
+		local unitX = try(function() return unit:GetX(); end, -1);
+		local unitY = try(function() return unit:GetY(); end, -1);
+		CivvisLedger.kinds[tostring(unitId)] = name;
+		if unitId >= 0 and unitX >= 0 and unitY >= 0 then
+			CivvisLedger.positions[tostring(unitId)] = { x = unitX, y = unitY };
+		end
 		units[#units + 1] = {
-			id = try(function() return unit:GetID(); end, -1),
+			id = unitId,
 			kind = name,
 			-- See `unitBaseType`: what this replaces, when it is a civ unique.
 			base = unitBaseType(name),
 			-- See `unitClass`: the fallback for a unique that replaces nothing.
 			class = unitClass(name),
-			x = try(function() return unit:GetX(); end, -1),
-			y = try(function() return unit:GetY(); end, -1),
+			x = unitX,
+			y = unitY,
 			hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 			moves = try(function() return unit:GetMovesRemaining(); end, -1),
 			xp = progress.xp,
@@ -10175,7 +10181,7 @@ end
 -- `applyOrder`); every read re-resolves through `UnitManager.GetUnit`.
 -- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
 CivvisLedger = {
-	open = {}, damage = {}, pending = {}, kinds = {}, expected_gp_activation = {}
+	open = {}, damage = {}, pending = {}, kinds = {}, positions = {}, expected_gp_activation = {}
 };
 
 CivvisLedger.componentKey = function(id)
@@ -10490,6 +10496,7 @@ CivvisLedger.onUnitRemoved = function(player, unitId)
 	local key = tostring(unitId);
 	local activationTurn = CivvisLedger.expected_gp_activation[key];
 	CivvisLedger.expected_gp_activation[key] = nil;
+	CivvisLedger.positions[key] = nil;
 	emit("unit_lost", {
 		turn = turn, unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[key],
 		cause = activationTurn == turn and "great_person_activation" or nil,
@@ -10519,6 +10526,35 @@ CivvisLedger.onUnitCaptured = function(currentUnitOwner, unitId, owningPlayer, c
 		unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[tostring(unitId)],
 		owner = tonumber(currentUnitOwner), original_owner = tonumber(owningPlayer),
 		captor = captor, captor_is_barbarian = barbarian,
+	});
+end;
+
+-- ★★★★★ THE REVERSE LEGALITY WITNESS. The bridge normally sends only actions
+-- CIVVIS already calls legal, so it can discover "CIVVIS allowed a host refusal"
+-- but never "the host allowed a CIVVIS refusal". `Events.UnitMoved` is the
+-- shipped event for the latter direction: TutorialUIRoot.lua:2733 receives
+-- `(player, unit, x, y, locallyVisible, stateChange)` after each movement.
+--
+-- Keep the previous location from the state export, then advance it after every
+-- event. A first sighting is intentionally only a seed: without a host-observed
+-- source coordinate it is not a legal-action comparison. The Rust audit marks
+-- that absence as uncomparable instead of inventing a path.
+CivvisLedger.onUnitMoved = function(player, unitId, x, y, locallyVisible, stateChange)
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	if tonumber(player) ~= pid then return; end
+	local id = tonumber(unitId);
+	local toX, toY = tonumber(x), tonumber(y);
+	if id == nil or toX == nil or toY == nil then return; end
+	local key = tostring(id);
+	local from = CivvisLedger.positions[key];
+	CivvisLedger.positions[key] = { x = toX, y = toY };
+	if from == nil or from.x == toX and from.y == toY then return; end
+	emit("host_move", {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		unit = id, unit_kind = CivvisLedger.kinds[key],
+		from_x = from.x, from_y = from.y, x = toX, y = toY,
+		locally_visible = locallyVisible == true,
+		state_change = stateChange == true,
 	});
 end;
 
@@ -18079,6 +18115,7 @@ function Initialize()
 		CombatVisBegin = CivvisLedger.onCombatVisBegin,
 		CombatVisEnd = CivvisLedger.onCombatVisEnd,
 		UnitDamageChanged = CivvisLedger.onUnitDamageChanged,
+		UnitMoved = CivvisLedger.onUnitMoved,
 		UnitRemovedFromMap = CivvisLedger.onUnitRemoved,
 		UnitCaptured = CivvisLedger.onUnitCaptured,
 		CityOccupationChanged = CivvisLedger.onCityOccupationChanged,

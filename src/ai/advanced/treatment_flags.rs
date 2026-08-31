@@ -2128,6 +2128,21 @@ impl AdvancedAi {
         self.science_victory_drive = false;
     }
 
+    /// Version 2 of `science_victory_drive`: the original planner remains a
+    /// separately measurable family member, while this continuation uses a
+    /// meaningful lead, legal launch sites, a research funnel, and an estimate
+    /// that can keep a live chain moving. One version of the family plays, so
+    /// this turns version 1 off. Opt-in gene `science-victory-drive-2`.
+    pub fn enable_science_victory_drive_2(&mut self) {
+        self.science_victory_drive = false;
+        self.science_victory_drive_2 = true;
+    }
+
+    /// The twin of `enable_science_victory_drive_2`.
+    pub fn disable_science_victory_drive_2(&mut self) {
+        self.science_victory_drive_2 = false;
+    }
+
     /// Let a Builder whose nearest improvable tile cannot be routed to try the
     /// next-nearest instead of standing still for the rest of the game. See
     /// `BasicAi::builder_tries_the_next_tile`; opt-in gene
