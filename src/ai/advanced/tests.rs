@@ -9588,15 +9588,15 @@ fn settlement_forecast_delays_second_ring_jobs_and_models_water_housing() {
         Some(first[0]),
         "the rich second-ring tile is not owned for the first citizen"
     );
-    assert_eq!(AdvancedAi::settlement_base_housing(&game, center), 2.0);
+    assert_eq!(AdvancedAi::settlement_base_housing(&game, 0, center), 2.0);
 
     let mut coast = game.clone();
     shape_forecast_tile(&mut coast, first[5], "coast", false, None);
-    assert_eq!(AdvancedAi::settlement_base_housing(&coast, center), 3.0);
+    assert_eq!(AdvancedAi::settlement_base_housing(&coast, 0, center), 3.0);
 
     let mut fresh = game;
     assert!(fresh.map.set_river_edge(center, first[5], true));
-    assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
+    assert_eq!(AdvancedAi::settlement_base_housing(&fresh, 0, center), 5.0);
 }
 
 #[test]
@@ -21661,6 +21661,11 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
         let (mut game, home) = camp_bounty_board(if barbarian { 92_041 } else { 92_042 });
         game.record_contact(0, 1);
         game.at_war.insert((0, 1));
+        // The route fixture intentionally makes all nearby sites dry. Keep
+        // that geometry eligible under the opening settlement policy so this
+        // remains a route-detour test rather than a water-site test.
+        game.players[0].techs.insert(crate::name!("pottery"));
+        game.players[0].gold = 1_000.0;
         // Make the nearby alternative sites comparable open ground. The
         // chosen target is cached deliberately: this test isolates a route
         // blocker that appears AFTER an otherwise valid target was selected.

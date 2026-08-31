@@ -9,8 +9,8 @@ hosts it in Terminal, `ladder_watchdog.py` restarts it, and
 
 What was **not** tracked until 2026-08-28 was the layer the operator actually
 touches: the switch that turns the lanes on and off, the wrapper that pins
-every game to the operator's policy, the retention job that keeps the disk
-alive, and the two launchd agents that run them. They lived in one machine's
+every game to the operator's policy, the retention jobs that keep the disk
+alive, and the launchd agents that run them. They lived in one machine's
 home directory (`~/bin/civvis-games`, `~/civvis-verified-head-launcher.zsh`,
 `~/.local/bin/civvis_run_prune.sh`, two hand-written plists and a block of
 `export`s in `~/.zprofile`), named that machine's home directory outright, and
@@ -23,8 +23,10 @@ had never been seen by a CI run. This page is how any Mac gets the same loop.
 | `tools/ops/civvis-games.sh` | `~/bin/civvis-games` (symlink) | `on` / `retire` / `off` / `status` / `wins` / `ensure` — the lane switch and explicit verification authorization |
 | `tools/ops/civvis-verified-head-launcher.sh` | `~/civvis-verification-launch.command` (symlink) | the entry point every start goes through: fresh `origin/main`, deployment genome, this host's policy, nothing inherited from the window |
 | `tools/ops/civvis-run-prune.sh` | — | removes every run directory older than 24 h; never the ledgers or an open run |
+| `tools/ops/civvis-worktree-prune.sh` | — | removes only clean, inactive task worktrees after 24 h, and only when GitHub already has their content |
 | `deploy/com.civvis.keepplaying.plist` | `~/Library/LaunchAgents/…` | `civvis-games ensure` every 5 min |
 | `deploy/com.civvis.run-prune.plist` | `~/Library/LaunchAgents/…` | `civvis-run-prune.sh` hourly |
+| `deploy/com.civvis.worktree-prune.plist` | `~/Library/LaunchAgents/…` | `civvis-worktree-prune.sh` hourly |
 | `tools/ops/civvis-install-host-automation.sh` | — | wires all of the above, idempotently |
 
 Symlinks, never copies: a home copy of a tracked script is exactly what
@@ -58,7 +60,7 @@ Symlinks, never copies: a home copy of a tracked script is exactly what
    ```
 
    It links `~/bin/civvis-games` and `~/civvis-verification-launch.command`
-   to the tracked scripts, renders and loads the two launchd agents, writes
+   to the tracked scripts, renders and loads the three launchd agents, writes
    `~/.civvis-verification-policy` once (seeded from any `CIVVIS_*` exports in
    the shell you ran it from, so a `.zprofile`-style setup migrates itself),
    and re-renders the keeper so a recovery starts the wrapper rather than the
