@@ -13,6 +13,8 @@
 --   4. UnitDamageChanged deltas inside an open combat are recorded;
 --   5. our unit leaving the map emits `unit_lost` with its last known kind
 --      and the treasury; another player's does not;
+--   5a. a Great Person consumed by activation keeps that witness but is marked
+--       with its non-loss cause;
 --   5b. our unit TAKEN emits `unit_captured` naming the captor and whether it
 --      is the barbarians (`UnitCaptured.lua:8`); a unit we capture does not;
 --   6. a city changing hands emits `city_occupation`.
@@ -165,6 +167,15 @@ ledger.onUnitRemoved(0, 7)
 local lost = lastEvent("unit_lost")
 check("unit_lost names the kind", has(lost, '"unit_kind":"UNIT_ARCHER"'), true)
 check("unit_lost carries the treasury", has(lost, '"gold":120'), true)
+
+-- 5a. Great Person activation consumes the physical unit, but is not a loss.
+ledger.kinds["9"] = "UNIT_GREAT_SCIENTIST"
+ledger.expected_gp_activation["9"] = 41
+ledger.onUnitRemoved(0, 9)
+local activated = lastEvent("unit_lost")
+check("activated Great Person keeps the removal witness", activated ~= nil, true)
+check("activated Great Person names its cause",
+	has(activated, '"cause":"great_person_activation"'), true)
 
 -- 5b. Our settler is TAKEN by the barbarians: the game's own word, ours only.
 ledger.kinds["8"] = "UNIT_SETTLER"
