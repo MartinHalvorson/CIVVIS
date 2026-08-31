@@ -29,12 +29,29 @@ local EXPORTS = {
 	CivvisAnswersPrompt = true,
 	CivvisSoftBlockers = true,
 	CivvisResidualBucket = true,
+	CivvisChooseSpyEscapeRoute = true,
 }
 
 setmetatable(_G, { __index = function(_, k)
 	if EXPORTS[k] then return rawget(_G, k); end
 	return stub();
 end })
+
+local request = nil
+PlayerOperations = {
+	PARAM_DISTRICT_TYPE = "district_type",
+	SET_ESCAPE_ROUTE = "set_escape_route",
+}
+GameInfo = {
+	Districts = {
+		DISTRICT_CITY_CENTER = { Index = 17 },
+	},
+}
+UI = {
+	RequestPlayerOperation = function(pid, operation, parameters)
+		request = { pid = pid, operation = operation, parameters = parameters }
+	end,
+}
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
 assert(chunk, "could not load agent: " .. tostring(err))
@@ -50,6 +67,19 @@ local soft = rawget(_G, "CivvisSoftBlockers")
 assert(type(owned) == "table", "CivvisOwnedBlockers is not exported")
 assert(type(answers) == "table", "CivvisAnswersPrompt is not exported")
 assert(type(soft) == "table", "CivvisSoftBlockers is not exported")
+
+-- 0. The unattended escape uses the same native operation as the shipped
+-- `EspionageEscape.lua:29-33` fourth button, with the city-center district
+-- index rather than a UI click that may never open the popup.
+local escape = rawget(_G, "CivvisChooseSpyEscapeRoute")
+assert(type(escape) == "function", "CivvisChooseSpyEscapeRoute is not exported")
+assert(escape(7) == true, "spy escape operation was not accepted by the host")
+assert(request ~= nil and request.pid == 7,
+	"spy escape request did not target the local player")
+assert(request.operation == "set_escape_route",
+	"spy escape used the wrong player operation")
+assert(request.parameters.district_type == 17,
+	"spy escape did not select the shipped city-center route")
 
 -- 1. Every prompt CIVVIS answers is a prompt CIVVIS owns.
 --

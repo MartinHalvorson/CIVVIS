@@ -4787,6 +4787,22 @@ local function currentBlocker(pid)
 	end);
 end
 
+-- The shipped `EspionageEscape.lua` answers this prompt with a
+-- `SET_ESCAPE_ROUTE` player operation.  The notification is not guaranteed to
+-- open that popup in an unattended seat, so use the same native operation from
+-- the agent.  City Center is the fourth shipped choice and is always enabled;
+-- this is a route choice, not a movement order, so it cannot move a unit or
+-- alter the mirrored position while it clears the blocker.
+CivvisChooseSpyEscapeRoute = function(pid)
+	return try(function()
+		local params = {};
+		params[PlayerOperations.PARAM_DISTRICT_TYPE] =
+			GameInfo.Districts["DISTRICT_CITY_CENTER"].Index;
+		UI.RequestPlayerOperation(pid, PlayerOperations.SET_ESCAPE_ROUTE, params);
+		return true;
+	end, false);
+end
+
 -- Not every blocker actually blocks. "Units have moves" and its relatives are
 -- the interface nagging that something could still be done this turn -- the
 -- shipped end-turn button cycles to the next idle unit instead of ending, but
@@ -4881,6 +4897,9 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_EMERGENCY_NEEDS_ATTENTION = true,
 	ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK = true,
 	ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION = true,
+	-- Escape-route choice is answered by the native operation in the soft arm
+	-- below; it stays here so the game does not treat it as an ordinary hard
+	-- decision while the operation settles.
 	ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE = true,
 	ENDTURN_BLOCKING_SPY_CHOOSE_DRAGNET_PRIORITY = true,
 };
@@ -17129,7 +17148,14 @@ local function tick()
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
-				if cfg.CivvisDecides then
+				-- `EspionageEscape` is a soft blocker only in the sense that it is
+				-- not a CIVVIS decision. It is still a native prompt the engine will
+				-- not clear by dismissing its notification; answer it with the same
+				-- operation the shipped fourth button sends.
+				if name == "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE" then
+					answered = CivvisChooseSpyEscapeRoute(pid)
+						and "escape_route:city_center" or nil;
+				elseif cfg.CivvisDecides then
 					-- CIVVIS has already made and applied its complete unit-order
 					-- pass in settleTurn. A soft blocker is only a UI reminder; the
 					-- legacy unit AI must not invent orders here. In particular, it
