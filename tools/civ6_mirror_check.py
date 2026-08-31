@@ -557,7 +557,16 @@ def minor_fact_mismatches(state, board, top):
             mismatches.append(f"missing minor actor {want or source.get('player')}")
             continue
         for key in ("score", "military"):
-            expected, got = source.get(key), player.get(key)
+            expected = source.get(key)
+            # `military` is the model's max(observed host strength, visible
+            # unit sum).  That distinction matters for city-states too: their
+            # units are often fully visible, so the reconstructed sum can be
+            # higher than the host's public ribbon value.  Compare the
+            # host-only field when the current board exports it, while keeping
+            # the old `military` fallback for boards built before that field
+            # existed.
+            board_key = "observed_military" if key == "military" else key
+            got = player.get(board_key, player.get(key))
             if isinstance(expected, (int, float)) and expected >= 0 \
                     and (not isinstance(got, (int, float)) or abs(got - expected) > 0.51):
                 mismatches.append(f"{want} {key} Civ6={expected:g} CIVVIS={got!r}")
