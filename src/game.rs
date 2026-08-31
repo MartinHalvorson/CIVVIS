@@ -18511,15 +18511,17 @@ impl Game {
             .max(self.unit_bombard_strength(u))
     }
 
-    /// Whether the city centre stands on fresh water, and whether it is
-    /// coastal. Both decide the housing floor, and an Aqueduct's whole worth
-    /// is the gap between the two floors — so the test lives in one place and
-    /// `city_housing` and `aqueduct_housing_gain` read it from here.
-    fn city_water(&self, city: &City) -> (bool, bool) {
-        let center = &self.map.tiles[&city.pos];
-        let fresh = self.grants_city_state_unique_bonus(city.owner, "Mohenjo-Daro")
+    /// Whether an existing or prospective city centre stands on fresh water,
+    /// and whether it is coastal.
+    ///
+    /// Both decide the housing floor. Keeping this at a position instead of
+    /// only on [`City`] lets settlement scoring ask the same question before
+    /// founding, including the host's observed `Plot:IsFreshWater()` result.
+    pub(crate) fn city_site_water(&self, pid: usize, pos: Pos) -> (bool, bool) {
+        let center = &self.map.tiles[&pos];
+        let fresh = self.grants_city_state_unique_bonus(pid, "Mohenjo-Daro")
             || center.has_river()
-            || self.nbrs(city.pos).iter().any(|n| {
+            || self.nbrs(pos).iter().any(|n| {
                 self.map
                     .get(*n)
                     .is_some_and(|t| t.terrain == "lake" || t.feature.as_deref() == Some("oasis"))
@@ -18529,16 +18531,83 @@ impl Game {
         // lake the export names `TERRAIN_COAST` is one the derivation misses.
         let fresh = self
             .observed_fresh_water
-            .get(&city.pos)
+            .get(&pos)
             .copied()
             .unwrap_or(fresh);
-        let coastal = self.nbrs(city.pos).iter().any(|n| {
+        let coastal = self.nbrs(pos).iter().any(|n| {
             self.map
                 .get(*n)
                 .map(|t| matches!(t.terrain.as_str(), "coast" | "ocean"))
                 .unwrap_or(false)
         });
         (fresh, coastal)
+    }
+
+    /// Whether the city centre stands on fresh water, and whether it is
+    /// coastal. Both decide the housing floor, and an Aqueduct's whole worth
+    /// is the gap between the two floors — so the test lives in one place and
+    /// `city_housing` and `aqueduct_housing_gain` read it from here.
+    fn city_water(&self, city: &City) -> (bool, bool) {
+        self.city_site_water(city.owner, city.pos)
+    }
+
+    /// The model-side Gold quote for buying a Granary in a newly founded city.
+    ///
+    /// Before a city exists the live host has no city-specific purchase menu to
+    /// query. A fresh city has no district discount, buildings, queue, or
+    /// production block, however, so its standard quote is exact once Pottery
+    /// and the empire-wide purchase rules permit it. `None` is deliberately
+    /// conservative when a future city could not have the Granary immediately.
+    pub(crate) fn new_city_granary_gold_purchase_cost(&self, pid: usize) -> Option<f64> {
+        let granary = crate::name!("granary");
+        let spec = self.rules.buildings.get(&granary)?;
+        let item = Item::Building { building: granary };
+        let city_center = spec
+            .district
+            .is_none_or(|district| self.district_family(district) == "city_center");
+        let unavailable = self.is_arena()
+            || !self.unlocked(pid, &spec.tech, &spec.civic)
+            || !spec.buildable
+            || spec.purchase_only
+            || !city_center
+            || !spec.requires.is_empty()
+            || !spec.requires_any.is_empty()
+            || spec.wonder
+            || spec.outer_defense > 0
+            || spec.coastal
+            || spec
+                .effects
+                .get("requires_river_city")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+            || spec
+                .effects
+                .get("requires_fresh_water_city")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+            || spec
+                .unique_to
+                .as_deref()
+                .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
+            || self.rules.buildings.values().any(|candidate| {
+                candidate.replaces == Some(granary)
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
+            })
+            || self.congress_effect_active("urban_development_treaty", "B", "city_center")
+            || self.congress_effect_active("global_energy_treaty", "B", "granary");
+        if unavailable {
+            return None;
+        }
+        let discount = self
+            .gov_effects(pid)
+            .gold_purchase_discount_pct
+            .clamp(0.0, 100.0);
+        Some(self.item_cost(&item) * 4.0 * (1.0 - discount / 100.0))
     }
 
     /// The housing a city centre carries before any building, improvement or
