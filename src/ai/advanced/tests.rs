@@ -5979,6 +5979,26 @@ fn a_defensive_posture_that_cannot_win_is_not_held_for_ever() {
 }
 
 #[test]
+fn an_explicit_science_target_keeps_its_lane_against_a_power_gap() {
+    let (mut game, _) = outgunned_at_war_fixture();
+    game.turn = 100;
+
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = science.assess(&game, 0);
+
+    assert_eq!(
+        plan.strategy,
+        GrandStrategy::Science,
+        "a Science contract must not become permanent Recovery merely because
+         a wartime rival has more military power"
+    );
+    assert!(
+        plan.threatened_city.is_none(),
+        "the fixture must contain no local city threat"
+    );
+}
+
+#[test]
 fn an_impossible_victory_denial_keeps_a_stale_major_war_defensive() {
     let (mut game, _) = outgunned_at_war_fixture();
     game.turn = 100;

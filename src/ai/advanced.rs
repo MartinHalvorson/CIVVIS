@@ -10376,11 +10376,17 @@ impl AdvancedAi {
             && actionable_denial.is_some_and(|(rival, counter)| {
                 counter == GrandStrategy::Conquest && my_power * 2.0 < g.military_power(rival)
             });
+        // An explicit Science contract must not let a power-gap comparison
+        // turn a defensive answer into a permanent empire-wide Recovery
+        // posture. The comparison is useful for an adaptive seat, but a
+        // targeted seat can remain below a wartime rival for the whole race;
+        // only a city-level threat should interrupt its research lane.
         let (strategy, because) = if at_war
             && (threatened_city.is_some()
                 || (my_power * 1.25 < strongest_wartime_rival
                     && !recovery_is_stale
-                    && !raid_only_war))
+                    && !raid_only_war
+                    && !science_targeted))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
         } else if impossible_denial {
