@@ -16362,6 +16362,107 @@ fn district_project_search_extends_only_concrete_great_person_races() {
 }
 
 #[test]
+fn opening_gpp_projects_wait_except_for_prophets_and_exceptional_scientists() {
+    let mut game = Game::new(2, 24, 16, 7_105, 200, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "campus");
+    install_ai_test_district(&mut game, city, "holy_site");
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("library"), crate::name!("shrine")];
+    game.players[0]
+        .techs
+        .extend([crate::name!("writing"), crate::name!("astrology")]);
+    game.turn = 51;
+    assert!(
+        game.turn < game.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS),
+        "the fixture must cover the turn-51 Online opening"
+    );
+
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let religion_plan = StrategicPlan {
+        strategy: GrandStrategy::Religion,
+        ..science_plan.clone()
+    };
+    let ordinary = AdvancedAi::new();
+    let mut restrained = AdvancedAi::new();
+    restrained.enable_early_project_restraint();
+
+    let ordinary_science =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    let restrained_science =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert!(ordinary_science > EARLY_GPP_PROJECT_FALLBACK_CAP);
+    assert_eq!(restrained_science, EARLY_GPP_PROJECT_FALLBACK_CAP);
+
+    let prophet =
+        restrained.district_project_value(&game, 0, city, "holy_site_prayers", &religion_plan);
+    assert!(
+        prophet > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "an open Prophet race must remain worth its production: {prophet}"
+    );
+
+    let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
+    assert_eq!(
+        game.current_great_person("scientist").map(|(id, _)| id),
+        Some("aryabhata"),
+        "the fixture's current early Scientist must be the three-boost prize"
+    );
+    let cost = game.gp_cost(0, "scientist");
+    assert!(
+        cost > award,
+        "one project must be a clutch, not a finished race"
+    );
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), cost - award);
+    let exceptional_clutch =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert!(
+        exceptional_clutch > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "a one-project claim on an exceptional Scientist must escape the opening cap"
+    );
+
+    game.retired_great_people.insert("aryabhata".to_string());
+    assert_eq!(
+        game.current_great_person("scientist").map(|(id, _)| id),
+        Some("euclid"),
+        "the comparison Scientist supplies only two boosts"
+    );
+    let euclid_cost = game.gp_cost(0, "scientist");
+    assert!(euclid_cost > award);
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), euclid_cost - award);
+    let ordinary_clutch =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert_eq!(ordinary_clutch, EARLY_GPP_PROJECT_FALLBACK_CAP);
+
+    game.players[0].gpp.insert("scientist".to_string(), 0.0);
+    game.turn = game.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS);
+    let after_opening =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    let stock_after_opening =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert_eq!(after_opening, stock_after_opening);
+}
+
+#[test]
 fn defensive_recovery_force_gap_outranks_rear_city_great_person_project() {
     let mut game = Game::new(2, 24, 16, 7_104, 200, 0);
     let settler = game

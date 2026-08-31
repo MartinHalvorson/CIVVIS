@@ -2143,6 +2143,18 @@ impl AdvancedAi {
         self.science_victory_drive_2 = false;
     }
 
+    /// In the opening, ordinary repeatable Great-Person projects wait for
+    /// city development; an open Prophet race and a clutch for an exceptional
+    /// Scientist remain forcing. Opt-in gene `early-project-restraint`.
+    pub fn enable_early_project_restraint(&mut self) {
+        self.early_project_restraint = true;
+    }
+
+    /// The twin of `enable_early_project_restraint`.
+    pub fn disable_early_project_restraint(&mut self) {
+        self.early_project_restraint = false;
+    }
+
     /// Let a Builder whose nearest improvable tile cannot be routed to try the
     /// next-nearest instead of standing still for the rest of the game. See
     /// `BasicAi::builder_tries_the_next_tile`; opt-in gene
