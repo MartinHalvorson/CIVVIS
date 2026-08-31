@@ -5169,6 +5169,17 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// The host refuses ~14% of MOVE_TO orders as `did_not_move`, the refusal
+    /// event carries no destination, and the verdicts are ledger-only — so
+    /// the same refused move was re-issued for up to eleven straight turns
+    /// while the livelock detector's footprint-of-one carve-out looked away.
+    /// `BasicAi` owns the machinery (watch, strikes, per-unit step bar; see
+    /// `judge_move_refusals`); this flag mirrors the gene so the Advanced
+    /// settler layer can also retire a frozen Settler's destination through
+    /// the dead-site machinery. HostOnly: the simulator applies every move,
+    /// so the proof — an issued step the fresh board shows untaken — cannot
+    /// exist off the live bridge. Gene `live-move-refusal-break`.
+    live_move_refusal_break: bool,
     /// The host's barbarian scouts capture civilians — run
     /// civvis-20260828T122324Z lost four settlers to ONE scout that every
     /// capture model exempted — so on the live seat a barbarian recon unit
@@ -6950,6 +6961,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            live_move_refusal_break: false,
             live_barbarian_scouts_capture: false,
             live_settler_capture_lessons: false,
             moksha_defends_the_faithless: false,
@@ -35317,6 +35329,44 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
+        // `live-move-refusal-break`: a Settler whose step the host has proved
+        // refused (see `BasicAi::judge_move_refusals`) does not merely bend
+        // its route — its destination goes through the same dead-site
+        // machinery a watchdog arrival uses, so the target chooser must pick
+        // a site the frozen approach does not serve. Bending alone can walk
+        // the same unreachable site from another angle for the whole bar.
+        self.retire_frozen_settler_targets(g);
+    }
+
+    /// `live-move-refusal-break`'s Settler half: a destination whose approach
+    /// the host has proved refused is set aside through the dead-site
+    /// machinery, exactly as a watchdog arrival is, so the target chooser
+    /// must pick a site the frozen approach does not serve.
+    fn retire_frozen_settler_targets(&mut self, g: &Game) {
+        if !self.live_move_refusal_break {
+            return;
+        }
+        let frozen: Vec<u32> = self
+            .settler_targets
+            .keys()
+            .copied()
+            .filter(|uid| self.base.move_refusal_blocked(g, *uid))
+            .collect();
+        for uid in frozen {
+            let Some(target) = self.settler_targets.remove(&uid) else {
+                continue;
+            };
+            self.settler_relaxed_targets.remove(&uid);
+            self.settler_dead_sites.entry(uid).or_default().insert(
+                target,
+                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+            );
+            think!(self.journal(), Expansion, Detail,
+                   "Settler retires a destination the host will not walk it toward";
+                   "its issued step was refused on consecutive turns without the unit \
+                    moving, so {target:?} is set aside and a fresh site is chosen";
+                   target);
+        }
     }
 
     /// Evaluate each legal city disposition on a cloned position, then play

@@ -1737,6 +1737,13 @@ pub const GENES: &[Gene] = &[
     // reconstructed case and a fix (operator rule, 2026-08-28). See
     // `advanced/civilian_safety.rs`.
     Gene { tag: "live-settler-capture-lessons", field: "live_settler_capture_lessons", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_settler_capture_lessons, disable: AdvancedAi::disable_live_settler_capture_lessons },
+    // The host refuses ~14% of MOVE_TO orders as `did_not_move` with no
+    // destination on the refusal event, so the same refused move was re-issued
+    // for up to eleven straight turns (a settler frozen four turns at
+    // (19,10) in run civvis-20260830T095742Z was captured on t47). The proof
+    // is an issued step the next turn's board shows untaken — impossible in
+    // the simulator, where every move applies, so no screen can price this.
+    Gene { tag: "live-move-refusal-break", field: "live_move_refusal_break", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_move_refusal_break, disable: AdvancedAi::disable_live_move_refusal_break },
     // A stranded Settler's wider search refuses a site beside an unresolved
     // rival border and forecasts its nearest-legal tier; see
     // `advanced/settler_never_idles.rs`.

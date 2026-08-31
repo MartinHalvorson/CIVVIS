@@ -165,6 +165,10 @@
       "group": "host-only",
       "reason": "The native barbarian seat's recon units cannot capture a civilian (the minor-seat gate returns them to fortify before `capture_adjacent_civilian`; the engine's scout phase moves them by `relocate`, which has no capture hook), so counting a barbarian scout in the exact capture-reach models is a zero-width change on a native board and a screen row could only measure noise. The Civilization VI host's scouts DO capture — run civvis-20260828T122324Z lost four settlers to one — so this is a `Kind::HostOnly` gene priced by the live ladder's `settlers_captured` column, with `disable_live_barbarian_scouts_capture` as the withholding arm."
     },
+    "live_move_refusal_break": {
+      "group": "host-only",
+      "reason": "The gene's whole proof is an issued step the NEXT turn's board shows untaken \u2014 the host's `did_not_move` answer read off the rebuilt mirror. In the simulator every legal applied move moves the unit, so the watch can never accumulate a strike, the bar can never be placed, and a screen row would be zero-width by construction. The live ladder prices it through the `did_not_move` share of `order_failed` (13.9% of all orders in the 2026-08-30 measurement), with `disable_live_move_refusal_break` as the withholding arm."
+    },
     "live_settler_capture_lessons": {
       "group": "host-only",
       "reason": "Every rule under it answers a live-seat fact a native board does not have: settler ids that change on every export (the vanished-settler detector is fed by `remap_unit_memory`), the host's own movement flood disagreeing with the mirror's, camps and raiders walking out of a fog the native barbarian seat does not hunt through, and the native seat's civilian losses being ~zero to begin with. A screen row would be zero-width by construction; the live ladder prices it directly through `settlers_captured` (#2724), with `disable_live_settler_capture_lessons` as the withholding arm."
