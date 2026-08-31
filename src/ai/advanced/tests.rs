@@ -12762,6 +12762,97 @@ fn severe_amenity_crisis_reclaims_one_research_grant_for_the_repair_chain() {
     assert!(!live.amenity_project_preemption);
 }
 
+/// `AdvancedAi::new` promotes the baseline Amenity repair flag, but its
+/// strategic production path used to bypass `BasicAi::pick_item` entirely.
+/// A severe city could therefore have a legal Entertainment Complex while
+/// the targeted governor kept choosing ordinary production. The bridge is
+/// deliberately bounded to one idle city per turn and leaves the frozen
+/// controller unchanged.
+#[test]
+fn promoted_amenity_repair_reaches_strategic_production_once_per_turn() {
+    let (mut game, capital, home) = empire_with_a_capital(71_116);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    let second = found_nearby_test_city(&mut game, 0, home);
+    game.players[0]
+        .civics
+        .insert(crate::name!("games_recreation"));
+    for cid in [capital, second] {
+        game.cities.get_mut(&cid).unwrap().pop = 6;
+        let site = game.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| {
+                *position != game.cities[&cid].pos
+                    && game.map.tiles[position].district.is_none()
+                    && game.map.tiles[position].district_foundation.is_none()
+                    && game.map.tiles[position].wonder.is_none()
+            })
+            .expect("the city has an owned district plot");
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.flooded = false;
+        let modeled = game.city_amenity_surplus(&game.cities[&cid]);
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
+            .insert(cid, -3 - modeled);
+        assert_eq!(game.city_amenity_surplus(&game.cities[&cid]), -3);
+        let legal = game.producible_items(0, cid);
+        assert!(
+            legal.iter().any(|item| matches!(
+                item,
+                Item::District { district, .. }
+                    if game.district_family(*district) == "entertainment_complex"
+            )),
+            "the severe city has a legal Entertainment Complex; legal: {legal:?}"
+        );
+    }
+    let mut frozen_board = game.clone();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    let mut live = AdvancedAi::new();
+    assert!(live.base.amenity_districts);
+    live.advanced_production(&mut game, 0, &plan, false);
+    let repaired: Vec<u32> = [capital, second]
+        .into_iter()
+        .filter(|cid| {
+            matches!(
+                game.cities[cid].queue.first(),
+                Some(Item::District { district, .. })
+                    if game.district_family(*district) == "entertainment_complex"
+            )
+        })
+        .collect();
+    assert_eq!(
+        repaired.len(),
+        1,
+        "the strategic handoff reserves one amenity district per turn: {repaired:?}"
+    );
+
+    let mut frozen = AdvancedAi::legacy();
+    frozen.advanced_production(&mut frozen_board, 0, &plan, false);
+    assert!(
+        [capital, second].into_iter().all(|cid| !matches!(
+            frozen_board.cities[&cid].queue.first(),
+            Some(Item::District { district, .. })
+                if frozen_board.district_family(*district) == "entertainment_complex"
+        )),
+        "the frozen strategic controller keeps the historical queue path"
+    );
+}
+
 /// The Entertainment Complex carries no amenity of its own; the Arena it
 /// hosts does. Priced by the district spec alone it scored like an empty
 /// plot: no Entertainment Complex in four of the last five live runs and
