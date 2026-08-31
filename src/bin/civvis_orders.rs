@@ -55,10 +55,11 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
 
 /// Direct invocations without `--victory` must agree with the high-level
-/// launchers' one central default. The launcher chain selected Diplomacy after
-/// deployment-shaped evidence; keeping a named mirror here prevents a bare
+/// launchers' one central default. The launch chain aims at Science on the
+/// operator's 2026-08-30 instruction (see `civ6_play.DEFAULT_CIVVIS_VICTORY`
+/// for the evidence trail); keeping a named mirror here prevents a bare
 /// recovery or manual invocation from silently reviving an old lane.
-const DEFAULT_VICTORY: &str = "diplomatic";
+const DEFAULT_VICTORY: &str = "science";
 
 /// Build the agent for a `--victory` lane, or `None` if the name is not one.
 ///
@@ -7238,13 +7239,13 @@ mod tests {
 
     #[test]
     fn direct_default_uses_the_safe_launcher_lane() {
-        assert_eq!(super::DEFAULT_VICTORY, "diplomatic");
+        assert_eq!(super::DEFAULT_VICTORY, "science");
         assert!(super::VICTORY_LANES
             .split('|')
             .any(|lane| lane == super::DEFAULT_VICTORY));
         assert_eq!(
             super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
-            Some(civvis::ai::VictoryTarget::Diplomacy)
+            Some(civvis::ai::VictoryTarget::Science)
         );
     }
 
