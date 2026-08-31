@@ -331,6 +331,21 @@ class GitHubRuntimeUpdaterTest(unittest.TestCase):
             beat = json.loads(updater.heartbeat_path().read_text())
             self.assertEqual(beat["last_error"], "cargo build failed (101)")
 
+    def test_a_disabled_refresh_stamps_the_heartbeat_as_chosen_silence(self) -> None:
+        """`--github-refresh-seconds 0` runs no updater; the stamp replaces
+        whatever the last enabled run froze on disk so the ladder check stops
+        alarming on its age forever."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "live-game-runtime"
+            (root / "nested").mkdir(parents=True)  # pre-existing cache is fine
+            civ6_brain.write_disabled_heartbeat(cache_root=root,
+                                               revision="abc123")
+            beat = json.loads((root / "heartbeat.json").read_text())
+            self.assertEqual(beat["refresh"], "disabled")
+            self.assertEqual(beat["current_revision"], "abc123")
+            self.assertEqual(beat["last_error"], "")
+            self.assertRegex(beat["utc"], r"Z$")
+
 
 class Civ6BrainTest(unittest.TestCase):
     def test_new_government_progression_is_not_blocked(self) -> None:

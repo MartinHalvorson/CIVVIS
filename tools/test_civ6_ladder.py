@@ -1456,6 +1456,20 @@ class LatestCodeGuarantee(LedgerCase):
                 "last_error": "cargo build failed (101): expected `;`"}
         self.assertIn("cargo build failed", self.heartbeat_problem(beat))
 
+    def test_a_disabled_refresh_stamp_never_ages_into_an_alarm(self):
+        """The live loop runs `--github-refresh-seconds 0` and stamps the
+        heartbeat as deliberately silent; before the stamp the check alarmed
+        on the last enabled run's frozen file forever (from 2026-08-19), and
+        an alarm that always fires catches nothing."""
+        beat = {"utc": "2026-08-19T00:00:00Z", "refresh": "disabled",
+                "last_error": ""}
+        self.assertIsNone(self.heartbeat_problem(beat))
+
+    def test_a_disabled_stamp_still_surfaces_a_recorded_error(self):
+        beat = {"utc": "2026-08-19T00:00:00Z", "refresh": "disabled",
+                "last_error": "cargo build failed (101): expected `;`"}
+        self.assertIn("cargo build failed", self.heartbeat_problem(beat))
+
 
 class TheHealthFloorStaysFalsifiable(LedgerCase):
     """A gap in measurement is not a gap in attempts.
