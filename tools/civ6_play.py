@@ -1999,8 +1999,12 @@ def _leader_observation(observations: list[dict], label: str,
             continue
         px, py = point[0] * screen_w, point[1] * screen_h
         rx, ry = (px - x) / w, (py - y) / h
+        # The selected leader row shifts a few points lower on the half-height
+        # recording layout (Trajan measured at ry=0.312 on 2026-08-31).  Keep
+        # the band narrow enough to identify the field, but include that
+        # verified layout instead of rejecting a correctly selected Rome.
         if 0.40 <= rx <= 0.62 and (
-            0.23 <= ry <= 0.31 if selected else 0.30 <= ry <= 0.76
+            0.23 <= ry <= 0.34 if selected else 0.30 <= ry <= 0.76
         ):
             return observation
     return None

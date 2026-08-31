@@ -885,6 +885,18 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertEqual(current, ("Random Leader", (1134, 142)))
 
+    def test_selected_leader_readback_accepts_half_height_layout(self) -> None:
+        """The lower half-height field still proves Trajan was selected."""
+        bounds = (864, 33, 864, 542)
+        observation = {
+            "text": "Trajan", "x": 0.733, "y": 0.1779,
+            "width": 0.011, "height": 0.0057,
+        }
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)):
+            self.assertIsNotNone(civ6_play._leader_observation(
+                [observation], "Trajan", bounds, selected=True
+            ))
+
     def test_setup_leader_readback_uses_surrounding_headings_at_full_height(self) -> None:
         """A full-height window centres the leader row below its old fallback band."""
         observations = [
