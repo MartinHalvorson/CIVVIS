@@ -1576,6 +1576,14 @@ pub struct AdvancedAi {
     builder_targets: BTreeMap<u32, Pos>,
     /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
     commitments: commitments::CommitmentLedger,
+    /// `(last observed turn, consecutive idle-turn count)` for cities whose
+    /// strategic queue remained empty.  Host bridge calls can revisit one
+    /// turn several times while a blocking production prompt is settling, so
+    /// the turn stamp is part of the value rather than a separate global
+    /// counter.  The recovery is deliberately narrow: only an explicitly
+    /// targeted Science seat consumes it, and only after the second distinct
+    /// idle turn.
+    idle_production_streak: BTreeMap<u32, (u32, u32)>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -6464,6 +6472,9 @@ impl AdvancedAi {
     /// different unit than it did last turn.
     pub fn forget_unit_memory(&mut self) {
         self.base.forget_unit_memory();
+        // A missing previous board can also mean that a new live game is
+        // starting. Do not carry a city's old idle debt into that game.
+        self.idle_production_streak.clear();
         self.settler_targets.clear();
         self.settler_stalls.clear();
         self.escort_march.clear();
@@ -6637,6 +6648,7 @@ impl AdvancedAi {
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
             commitments: commitments::CommitmentLedger::default(),
+            idle_production_streak: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -18148,6 +18160,35 @@ impl AdvancedAi {
         counts
     }
 
+    /// Record one empty production turn without counting repeated bridge
+    /// observations of the same host turn.  A gap or a rewind breaks the
+    /// streak: a city that built something in between must not inherit an old
+    /// idle debt when its next queue completes.
+    fn science_idle_production_recovery_due(&mut self, cid: u32, turn: u32) -> bool {
+        const RECOVERY_AFTER_IDLE_TURNS: u32 = 2;
+        let streak = match self.idle_production_streak.get_mut(&cid) {
+            Some((last_turn, count)) if *last_turn == turn => *count,
+            Some((last_turn, count)) if last_turn.checked_add(1) == Some(turn) => {
+                *last_turn = turn;
+                *count = count.saturating_add(1);
+                *count
+            }
+            Some(entry) => {
+                *entry = (turn, 1);
+                1
+            }
+            None => {
+                self.idle_production_streak.insert(cid, (turn, 1));
+                1
+            }
+        };
+        streak >= RECOVERY_AFTER_IDLE_TURNS
+    }
+
+    fn clear_idle_production_streak(&mut self, cid: u32) {
+        self.idle_production_streak.remove(&cid);
+    }
+
     fn religious_production(&self, g: &mut Game, pid: usize) {
         let city_ids = g.player_city_ids(pid);
         let has_holy_site = city_ids.iter().any(|cid| {
@@ -21878,6 +21919,9 @@ impl AdvancedAi {
                     let value = self.card_boosted_value(g, pid, cid, &item, value);
                     (value, item)
                 });
+            if committed.is_some() {
+                self.clear_idle_production_streak(cid);
+            }
             // The ordinary governor's recovery path only receives empty
             // queues. Preserve that contract even when an experimental
             // preemption margin is active: a banked unit can finish, but no
@@ -21909,6 +21953,7 @@ impl AdvancedAi {
                                 "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
                         }
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                     }
                 }
                 continue;
@@ -21953,6 +21998,7 @@ impl AdvancedAi {
                                 "the local camp/raider ring takes priority over economic production");
                         }
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22007,6 +22053,7 @@ impl AdvancedAi {
                     .is_ok()
                 {
                     counts.add_item(g, &builder);
+                    self.clear_idle_production_streak(cid);
                     continue;
                 }
             }
@@ -22037,6 +22084,7 @@ impl AdvancedAi {
                                 .is_ok()
                             {
                                 counts.add_item(g, &item);
+                                self.clear_idle_production_streak(cid);
                                 continue;
                             }
                         }
@@ -22074,6 +22122,7 @@ impl AdvancedAi {
                         .is_ok()
                     {
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22099,6 +22148,7 @@ impl AdvancedAi {
                         .is_ok()
                     {
                         counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
                         continue;
                     }
                 }
@@ -22125,6 +22175,7 @@ impl AdvancedAi {
                             "{gold_per_turn:.1} Gold/turn; a route-ready Trader compounds before ordinary production");
                     }
                     counts.add_item(g, &trader);
+                    self.clear_idle_production_streak(cid);
                     continue;
                 }
             }
@@ -22230,18 +22281,26 @@ impl AdvancedAi {
                 chosen
             };
             // See `never_an_empty_queue`: nothing cleared the bar, so this city
-            // is about to spend the turn producing nothing at all. Take the
-            // best REAL candidate instead — anything the scorer did not veto
-            // outright — which is the least-bad build rather than no build.
+            // is about to spend the turn producing nothing at all. A targeted
+            // Science seat gets the same least-bad civilian answer after two
+            // distinct idle turns. That turns a persistent queue stall into a
+            // bounded one-turn delay without making every ordinary refusal a
+            // new unit-maintenance bill.
+            let persistent_science_idle = chosen.is_none()
+                && committed.is_none()
+                && science_targeted
+                && self.science_idle_production_recovery_due(cid, g.turn);
             let chosen = match chosen {
                 Some(found) => Some(found),
-                None if (self.never_an_empty_queue || self.never_an_empty_queue_2)
+                None if (self.never_an_empty_queue
+                    || self.never_an_empty_queue_2
+                    || persistent_science_idle)
                     && committed.is_none() =>
                 {
                     // See `never_an_empty_queue_2`: version two will not answer
                     // an idle turn with a soldier the empire did not want and
                     // then owes upkeep on, and would rather stay idle.
-                    let civilian_only = self.never_an_empty_queue_2;
+                    let civilian_only = self.never_an_empty_queue_2 || persistent_science_idle;
                     let fallback = {
                         let _memo = g.query_memo();
                         let items = g.producible_items(pid, cid);
@@ -22297,12 +22356,19 @@ impl AdvancedAi {
                 // menu broke, and nothing was written. Ravenna in run
                 // civvis-20260829T062155Z sat idle from t131 to t171 with
                 // eighteen items buildable and appeared in the journal once,
-                // at its founding. The fallback above answers it only under
-                // `never-an-empty-queue` / `-2`; off, this line is the only
-                // trace the idle turn leaves.
-                think!(self.journal(), Cities, Detail,
-                       "{} builds nothing", g.cities[&cid].name;
-                       "every candidate scored under the veto bar and no idle-queue gene is on");
+                // at its founding. The fallback above answers it under either
+                // idle-queue gene, or after the targeted Science recovery
+                // streak; otherwise this line is the only trace the idle
+                // turn leaves.
+                if persistent_science_idle {
+                    think!(self.journal(), Cities, Detail,
+                           "{} builds nothing", g.cities[&cid].name;
+                           "two distinct idle turns reached, but no civilian candidate cleared the hard veto");
+                } else {
+                    think!(self.journal(), Cities, Detail,
+                           "{} builds nothing", g.cities[&cid].name;
+                           "every candidate scored under the veto bar and no idle-queue gene is on");
+                }
             }
             if let Some((score, item)) = chosen {
                 {
@@ -22353,6 +22419,7 @@ impl AdvancedAi {
                     }
                     let is_settler = matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
+                    self.clear_idle_production_streak(cid);
                     if adaptive_expansion_dispatch {
                         self.expansion_census.dispatch_productions += 1;
                         if is_settler {
