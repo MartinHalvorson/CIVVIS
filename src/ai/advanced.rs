@@ -22083,6 +22083,95 @@ impl AdvancedAi {
         }
     }
 
+    /// The promoted baseline governor knows when a city should choose an
+    /// Entertainment Complex, but targeted production never calls that
+    /// governor's menu. Keep that policy reachable for the live constructor
+    /// without turning the unresolved amenity genes on: one legal district,
+    /// one idle and unthreatened city, and one reservation per turn.
+    fn baseline_amenity_repair_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        city_ids: &[u32],
+    ) -> Option<(u32, Item, i64)> {
+        if self.base.minor
+            || !self.base.amenity_districts
+            || plan.strategy == GrandStrategy::Recovery
+        {
+            return None;
+        }
+
+        let mut best: Option<(i64, f64, u32, String, Item)> = None;
+        for &cid in city_ids {
+            let city = &g.cities[&cid];
+            if !city.queue.is_empty()
+                || plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0
+                    && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || g.city_has_district_family(city, crate::name!("entertainment_complex"))
+                // Local defense has priority over an amenity repair. The
+                // production loop repeats the same check before it reaches
+                // this handoff, but filtering here keeps the one-turn claim
+                // from being consumed by a city with a failed defense apply.
+                || self.base.barbarian_defense_item(g, pid, cid).is_some()
+            {
+                continue;
+            }
+            let shortfall = (-g.city_amenity_surplus(city)).max(0);
+            let specialty = g.city_specialty_district_count(city);
+            if !BasicAi::amenity_repair_outranks_lane(shortfall as f64, specialty) {
+                continue;
+            }
+
+            // `producible_items` has already applied the complete host/model
+            // legality check, including a unique replacement such as the
+            // Hippodrome or Street Carnival. Choose the best legal plot using
+            // the same adjacency ordering as the baseline district picker.
+            let item = g
+                .producible_items(pid, cid)
+                .into_iter()
+                .filter(|item| {
+                    matches!(
+                        item,
+                        Item::District { district, .. }
+                            if g.district_family(*district) == "entertainment_complex"
+                    )
+                })
+                .max_by(|left, right| {
+                    let site_yields = |item: &Item| match item {
+                        Item::District { district, pos } => {
+                            g.district_yields(*district, *pos).total()
+                        }
+                        _ => 0.0,
+                    };
+                    site_yields(left)
+                        .total_cmp(&site_yields(right))
+                        .then_with(|| format!("{right:?}").cmp(&format!("{left:?}")))
+                });
+            let Some(item) = item else {
+                continue;
+            };
+            let turns = g.item_remaining_cost_for_city(pid, cid, &item)
+                / g.city_yields(cid).production.max(1.0);
+            let key = format!("{item:?}");
+            let replace =
+                best.as_ref()
+                    .is_none_or(|(old_shortfall, old_turns, old_city, old_key, _)| {
+                        shortfall > *old_shortfall
+                            || (shortfall == *old_shortfall
+                                && (turns + f64::EPSILON < *old_turns
+                                    || ((turns - *old_turns).abs() <= f64::EPSILON
+                                        && (cid, key.as_str()) < (*old_city, old_key.as_str()))))
+                    });
+            if replace {
+                best = Some((shortfall, turns, cid, key, item));
+            }
+        }
+
+        best.map(|(shortfall, _, cid, _, item)| (cid, item, shortfall))
+    }
+
     /// Run the strategic production governor. `adaptive_expansion_dispatch`
     /// names the one new route exposed by the experiment, so the census does
     /// not accidentally attribute Recovery or an explicitly targeted lane to
@@ -22101,6 +22190,14 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        // The baseline `amenity_districts` policy is otherwise unreachable
+        // from this targeted/science governor. Claim at most one legal,
+        // unthreatened repair before the generic scorer fills the queues.
+        let baseline_amenity_target = if !economic_recovery {
+            self.baseline_amenity_repair_target(g, pid, plan, &city_ids)
+        } else {
+            None
+        };
         for cid in city_ids {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
@@ -22372,6 +22469,33 @@ impl AdvancedAi {
                     counts.add_item(g, &trader);
                     self.clear_idle_production_streak(cid);
                     continue;
+                }
+            }
+            if committed.is_none() {
+                if let Some((_target, item, shortfall)) = baseline_amenity_target
+                    .as_ref()
+                    .filter(|(target, _, _)| *target == cid)
+                {
+                    let item = item.clone();
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} starts {} for a severe Amenity deficit", city_name, Self::plain_item(&item);
+                                "the promoted baseline repair was unreachable in strategic production; {} Amenities short",
+                                shortfall);
+                        }
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
                 }
             }
             // `order_retry`: the menu is RANKED rather than reduced to its
