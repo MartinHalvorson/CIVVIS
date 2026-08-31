@@ -15703,6 +15703,93 @@ fn the_gene_takes_a_barbarian_held_settler_despite_a_duplicate_settler() {
     );
 }
 
+/// A Barbarian Builder is valuable, but not more valuable than the garrison
+/// of a city the current plan has marked under threat. The live
+/// `civvis-20260831T162344Z` run sent Warrior 57 two tiles out from Antium for
+/// this rescue and lost it to the surrounding Barbarian stack on the next
+/// turn. The rescue gene still works when the same unit is not holding the
+/// threatened city.
+#[test]
+fn threatened_city_does_not_peel_a_defender_for_civilian_rescue() {
+    let setup = || {
+        let mut game = Game::new_full(2, 24, 16, 71_022, 120, 0, true);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+        }
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.current = 0;
+        let barb = game.barb_pid.unwrap();
+        let city = game.player_city_ids(0)[0];
+        let origin = game.cities[&city].pos;
+        let target = game
+            .wdisk(origin, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(origin, *position) == 2
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the fixture needs an open tile two steps from the city");
+        (game, barb, city, origin, target)
+    };
+
+    let (mut unthreatened, barb, _city, origin, target) = setup();
+    let chaser = unthreatened.spawn_test_unit("warrior", 0, origin);
+    unthreatened.spawn_test_unit("warrior", 0, origin);
+    unthreatened.spawn_test_unit("builder", barb, target);
+    let open_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: unthreatened.turn,
+        rush: false,
+    };
+    let mut pursuing = AdvancedAi::new();
+    pursuing.enable_barbarian_settler_capture();
+    assert!(pursuing.advanced_military_step(&mut unthreatened, 0, chaser, &open_plan));
+    assert_ne!(
+        unthreatened.units[&chaser].pos, origin,
+        "without a city threat the rescue gene still takes its first step"
+    );
+
+    let (mut threatened, barb, city, origin, target) = setup();
+    let chaser = threatened.spawn_test_unit("warrior", 0, origin);
+    threatened.spawn_test_unit("warrior", 0, origin);
+    let captured = threatened.spawn_test_unit("builder", barb, target);
+    let threatened_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: Some(city),
+        desired_cities: 1,
+        assessed_turn: threatened.turn,
+        rush: false,
+    };
+    let mut holding = AdvancedAi::new();
+    holding.enable_barbarian_settler_capture();
+    let _ = holding.advanced_military_step(&mut threatened, 0, chaser, &threatened_plan);
+    assert_eq!(
+        threatened.units[&chaser].pos, origin,
+        "a defender within the threatened-city radius must not leave for a distant civilian"
+    );
+    assert_eq!(
+        threatened.units[&captured].owner, barb,
+        "the blocked detour must leave the Builder available for a later safe rescue"
+    );
+}
+
 #[test]
 fn exact_hybrid_search_uses_melee_to_finish_a_city() {
     let mut game = Game::new_full(2, 24, 16, 71_010, 120, 0, false);
