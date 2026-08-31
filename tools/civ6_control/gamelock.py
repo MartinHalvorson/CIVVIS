@@ -44,6 +44,17 @@ OPERATOR_HALT = Path(os.environ.get(
     "CIVVIS_OPERATOR_HALT_FILE",
     str(Path.home() / ".civvis-operator-halt.json"),
 ))
+# This is the durable authorization for automatic verification games.  It is
+# intentionally separate from OPERATOR_HALT: clearing a halt is a low-level
+# lock operation, while starting the unattended verification lane is an
+# explicit operator decision made by `civvis-games on`.
+OPERATOR_INTENT = Path(os.environ.get(
+    "CIVVIS_OPERATOR_INTENT_FILE",
+    os.environ.get(
+        "CIVVIS_INTENTFILE",
+        str(Path.home() / ".civvis-operator-intent"),
+    ),
+))
 
 
 def _holder() -> dict | None:
@@ -87,6 +98,33 @@ def operator_halt_description() -> str | None:
     suffix = f" (reason: {reason})" if reason else ""
     return (f"the game is explicitly halted since {since}{suffix}; "
             "run gamelock.py --resume before starting another game")
+
+
+def verification_intent() -> str | None:
+    """The standing verification authorization, or ``None`` when absent.
+
+    Missing, unreadable, empty, or multi-line values fail closed.  Only the
+    exact value ``running`` authorizes automatic verification recovery.  In
+    particular, ``gamelock.py --resume`` clears only OPERATOR_HALT; it never
+    grants this authorization.
+    """
+    try:
+        value = OPERATOR_INTENT.read_text().strip()
+    except (OSError, UnicodeError):
+        return None
+    return value or None
+
+
+def verification_intent_description() -> str | None:
+    """A refusal reason when automatic verification is not authorized."""
+    value = verification_intent()
+    if value == "running":
+        return None
+    if value is None:
+        return (f"verification intent is missing or unreadable at {OPERATOR_INTENT}; "
+                "run civvis-games on to authorize automatic verification")
+    return (f"verification intent is {value!r} at {OPERATOR_INTENT}; "
+            "run civvis-games on to authorize automatic verification")
 
 
 def request_operator_halt(reason: str = "") -> dict:

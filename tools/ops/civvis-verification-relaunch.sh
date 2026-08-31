@@ -33,6 +33,13 @@ unsetopt BG_NICE
 
 WRAPPER=${1:-$HOME/civvis-verification-launch.command}
 LOG=${CIVVIS_LADDER_LOG:-$HOME/Library/Logs/civvis-ladder.log}
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
+
+if [[ ! -r "$INTENTFILE" || "$(<"$INTENTFILE")" != running ]]; then
+  print -r -- "REFUSING: verification intent is not running at $INTENTFILE" >&2
+  print -r -- "  Run civvis-games on before relaunching the verification loop." >&2
+  exit 64
+fi
 
 # Walk up the process tree; Terminal.app must be an ancestor.
 terminal_descended() {
