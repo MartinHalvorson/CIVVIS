@@ -1955,6 +1955,62 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
     );
 }
 
+/// `science-opening-band`: with the gene on, two cities do not end the
+/// Science opening — the posture stays Expansion inside the band's window,
+/// and hands over once the window closes whatever the city count. The stock
+/// two-city handoff with the gene off is the test above, so together they
+/// pin the exact no-op.
+#[test]
+fn the_opening_band_keeps_a_two_city_science_seat_expanding() {
+    let mut game = Game::new_with(GameOptions {
+        speed: "online".to_string(),
+        ..GameOptions::new(2, 74, 46, 91_508, 250, 0)
+    });
+    game.victory_conditions = crate::game::VictoryConditions::parse("science,score").unwrap();
+    game.current = 0;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.found_city_for(0, game.units[&settler].pos, None);
+    game.remove_unit(settler);
+    let first_city = game.player_city_ids(0)[0];
+    let second_position = game
+        .map
+        .tiles
+        .iter()
+        .find(|(position, tile)| {
+            tile.owner_city.is_none()
+                && game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.wdist(**position, game.cities[&first_city].pos) >= 7
+        })
+        .map(|(position, _)| *position)
+        .unwrap();
+    game.found_city_for(0, second_position, None);
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_live_bridge_universe();
+    ai.enable_science_opening_band();
+
+    game.turn = 1;
+    let inside_band = ai.assess(&game, 0);
+    assert_eq!(
+        inside_band.strategy,
+        GrandStrategy::Expansion,
+        "inside the band two cities must not end the Science opening"
+    );
+
+    game.turn = game.standard_duration(SCIENCE_OPENING_BAND_STANDARD_TURNS);
+    let window_closed = ai.assess(&game, 0);
+    assert_eq!(
+        window_closed.strategy,
+        GrandStrategy::Science,
+        "past the band window the lane owns the plan whatever the count"
+    );
+}
+
 /// `settler-backlog-brake`: with three cities and a Settler parked six turns
 /// the pipeline is closed; off, the land grab's three walkers stand. Below
 /// three cities the brake never speaks.

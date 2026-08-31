@@ -618,6 +618,23 @@ const SCIENCE_OPENING_CITY_TARGET: usize = 2;
 /// infrastructure window rather than the generic expansion deadline.
 const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 60;
 
+/// `science-opening-band`: hold the expansion-first posture until the empire
+/// reaches the band every recorded live win opened from — four to six cities
+/// by turn 60 Online (9/9 wins inside it, 0/128 outside;
+/// `civvis-the-opening-band-every-win-came-from`). The first two live
+/// science-lane games handed the plan over at two cities (t44) and reached
+/// t150 at 0.31 and 0.36 of the leader's score, both abandoned; the same
+/// build's diplomatic games, which keep the generic t175 window, made eight
+/// to ten cities. The 250-turn self-play screen prefers the two-city opening
+/// (widening it there lost the one completing seed), so this is an opt-in
+/// live arm, not a new default: the live field and the mirror screen disagree
+/// and the live seat is the one this gene is for.
+const SCIENCE_OPENING_BAND_CITY_TARGET: usize = 5;
+
+/// The band gene's window: 100 standard turns is ~turn 67 at Online speed,
+/// just past the band's own measuring point.
+const SCIENCE_OPENING_BAND_STANDARD_TURNS: u32 = 100;
+
 /// Passable land per city the land grab prices the board at. Civilization VI
 /// packs cities four tiles apart (`CITY_MIN_RANGE` 3 plus the engine's own
 /// wdist ≥ 4 rule); a city works nineteen tiles at radius two, and the rivals
@@ -5441,6 +5458,11 @@ pub struct AdvancedAi {
     /// window closes. Opt-in gene `science-expansion-phase`; the timing
     /// argument is on the constant.
     science_expansion_phase: bool,
+    /// `science-opening-band`: the assigned Science lane keeps the
+    /// expansion-first posture until `SCIENCE_OPENING_BAND_CITY_TARGET`
+    /// cities or `SCIENCE_OPENING_BAND_STANDARD_TURNS`, instead of the
+    /// stock two-city opening.
+    science_opening_band: bool,
     /// `settler-backlog-brake`: no Settler starts while one stands parked
     /// (empire of three cities or more). See `BasicAi::settler_backlog_brake`
     /// and `settler_in_flight_allowed`.
@@ -6954,6 +6976,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             science_expansion_phase: false,
+            science_opening_band: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
             summoned_guard_turn: BTreeMap::new(),
@@ -10509,7 +10532,10 @@ impl AdvancedAi {
                 && g.turn < g.standard_duration(175)
                 && (!science_targeted
                     || (cities.len() < SCIENCE_OPENING_CITY_TARGET
-                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS)))
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS))
+                    || (self.science_opening_band
+                        && cities.len() < SCIENCE_OPENING_BAND_CITY_TARGET
+                        && g.turn < g.standard_duration(SCIENCE_OPENING_BAND_STANDARD_TURNS)))
             {
                 (
                     GrandStrategy::Expansion,

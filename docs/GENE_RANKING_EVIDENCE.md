@@ -199,6 +199,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `first-luxury-first` | off (unmeasured) | `first-luxury-first`: an improvement that opens a luxury the empire holds NO copy of outranks ordinary ground, priced by the Amenities the empire is short; a duplicate copy keeps the shipped flat +14. | 1 \| 1 |
 | `hostile-memory` | off (unmeasured) | The civilian capture envelope counts every at-war owner and keeps pricing a hostile the seat has seen for a few turns after it walks back into the fog. | 1 \| 1 |
 | `science-expansion-phase` | off (unmeasured) | Widen the science lane's land grab, deferring its city cap, while a founded city can still mature; then revert and grow. | 1 \| 1 |
+| `science-opening-band` | off (unmeasured) | Keep the Science lane expanding first until five cities or 100 standard turns, the band live wins open from. | 1 \| 1 |
 | `settler-backlog-brake` | off (unmeasured) | Once the empire holds three cities, no Settler starts while an owned Settler has stood on one tile six turns; the same brake on the `BasicAi` pipeline. | 1 \| 1 |
 | `walls-after-districts` | off (unmeasured) | `walls-after-districts`: the barbarian pre-emption's WALL answer waits until the city holds a district; its unit answer is untouched. | 1 \| 1 |
 
