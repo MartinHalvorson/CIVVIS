@@ -850,6 +850,61 @@ fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
     assert_eq!(game.cities[&city].queue.first(), Some(&defender));
 }
 
+#[test]
+fn live_siege_response_repairs_damaged_walls_before_recruiting() {
+    // The captured Puteoli sequence selected a local Helicopter after its
+    // first repair completed. That turn was still inside Firaxis's attack
+    // cooldown, so another repair was illegal; this regression covers the
+    // adjacent legal state and makes sure a wounded wall is not displaced by
+    // a slower defender once the cooldown has expired.
+    let (mut game, city, _) = empire_with_a_capital(71_154);
+    game.players[0]
+        .techs
+        .extend([crate::name!("masonry"), crate::name!("engineering")]);
+    game.turn = 30;
+    let city_state = game.cities.get_mut(&city).expect("capital exists");
+    city_state.buildings.push(crate::name!("walls"));
+    city_state.wall_hp = 40;
+    city_state.hp = 170;
+    city_state.last_attacked = 27;
+
+    let repair = Item::Project {
+        project: crate::name!("repair_outer_defenses"),
+    };
+    assert!(
+        game.can_produce(0, city, &repair),
+        "the test must be outside the host's repair cooldown"
+    );
+    let siege = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    assert!(game.can_produce(0, city, &siege));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: siege.clone(),
+        },
+    )
+    .expect("queue an unsafe siege piece");
+
+    let mut live = AdvancedAi::new();
+    live.enable_garrison_under_fire();
+    assert!(
+        matches!(
+            live.base.besieged_city_item(&game, 0, city),
+            Some(Item::Unit { .. })
+        ),
+        "the old emergency answer is a defender, so this proves repair priority"
+    );
+    live.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&repair),
+        "a legal wall repair must reclaim the unsafe queue before a new unit"
+    );
+}
+
 /// A targeted Science seat must finish the cheap half of a Campus before the
 /// strategic governor spends the city's queue on an unrelated district or
 /// building. The explicit target is the contract here; the independently
