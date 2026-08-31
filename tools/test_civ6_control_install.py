@@ -221,6 +221,27 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn(
             'refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],', source
         )
+
+        # The war-assault fallback must preflight a ranged attack with the
+        # target parameters. A parameterless CanStartOperation asks a
+        # different question and can discard a legal city shot before the
+        # request reaches the host.
+        self.assertIn(
+            'if operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then',
+            source,
+        )
+        self.assertNotIn(
+            'if canOperate(unit, OP["UNITOPERATION_RANGE_ATTACK"])', source
+        )
+
+        # Target-specific host refusals need a point-in-time explanation; the
+        # aggregate orders refusal is not enough to distinguish LOS from a
+        # stale or malformed request.
+        self.assertIn('emit("range_attack_refused", {', source)
+        self.assertIn(
+            'refusalReason(unit, OP["UNITOPERATION_RANGE_ATTACK"], params)',
+            source,
+        )
         self.assertEqual(
             source.count("UnitManager.CanStartOperation(\n\t\t\t\t\tunit, operation"),
             2,

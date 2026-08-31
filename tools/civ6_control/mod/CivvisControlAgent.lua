@@ -2467,8 +2467,11 @@ local function pressAttack(unit, turn)
 	local params = {};
 	params[UnitOperationTypes.PARAM_X] = warTarget.x;
 	params[UnitOperationTypes.PARAM_Y] = warTarget.y;
-	if canOperate(unit, OP["UNITOPERATION_RANGE_ATTACK"])
-			and operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then
+	-- Ranged legality is target-specific. The parameterless preflight used to
+	-- ask a different question from the request below, so a valid shot could be
+	-- rejected before the host ever saw its target. `operate` performs the one
+	-- correctly-parameterised check and request.
+	if operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then
 		return "range_attack";
 	end
 	-- A ranged unit that cannot shoot the city yet should close the distance,
@@ -13097,7 +13100,27 @@ local function applyOrder(player, pid, row, turn)
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
 			CivvisLedger.strike(unit, subject, verb, x, y, turn);
-			return operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params), verb;
+			local accepted = operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params);
+			if not accepted then
+				-- The simulator can preview a shot that the host rejects for a
+				-- target-specific reason (LOS, range, diplomatic state, etc.). Keep
+				-- the decision and the host verdict separate so the next run can
+				-- repair the right side of the bridge instead of guessing from the
+				-- aggregate RANGE_ATTACK refusal count.
+				emit("range_attack_refused", {
+					turn = turn, unit = subject, unit_kind = unitTypeName(unit),
+					unit_x = try(function() return unit:GetX(); end, -1),
+					unit_y = try(function() return unit:GetY(); end, -1),
+					x = x, y = y,
+					moves = try(function() return unit:GetMovesRemaining(); end, -1),
+					attacks = try(function() return unit:GetAttacksRemaining(); end, -1),
+					activity = try(function()
+						return UnitManager.GetActivityType(unit);
+					end, nil),
+					why = refusalReason(unit, OP["UNITOPERATION_RANGE_ATTACK"], params),
+				});
+			end
+			return accepted, verb;
 		end
 		-- ★★★★★ IMPROVE — the order whose absence made CIVVIS build builders forever.
 		--
