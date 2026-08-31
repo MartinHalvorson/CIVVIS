@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `capital-settler-after-completion` | off (unmeasured) | After its current production completes, let a population-two capital start the next legal Settler before ordinary production ranking. | 1 \| 1 |
+| `science-victory-drive-2` | off (unmeasured) | Version 2 of `science_victory_drive`: the original planner remains a separately measurable family member, while this continuation uses a meaningful lead, legal launch sites, a research funnel, and an estimate that can keep a live chain moving. | 1 \| 2 |
 
 ## Removed from the code
 

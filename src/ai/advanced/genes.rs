@@ -1833,6 +1833,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "first-luxury-first", field: "first_luxury_first", kind: Kind::OptIn, enable: AdvancedAi::enable_first_luxury_first, disable: AdvancedAi::disable_first_luxury_first },
     // Appended at the END so a running screen keeps its positional genome.
     Gene { tag: "science-opening-band", field: "science_opening_band", kind: Kind::OptIn, enable: AdvancedAi::enable_science_opening_band, disable: AdvancedAi::disable_science_opening_band },
+    // Version 2 keeps the original science-drive phenotype and tournament
+    // evidence intact, while pricing the continuation planner as its own
+    // family member: meaningful adaptive leads, legal pads, research funnel,
+    // and a live launch-chain estimate. Appended at the END so a running
+    // screen keeps its positional genome.
+    Gene { tag: "science-victory-drive-2", field: "science_victory_drive_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_victory_drive_2, disable: AdvancedAi::disable_science_victory_drive_2 },
     // A capital at population two can legally begin a Settler, yet the
     // ordinary production ranking may spend its newly empty queue on an
     // Archer or filler instead. Once its whole queue drains, reserve that

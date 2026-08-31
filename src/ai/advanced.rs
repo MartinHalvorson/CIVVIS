@@ -5599,6 +5599,11 @@ pub struct AdvancedAi {
     /// runs the race, two pads by the Earth Satellite. Opt-in gene
     /// `science-victory-drive`; see `advanced/science_victory_drive.rs`.
     science_victory_drive: bool,
+    /// Version 2 of `science_victory_drive`: preserve the measured first
+    /// implementation while separately pricing the continuation planner's
+    /// stronger lead gate, legal-pad routing, research funnel, and live
+    /// launch-chain estimate. Opt-in gene `science-victory-drive-2`.
+    science_victory_drive_2: bool,
     /// `science_victory_drive`'s state while the seat is driving: since
     /// when, the last reading of the field, and the launch city.
     science_drive: Option<ScienceDrive>,
@@ -7019,6 +7024,7 @@ impl AdvancedAi {
             settler_screen: false,
             settler_second_look: false,
             science_victory_drive: false,
+            science_victory_drive_2: false,
             science_drive: None,
             settler_guard_holds_2: false,
             settler_target_hysteresis_2: false,
