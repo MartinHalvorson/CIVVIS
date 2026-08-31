@@ -1,0 +1,184 @@
+{
+  "abandoned": null,
+  "cities_at_60": null,
+  "city_two_turn": null,
+  "configured": true,
+  "decider_binaries": [
+    {
+      "binary_revision": "27920bb1d71d2eb213b3f04a2864792dc96f8f30",
+      "binary_sha256": "189f44aa508b368a6675bb4d2891fc9c57400ccb79f1f29ad7ecc1ed0ce8188d",
+      "binary_source": "binary-checkout",
+      "revision": "27920bb1d71d2eb213b3f04a2864792dc96f8f30",
+      "source": "binary-checkout"
+    }
+  ],
+  "decider_revisions": [
+    "27920bb1d71d2eb213b3f04a2864792dc96f8f30"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-31T21:22:41Z",
+  "forced": [
+    "army-target-weighs-enemy",
+    "border-parity",
+    "border-parity-2",
+    "buildings-before-projects",
+    "garrison-under-fire",
+    "government-ladder",
+    "native-emergency-purchase",
+    "one-war-at-a-time",
+    "peace-when-the-war-does-not-pay",
+    "peacetime-deterrence",
+    "recovery-reads-the-war",
+    "science-building-first",
+    "skip-the-prophet-race",
+    "surprise-war-mobilization",
+    "threatened-city-reserve",
+    "unchosen-war-keeps-the-lane",
+    "upgrade-the-garrison",
+    "war-needs-a-treasury",
+    "war-reinforcement"
+  ],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "last_score": 0,
+  "last_turn": 1,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 500,
+  "mod_arms": {
+    "CampusSpecialist": true,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "operator_retire": {
+    "detail": "the control mod acknowledged Civilization VI ACTION_RETIRE",
+    "harness_pid": 78061,
+    "reason": "operator: replace unpatched private science run with capital-settler safeguarded King/Rome science restart",
+    "requested_utc": "2026-08-31T21:22:36Z",
+    "retired_utc": "2026-08-31T21:22:37Z",
+    "state": "retired",
+    "tag": "science-private-20260831T211800Z"
+  },
+  "orders": {
+    "*": {
+      "applied": 3,
+      "refused": {},
+      "seen": 3
+    },
+    "research": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "unit": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    }
+  },
+  "orders_applied": 3,
+  "orders_seen": 3,
+  "outcome": null,
+  "reason": "operator_retired",
+  "retire_confirmed": null,
+  "retire_requested": null,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 500,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "science-private-20260831T211800Z",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seat_autonomy": {
+    "civvis_unit_share": 1.0,
+    "engine_explored": 0,
+    "explore_guarded": 0,
+    "unit_orders": 2,
+    "unit_orders_applied": 2
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "science-private-20260831T211800Z",
+  "victory_target": "science",
+  "withheld": []
+}
