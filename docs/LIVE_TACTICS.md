@@ -47,8 +47,9 @@ Trace one wartime turn from the brain to the board:
    `Action::Pillage`, Heal, Alert, swap and formation combine were not
    translated at all.
 5. **Lua applies the list, sequentially, open-loop.** Every order is gated on
-   `CanStartOperation`, but later orders never see earlier results. Any combat
-   unit CIVVIS did not mention was handed to `UNITOPERATION_AUTOMATE_EXPLORE`.
+   `CanStartOperation`, but later orders never see earlier results. Any unit
+   CIVVIS did not mention receives an explicit hold; only CIVVIS names a
+   movement destination.
 6. **The host rolls its own dice** and the enemy takes its turn.
 7. **Next turn's export is the first feedback.** No unit-killed, unit-lost,
    combat or capture event exists; `move_refused` is written by the mod and
@@ -58,7 +59,7 @@ Trace one wartime turn from the brain to the board:
 
 | # | step | what it removes | measured by |
 |---|---|---|---|
-| 1 | **Sequenced, closed-loop actuation** — per-unit order queues in the mod with tick-level readback, proved approach+blow as one host order, no explore hand-off inside an engagement, Pillage translated; later a mid-turn combat frame | one order per unit per turn; step-then-strike losing the strike; the host scattering held units | share of planned strikes landing the same turn; hover share; Hall-of-Fame exchange ratio |
+| 1 | **Sequenced, closed-loop actuation** — per-unit order queues in the mod with tick-level readback, proved approach+blow as one host order, explicit holds for every unit the planner leaves in place, Pillage translated; later a mid-turn combat frame | one order per unit per turn; step-then-strike losing the strike; the host scattering held units | share of planned strikes landing the same turn; hover share; Hall-of-Fame exchange ratio |
 | 2 | **Host-grounded planning board** — seat-turn-start movement, embarked and ZOC state, front-line terrain and roads every turn, the host's own reachable set, engine parity for pass-through/swap/stacking, refusals consumed as facts | invented MP; stale front; the 12.5 % of MOVE_TOs that never moved; "next tile refuses the unit" holds | arrival ledger (planned vs actual), no-op share |
 | 4 | **Operational choreography** — army plan with per-unit ETAs, go/no-go on the muster ring, siege as ring → walls → capture, wounded rotation | piecemeal arrival; sieges walked away | first live capture; arrival spread |
 | 5 | **Live tactical ledger + replay bench** — kill/loss/combat/capture events, hostile ids, predicted-vs-actual per order, Hall-of-Fame per run, offline replay of recorded frames | the reconstruction this document had to do by hand | the next report cites the ledger |
@@ -93,10 +94,9 @@ says `order_queue = true`; against an older mod it behaves exactly as before.
 after the walk now rides along in sequence.
 
 **Two more leaks closed in the same change.**
-- Units CIVVIS did not mention are no longer handed to the host's explore
-  automation when a visible hostile combat unit or an at-war city stands
-  within `ExploreGuardRadius` (4) tiles — a held soldier stays held; the
-  automation keeps its peacetime job for units far from any enemy.
+- Units CIVVIS does not mention are explicitly held, regardless of distance to
+  an enemy. The host never chooses a route: the next movement must be a new
+  CIVVIS decision from the next exported board.
 - `Action::Pillage` translates to `PILLAGE` and the mod issues
   `UNITOPERATION_PILLAGE`, so light cavalry's pillage-before-combat and
   pillage-to-heal exist on the live seat.
@@ -225,8 +225,8 @@ turn again — the decider reads the newest state for that turn, which is the
 frame — and writes the answer beside the opening board's (`orders.frame`,
 `ready.frame`; a database from before the column is migrated in place). The
 mod's readers select by frame and treat a channel without the column as frame
-0. On a frame `applyOrders` hands no unit to explore automation and writes no
-`turn` record. Units export `attacks_remaining`; under `moves_at_turn_start`
+0. On a frame `applyOrders` makes no extra unmentioned-unit disposition and
+writes no `turn` record. Units export `attacks_remaining`; under `moves_at_turn_start`
 the mirror starts a unit with the host's count, so a frame's re-plan spends no
 strike twice (and its movement is the host's, from step 2).
 
@@ -251,7 +251,6 @@ brain-side withholds in `withheld`. Read a comparison with
 | step | switch (default) | withhold | where it is recorded |
 |---|---|---|---|
 | 1 · per-unit order queue | `OrderQueue` (on) | `civ6_play.py --no-order-queue` — the mod applies one order per unit per turn and the seat stops advertising `order_queue`, so the brain defers follow-ups exactly as before | `mod_arms.OrderQueue` |
-| 1 · explore guard | `ExploreGuard` (on), `ExploreGuardRadius` 4 | `--no-explore-guard` | `mod_arms.ExploreGuard` |
 | 1b · combat frame | `CombatFrames` (**0 = off**), `CombatFramePolls` 20 | `--combat-frames 1` turns it ON for a run | `mod_arms.CombatFrames` |
 | 6 · replan frames | `ReplanFrames` (**2**), same `CombatFramePolls` | `--replan-frames 0` — no mid-turn frame opens for revealed ground (nor for strikes unless `CombatFrames` says so), and the seat stops advertising `replan_frames` | `mod_arms.ReplanFrames` |
 | 6 · tiles delta | `TileDelta` (on) | `--no-tile-delta` — revealed ground crosses only with the `TileExportEvery` sweep, as before | `mod_arms.TileDelta` |
