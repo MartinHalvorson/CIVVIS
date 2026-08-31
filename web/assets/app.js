@@ -7999,6 +7999,98 @@ function hiddenMapMonsterPriority(q, r, seedA, seedB) {
   );
 }
 
+// The old artwork lookup was one independent hash per seat. That is uniform
+// over a large census, but a small map window can still land on the same two
+// drawings repeatedly. Shuffle the atlas once per world, then draw through the
+// shuffled deck. The cache is presentation-only: changing worlds gets a new
+// deck, while every repaint of one world gets the same one.
+const HIDDEN_MAP_TALE_ARTWORK_RADIUS = 32;
+let hiddenMapMonsterArtworkDeckKey = null;
+let hiddenMapMonsterArtworkDeckCache = null;
+let hiddenMapMonsterArtworkVariantCacheKey = null;
+let hiddenMapMonsterArtworkVariantCache = new Map();
+function hiddenMapMonsterArtworkDeck(seedA, seedB, variantCount) {
+  const cacheKey = `${seedA}:${seedB}:${variantCount}`;
+  if (cacheKey === hiddenMapMonsterArtworkDeckKey &&
+      hiddenMapMonsterArtworkDeckCache) return hiddenMapMonsterArtworkDeckCache;
+  const deck = Array.from({length: variantCount}, (_, index) => index);
+  // Fisher-Yates with independent seeded draws makes the map choose a new
+  // artwork order rather than merely nudging every coordinate by one offset.
+  for (let i = variantCount - 1; i > 0; i--) {
+    const j = Math.floor(hash2(
+      Math.imul(seedA, 173) + Math.imul(seedB, 179) + Math.imul(i, 181),
+      Math.imul(seedB, 191) + Math.imul(seedA, 193) + Math.imul(i, 197)
+    ) * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  hiddenMapMonsterArtworkDeckKey = cacheKey;
+  hiddenMapMonsterArtworkDeckCache = deck;
+  return deck;
+}
+
+function hiddenMapMonsterRawArtworkSlot(q, r, seedA, seedB, variantCount) {
+  return Math.floor(hash2(
+    Math.imul(q, 29) + Math.imul(seedA, 107) + Math.imul(seedB, 109),
+    Math.imul(r, 31) + Math.imul(seedB, 113) + Math.imul(seedA, 127)
+  ) * variantCount);
+}
+
+function hiddenMapMonsterShuffledVariant(q, r, seedA, seedB, variantCount) {
+  const deck = hiddenMapMonsterArtworkDeck(seedA, seedB, variantCount);
+  return deck[hiddenMapMonsterRawArtworkSlot(q, r, seedA, seedB, variantCount)];
+}
+
+function hiddenMapMonsterArtworkComesBefore(q, r, otherQ, otherR,
+                                             priority, otherPriority) {
+  return otherPriority < priority ||
+    (otherPriority === priority &&
+     (otherQ < q || (otherQ === q && otherR < r)));
+}
+
+// A nearby lower-priority tale takes its final deck entry before this tale
+// chooses. This is a small deterministic anti-repeat pass, not a second visual
+// random source: nearby tales remain stable across camera movement, but the
+// two drawings in one view do not needlessly collapse onto one engraving.
+function hiddenMapMonsterVariant(q, r, seedA, seedB, variantCount) {
+  const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
+  const deck = hiddenMapMonsterArtworkDeck(seedA, seedB, variantCount);
+  if (hiddenMapMonsterArtworkVariantCacheKey !== hiddenMapMonsterArtworkDeckKey) {
+    hiddenMapMonsterArtworkVariantCacheKey = hiddenMapMonsterArtworkDeckKey;
+    hiddenMapMonsterArtworkVariantCache = new Map();
+  }
+  const cacheKey = `${q}:${r}`;
+  if (hiddenMapMonsterArtworkVariantCache.has(cacheKey))
+    return hiddenMapMonsterArtworkVariantCache.get(cacheKey);
+  let slot = hiddenMapMonsterRawArtworkSlot(q, r, seedA, seedB, variantCount);
+  const used = new Set();
+  for (let dq = -HIDDEN_MAP_TALE_ARTWORK_RADIUS;
+       dq <= HIDDEN_MAP_TALE_ARTWORK_RADIUS; dq++) {
+    const from = Math.max(-HIDDEN_MAP_TALE_ARTWORK_RADIUS,
+                         -dq - HIDDEN_MAP_TALE_ARTWORK_RADIUS);
+    const to = Math.min(HIDDEN_MAP_TALE_ARTWORK_RADIUS,
+                        -dq + HIDDEN_MAP_TALE_ARTWORK_RADIUS);
+    for (let dr = from; dr <= to; dr++) {
+      if (!dq && !dr) continue;
+      const otherQ = q + dq, otherR = r + dr;
+      const otherPriority = hiddenMapMonsterPriority(otherQ, otherR, seedA, seedB);
+      if (otherPriority >= HIDDEN_MAP_TALE_CANDIDATE_RATE ||
+          !hiddenMapMonsterArtworkComesBefore(
+            q, r, otherQ, otherR, priority, otherPriority)) continue;
+      if (!hiddenMapMonsterSeat(otherQ, otherR, seedA, seedB)) continue;
+      used.add(hiddenMapMonsterVariant(
+        otherQ, otherR, seedA, seedB, variantCount));
+    }
+  }
+  if (used.size < variantCount) {
+    for (let offset = 0;
+         offset < variantCount && used.has(deck[slot]); offset++)
+      slot = (slot + 1) % variantCount;
+  }
+  const variant = deck[slot];
+  hiddenMapMonsterArtworkVariantCache.set(cacheKey, variant);
+  return variant;
+}
+
 // First put a private, seeded keep-out distance on each candidate. A fixed
 // radius makes the empty paper look artificially regimented; this 20%-tighter,
 // roughly 14--21 hex envelope makes the gaps vary while still stopping
@@ -8114,8 +8206,8 @@ function drawHiddenMapMonsters(layer) {
       cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 2.3,
       cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * 1.6,
       S * (HIDDEN_MAP_TALE_SIZE_MIN + detail * HIDDEN_MAP_TALE_SIZE_RANGE),
-      Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) *
-                 HIDDEN_MAP_MONSTER_VARIANTS),
+      hiddenMapMonsterVariant(
+        cell.q, cell.r, seedA, seedB, HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .2,
       hash2(cell.col * 37 + seedA, cell.r * 41 + seedB) > .5,
       .21
@@ -20414,7 +20506,8 @@ function drawPlanetChartMarginalia() {
       Math.min(width, height) * (.15 + h * .035)));
     drawHiddenMapMonster(
       seat.x, seat.y, size,
-      Math.floor(hash2(seedB + i * 23, seedA + 17) * HIDDEN_MAP_MONSTER_VARIANTS),
+      hiddenMapMonsterShuffledVariant(
+        i * 17 + 3, i * 19 + 5, seedA, seedB, HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
       hash2(seedB + i * 31, seedA + 29) > .5, .21
     );
