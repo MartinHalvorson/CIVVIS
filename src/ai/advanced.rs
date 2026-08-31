@@ -638,6 +638,34 @@ pub const LAND_GRAB_CITY_FLOOR: usize = 8;
 /// payback deadline decide the rest. See `land_grab`.
 pub const LAND_GRAB_CITY_CEILING: usize = 16;
 
+/// How wide the SCIENCE lane's land grab may go while its cities can still
+/// mature. Live rows scale with final city count, but at FIXED count science
+/// goes as `pop^1.21` — growing an existing city is super-linear while adding
+/// one dilutes. Timing reconciles them: a city founded early matures into the
+/// super-linear term, one founded late only dilutes. So under
+/// `science-expansion-phase` the science lane widens past the shared ceiling
+/// ONLY while a new city can still mature, then reverts to
+/// [`LAND_GRAB_CITY_CEILING`] and grows what it holds.
+///
+/// The gene has two effects with one window: the land grab's ceiling rises
+/// to this constant, and [`SCIENCE_CITY_TARGET_CAP`] — the shipped Science
+/// contract, written after this idea — is deferred until the window closes,
+/// so the two hypotheses (cap early and grow, versus widen early then grow)
+/// disagree on the board and a screen can price the difference.
+///
+/// Live evidence so far is three patched 250-turn Settler games (653/13
+/// cities, 276/4, 1063/15) against one stock (963/8) — n is tiny against a
+/// ~398 score stdev, and the 1063 met the strongest rival field seen while
+/// the 963 met the weakest. That is why the gene ships OFF: the argument is
+/// the timing model above, and the screen prices it.
+pub const SCIENCE_EXPANSION_CITY_CEILING: usize = 24;
+
+/// When the science lane stops widening and starts growing, in STANDARD-speed
+/// turns (`Game::standard_duration` rescales: 188 standard is ~t125 Online —
+/// half way through the 250-turn ladder game). The switch is observable in
+/// `civvis_notes.jsonl` as desired_cities 24 -> 16.
+pub const SCIENCE_EXPANSION_UNTIL_TURN: u32 = 188;
+
 /// The rapid native expansion gene aims to own this many cities on a roomy
 /// board. The practical-site gate can stop it sooner, and the target derives
 /// from land density on cramped maps, but a fifteen-city horizon gives the
@@ -5390,6 +5418,12 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// While a founded city can still mature, the science lane's land grab
+    /// widens to [`SCIENCE_EXPANSION_CITY_CEILING`] and the Science
+    /// contract's `SCIENCE_CITY_TARGET_CAP` is deferred; both revert when the
+    /// window closes. Opt-in gene `science-expansion-phase`; the timing
+    /// argument is on the constant.
+    science_expansion_phase: bool,
     /// `settler-backlog-brake`: no Settler starts while one stands parked
     /// (empire of three cities or more). See `BasicAi::settler_backlog_brake`
     /// and `settler_in_flight_allowed`.
@@ -6891,6 +6925,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_expansion_phase: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
             summoned_guard_turn: BTreeMap::new(),
@@ -10254,8 +10289,20 @@ impl AdvancedAi {
             } else {
                 land
             };
+            // The science lane widens while a founded city can still mature
+            // into the super-linear pop term; see
+            // `SCIENCE_EXPANSION_CITY_CEILING`. Every other lane, and the
+            // science lane's second half, keep the shared ceiling.
+            let ceiling = if self.science_expansion_phase
+                && science_targeted
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN)
+            {
+                SCIENCE_EXPANSION_CITY_CEILING
+            } else {
+                LAND_GRAB_CITY_CEILING
+            };
             (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING)
+                .clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
             (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
         };
@@ -10293,7 +10340,14 @@ impl AdvancedAi {
         // Science seat still settles enough productive cities to scale its
         // Campuses, then stops treating open land as the main objective. Never
         // lower the target beneath an empire that already exceeded the cap.
-        let desired_cities = if science_targeted {
+        // `science-expansion-phase` is the standing counter-hypothesis: while
+        // a founded city can still mature into the super-linear pop term the
+        // contract is deferred — the widened land-grab ceiling above sets the
+        // window's target — and the cap resumes when the window closes.
+        let desired_cities = if science_targeted
+            && !(self.science_expansion_phase
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN))
+        {
             desired_cities
                 .min(SCIENCE_CITY_TARGET_CAP)
                 .max(cities.len())
