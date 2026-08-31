@@ -25724,6 +25724,58 @@ impl Game {
         self.can_move_step(uid, pos, true)
     }
 
+    /// Whether `uid` could finish one observed host step from `from` at `to`.
+    ///
+    /// A live-state export can be older than an input event, so a conformance
+    /// audit cannot assume that the unit still stands at the position in its
+    /// latest mirror frame.  This creates an isolated branch, places the
+    /// moving formation at the host-reported source, and grants it a fresh
+    /// movement allowance.  The answer therefore covers structural movement
+    /// legality (terrain, borders, stacking, hostile units, and zone of
+    /// control) without treating previously spent movement as a disagreement.
+    ///
+    /// `None` means the observation cannot be represented by this board: the
+    /// unit or either endpoint is absent, or the event is not one map edge.
+    /// The authoritative game is never changed.
+    pub fn can_move_observed_step(&self, uid: u32, from: Pos, to: Pos) -> Option<bool> {
+        if !self.units.contains_key(&uid)
+            || !self.map.tiles.contains_key(&from)
+            || !self.map.tiles.contains_key(&to)
+            || self.wdist(from, to) != 1
+        {
+            return None;
+        }
+
+        let mut probe = self.clone();
+        // A linked support unit shares its leader's tile and movement test.
+        // Rebase both halves so a state frame from before the formation moved
+        // does not manufacture a false formation mismatch.
+        let mut movers = vec![uid];
+        if let Some(peer) = probe.units[&uid]
+            .linked_to
+            .filter(|peer| probe.units.contains_key(peer))
+        {
+            movers.push(peer);
+        }
+        for mover in movers {
+            probe.relocate(mover, from);
+            let attacks = probe.unit_max_attacks(mover);
+            let unit = probe.units.get_mut(&mover).expect("checked above");
+            unit.moves_left = 1_000.0;
+            unit.attacks_left = attacks;
+            unit.moved = false;
+            unit.acted = false;
+            unit.zoc_stopped = false;
+            unit.fortified = false;
+            unit.fortify_turns = 0;
+            // This host reading is tied to its old coordinate.  At a replayed
+            // source, let the board's terrain rule decide embarkation instead.
+            unit.host_embarked = None;
+            unit.started_turn_in_zoc = false;
+        }
+        Some(probe.can_move(uid, to))
+    }
+
     /// `can_move` for a hex in the middle of a longer walk, where the unit is
     /// crossing rather than arriving.
     ///

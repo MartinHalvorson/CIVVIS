@@ -52,10 +52,14 @@ def setUpModule() -> None:
     """
     sandbox = Path(_SANDBOX.name)
     halt, lock = sandbox / "operator-halt.json", sandbox / "civ6-game.lock"
+    intent = sandbox / "operator-intent"
+    intent.write_text("running\n")
     os.environ["CIVVIS_OPERATOR_HALT_FILE"] = str(halt)
     os.environ["CIVVIS_GAME_LOCK_DIR"] = str(lock)
+    os.environ["CIVVIS_OPERATOR_INTENT_FILE"] = str(intent)
     ladder_watchdog.gamelock.OPERATOR_HALT = halt
     ladder_watchdog.gamelock.LOCK = lock
+    ladder_watchdog.gamelock.OPERATOR_INTENT = intent
 
 
 class FakeRunner:
@@ -1051,7 +1055,37 @@ class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
                 "--state", str(tmp / "state.json"), "--log", str(log)])
             written = log.read_text()
             self.assertIn("operator-halt", written)
-            self.assertIn("Release the hold", written)
+            self.assertIn("not starting or stopping anything", written)
+
+    def test_a_stopped_intent_is_not_answered_with_a_restart(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            intent = ladder_watchdog.gamelock.OPERATOR_INTENT
+            intent.write_text("stopped\n")
+            self.addCleanup(lambda: intent.write_text("running\n"))
+            runs = ledger_with(tmp, [14.3])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--supervisor", "/x/supervisor.sh",
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.starts, [])
+            self.assertIn("verification intent is 'stopped'", (tmp / "log").read_text())
+
+    def test_a_missing_intent_is_fail_closed(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            intent = ladder_watchdog.gamelock.OPERATOR_INTENT
+            intent.unlink()
+            self.addCleanup(lambda: intent.write_text("running\n"))
+            runs = ledger_with(tmp, [0.2])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--lock", str(tmp / "absent"),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.starts, [])
+            self.assertIn("verification intent is missing or unreadable", (tmp / "log").read_text())
 
     def test_a_healthy_ledger_is_still_left_alone_while_held(self):
         """A hold is not a problem to report; it only explains a stale ledger."""
@@ -1096,6 +1130,12 @@ class TheSuiteReadsASandboxNotThisMachine(unittest.TestCase):
         self.assertEqual(os.environ.get("CIVVIS_OPERATOR_HALT_FILE"),
                          str(ladder_watchdog.gamelock.OPERATOR_HALT),
                          "a subprocess a test spawns must inherit the same sandbox")
+        self.assertTrue(
+            ladder_watchdog.gamelock.OPERATOR_INTENT.is_relative_to(sandbox),
+            "gamelock.OPERATOR_INTENT is outside the test sandbox")
+        self.assertEqual(os.environ.get("CIVVIS_OPERATOR_INTENT_FILE"),
+                         str(ladder_watchdog.gamelock.OPERATOR_INTENT),
+                         "a subprocess a test spawns must inherit the intent sandbox")
         self.assertEqual(os.environ.get("CIVVIS_GAME_LOCK_DIR"),
                          str(ladder_watchdog.gamelock.LOCK))
 

@@ -33,6 +33,7 @@ PID_FILE=$LOCK/pid
 SUPERVISOR_LOCK=${CIVVIS_SUPERVISOR_LOCK:-$HOME/.civvis-game-supervisor.lock}
 SUPERVISOR_PID_FILE=$SUPERVISOR_LOCK/pid
 POLL_S=${CIVVIS_INTERACTIVE_HOST_POLL_S:-5}
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 supervisor_pid=""
 supervisor_owned=0
 popup_keeper_pid=""
@@ -45,6 +46,18 @@ wedge_watchdog_pid=""
 wedge_watchdog_owned=0
 
 say() { print -r -- "[interactive-host] $(date -u +%FT%TZ) $*" >> "$LOG" }
+
+verification_intent_running() {
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+}
+
+intent_reason() {
+  if [[ -r "$INTENTFILE" ]]; then
+    print -r -- "intent=$(<"$INTENTFILE")"
+  else
+    print -r -- "intent=missing"
+  fi
+}
 
 hold_status() {
   # A missing or unreadable lock helper must not turn an explicit halt into a
@@ -130,6 +143,10 @@ live_supervisor_pid() {
 
 start_supervisor() {
   local existing=""
+  if ! verification_intent_running; then
+    say "verification intent is not running; refusing to start game supervisor ($(intent_reason))"
+    return 1
+  fi
   existing=$(live_supervisor_pid || true)
   if [[ -n "$existing" ]]; then
     supervisor_pid=$existing
@@ -243,7 +260,10 @@ start_wedge_watchdog() {
 }
 
 say "host up (pid $$)"
-if held=$(hold_status); then
+if ! verification_intent_running; then
+  say "verification intent is not running; exiting before startup: $(intent_reason)"
+  exit 0
+elif held=$(hold_status); then
   say "operator halt active; exiting before startup: $held"
   exit 0
 elif start_supervisor; then
@@ -257,7 +277,10 @@ elif start_supervisor; then
 fi
 
 while true; do
-  if held=$(hold_status); then
+  if ! verification_intent_running; then
+    say "verification intent is not running; stopping owned children and exiting: $(intent_reason)"
+    exit 0
+  elif held=$(hold_status); then
     say "operator halt active; stopping owned children and exiting: $held"
     exit 0
   fi

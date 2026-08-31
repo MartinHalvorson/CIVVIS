@@ -76,8 +76,13 @@ SELF_PATH=${0:A}
 SELF_STAMP=$(/usr/bin/stat -f '%m %z' "$SELF_PATH" 2>/dev/null || print -r -- "unknown")
 STATE_READER=${CIVVIS_WEDGE_STATE_READER:-${SELF_DIR}/civvis_watchdog_state.py}
 LOCK=${CIVVIS_WEDGE_LOCK:-$HOME/.civvis-agent-wedge-watchdog.lock}
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 
 say() { print -r -- "[wedge] $(date -u +%FT%TZ) $*" >> "$LOG" }
+
+verification_intent_running() {
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+}
 
 # The watchdog belongs to the unattended climb lane, not to every Python
 # process whose argv happens to mention civ6_play.py.  A protected manual
@@ -187,6 +192,10 @@ nudge_end_turn() {
 
 restart_attempt() {
   local reason="$1" climb="$2" play="$3" tag="$4" turn="${5:-0}"
+  if ! verification_intent_running; then
+    say "$tag recovery suppressed: verification intent is not running"
+    return 0
+  fi
   if ! is_python_harness "$climb" "civ6_civvis_climb.py" \
       || ! player_uses_tag "$play" "$tag"; then
     say "$tag recovery target is no longer the proven owned pair; leaving it alone"
@@ -246,6 +255,10 @@ reset_progress() {
   last_progress=""
 }
 
+if ! verification_intent_running; then
+  say "verification intent is not running; exiting without touching a game"
+  exit 0
+fi
 if ! mkdir "$LOCK" 2>/dev/null; then
   holder=$(cat "$LOCK/pid" 2>/dev/null || print -r -- "")
   if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
@@ -268,6 +281,10 @@ handoff_polls=0
 last_unowned_tag=""
 while true; do
   sleep "$POLL_S"
+  if ! verification_intent_running; then
+    say "verification intent is not running; exiting without touching a game"
+    exit 0
+  fi
   # Cheap: two numbers from one stat, once a minute. Deliberately mtime+size
   # rather than a hash — a rewritten script always changes one of them, and a
   # hash of a file being written mid-refresh could be read torn.

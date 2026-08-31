@@ -27,6 +27,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # killing a game in progress. Contents: an absolute path to the tree to play
 # from, or "head" to track origin/main in $HEAD_REPO below.
 PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 # How old a fetched `origin/main` may be and still be worth playing when GitHub
 # is unreachable. See the refusal this guards, below. Six hours keeps an
 # unattended overnight host producing games through a network blip without ever
@@ -187,7 +188,23 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
+verification_intent_running() {
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+}
+
+intent_reason() {
+  if [[ -r "$INTENTFILE" ]]; then
+    print -r -- "intent=$(<"$INTENTFILE")"
+  else
+    print -r -- "intent=missing"
+  fi
+}
+
 mkdir -p "$LOGS"
+if ! verification_intent_running; then
+  say "verification intent is not running; exiting before startup ($(intent_reason))"
+  exit 0
+fi
 if [[ -n "$REQUESTED_RETIRED_STRATEGY" ]]; then
   say "ignoring retired CIVVIS_STRATEGY=$REQUESTED_RETIRED_STRATEGY; live seat uses deployment genome (no --strategy)"
 fi
@@ -358,6 +375,10 @@ display_mirror_server_pid() {
 }
 
 while true; do
+  if ! verification_intent_running; then
+    say "verification intent is not running; exiting before the next game ($(intent_reason))"
+    exit 0
+  fi
   # ⚠ NEVER kill a HEALTHY game here. A global `pkill -f civ6_play.py` used to
   # terminate unrelated live runs. Wait for this supervisor's lock holder to
   # go quiet for two minutes, then ask only that exact harness to stop cleanly.
@@ -616,6 +637,10 @@ while true; do
   # claim Civ VI after the scan; launching into it produces an instant
   # "something already holds the game" failure and falsely burns a ladder
   # cycle.  Recheck at the launch boundary and leave the other owner alone.
+  if ! verification_intent_running; then
+    say "verification intent is not running; exiting before launch ($(intent_reason))"
+    exit 0
+  fi
   LAUNCH_UNOWNED_PID=$(unowned_harness_pid || true)
   if [[ -n "$LAUNCH_UNOWNED_PID" ]]; then
     say "an unowned Civ VI harness appeared during preflight (pid $LAUNCH_UNOWNED_PID); leaving it alone and retrying in 60s"

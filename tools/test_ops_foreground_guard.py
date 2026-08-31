@@ -245,6 +245,8 @@ class TheGuardRunsWhereItShould(unittest.TestCase):
             (tree / "Cargo.toml").write_text("[package]\n")
             (home / "pin").write_text("head\n")
             (home / "policy").write_text(f"CIVVIS_HEAD_REPO={tree}\n")
+            intent = home / ".civvis-operator-intent"
+            intent.write_text("running\n")
             launcher = home / "launcher.sh"
             launcher.write_text("#!/bin/zsh\nprint -r -- launcher-ran\n")
             launcher.chmod(0o755)
@@ -254,6 +256,7 @@ class TheGuardRunsWhereItShould(unittest.TestCase):
             env = clean_env(HOME=raw, GUARD_MARK=str(home / "guard-ran"),
                             CIVVIS_PINFILE=str(home / "pin"),
                             CIVVIS_VERIFICATION_POLICY=str(home / "policy"),
+                            CIVVIS_OPERATOR_INTENT_FILE=str(intent),
                             CIVVIS_LADDER_LOG=str(home / "ladder.log"),
                             CIVVIS_LADDER_LAUNCHER=str(launcher),
                             CIVVIS_FOREGROUND_GUARD_SCRIPT=str(guard))
