@@ -2348,3 +2348,58 @@ class TheThirdResumeSamplesSomewhereNew(unittest.TestCase):
         self.assertIsNone(climb.resume_from_autosave(
             {"last_turn": 93}, "frozen", 3, self._args(), 0.0,
             recent=lambda newer_than=None: list(self.SAVES)))
+
+
+class TheOperatorsLaneOutlivesAStaleEnvironment(unittest.TestCase):
+    """⚠⚠ `CIVVIS_VICTORY` is read ONCE, by a supervisor that runs for days.
+
+    Measured 2026-08-31: the supervisor still held the environment it inherited
+    on Aug 28, so a lane exported into the keeper's login shell pinned every
+    game after it and no merge to `main` could move the ladder. The climb is
+    spawned per game, so a file read HERE changes the lane without restarting a
+    host that must stay Terminal-owned to write inside `Civ6.app`.
+    """
+
+    def lane(self, contents, requested="diplomatic"):
+        warnings = []
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".civvis-victory-lane"
+            if contents is not None:
+                path.write_text(contents, encoding="utf-8")
+            got = climb.operator_victory_lane(
+                requested, path=path, warn=warnings.append)
+        return got, warnings
+
+    def test_an_absent_file_changes_nothing(self):
+        got, warnings = self.lane(None)
+        self.assertEqual(got, "diplomatic")
+        self.assertEqual(warnings, [])
+
+    def test_a_named_lane_overrides_the_inherited_one(self):
+        got, warnings = self.lane("science\n")
+        self.assertEqual(got, "science")
+        self.assertTrue(any("science" in w for w in warnings),
+                        "an override must say so; a silent one is how the "
+                        "stale environment went unnoticed for three days")
+
+    def test_agreeing_with_the_flag_is_silent(self):
+        got, warnings = self.lane("science\n", requested="science")
+        self.assertEqual(got, "science")
+        self.assertEqual(warnings, [])
+
+    def test_an_unknown_lane_is_ignored_not_fatal(self):
+        # ⚠ The opposite of `~/.civvis-live-force-on`, which refuses the batch.
+        # Correct there, wrong here: a typo must not stop an unattended ladder.
+        got, warnings = self.lane("sciense\n")
+        self.assertEqual(got, "diplomatic")
+        self.assertTrue(warnings)
+
+    def test_an_empty_file_is_not_a_lane(self):
+        got, warnings = self.lane("   \n")
+        self.assertEqual(got, "diplomatic")
+        self.assertEqual(warnings, [])
+
+    def test_every_lane_the_launcher_offers_is_accepted(self):
+        for lane in climb.VICTORY_LANES:
+            got, _ = self.lane(f"{lane}\n")
+            self.assertEqual(got, lane)
