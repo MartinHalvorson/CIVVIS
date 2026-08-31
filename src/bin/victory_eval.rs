@@ -82,8 +82,20 @@
 //! historical native baseline, and does not carry the live bridge's repair
 //! genes. Without this switch, withholding a live-only gene from a targeted
 //! seat is a no-op rather than a control arm.
-use civvis::ai::{run_game, AdvancedAi, VictoryTarget};
-use civvis::game::Game;
+//!
+//! ## `--denial-pair DEFENDER:RIVAL`
+//!
+//! A targeted controller used to have no native control arm for
+//! `deny-while-targeted`: the ordinary evaluator made every major pursue the
+//! same lane, and an adaptive `live` arm never reached the targeted-only
+//! gate. This paired mode gives major seat zero an assigned `DEFENDER` lane,
+//! pins every other major to `RIVAL`, and plays the same seed twice. Both
+//! legs use the live bridge; only seat zero's `deny-while-targeted` flag
+//! differs. It reports the selected denial responses as well as outcomes and
+//! fails if the enabled leg never selects one, so a zero-width comparison
+//! cannot be mistaken for evidence.
+use civvis::ai::{run_game, AdvancedAi, Ai, VictoryTarget};
+use civvis::game::{Action, Game};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -163,6 +175,246 @@ fn selected_speed(args: &[String]) -> Result<civvis::setup::GameSpeed, String> {
         .ok_or_else(|| format!("unknown --speed {raw:?}; use online|quick|standard|epic|marathon"))
 }
 
+/// The defender's assigned lane and the lane every rival is pinned to for a
+/// matched targeted-denial evaluation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DenialPair {
+    defender: VictoryTarget,
+    rival: VictoryTarget,
+}
+
+fn has_flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|arg| arg == flag)
+}
+
+/// Parse `--denial-pair science:diplomatic` without giving a malformed or
+/// symmetric field a chance to become a silent no-op.
+fn selected_denial_pair(args: &[String]) -> Result<Option<DenialPair>, String> {
+    let Some(index) = args.iter().position(|arg| arg == "--denial-pair") else {
+        return Ok(None);
+    };
+    if has_flag(args, "--target") {
+        return Err("--denial-pair supplies its own lanes; do not also pass --target".into());
+    }
+    if has_flag(args, "--with") || has_flag(args, "--without") {
+        return Err(
+            "--denial-pair owns the deny-while-targeted treatment/control; do not also pass --with or --without"
+                .into(),
+        );
+    }
+    let raw = args
+        .get(index + 1)
+        .ok_or_else(|| "--denial-pair requires DEFENDER:RIVAL".to_string())?;
+    let (defender, rival) = raw.split_once(':').ok_or_else(|| {
+        "--denial-pair must be DEFENDER:RIVAL, for example science:diplomatic".to_string()
+    })?;
+    let defender = defender.parse::<VictoryTarget>()?;
+    let rival = rival.parse::<VictoryTarget>()?;
+    if defender == rival {
+        return Err(
+            "--denial-pair needs distinct lanes: identical targets recreate the old symmetric no-op"
+                .into(),
+        );
+    }
+    Ok(Some(DenialPair { defender, rival }))
+}
+
+/// What one leg of a matched targeted-denial pair actually did.
+#[derive(Debug)]
+struct DenialTrial {
+    defender_won: bool,
+    victory: String,
+    turn: u32,
+    selections: u32,
+    first_selection: Option<(u32, usize, &'static str)>,
+}
+
+/// Build the two-arm experiment from the same deployment profile. Major zero
+/// is the measured defender; all other majors are fixed lane pursuers and
+/// therefore contribute no treatment variance. Minor and barbarian seats keep
+/// their ordinary controller, just as they do in the normal evaluator.
+fn denial_fleet(game: &Game, pair: DenialPair, treatment: bool) -> Vec<AdvancedAi> {
+    game.players
+        .iter()
+        .map(|player| {
+            if player.is_minor || player.is_barbarian {
+                return AdvancedAi::new();
+            }
+            let mut ai = AdvancedAi::targeting(if player.id == 0 {
+                pair.defender
+            } else {
+                pair.rival
+            });
+            // This probe exists for the live-only gate. Both legs must carry
+            // the deployment bundle before the one flag is withheld.
+            ai.enable_live_bridge();
+            if player.id == 0 && !treatment {
+                ai.disable_deny_while_targeted();
+            }
+            ai
+        })
+        .collect()
+}
+
+/// Run one leg with the same headless loop as [`run_game`], observing the
+/// defender immediately before each of its turns. `denial_target` is the
+/// exact actionable selector the planner will use, so counting it does not
+/// invent a second definition of "the treatment fired".
+fn run_denial_trial(
+    players: usize,
+    width: i32,
+    height: i32,
+    speed: civvis::setup::GameSpeed,
+    turns: u32,
+    seed: u64,
+    pair: DenialPair,
+    treatment: bool,
+) -> DenialTrial {
+    let city_states = if matches!(pair.defender, VictoryTarget::Diplomacy)
+        || matches!(pair.rival, VictoryTarget::Diplomacy)
+    {
+        (players + 1).max(3)
+    } else {
+        0
+    };
+    let mut game = Game::new_with(civvis::game::GameOptions {
+        barbarians: false,
+        speed: speed.id().to_string(),
+        ..civvis::game::GameOptions::new(players, width, height, seed, turns, city_states)
+    });
+    let mut ais = denial_fleet(&game, pair, treatment);
+    // Keep the mechanics identical to `run_game`; the only addition is the
+    // read-only diagnostic seam before the defender decides.
+    game.set_fog_memory(false);
+    game.set_war_ledger(false);
+    let mut selections = 0;
+    let mut first_selection = None;
+    while game.winner.is_none() && game.turn <= game.max_turns {
+        let pid = game.current;
+        if pid == 0 {
+            if let Some((target, counter)) = ais[pid].denial_target(&game, pid) {
+                selections += 1;
+                first_selection.get_or_insert((game.turn, target, counter.as_str()));
+            }
+        }
+        ais[pid].take_turn(&mut game, pid);
+        if game.winner.is_none() && game.current == pid {
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+    }
+    // This evaluator leaves score enabled, so the public EndTurn path awards
+    // the turn-limit winner before the bound can expire. `run_game` also has
+    // a crate-private fallback for score-disabled worlds; this probe does not
+    // offer a victory-mask switch that could need it.
+    let turn = game.reported_turn();
+    let victory = game.victory_type.unwrap_or_else(|| "none".to_string());
+    DenialTrial {
+        defender_won: game.winner == Some(0),
+        victory,
+        turn,
+        selections,
+        first_selection,
+    }
+}
+
+fn trial_cell(trial: &DenialTrial) -> String {
+    let first = trial.first_selection.map_or_else(
+        || "none".to_string(),
+        |(turn, target, counter)| format!("t{turn}/p{target}/{counter}"),
+    );
+    format!(
+        "defender={} victory={} t{} selections={} first={first}",
+        if trial.defender_won { "win" } else { "loss" },
+        trial.victory,
+        trial.turn,
+        trial.selections,
+    )
+}
+
+/// A pair is evidence only when the enabled treatment actually reached its
+/// decision seam. The withheld control must be silent because a targeted
+/// planner short-circuits before it can choose denial without this flag.
+fn validate_denial_exposure(
+    treatment_selections: u32,
+    control_selections: u32,
+) -> Result<(), String> {
+    if control_selections != 0 {
+        return Err(format!(
+            "invalid control: targeted defender selected {control_selections} denial responses with deny-while-targeted withheld"
+        ));
+    }
+    if treatment_selections == 0 {
+        return Err(
+            "inert denial pair: the enabled defender selected no actionable denial response; do not read its outcome contrast as a treatment measurement"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+/// Run the live treatment and its withheld control on every requested seed.
+/// Unlike ordinary lane verification, a defender loss is an observation, not
+/// a command failure: the paired contrast is the result.
+fn run_denial_pair(args: &[String], pair: DenialPair) -> Result<(), String> {
+    let speed = selected_speed(args)?;
+    let games = number(args, "--games", 3);
+    let start_seed = number(args, "--start-seed", 9_000) as u64;
+    let players = number(args, "--players", 2).clamp(2, 8);
+    let width = number(args, "--width", 24).max(16) as i32;
+    let height = number(args, "--height", 16).max(12) as i32;
+    let turns = args
+        .iter()
+        .position(|arg| arg == "--turns")
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or_else(|| default_turn_limit(pair.defender).max(default_turn_limit(pair.rival)));
+    let started = Instant::now();
+    let mut treatment_wins = 0;
+    let mut control_wins = 0;
+    let mut treatment_selections = 0;
+    let mut control_selections = 0;
+    let mut changed_outcomes = 0;
+
+    println!(
+        "targeted denial pair: defender={} rival={} (deployment bridge; treatment vs withheld deny-while-targeted)",
+        pair.defender.as_str(),
+        pair.rival.as_str(),
+    );
+    for game in 0..games {
+        let seed = start_seed + game as u64;
+        let treatment = run_denial_trial(players, width, height, speed, turns, seed, pair, true);
+        let control = run_denial_trial(players, width, height, speed, turns, seed, pair, false);
+        treatment_wins += usize::from(treatment.defender_won);
+        control_wins += usize::from(control.defender_won);
+        treatment_selections += treatment.selections;
+        control_selections += control.selections;
+        changed_outcomes += usize::from(
+            treatment.defender_won != control.defender_won
+                || treatment.victory != control.victory
+                || treatment.turn != control.turn,
+        );
+        println!(
+            "seed={seed} treatment=[{}] control=[{}]",
+            trial_cell(&treatment),
+            trial_cell(&control),
+        );
+    }
+
+    println!(
+        "\n{} paired seeds in {:.2}s: defender wins treatment={}/{} control={}/{}; actionable selections treatment={} control={}; changed outcomes={}",
+        games,
+        started.elapsed().as_secs_f64(),
+        treatment_wins,
+        games,
+        control_wins,
+        games,
+        treatment_selections,
+        control_selections,
+        changed_outcomes,
+    );
+    validate_denial_exposure(treatment_selections, control_selections)
+}
+
 fn default_turn_limit(target: VictoryTarget) -> u32 {
     match target {
         VictoryTarget::Religion => 450,
@@ -176,6 +428,17 @@ fn default_turn_limit(target: VictoryTarget) -> u32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let denial_pair = selected_denial_pair(&args).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
+    if let Some(pair) = denial_pair {
+        if let Err(error) = run_denial_pair(&args, pair) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let targets = selected_targets(&args).unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2);
@@ -581,6 +844,95 @@ mod tests {
         assert!(!deployment_profile(&args(&[])));
         assert!(deployment_profile(&args(&["--deployment"])));
         assert!(!deployment_profile(&args(&["--deployment-mode"])));
+    }
+
+    #[test]
+    fn denial_pair_requires_two_distinct_named_lanes() {
+        assert_eq!(
+            selected_denial_pair(&args(&["--denial-pair", "science:diplomatic"])).unwrap(),
+            Some(DenialPair {
+                defender: VictoryTarget::Science,
+                rival: VictoryTarget::Diplomacy,
+            })
+        );
+        assert_eq!(
+            selected_denial_pair(&args(&["--denial-pair", "religious:conquest"])).unwrap(),
+            Some(DenialPair {
+                defender: VictoryTarget::Religion,
+                rival: VictoryTarget::Domination,
+            })
+        );
+        for words in [
+            vec!["--denial-pair"],
+            vec!["--denial-pair", "science"],
+            vec!["--denial-pair", "science:science"],
+            vec!["--denial-pair", "science:diplomatic", "--target", "science"],
+            vec![
+                "--denial-pair",
+                "science:diplomatic",
+                "--without",
+                "deny-while-targeted",
+            ],
+        ] {
+            assert!(selected_denial_pair(&args(&words)).is_err(), "{words:?}");
+        }
+    }
+
+    #[test]
+    fn denial_pair_only_withholds_the_measured_defender() {
+        let game = Game::new(3, 24, 16, 91_002, 80, 0);
+        let pair = DenialPair {
+            defender: VictoryTarget::Science,
+            rival: VictoryTarget::Diplomacy,
+        };
+        let treatment = denial_fleet(&game, pair, true);
+        let control = denial_fleet(&game, pair, false);
+        assert_eq!(treatment[0].victory_target(), Some(pair.defender));
+        assert!(treatment[0].deny_while_targeted);
+        assert_eq!(control[0].victory_target(), Some(pair.defender));
+        assert!(!control[0].deny_while_targeted);
+        for pid in 1..3 {
+            assert_eq!(treatment[pid].victory_target(), Some(pair.rival));
+            assert_eq!(control[pid].victory_target(), Some(pair.rival));
+            assert!(treatment[pid].deny_while_targeted);
+            assert!(control[pid].deny_while_targeted);
+        }
+    }
+
+    #[test]
+    fn denial_pair_refuses_to_price_a_zero_exposure_arm() {
+        assert!(validate_denial_exposure(1, 0).is_ok());
+        assert!(validate_denial_exposure(0, 0)
+            .unwrap_err()
+            .contains("inert denial pair"));
+        assert!(validate_denial_exposure(1, 1)
+            .unwrap_err()
+            .contains("invalid control"));
+    }
+
+    /// The documented one-map smoke is a real branch exposure, not merely a
+    /// parser example. Both legs play the same deterministic world; only the
+    /// enabled defender may select denial because it is assigned a lane.
+    #[test]
+    fn documented_denial_pair_smoke_exposes_only_the_enabled_defender() {
+        use civvis::setup::GameSpeed;
+
+        let pair = DenialPair {
+            defender: VictoryTarget::Science,
+            rival: VictoryTarget::Religion,
+        };
+        let treatment = run_denial_trial(2, 24, 16, GameSpeed::Online, 200, 940_000, pair, true);
+        let control = run_denial_trial(2, 24, 16, GameSpeed::Online, 200, 940_000, pair, false);
+        assert!(
+            treatment.selections > 0,
+            "the documented smoke must reach the enabled denial branch: {treatment:?}"
+        );
+        assert_eq!(control.selections, 0, "the withheld arm must stay silent");
+        assert_eq!(
+            treatment.victory, control.victory,
+            "the fixture tests branch exposure, not an outcome claim"
+        );
+        validate_denial_exposure(treatment.selections, control.selections).unwrap();
     }
 
     /// ⚠ The reason this test exists is not the parser. #1278 removed this
