@@ -5027,6 +5027,49 @@ fn later_moved_units(
         .collect()
 }
 
+/// Whether a policy-deck order's requested cards are present in the state.
+///
+/// The planner emits the complete active deck, but the host may expose an
+/// additional slot on the answering frame after a civic completes. The
+/// postcondition therefore keeps the existing subset semantics: every card
+/// requested by the order must be present, while unrelated extra cards do not
+/// make an otherwise successful replacement fail.
+fn policy_deck_cards_present(order: &IssuedOrder, state: &civvis::mirror::StateSnapshot) -> bool {
+    if order.kind != "policy_deck" {
+        return false;
+    }
+    let requested: Vec<&str> = order
+        .verb
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter(|policy| !policy.is_empty())
+        .collect();
+    !requested.is_empty()
+        && requested
+            .iter()
+            .all(|policy| state.policies.iter().any(|have| have == policy))
+}
+
+/// A later same-turn policy replacement landed in the final answering state.
+///
+/// In that case an earlier deck can be absent for the healthy reason that the
+/// decider replaced it before the turn ended. Keep that case distinct from a
+/// host refusing the only policy transaction, just as later MOVE_TO orders are
+/// distinct from a failed FORTIFY.
+fn later_policy_deck_matches(
+    frames: &[PendingOrders],
+    turn: u32,
+    frame: u32,
+    after: &civvis::mirror::StateSnapshot,
+) -> bool {
+    frames
+        .iter()
+        .filter(|pending| pending.turn == turn && pending.frame > frame)
+        .flat_map(|pending| pending.orders.iter())
+        .any(|order| policy_deck_cards_present(order, after))
+}
+
 fn offset_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
     civvis::hex::distance(
         civvis::hex::offset_to_axial(a.0, a.1),
@@ -5514,6 +5557,9 @@ struct VerificationContext<'a> {
     /// The decider moved this unit in a later frame of the same turn, so any
     /// FORTIFY it issued earlier was overridden by its own next decision.
     later_moved: bool,
+    /// A later policy-deck replacement in this turn matches the final state,
+    /// so this order was superseded by the decider's own re-plan.
+    later_policy_deck: bool,
 }
 
 /// The next frame's verdict on one order issued on `turn`.
@@ -5696,6 +5742,8 @@ fn verify_order_with_context(
                 .collect();
             if missing.is_empty() {
                 Verdict::Verified
+            } else if context.later_policy_deck {
+                failed("superseded_by_policy_deck".to_string())
             } else {
                 failed(format!("missing={}", missing.join("+")))
             }
@@ -5779,6 +5827,7 @@ fn verify_order(
             same_turn_orders: &[],
             later_fortified: false,
             later_moved: false,
+            later_policy_deck: false,
         },
     )
 }
@@ -5798,20 +5847,28 @@ fn verify_orders(
         tiles,
         evidence,
         same_turn_orders,
-        &std::collections::BTreeSet::new(),
-        &std::collections::BTreeSet::new(),
+        LaterOrderEvidence {
+            fortified: &std::collections::BTreeSet::new(),
+            moved: &std::collections::BTreeSet::new(),
+            policy_deck: false,
+        },
     )
 }
 
 /// Verify pending orders with positive evidence from later same-turn frames.
+struct LaterOrderEvidence<'a> {
+    fortified: &'a std::collections::BTreeSet<i64>,
+    moved: &'a std::collections::BTreeSet<i64>,
+    policy_deck: bool,
+}
+
 fn verify_orders_with_later_fortifications(
     pending: &PendingOrders,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
     same_turn_orders: &[IssuedOrder],
-    later_fortified: &std::collections::BTreeSet<i64>,
-    later_moved: &std::collections::BTreeSet<i64>,
+    later: LaterOrderEvidence<'_>,
 ) -> Vec<OrderCheck> {
     pending
         .orders
@@ -5828,8 +5885,9 @@ fn verify_orders_with_later_fortifications(
                     same_turn_orders,
                     later_fortified: order
                         .subject
-                        .is_some_and(|id| later_fortified.contains(&id)),
-                    later_moved: order.subject.is_some_and(|id| later_moved.contains(&id)),
+                        .is_some_and(|id| later.fortified.contains(&id)),
+                    later_moved: order.subject.is_some_and(|id| later.moved.contains(&id)),
+                    later_policy_deck: later.policy_deck,
                 },
             ),
             order: order.clone(),
@@ -5936,6 +5994,8 @@ fn settle_pending_orders(
             .map_or(&[][..], Vec::as_slice);
         let later_fortified = later_fortified_units(&states, frame.turn, frame.frame);
         let later_moved = later_moved_units(&answered, frame.turn, frame.frame);
+        let later_policy_replan =
+            later_policy_deck_matches(&answered, frame.turn, frame.frame, after);
         by_turn
             .entry(frame.turn)
             .or_default()
@@ -5945,8 +6005,11 @@ fn settle_pending_orders(
                 tiles,
                 &evidence,
                 context,
-                &later_fortified,
-                &later_moved,
+                LaterOrderEvidence {
+                    fortified: &later_fortified,
+                    moved: &later_moved,
+                    policy_deck: later_policy_replan,
+                },
             ));
     }
     for (turn, checks) in by_turn {
@@ -6083,6 +6146,23 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             ((turn, frame), moved)
         })
         .collect();
+    // A later policy deck is only useful as supersession evidence when the
+    // final answering frame contains its requested cards. This mirrors the
+    // live settlement path while keeping the replay loop free to consume
+    // `by_frame` below.
+    let later_policy_deck_by_frame: std::collections::BTreeMap<(u32, u32), bool> = by_frame
+        .keys()
+        .map(|&(turn, frame)| {
+            let matched = frames.get(&(turn + 1)).is_some_and(|after| {
+                by_frame
+                    .iter()
+                    .filter(|((t, f), _)| *t == turn && *f > frame)
+                    .flat_map(|(_, orders)| orders.iter())
+                    .any(|order| policy_deck_cards_present(order, after))
+            });
+            ((turn, frame), matched)
+        })
+        .collect();
     for ((turn, frame), orders) in by_frame {
         let Some(before) = frame_states
             .get(&(turn, frame))
@@ -6122,14 +6202,21 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             .get(&(turn, frame))
             .cloned()
             .unwrap_or_default();
+        let later_policy_replan = later_policy_deck_by_frame
+            .get(&(turn, frame))
+            .copied()
+            .unwrap_or(false);
         for check in verify_orders_with_later_fortifications(
             &pending,
             after,
             &tiles,
             &window,
             context,
-            &later_fortified,
-            &later_moved,
+            LaterOrderEvidence {
+                fortified: &later_fortified,
+                moved: &later_moved,
+                policy_deck: later_policy_replan,
+            },
         ) {
             let label = match check.order.kind.as_str() {
                 "unit" => check
@@ -13721,8 +13808,11 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &pending.orders,
-            &later,
-            &std::collections::BTreeSet::new(),
+            LaterOrderEvidence {
+                fortified: &later,
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: false,
+            },
         );
         assert_eq!(checks[0].verdict, Verdict::Verified);
 
@@ -13749,8 +13839,11 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &repeated.orders,
-            &later,
-            &std::collections::BTreeSet::new(),
+            LaterOrderEvidence {
+                fortified: &later,
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: false,
+            },
         );
         assert_eq!(checks[0].verdict, failed("not_fortified"));
 
@@ -13776,14 +13869,101 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &overridden.orders,
-            &std::collections::BTreeSet::new(),
-            &walked_away,
+            LaterOrderEvidence {
+                fortified: &std::collections::BTreeSet::new(),
+                moved: &walked_away,
+                policy_deck: false,
+            },
         );
         assert_eq!(
             checks[0].verdict,
             failed("superseded_by_move"),
             "the decider walked this unit away after asking it to dig in"
         );
+    }
+
+    #[test]
+    fn a_later_same_turn_policy_replan_is_not_a_missing_card_failure() {
+        let before = frame(64);
+        let mut after = frame(65);
+        after.policies = vec![
+            "POLICY_CHARISMATIC_LEADER".to_string(),
+            "POLICY_COLONIZATION".to_string(),
+            "POLICY_FEUDAL_CONTRACT".to_string(),
+            "POLICY_URBAN_PLANNING".to_string(),
+        ];
+        let earlier = order(
+            "policy_deck",
+            None,
+            Some(
+                "POLICY_CHARISMATIC_LEADER,POLICY_COLONIZATION,POLICY_GOD_KING,POLICY_URBAN_PLANNING",
+            ),
+            None,
+        );
+        let later = order(
+            "policy_deck",
+            None,
+            Some(
+                "POLICY_CHARISMATIC_LEADER,POLICY_COLONIZATION,POLICY_FEUDAL_CONTRACT,POLICY_URBAN_PLANNING",
+            ),
+            None,
+        );
+        let pending = PendingOrders {
+            turn: 64,
+            frame: 0,
+            orders: vec![earlier.clone()],
+            before: before.clone(),
+        };
+        let later_pending = PendingOrders {
+            turn: 64,
+            frame: 2,
+            orders: vec![later.clone()],
+            before,
+        };
+
+        assert_eq!(
+            check(&earlier, &pending.before, &after, &[]),
+            failed("missing=POLICY_GOD_KING"),
+            "without same-turn context, the final state correctly lacks the old card"
+        );
+        assert!(later_policy_deck_matches(
+            &[later_pending],
+            64,
+            pending.frame,
+            &after
+        ));
+        let checks = verify_orders_with_later_fortifications(
+            &pending,
+            &after,
+            &no_tiles(),
+            &[],
+            &pending.orders,
+            LaterOrderEvidence {
+                fortified: &std::collections::BTreeSet::new(),
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: true,
+            },
+        );
+        assert_eq!(checks[0].verdict, failed("superseded_by_policy_deck"));
+
+        // A later deck that did not land must not hide a genuine missing card.
+        let mut unchanged = after.clone();
+        unchanged.policies = vec![
+            "POLICY_CHARISMATIC_LEADER".to_string(),
+            "POLICY_COLONIZATION".to_string(),
+            "POLICY_URBAN_PLANNING".to_string(),
+        ];
+        assert!(!later_policy_deck_matches(
+            &[PendingOrders {
+                turn: 64,
+                frame: 2,
+                orders: vec![later],
+                before: pending.before.clone(),
+            }],
+            64,
+            pending.frame,
+            &unchanged
+        ));
     }
 
     #[test]
