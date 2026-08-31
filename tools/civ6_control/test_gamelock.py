@@ -235,13 +235,16 @@ class VerificationIntent(unittest.TestCase):
         self.intent = self.root / "operator-intent"
         self._real = gamelock.OPERATOR_INTENT
         self._real_halt = gamelock.OPERATOR_HALT
+        self._real_foreign = gamelock.foreign_run
         gamelock.OPERATOR_INTENT = self.intent
         gamelock.OPERATOR_HALT = self.root / "operator-halt.json"
+        gamelock.foreign_run = lambda tag: None
         self.addCleanup(self.cleanup)
 
     def cleanup(self) -> None:
         gamelock.OPERATOR_INTENT = self._real
         gamelock.OPERATOR_HALT = self._real_halt
+        gamelock.foreign_run = self._real_foreign
         self.tmp.cleanup()
 
     def test_running_is_authorized(self) -> None:
@@ -260,6 +263,16 @@ class VerificationIntent(unittest.TestCase):
         self.intent.write_text("stopped\n")
         gamelock.clear_operator_halt()
         self.assertEqual(gamelock.verification_intent(), "stopped")
+
+    def test_game_acquisition_can_require_running_intent(self) -> None:
+        self.intent.write_text("stopped\n")
+        self.assertFalse(gamelock.acquire(
+            "civvis-intent-gate-test", require_verification_intent=True))
+
+        self.intent.write_text("running\n")
+        self.assertTrue(gamelock.acquire(
+            "civvis-intent-gate-test", require_verification_intent=True))
+        gamelock.release()
 
 if __name__ == "__main__":
     unittest.main()

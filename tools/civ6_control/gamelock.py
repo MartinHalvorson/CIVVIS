@@ -283,14 +283,28 @@ def foreign_run(tag: str) -> str | None:
     return f"a game is running under run tag {installed!r}"
 
 
-def acquire(tag: str, wait_s: float = 0.0, poll_s: float = 15.0) -> bool:
-    """Take the lock, optionally waiting. False when someone else holds it."""
+def acquire(
+    tag: str,
+    wait_s: float = 0.0,
+    poll_s: float = 15.0,
+    *,
+    require_verification_intent: bool = False,
+) -> bool:
+    """Take the lock, optionally waiting. False when play is not allowed.
+
+    ``require_verification_intent`` is used by the game launcher itself. Cleanup
+    callers leave it false so an operator turning the lane off can still acquire
+    ownership long enough to stop a game that was already running.
+    """
     deadline = time.monotonic() + wait_s
     while True:
         # This check belongs here as well as in the supervisors.  It prevents a
         # manual or legacy launcher from bypassing the operator's explicit
         # halt simply because it did not use the current host script.
         if operator_halt() is not None:
+            return False
+        if (require_verification_intent
+                and verification_intent_description() is not None):
             return False
         foreign = foreign_run(tag)
         if foreign is not None:
