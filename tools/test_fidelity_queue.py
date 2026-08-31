@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The divergence queue is generated from three sources, each optional, oldest first."""
+"""The divergence queue is generated from four sources, each optional, oldest first."""
 
 from __future__ import annotations
 
@@ -25,11 +25,14 @@ def orders_block(unit_refused: int, produce_refused: int = 0) -> dict:
     }
 
 
-def write_run(runs: Path, tag: str, finished: str, orders: dict) -> None:
+def write_run(runs: Path, tag: str, finished: str, orders: dict, events: list[dict] | None = None
+              ) -> None:
     run = runs / tag
     run.mkdir(parents=True)
     (run / "summary.json").write_text(json.dumps(
         {"tag": tag, "finished_utc": finished, "orders": orders}))
+    if events is not None:
+        (run / "events.jsonl").write_text("".join(json.dumps(event) + "\n" for event in events))
 
 
 class Queue(unittest.TestCase):
@@ -60,6 +63,27 @@ class Queue(unittest.TestCase):
         self.assertEqual(len(fidelity_queue.live_rows(self.runs, 3, 0.04)), 2)
         wide = fidelity_queue.live_rows(self.runs, 4, 0.2)   # unit 82/320 = 25.6%
         self.assertEqual([r["ref"] for r in wide], ["civvis-0"])
+
+    def test_postcondition_rows_surface_noops_with_their_own_denominator(self):
+        for index, finished in enumerate(("2026-08-20T10:00:00Z", "2026-08-21T10:00:00Z")):
+            write_run(
+                self.runs, f"civvis-v{index}", finished, orders_block(0),
+                [
+                    {"kind": "order_verified", "order_kind": "produce"},
+                    {"kind": "order_failed", "order_kind": "produce",
+                     "reason": "producing=nothing"},
+                    {"kind": "order_verified", "order_kind": "unit"},
+                    # This legacy record is intentionally not attributed to a
+                    # named kind and cannot create a false queue row.
+                    {"kind": "order_failed", "reason": "unknown_kind"},
+                ])
+        rows = fidelity_queue.postcondition_rows(self.runs, 6, 0.2)
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["when"], "2026-08-20T10:00:00Z")
+        self.assertEqual(row["ref"], "civvis-v0")
+        self.assertIn("`produce` failed postcondition `producing=nothing`", row["what"])
+        self.assertEqual(row["number"], "2/4 = 50.0% of checkable outcomes")
 
     def test_absent_sources_are_tolerated(self):
         text = fidelity_queue.build(
