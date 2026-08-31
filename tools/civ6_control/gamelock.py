@@ -376,6 +376,19 @@ if __name__ == "__main__":
     if args.halt:
         request_operator_halt(args.reason)
         print(operator_halt_description())
+        # A halt hands the machine back to a human, and the control mod must
+        # not follow them into their own games: left installed, it loads into
+        # every MANUAL Civilization VI session (measured 2026-08-31 — a
+        # hand-started game opened on turn 2 under the leftover agent, and
+        # restarting under the broken bundle seal crashed). `civ6_play`
+        # reinstalls it at the next verification run, so removal here loses
+        # nothing. A removal failure must not fail the halt itself.
+        try:
+            from civ6_control import install as modinstall
+            if modinstall.uninstall():
+                print("uninstalled the control mod; Civ6.app is vanilla for manual play")
+        except Exception as error:  # noqa: BLE001 - the halt must stand regardless
+            print(f"control mod uninstall failed (remove by hand): {error}")
         sys.exit(0)
     if args.resume:
         cleared = clear_operator_halt()

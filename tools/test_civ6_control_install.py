@@ -2116,3 +2116,63 @@ class TheLeaderIsMeasuredAgainstTheWholeField(unittest.TestCase):
         rule = play.split("def below_leader_score_reading", 1)[1][:1200]
         self.assertIn('event.get("rival_best")', rule)
         self.assertNotIn("rival_best_all", rule)
+
+
+class TheHaltHandsBackAVanillaApp(unittest.TestCase):
+    """`gamelock.py --halt` removes the control mod along with stopping games.
+
+    The mod is a per-run installation: left behind after 2026-08-31's halt it
+    loaded into the operator's MANUAL Civilization VI session, opened their
+    hand-started game on turn 2, and crashed it on restart. The halt is the
+    'a human wants the machine' signal, so it restores the vanilla bundle;
+    `civ6_play` reinstalls at the next verification run.
+    """
+
+    def test_halt_uninstalls_the_installed_mod(self) -> None:
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            planted = root / "install" / "DLC" / install.MOD_NAME
+            planted.mkdir(parents=True)
+            (planted / "config.json").write_text("{}\n")
+            halt_marker = root / "halt.json"
+            env = dict(
+                os.environ,
+                CIV6_INSTALL=str(root / "install"),
+                CIVVIS_OPERATOR_HALT_FILE=str(halt_marker),
+            )
+            done = subprocess.run(
+                [sys.executable,
+                 str(Path(__file__).resolve().parent / "civ6_control" / "gamelock.py"),
+                 "--halt", "--reason", "test"],
+                env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(done.returncode, 0, done.stderr or done.stdout)
+            self.assertTrue(halt_marker.is_file(), "the halt marker must persist")
+            self.assertFalse(
+                planted.is_dir(),
+                "the halt must remove the installed control mod: "
+                + done.stdout + done.stderr)
+            self.assertIn("vanilla", done.stdout)
+
+    def test_halt_stands_when_there_is_nothing_to_uninstall(self) -> None:
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "install").mkdir()
+            halt_marker = root / "halt.json"
+            env = dict(
+                os.environ,
+                CIV6_INSTALL=str(root / "install"),
+                CIVVIS_OPERATOR_HALT_FILE=str(halt_marker),
+            )
+            done = subprocess.run(
+                [sys.executable,
+                 str(Path(__file__).resolve().parent / "civ6_control" / "gamelock.py"),
+                 "--halt", "--reason", "test"],
+                env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(done.returncode, 0, done.stderr or done.stdout)
+            self.assertTrue(halt_marker.is_file())
