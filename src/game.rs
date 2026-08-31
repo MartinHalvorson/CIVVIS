@@ -23185,15 +23185,20 @@ impl Game {
             .map_or(0, |feature| feature.sight_through)
     }
 
-    /// The nearest unwrapped image of `to`, so a ray across the seam is drawn
-    /// as the short way round rather than back across the whole cylinder.
-    fn unwrapped_toward(&self, from: Pos, to: Pos) -> Pos {
+    /// The nearest unwrapped image of `to`, plus its distance from `from`, so
+    /// a ray across the seam is drawn as the short way round rather than back
+    /// across the whole cylinder. The ray consumes both values, and retaining
+    /// the winning comparison avoids measuring the same three images again.
+    fn unwrapped_toward(&self, from: Pos, to: Pos) -> (Pos, i32) {
         let width = self.map.width;
         [-width, 0, width]
             .into_iter()
-            .map(|shift| (to.0 + shift, to.1))
-            .min_by_key(|candidate| hex::distance(from, *candidate))
-            .unwrap_or(to)
+            .map(|shift| {
+                let candidate = (to.0 + shift, to.1);
+                (candidate, hex::distance(from, candidate))
+            })
+            .min_by_key(|(_, distance)| *distance)
+            .unwrap_or_else(|| (to, hex::distance(from, to)))
     }
 
     /// Walk one hex corridor from `from` to `to`, checking every tile strictly
@@ -23351,10 +23356,16 @@ impl Game {
         viewer_height: i32,
         see_through_woods: bool,
     ) -> bool {
-        if self.wdist(from, to) <= 1 {
+        let sphere = self.map.sphere().is_some();
+        let wraps = self.map.topology.wraps_east_west();
+        // On a cylinder `unwrapped_toward` chooses the same minimum as
+        // `wdist`; let its retained distance answer this fast path below.
+        // A globe does not have a cube ray and an arena must keep its
+        // non-wrapping distance, so both retain the original check.
+        if (sphere || !wraps) && self.wdist(from, to) <= 1 {
             return true;
         }
-        if self.map.sphere().is_some() {
+        if sphere {
             let target_height = self.sight_height_via(heights, to);
             return self.arc_is_clear(
                 heights,
@@ -23365,9 +23376,8 @@ impl Game {
                 see_through_woods,
             );
         }
-        let unwrapped = self.unwrapped_toward(from, to);
-        let distance = hex::distance(from, unwrapped);
-        if distance == 0 {
+        let (unwrapped, distance) = self.unwrapped_toward(from, to);
+        if distance == 0 || (wraps && distance == 1) {
             return true;
         }
         let target_height = self.sight_height_via(heights, to);
