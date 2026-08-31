@@ -530,9 +530,10 @@ impl AdvancedAi {
         self.settler_guard_holds_2 = false;
     }
 
-    /// A settle site one settler drops for danger is set aside for every own
-    /// settler for the same window, so a second settler does not march to the
-    /// tile the first just fled.
+    /// A settle site one settler drops for an empire-wide invalidation is set
+    /// aside for every own settler for the same window. Route safety remains
+    /// local, so an escorted Settler can still use a site an unguarded one
+    /// cannot approach.
     ///
     /// Version 2 of `settler_target_hysteresis`; one version of a family plays, so this
     /// turns version 1 off. Opt-in gene `settler-target-hysteresis-2`. See `AdvancedAi::settler_target_hysteresis_2`.

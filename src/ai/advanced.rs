@@ -5615,10 +5615,11 @@ pub struct AdvancedAi {
     /// enable turns version 1 off. Opt-in gene `settler-guard-holds-2`.
     settler_guard_holds_2: bool,
     /// Version 2 of `settler_target_hysteresis`: a site one settler drops
-    /// for danger is set aside for EVERY own settler for the same window
-    /// (`settler_dead_sites`), so a second settler does not march to the
-    /// tile the first just fled. Implies version 1; its enable turns
-    /// version 1 off. Opt-in gene `settler-target-hysteresis-2`.
+    /// for an empire-wide invalidation is set aside for EVERY own settler for
+    /// the same window (`settler_dead_sites`). Route safety remains individual:
+    /// a bound guard can make the same site safe for one Settler but not another.
+    /// Implies version 1; its enable turns version 1 off. Opt-in gene
+    /// `settler-target-hysteresis-2`.
     settler_target_hysteresis_2: bool,
     /// The first turn an own land military unit stands within two tiles of
     /// an at-war city resets the fatigue clock once for that city, so a
@@ -26107,6 +26108,24 @@ impl AdvancedAi {
             || (self.settler_never_idles && self.settler_routing_recovery_on())
     }
 
+    /// Whether a cached-target failure is intrinsic to the site, rather than
+    /// depending on this Settler's route, its guard, or the visible threat
+    /// frame. Version-2 hysteresis may share only these failures: its memory is
+    /// consulted by every Settler, while safety pricing deliberately depends on
+    /// the mover's support.
+    fn settler_target_drop_is_empire_wide(why: &str) -> bool {
+        matches!(
+            why,
+            "the tile left the map"
+                | "water"
+                | "impassable"
+                | "a city within three tiles"
+                | "another empire's ground"
+                | "the host blocked the plot"
+                | "a settler was lost within three tiles"
+        )
+    }
+
     fn guard_outmatched_at(
         &self,
         g: &Game,
@@ -28658,10 +28677,14 @@ impl AdvancedAi {
                             next picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a \
                             threat flickering at the edge of sight cannot flip the march every frame";
                            dropped);
-                    // See `settler_target_hysteresis_2`: the danger is the
-                    // site's, not this settler's, so every other own settler
-                    // sets it aside for the same window.
-                    if self.settler_target_hysteresis_2 {
+                    // See `settler_target_hysteresis_2`: share only a failure
+                    // that is really the site's. A route, support, or threat
+                    // rejection is local to this Settler; sharing it can make
+                    // every expansion unit discard a route another's guard can
+                    // safely complete.
+                    if self.settler_target_hysteresis_2
+                        && Self::settler_target_drop_is_empire_wide(why)
+                    {
                         let until = g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS);
                         let others: Vec<u32> = g
                             .player_unit_ids(pid)
