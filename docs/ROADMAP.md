@@ -101,7 +101,6 @@ Everything the old roadmap called planned has shipped and then some:
    | file | merges touching it | why it is contended |
    |---|---:|---|
    | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
-   | `src/game.rs` | 17% | size |
    | `src/ai/advanced/tests.rs` | 24% | size — 31.7k lines, cut out of `advanced.rs` by #1918 and now longer than it |
    | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` treatments |
 

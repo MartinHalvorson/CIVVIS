@@ -66,6 +66,15 @@ BIN = default_binary()
 RUNS = os.environ.get(
     "CIVVIS_RUNS", os.path.join(os.path.expanduser("~"), "civvis-civ6-runs", "control"))
 PORT = int(os.environ.get("CIVVIS_MIRROR_PORT", "8610"))
+
+# The durable operator halt (`gamelock.py --halt`). The follower is part of a
+# game session: on 2026-08-31 it survived a halt teardown as a launchd orphan,
+# kept respawning the :8610 mirror server, and the display it fed sat over a
+# MANUALLY launched Civilization VI while the operator asked why a civvis
+# window kept forcing itself open. A halt means there is no session to follow.
+OPERATOR_HALT = os.environ.get(
+    "CIVVIS_OPERATOR_HALT_FILE",
+    os.path.expanduser("~/.civvis-operator-halt.json"))
 LOG = os.environ.get("CIVVIS_FOLLOW_LOG", os.path.join(RIG, "follow.log"))
 STATUS = os.environ.get("CIVVIS_FOLLOW_STATUS", os.path.join(RIG, "status.json"))
 STAGE = os.environ.get("CIVVIS_FOLLOW_STAGE", os.path.join(RIG, "stage"))
@@ -905,6 +914,14 @@ def main():
     watch = {"dead_since": None, "last_revival": 0.0, "revivals": 0}
 
     while True:
+        if os.path.exists(OPERATOR_HALT):
+            # Exit rather than idle: the interactive host restarts the
+            # follower with the next session, and an exited follower cannot
+            # revive Chrome windows or mirror servers over a halted machine.
+            log("operator halt in force; the follower exits with its session")
+            if server_alive(PORT):
+                stop_visible_server()
+            return
         misses = ensure_on_screen(misses)
         ensure_watching(watch)
         run_dir, mtime = newest_run()

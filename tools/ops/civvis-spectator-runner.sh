@@ -72,7 +72,19 @@ stop_spectator() {
 trap stop_spectator HUP INT TERM EXIT
 cd "$deploy_root" || exit 1
 
+# The durable operator halt (`gamelock.py --halt`). The exhibition plays
+# headless games around the clock by design, but "stop civvis games on this
+# machine" means these too: on 2026-08-31 the operator watched a civvis board
+# play itself in the display window after halting everything, because only the
+# ladder honored the marker. Idle rather than exit: this is a KeepAlive
+# service, and exiting would just make launchd respawn-churn it.
+operator_halt=${CIVVIS_OPERATOR_HALT_FILE:-$HOME/.civvis-operator-halt.json}
+
 while (( ! stopping )); do
+  if [[ -e "$operator_halt" ]]; then
+    sleep 30
+    continue
+  fi
   # HUP is ignored only in the child, so this wrapper can translate a hangup
   # into SIGINT and exercise the supervisor's clean shutdown, which also stops
   # the game server it is running.
@@ -93,7 +105,15 @@ while (( ! stopping )); do
       --no-open
   ) &
   supervisor_pid=$!
-  wait "$supervisor_pid"
+  # A halt that lands MID-GAME must stop the running exhibition too, not only
+  # refuse the next one; a blocking `wait` would play the whole game out.
+  while kill -0 "$supervisor_pid" 2>/dev/null; do
+    if [[ -e "$operator_halt" ]]; then
+      kill -INT "$supervisor_pid" 2>/dev/null || true
+    fi
+    sleep 5
+  done
+  wait "$supervisor_pid" 2>/dev/null
   rc=$?
   supervisor_pid=""
   (( stopping )) && break
