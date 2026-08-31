@@ -5847,22 +5847,28 @@ fn verify_orders(
         tiles,
         evidence,
         same_turn_orders,
-        &std::collections::BTreeSet::new(),
-        &std::collections::BTreeSet::new(),
-        false,
+        LaterOrderEvidence {
+            fortified: &std::collections::BTreeSet::new(),
+            moved: &std::collections::BTreeSet::new(),
+            policy_deck: false,
+        },
     )
 }
 
 /// Verify pending orders with positive evidence from later same-turn frames.
+struct LaterOrderEvidence<'a> {
+    fortified: &'a std::collections::BTreeSet<i64>,
+    moved: &'a std::collections::BTreeSet<i64>,
+    policy_deck: bool,
+}
+
 fn verify_orders_with_later_fortifications(
     pending: &PendingOrders,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
     same_turn_orders: &[IssuedOrder],
-    later_fortified: &std::collections::BTreeSet<i64>,
-    later_moved: &std::collections::BTreeSet<i64>,
-    later_policy_deck: bool,
+    later: LaterOrderEvidence<'_>,
 ) -> Vec<OrderCheck> {
     pending
         .orders
@@ -5879,9 +5885,9 @@ fn verify_orders_with_later_fortifications(
                     same_turn_orders,
                     later_fortified: order
                         .subject
-                        .is_some_and(|id| later_fortified.contains(&id)),
-                    later_moved: order.subject.is_some_and(|id| later_moved.contains(&id)),
-                    later_policy_deck,
+                        .is_some_and(|id| later.fortified.contains(&id)),
+                    later_moved: order.subject.is_some_and(|id| later.moved.contains(&id)),
+                    later_policy_deck: later.policy_deck,
                 },
             ),
             order: order.clone(),
@@ -5999,9 +6005,11 @@ fn settle_pending_orders(
                 tiles,
                 &evidence,
                 context,
-                &later_fortified,
-                &later_moved,
-                later_policy_replan,
+                LaterOrderEvidence {
+                    fortified: &later_fortified,
+                    moved: &later_moved,
+                    policy_deck: later_policy_replan,
+                },
             ));
     }
     for (turn, checks) in by_turn {
@@ -6204,9 +6212,11 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             &tiles,
             &window,
             context,
-            &later_fortified,
-            &later_moved,
-            later_policy_replan,
+            LaterOrderEvidence {
+                fortified: &later_fortified,
+                moved: &later_moved,
+                policy_deck: later_policy_replan,
+            },
         ) {
             let label = match check.order.kind.as_str() {
                 "unit" => check
@@ -13798,9 +13808,11 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &pending.orders,
-            &later,
-            &std::collections::BTreeSet::new(),
-            false,
+            LaterOrderEvidence {
+                fortified: &later,
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: false,
+            },
         );
         assert_eq!(checks[0].verdict, Verdict::Verified);
 
@@ -13827,9 +13839,11 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &repeated.orders,
-            &later,
-            &std::collections::BTreeSet::new(),
-            false,
+            LaterOrderEvidence {
+                fortified: &later,
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: false,
+            },
         );
         assert_eq!(checks[0].verdict, failed("not_fortified"));
 
@@ -13855,9 +13869,11 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &overridden.orders,
-            &std::collections::BTreeSet::new(),
-            &walked_away,
-            false,
+            LaterOrderEvidence {
+                fortified: &std::collections::BTreeSet::new(),
+                moved: &walked_away,
+                policy_deck: false,
+            },
         );
         assert_eq!(
             checks[0].verdict,
@@ -13922,9 +13938,11 @@ mod order_postcondition_tests {
             &no_tiles(),
             &[],
             &pending.orders,
-            &std::collections::BTreeSet::new(),
-            &std::collections::BTreeSet::new(),
-            true,
+            LaterOrderEvidence {
+                fortified: &std::collections::BTreeSet::new(),
+                moved: &std::collections::BTreeSet::new(),
+                policy_deck: true,
+            },
         );
         assert_eq!(checks[0].verdict, failed("superseded_by_policy_deck"));
 
