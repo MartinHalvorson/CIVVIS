@@ -319,6 +319,7 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
                       text)
         self.assertIn('exec /bin/zsh "$LAUNCHER"', text)
 
+
 @unittest.skipUnless(HAS_ZSH, "the installer is zsh; this runner has no zsh")
 class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
     def _install(self, home: Path, *args: str, **extra: str):
