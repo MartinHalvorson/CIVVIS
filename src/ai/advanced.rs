@@ -3094,6 +3094,11 @@ pub struct AdvancedAi {
     /// Native and off by default until `gene_screen` prices it through
     /// `PRODUCTION_OPT_INS` as `rapid-city-expansion`.
     pub rapid_city_expansion: bool,
+    /// `capital-settler-after-completion`: after its queue drains, the capital
+    /// starts a legal Settler at population two rather than letting the
+    /// ordinary ranking fill the opening. The baseline governor owns the
+    /// choice; this flag makes it a screenable AdvancedAI gene.
+    pub capital_settler_after_completion: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -6814,6 +6819,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
