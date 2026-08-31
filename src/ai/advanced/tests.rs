@@ -19324,6 +19324,53 @@ fn research_prices_the_node_that_retires_the_army_already_in_the_field() {
 }
 
 #[test]
+fn advanced_research_protects_a_science_lane_from_a_nearby_barbarian_quality_gap() {
+    let mut game = Game::new_full(1, 24, 16, 91_503, 120, 0, true);
+    game.current = 0;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    clear_barbarian_fixture(&mut game);
+    let city = game.player_city_ids(0)[0];
+    let center = game.cities[&city].pos;
+    let barbarian = game.barb_pid.expect("the fixture has a barbarian seat");
+    let raider_position = game
+        .nbrs(center)
+        .into_iter()
+        .find(|position| g_is_open_land(&game, *position) && game.units_at(*position).is_empty())
+        .expect("the capital has an open neighboring tile");
+    game.spawn_test_unit("crossbowman", barbarian, raider_position);
+    for _ in 0..3 {
+        game.spawn_test_unit("archer", 0, center);
+    }
+    game.players[0].research = None;
+
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut game, 0, &plan);
+
+    let selected = game.players[0]
+        .research
+        .as_deref()
+        .expect("the research slot should be filled");
+    assert!(
+        ai.tech_leads_to(&game, selected, "machinery"),
+        "Science must take the cheapest step toward Machinery, not a victory detour; selected {selected}"
+    );
+}
+
+#[test]
 fn culture_strategy_treats_tourism_as_a_builder_yield() {
     let mut g = Game::new(2, 24, 16, 73, 80, 0);
     let pos = *g.map.tiles.keys().next().unwrap();

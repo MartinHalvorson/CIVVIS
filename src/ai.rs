@@ -191,6 +191,12 @@ const BARBARIAN_RETURN_RADIUS: i32 = BARBARIAN_RAID_RADIUS + 2;
 /// Trade is held while a real raider or camp is this close to one of our
 /// cities. A barbarian Scout is an information unit, not a combat threat.
 pub(crate) const BARBARIAN_TRADE_RISK_RADIUS: i32 = 7;
+/// A nearby barbarian army must be materially better than our best land unit
+/// before it can displace a victory or economy research lane. Aggregate
+/// military power is deliberately not used here: ten Archers do not answer a
+/// Crossbowman or Man-at-Arms at the city they are supposed to protect.
+const BARBARIAN_MILITARY_GAP_RATIO: f64 = 1.25;
+const BARBARIAN_MILITARY_GAP_MARGIN: f64 = 5.0;
 /// A city with this many local barbarian pressure points must produce a
 /// defender even when it is not formally at war with a major civilization.
 const BARBARIAN_LOCAL_DEFENDER_RADIUS: i32 = 3;
@@ -3508,6 +3514,152 @@ impl BasicAi {
                     .iter()
                     .any(|parent| Self::tech_leads_to(g, candidate, parent))
             })
+    }
+
+    /// Whether a visible barbarian combat unit near one of our cities is
+    /// materially stronger than our best land unit. This is intentionally a
+    /// quality alarm, not a headcount alarm: the ordinary barbarian defense
+    /// branch already handles how many bodies a city needs, while this one
+    /// decides whether research must retire obsolete bodies.
+    fn barbarian_strength_gap(g: &Game, pid: usize) -> Option<(f64, f64)> {
+        let barb_pid = g.barb_pid?;
+        let player = g.players.get(pid)?;
+        if player.is_minor || player.is_barbarian || barb_pid == pid {
+            return None;
+        }
+        let cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| city.pos)
+            .collect();
+        if cities.is_empty() {
+            return None;
+        }
+        let near_home = |position: Pos| {
+            cities
+                .iter()
+                .any(|city| g.wdist(position, *city) <= HOME_THREAT_RADIUS)
+        };
+        let combat_power = |kind: Name| {
+            let spec = &g.rules.units[kind];
+            spec.strength.max(spec.ranged_attack_strength())
+        };
+        let strongest_barbarian = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == barb_pid
+                    && Self::is_barbarian_raider(g, unit)
+                    && near_home(unit.pos)
+                    && g.player_can_see(pid, unit.pos)
+            })
+            .map(|unit| combat_power(unit.kind))
+            .fold(0.0, f64::max);
+        if strongest_barbarian <= 0.0 {
+            return None;
+        }
+        let strongest_own = g
+            .units
+            .values()
+            .filter(|unit| {
+                if unit.owner != pid {
+                    return false;
+                }
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military" && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+            .map(|unit| combat_power(unit.kind))
+            .fold(0.0, f64::max);
+        (strongest_barbarian
+            > strongest_own * BARBARIAN_MILITARY_GAP_RATIO + BARBARIAN_MILITARY_GAP_MARGIN)
+            .then_some((strongest_barbarian, strongest_own))
+    }
+
+    /// The technology whose absence strands the largest share of the current
+    /// land army behind a nearby barbarian's quality. The returned goal may be
+    /// several prerequisites away; `research_step_toward` turns it into the
+    /// cheapest legal next step. Resource-gated successors with no stockpile
+    /// are skipped so the AI does not beeline toward a unit it cannot field.
+    pub(crate) fn barbarian_military_research_goal(g: &Game, pid: usize) -> Option<String> {
+        Self::barbarian_strength_gap(g, pid)?;
+        let player = &g.players[pid];
+        let mut goals: BTreeMap<Name, (f64, f64, usize)> = BTreeMap::new();
+        for unit in g.units.values().filter(|unit| {
+            if unit.owner != pid {
+                return false;
+            }
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military" && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        }) {
+            let mut current = unit.kind;
+            let mut visited = BTreeSet::new();
+            loop {
+                if !visited.insert(current) {
+                    break;
+                }
+                let Some(held) = g.rules.units.get(&current) else {
+                    break;
+                };
+                let Some(generic_target) = held.upgrade_to else {
+                    break;
+                };
+                let target_kind = g.player_unit_replacement(pid, generic_target);
+                let Some(target) = g.rules.units.get(&target_kind) else {
+                    break;
+                };
+                if target.class != "military"
+                    || matches!(target.domain.as_deref(), Some("sea" | "air"))
+                    || !target.buildable
+                {
+                    break;
+                }
+                if target.requires_resource.is_some_and(|resource| {
+                    target.resource_cost > 0.0
+                        && g.strategic_stockpile(pid, resource) + f64::EPSILON
+                            < target.resource_cost
+                }) {
+                    break;
+                }
+                let tech_known = target.tech.is_none_or(|tech| player.techs.contains(&tech));
+                let civic_known = target
+                    .civic
+                    .is_none_or(|civic| player.civics.contains(&civic));
+                if !tech_known {
+                    let Some(tech) = target.tech else {
+                        break;
+                    };
+                    let held_power = held.strength.max(held.ranged_attack_strength());
+                    let target_power = target.strength.max(target.ranged_attack_strength());
+                    let gain = (target_power - held_power).max(0.0);
+                    if gain > 0.0 {
+                        let entry = goals.entry(tech).or_insert((0.0, 0.0, 0));
+                        entry.0 += gain;
+                        entry.1 = entry.1.max(target_power);
+                        entry.2 += 1;
+                    }
+                    break;
+                }
+                if !civic_known {
+                    break;
+                }
+                current = target_kind;
+            }
+        }
+        goals
+            .into_iter()
+            .max_by(|(left_name, left), (right_name, right)| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then(left.1.total_cmp(&right.1))
+                    .then(left.2.cmp(&right.2))
+                    .then(left_name.cmp(right_name))
+            })
+            .map(|(tech, _)| tech.to_string())
+    }
+
+    pub(crate) fn barbarian_military_gap(g: &Game, pid: usize) -> bool {
+        Self::barbarian_strength_gap(g, pid).is_some()
     }
 
     fn civic_leads_to(g: &Game, candidate: &str, target: &str) -> bool {
@@ -7290,6 +7442,11 @@ impl BasicAi {
         if g.players[pid].research.is_none() {
             let avail = g.available_techs(pid);
             if !avail.is_empty() {
+                let barbarian_goal = if self.barbarian_tactics {
+                    Self::barbarian_military_research_goal(g, pid)
+                } else {
+                    None
+                };
                 let great_person_goal = Self::live_great_person_tech_goal(g, pid);
                 let great_person_pick =
                     Self::research_step_toward(g, &avail, great_person_goal.as_deref());
@@ -7297,7 +7454,8 @@ impl BasicAi {
                     Self::research_step_toward(g, &avail, Self::water_research_goal(g, pid));
                 let economic_pick =
                     Self::research_step_toward(g, &avail, Self::economic_research_goal(g, pid));
-                let pick = great_person_pick
+                let pick = Self::research_step_toward(g, &avail, barbarian_goal.as_deref())
+                    .or(great_person_pick)
                     .or(water_pick)
                     .or(economic_pick)
                     .or_else(|| {
@@ -9106,7 +9264,13 @@ impl BasicAi {
             .players
             .iter()
             .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
-        let floor = if at_war { 30.0 } else { 120.0 };
+        // Nearby barbarians do not create a diplomatic war, but a materially
+        // stronger raider creates the same immediate need to spend. Holding
+        // 120 Gold back in that state leaves a two-upgrade army fighting with
+        // the obsolete unit it already owns; keep only the wartime emergency
+        // reserve until the local quality gap closes.
+        let barbarian_gap = Self::barbarian_military_gap(g, pid);
+        let floor = if at_war || barbarian_gap { 30.0 } else { 120.0 };
         loop {
             let mut best: Option<(f64, f64, u32)> = None;
             for uid in g.player_unit_ids(pid) {
@@ -17503,6 +17667,60 @@ mod tests {
         let straggler = g.spawn_test_unit("warrior", 0, source);
         BasicAi::upgrade_units(&mut g, 0);
         assert_eq!(g.units[&straggler].kind, "warrior");
+    }
+
+    #[test]
+    fn a_nearby_advanced_barbarian_redirects_research_to_the_army_upgrade_path() {
+        let (mut g, city, raider) = barbarian_at_the_gates_game(91_501);
+        g.units.get_mut(&raider).unwrap().kind = crate::name!("crossbowman");
+        let center = g.cities[&city].pos;
+        for _ in 0..3 {
+            g.spawn_test_unit("archer", 0, center);
+        }
+
+        assert!(BasicAi::barbarian_military_gap(&g, 0));
+        assert_eq!(
+            BasicAi::barbarian_military_research_goal(&g, 0).as_deref(),
+            Some("machinery")
+        );
+
+        g.players[0].research = None;
+        BasicAi::new().research_with_government(&mut g, 0, false, None);
+        let selected = g.players[0]
+            .research
+            .as_deref()
+            .expect("the barbarian gap selects a research step");
+        assert!(
+            BasicAi::tech_leads_to(&g, selected, "machinery"),
+            "selected {selected} should be on the path to Machinery"
+        );
+    }
+
+    #[test]
+    fn a_barbarian_quality_gap_spends_the_upgrade_budget_before_the_peacetime_reserve() {
+        let (mut g, city, raider) = barbarian_at_the_gates_game(91_502);
+        g.units.get_mut(&raider).unwrap().kind = crate::name!("crossbowman");
+        g.players[0].techs.insert(crate::name!("machinery"));
+        let center = g.cities[&city].pos;
+        let archers: Vec<u32> = (0..2)
+            .map(|_| g.spawn_test_unit("archer", 0, center))
+            .collect();
+        g.players[0].gold = 10_000.0;
+        let cost = g
+            .unit_gold_upgrade_detail(0, archers[0])
+            .unwrap_or_else(|why| panic!("Machinery should expose an Archer upgrade: {why}"))
+            .1;
+        g.players[0].gold = cost * 2.0 + 40.0;
+
+        BasicAi::upgrade_units(&mut g, 0);
+
+        assert!(
+            archers
+                .iter()
+                .all(|unit| g.units[unit].kind == "crossbowman"),
+            "both affordable upgrades should be taken under the local gap"
+        );
+        assert_eq!(g.players[0].gold, 40.0);
     }
 
     /// A Gold upgrade is only offered inside the borders, so an army that
