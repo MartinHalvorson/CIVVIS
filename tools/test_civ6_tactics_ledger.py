@@ -54,6 +54,26 @@ class GeometryTest(unittest.TestCase):
         self.assertEqual(ledger.hex_distance((1, 1), (2, 2)), 1)
 
 
+class HostilePlotTest(unittest.TestCase):
+    def test_at_war_city_state_units_and_cities_are_hostile(self) -> None:
+        state = {
+            "hostiles": [],
+            "rivals": [],
+            "minors": [
+                {"at_war": True,
+                 "units": [_unit(7, "UNIT_CROSSBOWMAN", 12, 25),
+                           _unit(8, "UNIT_BUILDER", 11, 22, combat=0)],
+                 "cities": [{"x": 11, "y": 27}]},
+                {"at_war": False,
+                 "units": [_unit(9, "UNIT_WARRIOR", 3, 3)],
+                 "cities": [{"x": 4, "y": 4}]},
+            ],
+        }
+
+        self.assertCountEqual(
+            ledger._hostile_plots(state), [(12, 25), (11, 27)])
+
+
 class ArrivalTest(unittest.TestCase):
     def test_moves_are_judged_against_the_next_frame(self) -> None:
         events = [
