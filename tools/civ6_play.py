@@ -1293,6 +1293,16 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
 #: bounded recovery path one more chance before setup refuses to click blind.
 SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0, 4.0)
 CAPTURE_ACCESS_POLL_SECONDS = 10.0
+# Setup's screen readers already sit inside `_poll_screen` (and the enclosing
+# bootstrap attempt) which retries a missing frame over time.  Spending the
+# entire five-capture native retry schedule inside each of those polls made a
+# transient ScreenCaptureKit miss cost several minutes before the next safe OCR
+# attempt: six unreadable menu polls on civvis-20260831T152158Z took roughly
+# six minutes before the seventh frame arrived.  One native attempt per setup
+# poll keeps the same no-blind-click rule while letting the outer bounded poll
+# provide the recovery window.  Ordinary diagnostic/stall shots retain the
+# full schedule above.
+SETUP_SCREENSHOT_ATTEMPTS = 1
 
 
 def wait_for_safe_screen_capture(poll_s: float = CAPTURE_ACCESS_POLL_SECONDS) -> None:
@@ -1327,7 +1337,7 @@ def wait_for_safe_screen_capture(poll_s: float = CAPTURE_ACCESS_POLL_SECONDS) ->
         time.sleep(poll_s)
 
 
-def screenshot(path: Path) -> bool:
+def screenshot(path: Path, *, attempts: int | None = None) -> bool:
     """Keep a picture of the screen. A misclick is a visual failure and the
     log cannot describe it; the shot is what says which row was hit.
 
@@ -1361,7 +1371,15 @@ def screenshot(path: Path) -> bool:
         print(f"[shot] display geometry is unreadable for {path.name}; treating this poll as "
               "unreadable", flush=True)
         return False
-    for attempt in range(1, len(SHOT_BACKOFF_SECONDS) + 2):
+    if attempts is None:
+        attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
+    else:
+        try:
+            attempt_limit = max(1, int(attempts))
+        except (TypeError, ValueError):
+            attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
+        attempt_limit = min(attempt_limit, len(SHOT_BACKOFF_SECONDS) + 1)
+    for attempt in range(1, attempt_limit + 1):
         path.unlink(missing_ok=True)
         try:
             macos_capture.capture_region((0, 0, *size), path)
@@ -1379,10 +1397,10 @@ def screenshot(path: Path) -> bool:
                 return True
         except OSError:
             pass
-        if attempt <= len(SHOT_BACKOFF_SECONDS):
+        if attempt < attempt_limit:
             time.sleep(SHOT_BACKOFF_SECONDS[attempt - 1])
     print(f"[shot] native capture wrote nothing for {path.name} after "
-          f"{len(SHOT_BACKOFF_SECONDS) + 1} attempts; treating this poll as "
+          f"{attempt_limit} attempts; treating this poll as "
           "unreadable", flush=True)
     return False
 
@@ -2717,7 +2735,11 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         menushot = run_dir / f"menu-attempt{attempt}.png"
 
         def read_top_menu():
-            screenshot(menushot)
+            # `_poll_screen` is the retry loop for this reader.  A full native
+            # retry schedule here can consume the whole screen budget before
+            # the outer loop gets a second frame, turning a transient capture
+            # miss into minutes of setup latency.
+            screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)
             point = _main_menu_point(menushot, bounds)
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
@@ -2790,7 +2812,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         submenu = run_dir / f"submenu-attempt{attempt}.png"
 
         def read_submenu():
-            screenshot(submenu)
+            screenshot(submenu, attempts=SETUP_SCREENSHOT_ATTEMPTS)
             found = _observed_label_point(submenu, "Create Game", bounds)
             seen = (vision.submenu_rows(submenu, bounds, near=sp_y, pitch=pitch)
                     if vision.available() else [])

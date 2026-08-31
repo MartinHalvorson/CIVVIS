@@ -1548,6 +1548,37 @@ class ScreenshotFailureTests(unittest.TestCase):
                          list(civ6_play.SHOT_BACKOFF_SECONDS),
                          "and it waits longer each time")
 
+    def test_setup_capture_can_leave_retries_to_the_outer_screen_poll(self) -> None:
+        """A setup poll must not spend minutes inside one native miss.
+
+        The menu reader has its own bounded polling loop.  Limiting the inner
+        capture to one attempt preserves the rule that no coordinate is clicked
+        without OCR proof while allowing the next poll to try a fresh frame.
+        """
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_capture, "capture_region") as capture, \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            landed = civ6_play.screenshot(
+                Path(temporary) / "setup-miss.png",
+                attempts=civ6_play.SETUP_SCREENSHOT_ATTEMPTS,
+            )
+        self.assertFalse(landed)
+        capture.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_setup_menu_readers_use_the_outer_poll_for_capture_retries(self) -> None:
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn(
+            "screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)",
+            source,
+        )
+        self.assertIn(
+            "screenshot(submenu, attempts=SETUP_SCREENSHOT_ATTEMPTS)",
+            source,
+        )
+
     def test_the_capture_rides_out_a_spike_that_outlasts_one_retry(self) -> None:
         """The 2026-08-19 failure: two captures a second apart sample one spike
         twice, and the launch dies. A shot that lands on the third attempt is
