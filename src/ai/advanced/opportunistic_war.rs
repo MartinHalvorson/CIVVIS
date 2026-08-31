@@ -34,7 +34,7 @@
 //! improvement still pillages it), so one screen of both genes says whether
 //! the tiles are worth the wars they open.
 
-use super::{AdvancedAi, GrandStrategy, StrategicPlan};
+use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Action, ActionFamilies, Game};
 use crate::think;
 use crate::Pos;
@@ -358,7 +358,8 @@ impl AdvancedAi {
 
     /// The best raid on the table this turn, if any clears the bar.
     pub(crate) fn raid_opportunity(&self, g: &Game, pid: usize) -> Option<RaidOpportunity> {
-        if !self.opportunistic_war
+        if self.active_victory_target(g) == Some(VictoryTarget::Science)
+            || !self.opportunistic_war
             || self.raid_war.is_some()
             || g.turn < g.standard_duration(RAID_MIN_TURN)
             || g.turn < self.peace_until
@@ -705,7 +706,7 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod raid_score_safety_tests {
-    use super::{AdvancedAi, RaidPrize, SETTLER_PRIZE};
+    use super::{AdvancedAi, RaidPrize, VictoryTarget, SETTLER_PRIZE};
     use crate::game::Game;
     use crate::Pos;
     use std::sync::Arc;
@@ -849,6 +850,19 @@ mod raid_score_safety_tests {
         assert!(
             ai.raid_opportunity(&game, 0).is_some(),
             "the same legal, power-safe pillage raid remains available at score parity or better"
+        );
+    }
+
+    #[test]
+    fn science_target_does_not_open_an_opportunistic_raid() {
+        let game = pillage_raid_board();
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_opportunistic_war();
+        ai.enable_raid_pillage_prizes();
+
+        assert!(
+            ai.raid_opportunity(&game, 0).is_none(),
+            "an explicit Science lane must not trade its research race for a raid"
         );
     }
 }

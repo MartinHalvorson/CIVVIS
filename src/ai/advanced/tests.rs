@@ -2145,6 +2145,11 @@ fn the_land_grab_settles_past_the_assigned_lanes_cutoff() {
         "stock: the assigned lane's window is shut at t{}",
         game.turn
     );
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        science.settler_expansion_window_open(&game, 0, capital),
+        "Science keeps a productive Settler window open past the old lane cutoff"
+    );
     targeted.enable_land_grab();
     assert!(
         targeted.settler_expansion_window_open(&game, 0, capital),
@@ -4965,6 +4970,53 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(!AdvancedAi::legacy().buildings_before_projects);
 }
 
+/// The named Science target must reach the Advanced production reserve even
+/// when the live genome has not enabled that separately screenable opt-in.
+/// BasicAi's science partition is too late to prevent an unrelated district
+/// from winning the queue, so this exercises the actual turn handoff.
+#[test]
+fn a_targeted_science_turn_reserves_the_first_campus_building() {
+    let mut game = Game::new_full(1, 24, 16, 5_416, 250, 1, false);
+    game.victory_conditions = crate::game::VictoryConditions::parse("science,score").unwrap();
+    let city_state = game
+        .players
+        .iter()
+        .find(|player| player.is_minor && !player.is_barbarian)
+        .expect("city-state seat")
+        .id;
+    game.record_contact(0, city_state);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "campus");
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.turn = 60;
+    game.cities.get_mut(&city).unwrap().queue.clear();
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.base.book_pos = 4;
+    ai.base.recon_replacement = false;
+    ai.take_turn(&mut game, 0);
+
+    assert!(
+        ai.first_research_building_reserve,
+        "an explicit Science target must activate the research-building reserve"
+    );
+    assert!(
+        matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building }) if *building == crate::name!("library")
+        ),
+        "Science queue: {:?}",
+        game.cities[&city].queue
+    );
+}
+
 /// Host competitions move the diplomatic race outside the ordinary Congress
 /// ballot. The exact score table must therefore make World Games and either
 /// Aid Request project legal and compelling, while the World's Fair rewards
@@ -5979,6 +6031,26 @@ fn a_defensive_posture_that_cannot_win_is_not_held_for_ever() {
         fresh.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
         "the bound must not fire on a war that started last turn"
+    );
+}
+
+#[test]
+fn an_explicit_science_target_keeps_its_lane_against_a_power_gap() {
+    let (mut game, _) = outgunned_at_war_fixture();
+    game.turn = 100;
+
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = science.assess(&game, 0);
+
+    assert_eq!(
+        plan.strategy,
+        GrandStrategy::Science,
+        "a Science contract must not become permanent Recovery merely because
+         a wartime rival has more military power"
+    );
+    assert!(
+        plan.threatened_city.is_none(),
+        "the fixture must contain no local city threat"
     );
 }
 
@@ -7258,6 +7330,58 @@ fn outmatched_major_must_negotiate_peace_with_the_winning_campaign() {
     assert!(!game.is_at_war(0, 1));
     assert_eq!(accepting.peace_until, game.turn + 30);
     assert!(accepting.major_war_since.is_none());
+}
+
+#[test]
+fn an_explicit_science_lane_ends_a_losing_threatened_war_directly() {
+    let mut game = Game::new_full(2, 24, 16, 7_923, 300, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    let staging = game.cities[&game.player_city_ids(0)[0]].pos;
+    let defender_staging = game.cities[&game.player_city_ids(1)[0]].pos;
+    game.spawn_test_unit("modern_armor", 0, staging);
+    game.spawn_test_unit("modern_armor", 1, defender_staging);
+    for _ in 0..2 {
+        game.spawn_test_unit("warrior", 0, staging);
+    }
+    game.current = 0;
+    game.turn = 60;
+    game.record_contact(0, 1);
+    game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    game.turn = game
+        .peace_available_at(0, 1)
+        .expect("the new war has a mandatory minimum");
+    assert!(game.military_power(1) < game.military_power(0) * 0.85);
+    assert!(game.military_power(1) >= game.military_power(0) * 0.62);
+
+    let threatened_city = game.player_city_ids(1).into_iter().next();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.major_war_since = Some(60);
+    game.current = 1;
+    science.advanced_diplomacy(&mut game, 1, &plan);
+
+    assert!(
+        !game.is_at_war(0, 1),
+        "a losing siege must not wait for the attacker to accept a peace offer"
+    );
+    assert_eq!(science.peace_until, game.turn + 30);
+    assert!(science.major_war_since.is_none());
 }
 
 #[test]
@@ -11644,6 +11768,57 @@ fn district_search_values_unique_families_and_real_housing_need() {
         crowded_value > roomy_value,
         "appeal housing must be worth more when growth is constrained"
     );
+}
+
+/// Once the Campus chain has no currently buildable rung, an explicit Science
+/// target must not fall through to a generic Culture, Gold, or Faith district.
+/// Those districts can look positive in the ordinary production argmax and
+/// still spend the queue seat before Electricity unlocks the Research Lab.
+#[test]
+fn a_targeted_science_refuses_unrelated_specialty_districts() {
+    let mut game = Game::new_full(1, 24, 16, 5_417, 250, 1, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    let site = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != game.cities[&city].pos)
+        .expect("owned district site");
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = ai.counts(&game, 0);
+
+    for district in [
+        "theater_square",
+        "commercial_hub",
+        "harbor",
+        "holy_site",
+        "preserve",
+    ] {
+        let item = Item::District {
+            district: Name::new(district),
+            pos: site,
+        };
+        assert!(
+            ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0,
+            "Science must refuse {district}"
+        );
+    }
 }
 
 #[test]
@@ -35276,14 +35451,14 @@ fn expansion_pays_back_is_a_registered_reversible_opt_in() {
     assert!(!ai.expansion_pays_back, "reversible");
 }
 
-/// ⚠⚠ THE NATIVE BOARD HAS ONLY EVER SHUT ITS SETTLER WINDOW ON A CLOCK.
+/// ⚠⚠ Stock native boards still shut their Settler window on a clock; the
+/// explicit Science contract now uses the payback test as well.
 ///
-/// `settler_expansion_window_open` takes the payback branch under `land_grab`
-/// or `expansion_pays_back`, and `land_grab` is `Kind::HostOnly` — so with
-/// both off, which is every headless configuration this repository could
-/// produce before this row, the window is a deadline and nothing else.
+/// `settler_expansion_window_open` takes the payback branch under `land_grab`,
+/// `expansion_pays_back`, or an explicit Science target. Stock and the other
+/// assigned lanes retain their historical deadline.
 #[test]
-fn the_payback_branch_was_unreachable_on_a_native_board() {
+fn the_payback_branch_is_reserved_for_expansion_and_science() {
     assert!(
         GENES
             .iter()

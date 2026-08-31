@@ -606,9 +606,9 @@ pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
 /// A named Science seat needs enough cities to support several Campuses and a
 /// couple of launch pads, but the live land-grab ceiling is a different
-/// objective. Eight cities keeps the research base broad without asking a
+/// objective. Six cities keeps the research base broad without asking a
 /// Science race to spend its opening on a sixteen-city settlement campaign.
-const SCIENCE_CITY_TARGET_CAP: usize = 8;
+const SCIENCE_CITY_TARGET_CAP: usize = 6;
 
 /// A Science seat may take the first two cities before its lane owns the plan.
 /// This is the small opening economy that makes the target viable; after it,
@@ -619,7 +619,7 @@ const SCIENCE_OPENING_CITY_TARGET: usize = 2;
 
 /// If hostile land or a slow start prevents two cities, give the Science lane
 /// only this many standard turns to finish that opening before it takes over.
-/// At Online speed this is forty game turns, matching the first research
+/// At Online speed this is forty turns, matching the first research
 /// infrastructure window rather than the generic expansion deadline.
 const SCIENCE_OPENING_EXPANSION_STANDARD_TURNS: u32 = 60;
 
@@ -10510,11 +10510,17 @@ impl AdvancedAi {
             && actionable_denial.is_some_and(|(rival, counter)| {
                 counter == GrandStrategy::Conquest && my_power * 2.0 < g.military_power(rival)
             });
+        // An explicit Science contract must not let a power-gap comparison
+        // turn a defensive answer into a permanent empire-wide Recovery
+        // posture. The comparison is useful for an adaptive seat, but a
+        // targeted seat can remain below a wartime rival for the whole race;
+        // only a city-level threat should interrupt its research lane.
         let (strategy, because) = if at_war
             && (threatened_city.is_some()
                 || (my_power * 1.25 < strongest_wartime_rival
                     && !recovery_is_stale
-                    && !raid_only_war))
+                    && !raid_only_war
+                    && !science_targeted))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
         } else if impossible_denial {
@@ -11029,7 +11035,15 @@ impl AdvancedAi {
         // whatever the lane. See `land_grab`: under an assigned lane the
         // window used to shut at `standard_duration(175)` — t116 Online — and
         // run T104654Z then read "7 cities of 8..11 wanted" for 130 turns.
-        if self.rapid_city_expansion || self.land_grab || self.expansion_pays_back {
+        // An explicit Science lane has the same economic contract: its six-
+        // city target is only useful if a productive city may still fund the
+        // next campus after the old clock has expired.
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        if self.rapid_city_expansion
+            || self.land_grab
+            || self.expansion_pays_back
+            || science_targeted
+        {
             self.expansion_pays_back_for(g, pid, cid)
         } else if self.victory_target.is_some() {
             // Assigned lanes have always carried a distinct cutoff. Neither
@@ -11795,6 +11809,42 @@ impl AdvancedAi {
             })
             .min_by(|left, right| left.0.total_cmp(&right.0).then_with(|| left.1.cmp(right.1)))
             .map(|(_, name)| *name)
+    }
+
+    /// Claim owed Campus-family buildings before the ancillary reservation
+    /// passes can fill an idle city with an Envoy district, Aerodrome, or
+    /// another unrelated one-off. The ordinary Advanced production reserve is
+    /// intentionally later in the turn; this narrow early pass exists only
+    /// for an explicit Science target and preserves the same cheapest-rung
+    /// ordering in every city that already owns a Campus.
+    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize) {
+        for cid in g.player_city_ids(pid) {
+            if !g.cities[&cid].queue.is_empty() {
+                continue;
+            }
+            let Some(building) = Self::first_owed_campus_building(g, pid, cid) else {
+                continue;
+            };
+            let item = Item::Building { building };
+            if !g.can_produce(pid, cid, &item)
+                || g.apply(
+                    pid,
+                    &Action::Produce {
+                        city: cid,
+                        item: item.clone(),
+                    },
+                )
+                .is_err()
+            {
+                continue;
+            }
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let city_name = g.cities[&cid].name.clone();
+                think!(self.journal(), Research, Decision,
+                    "{} reserves {} for the Science lane", city_name, Self::plain_item(&item);
+                    "the Campus chain is owed before ancillary production claims this idle queue");
+            }
+        }
     }
 
     fn chain_horizon(&self, g: &Game, rung: ChainRung) -> f64 {
@@ -16633,6 +16683,17 @@ impl AdvancedAi {
             // `advanced/one_war.rs`.
             let one_war_peace = self.one_war_peace(g, pid, *other);
             let one_war_presses = self.one_war_presses(g, pid, *other);
+            // An explicit Science seat has no offensive use for a war it did
+            // not appoint. A losing proposal can still be refused by the
+            // attacker, so make the direct-peace condition part of the outer
+            // offer gate as well; otherwise a merely outmatched (rather than
+            // catastrophically outmatched) besieged city never reaches it.
+            let science_defensive_peace = self.victory_target == Some(VictoryTarget::Science)
+                && self.war_plan.is_none()
+                && plan.strategy != GrandStrategy::Conquest
+                && plan.threatened_city.is_some()
+                && my_power < g.military_power(*other) * 0.85
+                && g.peace_available_at(pid, *other).is_none();
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -16658,7 +16719,8 @@ impl AdvancedAi {
                             || g.turn.saturating_sub(self.last_campaign_progress)
                                 >= g.standard_duration(PEACE_STALL_TURNS)))
                     || envoy_reclaim.is_some()
-                    || one_war_peace.is_some())
+                    || one_war_peace.is_some()
+                    || science_defensive_peace)
             {
                 self.peace_offers.insert(*other);
                 // Only a rout licenses a live tribute; every other reason
@@ -16698,6 +16760,21 @@ impl AdvancedAi {
                     think!(self.journal(), Diplomacy, Decision,
                            "Offering peace to {}", g.players[*other].civ;
                            "{because}: {my_power:.0} power against their {their_power:.0}");
+                }
+                // Keep this narrow: ordinary adaptive seats still negotiate,
+                // and an appointed campaign or Emergency war retains its
+                // bilateral commitment.
+                if science_defensive_peace
+                    && g.apply(pid, &Action::MakePeace { player: *other }).is_ok()
+                {
+                    self.peace_until = g.turn.saturating_add(30);
+                    self.major_war_since = None;
+                    if self.journal().wants(crate::reasoning::Level::Strategy) {
+                        think!(self.journal(), Diplomacy, Strategy,
+                               "Ending the defensive war with {}", g.players[*other].civ;
+                               "the Science lane cannot afford a losing siege against a threatened home city");
+                    }
+                    continue;
                 }
                 // Peace between majors is bilateral. The former direct
                 // MakePeace let an outmatched defender terminate a winning
@@ -24350,6 +24427,24 @@ impl AdvancedAi {
             Item::District { district, pos } => {
                 let spec = &g.rules.districts[district];
                 let family = g.district_family(*district);
+                // A named Science seat has a narrower district contract than
+                // the adaptive stock lane. Once Campus buildings are caught
+                // up, generic Culture/Gold/Faith districts otherwise remain
+                // legal argmax candidates and can consume the queue before
+                // Electricity unlocks the Research Lab. Keep genuinely
+                // enabling infrastructure (Campus, Industrial Zone,
+                // Spaceport, production/housing/defense districts, and the
+                // first Government Plaza/Diplomatic Quarter) available, but
+                // do not let a Theater Square, Commercial Hub, Harbor, Holy
+                // Site, or Preserve become a Science detour.
+                if self.victory_target == Some(VictoryTarget::Science)
+                    && matches!(
+                        family.as_str(),
+                        "theater_square" | "commercial_hub" | "harbor" | "holy_site" | "preserve"
+                    )
+                {
+                    return -10_000.0;
+                }
                 if family == "spaceport" && city.districts.contains_key(crate::name!("spaceport")) {
                     // Multiple Spaceports are rules-legal, but one city can
                     // execute only one project at a time. Put additional
@@ -24717,6 +24812,7 @@ impl AdvancedAi {
             }
             Item::Wonder { wonder, .. } => {
                 let spec = &g.rules.wonders[wonder];
+                let science_target = self.victory_target == Some(VictoryTarget::Science);
                 let wonder_civ =
                     !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                 let already_queued = g.cities.values().any(|other| {
@@ -24796,7 +24892,8 @@ impl AdvancedAi {
                 // score production buys — fifteen points and an era-score
                 // moment — and the guards below were written for the
                 // ordinary race, not for a bargain.
-                let bargain_race = self.cheapest_wonder_first
+                let bargain_race = !science_target
+                    && self.cheapest_wonder_first
                     && self.live_wonder_race
                     && !lane_opens
                     && plan.strategy != GrandStrategy::Recovery
@@ -24804,16 +24901,17 @@ impl AdvancedAi {
                     && wonder_era + 2 >= g.world_era
                     && wonders_in_flight < Self::live_wonder_race_lanes(city_count).max(1)
                     && self.wonder_bargain_city(g, pid, cid);
-                let live_race_opens = bargain_race
-                    || (self.live_wonder_race
-                        && !lane_opens
-                        && plan.strategy != GrandStrategy::Recovery
-                        && city_count >= 3
-                        && city.buildings.len() >= 3
-                        && wonder_era + 2 >= g.world_era
-                        && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
-                        && (!self.cheapest_wonder_first
-                            || turns <= CHEAPEST_WONDER_LANE_MAX_TURNS));
+                let live_race_opens = !science_target
+                    && (bargain_race
+                        || (self.live_wonder_race
+                            && !lane_opens
+                            && plan.strategy != GrandStrategy::Recovery
+                            && city_count >= 3
+                            && city.buildings.len() >= 3
+                            && wonder_era + 2 >= g.world_era
+                            && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
+                            && (!self.cheapest_wonder_first
+                                || turns <= CHEAPEST_WONDER_LANE_MAX_TURNS)));
                 // See `strategic_wonder_value`. The lane the agent is actually
                 // trying to win is its target when it has one, and its plan's
                 // strategy when it does not — a targeted agent whose plan has
@@ -24869,6 +24967,7 @@ impl AdvancedAi {
                 // refused by one bar and handed a bonus by another — the
                 // mistake the `strategic_value` comment above records.
                 let tally_opens = self.wonder_score_tally
+                    && !science_target
                     && !lane_opens
                     && !live_race_opens
                     && plan.strategy != GrandStrategy::Recovery
@@ -27760,15 +27859,19 @@ impl AdvancedAi {
         if let Some(why) = self.settle_site_frontier_loyalty_verdict(g, pid, site) {
             return Some(why);
         }
-        // `exhaustion-loyalty-guard`: the forecast below sums the rival
-        // cities the mirror can see, and under-reads the ones it cannot.
+        // `exhaustion-loyalty-guard` and an explicit Science lane: the
+        // forecast below sums the rival cities the mirror can see, and
+        // under-reads the ones it cannot.
         // Run civvis-20260829T090147Z founded Arretium at t29 four tiles from
         // a visible Mongolian city and five from Rome; the forecast passed it,
         // the engine read −7.2 Loyalty a turn from the first turn, and the
         // city flipped at t42 in peacetime. The exhaustion search's sieve
         // (`inside_rival_sphere`) already refuses such a plot; the preferred
         // search now asks the same question first.
-        if self.exhaustion_loyalty_guard && Self::inside_rival_sphere(g, pid, site) {
+        if (self.exhaustion_loyalty_guard
+            || self.active_victory_target(g) == Some(VictoryTarget::Science))
+            && Self::inside_rival_sphere(g, pid, site)
+        {
             return Some(
                 "it stands nearer a visible rival major's city than any of ours, inside that \
                  city's nine-tile Loyalty reach, and the forecast under-reads the rival cities \
@@ -28334,7 +28437,9 @@ impl AdvancedAi {
         // the exact immediate Loyalty collapse the guard exists to prevent.
         // Either guard also owns safe exhaustion below, so `BasicAi` cannot
         // immediately reselect a site this controller just retired.
-        let loyalty_guard_active = self.base.loyalty_rate_alarm || self.frontier_loyalty;
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        let loyalty_guard_active =
+            self.base.loyalty_rate_alarm || self.frontier_loyalty || science_targeted;
         // See `settler_target_hysteresis`: a cached site the validation just
         // dropped stays out of the next picks, so a threat flickering at the
         // edge of sight cannot flip the settler between two sites every frame.
@@ -28425,7 +28530,7 @@ impl AdvancedAi {
                 let Some((pos, _)) = candidate else {
                     break None;
                 };
-                let verdict = if self.base.loyalty_rate_alarm {
+                let verdict = if self.base.loyalty_rate_alarm || science_targeted {
                     self.settle_site_loyalty_verdict(g, pid, pos)
                 } else {
                     self.settle_site_frontier_loyalty_verdict(g, pid, pos)
@@ -28494,11 +28599,11 @@ impl AdvancedAi {
             // make the loss irreversible.
             let relaxed = self.settler_never_idles
                 && self.settler_relaxed_targets.get(&uid) == Some(&current);
-            let arrival_verdict = if relaxed {
+            let arrival_verdict = if relaxed && !science_targeted {
                 // See `relaxed_arrival_verdict`: a site the exhaustion search
                 // chose is judged at arrival by the rule that chose it.
                 Self::relaxed_arrival_verdict(g, pid, current)
-            } else if self.base.loyalty_rate_alarm {
+            } else if self.base.loyalty_rate_alarm || science_targeted {
                 self.settle_site_loyalty_verdict(g, pid, current)
             } else {
                 self.settle_site_frontier_loyalty_verdict(g, pid, current)
@@ -28828,10 +28933,12 @@ impl AdvancedAi {
             return false;
         }
         // A stalled route may reach a tile that the ordinary target loop had
-        // already rejected. Keep the fallback behind the same live-only
-        // Loyalty protections as target selection and arrival: the optional
-        // rate forecast, plus the always-shipped frontier guard.
-        let loyalty_verdict = if self.base.loyalty_rate_alarm {
+        // already rejected. Keep the fallback behind the same Loyalty
+        // protections as target selection and arrival: the optional rate
+        // forecast, plus the always-shipped frontier guard. An explicit
+        // Science lane opts into the full verdict as well.
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        let loyalty_verdict = if self.base.loyalty_rate_alarm || science_targeted {
             self.settle_site_loyalty_verdict(g, pid, here)
         } else {
             self.settle_site_frontier_loyalty_verdict(g, pid, here)
@@ -35738,6 +35845,14 @@ impl AdvancedAi {
         // making the named Science lane self-consistent.
         self.base.science_building_first =
             self.science_building_first || active_victory_target == Some(VictoryTarget::Science);
+        // A targeted Science seat also has to get through the Advanced
+        // governor's reservation path. `science-building-first` only
+        // partitions BasicAi's final building list; districts are ranked
+        // before that list, so an owed Library would otherwise still lose to
+        // a Theater or another unrelated district. Keep the gene opt-in for
+        // adaptive seats while making the named lane self-consistent.
+        self.first_research_building_reserve = self.first_research_building_reserve
+            || active_victory_target == Some(VictoryTarget::Science);
         // One reading a turn: `Game::victory_races` walks every city of every
         // major, and `production_value` asks this question per item per city.
         self.lane_lost = self.assigned_lane_is_lost(g, pid);
@@ -35952,6 +36067,12 @@ impl AdvancedAi {
                 // only if the empire is still short of its city plan.
                 self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
                 self.redirect_repeatable_projects_for_settlement_gap(g, pid, &plan);
+            }
+            if active_victory_target == Some(VictoryTarget::Science) {
+                // The named research chain owns an idle Campus city before
+                // ancillary reservations such as Envoy infrastructure, so a
+                // one-off district cannot hide the Library/University debt.
+                self.reserve_targeted_research_buildings(g, pid);
             }
             // Reserve one reachable diplomatic stage before baseline queues fill.
 

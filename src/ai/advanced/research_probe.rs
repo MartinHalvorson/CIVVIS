@@ -1163,6 +1163,29 @@ fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
     assert!(!live.wonder_score_tally);
     let raced = live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
     assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
+
+    // An explicit Science target keeps the default live wonder treatment from
+    // opening a generic score race. Science-specific wonders remain available
+    // through their strategic lane value; this check is the generic fallback.
+    let mut science_target = AdvancedAi::targeting(VictoryTarget::Science);
+    science_target.enable_live_bridge();
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        ..plan.clone()
+    };
+    let refused = science_target.production_value(
+        &game,
+        0,
+        capital,
+        &pyramids,
+        &science_plan,
+        &science_target.counts(&game, 0),
+    );
+    assert!(
+        refused <= -10_000.0,
+        "a targeted Science lane refuses the generic wonder race: {refused}"
+    );
+
     // ★★★★ And prices it higher as the tally approaches: ×1 at the start,
     // ×2 at the midpoint, ×3 at the limit. See `live_wonder_race_scale`.
     let turn_before = game.turn;
