@@ -16403,8 +16403,8 @@ fn culture_building_debt_is_in_native_universe_and_ledger_decides_deployment() {
         "{tag}: deployment must follow the ledger"
     );
     assert!(
-        deployed.culture_building_debt,
-        "culture-building-debt is in the explicit deployment selection"
+        !deployed.culture_building_debt,
+        "culture-building-debt is withheld by the explicit deployment selection"
     );
 }
 
@@ -20174,11 +20174,13 @@ fn live_capture_lessons_activate_guard_survival_when_the_screen_is_withheld() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
+    live.disable_settler_guard_holds();
     assert!(!live.settler_guard_holds);
     assert!(live.settler_guard_holds_on());
 
     let mut unsafe_controller = AdvancedAi::new();
     unsafe_controller.enable_live_bridge();
+    unsafe_controller.disable_settler_guard_holds();
     unsafe_controller.settlement_safety = false;
     assert!(!unsafe_controller.settler_guard_holds_on());
 }
@@ -20215,6 +20217,7 @@ fn live_capture_lessons_do_not_panic_on_a_healthy_stacked_guard() {
 
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge();
+    ai.disable_settler_guard_holds();
     assert!(!ai.settler_guard_holds);
     assert!(ai.settler_guard_holds_on());
     ai.settler_guards.insert(settler, guard);
@@ -21548,16 +21551,16 @@ fn settler_threat_detour_is_a_native_opt_in_withheld_by_the_ledger() {
 /// The live bridge's capture model also needs the route-recovery gates.  The
 /// host refuses a visible hostile leg even when a stacked escort would make
 /// the native risk score look safe; the live-only helper must therefore turn
-/// on both the short target hold and the safe-runner detour without changing
-/// the screenable gene's published default.
+/// on the safe-runner detour while the separately screened short target hold
+/// remains governed by the published default.
 #[test]
-fn live_capture_lessons_enable_bounded_settler_route_recovery() {
+fn live_capture_lessons_enable_route_recovery_without_hysteresis() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
     assert!(live.settlement_safety);
     assert!(live.settler_routing_recovery_on());
-    assert!(live.settler_target_hysteresis_on());
+    assert!(!live.settler_target_hysteresis_on());
     assert!(live.settler_threat_detour_on());
 
     let mut withheld = AdvancedAi::new();
@@ -36001,17 +36004,17 @@ fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
     );
 }
 
-/// The gene is off in the stock and legacy agents and remains off through the
-/// ledger under the 2026-08-27 operator directive.
+/// The gene is off in the stock and legacy agents and follows the current
+/// deployment selection when repairs are enabled.
 #[test]
-fn builder_tries_the_next_tile_stays_off_through_the_ledger() {
+fn builder_tries_the_next_tile_follows_the_ledger() {
     assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
     assert!(
-        !deployment.base.builder_tries_the_next_tile,
-        "held off by the 2026-08-27 operator directive"
+        deployment.base.builder_tries_the_next_tile,
+        "selected by the current three-batch deployment policy"
     );
 }
 

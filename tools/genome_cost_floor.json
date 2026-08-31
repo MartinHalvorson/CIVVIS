@@ -1,316 +1,289 @@
 {
  "what": "The deployed genome's per-gene compute cost, from the screens docs/gene_ledger.json draws on. compute_cost_pct is the percent change in wall seconds per completed turn per enabled major seat (docs/GENE_SCREEN.md). Regenerate with `python3 tools/genome_cost.py write`; `check` fails when this file and the ledger disagree, so the bill cannot move without the diff showing which gene moved it.",
  "not_a_total": "summed_cost_pct adds marginal costs each measured with the rest of the genome enabled. They do not compose \u2014 two genes that walk the same list cost less together than apart \u2014 so this is an indicator that TRACKS the bill, not the bill. Compare it with itself over time; never quote it as what the genome costs.",
- "deployed_genes": 34,
- "priced": 34,
- "resolved_beyond_one_se": 9,
- "summed_cost_pct": 8.976,
- "summed_positive_cost_pct": 12.383,
+ "deployed_genes": 31,
+ "priced": 31,
+ "resolved_beyond_one_se": 16,
+ "summed_cost_pct": 1.054,
+ "summed_positive_cost_pct": 4.778,
  "genes": [
   {
-   "tag": "pass-picket",
-   "compute_cost_pct": 2.246,
-   "compute_cost_se_pct": 1.073,
-   "win_diff_pp": 0.37897,
+   "tag": "swap-rotation",
+   "compute_cost_pct": 0.733,
+   "compute_cost_se_pct": 0.288,
+   "win_diff_pp": 0.345735,
    "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "opportunistic-war",
-   "compute_cost_pct": 2.077,
-   "compute_cost_se_pct": 1.033,
-   "win_diff_pp": 0.780793,
-   "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "science-victory-drive",
-   "compute_cost_pct": 1.914,
-   "compute_cost_se_pct": 1.08,
-   "win_diff_pp": 0.947374,
-   "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": 2.02
-  },
-  {
-   "tag": "early-archers",
-   "compute_cost_pct": 1.655,
-   "compute_cost_se_pct": 1.093,
-   "win_diff_pp": 0.864742,
-   "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": 1.91
-  },
-  {
-   "tag": "blind-objective-units",
-   "compute_cost_pct": 1.62,
-   "compute_cost_se_pct": 1.05,
-   "win_diff_pp": 0.153042,
-   "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "builder-barbarian-safety",
-   "compute_cost_pct": 1.519,
-   "compute_cost_se_pct": 1.082,
-   "win_diff_pp": 0.171386,
-   "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "treasury-at-work-2",
-   "compute_cost_pct": 1.352,
-   "compute_cost_se_pct": 1.201,
-   "win_diff_pp": 0.478929,
-   "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "siege-commitment",
-   "compute_cost_pct": 0.931,
-   "compute_cost_se_pct": 1.007,
-   "win_diff_pp": 0.03072,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
    "cost_per_point": null
   },
   {
    "tag": "solvency-first-trade-slot",
-   "compute_cost_pct": 0.816,
-   "compute_cost_se_pct": 1.08,
-   "win_diff_pp": 5.321169,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
+   "compute_cost_pct": 0.72,
+   "compute_cost_se_pct": 0.321,
+   "win_diff_pp": 5.450102,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": 0.13
   },
   {
-   "tag": "culture-building-debt",
-   "compute_cost_pct": 0.752,
-   "compute_cost_se_pct": 1.067,
-   "win_diff_pp": 0.475309,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "elective-war-yields-to-a-lane",
-   "compute_cost_pct": 0.529,
-   "compute_cost_se_pct": 1.029,
-   "win_diff_pp": 1.820222,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "defensible-sites",
-   "compute_cost_pct": 0.521,
-   "compute_cost_se_pct": 1.022,
-   "win_diff_pp": 1.569757,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "settler-screen",
-   "compute_cost_pct": 0.447,
-   "compute_cost_se_pct": 1.028,
-   "win_diff_pp": 0.381097,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "great-person-housing",
-   "compute_cost_pct": 0.364,
-   "compute_cost_se_pct": 1.078,
-   "win_diff_pp": 1.334607,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "price-the-suzerainty",
-   "compute_cost_pct": 0.361,
-   "compute_cost_se_pct": 1.065,
-   "win_diff_pp": 0.884526,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "swap-rotation",
-   "compute_cost_pct": 0.327,
-   "compute_cost_se_pct": 1.075,
-   "win_diff_pp": 0.365723,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "competition-victory-points",
-   "compute_cost_pct": 0.23,
-   "compute_cost_se_pct": 1.063,
-   "win_diff_pp": 0.33332,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "engine-faith-price",
-   "compute_cost_pct": 0.099,
-   "compute_cost_se_pct": 1.011,
-   "win_diff_pp": 1.342586,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "founder-temple",
-   "compute_cost_pct": 0.086,
-   "compute_cost_se_pct": 1.049,
-   "win_diff_pp": 0.410096,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "settler-never-idles",
-   "compute_cost_pct": 0.022,
-   "compute_cost_se_pct": 1.02,
-   "win_diff_pp": 0.634834,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "religious-veto-defence",
-   "compute_cost_pct": -0.106,
-   "compute_cost_se_pct": 1.074,
-   "win_diff_pp": 0.72232,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "unit-cost-efficiency",
-   "compute_cost_pct": -0.127,
-   "compute_cost_se_pct": 0.999,
-   "win_diff_pp": 0.320522,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "slot-kind-tiebreak",
-   "compute_cost_pct": -0.183,
-   "compute_cost_se_pct": 1.039,
-   "win_diff_pp": 0.203586,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "pantheon-board",
-   "compute_cost_pct": -0.184,
-   "compute_cost_se_pct": 1.021,
-   "win_diff_pp": 0.219516,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "chokepoint-siting",
-   "compute_cost_pct": -0.239,
-   "compute_cost_se_pct": 0.989,
-   "win_diff_pp": 0.391395,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "loyalty-rate-alarm",
-   "compute_cost_pct": -0.255,
-   "compute_cost_se_pct": 1.058,
-   "win_diff_pp": 1.049541,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "escort-unstick",
-   "compute_cost_pct": -0.376,
-   "compute_cost_se_pct": 1.016,
-   "win_diff_pp": 0.703173,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "flip-nearby-city-states",
-   "compute_cost_pct": -0.397,
-   "compute_cost_se_pct": 1.026,
-   "win_diff_pp": 0.533236,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "barbarian-settler-capture",
-   "compute_cost_pct": -0.459,
-   "compute_cost_se_pct": 1.029,
-   "win_diff_pp": 1.923264,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
+   "tag": "treasury-at-work-2",
+   "compute_cost_pct": 0.69,
+   "compute_cost_se_pct": 0.333,
+   "win_diff_pp": 0.288526,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
    "cost_per_point": null
   },
   {
    "tag": "wide-map-capacity",
-   "compute_cost_pct": -0.523,
-   "compute_cost_se_pct": 1.001,
-   "win_diff_pp": 1.162871,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "whole-turn-backtrack-guard",
-   "compute_cost_pct": -0.569,
-   "compute_cost_se_pct": 1.035,
-   "win_diff_pp": 0.256816,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "idle-faith-patronage",
-   "compute_cost_pct": -0.746,
-   "compute_cost_se_pct": 1.076,
-   "win_diff_pp": 0.458604,
-   "resolved": false,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "barbarian-ranged-answer",
-   "compute_cost_pct": -1.484,
-   "compute_cost_se_pct": 1.003,
-   "win_diff_pp": 0.456172,
+   "compute_cost_pct": 0.671,
+   "compute_cost_se_pct": 0.284,
+   "win_diff_pp": 1.174562,
    "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": 0.57
+  },
+  {
+   "tag": "loyalty-rate-alarm",
+   "compute_cost_pct": 0.479,
+   "compute_cost_se_pct": 0.279,
+   "win_diff_pp": 1.026753,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": 0.47
+  },
+  {
+   "tag": "religious-veto-defence",
+   "compute_cost_pct": 0.475,
+   "compute_cost_se_pct": 0.28,
+   "win_diff_pp": 0.969682,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": 0.49
+  },
+  {
+   "tag": "gold-for-the-young-city",
+   "compute_cost_pct": 0.357,
+   "compute_cost_se_pct": 0.279,
+   "win_diff_pp": 0.383943,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "builder-tries-the-next-tile",
+   "compute_cost_pct": 0.344,
+   "compute_cost_se_pct": 0.271,
+   "win_diff_pp": 0.402505,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "opportunistic-war",
+   "compute_cost_pct": 0.309,
+   "compute_cost_se_pct": 0.278,
+   "win_diff_pp": 0.736843,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "price-the-suzerainty",
+   "compute_cost_pct": 0.255,
+   "compute_cost_se_pct": 0.292,
+   "win_diff_pp": 1.084014,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "chokepoint-siting",
+   "compute_cost_pct": -0.013,
+   "compute_cost_se_pct": 0.272,
+   "win_diff_pp": 0.298403,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "barbarian-settler-capture",
+   "compute_cost_pct": -0.016,
+   "compute_cost_se_pct": 0.288,
+   "win_diff_pp": 1.856688,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "siege-commitment",
+   "compute_cost_pct": -0.016,
+   "compute_cost_se_pct": 0.292,
+   "win_diff_pp": 0.009488,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "early-archers",
+   "compute_cost_pct": -0.017,
+   "compute_cost_se_pct": 0.292,
+   "win_diff_pp": 1.309677,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "settler-guard-holds",
+   "compute_cost_pct": -0.034,
+   "compute_cost_se_pct": 0.302,
+   "win_diff_pp": 0.204442,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "great-person-housing",
+   "compute_cost_pct": -0.036,
+   "compute_cost_se_pct": 0.29,
+   "win_diff_pp": 1.336044,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "founder-temple",
+   "compute_cost_pct": -0.043,
+   "compute_cost_se_pct": 0.277,
+   "win_diff_pp": 0.42892,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "apostle-promotion-by-role",
+   "compute_cost_pct": -0.049,
+   "compute_cost_se_pct": 0.285,
+   "win_diff_pp": 0.147439,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "barbarian-bargain",
+   "compute_cost_pct": -0.106,
+   "compute_cost_se_pct": 0.287,
+   "win_diff_pp": 0.400397,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "peacetime-deterrence",
+   "compute_cost_pct": -0.143,
+   "compute_cost_se_pct": 0.284,
+   "win_diff_pp": 0.338274,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
    "cost_per_point": null
   },
   {
    "tag": "district-planning",
-   "compute_cost_pct": -1.923,
-   "compute_cost_se_pct": 1.043,
-   "win_diff_pp": 0.327533,
+   "compute_cost_pct": -0.181,
+   "compute_cost_se_pct": 0.272,
+   "win_diff_pp": 0.324987,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "flip-nearby-city-states",
+   "compute_cost_pct": -0.209,
+   "compute_cost_se_pct": 0.276,
+   "win_diff_pp": 0.604484,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "defensible-sites",
+   "compute_cost_pct": -0.219,
+   "compute_cost_se_pct": 0.287,
+   "win_diff_pp": 1.4508,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "amenity-project-preemption-2",
+   "compute_cost_pct": -0.294,
+   "compute_cost_se_pct": 0.346,
+   "win_diff_pp": 1.259605,
+   "resolved": false,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "screen-the-shooters",
+   "compute_cost_pct": -0.317,
+   "compute_cost_se_pct": 0.295,
+   "win_diff_pp": 0.426866,
    "resolved": true,
-   "source": "2026-08-28-standard-continuous-10650-total-seats-20260828T034758Z-join.json",
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "stranded-settler-discount",
+   "compute_cost_pct": -0.394,
+   "compute_cost_se_pct": 0.283,
+   "win_diff_pp": 0.258717,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "government-ladder-2",
+   "compute_cost_pct": -0.457,
+   "compute_cost_se_pct": 0.361,
+   "win_diff_pp": 1.487183,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "engine-faith-price",
+   "compute_cost_pct": -0.488,
+   "compute_cost_se_pct": 0.276,
+   "win_diff_pp": 1.356881,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "escort-unstick",
+   "compute_cost_pct": -0.639,
+   "compute_cost_se_pct": 0.278,
+   "win_diff_pp": 0.675594,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "science-victory-drive",
+   "compute_cost_pct": -0.663,
+   "compute_cost_se_pct": 0.287,
+   "win_diff_pp": 0.889013,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "elective-war-yields-to-a-lane",
+   "compute_cost_pct": -0.766,
+   "compute_cost_se_pct": 0.28,
+   "win_diff_pp": 1.745751,
+   "resolved": true,
+   "source": "2026-08-28-standard-continuous-23856-total-seats-20260828T035903Z-0543.json",
    "cost_per_point": null
   }
  ]
