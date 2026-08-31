@@ -761,6 +761,14 @@ fn live_settler_uses_a_ranked_local_site_after_distant_loyalty_failures() {
     distant.sort_unstable();
     let distant = distant.into_iter().step_by(8).take(3).collect::<Vec<_>>();
     assert_eq!(distant.len(), 3, "fixture needs three distant colonies");
+    // This is a loyalty-ranking fixture, not a dry-city exception fixture.
+    // Keep every candidate fresh-water backed so the opening policy treats
+    // them uniformly and the rice sites retain their intended lead.
+    let observed_fresh_water = std::sync::Arc::make_mut(&mut game.observed_fresh_water);
+    observed_fresh_water.insert(local, true);
+    for site in &distant {
+        observed_fresh_water.insert(*site, true);
+    }
     for site in &distant {
         for position in game.wdisk(*site, 2) {
             if let Some(tile) = game.map.tiles.get_mut(&position) {
