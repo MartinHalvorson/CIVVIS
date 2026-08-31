@@ -8358,14 +8358,48 @@ fn apply_player_religion(
 }
 
 fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
+    // `City::pressure` is the model's only existing representation of a
+    // conversion in progress.  The host gives us the more useful clock, but
+    // not the individual pressure values, so retain the exact majority above
+    // and add only a bounded warning signal for a flip that is close enough to
+    // require a response.  A marker of 1.0 keeps a religionless city below its
+    // 50-point atheist pressure and therefore cannot invent a majority; when a
+    // city already has a majority, 60.0 is the smallest value that reaches
+    // AdvancedAi's existing 60%-of-top-pressure defense threshold while the
+    // observed majority remains at 100.0.
+    const ACTIONABLE_CONVERSION_TURNS: i64 = 20;
+    const RELIGIONLESS_CONVERSION_MARKER: f64 = 1.0;
+    const MAJORITY_CONVERSION_MARKER: f64 = 60.0;
+
+    let current = state.religion.as_deref().and_then(civvis_religion_name);
     live.pressure.clear();
-    match state.religion.as_deref().and_then(civvis_religion_name) {
+    match current.as_ref() {
         Some(religion) => {
             live.atheist_pressure = 0.0;
-            live.pressure.insert(religion, 100.0);
+            live.pressure.insert(religion.clone(), 100.0);
         }
         None => live.atheist_pressure = 50.0,
     }
+
+    let Some(next) = state
+        .religion_next
+        .as_deref()
+        .and_then(civvis_religion_name)
+    else {
+        return;
+    };
+    if current.as_deref() == Some(next.as_str())
+        || state.religion_turns < 0
+        || state.religion_turns > ACTIONABLE_CONVERSION_TURNS
+    {
+        return;
+    }
+    let marker = if current.is_some() {
+        MAJORITY_CONVERSION_MARKER
+    } else {
+        RELIGIONLESS_CONVERSION_MARKER
+    };
+    live.pressure.insert(next, marker);
 }
 
 /// Apply a city's districts and wonders to both representations CIVVIS uses.
