@@ -8768,11 +8768,15 @@ fn apply_unit_observation(
     if let Some(religion) = progress.religion {
         live.religion = Some(religion);
     }
+    // Zero is an authoritative observation: a Builder or religious unit that
+    // spent its final charge must not regain the ruleset default on a fresh
+    // rebuild, or retain the previous turn's charge count on sync. Negative
+    // values remain the mod's "could not read" sentinel.
     let observed_charges = state
         .build_charges
         .into_iter()
         .chain(state.spread_charges)
-        .filter(|charges| *charges > 0)
+        .filter(|charges| *charges >= 0)
         .max();
     if let Some(charges) = observed_charges {
         live.charges = charges;
