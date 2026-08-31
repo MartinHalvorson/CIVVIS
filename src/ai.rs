@@ -20715,6 +20715,120 @@ mod tests {
         (game, ours, front, home)
     }
 
+    /// A Quadrireme has one tile of ranged reach, not two, and must retain a
+    /// movement point to fire. A wounded land unit that has actually entered
+    /// that full envelope must recover away from the shore, rather than
+    /// fortifying for another naval volley.
+    #[test]
+    fn a_wounded_land_unit_leaves_a_coast_under_quadrireme_fire() {
+        let mut game = Game::new_full(2, 20, 14, 91_485, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.road = 0;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let shore = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.wdisk(*position, 4).len() == 61)
+            .expect("fixture needs an interior shore");
+        let water = game.nbrs(shore)[0];
+        let water_after_one_move = game
+            .nbrs(water)
+            .into_iter()
+            .find(|position| game.wdist(*position, shore) == 2)
+            .expect("fixture needs a coast one move out");
+        let water_after_two_moves = game
+            .nbrs(water_after_one_move)
+            .into_iter()
+            .find(|position| game.wdist(*position, shore) == 3)
+            .expect("fixture needs a coast two moves out");
+        for position in [water, water_after_one_move, water_after_two_moves] {
+            game.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("coast");
+        }
+        let inland = game
+            .nbrs(shore)
+            .into_iter()
+            .find(|position| {
+                *position != water
+                    && game
+                        .nbrs(*position)
+                        .into_iter()
+                        .all(|neighbor| !game.rules.is_water(&game.map.tiles[&neighbor]))
+            })
+            .expect("fixture needs a land step behind the shore");
+
+        let defender = game.spawn_test_unit("swordsman", 0, shore);
+        game.units.get_mut(&defender).unwrap().hp = 45;
+        // A friendly observer gives the controller sight of the ship even
+        // though its target is two sea steps beyond the wounded defender.
+        let observer = game
+            .nbrs(water_after_two_moves)
+            .into_iter()
+            .find(|position| {
+                *position != water_after_one_move && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .expect("fixture needs a land observer next to the ship");
+        game.spawn_test_unit("scout", 0, observer);
+        let quadrireme = game.spawn_test_unit("quadrireme", 1, water_after_two_moves);
+        assert_eq!(
+            game.unit_attack_range(quadrireme),
+            1,
+            "the shipped Quadrireme record has Range=1"
+        );
+        assert!(
+            game.attack_reach(quadrireme).contains(&shore),
+            "two sea moves leave the one point needed for its adjacent shot"
+        );
+        assert!(
+            !game.attack_reach(quadrireme).contains(&inland),
+            "the tile behind that shore is outside its actual firing envelope"
+        );
+
+        let probe = BasicAi::new();
+        let envelopes = probe.enemy_attack_envelopes(&game, 0);
+        let incoming = BasicAi::evacuation_incoming_damage(&game, 0, defender, shore, &envelopes);
+        assert!(
+            incoming > 0.0 && incoming < f64::from(game.units[&defender].hp),
+            "the current volley is harmful but not an average lethal pool: {incoming:.1}"
+        );
+
+        let mut ai = BasicAi::new();
+        assert_eq!(ai.healing_step(&mut game, 0, defender), Some(true));
+        let retreat = game.units[&defender].pos;
+        assert_ne!(
+            retreat, shore,
+            "the wounded unit does not fortify on the shore"
+        );
+        assert!(
+            game.nbrs(retreat)
+                .into_iter()
+                .all(|position| !game.rules.is_water(&game.map.tiles[&position])),
+            "the recovery step leaves the exposed coast"
+        );
+        let envelopes = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            envelopes.iter().all(|(_, reach)| !reach.contains(&retreat)),
+            "the recovery tile is outside every observed next-turn attack envelope"
+        );
+    }
+
     /// ★★★ THE CASE BOTH EXISTING TESTS ABOVE MISS. `withdraw_hp` is 45 and
     /// the pool this tile invites is 45, so a Warrior on 50 is healthy by the
     /// floor and safe by the lethal-pool test — and dies to the next shot
