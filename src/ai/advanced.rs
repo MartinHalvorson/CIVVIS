@@ -299,6 +299,11 @@ const SETTLER_RETREAT_LIMIT: u32 = 3;
 /// should yield the site to a safer alternative, even if it is not in the
 /// mirror's immediate -8-per-turn emergency.
 const SETTLE_TARGET_LOYALTY_RISK_TURNS: f64 = 40.0;
+/// A governed city with this many measured turns of Loyalty headroom is close
+/// enough to justify `praetorium`'s +2 Governor Loyalty. The live Arretium
+/// loss had roughly 17 turns at t168; waiting for the city to cross the old
+/// level alarm left no time for a policy swap to matter.
+const LOYALTY_POLICY_TRIGGER_TURNS: f64 = 20.0;
 /// How far from an own city a colony still holds on fogged ground. The
 /// loyalty model's citizens press out to nine tiles, but what a colony needs
 /// is enough of that pressure to outweigh rivals it cannot see: measured
@@ -13597,6 +13602,20 @@ impl AdvancedAi {
         overflow + wildcard <= slots.wildcard
     }
 
+    /// Whether the live bridge has a governed city whose measured Loyalty
+    /// decline is close enough to warrant the Governor-specific policy card.
+    /// Frozen controllers do not have the host rate signal and therefore keep
+    /// the recorded policy deck exactly as it was.
+    fn loyalty_policy_needed(&self, g: &Game, pid: usize) -> bool {
+        self.base.loyalty_rate_alarm
+            && g.player_city_ids(pid).into_iter().any(|city| {
+                self.base
+                    .loyalty_emergency(g, city)
+                    .is_some_and(|turns| turns.is_finite() && turns <= LOYALTY_POLICY_TRIGGER_TURNS)
+                    && g.governor_effect(pid, city, "loyalty") > 0.0
+            })
+    }
+
     /// Reassess policy cards as the civic tree advances instead of treating
     /// the first cards which filled a government as permanent.  Each plan has
     /// a complete late-game portfolio, while temporary Dark Age cards are
@@ -13759,6 +13778,15 @@ impl AdvancedAi {
         // production and maintenance cards displace the peaceful portfolio.
         // The helper is an exact no-op when its opt-in gene is off.
         self.prioritize_surprise_defense_policies(g, pid, &mut desired);
+
+        // A Governor already in a city is the one place where Praetorium's
+        // effect can apply. Put it ahead of the ordinary victory portfolio
+        // only for a live, measured decline with a short runway; a healthy
+        // governed city must not trade away a lane card for a merely
+        // hypothetical loyalty benefit.
+        if self.loyalty_policy_needed(g, pid) {
+            desired.insert(0, "praetorium");
+        }
 
         // ⚠ FRONT of the list, not appended: these portfolios are preference
         // ordered and the military slot is contested from the ancient era, which is
@@ -14031,11 +14059,12 @@ impl AdvancedAi {
         {
             temporary.push("robber_barons");
         }
-        // ★★★★★ CITIES BLEEDING LOYALTY HAVE ONE LEVER AND FIVE UNUSED ONES.
+        // ★★★★★ CITIES BLEEDING LOYALTY HAD ONE LEVER AND NO POLICY RESPONSE.
         //
-        // `loyalty_emergency` reads the RATE (that is what #981 fixed) but its only
-        // consumer is `reassign_governor_for_loyalty`, so moving a governor is the
-        // entire response and it is capped by how many governors exist.
+        // `loyalty_emergency` reads the RATE (that is what #981 fixed). The
+        // inherited governor pass can move one established Governor, while the
+        // live policy response below can add a small Loyalty buffer when that
+        // move cannot reach an already governed city.
         //
         // Measured over 117 city losses in 91 runs: **47 were revolts**, and they died
         // at loyalty 0.1-1.9 carrying -13 to -22 a turn. The warning is long and
@@ -14048,9 +14077,11 @@ impl AdvancedAi {
         //
         // Five policy cards carry loyalty effects and every one is already honoured by
         // `Game::city_loyalty_per_turn`. **Across those 91 runs only COLONIAL_OFFICES
-        // was ever slotted, in 5 of them; the other four never once** — including
-        // `limitanei`, which needs only `early_empire`, an ancient civic reached in
-        // essentially every game, and sits in a MILITARY slot nothing competes for.
+        // was ever slotted, in 5 of them; the remaining direct loyalty cards were
+        // absent from the ordinary deck** — including `limitanei`, which needs only
+        // `early_empire`, an ancient civic reached in essentially every game, and
+        // sits in a MILITARY slot nothing competes for. The live emergency arm now
+        // names `praetorium` when a governed city has a short measured runway.
         //
         // ★ This is also what makes a garrison worth anything. Garrisoning has measured
         // null as a military mechanism (~2pp, parity), but with Limitanei slotted the
@@ -35975,6 +36006,13 @@ impl AdvancedAi {
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
+        // AdvancedAi owns its turn pipeline instead of delegating through
+        // BasicAi::take_turn, so explicitly retain the live-only governor
+        // emergency pass that protects an ungoverned city with a measured
+        // Loyalty collapse. The frozen controller keeps its old path.
+        if self.base.loyalty_rate_alarm {
+            self.base.reassign_governor_for_loyalty(g, pid);
+        }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
         self.base
