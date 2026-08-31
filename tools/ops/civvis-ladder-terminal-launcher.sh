@@ -31,6 +31,41 @@ say() {
   print -r -- "[launcher] $(date -u +%FT%TZ) $*" >> "$LOG"
 }
 
+# Terminal replaces a document shell with its normal post-command shell before
+# an EXIT trap can inspect it. The old direct-TTY cleanup therefore logged
+# "own tty not found" and left the completed document behind. Spawn a tiny
+# Terminal-descended reaper before exit instead: after the shell is actually
+# idle it can close only a window whose title still proves it was ours. An
+# operator's normal Terminal remains busy and never matches this predicate.
+WINDOW_REAPER_SCHEDULED=0
+schedule_idle_window_reap() {
+  (( WINDOW_REAPER_SCHEDULED )) && return 0
+  WINDOW_REAPER_SCHEDULED=1
+  [[ -z ${CIVVIS_LADDER_KEEP_WINDOW:-} ]] || return 0
+  local own_tty=${TTY:-}
+  [[ "$own_tty" == /dev/tty* ]] || return 0
+  (
+    /usr/bin/nohup /usr/bin/osascript >>"$LOG" 2>&1 <<'APPLESCRIPT'
+delay 1
+set reaped to 0
+tell application "Terminal"
+  repeat with i from (count of windows) to 1 by -1
+    try
+      set w to item i of windows
+      if (busy of w) is false and (((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher")) then
+        close w
+        set reaped to reaped + 1
+      end if
+    end try
+  end repeat
+end tell
+return "window cleanup: reaped " & reaped & " idle managed window(s)"
+APPLESCRIPT
+  ) &
+  say "window cleanup: scheduled idle managed-window reaper"
+}
+trap 'schedule_idle_window_reap || true' EXIT
+
 # ⚠ NOT `{ ... } | tee`. A pipeline hands the exit line to a `tee` that dies
 # with the rest of the pipeline, and the last thing written is exactly the thing
 # worth keeping — measured 2026-08-17T21:20Z, where the "starting" line landed
@@ -82,7 +117,11 @@ on run argv
           if mine then
             set miniaturized of w to true
             set mineSeen to mineSeen + 1
-          else if (name of w) contains "civvis-ladder-terminal-launcher" then
+          -- Terminal titles the document it opened, not necessarily the script
+          -- that it `exec`s.  Normal recovery opens the operator wrapper, whose
+          -- title is `civvis-verified-head-launcher.sh`; matching only this
+          -- hand-off file left every completed recovery window behind.
+          else if ((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher") then
             if (busy of w) is false then
               close w
               set reaped to reaped + 1

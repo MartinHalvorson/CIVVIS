@@ -319,6 +319,15 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
                       text)
         self.assertIn('exec /bin/zsh "$LAUNCHER"', text)
 
+    def test_outer_wrapper_cleans_a_refused_terminal_document_after_exit(self):
+        """The authorization guard can refuse before the ladder launcher runs."""
+        text = WRAPPER.read_text()
+        refusal = text[text.index("refuse() {"):text.index("typeset -A policy")]
+        self.assertIn("schedule_idle_window_reap()", text)
+        self.assertIn("(busy of w) is false", text)
+        self.assertIn("trap 'schedule_idle_window_reap || true' EXIT", text)
+        self.assertIn('exit "${REFUSE_STATUS:-64}"', refusal)
+
 
 @unittest.skipUnless(HAS_ZSH, "the installer is zsh; this runner has no zsh")
 class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):

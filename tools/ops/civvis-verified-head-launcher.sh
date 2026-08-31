@@ -69,6 +69,40 @@ mkdir -p "${LOG:h}"
 
 say() { print -r -- "[verified-head] $(date -u +%FT%TZ) $*" >> "$LOG" }
 
+# This wrapper can refuse before it execs the ladder launcher (notably when an
+# automatic caller lacks the required verification intent). Terminal keeps
+# that rejected document window unless the outermost entry point reaps it.
+# Schedule a delayed, title-scoped cleanup rather than closing the current tab:
+# a manually typed command returns to a busy normal shell and is left alone.
+WINDOW_REAPER_SCHEDULED=0
+schedule_idle_window_reap() {
+  (( WINDOW_REAPER_SCHEDULED )) && return 0
+  WINDOW_REAPER_SCHEDULED=1
+  [[ -z ${CIVVIS_LADDER_KEEP_WINDOW:-} ]] || return 0
+  local own_tty=${TTY:-}
+  [[ "$own_tty" == /dev/tty* ]] || return 0
+  (
+    /usr/bin/nohup /usr/bin/osascript >>"$LOG" 2>&1 <<'APPLESCRIPT'
+delay 1
+set reaped to 0
+tell application "Terminal"
+  repeat with i from (count of windows) to 1 by -1
+    try
+      set w to item i of windows
+      if (busy of w) is false and (((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher")) then
+        close w
+        set reaped to reaped + 1
+      end if
+    end try
+  end repeat
+end tell
+return "window cleanup: reaped " & reaped & " idle managed window(s)"
+APPLESCRIPT
+  ) &
+  say "window cleanup: scheduled idle managed-window reaper"
+}
+trap 'schedule_idle_window_reap || true' EXIT
+
 # ⚠ A refusal is LOGGED, not merely printed. The window this runs in is
 # minimised by the launcher and gone once the shell exits — that is the whole
 # point of civvis-ladder-terminal-launcher.sh — so stderr alone would vanish
