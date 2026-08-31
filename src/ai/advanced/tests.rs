@@ -39846,7 +39846,7 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
     ai.retire_frozen_settler_targets(&g);
 
     assert!(
-        ai.settler_targets.get(&settler).is_none(),
+        !ai.settler_targets.contains_key(&settler),
         "the frozen destination must be dropped"
     );
     assert!(
