@@ -108,7 +108,7 @@ def read_events(run: Path) -> list[dict]:
 
 
 def dropped_units(run: Path) -> dict:
-    """Units the export named that never reached CIVVIS's board, from the decider's note.
+    """Classify exported units that did not resolve exactly, from the decider's note.
 
     ★★★★★ THIS IS THE DETECTOR FOR THE NIGHT'S WORST FINDING. Six of twenty-one units
     were missing from the reconstruction on run `civvis-20260731T070956Z` — every
@@ -125,6 +125,7 @@ def dropped_units(run: Path) -> dict:
     if not notes.exists():
         return {"checked": False}
     worst, reasons, turns_with = 0, Counter(), 0
+    approximated, approximation_reasons, approximation_turns = 0, Counter(), 0
     managed_great_people = 0
     for line in notes.read_text(errors="replace").splitlines():
         try:
@@ -135,6 +136,7 @@ def dropped_units(run: Path) -> dict:
         if not found:
             continue
         unmanaged_this_turn = 0
+        approximated_this_turn = 0
         for entry in found.group(2).split():
             reason = entry.rsplit(":", 1)[-1]
             # Physical Great People intentionally bypass CIVVIS's ordinary unit
@@ -144,16 +146,33 @@ def dropped_units(run: Path) -> dict:
             if reason == "great_person":
                 managed_great_people += 1
                 continue
+            # A unique unit represented by its Firaxis stock role *is* on the
+            # reconstructed board and can receive orders.  The mirror keeps
+            # the observation in `dropped_units` so the approximation remains
+            # auditable, but treating it as an unordered loss makes the
+            # watchdog report a false missing-unit failure.  Keep these in a
+            # separate counter and only make genuinely untranslatable units
+            # contribute to the loud failure metrics below.
+            if reason.startswith("approximated_as_"):
+                approximated += 1
+                approximation_reasons[reason] += 1
+                approximated_this_turn += 1
+                continue
             reasons[reason] += 1
             unmanaged_this_turn += 1
         if unmanaged_this_turn:
             turns_with += 1
             worst = max(worst, unmanaged_this_turn)
+        if approximated_this_turn:
+            approximation_turns += 1
     return {
         "checked": True,
         "turns_with_drops": turns_with,
         "worst_on_one_turn": worst,
         "by_reason": dict(reasons.most_common(6)),
+        "approximation_turns": approximation_turns,
+        "approximated_units": approximated,
+        "approximated_by_reason": dict(approximation_reasons.most_common(6)),
         "bridge_managed_great_person_observations": managed_great_people,
     }
 
@@ -1205,6 +1224,11 @@ def main() -> int:
         if managed_people:
             print(f"  bridge: {managed_people} physical Great Person observation(s) "
                   "handled outside the ordinary unit model")
+        approximated = report["dropped_units"].get("approximated_units", 0)
+        if approximated:
+            turns = report["dropped_units"].get("approximation_turns", 0)
+            print(f"  mirror: {approximated} unique-unit observation(s) on {turns} turns "
+                  "represented by their modeled stock role")
         if "mirror" in report:
             mirror = report["mirror"]
             if mirror.get("error"):
