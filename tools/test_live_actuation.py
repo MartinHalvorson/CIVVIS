@@ -59,6 +59,16 @@ NEW_FORMAT = [
 OLD_FORMAT = [
     orders_event(1, by={"unit": 4}, refusals={"UPGRADE": 3}),
 ]
+POSTCONDITIONS = [
+    {"kind": "order_verified", "turn": 1, "order_kind": "unit", "verb": "MOVE_TO"},
+    {"kind": "order_failed", "turn": 1, "order_kind": "produce",
+     "reason": "producing=nothing"},
+    {"kind": "order_failed", "turn": 2, "order_kind": "unit", "reason": "unit_gone"},
+    {"kind": "order_verified", "turn": 2, "order_kind": "produce", "verb": "BUILDING"},
+    # Keep an old/incomplete verdict visible, but never attribute it to a
+    # named kind or use it as a named-kind floor.
+    {"kind": "order_failed", "turn": 3, "reason": "missing_kind"},
+]
 
 
 class OrdersByKind(unittest.TestCase):
@@ -101,6 +111,26 @@ class OrdersByKind(unittest.TestCase):
                     fh.write(json.dumps(event) + "\n")
             self.assertEqual(civ6_ladder.orders_by_kind(gz)["*"]["seen"], 19)
 
+    def test_postconditions_keep_verified_effects_separate_from_host_acceptance(self):
+        import gzip
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), "civvis-v", "2026-08-20T10:00:00Z", POSTCONDITIONS)
+            block = civ6_ladder.postconditions_by_kind(run / "events.jsonl")
+            self.assertEqual(block["*"], {"verified": 2, "failed": 3, "reasons": {
+                "producing=nothing": 1, "unit_gone": 1, "missing_kind": 1}})
+            self.assertEqual(block["unit"], {"verified": 1, "failed": 1,
+                                             "reasons": {"unit_gone": 1}})
+            self.assertEqual(block["produce"], {"verified": 1, "failed": 1,
+                                                "reasons": {"producing=nothing": 1}})
+            self.assertEqual(block[civ6_ladder.POSTCONDITION_UNATTRIBUTED], {
+                "verified": 0, "failed": 1, "reasons": {"missing_kind": 1}})
+            self.assertIsNone(civ6_ladder.postconditions_by_kind(run / "missing.jsonl"))
+            gz = run / "events.jsonl.gz"
+            with gzip.open(gz, "wt") as handle:
+                for event in POSTCONDITIONS:
+                    handle.write(json.dumps(event) + "\n")
+            self.assertEqual(civ6_ladder.postconditions_by_kind(gz)["*"]["failed"], 3)
+
 
 class Tooling(unittest.TestCase):
     def setUp(self):
@@ -135,6 +165,38 @@ class Tooling(unittest.TestCase):
         self.assertIn("86.7%", out)
         self.assertIn("unit_gone 6", out)
         self.assertNotIn("unattributed", out)
+
+    def test_postcondition_evidence_is_reported_and_ratchets_separately(self):
+        with TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            write_run(runs, "civvis-v", "2026-08-20T10:00:00Z",
+                      NEW_FORMAT + POSTCONDITIONS[:-1])
+            import live_ledger
+            agg = live_actuation.aggregate(live_ledger.summaries(runs))
+        self.assertEqual(agg["unit"]["postconditions"], {
+            "verified": 1, "failed": 1, "reasons": {"unit_gone": 1}})
+        self.assertEqual(agg["produce"]["postconditions"], {
+            "verified": 1, "failed": 1, "reasons": {"producing=nothing": 1}})
+        self.assertIn("1/2 (50.0%)", live_actuation.table(agg))
+        self.assertIn("producing=nothing 1", live_actuation.table(agg))
+        self.assertEqual(live_actuation.ratchet_verified({}, agg, min_seen=2), {
+            "*": 50.0, "produce": 50.0, "unit": 50.0})
+        problems = live_actuation.check_verified_floors(
+            agg, {"produce": 60.0, "unit": 50.0}, min_seen=2)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("produce: verified 50.0% of 2 checkable < floor 60.0%", problems[0])
+
+    def test_unattributed_postconditions_never_create_named_floors(self):
+        agg = {
+            "*": {"seen": 0, "applied": 0, "refused": {}, "postconditions": {
+                "verified": 5, "failed": 0, "reasons": {}}},
+            "unit": {"seen": 0, "applied": 0, "refused": {}, "postconditions": {
+                "verified": 1, "failed": 0, "reasons": {}}},
+            civ6_ladder.POSTCONDITION_UNATTRIBUTED: {
+                "seen": 0, "applied": 0, "refused": {}, "postconditions": {
+                    "verified": 4, "failed": 0, "reasons": {}}},
+        }
+        self.assertEqual(live_actuation.ratchet_verified({}, agg, min_seen=1), {"*": 100.0})
 
     def test_check_fails_under_the_floor_and_skips_thin_kinds(self):
         agg = self.aggregate()
@@ -186,6 +248,7 @@ class Tooling(unittest.TestCase):
                 ["--runs", str(self.runs), "table"]), 0)
         body = json.loads(floors.read_text())
         self.assertEqual(body["floors"]["unit"], 86.7)
+        self.assertEqual(body["verified_floors"], {})
         self.assertEqual(body["window"], 5)
         self.assertIn("civvis-1", body["runs"])
         self.assertIn("floor(s) held", out.getvalue())
@@ -197,6 +260,20 @@ class Tooling(unittest.TestCase):
                 ["--runs", str(self.runs), "--min-seen", "10", "check",
                  "--floors", str(floors)]), 1)
         self.assertIn("ACTUATION: unit", out.getvalue())
+
+    def test_cli_reports_postcondition_floor_breach(self):
+        runs = Path(self.tmp.name) / "postcondition-runs"
+        write_run(runs, "civvis-v", "2026-08-20T10:00:00Z", POSTCONDITIONS[:-1])
+        floors = Path(self.tmp.name) / "postcondition-floors.json"
+        live_actuation.write_floors(
+            floors, {}, {"produce": 60.0}, window=1, runs=["civvis-v"])
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(live_actuation.main(
+                ["--runs", str(runs), "--min-seen", "2", "check",
+                 "--floors", str(floors)]), 1)
+        self.assertIn("POSTCONDITION: produce: verified 50.0% of 2 checkable < floor 60.0%",
+                      out.getvalue())
 
 
 if __name__ == "__main__":

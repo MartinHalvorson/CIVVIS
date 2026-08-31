@@ -1839,6 +1839,14 @@ pub const GENES: &[Gene] = &[
     // and a live launch-chain estimate. Appended at the END so a running
     // screen keeps its positional genome.
     Gene { tag: "science-victory-drive-2", field: "science_victory_drive_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_victory_drive_2, disable: AdvancedAi::disable_science_victory_drive_2 },
+    // A capital at population two can legally begin a Settler, yet the
+    // ordinary production ranking may spend its newly empty queue on an
+    // Archer or filler instead. Once its whole queue drains, reserve that
+    // one next build for a Settler; repairs, emergencies, war, the city
+    // target, the normal deadline, and the practical-site gate still decide
+    // whether the reservation is allowed. See `BasicAi::pick_item`.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "capital-settler-after-completion", field: "capital_settler_after_completion", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_settler_after_completion, disable: AdvancedAi::disable_capital_settler_after_completion },
     // Opening project restraint is intentionally an opt-in while the
     // single-gene screen determines whether its production reallocation
     // improves the live universe. Appended at the END to preserve any

@@ -165,8 +165,8 @@ end
 --
 -- Operations are looked up in GameInfo, not on the UnitOperationTypes table.
 -- The named table is a convenience list and it is *not* complete: on this
--- build it has no SKIP_TURN, no SLEEP and no AUTOMATE_EXPLORE, while the
--- database defines all three. Reading a missing name off the enum yields nil,
+-- build it has no SKIP_TURN or SLEEP, while the database defines both.
+-- Reading a missing name off the enum yields nil,
 -- the guarded call then refuses the order, and a unit that could have been
 -- told to skip instead blocks the end of the turn forever.
 
@@ -193,7 +193,7 @@ local function resolveActions()
 		"UNITOPERATION_MOVE_TO",
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
-		"UNITOPERATION_HEAL", "UNITOPERATION_AUTOMATE_EXPLORE",
+		"UNITOPERATION_HEAL",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
 		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
 		-- light cavalry's pillage-before-combat could not happen on the live
@@ -1404,7 +1404,7 @@ end
 --
 -- Cities have to be a few tiles apart, so after the capital every settler is
 -- standing somewhere it cannot found. The first version handled that by
--- falling back to explore automation, which is why a game reached turn 50 with
+-- falling back to host-chosen wandering, which is why a game reached turn 50 with
 -- six units, one city, and two hundred settler orders: the settlers wandered,
 -- and wandering never becomes a city.
 --
@@ -1650,8 +1650,7 @@ local function orderSettler(player, pid, unit, turn)
 		-- ⚠ NO `reachable` GATE. It counts the plots in the path and demands
 		-- more than one, which is false for a site the settler is already
 		-- standing next to — so a settler one tile from a good site could
-		-- neither found nor move, fell through to AUTOMATE_EXPLORE (which a
-		-- settler cannot do), and ended on SKIP_TURN. Measured at turn 20 of
+		-- neither found nor move, and ended on SKIP_TURN. Measured at turn 20 of
 		-- run settler-20260730T001117Z: `UNIT_SETTLER:UNITOPERATION_SKIP_TURN=2`
 		-- with the empire still on one city. MOVE_TO fails harmlessly when the
 		-- site truly cannot be reached, so trying it is strictly safer.
@@ -1679,10 +1678,9 @@ local function orderSettler(player, pid, unit, turn)
 			end
 		end
 	end
-	-- A settler cannot explore, so this is nearly always nil; it is left as the
-	-- last resort rather than removed because a settler with nowhere to go is
-	-- better wandering than blocking the tile it stands on.
-	return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
+	-- No safe site is a reason to wait, not a license for the host to choose a
+	-- destination.  The next CIVVIS board will reconsider with fresh state.
+	return firstOperation(unit, { "UNITOPERATION_SKIP_TURN" });
 end
 
 local function orderBuilder(unit)
@@ -1845,8 +1843,8 @@ end
 
 -- The nearest ground we have SEEN that belongs to a civilization we have met.
 --
--- ★ WHY EXPLORING WAS NOT ENOUGH. `findWarTarget` needs a rival city plot to be
--- revealed, and letting two units run `AUTOMATE_EXPLORE` did not deliver one:
+-- ★ WHY GENERIC EXPLORATION WAS NOT ENOUGH. `findWarTarget` needs a rival city
+-- plot to be revealed, and generic frontier wandering did not deliver one:
 -- turn 120 of run settler-20260730T025856Z still read `target = None` with
 -- twenty units alive, so no war was declared and domination stayed impossible —
 -- while the rival's score ran to 493 against our 126. Automated explore seeks
@@ -2015,7 +2013,7 @@ end
 --
 -- `findWarTarget` needs HasMet AND a revealed rival city. Contact happens through units
 -- and reveals none of their land, so the revealed gate binds forever, and
--- `AUTOMATE_EXPLORE` charts terrain with no reason to walk toward anybody.
+-- Generic frontier wandering charts terrain with no reason to walk toward anybody.
 --
 -- The frontier is the answer available from earned knowledge alone: a plot WE HAVE SEEN
 -- that still has an unseen neighbour is the edge of our map, and the farthest such plot
@@ -2086,9 +2084,9 @@ local function frontierGround(player, pid, turn)
 	return best;
 end
 
-local function orderMilitary(unit, stillExploring, player, probeTo)
-	-- A probe with somewhere to be walks there. Automated explore is for charting
-	-- empty ground; finding a rival's city means going to a rival's border.
+local function orderMilitary(unit, player, probeTo)
+	-- A probe with somewhere to be walks there. Finding a rival's city means
+	-- choosing the rival's border explicitly rather than delegating a route.
 	if probeTo ~= nil then
 		local params = {};
 		params[UnitOperationTypes.PARAM_X] = probeTo.x;
@@ -2096,10 +2094,6 @@ local function orderMilitary(unit, stillExploring, player, probeTo)
 		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
 			return "probe";
 		end
-	end
-	if stillExploring then
-		local acted = firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
-		if acted then return acted; end
 	end
 	-- Heal first: a damaged garrison is not a garrison.
 	local damage = try(function() return unit:GetDamage(); end, 0) or 0;
@@ -2564,7 +2558,11 @@ local function orderFor(player, pid, unit, turn)
 	elseif name == "UNIT_BUILDER" then
 		return orderBuilder(unit);
 	elseif name == "UNIT_SCOUT" then
-		return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
+		-- The fallback still names a destination itself; it never asks the host
+		-- to invent one. `frontierGround` is memoized for the turn, so scouts
+		-- fan toward the same known map edge rather than each receiving a blind
+		-- autonomous route.
+		return orderMilitary(unit, player, frontierGround(player, pid, turn)) or orderIdle(unit);
 	elseif name == "UNIT_BATTERING_RAM" or name == "UNIT_SIEGE_TOWER" then
 		-- ⚠ SUPPORT UNITS HAVE Combat = 0, so the military branch below never sees
 		-- them. Without this branch a battering ram would be built and then fall
@@ -2621,7 +2619,6 @@ local function orderFor(player, pid, unit, turn)
 		-- turn while actually just exploring. The counter read as though
 		-- reconnaissance were happening; the only honest signal was that `probe`
 		-- never appeared in the action histogram.
-		local probing = false;
 		local probeTo = nil;
 		if not early and defended and warTarget == nil
 				and probesOut < (cfg.ProbeUnits or 2) then
@@ -2634,11 +2631,10 @@ local function orderFor(player, pid, unit, turn)
 			end
 			probeDest = probeTo and (probeTo.x .. ":" .. probeTo.y) or nil;
 			if probeTo ~= nil then
-				probing = true;
 				probesOut = probesOut + 1;
 			end
 		end
-		return orderMilitary(unit, early or probing, player, probeTo);
+		return orderMilitary(unit, player, probeTo);
 	end
 	return nil;
 end
@@ -2646,8 +2642,8 @@ end
 -- Work the game's own ready list rather than every unit the player owns.
 --
 -- Iterating all units and re-issuing an order to each looks equivalent and is
--- not: a unit that was told to explore last turn is still owned, still has
--- movement, and being told to explore again *restarts* it, so the ready list
+-- not: a unit with a host operation still in progress is still owned, still has
+-- movement, and reissuing an operation can restart it, so the ready list
 -- never empties and the same turn is ordered forever. GetFirstReadyUnit is the
 -- same query the shipped interface uses to decide whether units are holding up
 -- the turn, so working it to exhaustion is exactly the human loop.
@@ -13307,8 +13303,7 @@ local function applyOrder(player, pid, row, turn)
 			-- while the mirror keeps reporting an undeveloped empire and CIVVIS orders
 			-- another builder.
 			--
-			-- Same shape as `ExploreUnassigned`, and the same honesty applies: this is a
-			-- POLICY. It does not pick a tile or an improvement — Civ 6's own builder
+			-- This is a POLICY. It does not pick a tile or an improvement — Civ 6's own builder
 			-- automation does — and it only ever runs where CIVVIS's own choice was
 			-- refused. Reported as `IMPROVE_AUTOMATED` so it is never counted as CIVVIS's.
 			if cfg.AutomateStuckBuilders ~= false
@@ -13667,7 +13662,7 @@ local function applyOrder(player, pid, row, turn)
 			return ok, ok and verb or (why or "condemn_refused");
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
-		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
+		-- ALERT, SKIP_TURN, HEAL, BUILD_IMPROVEMENT,
 		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
 		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- `operate` selects
 		-- the shipped UnitPanel's two-argument request for these.
@@ -14324,78 +14319,6 @@ CivvisQueue.giveUp = function(turn)
 	CivvisQueue.report(turn, "stalled");
 end;
 
--- ★★★★ A HELD SOLDIER IS NOT AN IDLE ONE. `applyOrders` hands every combat
--- unit CIVVIS did not mention to `UNITOPERATION_AUTOMATE_EXPLORE`, which was
--- right for a peacetime army parked in its capital and wrong for the one
--- CIVVIS meant to hold in contact — a hold produces no order, and the host's
--- automation then walked the unit wherever it liked. Visible hostile combat
--- units and at-war cities within `ExploreGuardRadius` tiles keep the unit
--- where CIVVIS left it. Computed once per turn, only when the hand-off asks.
-CivvisQueue.contactPlots = function(pid, turn)
-	local q = CivvisQueue;
-	if q.contactTurn == turn and q.contacts ~= nil then return q.contacts; end
-	local plots = {};
-	local diplomacy = try(function() return Players[pid]:GetDiplomacy(); end);
-	local visible = function(x, y)
-		return try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) == true;
-	end
-	local combatUnit = function(unit)
-		return try(function()
-			local row = GameInfo.Units[unit:GetUnitType()];
-			return row ~= nil and ((row.Combat or 0) > 0 or (row.RangedCombat or 0) > 0);
-		end, false) == true;
-	end
-	local addUnits = function(other)
-		pcall(function()
-			for _, unit in other:GetUnits():Members() do
-				local ux, uy = unit:GetX(), unit:GetY();
-				if visible(ux, uy) and combatUnit(unit) then
-					plots[#plots + 1] = { x = ux, y = uy };
-				end
-			end
-		end);
-	end
-	pcall(function()
-		for _, oid in ipairs(PlayerManager.GetAliveIDs() or {}) do
-			if oid ~= pid then
-				local other = Players[oid];
-				local barbarian = try(function() return other:IsBarbarian(); end, false) == true;
-				local free = try(function()
-					return other.IsFreeCities ~= nil and other:IsFreeCities() == true;
-				end, false) == true;
-				local atWar = diplomacy ~= nil
-					and try(function() return diplomacy:IsAtWarWith(oid); end, false) == true;
-				if other ~= nil and (barbarian or free or atWar) then
-					addUnits(other);
-					if atWar then
-						pcall(function()
-							for _, city in other:GetCities():Members() do
-								local cx, cy = city:GetX(), city:GetY();
-								if visible(cx, cy) then plots[#plots + 1] = { x = cx, y = cy }; end
-							end
-						end);
-					end
-				end
-			end
-		end
-	end);
-	q.contacts = plots;
-	q.contactTurn = turn;
-	return plots;
-end;
-
-CivvisQueue.inContact = function(pid, unit, turn)
-	local radius = tonumber(cfg.ExploreGuardRadius) or 4;
-	local ux = tonumber(try(function() return unit:GetX(); end, -1)) or -1;
-	local uy = tonumber(try(function() return unit:GetY(); end, -1)) or -1;
-	if ux < 0 then return false; end
-	for _, plot in ipairs(CivvisQueue.contactPlots(pid, turn)) do
-		local d = tonumber(try(function() return Map.GetPlotDistance(ux, uy, plot.x, plot.y); end, -1)) or -1;
-		if d >= 0 and d <= radius then return true; end
-	end
-	return false;
-end;
-
 -- --------------------------------------------------------- host-grounded board
 --
 -- ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. `mirror_unit_moves`
@@ -14417,7 +14340,7 @@ end;
 --     the brain re-plans the rest from the real position next turn — no path
 --     is left queued to walk the unit somewhere stale;
 --   * combat units that enter the turn with a queued destination anyway (an
---     older order, the fallback ladder, explore automation) get
+--     older order, the fallback ladder, or a stale host operation) get
 --     `UNITCOMMAND_CANCEL` at turn start, so the brain owns them from the next
 --     turn on. Civilians keep theirs: a settler's long walk is exactly what a
 --     queued path is for.
@@ -14951,7 +14874,7 @@ end;
 -- local player's ordinary visibility and applies while the Settler is
 -- travelling as well as on its first city departure.  Its matching escort row
 -- is held too, so refusing the civilian cannot leave the soldier walking into
--- the threat or being handed to explore automation.
+-- the threat or being moved by the host.
 CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 	local player = try(function() return Players[pid]; end, nil);
 	if player == nil then return; end
@@ -15271,8 +15194,8 @@ end;
 -- Cancel stale host movement on combat units before the board owns them.
 --
 -- `GetQueuedDestination` catches an ordinary multi-turn MOVE_TO, but it is
--- deliberately nil while the host is running `AUTOMATE_EXPLORE`: the unit
--- exports as `activity = "operation"` instead.  That left a second driver on
+-- deliberately nil while a stale host operation is active: the unit exports
+-- as `activity = "operation"` instead.  That left a second driver on
 -- a unit CIVVIS had just planned.  In run civvis-20260831T195447Z the Slinger
 -- was sent to (38,14) on replan frame 1, the operation instead walked it to
 -- (38,11), and a later frame had no movement left to leave a Spearman plus
@@ -15460,10 +15383,10 @@ local function applyOrders(player, pid, turn, rows)
 		if perKind == nil then perKind = {}; refusedByKind[kind] = perKind; end
 		perKind[why] = (perKind[why] or 0) + 1;
 	end
-	-- The board may answer an intra-turn replan while a previous fallback
-	-- `AUTOMATE_EXPLORE` is still active.  Preempt that host operation before
-	-- applying an order for the same combat unit; otherwise the request can be
-	-- accepted and still lose the race to the host's explorer.  Do not scan
+	-- The board may answer an intra-turn replan while a stale host operation is
+	-- still active. Preempt it before applying an order for the same combat
+	-- unit; otherwise the request can be accepted and still lose the race to
+	-- the host's prior operation. Do not scan
 	-- unmentioned units here: their disposition remains the opening-frame
 	-- fallback below, while named units are unequivocally CIVVIS's to drive.
 	if cfg.CancelQueuedPaths ~= false then
@@ -15714,9 +15637,10 @@ local function applyOrders(player, pid, turn, rows)
 		end
 	end
 
-	-- Great People go first, before the explore handoff: they cannot explore,
-	-- and CIVVIS cannot mention them — the mirror drops `UNIT_GREAT_*` by
-	-- design. See `orderGreatPerson` for what this is and is not.
+	-- Great People go first, before the unmentioned-unit holding pass: they
+	-- cannot be represented on the planner's unit board, and the mirror drops
+	-- `UNIT_GREAT_*`, so CIVVIS cannot mention them. See `orderGreatPerson` for
+	-- what this is and is not.
 	local gpActivated, gpMoving, gpRetired, gpIdle = 0, 0, 0, 0;
 	local gpHandled = {};
 	if cfg.GreatPeopleUse ~= false then
@@ -15733,27 +15657,22 @@ local function applyOrders(player, pid, turn, rows)
 		end);
 	end
 
-	-- ★★★★ UNITS CIVVIS DID NOT MENTION GO TO THE GAME'S OWN EXPLORE AUTOMATION.
+	-- ★★★★ CIVVIS OWNS EVERY UNIT MOVEMENT.
 	--
-	-- ⚠ BE HONEST ABOUT WHAT THIS IS: it is a policy, and therefore a decision. It is
-	-- here because the alternative is also a decision — a unit nobody ordered stands
-	-- still — and standing still is what made domination unreachable. Measured at turn
-	-- 21 of run civvis-20260730T132023Z: three units alive and the FURTHEST was **1
-	-- tile** from the capital. Across whole games `met` stalls at 1-2 of 3 rivals, ZERO
-	-- rival cities are ever seen, and an army of 20+ has nothing it can attack.
-	--
-	-- What it deliberately does NOT do is choose a destination. `AUTOMATE_EXPLORE` is
-	-- Civilization VI's own automation, so the game picks where to go; this only decides
-	-- that an idle unit should be doing something. Every unit CIVVIS actually assigns is
-	-- untouched, and the count is reported separately as `explored` so a run's telemetry
-	-- never presents this as CIVVIS's work.
-	local explored, guarded, rangedProtected = 0, 0, 0;
-	local guardedHeld = 0;
-	local rangedProtectedHeld = 0;
+	-- A missing row means the planner chose no movement on this board; it does
+	-- not delegate a destination to Civilization VI.  This is especially
+	-- important for a unit whose apparent safety depends on retaining movement:
+	-- the live Slinger that crossed into a combined Spearman + Quadrireme
+	-- envelope did so under a host-selected route and could not retreat after
+	-- the board saw the threat.  Explicit movement comes only from CIVVIS rows.
+	-- Everything else gets a position-preserving order so it cannot block the
+	-- turn, and is reconsidered from a fresh board next turn.
+	local unmentionedHeld, unmentionedHeldApplied = 0, 0;
 	local civiliansSkipped = 0;
-	-- ⚠ NEVER on a combat frame: every unit not named by the frame's answer
-	-- was ordered by the opening board and is exactly where CIVVIS left it.
-	if cfg.ExploreUnassigned ~= false and (awaiting.frame or 0) == 0 then
+	-- NEVER on a combat frame: every unit not named by the frame's answer was
+	-- already dispositioned by the opening board and is exactly where CIVVIS
+	-- left it.
+	if (awaiting.frame or 0) == 0 then
 		local mentioned = {};
 		for _, row in ipairs(rows) do
 			if tostring(row.kind or "") == "unit" then
@@ -15765,84 +15684,27 @@ local function applyOrders(player, pid, turn, rows)
 			if id == -1 or mentioned[id] or gpHandled[id] then return; end
 			if CivvisBoard.escortHolds[id] then return; end
 			local name = unitTypeName(unit);
-			-- Civilians cannot explore, and a settler that wanders is a settler that
-			-- never founds — this project has already paid for both. Both remain
-			-- true: nothing below hands a civilian to `AUTOMATE_EXPLORE`.
-			--
-			-- ⚠⚠ BUT NOT EXPLORING IS NOT THE SAME AS HAVING NO ORDERS, and this
-			-- returned bare. Civilization VI will not end a turn while ANY unit
-			-- still awaits orders, civilian included, so an unmentioned Settler
-			-- or Builder blocked the turn exactly as the guarded soldier beside
-			-- it did. Seven of the nineteen `ENDTURN_BLOCKING_UNITS` turns in run
-			-- civvis-20260828T165926Z had an unordered civilian on them.
-			--
-			-- SKIP_TURN and nothing else. Fortify would be wrong for a civilian,
-			-- Alert wrong for a Trader, and Explore is the thing the comment
-			-- above forbids. Skipping changes no gameplay — the unit stays
-			-- exactly where CIVVIS left it and is re-planned next turn — it only
-			-- tells the engine the turn may end.
+			-- Civilians receive SKIP_TURN and nothing else. Fortify would be
+			-- wrong for a civilian and Alert wrong for a Trader. Skipping changes
+			-- no gameplay — the unit stays exactly where CIVVIS left it and is
+			-- re-planned next turn — it only tells the engine the turn may end.
 			local gp = try(function() return unit:GetGreatPerson(); end);
+			unmentionedHeld = unmentionedHeld + 1;
 			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER"
 					or name == "UNIT_TRADER"
 					or (gp ~= nil and try(function() return gp:IsGreatPerson(); end, false)) then
 				if operate(unit, OP["UNITOPERATION_SKIP_TURN"], {}) then
+					unmentionedHeldApplied = unmentionedHeldApplied + 1;
 					civiliansSkipped = civiliansSkipped + 1;
 				end
 				return;
 			end
-			-- A ranged unit is a tactical asset, not a safe generic explorer.
-			-- The host's automation consumes its whole move before CIVVIS receives
-			-- the revealed board, which is exactly how the live Slinger reached a
-			-- combined lethal envelope with `moves = 0`.  The Rust controller owns
-			-- ranged movement already and sums every visible attack source before
-			-- it chooses a retreat; keep the unit available for that decision until
-			-- it explicitly assigns one.  Scouts and melee units retain the
-			-- peacetime exploration fallback below.
-			local ranged = try(function()
-				local row = GameInfo.Units[unit:GetUnitType()];
-				return row ~= nil and (row.RangedCombat or 0) > 0;
-			end, false) == true;
-			if ranged then
-				rangedProtected = rangedProtected + 1;
-				if firstOperation(unit, { "UNITOPERATION_FORTIFY",
-						"UNITOPERATION_ALERT", "UNITOPERATION_SKIP_TURN" }) then
-					rangedProtectedHeld = rangedProtectedHeld + 1;
-				end
-				return;
-			end
-			-- A held soldier stays held: see `CivvisQueue.contactPlots`.
-			--
-			-- ⚠⚠⚠ HELD IS NOT THE SAME AS UNORDERED, AND THIS RETURNED WITHOUT
-			-- ORDERING ANYTHING. Civilization VI will not end a turn while a
-			-- unit still awaits orders, so a soldier CIVVIS did not mention and
-			-- the guard kept off explore automation had no disposition at all
-			-- and blocked the turn forever.
-			--
-			-- Measured 2026-08-28, run civvis-20260828T161408Z, at turn 105:
-			--   by={"produce_next":2,"sell":1}  explored=2  guarded=5
-			-- then blocked(ENDTURN_BLOCKING_UNITS) -> dismissed(forced) ->
-			-- residual_unblock -> blocked ... repeating until the wedge
-			-- watchdog killed the attempt. The `sample` taken first (#2698)
-			-- showed the Game Core thread parked in `_pthread_cond_wait` for
-			-- 1342 of 1406 samples: the engine was not busy, it was waiting for
-			-- the orders these five units were never given. That game had
-			-- reached turn 105 with seven cities — the best run of the day.
-			--
-			-- Holding is what the guard MEANS, so say it to the engine. Fortify
-			-- first (a unit in contact should dig in and it keeps the defence
-			-- bonus), Alert second (it wakes on an approach), Skip last, which
-			-- always succeeds and is the difference between a held unit and a
-			-- dead turn.
-			if cfg.ExploreGuard ~= false and CivvisQueue.inContact(pid, unit, turn) then
-				guarded = guarded + 1;
-				if firstOperation(unit, { "UNITOPERATION_FORTIFY",
-						"UNITOPERATION_ALERT", "UNITOPERATION_SKIP_TURN" }) then
-					guardedHeld = guardedHeld + 1;
-				end
-				return;
-			end
-			if operate(unit, OP["UNITOPERATION_AUTOMATE_EXPLORE"], {}) then
-				explored = explored + 1;
+			-- A held soldier must still receive an operation: leaving it ready
+			-- produces ENDTURN_BLOCKING_UNITS and can wedge the run. Fortify
+			-- preserves position with defense first, Alert second, Skip last.
+			if firstOperation(unit, { "UNITOPERATION_FORTIFY",
+					"UNITOPERATION_ALERT", "UNITOPERATION_SKIP_TURN" }) then
+				unmentionedHeldApplied = unmentionedHeldApplied + 1;
 			end
 		end);
 	end
@@ -15856,23 +15718,16 @@ local function applyOrders(player, pid, turn, rows)
 		-- Verdict rows on an earlier turn's orders, re-emitted as events; see
 		-- CivvisVerify. Not orders, so not in `seen`.
 		verdicts = verdicts,
-		-- Not part of `applied`: these are units CIVVIS said nothing about.
-		explored = explored,
-		-- Unmentioned combat units kept off the explore automation because a
-		-- hostile stood within `ExploreGuardRadius`; see `CivvisQueue.inContact`.
-		explore_guarded = guarded,
-		-- Of those, the ones the engine accepted a holding operation
-		-- for. A gap between these two is a unit that can still block
-		-- the end of the turn.
-		explore_guarded_held = guardedHeld,
-		-- Ranged combat units that were not handed to the host's autonomous
-		-- explorer.  They are held so a newly visible combined threat is still
-		-- evaluated with their movement available on the next CIVVIS board.
-		explore_ranged_protected = rangedProtected,
-		explore_ranged_protected_held = rangedProtectedHeld,
-		-- Unmentioned civilians told to skip so the turn can end. They are
-		-- never explored (see the branch): this is only the difference
-		-- between "idle" and "idle and blocking".
+		-- Retained as a literal zero for readers of historical events: this mod
+		-- never asks the host to choose an exploration route.
+		explored = 0,
+		-- Every unmentioned unit is held by the bridge rather than moved by the
+		-- host. A gap between these two is a unit the engine may still report as
+		-- ready, so the end-turn parking pass can diagnose it.
+		unmentioned_held = unmentionedHeld,
+		unmentioned_held_applied = unmentionedHeldApplied,
+		-- Unmentioned civilians told to skip so the turn can end; this is the
+		-- civilian portion of `unmentioned_held_applied`.
 		civilians_skipped = civiliansSkipped,
 		-- MOVE_TOs sent as this turn's leg of a longer host path, and moves
 		-- refused because the unit could not take even the first step this
@@ -17371,9 +17226,8 @@ local function tick()
 					-- The pass is complete for units CIVVIS MENTIONED. A unit can
 					-- go ready again inside the same turn — it finishes the walk
 					-- the opening board gave it, and a REPLAN FRAME does not
-					-- re-run the unassigned pass (by design: `ExploreUnassigned`
-					-- is skipped whenever `frame > 0`, because a unit CIVVIS is
-					-- manoeuvring must not be handed to explore automation).
+					-- re-run the unassigned pass (it is skipped whenever `frame > 0`,
+					-- because the opening frame already parked each unmentioned unit).
 					-- Nothing then dispositions it, `ENDTURN_BLOCKING_UNITS`
 					-- stands, and answering "civvis_complete" told us it was
 					-- handled while the turn died.

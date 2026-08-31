@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Generate the divergence queue: what live play and the rules audit disagree on.
 
-`docs/fidelity/QUEUE.md` is generated, never edited. Its rows come from three
+`docs/fidelity/QUEUE.md` is generated, never edited. Its rows come from four
 sources, each tolerated when absent:
 
-- **live refusals** — every refusal reason above `--refusal-share` (default 5%)
-  of its order kind over the last `--last` runs (a local runs directory or the
-  pulled ledger, `tools/live_ledger.py pull`), via `civ6_ladder.orders_by_kind`;
+- **live refusals** — every request-side refusal reason above
+  `--refusal-share` (default 5%) of its order kind over the last `--last` runs
+  (a local runs directory or the pulled ledger, `tools/live_ledger.py pull`),
+  via `civ6_ladder.orders_by_kind`;
+- **live postcondition failures** — every receiving-side failure above that
+  same share of its kind's explicitly checkable outcomes, via
+  `civ6_ladder.postconditions_by_kind`;
 - **the divergence scoreboard** — rows of `docs/fidelity/SCOREBOARD.md`
   (`tools/live_divergence.py`) whose MAE is above their subsystem's threshold;
 - **the rules-data audit** — unwaived divergences from a `civ6_fidelity.py
@@ -74,6 +78,50 @@ def live_rows(root: Path, last: int, share: float) -> list[dict]:
         rows.append({"when": when, "source": "live", "ref": tag,
                      "what": f"`{kind}` refused `{reason}`",
                      "number": f"{n}/{total} = {100.0 * n / total:.1f}% of the kind"})
+    return rows
+
+
+def postcondition_rows(root: Path, last: int, share: float) -> list[dict]:
+    """Failed receiving-side outcomes above ``share`` of their checkable kind.
+
+    A host call that returns true is only the issuing side of an order.  The
+    verifier writes an ``order_failed`` event only after the next state frame
+    shows that the requested effect did not land.  Keep these rows separate
+    from ``live_rows``: their denominator is explicit checkable verdicts, not
+    all requests, and legacy verdicts without an order kind cannot safely
+    implicate a named kind.
+    """
+    first_seen: dict[tuple[str, str], str] = {}
+    checked: dict[str, int] = {}
+    failed: dict[tuple[str, str], int] = {}
+    for body in live_ledger.summaries(root, last):
+        events = live_ledger.events_path(body["_dir"])
+        block = civ6_ladder.postconditions_by_kind(events) if events else None
+        if not block:
+            continue
+        stamp = body.get("finished_utc") or ""
+        tag = str(body.get("tag") or body["_dir"].name)
+        for kind, row in block.items():
+            if kind in ("*", civ6_ladder.POSTCONDITION_UNATTRIBUTED):
+                continue
+            if not isinstance(row, dict):
+                continue
+            checked[kind] = checked.get(kind, 0) + int(row.get("verified") or 0) + int(
+                row.get("failed") or 0)
+            for reason, n in (row.get("reasons") or {}).items():
+                key = (kind, str(reason))
+                failed[key] = failed.get(key, 0) + int(n or 0)
+                first_seen.setdefault(key, f"{stamp} {tag}")
+    rows = []
+    for (kind, reason), n in failed.items():
+        total = checked.get(kind, 0)
+        if total <= 0 or n / total <= share:
+            continue
+        when, _, tag = first_seen[(kind, reason)].partition(" ")
+        rows.append({"when": when, "source": "postcondition", "ref": tag,
+                     "what": f"`{kind}` failed postcondition `{reason}`",
+                     "number": (f"{n}/{total} = {100.0 * n / total:.1f}% "
+                                "of checkable outcomes")})
     return rows
 
 
@@ -172,11 +220,17 @@ def build(root: Path | None, *, last: int, share: float, scoreboard: Path,
     sources = {}
     if root is not None and Path(root).is_dir():
         live = live_rows(root, last, share)
+        postconditions = postcondition_rows(root, last, share)
         rows += live
+        rows += postconditions
         sources["live refusals"] = (f"{len(live)} above {100 * share:.0f}% of their kind "
                                     f"({Path(root).name}, last {last})")
+        sources["live postcondition failures"] = (
+            f"{len(postconditions)} above {100 * share:.0f}% of checkable outcomes "
+            f"({Path(root).name}, last {last})")
     else:
         sources["live refusals"] = "no runs directory"
+        sources["live postcondition failures"] = "no runs directory"
     board = scoreboard_rows(scoreboard, threshold)
     rows += board
     sources["scoreboard"] = (f"{len(board)} above threshold ({scoreboard.name})"

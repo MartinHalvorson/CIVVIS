@@ -1,6 +1,7 @@
--- A host explore operation is not a queued destination: Civilization VI reports
--- it as ACTIVITY_OPERATION.  Drive the shipped agent against a small fake host
--- so a stale auto-explorer cannot override CIVVIS's tactical order.
+-- A stale host operation is not a queued destination: Civilization VI reports
+-- it as ACTIVITY_OPERATION. Drive the shipped agent against a small fake host
+-- so a legacy operation cannot override CIVVIS's tactical order, and prove the
+-- agent never asks the host to select an exploration route.
 --
 -- Run: lua5.1 tools/civ6_control/mod/auto_explore_cancellation_test.lua
 
@@ -194,7 +195,13 @@ local function row(subject, verb, x, y)
 	return { kind = "unit", subject = subject, verb = verb, x = x, y = y }
 end
 
--- 1. An active auto-explore operation has no queued destination, but must be
+local sourceFile = assert(io.open(here .. "/CivvisControlAgent.lua", "r"))
+local agentSource = sourceFile:read("*a")
+sourceFile:close()
+check("agent never requests host auto-explore",
+	agentSource:find("UNITOPERATION_AUTOMATE_EXPLORE", 1, true) == nil, true)
+
+-- 1. An active legacy operation has no queued destination, but must be
 -- cancelled at turn start before it can spend another movement point.
 reset()
 host.units[11] = { id = 11, kind = "UNIT_SLINGER", x = 1, y = 1, moves = 2,
@@ -204,30 +211,27 @@ check("active operation is cancelled without a queued destination", calls(11),
 	"command:UNITCOMMAND_CANCEL")
 check("active operation count is reported", field(lastEvent("queued_paths"), "active_operations"), 1)
 
--- 2. A replan's explicit MOVE_TO preempts the lingering explorer before its
--- own request, so the host cannot accept the order then keep walking elsewhere.
+-- 2. A replan's explicit MOVE_TO preempts the lingering host operation before
+-- its own request, so the host cannot accept the order then keep walking elsewhere.
 reset()
 host.units[12] = { id = 12, kind = "UNIT_SLINGER", x = 1, y = 1, moves = 2,
 	activity = "operation" }
 applyOrders(player, PID, 7, { row(12, "MOVE_TO", 2, 1) })
-check("CIVVIS order preempts host explorer first", calls(12),
+check("CIVVIS order preempts host operation first", calls(12),
 	"command:UNITCOMMAND_CANCEL,operation:UNITOPERATION_MOVE_TO")
 
--- 3. An unmentioned ranged unit is held, not handed to the host's generic
--- explorer; a Warrior still retains the established exploration fallback.
+-- 3. Every unmentioned unit is held. The planner must name a destination;
+-- neither a Slinger nor a Warrior is delegated to the host.
 reset()
 host.units[13] = { id = 13, kind = "UNIT_SLINGER", x = 1, y = 1, moves = 2,
 	activity = "awake" }
-applyOrders(player, PID, 7, {})
-check("unmentioned ranged unit is held", calls(13), "operation:UNITOPERATION_FORTIFY")
-check("ranged protection is counted", field(lastEvent("orders"), "explore_ranged_protected"), 1)
-
-reset()
 host.units[14] = { id = 14, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2,
 	activity = "awake" }
 applyOrders(player, PID, 7, {})
-check("unmentioned melee unit still explores", calls(14),
-	"operation:UNITOPERATION_AUTOMATE_EXPLORE")
+check("unmentioned ranged unit is held", calls(13), "operation:UNITOPERATION_FORTIFY")
+check("unmentioned melee unit is held", calls(14), "operation:UNITOPERATION_FORTIFY")
+check("every unmentioned unit is counted", field(lastEvent("orders"), "unmentioned_held"), 2)
+check("every hold is accepted", field(lastEvent("orders"), "unmentioned_held_applied"), 2)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))
