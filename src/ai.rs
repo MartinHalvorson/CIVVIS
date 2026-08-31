@@ -529,7 +529,8 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 /// off — a setting that is serialized and restored from saves. Without the
 /// bound such a game runs past its limit forever. With score enabled the bound
 /// never fires first, because `set_winner` runs inside `do_end_turn` before
-/// this condition is tested again.
+/// this condition is tested again. A score-disabled world is recorded as a
+/// draw when the bounded loop reaches its cap, matching the server stepper.
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
     // A headless rollout never serializes a player observation between
     // actions. Explored ground, contacts and Natural-Wonder discovery remain
@@ -550,6 +551,7 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
             let _ = g.apply(pid, &Action::EndTurn);
         }
     }
+    g.finish_at_turn_limit();
 }
 
 // ----------------------------------------------------------------- RandomAi
