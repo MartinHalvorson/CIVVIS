@@ -423,6 +423,34 @@ class MirrorCheckTest(unittest.TestCase):
             civ6_mirror_check.minor_fact_mismatches(state, board, 44)[0],
         )
 
+    def test_city_state_military_uses_the_host_observation_not_unit_sum(self) -> None:
+        state = {"rivals": [], "minors": [{
+            "player": 6, "civ": "CIVILIZATION_KABUL", "score": 91,
+            "military": 128, "envoys": 3, "suzerain": 0,
+            "cities": [{"x": 18, "y": 35, "name": "Kabul"}],
+        }]}
+        board = {
+            "players": [{
+                "id": 6, "civ": "Kabul", "is_minor": True, "is_barbarian": False,
+                "score": 91, "military": 135, "observed_military": 128,
+                "my_envoys": 3, "suzerain": 0,
+            }],
+            "cities": [{"owner": 6, "pos": [14, 9], "name": "Kabul"}],
+        }
+        self.assertEqual(civ6_mirror_check.minor_fact_mismatches(state, board, 44), [])
+
+        board["players"][0]["observed_military"] = 127
+        self.assertIn(
+            "kabul military Civ6=128",
+            civ6_mirror_check.minor_fact_mismatches(state, board, 44)[0],
+        )
+
+        # A pre-observed-military board remains compatible with the checker;
+        # there is no host-only value to compare on that older wire.
+        board["players"][0].pop("observed_military")
+        board["players"][0]["military"] = 128
+        self.assertEqual(civ6_mirror_check.minor_fact_mismatches(state, board, 44), [])
+
     def test_renamed_city_state_matches_capital_not_legacy_type(self) -> None:
         state = {"rivals": [], "minors": [{
             "player": 8, "civ": "CIVILIZATION_JAKARTA", "score": 33,
