@@ -23,7 +23,9 @@ PLAY_LOGS=$BASE/civvis-climb-logs
 AUDIT_LOG=$BASE/civvis-civ6-runs/overnight_audit.log
 HOST_LAUNCHER=${CIVVIS_HOST_LAUNCHER:-$SELF_DIR/civvis-ladder-terminal-launcher.sh}
 MIRROR_KEEPER=${CIVVIS_MIRROR_KEEPER:-$SELF_DIR/civvis-mirror-keeper.sh}
-DISPLAY_KEEPER=${CIVVIS_DISPLAY_KEEPER:-$BASE/civvis-display-keeper.mjs}
+# The keeper is tracked beside this script now; the old home-directory copy
+# was an untracked deployment that outlived every teardown.
+DISPLAY_KEEPER=${CIVVIS_DISPLAY_KEEPER:-$SELF_DIR/civvis-display-keeper.mjs}
 SUPERVISOR_LOCK=${CIVVIS_SUPERVISOR_LOCK:-$BASE/.civvis-game-supervisor.lock}
 SUPERVISOR_PID_FILE=$SUPERVISOR_LOCK/pid
 JQ=/opt/homebrew/bin/jq
@@ -140,6 +142,17 @@ collect_display_page() {
 typeset -a warnings actions
 warnings=()
 actions=()
+
+# The durable operator halt (`gamelock.py --halt`). This audit's whole job is
+# restarting pieces of the game stack that have gone missing — host, mirror
+# keeper, display keeper — which is exactly what must NOT happen while the
+# operator has the machine's games stopped. Every keeper it would revive is a
+# window or an input driver over whatever the operator is doing instead.
+operator_halt=${CIVVIS_OPERATOR_HALT_FILE:-$HOME/.civvis-operator-halt.json}
+if [[ -e "$operator_halt" ]]; then
+  say "operator halt in force; auditing nothing and starting nothing"
+  exit 0
+fi
 
 host_pid=$(first_pid '[c]ivvis-interactive-host\.sh')
 supervisor_pid=$(live_supervisor_pid || true)
