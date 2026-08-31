@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from collections import Counter
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -17,6 +20,30 @@ import civ6_mirror_check  # noqa: E402
 
 
 class MirrorCheckTest(unittest.TestCase):
+    def test_unavailable_live_mirror_is_reported_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "state", "turn": 1}) + "\n")
+            output = io.StringIO()
+            with (
+                mock.patch.object(
+                    civ6_mirror_check,
+                    "live_runtime_problems",
+                    return_value=[],
+                ),
+                mock.patch.object(
+                    civ6_mirror_check.urllib.request,
+                    "urlopen",
+                    side_effect=OSError("connection refused"),
+                ),
+                redirect_stdout(output),
+            ):
+                result = civ6_mirror_check.main([temporary])
+
+        self.assertEqual(result, 1)
+        self.assertIn("MIRROR  ⚠ unavailable", output.getvalue())
+        self.assertIn("connection refused", output.getvalue())
+
     def test_live_state_is_exact_while_turn_completion_is_in_flight(self) -> None:
         self.assertTrue(civ6_mirror_check.exact_host_frame(96, 96, 95))
         self.assertFalse(civ6_mirror_check.exact_host_frame(96, 95, 95))
