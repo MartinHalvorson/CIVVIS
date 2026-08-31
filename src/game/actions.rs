@@ -1007,12 +1007,15 @@ impl Game {
                         if !self.map.tiles.contains_key(&pos) {
                             continue;
                         }
-                        let hit = self.unit_ids_at(pos).iter().any(|oid| {
-                            let o = &self.units[oid];
-                            o.owner != pid
-                                && self.is_at_war(pid, o.owner)
-                                && self.rules.units[o.kind].class == "military"
-                        });
+                        // See `peaceful_foreign_unit_at`: a city strike is a
+                        // plot order too, and the host picks its defender.
+                        let hit = !self.peaceful_foreign_unit_at(pid, pos)
+                            && self.unit_ids_at(pos).iter().any(|oid| {
+                                let o = &self.units[oid];
+                                o.owner != pid
+                                    && self.is_at_war(pid, o.owner)
+                                    && self.rules.units[o.kind].class == "military"
+                            });
                         if hit
                             && self.city_at(pos).is_none()
                             && self.encampment_at(pos).is_none()
@@ -1039,12 +1042,15 @@ impl Game {
                         continue;
                     };
                     for pos in self.wdisk(source, 2) {
-                        let hit = self.unit_ids_at(pos).iter().any(|id| {
-                            let other = &self.units[id];
-                            other.owner != pid
-                                && self.is_at_war(pid, other.owner)
-                                && self.rules.units[other.kind].class == "military"
-                        });
+                        // See `peaceful_foreign_unit_at`: same plot order, same
+                        // host-chosen defender, same surprise war.
+                        let hit = !self.peaceful_foreign_unit_at(pid, pos)
+                            && self.unit_ids_at(pos).iter().any(|id| {
+                                let other = &self.units[id];
+                                other.owner != pid
+                                    && self.is_at_war(pid, other.owner)
+                                    && self.rules.units[other.kind].class == "military"
+                            });
                         if hit
                             && self.city_at(pos).is_none()
                             && self.encampment_at(pos).is_none()
@@ -1619,15 +1625,56 @@ impl Game {
         acts
     }
 
-    pub(super) fn enemy_combat_target_at(&self, pid: usize, pos: Pos) -> bool {
-        for oid in self.unit_ids_at(pos) {
+    /// Whether a unit belonging to a player we are NOT at war with stands on
+    /// `pos`. Barbarians and Free Cities read as at war through
+    /// [`Game::is_at_war`], so only a real peace — or a teammate — vetoes.
+    ///
+    /// ★★★★★ A STRIKE IS ADDRESSED TO A PLOT, NOT TO A UNIT, AND THE HOST
+    /// PICKS THE DEFENDER.
+    ///
+    /// `civvis_orders` emits `Attack` and `RANGE_ATTACK` as coordinates, so
+    /// every plot-addressed strike is a bet that the defender Civ 6 chooses
+    /// is the one we aimed at. The gates below were all existential
+    /// (`.any()`): ONE at-war military unit standing there made the whole
+    /// plot legal, and a unit we are at peace with beside it never got a
+    /// vote. When the host then resolves the blow against THAT unit, the
+    /// engine starts a war nobody declared and books 150 grievances.
+    ///
+    /// Measured 2026-08-29 over 95 live runs: of 3,832 deduped
+    /// plot-addressed strikes, 24 were aimed at a plot whose own state frame
+    /// showed a foreign unit we were at peace with — 19 a major's, 5 a
+    /// minor's, and every one of them a civilian (TRADER, MISSIONARY,
+    /// APOSTLE, BUILDER) stacked with or replacing a barbarian.
+    /// `civvis-20260827T183146Z` t53 shot (56,35), a Brazilian MISSIONARY on
+    /// a barbarian WARRIOR; `civvis-20260827T191140Z` t57 shot (56,30), a
+    /// Maya TRADER with a barbarian SCOUT; `civvis-20260828T142735Z` t58
+    /// shot (70,23), a Mongolian TRADER with a barbarian WARRIOR.
+    ///
+    /// There is no way to aim a plot order past the bystander, so the cure
+    /// is to not send it. This is the veto every plot-addressed strike gate
+    /// asks first.
+    pub(crate) fn peaceful_foreign_unit_at(&self, pid: usize, pos: Pos) -> bool {
+        self.unit_ids_at(pos).iter().any(|oid| {
             let unit = &self.units[oid];
-            if unit.owner != pid
-                && self.is_at_war(pid, unit.owner)
-                && self.rules.units[unit.kind].class == "military"
-                && self.rules.units[unit.kind].domain.as_deref() != Some("air")
-            {
-                return true;
+            unit.owner != pid && !self.is_at_war(pid, unit.owner)
+        })
+    }
+
+    pub(super) fn enemy_combat_target_at(&self, pid: usize, pos: Pos) -> bool {
+        // The veto covers the unit scan only. A city or an Encampment on the
+        // plot is always its own defender — an attack on one cannot be
+        // resolved against a bystander standing in it — so the two branches
+        // below stay reachable with a peaceful unit on the tile.
+        if !self.peaceful_foreign_unit_at(pid, pos) {
+            for oid in self.unit_ids_at(pos) {
+                let unit = &self.units[oid];
+                if unit.owner != pid
+                    && self.is_at_war(pid, unit.owner)
+                    && self.rules.units[unit.kind].class == "military"
+                    && self.rules.units[unit.kind].domain.as_deref() != Some("air")
+                {
+                    return true;
+                }
             }
         }
         if let Some(cid) = self.city_at(pos) {
@@ -1676,6 +1723,12 @@ impl Game {
         if self.enemy_combat_target_at(pid, pos) {
             return true;
         }
+        // Same plot, same veto: `enemy_combat_target_at` has already refused
+        // the ground scan, and a support unit or a fighter's patrol station
+        // does not make the bystander underneath it any safer to hit.
+        if self.peaceful_foreign_unit_at(pid, pos) {
+            return false;
+        }
         self.units.values().any(|unit| {
             // Standing over the tile is the necessary condition, and it is two
             // field reads; deciding a war is not. Ask it first, of a scan that
@@ -1692,13 +1745,17 @@ impl Game {
 
     pub(super) fn enemy_ranged_target_at(&self, pid: usize, pos: Pos) -> bool {
         self.enemy_combat_target_at(pid, pos)
-            || self.units.values().any(|unit| {
-                unit.air_patrol
-                    && unit.air_patrol_pos == Some(pos)
-                    && unit.owner != pid
-                    && self.is_at_war(pid, unit.owner)
-                    && self.rules.units[unit.kind].promotion_class == "air_fighter"
-            })
+            // An enemy fighter's patrol station is not a reason to shell the
+            // plot it covers when someone we are at peace with is standing
+            // on it: the host resolves the shot against the ground unit.
+            || (!self.peaceful_foreign_unit_at(pid, pos)
+                && self.units.values().any(|unit| {
+                    unit.air_patrol
+                        && unit.air_patrol_pos == Some(pos)
+                        && unit.owner != pid
+                        && self.is_at_war(pid, unit.owner)
+                        && self.rules.units[unit.kind].promotion_class == "air_fighter"
+                }))
     }
 
     /// Whether the engine will accept `Ranged { unit: uid, target }` right
@@ -3101,6 +3158,13 @@ impl Game {
                 city_id = None;
             }
         }
+        // See `peaceful_foreign_unit_at`. The enumeration above no longer
+        // offers this plot; refuse it here too so a hand-written order — or a
+        // replay of one the host already mangled — cannot take the same shot.
+        // A city is its own defender, so only the unit fight is vetoed.
+        if city_id.is_none() && self.peaceful_foreign_unit_at(pid, target) {
+            return Err("a unit we are at peace with stands there".into());
+        }
         if enemy_ids.is_empty() && city_id.is_none() {
             return Err("nothing to attack".into());
         }
@@ -3465,6 +3529,11 @@ impl Game {
             if owner == pid || !self.is_at_war(pid, owner) {
                 city_id = None;
             }
+        }
+        // See `peaceful_foreign_unit_at`, and `do_attack` for why the city
+        // branch stays open.
+        if city_id.is_none() && self.peaceful_foreign_unit_at(pid, target) {
+            return Err("a unit we are at peace with stands there".into());
         }
         let military: Vec<u32> = enemy_ids
             .iter()
@@ -5786,6 +5855,20 @@ impl Game {
         })
     }
 
+    /// Warrior Monks are a religious-unit unlock attached to the player's
+    /// founded religion, not a generic faith discount for military units.
+    /// Keeping this separate from the Theocracy/Masonry faith-purchase gate
+    /// prevents the unit from becoming available to every military-faith
+    /// buyer once the roster contains it.
+    fn player_has_warrior_monks_belief(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .and_then(|player| player.religion.as_deref())
+            .is_some_and(|religion| {
+                self.religion_belief_effect(religion, "warrior_monk_purchase") > 0.0
+            })
+    }
+
     /// Memoized front door for [`Game::unit_purchase_cost_for_formation_uncached`],
     /// scoped like [`Game::tile_appeal`] rather than like `producible_items`:
     /// cached only for the life of one [`QueryMemo`] guard (see
@@ -5861,13 +5944,14 @@ impl Game {
         }
 
         let religious = spec.class == "religious";
+        let warrior_monk = unit == "warrior_monk";
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
         let nihang = unit == "nihang"
             && formation == 0
             && currency == "faith"
             && self.grants_city_state_unique_bonus(pid, "Lahore");
-        if formation > 0 && (religious || rock_band || naturalist) {
+        if formation > 0 && (religious || warrior_monk || rock_band || naturalist) {
             return None;
         }
         if !nihang
@@ -5879,6 +5963,16 @@ impl Game {
         }
         if rock_band || naturalist {
             if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
+                return None;
+            }
+        } else if warrior_monk {
+            if currency != "faith"
+                || !self.player_has_warrior_monks_belief(pid)
+                || !self.unlocked(pid, &spec.tech, &spec.civic)
+                || spec.requires_building.as_ref().is_some_and(|building| {
+                    !self.city_has_building_family(city, Name::new(building))
+                })
+            {
                 return None;
             }
         } else if religious {
@@ -6083,6 +6177,7 @@ impl Game {
             return Err("no such unit".into());
         };
         let religious = spec.class == "religious";
+        let warrior_monk = unit == "warrior_monk";
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
         let nihang = unit == "nihang"
@@ -6098,7 +6193,7 @@ impl Game {
         if unit == "spy" {
             return Err("Spies cannot be purchased with Gold or Faith".into());
         }
-        if formation > 0 && (rock_band || naturalist || religious) {
+        if formation > 0 && (rock_band || naturalist || religious || warrior_monk) {
             return Err("that unit cannot be purchased as a formation".into());
         }
         // Isolationism closes the frontier to Gold and Faith as well as to
@@ -6109,6 +6204,21 @@ impl Game {
         if rock_band || naturalist {
             if currency != "faith" || !self.unlocked(pid, &spec.tech, &spec.civic) {
                 return Err(format!("{unit} is unlocked and purchased with faith"));
+            }
+        } else if warrior_monk {
+            if currency != "faith" {
+                return Err("Warrior Monks are bought with faith".into());
+            }
+            if !self.player_has_warrior_monks_belief(pid) {
+                return Err("Warrior Monks require the founded religion's belief".into());
+            }
+            if !self.unlocked(pid, &spec.tech, &spec.civic) {
+                return Err("not unlocked".into());
+            }
+            if spec.requires_building.as_ref().is_some_and(|building| {
+                !self.city_has_building_family(&self.cities[&cid], Name::new(building))
+            }) {
+                return Err("required religious building is missing".into());
             }
         } else if religious {
             if currency != "faith" {
@@ -6220,7 +6330,7 @@ impl Game {
             self.units.get_mut(&placed).unwrap().charges +=
                 self.governor_effect(pid, cid, "builder_charges") as i32;
         }
-        if religious {
+        if religious || warrior_monk {
             self.units.get_mut(&placed).unwrap().religion =
                 self.city_religion(&self.cities[&cid]).map(str::to_string);
         }
@@ -7330,6 +7440,11 @@ impl Game {
         if !self.has_line_of_sight(self.cities[&cid].pos, target, true) {
             return Err("line of sight blocked".into());
         }
+        // See `peaceful_foreign_unit_at`. The scan below is existential and
+        // would happily name the barbarian standing beside a rival's Trader.
+        if self.peaceful_foreign_unit_at(pid, target) {
+            return Err("a unit we are at peace with stands there".into());
+        }
         let enemies: Vec<u32> = self
             .unit_ids_at(target)
             .iter()
@@ -7431,6 +7546,10 @@ impl Game {
         }
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
             return Err("defensible districts cannot target each other".into());
+        }
+        // See `peaceful_foreign_unit_at`.
+        if self.peaceful_foreign_unit_at(pid, target) {
+            return Err("a unit we are at peace with stands there".into());
         }
         let defender_id = self
             .units_at(target)

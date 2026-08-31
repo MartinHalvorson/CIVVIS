@@ -611,6 +611,18 @@ while true; do
     sleep 5
   fi
 
+  # The ownership scan above runs before the fetch/build/mirror-preflight
+  # work.  That work is long enough for an independent harness to start and
+  # claim Civ VI after the scan; launching into it produces an instant
+  # "something already holds the game" failure and falsely burns a ladder
+  # cycle.  Recheck at the launch boundary and leave the other owner alone.
+  LAUNCH_UNOWNED_PID=$(unowned_harness_pid || true)
+  if [[ -n "$LAUNCH_UNOWNED_PID" ]]; then
+    say "an unowned Civ VI harness appeared during preflight (pid $LAUNCH_UNOWNED_PID); leaving it alone and retrying in 60s"
+    sleep 60
+    continue
+  fi
+
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
   say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
@@ -631,11 +643,15 @@ while true; do
   # that re-execs onto a newer GitHub revision mid-game turns one fresh-build
   # game into an unrepeatable mixture of programs; fetch and build again only
   # at the next game boundary.
+  # Every production ladder row is Rome.  Do not inherit the climb's default:
+  # an upstream default change must not silently change the civilization that
+  # the live ledger compares.
   CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
   CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --refresh-seconds 0 \
       --difficulty "$DIFFICULTY" \
+      --leader LEADER_TRAJAN \
       "${WITHOUT_ARGS[@]}" \
       "${WITH_ARGS[@]}" \
       "${TIMEOUT_ARGS[@]}" \

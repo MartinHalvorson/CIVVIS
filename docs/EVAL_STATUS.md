@@ -47,8 +47,8 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **234**
-- Reachable as a gene `gene_screen` can vary: **195**
+- Capability toggles on the controller: **246**
+- Reachable as a gene `gene_screen` can vary: **207**
 - Measured by at least one screen: **73**
 - Resolved by the ledger (helps or hurts): **16**
 - **Unreachable by any screen: 39**
@@ -73,14 +73,14 @@ Unreachable:
 
 ## Live ladder
 
-- Attempts recorded: **637**
-- Configured attempts: **630**
+- Attempts recorded: **650**
+- Configured attempts: **642**
 - Terminal outcomes: **326**
 - Configured wins: **23**
-- Latest ledger entry: **2026-08-26T08:29:44Z**
+- Latest ledger entry: **2026-08-30T11:23:20Z**
 
 - Attempts that ran the full clock: **207**, median score **544**, best **1606**
-- Graded against the best rival: **325** of 207 finished attempts; rival bar median **572**, our lead median **-179**, best **+759**, ahead in **46**
+- Graded against the best rival: **337** of 207 finished attempts; rival bar median **597**, our lead median **-182**, best **+759**, ahead in **46**
 - Lost to a rival's victory before the clock: **117** (diplomatic 58, culture 42, technology 11, religious 5, conquest 1), of which **17** while our own score was the highest on the board
 - The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 229), diplomatic 202–247 (median 241), religious 75–233 (median 170), technology 227–246 (median 242)
 

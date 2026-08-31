@@ -493,6 +493,21 @@ class DeciderRebuildTests(unittest.TestCase):
         self.assertIn("--no-build", note)
 
 
+class DeciderProvenanceTests(unittest.TestCase):
+    """The climb names the executable, not only the Python bridge checkout."""
+
+    def test_the_attempt_log_line_names_the_binary_digest_and_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "civvis_orders"
+            binary.write_bytes(b"decider image")
+            line = climb.decider_provenance_line(binary)
+
+        self.assertIn("revision=unknown", line)
+        self.assertIn("source=unverified-binary", line)
+        self.assertIn(climb.hashlib.sha256(b"decider image").hexdigest(), line)
+        self.assertIn(str(binary), line)
+
+
 class ClimbBudgetTests(_Harness, unittest.TestCase):
     # ---- the regression itself -------------------------------------------------
 
@@ -1548,21 +1563,31 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         saves = [
             Path("/saves/AutoSave_0181.Civ6Save"),
             Path("/saves/AutoSave_0180.Civ6Save"),
+            Path("/saves/AutoSave_0179.Civ6Save"),
         ]
         finder = lambda newer_than=None: saves
         frozen = {"last_turn": 181}
 
+        # ⚠⚠ THE FIRST STEP BACK IS THE PARKED TURN ITSELF. This asserted that
+        # resume 1 reloads AutoSave_0181 — the save written AT the turn that
+        # hung — which reproduces the hang and spends half the budget on a board
+        # already known to fail. Live 2026-08-30: run civvis-20260830T131438Z
+        # parked at t44, `-cont1` reloaded AutoSave_0044 and parked AT THE SAME
+        # TURN ON THE SAME BLOCKER, and only `-cont2` on AutoSave_0043 escaped —
+        # then the game reached t112 with 8 cities and had no resume left when
+        # it parked again. The name of this test was always the right contract;
+        # the numbers were one step behind it.
         self.assertEqual(
             climb.resume_from_autosave(
                 frozen, "frozen", 0, args, 1234.5, recent=finder,
             ),
-            saves[0],
+            saves[1],
         )
         self.assertEqual(
             climb.resume_from_autosave(
                 frozen, "frozen", 1, args, 1234.5, recent=finder,
             ),
-            saves[1],
+            saves[2],
         )
 
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
@@ -1577,8 +1602,12 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        # ⚠ ONE TURN BACK, not the parked turn's own save. `resume_from_autosave`
+        # skips the autosave written AT the turn that hung, because reloading it
+        # reproduces the hang — so `AutoSave_0102.Civ6Save` for a t102 freeze is
+        # no longer a candidate and no resume would be attempted at all.
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0102.Civ6Save")
+            Path("/saves/AutoSave_0101.Civ6Save")
         ]
         climb.subprocess.Popen = Recording
         try:
@@ -1602,15 +1631,19 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertNotEqual(row.get("reason"), "attempt frozen",
                             "a resumed-and-finished game is not 'attempt frozen'")
         cont = row["resumed_from"] + "-cont1"
+        # `from_turn` is the turn that FROZE; `save` is the board reloaded, which
+        # is one turn back because the parked turn's own save reproduces the hang.
         self.assertEqual(row["resumes"], [{"tag": cont, "from_turn": 102,
-                                           "save": "AutoSave_0102.Civ6Save"}])
+                                           "save": "AutoSave_0101.Civ6Save"}])
 
         plays = [argv for argv in spawned if any("civ6_play.py" in str(w) for w in argv)]
         self.assertEqual(len(plays), 2, "the original launch and one continuation")
         first, second = plays
         self.assertNotIn("--load-save", first)
         self.assertIn("--load-save", second)
-        self.assertEqual(second[second.index("--load-save") + 1], "/saves/AutoSave_0102.Civ6Save")
+        # One turn back: the parked turn's own save reproduces the hang, so it is
+        # not a candidate. See `resume_from_autosave`.
+        self.assertEqual(second[second.index("--load-save") + 1], "/saves/AutoSave_0101.Civ6Save")
         self.assertEqual(second[second.index("--tag") + 1], cont)
         self.assertEqual(first[first.index("--tag") + 1], row["resumed_from"])
         # Everything else about the continuation is the original command.
@@ -1629,17 +1662,24 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                          without(second, "--tag", "--orders-db", "--load-save"))
 
     def test_the_resume_budget_is_bounded_and_the_last_freeze_is_the_row(self):
-        verdicts = ["frozen", "frozen", "frozen"]
+        # ⚠ The budget is THREE — a game can park more than once at DIFFERENT
+        # turns (run civvis-20260830T223229Z parked at t66, was rescued one turn
+        # back, played 27 more turns, then parked again at t93). So this needs a
+        # fourth verdict to prove the fourth attempt is refused. The save list is
+        # long because autosaves accumulate one per turn and the resume floor is
+        # t20; a short list would force the stride to clamp onto a board that
+        # just failed.
+        verdicts = ["frozen", "frozen", "frozen", "frozen"]
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0150.Civ6Save"),
-            Path("/saves/AutoSave_0149.Civ6Save"),
+            Path(f"/saves/AutoSave_{n:04d}.Civ6Save") for n in range(160, 130, -1)
         ]
         try:
             code, rows = self.climb_with(
-                [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151}],
+                [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151},
+                 {"last_turn": 158}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
@@ -1647,20 +1687,28 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         row = rows[0]
-        self.assertEqual(row["last_turn"], 151)
+        self.assertEqual(row["last_turn"], 158)
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
-        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140])
+        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140, 151])
+        # One back, four back, nine back — RESUME_STEPS = (0, 3, 8) against the
+        # list with the parked turn's own save removed. Each attempt reaches a
+        # board the last one did not.
         self.assertEqual([r["save"] for r in row["resumes"]],
-                         ["AutoSave_0150.Civ6Save", "AutoSave_0149.Civ6Save"])
-        self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont2"))
+                         ["AutoSave_0160.Civ6Save", "AutoSave_0157.Civ6Save",
+                          "AutoSave_0152.Civ6Save"])
+        self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont3"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
         verdicts = ["frozen", "exited"]
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        # ⚠ ONE TURN BACK, not the parked turn's own save. `resume_from_autosave`
+        # skips the autosave written AT the turn that hung, because reloading it
+        # reproduces the hang — so `AutoSave_0102.Civ6Save` for a t102 freeze is
+        # no longer a candidate and no resume would be attempted at all.
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0102.Civ6Save")
+            Path("/saves/AutoSave_0101.Civ6Save")
         ]
         try:
             code, rows = self.climb_with(
@@ -1683,8 +1731,12 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         saved_wait = climb.wait_watching_the_turn
         saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        # ⚠ ONE TURN BACK, not the parked turn's own save. `resume_from_autosave`
+        # skips the autosave written AT the turn that hung, because reloading it
+        # reproduces the hang — so `AutoSave_0102.Civ6Save` for a t102 freeze is
+        # no longer a candidate and no resume would be attempted at all.
         climb._recent_autosaves = lambda newer_than=None: [
-            Path("/saves/AutoSave_0102.Civ6Save")
+            Path("/saves/AutoSave_0101.Civ6Save")
         ]
         try:
             code, rows = self.climb_with([{"last_turn": 102}], attempts=1,
@@ -1807,6 +1859,16 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             "--restart-below-leader-ratio",
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_the_play_command_always_selects_rome(self):
+        """Even a direct caller cannot pass another leader through the climb."""
+        for requested in (None, "LEADER_TOKUGAWA", "LEADER_TRAJAN"):
+            with self.subTest(requested=requested):
+                cmd = climb.play_command(
+                    self._play_args(leader=requested), "t",
+                    Path("orders.sqlite"), Path("civvis_orders"))
+                leader = cmd.index("--leader")
+                self.assertEqual(cmd[leader + 1], climb.ROMAN_LEADER)
 
     def test_the_mid_turn_frames_reach_the_play_command(self):
         """The combat frame (#2132) was never forwarded by the climb, so no
@@ -1969,6 +2031,107 @@ class TheWedgeWatchdogGetsThisBatchsBuildToo(unittest.TestCase):
                       "    retire_stale_wedge_watchdog()", source)
 
 
+class ExitWhileStaleIsFrozen(unittest.TestCase):
+    """⭐⭐⭐ THE WEDGE WATCHDOG'S KILL MUST REACH THE RESUME PATH.
+
+    Civ 6 writes an autosave every turn, and `resume_from_autosave` reloads one
+    into a FRESH Civ 6 — the only thing that recovers a parked core, whose own
+    process no longer answers input at all. But it runs ONLY for `why ==
+    "frozen"`, and `frozen_s` here is 900 s while the external wedge watchdog
+    signals the player after five confirmed one-minute samples. So the watchdog
+    always won the race, `play.wait()` returned, the attempt was filed as
+    "exited", and the autosave on disk was discarded.
+
+    The evidence is the run tags: seven `<tag>-contN` runs exist, every one from
+    08-17..19, and NONE since the watchdog began signalling — which is exactly
+    the window in which parked cores became the dominant way a run dies, taking
+    games as deep as t179 holding 15 cities at 0.763 of the leader.
+    """
+
+    class _DyingPlay:
+        """A player that exits on the Nth wait, as an outside signal makes it."""
+
+        def __init__(self, clock, step, die_on):
+            self.signalled = None
+            self._clock, self._step = clock, step
+            self._die_on, self._waits = die_on, 0
+
+        def wait(self, timeout=None):
+            self._waits += 1
+            self._clock["t"] += self._step
+            if self._waits >= self._die_on:
+                return 0
+            raise climb.subprocess.TimeoutExpired("play", timeout or 0)
+
+        def send_signal(self, sig):
+            self.signalled = sig
+
+        def kill(self):
+            pass
+
+    def _run(self, die_on, step=60.0, frozen_s=900.0):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run").mkdir()
+            (root / "run" / "events.jsonl").write_text(
+                json.dumps({"kind": "turn", "turn": 102}) + "\n")
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            clock = {"t": 0.0}
+            try:
+                play = self._DyingPlay(clock, step, die_on)
+                with mock.patch.object(climb.time, "time", lambda: clock["t"]):
+                    return climb.wait_watching_the_turn(
+                        play, "run", 100_000.0, frozen_s,
+                        locked_probe=lambda: False)
+            finally:
+                climb.RUN_ROOT = original
+
+    def test_a_player_killed_on_a_stale_turn_is_frozen_not_exited(self):
+        # The turn lands at t=60 and the player is signalled at t=360, so the
+        # turn had been stale for 300 s — past EXIT_WHILE_STALE_S (240 s), and
+        # about when the watchdog's fifth no-progress sample confirms a wedge.
+        self.assertEqual(self._run(die_on=6), "frozen")
+
+    def test_a_game_that_simply_ends_is_still_exited(self):
+        # Stale for only 60 s: an attempt reaching its own end screen must not
+        # be reloaded from an autosave.
+        self.assertEqual(self._run(die_on=2), "exited")
+
+    def test_the_threshold_sits_under_the_watchdogs_confirmation(self):
+        """The watchdog confirms over five 60 s samples; this must be below it
+        so its signal is what arrives, and above a normal end."""
+        self.assertLess(climb.EXIT_WHILE_STALE_S, 5 * 60)
+        self.assertGreaterEqual(climb.EXIT_WHILE_STALE_S, 3 * 60)
+
+
+class AbandonedGamesAreNotReloaded(unittest.TestCase):
+    """⚠ AN ABANDONED GAME MUST STAY ABANDONED.
+
+    The operator rule retires a run under 60% of the leader at turn 150+. A
+    retirement leaves the turn stale while the end screens settle, which now
+    reads as "frozen" — so without this guard the resume path would reload the
+    very game the rule had just ended.
+    """
+
+    def _args(self):
+        import argparse
+        return argparse.Namespace(max_resumes=2,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    def test_a_retired_attempt_is_not_resumed(self):
+        record = {"last_turn": 150, "retire_requested": True}
+        self.assertIsNone(climb.resume_from_autosave(
+            record, "frozen", 0, self._args(), 0.0,
+            latest=lambda newer_than=None: Path("/saves/AutoSave_0150.Civ6Save")))
+
+    def test_a_wedged_attempt_at_the_same_turn_still_is(self):
+        record = {"last_turn": 150}
+        self.assertEqual(
+            climb.resume_from_autosave(
+                record, "frozen", 0, self._args(), 0.0,
+                latest=lambda newer_than=None: Path("/s/AutoSave_0150.Civ6Save")),
+            Path("/s/AutoSave_0150.Civ6Save"))
 class TheKeepersOwnClearerGetsThisBatchsBuildToo(unittest.TestCase):
     """⚠⚠ It never did, and it silently ran yesterday's code for a whole day.
 
@@ -2020,3 +2183,168 @@ class TheKeepersOwnClearerGetsThisBatchsBuildToo(unittest.TestCase):
         self.assertIn("the keeper's own clearer so this", branch)
         self.assertLess(branch.index("the keeper's own clearer so this"),
                         branch.index("        return"))
+
+
+class ARivalsDefeatIsNotOurEnding(unittest.TestCase):
+    """⚠⚠⚠ A RIVAL'S ELIMINATION WAS READ AS THE GAME ENDING.
+
+    `outcome_of` treated every `victory` / `defeat` / `gameover` event as the
+    game reaching its end. Counting a rival's VICTORY is deliberate — that does
+    end the game — but a rival's DEFEAT is an elimination and the others play on.
+
+    Run `civvis-20260830T104408Z` emitted
+    `{"kind":"defeat","ours":false,"player":11,"turn":38}` for a seat knocked out
+    on turn 38 and then played to turn 88. The row recorded `end_screen_turn =
+    38` for a game that ran fifty turns longer, and because
+    `resume_from_autosave` refuses a run that already reached an end screen, it
+    blocked the reload of the FIRST wedge the watchdog handoff ever gave the
+    climb — with `AutoSave_0088.Civ6Save` sitting on disk.
+    """
+
+    # ⚠ NOT `_outcome`: unittest stores its own `_Outcome` result recorder on
+    # the instance under that name, so it silently shadows the framework and
+    # every call fails with "'_Outcome' object is not callable". The same trap
+    # is documented above.
+    def _row(self, *events):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run").mkdir()
+            (root / "run" / "events.jsonl").write_text(
+                "".join(json.dumps(event) + "\n" for event in events))
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            try:
+                return climb.outcome_of("run")
+            finally:
+                climb.RUN_ROOT = original
+
+    TURN = {"kind": "turn", "turn": 88, "score": 130}
+
+    def test_a_rival_knocked_out_does_not_end_our_game(self):
+        row = self._row(
+            {"kind": "defeat", "ours": False, "player": 11, "turn": 38},
+            self.TURN)
+        self.assertIsNone(row["end_screen_turn"], "the game played on to t88")
+        self.assertEqual(row["last_turn"], 88)
+
+    def test_our_own_defeat_still_ends_it(self):
+        row = self._row({"kind": "defeat", "ours": True, "turn": 38},
+                            self.TURN)
+        self.assertEqual(row["end_screen_turn"], 38)
+
+    def test_a_defeat_from_before_the_flag_is_still_ours(self):
+        """Only an explicit `ours: false` is excluded — an older event carries
+        no opinion, and every existing row already assumes it was ours."""
+        row = self._row({"kind": "defeat", "turn": 38}, self.TURN)
+        self.assertEqual(row["end_screen_turn"], 38)
+
+    def test_a_rivals_victory_still_ends_it(self):
+        """Deliberate, and unchanged: somebody else winning ends the game."""
+        row = self._row({"kind": "victory", "ours": False, "turn": 38},
+                            self.TURN)
+        self.assertEqual(row["end_screen_turn"], 38)
+
+
+class TheParkedTurnsSaveIsNeverReloaded(unittest.TestCase):
+    """⚠⚠ RELOADING THE TURN THAT JUST PARKED REPRODUCES THE PARK.
+
+    `saves` is newest first, so `saves[0]` is the autosave written AT the parked
+    turn — the very board that deadlocked. Measured twice:
+
+    - 2026-08-24: "reloading the exact same t181 save twice reproduced the same
+      engine-side PLEASE WAIT spin twice" — the observation this rotation exists
+      for.
+    - 2026-08-30: run `civvis-20260830T131438Z` parked at t44 on
+      `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN`; `-cont1` reloaded AutoSave_0044
+      and parked AT THE SAME TURN ON THE SAME BLOCKER; `-cont2` reloaded
+      AutoSave_0043 and played on to turn 112 with 8 cities.
+
+    The rotation walked one save back per attempt but started one step too late,
+    so the first attempt was always spent on the board known to fail — half of a
+    two-resume budget. That same game then parked again at t112 with nothing
+    left to recover with.
+    """
+
+    def _args(self):
+        import argparse
+        return argparse.Namespace(max_resumes=2,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    SAVES = [Path("AutoSave_0044.Civ6Save"),
+             Path("AutoSave_0043.Civ6Save"),
+             Path("AutoSave_0042.Civ6Save")]
+
+    def test_the_first_resume_skips_the_turn_that_parked(self):
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 0, self._args(), 0.0,
+            recent=lambda newer_than=None: list(self.SAVES))
+        self.assertEqual(got, Path("AutoSave_0043.Civ6Save"),
+                         "reloading t44 after parking at t44 is a spent resume")
+
+    def test_the_second_resume_reaches_well_past_the_first(self):
+        """⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK, so the second
+        attempt must not sample the board next door to the first.
+
+        Three parks on 2026-08-30: t44 escaped at one back and played on to t112;
+        t62 parked again at one back; t136 parked again at one back AND at two
+        back. The t136 game spent both attempts on boards one turn apart.
+        """
+        saves = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(44, 36, -1)]
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 1, self._args(), 0.0,
+            recent=lambda newer_than=None: list(saves))
+        self.assertEqual(got, Path("AutoSave_0040.Civ6Save"),
+                         "four turns back, not two")
+
+    def test_a_short_autosave_list_takes_the_oldest_it_has(self):
+        """The stride is a reach, not a requirement: with only two candidates the
+        second attempt takes the older rather than giving up."""
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 1, self._args(), 0.0,
+            recent=lambda newer_than=None: list(self.SAVES))
+        self.assertEqual(got, Path("AutoSave_0042.Civ6Save"))
+
+    def test_an_unparsable_name_is_kept_rather_than_dropped(self):
+        """A name this cannot read is still a candidate; dropping every save
+        would be a worse failure than reloading one."""
+        saves = [Path("civvis-resume.Civ6Save"), Path("AutoSave_0043.Civ6Save")]
+        got = climb.resume_from_autosave(
+            {"last_turn": 44}, "frozen", 0, self._args(), 0.0,
+            recent=lambda newer_than=None: list(saves))
+        self.assertEqual(got, Path("civvis-resume.Civ6Save"))
+
+
+class TheThirdResumeSamplesSomewhereNew(unittest.TestCase):
+    """⚠ A GAME CAN PARK MORE THAN ONCE, AT DIFFERENT TURNS.
+
+    Run `civvis-20260830T223229Z` parked at t66, was rescued ONE turn back,
+    played 27 more turns, and parked again at t93 — a genuinely new deadlock, not
+    a replay of the first. Across 2026-08-30, 5 of the 14 runs that used a resume
+    (36%) exhausted the budget, so a third attempt earns its place.
+
+    It needs its own stride index: without one it would reload the same board the
+    second attempt just failed on, which is the waste #2817 removed.
+    """
+
+    def _args(self):
+        import argparse
+        return argparse.Namespace(max_resumes=3,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    SAVES = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(93, 78, -1)]
+
+    def test_each_attempt_reaches_somewhere_the_last_did_not(self):
+        picks = [climb.resume_from_autosave(
+                     {"last_turn": 93}, "frozen", i, self._args(), 0.0,
+                     recent=lambda newer_than=None: list(self.SAVES))
+                 for i in range(3)]
+        self.assertEqual(len(set(picks)), 3, f"three distinct boards: {picks}")
+        self.assertEqual(picks, [Path("AutoSave_0092.Civ6Save"),
+                                 Path("AutoSave_0089.Civ6Save"),
+                                 Path("AutoSave_0084.Civ6Save")])
+
+    def test_a_fourth_attempt_is_refused(self):
+        """The budget still bounds the loop."""
+        self.assertIsNone(climb.resume_from_autosave(
+            {"last_turn": 93}, "frozen", 3, self._args(), 0.0,
+            recent=lambda newer_than=None: list(self.SAVES)))

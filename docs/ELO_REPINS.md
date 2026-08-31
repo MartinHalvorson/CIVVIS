@@ -1855,3 +1855,30 @@ was literally `volcano`. Soil beside Vesuvius, Kilimanjaro or Eyjafjallajokull
 therefore fell through to the coordinate-seeded fallback and pointed in an
 arbitrary direction, away from the only volcano on screen. Both now ask
 `isVolcano`, which reads the served `volcano` flag over a four-name roster.
+
+## v27 (2026-08-29) — superseded rules-data re-pin
+
+The full `tools/civ6_fidelity.py` audit against the installed Gathering Storm
+database appeared to find nine remaining field mismatches in rows CivVis already
+claimed. The patch interpreted the XML/cache discrepancy in the wrong direction:
+it changed Pike and Shot upkeep to 3, Tagma to 180/3/Tank, Prasat to 4 Faith and
+two Relics, Sukiennice to 3 Gold, Tlachtli to 1 Culture, and Eyjafjallajökull to
+2 adjacent Food.
+
+This was a shared rules change, not a controller treatment, and it was therefore
+caught by the restored anchor. The direct cache re-check below supersedes this
+entry; the current model does not use these nine inverted values.
+
+## v28 (2026-08-29) — the compiled cache is the effective Gathering Storm ruleset
+
+A direct read of the same machine's `DebugGameplay.sqlite`, followed by the
+full `tools/civ6_fidelity.py --check --max-divergences 0` audit, showed that v27
+had reversed the nine fields. The model is restored to Pike and Shot upkeep 4;
+Tagma 220 Production, 4 upkeep and Cuirassier upgrade; Prasat 6 Faith and one
+Relic; Sukiennice 2 Gold; Tlachtli 2 Culture; and Eyjafjallajökull adjacent Food
+1. The audit is again **0 divergent fields across 29 tables**.
+
+Because the restoration returns the shared rules to v26's effective values, the
+anchor returns to **18,515 decisions and `0x04f5_da2a_c86b_099c`**. The Bireme
+addition remains in the current rules fingerprint, which is
+`fnv1a64:627c58933728c2f1`.

@@ -3350,10 +3350,10 @@ mod tests {
         // was touched, since matching the raw column would have doubled every one.
         //
         // Moved again by the installed Gathering Storm load order: Pike and
-        // Shot maintenance is 3, Tagma costs 180 with 3 maintenance and upgrades
-        // directly to Tank, Prasat is Faith 4 with two Relic slots, Sukiennice
-        // is Gold 3, Tlachtli is Culture 1, Eyjafjallajökull gives adjacent Food
-        // 2, and Armagh's Monastery permits Hills. Mine accepts Hills, a valid
+        // Shot maintenance is 4, Tagma costs 220 with 4 maintenance and upgrades
+        // to Cuirassier, Prasat is Faith 6 with one Relic slot, Sukiennice
+        // is Gold 2, Tlachtli is Culture 2, Eyjafjallajökull gives adjacent Food
+        // 1, and Armagh's Monastery permits Hills. Mine accepts Hills, a valid
         // resource, or Volcanic Soil; Terrace Farm and Rock-Hewn Church accept
         // Hills or Volcanic Soil. The historical XML snippets that suggested
         // the opposite values are not the effective ruleset.
@@ -3617,10 +3617,42 @@ mod tests {
         // Eyjafjallajokull — so those three had been scenery: never active,
         // never drawn by the eruption lottery, and never the source of a hex
         // of Volcanic Soil.
+        // Moved again by completing the five Gathering Storm belief rows the
+        // fidelity audit had left outside the model: Papal Primacy and
+        // Stewardship (founder yields/pressure), Holy Waters and Monastic
+        // Isolation (religious healing/combat pressure), and Warrior Monks
+        // (faith purchase, Temple gate and Holy Site Culture Bomb). The
+        // Warrior Monk production cost was corrected from 200 to the shipped
+        // 100 at the same time; the Faith price remains the host's 200.
+        // Moved again by giving Phoenicia its shipped Bireme replacement: the
+        // 4-move, 35-strength Galley successor was visible in the installed
+        // `Expansion2_Units_Major.xml` row but CIVVIS had been falling back to
+        // the weaker generic Galley.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:63b1654facb5b19b"
+            "fnv1a64:627c58933728c2f1"
         );
+    }
+
+    #[test]
+    fn gathering_storm_unique_rows_match_the_installed_database() {
+        let rules = Rules::shipped();
+        let pike_and_shot = &rules.units["pike_and_shot"];
+        assert_eq!(pike_and_shot.maintenance, 4.0);
+
+        let tagma = &rules.units["tagma"];
+        assert_eq!(tagma.cost, 220.0);
+        assert_eq!(tagma.maintenance, 4.0);
+        assert_eq!(tagma.upgrade_to.as_deref(), Some("cuirassier"));
+
+        let prasat = &rules.buildings["prasat"];
+        assert_eq!(prasat.yields.faith, 6.0);
+        assert_eq!(prasat.great_work_slots["relic"], 1);
+        assert_eq!(rules.buildings["sukiennice"].yields.gold, 2.0);
+        assert_eq!(rules.buildings["tlachtli"].yields.culture, 2.0);
+
+        let eyjafjallajokull = &rules.features["eyjafjallajokull"];
+        assert_eq!(eyjafjallajokull.adjacent_yields.food, 1.0);
     }
 
     #[test]
@@ -4192,6 +4224,7 @@ mod tests {
             ("medic", "supply_convoy"),
             ("observation_balloon", "drone"),
             ("anti_air_gun", "mobile_sam"),
+            ("bireme", "caravel"),
             ("galley", "caravel"),
             ("caravel", "ironclad"),
             ("ironclad", "destroyer"),
@@ -4252,7 +4285,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 90);
+        assert_eq!(rules.units.len(), 91);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);

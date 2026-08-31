@@ -3121,6 +3121,148 @@ impl AdvancedAi {
         self.exhaustion_loyalty_guard = false;
     }
 
+    /// Once the empire holds three cities, no Settler starts while an owned
+    /// Settler has stood on one tile six turns; the same brake on the
+    /// `BasicAi` pipeline. See `AdvancedAi::settler_in_flight_allowed`.
+    pub fn enable_settler_backlog_brake(&mut self) {
+        self.settler_backlog_brake = true;
+        self.base.settler_backlog_brake = true;
+    }
+
+    /// The twin of `enable_settler_backlog_brake`.
+    pub fn disable_settler_backlog_brake(&mut self) {
+        self.settler_backlog_brake = false;
+        self.base.settler_backlog_brake = false;
+    }
+
+    /// A city grown to its housing (pop + 1 ≥ housing) with no Granary starts
+    /// one ahead of the argmax. See `AdvancedAi::first_granary_reserve`.
+    pub fn enable_first_granary_reserve(&mut self) {
+        self.first_granary_reserve = true;
+    }
+
+    /// The twin of `enable_first_granary_reserve`.
+    pub fn disable_first_granary_reserve(&mut self) {
+        self.first_granary_reserve = false;
+    }
+
+    /// Research the cheapest technology that connects an owned, unimproved
+    /// luxury (Irrigation, Sailing) ahead of the lane's beeline, once the
+    /// opening techs are in. See `AdvancedAi::unconnected_luxury_tech`.
+    pub fn enable_connect_the_luxury(&mut self) {
+        self.connect_the_luxury = true;
+    }
+
+    /// The twin of `enable_connect_the_luxury`.
+    pub fn disable_connect_the_luxury(&mut self) {
+        self.connect_the_luxury = false;
+    }
+
+    /// In peacetime, keep the seat's military power at four fifths of the
+    /// strongest bordering major's by buying the contact city's ranged
+    /// defender with Gold above a reserve. See
+    /// `AdvancedAi::border_parity_purchase`.
+    pub fn enable_border_parity(&mut self) {
+        self.border_parity = true;
+    }
+
+    /// The twin of `enable_border_parity`.
+    pub fn disable_border_parity(&mut self) {
+        self.border_parity = false;
+    }
+
+    /// One to four era points short of a Normal Age, patronize any Great
+    /// Person the bank can carry for its Historic Moment. See
+    /// `AdvancedAi::era_points_short`.
+    pub fn enable_age_closer(&mut self) {
+        self.age_closer = true;
+    }
+
+    /// The twin of `enable_age_closer`.
+    pub fn disable_age_closer(&mut self) {
+        self.age_closer = false;
+    }
+
+    /// Research a prerequisite-met technology whose Eureka is in hand and
+    /// whose remaining cost is at most two turns of science before the lane's
+    /// beeline resumes. See `AdvancedAi::boosted_bargain_tech`.
+    pub fn enable_boosted_bargain_first(&mut self) {
+        self.boosted_bargain_first = true;
+    }
+
+    /// The twin of `enable_boosted_bargain_first`.
+    pub fn disable_boosted_bargain_first(&mut self) {
+        self.boosted_bargain_first = false;
+    }
+
+    /// A wonder within twelve turns of done in one of the empire's strongest
+    /// cities opens the live wonder race without the three-city and
+    /// three-building guards, with a bonus that scales with how quickly it
+    /// finishes; a wonder further than twenty-five turns from done never
+    /// opens the ordinary race. See `AdvancedAi::wonder_bargain_city`.
+    pub fn enable_cheapest_wonder_first(&mut self) {
+        self.cheapest_wonder_first = true;
+    }
+
+    /// The twin of `enable_cheapest_wonder_first`.
+    pub fn disable_cheapest_wonder_first(&mut self) {
+        self.cheapest_wonder_first = false;
+    }
+
+    /// Version two of `border-parity`: the same target and Gold purchase,
+    /// and when the treasury cannot pay, the contact city's idle queue starts
+    /// the defender. See `AdvancedAi::border_parity_target`.
+    pub fn enable_border_parity_2(&mut self) {
+        self.border_parity_2 = true;
+    }
+
+    /// The twin of `enable_border_parity_2`.
+    pub fn disable_border_parity_2(&mut self) {
+        self.border_parity_2 = false;
+    }
+
+    pub fn enable_first_district_first(&mut self) {
+        self.first_district_first = true;
+    }
+
+    pub fn disable_first_district_first(&mut self) {
+        self.first_district_first = false;
+    }
+
+    pub fn enable_walls_after_districts(&mut self) {
+        self.walls_after_districts = true;
+    }
+
+    pub fn disable_walls_after_districts(&mut self) {
+        self.walls_after_districts = false;
+    }
+
+    /// The two-turn escort cap releases the settler on schedule instead of
+    /// being suspended by a predicate that reads only the visible frame, and
+    /// a settler already outside its own city with no guard on its tile
+    /// marches on a zero risk reading rather than fortifying bare. See
+    /// `AdvancedAi::stacked_escort_pace`.
+    pub fn enable_escort_cap_holds(&mut self) {
+        self.escort_cap_holds = true;
+    }
+
+    /// The twin of `enable_escort_cap_holds`.
+    pub fn disable_escort_cap_holds(&mut self) {
+        self.escort_cap_holds = false;
+    }
+
+    /// The civilian capture envelope counts every at-war owner and keeps
+    /// pricing a hostile the seat has seen for a few turns after it walks
+    /// back into the fog. See `AdvancedAi::barbarian_reach`.
+    pub fn enable_hostile_memory(&mut self) {
+        self.hostile_memory = true;
+    }
+
+    /// The twin of `enable_hostile_memory`.
+    pub fn disable_hostile_memory(&mut self) {
+        self.hostile_memory = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

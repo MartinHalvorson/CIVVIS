@@ -62,7 +62,7 @@
 //! Off, every touched path is byte-identical to before.
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
-use super::{AdvancedAi, SETTLEMENT_GLOBAL_PREFILTER_LIMIT};
+use super::{AdvancedAi, SETTLEMENT_GLOBAL_PREFILTER_LIMIT, SETTLER_STEP_RISK_LIMIT};
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};
 use crate::think;
@@ -168,35 +168,82 @@ impl AdvancedAi {
         .then_some("a rival border within five tiles may hide the city that would press it")
     }
 
-    /// Drop the sites `exhaustion_site_unpriceable` refuses from a candidate
-    /// list, saying so once. Nothing is dropped with the gene off.
-    fn set_aside_unpriceable_sites(&self, g: &Game, candidates: &mut Vec<(Pos, f64)>) {
-        if !(self.exhaustion_loyalty_guard && self.frontier_loyalty) {
+    /// Whether `site` sits inside a rival major's Loyalty sphere: a visible
+    /// rival-major city stands within the nine-tile pressure radius and no
+    /// own city stands as near. A city founded there loses about twenty
+    /// Loyalty a turn from turn one — run `civvis-20260829T050508Z` t56–t69
+    /// forecast −22 on each of the five plots nearest a stranded Settler
+    /// that had wandered between two Spanish cities, spent the forecast
+    /// retries on them, and held fourteen turns while sites eight tiles
+    /// nearer home would have passed. The forecast is the judge; this is the
+    /// cheap sieve that keeps its retries for plots that can pass.
+    pub(super) fn inside_rival_sphere(g: &Game, pid: usize, site: Pos) -> bool {
+        let mut nearest_rival: Option<i32> = None;
+        let mut nearest_own: Option<i32> = None;
+        for city in g.cities.values() {
+            let distance = g.wdist(city.pos, site);
+            if city.owner == pid {
+                nearest_own = Some(nearest_own.map_or(distance, |d| d.min(distance)));
+            } else if !g.players[city.owner].is_minor && !g.players[city.owner].is_barbarian {
+                nearest_rival = Some(nearest_rival.map_or(distance, |d| d.min(distance)));
+            }
+        }
+        match (nearest_rival, nearest_own) {
+            (Some(rival), Some(own)) => rival <= 9 && rival <= own,
+            (Some(rival), None) => rival <= 9,
+            _ => false,
+        }
+    }
+
+    /// Drop the sites `exhaustion_site_unpriceable` refuses, and the sites
+    /// inside a rival major's sphere, from a candidate list, saying so once.
+    /// Nothing is dropped with the gene off.
+    fn set_aside_unpriceable_sites(&self, g: &Game, pid: usize, candidates: &mut Vec<(Pos, f64)>) {
+        if !self.exhaustion_loyalty_guard {
             return;
         }
         let before = candidates.len();
         candidates.retain(|(pos, _)| self.exhaustion_site_unpriceable(g, *pos).is_none());
-        let set_aside = before - candidates.len();
-        if set_aside > 0 {
+        let unpriceable = before - candidates.len();
+        candidates.retain(|(pos, _)| !Self::inside_rival_sphere(g, pid, *pos));
+        let in_sphere = before - unpriceable - candidates.len();
+        if unpriceable > 0 {
             think!(self.journal(), Expansion, Detail,
-                   "Stranded Settler sets aside {set_aside} unpriceable site(s)";
+                   "Stranded Settler sets aside {unpriceable} unpriceable site(s)";
                    "each lies within five tiles of a rival border whose city may be hidden; \
                     the forecast cannot price that Loyalty pressure, and the exhaustion \
                     search will not guess at a city it would hand to that rival");
+        }
+        if in_sphere > 0 {
+            think!(self.journal(), Expansion, Detail,
+                   "Stranded Settler sets aside {in_sphere} site(s) inside a rival's sphere";
+                   "each stands nearer a visible rival major's city than any of ours, within \
+                    its nine-tile Loyalty reach; the forecast's retries are kept for plots \
+                    that can pass");
         }
     }
 
     /// The wider questions asked when the preferred search returns nothing.
     ///
     /// Tier 2: the advanced ranking over a stranded radius, with this
-    /// Settler's retired sites, the empire's threat deferrals and the fog
-    /// guesses set aside; a candidate is refused only when the engine's own
-    /// Loyalty calculation of a city founded there revolts inside
-    /// [`STRANDED_SITE_MIN_HOLD_TURNS`]. Tier 3: any legal reachable site,
-    /// nearest first. `None` when the map holds nothing this Settler can
-    /// reach.
+    /// Settler's retired sites, hysteresis avoidance, the empire's threat
+    /// deferrals and the fog guesses set aside; a candidate is refused only
+    /// when the engine's own Loyalty calculation of a city founded there
+    /// revolts inside [`STRANDED_SITE_MIN_HOLD_TURNS`]. Tier 3: any legal
+    /// reachable site, nearest first, with the same per-Settler exclusions.
+    /// `None` when the map holds nothing this Settler can reach.
     pub(super) fn settler_exhaustion_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         let from = g.units[&uid].pos;
+        // The normal target picker receives this exception explicitly, but
+        // the exhaustion fallback is also reached after a target was dropped
+        // for an unsafe route step. Keep the same cooldown here or the
+        // never-idles lane immediately resurrects the very site hysteresis
+        // retired (the live t103-t111 `(13,31)` loop). Expiry is checked here
+        // as well so direct watchdog/test callers do not inherit stale state.
+        let avoided = self
+            .settler_avoid
+            .get(&uid)
+            .and_then(|(position, until)| (*until > g.turn).then_some(*position));
         let radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
             g.map.width + g.map.height
         } else {
@@ -214,12 +261,13 @@ impl AdvancedAi {
             .filter(|(pos, _)| {
                 !g.blocked_city_sites.contains(pos)
                     && !self.settler_site_is_dead(uid, *pos)
-                    && (!self.settler_threat_detour
+                    && Some(*pos) != avoided
+                    && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
             .collect();
-        self.set_aside_unpriceable_sites(g, &mut ranked);
+        self.set_aside_unpriceable_sites(g, pid, &mut ranked);
         for _ in 0..=STRANDED_FORECAST_RETRIES {
             let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, &ranked) else {
                 break;
@@ -242,11 +290,18 @@ impl AdvancedAi {
                 }
             }
         }
-        // Tier 3: a city anywhere beats a Settler for ever. Nearest first,
-        // the position the tie-break — deliberately no site value here: the
-        // value is a growth forecast over a radius-2 disk per plot, and a
-        // stranded Settler asks this every recheck for every legal plot in
-        // the radius.
+        // Tier 3 normally asks for the nearest legal site.  The live bridge
+        // has one additional failure mode: the nearest legal fallback can be
+        // a visibly exposed, low-value plot even while a safer and more
+        // defensible site is available.  That is exactly how a stranded
+        // Settler was sent into the Gaul lane on t110 of the managed run.
+        // Reuse the normal site value and route-risk model for the live-only
+        // fallback, while keeping the historical nearest-site behavior for
+        // native/evaluator controllers.
+        let live_fallback_safety = self.live_settler_capture_lessons && self.settlement_safety;
+        let live_fallback_loyalty =
+            live_fallback_safety && (self.base.loyalty_rate_alarm || self.frontier_loyalty);
+        let visible = live_fallback_safety.then(|| self.battlefront_visibility(g, pid));
         let mut legal: Vec<(Pos, f64)> = g
             .wdisk(from, radius)
             .into_iter()
@@ -254,14 +309,53 @@ impl AdvancedAi {
                 self.base.valid_settle_site(g, pid, *pos)
                     && !g.blocked_city_sites.contains(pos)
                     && !self.settler_site_is_dead(uid, *pos)
-                    && (!self.settler_threat_detour
+                    && Some(*pos) != avoided
+                    && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
             })
-            .map(|pos| (pos, -(g.wdist(from, pos) as f64)))
+            .filter_map(|pos| {
+                if !live_fallback_safety {
+                    return Some((pos, -(g.wdist(from, pos) as f64)));
+                }
+                let visible = visible
+                    .as_ref()
+                    .expect("the live fallback owns a visibility frame");
+                // A fallback target is not allowed to be a tile a visible
+                // hostile can already take next turn.  If every legal plot
+                // is exposed, returning no target lets the emergency flee
+                // pass/stranded watchdog hold or retreat instead of knowingly
+                // marching into the capture envelope.
+                let tile_risk = self.settlement_tile_risk(g, pid, Some(uid), pos, visible);
+                if tile_risk > SETTLER_STEP_RISK_LIMIT {
+                    return None;
+                }
+                // The ranked exhaustion tier already forecasts Loyalty.  Keep
+                // that same guard on the live nearest/legal fallback: otherwise
+                // exhausting the ranked list would make the bridge deliberately
+                // choose a site the forecast just proved would revolt.
+                if live_fallback_loyalty && self.settle_site_loyalty_verdict(g, pid, pos).is_some()
+                {
+                    return None;
+                }
+                let site_value = self.settle_value_visible(g, pid, pos, visible);
+                let route_penalty = g
+                    .path_to(uid, pos)
+                    .map(|path| {
+                        let (movement_cost, route_risk) =
+                            self.settlement_route_risk(g, pid, uid, &path, visible);
+                        movement_cost * 0.8 + route_risk
+                    })
+                    .unwrap_or(0.0);
+                let distance_penalty = if radius > 12 { 0.78 } else { 1.25 };
+                Some((
+                    pos,
+                    site_value - distance_penalty * g.wdist(from, pos) as f64 - route_penalty,
+                ))
+            })
             .collect();
         legal.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
-        self.set_aside_unpriceable_sites(g, &mut legal);
+        self.set_aside_unpriceable_sites(g, pid, &mut legal);
         if self.exhaustion_loyalty_guard {
             // This tier ran no forecast at all: of the sixteen nearest-legal
             // foundings in the King runs of 2026-08-27..29, six read a
@@ -282,11 +376,19 @@ impl AdvancedAi {
                         legal.retain(|(pos, _)| *pos != site);
                     }
                     _ => {
-                        think!(self.journal(), Expansion, Detail,
-                               "Settler takes the nearest legal site at {site:?}";
-                               "no ranked site is reachable; a city {} tiles away beats a \
-                                Settler standing still, and the forecast says it holds",
-                               g.wdist(from, site); site);
+                        if live_fallback_safety {
+                            think!(self.journal(), Expansion, Detail,
+                                   "Settler takes the safest reachable legal site";
+                                   "no ranked site is reachable; {site:?} is {} tiles away and \
+                                    the forecast says it holds",
+                                   g.wdist(from, site); site);
+                        } else {
+                            think!(self.journal(), Expansion, Detail,
+                                   "Settler takes the nearest legal site at {site:?}";
+                                   "no ranked site is reachable; a city {} tiles away beats a \
+                                    Settler standing still, and the forecast says it holds",
+                                   g.wdist(from, site); site);
+                        }
                         return Some(site);
                     }
                 }
@@ -294,10 +396,19 @@ impl AdvancedAi {
             return None;
         }
         let site = BasicAi::first_reachable_settle_site(g, uid, &legal).map(|(pos, _)| pos)?;
-        think!(self.journal(), Expansion, Detail,
-               "Settler takes the nearest legal site at {site:?}";
-               "no ranked site is reachable; a city {} tiles away beats a Settler standing still",
-               g.wdist(from, site); site);
+        if live_fallback_safety {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler takes the safest reachable legal site";
+                   "no ranked site is reachable; {site:?} is {} tiles away and beats a Settler \
+                    standing still",
+                   g.wdist(from, site); site);
+        } else {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler takes the nearest legal site at {site:?}";
+                   "no ranked site is reachable; a city {} tiles away beats a Settler standing \
+                    still",
+                   g.wdist(from, site); site);
+        }
         Some(site)
     }
 
@@ -310,6 +421,7 @@ impl AdvancedAi {
         self.settler_closest.remove(&uid);
         if g.can_found_city(uid)
             && self.exhaustion_site_unpriceable(g, here).is_none()
+            && !(self.exhaustion_loyalty_guard && Self::inside_rival_sphere(g, pid, here))
             && !Self::settle_site_forecast_revolt(g, pid, here)
                 .is_some_and(|(_, turns)| turns < STRANDED_SITE_MIN_HOLD_TURNS)
         {
@@ -369,6 +481,50 @@ impl AdvancedAi {
     /// legal one, else toward what the exhaustion search finds, onto the
     /// first progressing tile the exact-reach rule allows. Founds when it
     /// stands on its target. Returns whether it acted.
+    /// Neighbours worth giving ground for, best first, when raiders already
+    /// cover the tile the settler stands on. Empty whenever holding is not the
+    /// losing move — nothing covers this tile, or nothing reachable beats it.
+    ///
+    /// Ordered by the fewest raiders that reach it, then the farthest from any
+    /// of them. ⚠ It deliberately ignores PROGRESS, which every other step
+    /// filter in this crate requires (`wdist(next, target) < distance` above,
+    /// `regress <= 0` in `settler_step_out_of_reach`). Retreat is correct only
+    /// here, because this is reached solely when standing still is losing.
+    fn cornered_retreats(
+        &self,
+        g: &Game,
+        uid: u32,
+        current: Pos,
+        reach: &BarbarianReach,
+    ) -> Vec<Pos> {
+        let here_covering = reach.raiders_covering(g, current);
+        if here_covering == 0 {
+            return Vec::new();
+        }
+        let here_nearest = reach.nearest(g, current);
+        let mut retreats: Vec<(usize, i32, Pos)> = g
+            .nbrs(current)
+            .into_iter()
+            .filter(|next| g.map.get(*next).is_some() && g.can_move(uid, *next))
+            .map(|next| {
+                (
+                    reach.raiders_covering(g, next),
+                    reach.nearest(g, next),
+                    next,
+                )
+            })
+            .filter(|(covering, nearest, _)| {
+                *covering < here_covering || (*covering == here_covering && *nearest > here_nearest)
+            })
+            .collect();
+        retreats.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        retreats.into_iter().map(|(_, _, pos)| pos).collect()
+    }
+
     pub(super) fn settler_watchdog_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
         if g.units[&uid].moves_left <= 0.0 {
@@ -376,7 +532,7 @@ impl AdvancedAi {
         }
         let cached = self.settler_targets.get(&uid).copied().filter(|target| {
             !self.settler_site_is_dead(uid, *target)
-                && (!self.settler_threat_detour
+                && (!self.settler_threat_detour_on()
                     || !self.settler_threat_deferrals.contains_key(target))
                 && !self.settler_target_reserved_by_other(g, pid, uid, *target)
                 && ((*target == current && g.can_found_city(uid))
@@ -437,6 +593,44 @@ impl AdvancedAi {
                        "Settler stops waiting and marches to {next:?}";
                        "it stood still {streak} turns; {target:?} is {distance} tiles away and \
                         nothing visible can reach {next:?} next turn"; next);
+                self.settler_stalls.remove(&uid);
+                return true;
+            }
+        }
+        // ⚠⚠⚠ A HOLD IS NOT SAFETY WHEN THE TILE UNDER THE SETTLER IS ALREADY
+        // COVERED. Every candidate above must both make PROGRESS
+        // (`wdist(next, target) < distance`) and pass `watchdog_tile_is_safe`,
+        // which is an absolute test. A settler that raiders have surrounded has
+        // no such tile, so the watchdog refused "to walk it into a capture"
+        // while it was standing in one — and the comparison it never made was
+        // against staying.
+        //
+        // Live, run `civvis-20260830T095742Z`, settler 589826 — its own journal:
+        //
+        //     t36 settler holds inside a barbarian's reach | 3 raider(s) could
+        //         take (14, 9) and no reachable tile is better
+        //     t37 Settler holds at (13, 9) ... it has stood still 7 turns;
+        //         the watchdog will not walk it into a capture
+        //
+        // It held from t34 to t47 — seventeen `settler_barbarian_combat_capture_hold`
+        // events — and a horseman took it on t47. That game built EIGHT settlers
+        // and finished turn 150 with ONE city, abandoned at 0.277 of the leader.
+        //
+        // So when raiders already cover this tile, give ground: the least-covered
+        // neighbour that is STRICTLY better than here, progress or not. Bounded
+        // by its own condition — coverage strictly decreases, so it cannot
+        // oscillate, and once nothing covers the settler the ordinary march
+        // resumes. ⚠ Retreat is exactly what the sidestep filters elsewhere
+        // forbid (`regress <= 0`, `wdist < distance`); it is correct only
+        // because this branch is reached solely when standing still is losing.
+        let here_covering = reach.raiders_covering(g, current);
+        for next in self.cornered_retreats(g, uid, current, &reach) {
+            if self.base.path_move(g, pid, uid, next) {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler gives ground rather than wait to be taken";
+                       "it stood still {streak} turns and {here_covering} raider(s) already \
+                        cover {current:?}; {next:?} is reached by fewer";
+                       next);
                 self.settler_stalls.remove(&uid);
                 return true;
             }
@@ -540,6 +734,183 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The rival-sphere sieve on the doomed-target board: the plot four tiles
+    /// from a pop-12 rival capital is inside the sphere, a plot beside our
+    /// own capital is not, and with both plots the only ones left the guard's
+    /// exhaustion search answers the home plot instead of spending its
+    /// forecast retries on the doomed one and returning nothing.
+    #[test]
+    fn the_sieve_keeps_the_forecast_for_plots_outside_the_rivals_sphere() {
+        let mut g = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        g.current = 0;
+        for pid in 0..2 {
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| g.units[unit].kind == "settler")
+                .expect("a starting settler");
+            let pos = g.units[&settler].pos;
+            g.remove_unit(settler);
+            g.found_city_for(pid, pos, None);
+        }
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+        let ours = g.player_city_ids(0)[0];
+        let theirs = g.player_city_ids(1)[0];
+        let home = g.cities[&ours].pos;
+        let rival = g.cities[&theirs].pos;
+        assert!(g.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for position in &positions {
+            let tile = g.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            g.players[0].explored.insert(*position);
+        }
+        g.cities.get_mut(&theirs).unwrap().pop = 12;
+        g.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| g.wdist(*pos, rival) == 4 && g.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let doomed = beside_rival[0];
+        // Beside home, out of the rival's reach, and inside the stranded
+        // search radius from where the Settler will stand.
+        let mut beside_home: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| {
+                g.wdist(*pos, home) <= 4
+                    && g.wdist(*pos, rival) >= 8
+                    && g.wdist(*pos, doomed) < STRANDED_SITE_RADIUS
+            })
+            .collect();
+        beside_home.sort_by_key(|pos| (g.wdist(*pos, doomed), *pos));
+        let mut ai = AdvancedAi::new();
+        ai.enable_engine_repairs();
+        ai.enable_settler_never_idles();
+        ai.enable_exhaustion_loyalty_guard();
+        ai.attach_journal(Journal::recording());
+        let safe = beside_home
+            .iter()
+            .copied()
+            .find(|pos| ai.base.valid_settle_site(&g, 0, *pos))
+            .expect("fixture: a legal plot beside home");
+        assert!(
+            AdvancedAi::inside_rival_sphere(&g, 0, doomed),
+            "four tiles from a rival capital"
+        );
+        assert!(
+            !AdvancedAi::inside_rival_sphere(&g, 0, safe),
+            "beside our own capital"
+        );
+        // The Settler stands beside the doomed plot, the nearest legal one.
+        let start = g
+            .nbrs(doomed)
+            .into_iter()
+            .find(|pos| g.map.tiles.contains_key(pos) && g.wdist(*pos, rival) >= 4)
+            .expect("a neighbour to stand on");
+        let settler = g.spawn_test_unit("settler", 0, start);
+        g.units.get_mut(&settler).expect("settler").moves_left = 40.0;
+        let retired = ai.settler_dead_sites.entry(settler).or_default();
+        for pos in &positions {
+            if *pos != doomed && *pos != safe {
+                retired.insert(*pos, g.turn + 1000);
+            }
+        }
+        assert_eq!(
+            ai.settler_exhaustion_target(&g, 0, settler),
+            Some(safe),
+            "the sieve drops the doomed plot and the forecast passes the home plot"
+        );
+    }
+
+    /// Arretium in `civvis-20260829T090147Z`: a plot four tiles from a small
+    /// visible rival city and five from our own capital passes the mirror's
+    /// forecast (the rival's unseen cities are not on the board) and revolted
+    /// in peacetime. Under the guard the preferred search's verdict refuses it
+    /// for standing inside the rival's sphere; off, the forecast alone speaks.
+    #[test]
+    fn the_preferred_verdict_refuses_a_plot_inside_a_rivals_sphere_under_the_guard() {
+        let mut g = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        g.current = 0;
+        for pid in 0..2 {
+            let settler = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| g.units[unit].kind == "settler")
+                .expect("a starting settler");
+            let pos = g.units[&settler].pos;
+            g.remove_unit(settler);
+            g.found_city_for(pid, pos, None);
+        }
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+        let ours = g.player_city_ids(0)[0];
+        let theirs = g.player_city_ids(1)[0];
+        let home = g.cities[&ours].pos;
+        let rival = g.cities[&theirs].pos;
+        assert!(g.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for position in &positions {
+            let tile = g.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            g.players[0].explored.insert(*position);
+        }
+        // A small rival city: the forecast reads its two citizens as harmless
+        // once a city of ours stands five tiles from the plot — Arretium's
+        // board: Rome five away, Aksu (pop 2) four away.
+        g.cities.get_mut(&theirs).unwrap().pop = 2;
+        g.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| g.wdist(*pos, rival) == 4 && g.wdist(*pos, home) > 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let plot = beside_rival[0];
+        let mut near_plot: Vec<Pos> = positions
+            .iter()
+            .copied()
+            .filter(|pos| g.wdist(*pos, plot) == 5 && g.wdist(*pos, rival) >= 6)
+            .collect();
+        near_plot.sort_unstable();
+        let second = g.found_city_for(0, near_plot[0], None);
+        g.cities.get_mut(&second).unwrap().pop = 6;
+        assert!(
+            AdvancedAi::settle_site_forecast_revolt(&g, 0, plot).is_none(),
+            "fixture: the forecast passes a plot beside a pop-2 rival city"
+        );
+        assert!(AdvancedAi::inside_rival_sphere(&g, 0, plot));
+        let mut ai = AdvancedAi::new();
+        ai.enable_engine_repairs();
+        assert_eq!(
+            ai.settle_site_loyalty_verdict(&g, 0, plot),
+            None,
+            "off, the forecast alone speaks and passes it"
+        );
+        ai.enable_exhaustion_loyalty_guard();
+        let why = ai
+            .settle_site_loyalty_verdict(&g, 0, plot)
+            .expect("under the guard the preferred verdict refuses the plot");
+        assert!(why.contains("rival major's city"), "{why}");
     }
 
     /// The nearest-legal tier founded with no forecast at all. The board of
@@ -770,7 +1141,7 @@ mod tests {
             .into_iter()
             .map(|(pos, _)| pos)
             .filter(|pos| g.path_to(settler, *pos).is_some())
-            .take(3)
+            .take(4)
             .collect();
         let direct_valid = g
             .wdisk(home, 14)
@@ -778,18 +1149,24 @@ mod tests {
             .filter(|pos| ai.base.valid_settle_site(&g, 0, *pos))
             .count();
         assert!(
-            reachable.len() >= 2,
-            "fixture needs two reachable city sites, got {reachable:?} (direct valid={direct_valid})"
+            reachable.len() >= 3,
+            "fixture needs three reachable city sites, got {reachable:?} (direct valid={direct_valid})"
         );
         let retired = reachable[0];
         let reserved = reachable[1];
+        let avoided = reachable[2];
         ai.settler_dead_sites
             .entry(settler)
             .or_default()
             .insert(retired, g.turn + 1000);
         ai.settler_targets.insert(peer, reserved);
+        ai.settler_avoid.insert(settler, (avoided, g.turn + 1000));
 
         let picked = ai.settler_exhaustion_target(&g, 0, settler);
+        assert!(
+            picked.is_some(),
+            "the fixture leaves a fourth reachable site"
+        );
         assert_ne!(
             picked,
             Some(retired),
@@ -799,6 +1176,125 @@ mod tests {
             picked,
             Some(reserved),
             "the fallback duplicated a peer target"
+        );
+        assert_ne!(
+            picked,
+            Some(avoided),
+            "the fallback resurrected the target in this Settler's hysteresis cooldown"
+        );
+    }
+
+    /// A live fallback must not answer "never idle" by selecting a plot a
+    /// visible hostile can take on the next turn.  The historical controller
+    /// still asks the nearest legal site; the bridge's capture lessons reject
+    /// that sole exposed target and let the emergency safety pass/stranded
+    /// watchdog hold or retreat instead.
+    #[test]
+    fn live_exhaustion_fallback_drops_an_exposed_legal_site() {
+        let mut g = Game::new_full(2, 32, 20, 91_319, 120, 0, false);
+        g.current = 0;
+        let founding = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .expect("a starting settler");
+        let home = g.units[&founding].pos;
+        g.apply(0, &crate::game::Action::FoundCity { unit: founding })
+            .expect("the starting settler founds");
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for position in &positions {
+            let tile = g.map.tiles.get_mut(position).expect("map tile");
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            g.players[0].explored.insert(*position);
+        }
+        let probe = AdvancedAi::new();
+        let danger = positions
+            .iter()
+            .copied()
+            .filter(|pos| {
+                g.wdist(home, *pos) >= 6
+                    && g.wdist(home, *pos) <= 12
+                    && probe.base.valid_settle_site(&g, 0, *pos)
+            })
+            .min()
+            .expect("a legal frontier site");
+        let start = g
+            .nbrs(danger)
+            .into_iter()
+            .find(|pos| {
+                g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("a passable neighbour for the Settler");
+        let hostile_tile = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                g.wdist(danger, *pos) == 1
+                    && *pos != start
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("a visible hostile post beside the danger site");
+        let settler = g.spawn_test_unit("settler", 0, start);
+        g.units.get_mut(&settler).expect("settler").moves_left = 20.0;
+        let hostile = g.spawn_test_unit("warrior", 1, hostile_tile);
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        g.players[0].explored.insert(hostile_tile);
+
+        let mut plain = AdvancedAi::new();
+        plain.enable_settler_never_idles();
+        plain.settler_dead_sites.entry(settler).or_default().extend(
+            g.map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| *pos != danger)
+                .map(|pos| (pos, g.turn + 1000)),
+        );
+        assert_eq!(
+            plain.settler_exhaustion_target(&g, 0, settler),
+            Some(danger),
+            "the historical nearest-legal fallback sees the fixture site"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge_universe();
+        live.enable_settler_never_idles();
+        live.settler_dead_sites.entry(settler).or_default().extend(
+            g.map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| *pos != danger)
+                .map(|pos| (pos, g.turn + 1000)),
+        );
+        let visible = live.battlefront_visibility(&g, 0);
+        assert!(g.unit_visible_to(hostile, 0) && g.sees(&visible, hostile_tile));
+        assert!(
+            live.settlement_tile_risk(&g, 0, Some(settler), danger, &visible)
+                > super::super::SETTLER_STEP_RISK_LIMIT,
+            "the fixture danger site is visibly capturable"
+        );
+        assert_eq!(
+            live.settler_exhaustion_target(&g, 0, settler),
+            None,
+            "the live fallback refuses the exposed sole site"
         );
     }
 
@@ -974,5 +1470,86 @@ mod tests {
                 .any(|thought| thought.headline.starts_with("Settler is stranded")),
             "the hold is named"
         );
+    }
+
+    /// ⚠⚠⚠ A HOLD IS NOT SAFETY WHEN THE TILE UNDER THE SETTLER IS COVERED.
+    ///
+    /// Every candidate the watchdog considers must make PROGRESS and pass the
+    /// absolute `watchdog_tile_is_safe`. A settler raiders have surrounded has
+    /// no such tile, so it refused "to walk it into a capture" while standing
+    /// in one. Live, `civvis-20260830T095742Z` settler 589826 held from t34 to
+    /// t47 — its own journal reading "3 raider(s) could take (14, 9) and no
+    /// reachable tile is better" — and a horseman took it. That game built
+    /// EIGHT settlers and ended turn 150 with ONE city at 0.277 of the leader.
+    #[test]
+    fn a_cornered_settler_gives_ground_rather_than_wait_to_be_taken() {
+        let mut g = Game::new_full(2, 20, 12, 91_306, 120, 0, true);
+        let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        g.players[0].explored.extend(explored.iter().copied());
+        // ⚠ `players.iter().position(|p| p.is_barbarian)` is NOT the same seat:
+        // it finds an earlier slot and the spawned raiders end up owned by a
+        // minor, so the reach never sees them. `barb_pid` is the one the reach
+        // itself asks for.
+        let barb = g
+            .barb_pid
+            .expect("new_full's last argument seats the barbarians");
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .expect("a starting settler");
+        let here = g.units[&settler].pos;
+        g.units.get_mut(&settler).expect("settler").moves_left = 2.0;
+        let ai = AdvancedAi::new();
+
+        // Nothing is hunting it: holding is not the losing move, so the
+        // watchdog is offered no reason to give ground.
+        let quiet = ai.barbarian_reach(&g, 0, here, REACH_SCAN_RADIUS);
+        assert!(
+            ai.cornered_retreats(&g, settler, here, &quiet).is_empty(),
+            "an unthreatened settler is never told to retreat"
+        );
+
+        // Now put raiders on it. Two neighbours are enough to cover the tile.
+        for next in g.nbrs(here).into_iter().take(2) {
+            g.spawn_unit("warrior", barb, next);
+        }
+        let hunted = ai.barbarian_reach(&g, 0, here, REACH_SCAN_RADIUS);
+        let here_covering = hunted.raiders_covering(&g, here);
+        let seen: Vec<(u32, bool)> = g
+            .units
+            .values()
+            .filter(|u| Some(u.owner) == g.barb_pid)
+            .map(|u| (u.id, g.unit_visible_to(u.id, 0)))
+            .collect();
+        assert!(
+            here_covering > 0,
+            "the raiders cover the settler's own tile: {seen:?}"
+        );
+
+        let retreats = ai.cornered_retreats(&g, settler, here, &hunted);
+        // The contract, whatever this map happens to offer: never the tile it
+        // already stands on, every choice STRICTLY better than staying, and
+        // ordered so the least-covered is taken first.
+        assert!(
+            !retreats.contains(&here),
+            "retreating to here is not retreating"
+        );
+        let mut previous = 0usize;
+        for next in &retreats {
+            let covering = hunted.raiders_covering(&g, *next);
+            assert!(
+                covering < here_covering
+                    || (covering == here_covering
+                        && hunted.nearest(&g, *next) > hunted.nearest(&g, here)),
+                "{next:?} is covered by {covering} against {here_covering} here — \
+                 it is not strictly better than holding"
+            );
+            assert!(
+                covering >= previous,
+                "the least-covered tile is offered first"
+            );
+            previous = covering;
+        }
     }
 }

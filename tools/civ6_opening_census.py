@@ -73,8 +73,15 @@ def _capital_orders(run: Path) -> tuple[list[tuple[int, str]], list[tuple[int, s
     path = run / "orders.sqlite"
     if not path.exists():
         return [], []
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    connection = None
     try:
+        # A live controller keeps this database in WAL mode. A census is
+        # intentionally read-only, but SQLite can still reject the snapshot
+        # while the writer is changing the WAL index ("unable to open database
+        # file" is the macOS error for that short window). This report is over
+        # a corpus, so one busy run must take the existing named-skip path
+        # rather than aborting every other run after it.
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         every = connection.execute(
             "select turn, verb from orders where kind='produce' and turn<=? order by turn, seq",
             (HORIZON,),
@@ -89,8 +96,11 @@ def _capital_orders(run: Path) -> tuple[list[tuple[int, str]], list[tuple[int, s
                 "order by turn, seq",
                 (capital[0], HORIZON),
             ).fetchall()
+    except sqlite3.Error as error:
+        raise CensusError(f"{run}: orders.sqlite unavailable: {error}") from error
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()
     return [(int(t), v) for t, v in mine], [(int(t), v) for t, v in every]
 
 

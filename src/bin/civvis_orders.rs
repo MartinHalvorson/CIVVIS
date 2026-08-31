@@ -55,10 +55,11 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
 
 /// Direct invocations without `--victory` must agree with the high-level
-/// launchers' one central default. The launcher chain selected Diplomacy after
-/// deployment-shaped evidence; keeping a named mirror here prevents a bare
+/// launchers' one central default. The launch chain aims at Science on the
+/// operator's 2026-08-30 instruction (see `civ6_play.DEFAULT_CIVVIS_VICTORY`
+/// for the evidence trail); keeping a named mirror here prevents a bare
 /// recovery or manual invocation from silently reviving an old lane.
-const DEFAULT_VICTORY: &str = "diplomatic";
+const DEFAULT_VICTORY: &str = "science";
 
 /// Build the agent for a `--victory` lane, or `None` if the name is not one.
 ///
@@ -139,6 +140,7 @@ fn quote(text: &str) -> String {
 /// a refusal rather than acted on.
 fn civ6_unit_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
+        "bireme" => "PHOENICIA_BIREME",
         "tagma" => "BYZANTINE_TAGMA",
         "legion" => "ROMAN_LEGION",
         "nau" => "PORTUGUESE_NAU",
@@ -1582,6 +1584,120 @@ fn append_border_buy_order(
         kind: "buy",
         subject: Some(rival.player as i64),
         verb: Some("OPEN_BORDERS".to_string()),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
+// ★★★★★ THE LUXURY THE SEAT LACKS, BOUGHT FOR GOLD. The live seat runs
+// Displeased on 48% of its city-turns — Firaxis takes 10% off every non-food
+// yield there, ≈1,150 yield points over a game — and luxuries are 60% of the
+// amenities it does have. Rivals visibly hold 2–8 improved luxuries the seat
+// holds none of, the host sells a copy as an ordinary deal, and in the nine
+// recorded sales the AI asked 2–14 Gold a turn per copy; one copy is +1
+// Amenity in four cities. `Game::quick_deals` does quote a luxury PURCHASE,
+// but the mirror carries no rival's tradeable stock and `border_buy_ceiling`
+// rightly refuses the shape, so — like the favor sale and the passage
+// purchase — the order is composed here from the export's own facts: the
+// amenity ledger the host reports per city, the net income, the treasury,
+// the rivals' war state and gold. The Lua arm reads the RIVAL's own
+// tradeable list, takes the first luxury the host says the seat holds none
+// of, asks the rival's own price with EQUALIZE and closes only at or under
+// the ceiling carried in `x`.
+//
+// Cadence-gated like its neighbours (phase 4, the last free slot of the
+// six-turn deal week), aimed at the richest met major at peace with no deal
+// already heading its way this turn; the mod's own cooldowns
+// (`TradeRetryTurns`) meter re-asks after a `buy_no_luxury`. The ceiling is
+// what a copy is worth to the empire — a base and a share per city, since
+// the four cities it reaches each recover the 10% — bounded by what the
+// income carries at the 25× book with `LUXURY_BUY_INCOME_FLOOR` Gold a turn
+// kept clear (every recorded ask was per-turn), and by the cap. A ceiling
+// under `LUXURY_BUY_CEILING_MIN` — two Gold a turn, the cheapest ask on
+// record — is not worth a deal window.
+const LUXURY_BUY_MIN_DEFICIT: f64 = 2.0;
+const LUXURY_BUY_GOLD_RESERVE: i64 = 60;
+const LUXURY_BUY_INCOME_FLOOR: f64 = 4.0;
+const LUXURY_BUY_CEILING_BASE: i32 = 135;
+const LUXURY_BUY_CEILING_PER_CITY: i32 = 10;
+const LUXURY_BUY_CEILING_MIN: i32 = 50;
+const LUXURY_BUY_CEILING_MAX: i32 = 300;
+const LUXURY_BUY_CADENCE: u32 = 6;
+const LUXURY_BUY_PHASE: u32 = 4;
+
+/// How many amenities the empire is short by the host's own ledger: the sum
+/// over cities of `needed − have` where positive. A city whose ledger the
+/// host did not report (`NaN` or `-1`, see `StateCity::amenities`) is left
+/// out rather than read as content or as starving.
+fn amenity_deficit(state: &civvis::mirror::StateSnapshot) -> f64 {
+    state
+        .cities
+        .iter()
+        .filter(|city| city.amenities >= 0.0 && city.amenities_needed >= 0.0)
+        .map(|city| (city.amenities_needed - city.amenities).max(0.0))
+        .sum()
+}
+
+/// Why no luxury-purchase order was appended this turn, for the note; `None`
+/// when one was.
+fn append_luxury_buy_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    if amenity_deficit(state) < LUXURY_BUY_MIN_DEFICIT {
+        return Some("luxury_buy_hold:content");
+    }
+    if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
+        return Some("luxury_buy_hold:cadence");
+    }
+    let Some(income) = state.gold_per_turn.filter(|income| income.is_finite()) else {
+        return Some("luxury_buy_hold:income_unknown");
+    };
+    let carried = (25.0 * (income - LUXURY_BUY_INCOME_FLOOR))
+        .floor()
+        .clamp(0.0, LUXURY_BUY_CEILING_MAX as f64) as i32;
+    let worth = LUXURY_BUY_CEILING_BASE
+        + LUXURY_BUY_CEILING_PER_CITY * state.cities.len().min(i32::MAX as usize) as i32;
+    let ceiling = worth.min(LUXURY_BUY_CEILING_MAX).min(carried);
+    if ceiling < LUXURY_BUY_CEILING_MIN {
+        return Some("luxury_buy_hold:income");
+    }
+    if state.gold < LUXURY_BUY_GOLD_RESERVE {
+        return Some("luxury_buy_hold:treasury");
+    }
+    // One working deal per rival at a time is the mod's rule; a rival with a
+    // sale or purchase already heading its way this turn is passed over for
+    // the next-richest, not held against.
+    let seller = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .filter(|rival| {
+            !orders.iter().any(|order| {
+                (order.kind == "sell" || order.kind == "buy")
+                    && order.subject == Some(rival.player as i64)
+            })
+        })
+        .max_by(|left, right| {
+            let gold = |rival: &civvis::mirror::StateRival| {
+                if rival.gold.is_finite() {
+                    rival.gold
+                } else {
+                    0.0
+                }
+            };
+            gold(left)
+                .partial_cmp(&gold(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.player.cmp(&left.player))
+        });
+    let Some(seller) = seller else {
+        return Some("luxury_buy_hold:no_seller");
+    };
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(seller.player as i64),
+        verb: Some("LUXURY_ANY".to_string()),
         pos: Some((ceiling, 0)),
     });
     None
@@ -3305,6 +3421,20 @@ fn decide(
             }
         }
     }
+    match append_luxury_buy_order(state, &mut orders) {
+        None => note_bits.push("luxury_buy=1".to_string()),
+        Some(why) => {
+            // The holds worth a glance: an amenity deficit standing on the
+            // lane's own turn while the income or the treasury cannot carry
+            // a copy, or with nobody at peace to buy one from.
+            if why == "luxury_buy_hold:income"
+                || why == "luxury_buy_hold:treasury"
+                || why == "luxury_buy_hold:no_seller"
+            {
+                note_bits.push(why.to_string());
+            }
+        }
+    }
     match append_work_sale_order(state, &mut orders) {
         None => note_bits.push("work_sale=1".to_string()),
         Some(why) => {
@@ -4625,6 +4755,10 @@ struct OrderCheck {
 /// Orders sent on one frame, held until a later turn's frame answers them.
 struct PendingOrders {
     turn: u32,
+    /// The mid-turn frame that supplied the board on which these orders were
+    /// decided. Frame 0 is the opening board; later frames are re-plans after
+    /// the host has drained some of the unit queue.
+    frame: u32,
     orders: Vec<IssuedOrder>,
     before: civvis::mirror::StateSnapshot,
 }
@@ -4703,7 +4837,7 @@ const EVIDENCE_KINDS: &[&str] = &[
     "move_refused",
 ];
 
-/// Ledger events of the evidence kinds stamped with one of `turns`.
+/// Ledger evidence and state frames stamped with one of `turns`.
 ///
 /// A rival answers a deal during its own part of the game turn, so the answer
 /// carries our turn; a callback that lands at the start of the next turn
@@ -4712,25 +4846,54 @@ const EVIDENCE_KINDS: &[&str] = &[
 /// ⚠ The relay re-encodes every line with `": "` spacing, so the cheap
 /// pre-filter looks for the quoted kind alone (as `state_from_events` does)
 /// and the parsed `kind` decides.
-fn ledger_evidence(path: &Path, turns: &[u32]) -> Vec<serde_json::Value> {
+fn ledger_evidence_and_states(
+    path: &Path,
+    turns: &[u32],
+) -> (Vec<serde_json::Value>, Vec<civvis::mirror::StateSnapshot>) {
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
-    raw.lines()
-        .filter(|line| {
-            EVIDENCE_KINDS
+    let mut evidence = Vec::new();
+    let mut states = Vec::new();
+    for line in raw.lines() {
+        if !line.contains("\"state\"")
+            && !EVIDENCE_KINDS
                 .iter()
-                .any(|k| line.contains(&format!("\"{k}\"")))
-        })
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|event| {
-            let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-            EVIDENCE_KINDS.contains(&kind)
-                && event
-                    .get("turn")
-                    .and_then(|t| t.as_u64())
-                    .is_some_and(|t| turns.iter().any(|want| u64::from(*want) == t))
-        })
+                .any(|kind| line.contains(&format!("\"{kind}\"")))
+        {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let turn = event.get("turn").and_then(|turn| turn.as_u64());
+        if !turn.is_some_and(|turn| turns.iter().any(|want| u64::from(*want) == turn)) {
+            continue;
+        }
+        let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+        if kind == "state" {
+            if let Ok(state) = serde_json::from_value(event) {
+                states.push(state);
+            }
+        } else if EVIDENCE_KINDS.contains(&kind) {
+            evidence.push(event);
+        }
+    }
+    (evidence, states)
+}
+
+/// Unit ids that were explicitly fortified on a later frame of this turn.
+fn later_fortified_units(
+    states: &[civvis::mirror::StateSnapshot],
+    turn: u32,
+    frame: u32,
+) -> std::collections::BTreeSet<i64> {
+    states
+        .iter()
+        .filter(|state| state.turn == turn && state.frame > frame)
+        .flat_map(|state| state.units.iter())
+        .filter(|unit| unit.fortified || unit.fortify_turns > 0)
+        .map(|unit| unit.id)
         .collect()
 }
 
@@ -4921,6 +5084,27 @@ fn unit_appeared_at_city(
     })
 }
 
+/// A newly visible unit can prove either a completed production order or a
+/// purchase made in the same turn. When both orders ask the same city for the
+/// same unit, the next frame cannot attribute the appearance to production.
+/// Keep that ambiguity from turning a refused queue replacement into a false
+/// `order_verified` row.
+fn production_unit_appearance_conflicts_with_purchase(
+    order: &IssuedOrder,
+    same_turn_orders: &[IssuedOrder],
+) -> bool {
+    order.kind == "produce"
+        && order
+            .verb
+            .as_deref()
+            .is_some_and(|verb| verb.starts_with("UNIT_"))
+        && same_turn_orders.iter().any(|other| {
+            matches!(other.kind.as_str(), "purchase" | "purchase_faith")
+                && other.subject == order.subject
+                && other.verb == order.verb
+        })
+}
+
 fn verify_unit_order(
     order: &IssuedOrder,
     turn: u32,
@@ -4928,6 +5112,7 @@ fn verify_unit_order(
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    later_fortified: bool,
 ) -> Verdict {
     let Some(id) = order.subject else {
         return Verdict::Failed("no_subject".to_string());
@@ -5010,11 +5195,23 @@ fn verify_unit_order(
                 Verdict::Failed("target_unharmed".to_string())
             }
         }
-        "FORTIFY" => match now {
-            None => gone(),
-            Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
-            Some(_) => Verdict::Failed("not_fortified".to_string()),
-        },
+        "FORTIFY" => {
+            // Fortify is a transient host state: a later same-turn queued move
+            // can clear it before the next turn's opening frame, even though
+            // the FORTIFY operation did land. Require the unit to have been
+            // eligible on the decision frame so a newly appearing id or a
+            // refused repeat on an already-fortified unit cannot be credited.
+            let was_eligible = was.is_some_and(|unit| !unit.fortified && unit.fortify_turns <= 0);
+            if later_fortified && was_eligible {
+                Verdict::Verified
+            } else {
+                match now {
+                    None => gone(),
+                    Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
+                    Some(_) => Verdict::Failed("not_fortified".to_string()),
+                }
+            }
+        }
         "UPGRADE" => match (was, now) {
             // The host may hand the upgraded unit a new id: a different kind
             // standing where this one stood, unseen before, is the upgrade.
@@ -5137,14 +5334,20 @@ fn verify_unit_order(
     }
 }
 
+struct VerificationContext<'a> {
+    same_turn_orders: &'a [IssuedOrder],
+    later_fortified: bool,
+}
+
 /// The next frame's verdict on one order issued on `turn`.
-fn verify_order(
+fn verify_order_with_context(
     order: &IssuedOrder,
     turn: u32,
     before: &civvis::mirror::StateSnapshot,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    context: VerificationContext<'_>,
 ) -> Verdict {
     if unverifiable_kind(&order.kind) {
         return Verdict::Unverifiable;
@@ -5152,16 +5355,29 @@ fn verify_order(
     let verb = order.verb.as_deref().unwrap_or("");
     let failed = |why: String| Verdict::Failed(why);
     match order.kind.as_str() {
-        "unit" => verify_unit_order(order, turn, before, after, tiles, evidence),
+        "unit" => verify_unit_order(
+            order,
+            turn,
+            before,
+            after,
+            tiles,
+            evidence,
+            context.later_fortified,
+        ),
         "produce" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
                 return failed("city_gone".to_string());
             };
+            let unit_appeared = unit_appeared_at_city(before, after, city, verb);
+            let purchase_conflict =
+                production_unit_appearance_conflicts_with_purchase(order, context.same_turn_orders);
             if city.producing.as_deref() == Some(verb)
                 || city_holds(city, verb)
-                || unit_appeared_at_city(before, after, city, verb)
+                || (unit_appeared && !purchase_conflict)
             {
                 Verdict::Verified
+            } else if unit_appeared && purchase_conflict {
+                failed("unit_appearance_ambiguous_purchase".to_string())
             } else {
                 failed(format!(
                     "producing={}",
@@ -5360,18 +5576,78 @@ fn verify_order(
     }
 }
 
+/// Verify one order without sibling-order context. The single-order helper
+/// remains useful for focused postcondition tests; live settlement supplies
+/// the full turn context through `verify_orders` below.
+#[cfg(test)]
+fn verify_order(
+    order: &IssuedOrder,
+    turn: u32,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+) -> Verdict {
+    verify_order_with_context(
+        order,
+        turn,
+        before,
+        after,
+        tiles,
+        evidence,
+        VerificationContext {
+            same_turn_orders: &[],
+            later_fortified: false,
+        },
+    )
+}
+
 /// Every order in `pending` against the frame that followed it.
+#[cfg(test)]
 fn verify_orders(
     pending: &PendingOrders,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
+    same_turn_orders: &[IssuedOrder],
+) -> Vec<OrderCheck> {
+    verify_orders_with_later_fortifications(
+        pending,
+        after,
+        tiles,
+        evidence,
+        same_turn_orders,
+        &std::collections::BTreeSet::new(),
+    )
+}
+
+/// Verify pending orders with positive evidence from later same-turn frames.
+fn verify_orders_with_later_fortifications(
+    pending: &PendingOrders,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+    same_turn_orders: &[IssuedOrder],
+    later_fortified: &std::collections::BTreeSet<i64>,
 ) -> Vec<OrderCheck> {
     pending
         .orders
         .iter()
         .map(|order| OrderCheck {
-            verdict: verify_order(order, pending.turn, &pending.before, after, tiles, evidence),
+            verdict: verify_order_with_context(
+                order,
+                pending.turn,
+                &pending.before,
+                after,
+                tiles,
+                evidence,
+                VerificationContext {
+                    same_turn_orders,
+                    later_fortified: order
+                        .subject
+                        .is_some_and(|id| later_fortified.contains(&id)),
+                },
+            ),
             order: order.clone(),
         })
         .collect()
@@ -5459,14 +5735,33 @@ fn settle_pending_orders(
         return Vec::new();
     }
     let turns: Vec<u32> = answered.iter().flat_map(|p| [p.turn, p.turn + 1]).collect();
-    let evidence = ledger_evidence(events, &turns);
+    let (evidence, states) = ledger_evidence_and_states(events, &turns);
     let mut rows = Vec::new();
+    let mut same_turn_orders: std::collections::BTreeMap<u32, Vec<IssuedOrder>> =
+        Default::default();
+    for frame in &answered {
+        same_turn_orders
+            .entry(frame.turn)
+            .or_default()
+            .extend(frame.orders.iter().cloned());
+    }
     let mut by_turn: std::collections::BTreeMap<u32, Vec<OrderCheck>> = Default::default();
     for frame in &answered {
+        let context = same_turn_orders
+            .get(&frame.turn)
+            .map_or(&[][..], Vec::as_slice);
+        let later_fortified = later_fortified_units(&states, frame.turn, frame.frame);
         by_turn
             .entry(frame.turn)
             .or_default()
-            .extend(verify_orders(frame, after, tiles, &evidence));
+            .extend(verify_orders_with_later_fortifications(
+                frame,
+                after,
+                tiles,
+                &evidence,
+                context,
+                &later_fortified,
+            ));
     }
     for (turn, checks) in by_turn {
         rows.extend(verdict_rows(turn, &checks));
@@ -5477,7 +5772,8 @@ fn settle_pending_orders(
 /// Replay a recorded run's orders against its own frames.
 ///
 /// `orders_path` holds the rows the brain wrote to `orders.sqlite`, one JSON
-/// object per line (`turn`, `kind`, `subject`, `verb`, `x`, `y`); the frames
+/// object per line (`turn`, `kind`, `subject`, `verb`, `x`, `y`, and optionally
+/// `frame`); the frames
 /// and the evidence come from the run's `events.jsonl`. Prints one JSON line:
 /// what the checks verified, what failed and why, and the mod's own
 /// `orders_reported` for the same turns, so the gap can be measured on a run
@@ -5485,7 +5781,7 @@ fn settle_pending_orders(
 /// the plot-bound checks (`buy_plot`, `PILLAGE`, `REPAIR`) are counted apart
 /// as `plot_bound` rather than as failures.
 fn audit_orders(events: &Path, orders_path: &Path) {
-    let mut by_turn: std::collections::BTreeMap<u32, Vec<IssuedOrder>> = Default::default();
+    let mut by_frame: std::collections::BTreeMap<(u32, u32), Vec<IssuedOrder>> = Default::default();
     for line in std::fs::read_to_string(orders_path)
         .unwrap_or_default()
         .lines()
@@ -5496,6 +5792,10 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         let Some(turn) = row.get("turn").and_then(|t| t.as_u64()) else {
             continue;
         };
+        let frame = row
+            .get("frame")
+            .and_then(|frame| frame.as_u64())
+            .unwrap_or(0);
         let kind = row
             .get("kind")
             .and_then(|k| k.as_str())
@@ -5506,19 +5806,25 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         }
         let x = row.get("x").and_then(|v| v.as_i64());
         let y = row.get("y").and_then(|v| v.as_i64());
-        by_turn.entry(turn as u32).or_default().push(IssuedOrder {
-            kind,
-            subject: row.get("subject").and_then(|v| v.as_i64()),
-            verb: row.get("verb").and_then(|v| v.as_str()).map(str::to_string),
-            pos: match (x, y) {
-                (Some(x), Some(y)) => Some((x as i32, y as i32)),
-                _ => None,
-            },
-        });
+        by_frame
+            .entry((turn as u32, frame as u32))
+            .or_default()
+            .push(IssuedOrder {
+                kind,
+                subject: row.get("subject").and_then(|v| v.as_i64()),
+                verb: row.get("verb").and_then(|v| v.as_str()).map(str::to_string),
+                pos: match (x, y) {
+                    (Some(x), Some(y)) => Some((x as i32, y as i32)),
+                    _ => None,
+                },
+            });
     }
     let raw = std::fs::read_to_string(events).unwrap_or_default();
     let mut frames: std::collections::BTreeMap<u32, civvis::mirror::StateSnapshot> =
         Default::default();
+    let mut frame_states: std::collections::BTreeMap<(u32, u32), civvis::mirror::StateSnapshot> =
+        Default::default();
+    let mut all_states: Vec<civvis::mirror::StateSnapshot> = Vec::new();
     let mut reported: std::collections::BTreeMap<u32, (i64, i64)> = Default::default();
     let mut evidence: Vec<serde_json::Value> = Vec::new();
     for line in raw.lines() {
@@ -5530,7 +5836,11 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             // The opening board of each turn: the one the orders were decided on.
             match serde_json::from_value::<civvis::mirror::StateSnapshot>(event) {
                 Ok(state) => {
-                    frames.entry(state.turn).or_insert(state);
+                    frame_states
+                        .entry((state.turn, state.frame))
+                        .or_insert_with(|| state.clone());
+                    frames.entry(state.turn).or_insert_with(|| state.clone());
+                    all_states.push(state);
                 }
                 Err(why) => eprintln!("audit: state frame skipped: {why}"),
             }
@@ -5558,14 +5868,32 @@ fn audit_orders(events: &Path, orders_path: &Path) {
     let (mut seen, mut ok) = (0i64, 0i64);
     let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
     let mut by_kind: std::collections::BTreeMap<String, [usize; 3]> = Default::default();
-    for (turn, orders) in by_turn {
-        let (Some(before), Some(after)) = (frames.get(&turn), frames.get(&(turn + 1))) else {
+    let mut counted_reported_turns = std::collections::BTreeSet::new();
+    let mut same_turn_orders: std::collections::BTreeMap<u32, Vec<IssuedOrder>> =
+        Default::default();
+    for ((turn, _frame), orders) in &by_frame {
+        same_turn_orders
+            .entry(*turn)
+            .or_default()
+            .extend(orders.iter().cloned());
+    }
+    for ((turn, frame), orders) in by_frame {
+        let Some(before) = frame_states
+            .get(&(turn, frame))
+            .or_else(|| frames.get(&turn))
+        else {
             unframed += orders.len();
             continue;
         };
-        if let Some((s, a)) = reported.get(&turn) {
-            seen += s;
-            ok += a;
+        let Some(after) = frames.get(&(turn + 1)) else {
+            unframed += orders.len();
+            continue;
+        };
+        if counted_reported_turns.insert(turn) {
+            if let Some((s, a)) = reported.get(&turn) {
+                seen += s;
+                ok += a;
+            }
         }
         let window: Vec<serde_json::Value> = evidence
             .iter()
@@ -5578,10 +5906,20 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             .collect();
         let pending = PendingOrders {
             turn,
+            frame,
             orders,
             before: before.clone(),
         };
-        for check in verify_orders(&pending, after, &tiles, &window) {
+        let context = same_turn_orders.get(&turn).map_or(&[][..], Vec::as_slice);
+        let later_fortified = later_fortified_units(&all_states, turn, frame);
+        for check in verify_orders_with_later_fortifications(
+            &pending,
+            after,
+            &tiles,
+            &window,
+            context,
+            &later_fortified,
+        ) {
             let label = match check.order.kind.as_str() {
                 "unit" => check
                     .order
@@ -6727,6 +7065,7 @@ fn main() {
                 host_city_strikes.observe(state.turn, &orders);
                 pending_orders.push(PendingOrders {
                     turn: state.turn,
+                    frame: state.frame,
                     orders,
                     before: state.clone(),
                 });
@@ -6900,13 +7239,13 @@ mod tests {
 
     #[test]
     fn direct_default_uses_the_safe_launcher_lane() {
-        assert_eq!(super::DEFAULT_VICTORY, "diplomatic");
+        assert_eq!(super::DEFAULT_VICTORY, "science");
         assert!(super::VICTORY_LANES
             .split('|')
             .any(|lane| lane == super::DEFAULT_VICTORY));
         assert_eq!(
             super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
-            Some(civvis::ai::VictoryTarget::Diplomacy)
+            Some(civvis::ai::VictoryTarget::Science)
         );
     }
 
@@ -8772,20 +9111,20 @@ mod tests {
         warrior.x = 5;
         warrior.y = 4;
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[]),
+            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[], false),
             Verdict::Verified
         ));
 
         let mut gone = before.clone();
         gone.hostiles.clear();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &gone, &tiles, &[]),
+            verify_unit_order(&order, 30, &before, &gone, &tiles, &[], false),
             Verdict::Verified
         ));
 
         let stood = before.clone();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &stood, &tiles, &[]),
+            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], false),
             Verdict::Failed(reason) if reason == "not_captured"
         ));
     }
@@ -11521,6 +11860,156 @@ mod tests {
     }
 
     #[test]
+    fn luxury_buys_fill_the_amenity_gap() {
+        // Two cities one Amenity short and one with a surplus: a deficit of
+        // two by the host's own ledger, on the lane's turn, with income to
+        // carry a copy and three majors met — one at war, one broke.
+        let short = |needed: f64, have: f64| StateCity {
+            amenities: have,
+            amenities_needed: needed,
+            ..StateCity::default()
+        };
+        let state = StateSnapshot {
+            turn: 94, // 94 % 6 == 4, the lane's phase
+            gold: 200,
+            gold_per_turn: Some(12.0),
+            cities: vec![short(5.0, 4.0), short(6.0, 5.0), short(3.0, 4.0)],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    gold: 300.0,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    gold: 500.0,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 5,
+                    gold: 900.0,
+                    at_war: true,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 6,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        assert_eq!(amenity_deficit(&state), 2.0);
+
+        let mut orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&state, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        // The richest major at peace; seat 5 is richer and at war, seat 6's
+        // treasury is unknown and reads as nothing.
+        assert_eq!(orders[0].subject, Some(4));
+        assert_eq!(orders[0].verb.as_deref(), Some("LUXURY_ANY"));
+        // 135 + 10·3 = 165, under what 12 a turn carries (25·(12−4) = 200)
+        // and the cap.
+        assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // The income binds: 8 a turn carries 100 at the 25× book with 4 kept
+        // clear; the cap binds a wide empire on a fat income.
+        let mut lean = state.clone();
+        lean.gold_per_turn = Some(8.0);
+        let mut lean_orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&lean, &mut lean_orders), None);
+        assert_eq!(lean_orders[0].pos, Some((100, 0)));
+        let mut wide = state.clone();
+        wide.gold_per_turn = Some(40.0);
+        wide.cities = (0..20).map(|_| short(6.0, 5.0)).collect();
+        let mut wide_orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&wide, &mut wide_orders), None);
+        assert_eq!(wide_orders[0].pos, Some((300, 0)));
+
+        // Content, or with only a ledger the host never sent: no ask.
+        let mut held = Vec::new();
+        let mut content = state.clone();
+        content.cities = vec![short(5.0, 4.0), short(3.0, 4.0)];
+        assert_eq!(
+            append_luxury_buy_order(&content, &mut held),
+            Some("luxury_buy_hold:content")
+        );
+        let mut unknown = state.clone();
+        unknown.cities = vec![
+            short(f64::NAN, f64::NAN),
+            short(-1.0, -1.0),
+            short(9.0, 4.0),
+        ];
+        assert_eq!(amenity_deficit(&unknown), 5.0);
+        unknown.cities.pop();
+        assert_eq!(
+            append_luxury_buy_order(&unknown, &mut held),
+            Some("luxury_buy_hold:content")
+        );
+
+        // Off the cadence, income unknown, income too thin for the cheapest
+        // ask on record, or the treasury under the reserve: held.
+        let mut off_cadence = state.clone();
+        off_cadence.turn = 95;
+        assert_eq!(
+            append_luxury_buy_order(&off_cadence, &mut held),
+            Some("luxury_buy_hold:cadence")
+        );
+        let mut blind = state.clone();
+        blind.gold_per_turn = None;
+        assert_eq!(
+            append_luxury_buy_order(&blind, &mut held),
+            Some("luxury_buy_hold:income_unknown")
+        );
+        let mut thin = state.clone();
+        thin.gold_per_turn = Some(5.0); // 25·(5−4) = 25, under the 50 minimum
+        assert_eq!(
+            append_luxury_buy_order(&thin, &mut held),
+            Some("luxury_buy_hold:income")
+        );
+        let mut poor = state.clone();
+        poor.gold = 59;
+        assert_eq!(
+            append_luxury_buy_order(&poor, &mut held),
+            Some("luxury_buy_hold:treasury")
+        );
+        assert!(held.is_empty());
+
+        // A deal already heading to the richest seat this turn passes the
+        // ask to the next-richest; with every peaceful seat busy, or nobody
+        // met, there is nobody to buy from.
+        let mut in_flight = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(append_luxury_buy_order(&state, &mut in_flight), None);
+        assert_eq!(in_flight.len(), 2);
+        assert_eq!(in_flight[1].subject, Some(2));
+        let mut all_busy: Vec<Order> = [2, 4, 6]
+            .into_iter()
+            .map(|seat| Order {
+                kind: "buy",
+                subject: Some(seat),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((40, 0)),
+            })
+            .collect();
+        assert_eq!(
+            append_luxury_buy_order(&state, &mut all_busy),
+            Some("luxury_buy_hold:no_seller")
+        );
+        assert_eq!(all_busy.len(), 3);
+        let mut alone = state.clone();
+        alone.rivals.clear();
+        assert_eq!(
+            append_luxury_buy_order(&alone, &mut held),
+            Some("luxury_buy_hold:no_seller")
+        );
+    }
+
+    #[test]
     fn city_state_war_and_peace_orders_name_the_firaxis_seat() {
         // Live run civvis-20260816T070212Z reached this shape at t92: CIVVIS
         // chose a staged war on Nazca (host player 13), but translating only
@@ -12770,6 +13259,107 @@ mod order_postcondition_tests {
     }
 
     #[test]
+    fn a_purchased_unit_cannot_verify_a_same_turn_production_order() {
+        let mut before = frame(30);
+        before.cities = vec![city(65_536, 20, 20, Some("UNIT_SETTLER"))];
+
+        let mut after = frame(31);
+        after.cities = before.cities.clone();
+        after.units = vec![unit(8, "UNIT_WARRIOR", 20, 20)];
+
+        let produce = order("produce", Some(65_536), Some("UNIT_WARRIOR"), None);
+        let purchase = order(
+            "purchase",
+            Some(65_536),
+            Some("UNIT_WARRIOR"),
+            Some((0, -1)),
+        );
+        let pending = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![produce.clone(), purchase.clone()],
+            before: before.clone(),
+        };
+
+        // Without a sibling purchase, the new unit remains valid completion
+        // evidence for the production postcondition.
+        assert_eq!(check(&produce, &before, &after, &[]), Verdict::Verified);
+
+        let checks = verify_orders(&pending, &after, &no_tiles(), &[], &pending.orders);
+        assert_eq!(checks[0].order, produce);
+        assert_eq!(
+            checks[0].verdict,
+            failed("unit_appearance_ambiguous_purchase")
+        );
+        assert_eq!(checks[1].order, purchase);
+        assert_eq!(checks[1].verdict, Verdict::Verified);
+    }
+
+    #[test]
+    fn a_later_same_turn_fortify_frame_proves_a_transient_fortify() {
+        let mut before = frame(30);
+        before.units = vec![unit(7, "UNIT_WARRIOR", 20, 20)];
+
+        // The next turn has already cleared the transient fortified state by
+        // moving this unit, so the ordinary next-turn postcondition alone
+        // would report `not_fortified`.
+        let mut after = frame(31);
+        after.units = vec![unit(7, "UNIT_WARRIOR", 21, 20)];
+
+        // Frame 1 is emitted after frame 0's FORTIFY has reached the host.
+        let mut same_turn = frame(30);
+        same_turn.frame = 1;
+        let mut fortified = unit(7, "UNIT_WARRIOR", 20, 20);
+        fortified.fortified = true;
+        fortified.fortify_turns = 1;
+        same_turn.units = vec![fortified];
+
+        let pending = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![order("unit", Some(7), Some("FORTIFY"), None)],
+            before,
+        };
+        let later = later_fortified_units(&[same_turn.clone()], 30, pending.frame);
+        let checks = verify_orders_with_later_fortifications(
+            &pending,
+            &after,
+            &no_tiles(),
+            &[],
+            &pending.orders,
+            &later,
+        );
+        assert_eq!(checks[0].verdict, Verdict::Verified);
+
+        // Evidence from the frame on which the order was issued is not enough
+        // to prove that the host accepted it.
+        assert!(later_fortified_units(&[same_turn], 30, 1).is_empty());
+
+        // A repeat FORTIFY issued after the unit was already fortified remains
+        // a failure even if that old state is visible on a later frame.
+        let mut already_fortified = frame(30);
+        let mut old = unit(7, "UNIT_WARRIOR", 20, 20);
+        old.fortified = true;
+        old.fortify_turns = 1;
+        already_fortified.units = vec![old];
+        let repeated = PendingOrders {
+            turn: 30,
+            frame: 0,
+            orders: vec![order("unit", Some(7), Some("FORTIFY"), None)],
+            before: already_fortified,
+        };
+        let checks = verify_orders_with_later_fortifications(
+            &repeated,
+            &after,
+            &no_tiles(),
+            &[],
+            &repeated.orders,
+            &later,
+        );
+        assert_eq!(checks[0].verdict, failed("not_fortified"));
+    }
+
+    #[test]
     fn a_bought_plot_is_verified_by_its_owner_on_the_board() {
         let mut before = frame(20);
         before.seat.local_player = 4;
@@ -13273,6 +13863,7 @@ mod order_postcondition_tests {
         before.units = vec![unit(7, "UNIT_WARRIOR", 1, 1)];
         let mut pending = vec![PendingOrders {
             turn: 42,
+            frame: 0,
             orders: vec![
                 order("unit", Some(7), Some("MOVE_TO"), Some((3, 1))),
                 order("sell", Some(2), Some("FAVOR=10"), Some((60, 0))),

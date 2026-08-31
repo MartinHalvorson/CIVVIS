@@ -25,10 +25,10 @@ before that export carries the index alone and reads `—` here.
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 637.
+Attempts recorded: 650.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 363 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 364 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
 
 ## Which victories have been won, per difficulty
 
@@ -68,7 +68,7 @@ absent from this table have never been completed by anyone here.
 | 4 | — | 5 | 2% |
 | 2 | — | 1 | 0% |
 
-326 of 637 attempts reached a terminal victory event, and 1 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
+326 of 650 attempts reached a terminal victory event, and 1 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
 
 ## Every attempt
 
@@ -86,19 +86,6 @@ same row.
 
 | run | difficulty | playing for | configured | outcome | turns | score | ended |
 |---|---|---|---|---|---|---|---|
-| `civvis-20260824T214258Z` | King | diplomatic | yes | abandoned | 104 | 124 | 2026-08-24T22:12:58Z |
-| `civvis-20260824T224616Z` | King | diplomatic | yes | abandoned | 115 | 272 | 2026-08-24T23:12:54Z |
-| `civvis-20260824T231622Z` | King | diplomatic | yes | abandoned | 104 | 293 | 2026-08-24T23:47:05Z |
-| `civvis-20260824T235034Z-cont3` | King | diplomatic | yes | stopped | 227 | 1342 | 2026-08-25T02:46:07Z |
-| `civvis-20260825T044835Z-cont1` | King | diplomatic | yes | stopped | 246 | 367 | 2026-08-25T06:06:25Z |
-| `civvis-20260825T072659Z-cont1` | King | diplomatic | yes | stopped | 217 | 685 | 2026-08-25T09:05:20Z |
-| `civvis-20260825T090907Z-cont2` | King | diplomatic | yes | stopped | 242 | 238 | 2026-08-25T10:45:37Z |
-| `civvis-20260825T104927Z` | King | diplomatic | yes | stopped | 233 | 253 | 2026-08-25T11:58:26Z |
-| `civvis-20260825T182132Z` | King | diplomatic | yes | abandoned | 32 | 54 | 2026-08-25T18:39:39Z |
-| `civvis-20260825T184439Z` | King | diplomatic | yes | abandoned | 23 | 29 | 2026-08-25T18:52:10Z |
-| `civvis-20260825T185245Z` | King | diplomatic | yes | abandoned | 32 | 60 | 2026-08-25T19:02:14Z |
-| `civvis-20260825T190735Z` | King | diplomatic | yes | abandoned | 26 | 38 | 2026-08-25T19:15:14Z |
-| `civvis-20260825T191946Z` | King | diplomatic | yes | abandoned | 32 | 57 | 2026-08-25T19:31:29Z |
 | `civvis-20260825T193604Z` | King | diplomatic | yes | abandoned | 24 | 38 | 2026-08-25T19:42:40Z |
 | `civvis-20260825T210439Z` | King | diplomatic | yes | abandoned | 14 | 25 | 2026-08-25T21:09:09Z |
 | `civvis-20260825T215023Z` | King | diplomatic | yes | abandoned | 32 | 50 | 2026-08-25T21:58:23Z |
@@ -126,3 +113,16 @@ same row.
 | `civvis-20260826T080103Z` | King | diplomatic | yes | abandoned | 14 | 23 | 2026-08-26T08:05:45Z |
 | `civvis-20260826T080627Z` | King | diplomatic | yes | abandoned | 32 | 65 | 2026-08-26T08:16:20Z |
 | `civvis-20260826T082005Z` | King | diplomatic | yes | abandoned | 32 | 50 | 2026-08-26T08:29:44Z |
+| `civvis-20260829T040648Z` | King | diplomatic | yes | abandoned | 150 | 407 | 2026-08-29T05:00:50Z |
+| `civvis-20260829T050452Z` | King | diplomatic | yes | abandoned | 220 | 706 | 2026-08-29T06:33:47Z |
+| `civvis-20260829T063758Z` | King | diplomatic | yes | abandoned | 150 | 155 | 2026-08-29T07:21:57Z |
+| `civvis-20260829T084031Z` | King | diplomatic | yes | abandoned | 150 | 368 | 2026-08-29T09:31:58Z |
+| `civvis-20260829T105755Z` | King | diplomatic | yes | abandoned | 150 | 386 | 2026-08-29T11:56:14Z |
+| `civvis-20260829T150139Z` | King | diplomatic | yes | abandoned | 150 | 346 | 2026-08-29T15:55:03Z |
+| `civvis-20260829T194002Z` | King | diplomatic | yes | abandoned | 154 | 448 | 2026-08-29T20:30:09Z |
+| `civvis-20260829T203407Z` | King | diplomatic | yes | abandoned | 150 | 406 | 2026-08-29T21:24:49Z |
+| `civvis-20260830T021417Z` | King | diplomatic | yes | game exited | 167 | 516 | 2026-08-30T03:11:28Z |
+| `civvis-20260830T055337Z` | King | diplomatic | yes | abandoned | 150 | 393 | 2026-08-30T06:47:37Z |
+| `civvis-20260830T083406Z` | King | diplomatic | yes | abandoned | 150 | 246 | 2026-08-30T09:21:56Z |
+| `civvis-20260830T095742Z` | King | diplomatic | yes | abandoned | 150 | 107 | 2026-08-30T10:36:24Z |
+| `civvis-20260830T104408Z` | King | — | NO | killed | 88 | 130 | 2026-08-30T11:23:20Z |

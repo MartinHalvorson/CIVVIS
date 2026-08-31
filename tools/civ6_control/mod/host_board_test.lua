@@ -20,11 +20,15 @@
 --      count is reported;
 --  10. a refused settler move cannot draw its guard into a synthetic move;
 --  11. the `orders` event carries the cap and shadow counters.
+--  12. a rows-less asynchronous watch releases when the host lands the unit
+--      on a different plot, so the brain can re-plan from the actual board.
 --  13. an unguarded settler will not step into the measured two-plot reach of
---      a visible barbarian scout; any settler leg beside a visible barbarian
---      combat unit is held even with a synchronized single escort, while
---      invisible, distant, and proven-scout-escort cases retain ordinary
+--      a visible barbarian scout; any settler leg reachable by a visible
+--      barbarian combat unit is held even with a synchronized single escort,
+--      while invisible, distant, and proven-scout-escort cases retain ordinary
 --      movement.
+--  14. A co-located combat escort queued in an earlier frame stays with an
+--      exposed Settler until the later Settler safety row is actuated.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -44,11 +48,26 @@ local LOG = {}
 Automation = { Log = function(line) LOG[#LOG + 1] = line end }
 UnitOperationTypes = { PARAM_X = "x", PARAM_Y = "y" }
 UnitCommandTypes = {}
+DirectionTypes = {
+	DIRECTION_WEST = "west", DIRECTION_EAST = "east",
+	DIRECTION_NORTHWEST = "northwest", DIRECTION_NORTHEAST = "northeast",
+	DIRECTION_SOUTHWEST = "southwest", DIRECTION_SOUTHEAST = "southeast",
+}
 -- Plot index = y * 100 + x on this fake map.
 local function plotIndex(x, y) return y * 100 + x end
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2) return math.max(math.abs(x1 - x2), math.abs(y1 - y2)) end,
 	GetPlot = function() return nil end,
+	GetAdjacentPlot = function(x, y, direction)
+		local dx, dy = 0, 0
+		if direction == DirectionTypes.DIRECTION_WEST then dx = -1
+		elseif direction == DirectionTypes.DIRECTION_EAST then dx = 1
+		elseif direction == DirectionTypes.DIRECTION_NORTHWEST then dy = -1
+		elseif direction == DirectionTypes.DIRECTION_NORTHEAST then dx, dy = 1, -1
+		elseif direction == DirectionTypes.DIRECTION_SOUTHWEST then dx, dy = -1, 1
+		elseif direction == DirectionTypes.DIRECTION_SOUTHEAST then dy = 1 end
+		return { GetX = function() return x + dx end, GetY = function() return y + dy end }
+	end,
 	GetPlotIndex = function(x, y) return plotIndex(x, y) end,
 	GetPlotByIndex = function(index)
 		return { GetX = function() return index % 100 end, GetY = function() return math.floor(index / 100) end }
@@ -380,7 +399,17 @@ applyOrders(player, PID, 7, { row(23, "MOVE_TO", 2, 1) })
 check("blocked setter has no shadow injection", lastEvent("escort_shadow_injected"), nil)
 check("blocked setter does not synthesize a guard move", has(ops(24), "UNITOPERATION_MOVE_TO"), false)
 
--- 12. Queued paths: combat units cancelled, civilians kept, count reported.
+-- 12. A rows-less opening watch must release after an asynchronous host walk
+-- lands somewhere other than the requested coordinate.  The next brain frame
+-- needs the actual landing, not an expectation that can never become true.
+reset()
+host.units[25] = { id = 25, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+queue.watch(25, { x = 5, y = 5 }, { x = 1, y = 1 })
+host.units[25].x, host.units[25].y = 3, 2
+queue.drain(player, PID, 7)
+check("mismatched async landing releases its watch", queue.pendingCount(), 0)
+
+-- 13. Queued paths: combat units cancelled, civilians kept, count reported.
 reset()
 host.units[14] = { id = 14, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.units[15] = { id = 15, kind = "UNIT_SETTLER", x = 2, y = 2, moves = 2 }
@@ -393,7 +422,7 @@ check("it was the warrior, not the settler", host.cmds[1] and host.cmds[1].id, 1
 check("cancel used UNITCOMMAND_CANCEL", host.cmds[1] and host.cmds[1].cmd, "UNITCOMMAND_CANCEL")
 check("queued_paths reported", has(lastEvent("queued_paths"), '"found":2') and has(lastEvent("queued_paths"), '"cancelled":1'), true)
 
--- 13. The direct live-loss geometry is held: a new settler leaving a city for
+-- 14. The direct live-loss geometry is held: a new settler leaving a city for
 -- a tile within a barbarian scout's measured two-plot reach cannot spend its
 -- opening turn there without a guard.
 reset()
@@ -408,6 +437,22 @@ check("visible scout: hold names setter and scout", has(lastEvent("settler_scout
 	and has(lastEvent("settler_scout_capture_hold"), '"scout":90'), true)
 check("visible scout: order is an explicit held refusal", has(lastEvent("orders"), "settler_scout_capture_hold"), true)
 check("visible scout: orders count the held capture leg", has(lastEvent("orders"), '"settler_scout_capture_held":1'), true)
+
+-- A refusal is not enough when the Settler already stands inside the scout's
+-- measured envelope.  The host can prove a one-step retreat, so rewrite the
+-- actuation leg to that safe tile instead of leaving the civilian exposed.
+reset()
+host.units[32] = { id = 32, kind = "UNIT_SETTLER", x = 1, y = 2, moves = 2 }
+host.barbarians[92] = { id = 92, kind = "UNIT_SCOUT", x = 1, y = 4, moves = 0 }
+host.paths["32:" .. plotIndex(1, 3)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 3) }, turns = { 0, 1 } }
+host.paths["32:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(32, "MOVE_TO", 1, 3) })
+check("exposed scout leg retreats to a safe neighbour", ops(32), "UNITOPERATION_MOVE_TO@1,1")
+check("exposed scout retreat records the original target", has(lastEvent("settler_capture_escape"), '"want":[1,3]')
+	and has(lastEvent("settler_capture_escape"), '"sent":[1,1]'), true)
+check("exposed scout retreat is not counted as a hold", has(lastEvent("orders"), '"settler_scout_capture_held":0'), true)
 
 -- The safety decision is made against the first host leg, not the far-away
 -- planner target.  This catches a queued route whose current cap ends beside
@@ -553,6 +598,41 @@ check("visible combat rescue: shadow is applied, not counted as CIVVIS work",
 	has(lastEvent("orders"), '"settler_barbarian_combat_guard_rescued":1')
 	and has(lastEvent("orders"), '"escort_shadow_applied":1'), true)
 
+-- When no guard is available, an exposed Settler still gets a proven retreat
+-- rather than waiting on the combat threat's current tile.  This mirrors the
+-- live turn-20 loss where the held destination was safe by the mirror but the
+-- stationary Settler was already inside the host's BaseMoves envelope.
+reset()
+host.units[53] = { id = 53, kind = "UNIT_SETTLER", x = 1, y = 2, moves = 2 }
+host.barbarians[104] = { id = 104, kind = "UNIT_WARRIOR", x = 1, y = 4, moves = 0 }
+host.paths["53:" .. plotIndex(1, 3)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 3) }, turns = { 0, 1 } }
+host.paths["53:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(53, "MOVE_TO", 1, 3) })
+check("exposed combat leg retreats without a guard", ops(53), "UNITOPERATION_MOVE_TO@1,1")
+check("exposed combat retreat identifies the threat", has(lastEvent("settler_capture_escape"), '"settler":53')
+	and has(lastEvent("settler_capture_escape"), '"sent":[1,1]'), true)
+check("exposed combat retreat is not counted as a hold", has(lastEvent("orders"), '"settler_barbarian_combat_capture_held":0'), true)
+
+-- A co-located guard can be queued in an earlier combat frame than the
+-- Settler's later safety row.  Keep that guard on the exposed current tile;
+-- otherwise it leaves first and the Settler is captured before its held row
+-- is even visible to the host bridge.
+reset()
+host.units[54] = { id = 54, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.units[55] = { id = 55, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[105] = { id = 105, kind = "UNIT_WARRIOR", x = 1, y = 3, moves = 0 }
+host.paths["55:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(55, "MOVE_TO", 2, 1) })
+check("earlier-frame guard stays with exposed settler", ops(55), "")
+check("earlier-frame guard hold names both units",
+	has(lastEvent("settler_barbarian_combat_guard_hold"), '"settler":54')
+	and has(lastEvent("settler_barbarian_combat_guard_hold"), '"guard":55'), true)
+check("earlier-frame guard hold is counted", has(lastEvent("orders"),
+	'"settler_barbarian_combat_guard_held":1'), true)
+
 -- A nearby guard that already has an unrelated order is deliberately not
 -- overwritten.  The conservative result is observable: no rescue event or
 -- shadow row, and the guard keeps the route the planner supplied.
@@ -570,6 +650,36 @@ check("visible combat no-overwrite: setter stays out of capture leg", ops(49), "
 check("visible combat no-overwrite: guard keeps its supplied route", ops(50), "UNITOPERATION_MOVE_TO@3,1")
 check("visible combat no-overwrite: no rescue is synthesized", lastEvent("settler_barbarian_combat_guard_rescue"), nil)
 check("visible combat no-overwrite: rescue counter stays zero", has(lastEvent("orders"), '"settler_barbarian_combat_guard_rescued":0'), true)
+
+-- A combat unit can capture from more than one plot away on its next turn.
+-- The live horse-archer loss at t43 used this geometry: the staggered-hex
+-- distance was two, so an adjacency-only check let the Settler step onto the
+-- exact tile the horse archer could enter.  Prefer the host path proof even
+-- when the hostile has already spent its current-turn movement.
+reset()
+host.units[51] = { id = 51, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[102] = { id = 102, kind = "UNIT_HORSEMAN", x = 4, y = 1, moves = 0 }
+host.paths["51:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.paths["102:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(4, 1), plotIndex(3, 1), plotIndex(2, 1) }, turns = { 0, 1, 1 } }
+applyOrders(player, PID, 7, { row(51, "MOVE_TO", 2, 1) })
+check("two-step combat reach: setter stays out of capture leg", ops(51), "")
+check("two-step combat reach: host path names the threat", has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile":102')
+	and has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile_reach":"path"'), true)
+
+-- If the host cannot answer an enemy path to a civilian-occupied plot, the
+-- conservative BaseMoves/distance fallback still holds a normal two-move
+-- barbarian rather than accepting a false-safe leg.
+reset()
+host.units[52] = { id = 52, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[103] = { id = 103, kind = "UNIT_HORSEMAN", x = 4, y = 1, moves = 0 }
+host.paths["52:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(52, "MOVE_TO", 2, 1) })
+check("two-step fallback reach: setter stays out of capture leg", ops(52), "")
+check("two-step fallback reach: distance names the threat", has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile":103')
+	and has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile_reach":"base_moves"'), true)
 
 -- A visible combat unit outside the adjacent-capture geometry does not freeze
 -- normal expansion movement.

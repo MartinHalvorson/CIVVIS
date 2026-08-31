@@ -1103,6 +1103,45 @@ fn gaul_specialty_districts_culture_bomb_from_nonadjacent_sites() {
 }
 
 #[test]
+fn warrior_monks_culture_bomb_when_a_holy_site_completes() {
+    let mut game = Game::new_full(1, 20, 14, 5_157, 100, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    let city = game.found_city_for(0, game.units[&settler].pos, None);
+    game.players[0].techs.insert(crate::name!("astrology"));
+    game.players[0].religion = Some("Home Faith".to_string());
+    game.players[0].religion_beliefs = vec!["warrior_monks".to_string()];
+    let site = game
+        .district_sites(city, crate::name!("holy_site"))
+        .into_iter()
+        .find(|position| {
+            game.nbrs(*position)
+                .into_iter()
+                .any(|neighbor| game.map.tiles[&neighbor].owner_city.is_none())
+        })
+        .expect("Holy Site with an unowned adjacent tile");
+    let claim = game
+        .nbrs(site)
+        .into_iter()
+        .find(|position| game.map.tiles[position].owner_city.is_none())
+        .unwrap();
+
+    assert!(game.complete_item(
+        0,
+        city,
+        &Item::District {
+            district: crate::name!("holy_site"),
+            pos: site,
+        },
+    ));
+    assert_eq!(game.map.tiles[&claim].owner_city, Some(city));
+    assert!(game.cities[&city].owned_tiles.contains(&claim));
+}
+
+#[test]
 fn district_costs_scale_with_tree_progress_and_spaceports_remain_fixed() {
     let mut game = Game::new_full(1, 20, 14, 5155, 100, 0, false);
     let settler = game
@@ -5129,7 +5168,7 @@ fn tagma_replaces_knights_buffs_its_formation_and_is_the_hippodrome_reward() {
         },
     ));
     // The shipped Units row (220 Production, 4 Gold) and UnitUpgrades row
-    // (Cuirassier, the Knight's own successor), audited by civ6_fidelity.py.
+    // (Cuirassier), audited by civ6_fidelity.py.
     let tagma = &game.rules.units["tagma"];
     assert_eq!(tagma.cost, 220.0);
     assert_eq!(tagma.maintenance, 4.0);
