@@ -466,6 +466,8 @@ const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-
 const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
 const EMBEDDED_CIV6_UNIT_FLAG_PLATES: &[u8] =
     include_bytes!("../web/assets/civ6-unit-flag-plates.png");
+const EMBEDDED_CIV6_CITY_BANNER_SHIELDS: &[u8] =
+    include_bytes!("../web/assets/civ6-city-banner-shields.png");
 
 /// The agents that exist in every build, with a friendly handle each.
 /// `crate::elo::builtin_send_ai` resolves the id, and the auto-play control
@@ -3063,6 +3065,11 @@ fn civ6_unit_flag_plates() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAG_PLATES.to_vec())
 }
 
+fn civ6_city_banner_shields() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-city-banner-shields.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_CITY_BANNER_SHIELDS.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -4188,6 +4195,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("GET", "/assets/civ6-unit-flag-plates.png") => {
             respond(stream, "200 OK", "image/png", &civ6_unit_flag_plates());
+        }
+        ("GET", "/assets/civ6-city-banner-shields.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_city_banner_shields());
         }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
