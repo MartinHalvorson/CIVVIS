@@ -1724,6 +1724,14 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                       flush=True)
                 return True
 
+            # OCR and screen capture do not preserve the key application.  If
+            # another window became frontmost, the first click on Civ VI only
+            # activates it and the dropdown stays closed; the post-click frame
+            # then looks exactly like a missed coordinate.  Raise the game at
+            # the same boundary used for the final Start Game click.  The
+            # click helper's existing move/settle delay gives the raise time to
+            # take effect without changing the measured setup geometry.
+            focus_game(GAME_SIDE, GAME_FRACTION)
             click_at(*current_point)
             park_setup_pointer(bounds)
             time.sleep(1.2)
@@ -1734,6 +1742,9 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                   flush=True)
             continue
 
+        # The option click is a separate input event and needs the same
+        # foreground guarantee as the click that opened the list.
+        focus_game(GAME_SIDE, GAME_FRACTION)
         click_at(*target)
         park_setup_pointer(bounds)
         time.sleep(1.2)
