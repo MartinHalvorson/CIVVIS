@@ -5136,6 +5136,17 @@ fn production_unit_appearance_conflicts_with_purchase(
         })
 }
 
+/// What later frames of the same turn say about a unit, for verdicts that a
+/// single frame cannot settle. Bundled rather than passed as loose flags so
+/// `verify_unit_order` stays inside clippy's argument limit.
+#[derive(Clone, Copy, Default)]
+struct LaterFrames {
+    /// The unit was fortified on a later frame, so a FORTIFY did land.
+    fortified: bool,
+    /// The decider moved it on a later frame, overriding its own FORTIFY.
+    moved: bool,
+}
+
 fn verify_unit_order(
     order: &IssuedOrder,
     turn: u32,
@@ -5143,8 +5154,7 @@ fn verify_unit_order(
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
     evidence: &[serde_json::Value],
-    later_fortified: bool,
-    later_moved: bool,
+    later: LaterFrames,
 ) -> Verdict {
     let Some(id) = order.subject else {
         return Verdict::Failed("no_subject".to_string());
@@ -5234,7 +5244,7 @@ fn verify_unit_order(
             // eligible on the decision frame so a newly appearing id or a
             // refused repeat on an already-fortified unit cannot be credited.
             let was_eligible = was.is_some_and(|unit| !unit.fortified && unit.fortify_turns <= 0);
-            if later_fortified && was_eligible {
+            if later.fortified && was_eligible {
                 Verdict::Verified
             } else {
                 match now {
@@ -5242,7 +5252,7 @@ fn verify_unit_order(
                     Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
                     // See `later_moved_units`: the decider walked this unit away
                     // after asking it to dig in. Not the bridge's doing.
-                    Some(_) if later_moved => {
+                    Some(_) if later.moved => {
                         Verdict::Failed("superseded_by_move".to_string())
                     }
                     Some(_) => Verdict::Failed("not_fortified".to_string()),
@@ -5402,8 +5412,10 @@ fn verify_order_with_context(
             after,
             tiles,
             evidence,
-            context.later_fortified,
-            context.later_moved,
+            LaterFrames {
+                fortified: context.later_fortified,
+                moved: context.later_moved,
+            },
         ),
         "produce" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
@@ -9185,20 +9197,20 @@ mod tests {
         warrior.x = 5;
         warrior.y = 4;
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[], false, false),
+            verify_unit_order(&order, 30, &before, &arrived, &tiles, &[], LaterFrames::default()),
             Verdict::Verified
         ));
 
         let mut gone = before.clone();
         gone.hostiles.clear();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &gone, &tiles, &[], false, false),
+            verify_unit_order(&order, 30, &before, &gone, &tiles, &[], LaterFrames::default()),
             Verdict::Verified
         ));
 
         let stood = before.clone();
         assert!(matches!(
-            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], false, false),
+            verify_unit_order(&order, 30, &before, &stood, &tiles, &[], LaterFrames::default()),
             Verdict::Failed(reason) if reason == "not_captured"
         ));
     }
