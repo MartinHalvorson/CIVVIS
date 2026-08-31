@@ -1692,6 +1692,61 @@ def _recent_autosaves(newer_than: float | None = None) -> list[Path]:
     return civ6_play.recent_autosaves(newer_than=newer_than)
 
 
+#: The operator's standing victory lane, re-read ONCE PER GAME from a one-line
+#: file. Absent (the normal case) changes nothing and the flag or the tree's
+#: declared default stands.
+#:
+#: ⚠⚠ WHY THIS EXISTS, and why it beats the flag. The lane the supervisor passes
+#: comes from `CIVVIS_VICTORY`, read once at `civvis-game-supervisor.sh` start.
+#: That supervisor is a single long-running process — measured 2026-08-31 still
+#: holding the environment it inherited on **Aug 28**, three days earlier — so a
+#: lane exported into the keeper's login shell pins every game the ladder plays
+#: from then on, and no merge to `main` can change it. On 2026-08-31 the ladder
+#: launched a game on a tree whose `DEFAULT_CIVVIS_VICTORY` read `science` while
+#: still passing `--victory diplomatic`, and the operator's standing goal was a
+#: science victory.
+#:
+#: ⚠ Clearing that environment means restarting the host, and the host must be
+#: Terminal-hosted: macOS grants writing inside `Civ6.app` to Terminal and not
+#: to launchd (see `civvis-ladder-terminal-launcher.sh`). Restarting it from an
+#: automation context risks leaving the ladder down for good. A file the climb
+#: re-reads per game changes the lane without touching that process at all, the
+#: same way `~/.civvis-play-pin` switches the played tree mid-loop.
+#:
+#: ⚠ An unreadable or unknown lane is IGNORED with a warning, never fatal. This
+#: is the opposite of `~/.civvis-live-force-on`, which refuses a batch outright
+#: — correct there, wrong here: a typo must not stop an unattended ladder.
+VICTORY_LANE_FILE = Path(
+    os.environ.get("CIVVIS_VICTORY_LANE_FILE", "")
+    or Path.home() / ".civvis-victory-lane"
+)
+
+
+def operator_victory_lane(requested: str, path: Path | None = None,
+                          warn=None) -> str:
+    """The lane to play: the operator's file when it names one, else `requested`."""
+    path = VICTORY_LANE_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (FileNotFoundError, NotADirectoryError):
+        return requested
+    except OSError as exc:
+        warn(f"victory lane file {path} is unreadable ({exc}); "
+             f"keeping {requested}")
+        return requested
+    lane = text.strip()
+    if not lane:
+        return requested
+    if lane not in VICTORY_LANES:
+        warn(f"victory lane file {path} names {lane!r}, which is not one of "
+             f"{'|'.join(VICTORY_LANES)}; keeping {requested}")
+        return requested
+    if lane != requested:
+        warn(f"victory lane file {path} pins {lane!r}; overriding {requested!r}")
+    return lane
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
@@ -1973,6 +2028,9 @@ def main() -> int:
                          "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
     args.leader = enforce_roman_leader(args.leader, caller="civ6_civvis_climb")
+    # Re-read per game, so the lane can be changed without restarting a
+    # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
+    args.victory = operator_victory_lane(args.victory)
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
     logs.mkdir(parents=True, exist_ok=True)
