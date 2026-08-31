@@ -210,6 +210,40 @@ fn a_unit_cannot_end_on_its_own_unit() {
     );
 }
 
+/// A host movement event may arrive after the last exported state.  Its
+/// reported source is still the fact to replay, and asking that question must
+/// neither require the old mirror position nor mutate the authoritative game.
+#[test]
+fn observed_step_probe_rebases_without_mutating_the_game() {
+    let (mut g, start, _) = plain_board(61021);
+    let (middle, beyond) = straight_line(&g, start);
+    let mover = g.spawn_unit("warrior", 0, start);
+    g.begin_turn(0);
+    g.units.get_mut(&mover).expect("the mover").moves_left = 0.0;
+
+    assert_eq!(g.can_move_observed_step(mover, middle, beyond), Some(true));
+    assert_eq!(
+        g.units[&mover].pos, start,
+        "the probe cannot relocate the game"
+    );
+    assert_eq!(
+        g.units[&mover].moves_left, 0.0,
+        "the probe cannot replenish the authoritative unit"
+    );
+    assert!(
+        g.unit_ids_at(middle).is_empty(),
+        "the source stays unoccupied"
+    );
+
+    let friend = g.spawn_unit("warrior", 0, beyond);
+    assert_eq!(
+        g.can_move_observed_step(mover, middle, beyond),
+        Some(false),
+        "the replay still enforces the destination stacking rule"
+    );
+    assert_eq!(g.units[&friend].pos, beyond);
+}
+
 /// Passing through is not free: the unit needs the Movement to leave again,
 /// and one movement point buys the crossing and nothing else.
 #[test]
