@@ -137,7 +137,17 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 # ⚠ Rows either side of this change are NOT comparable, and `code_rev` is what
 # separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
 # untargeted `civvis` the batch loop used to hard-code.
-DEFAULT_CIVVIS_VICTORY = "diplomatic"
+#
+# 2026-08-30: SCIENCE AGAIN, on the operator's standing instruction — improve
+# the science-victory strategies until a live King game is won by science —
+# which sits above the measured-default rule the same way the leader pin below
+# does. The 08-17 "0/16" reading above predates #2435 `science-victory-drive`
+# (merged 08-25), which rewrote the exact machinery that refused to launch
+# (`space_race_can_finish` priced the chain at raw production and never sited
+# the pad); rerun at the same profile and seeds on main `1473eba2`, the lane
+# now completes — see `victory_eval`'s module doc and PR #2824 for the fresh
+# table. The 08-17 numbers stay above because they were true of that binary.
+DEFAULT_CIVVIS_VICTORY = "science"
 # The operator's standing instruction is unambiguous: every live game plays
 # Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
 # not merely in a launcher default, so a direct ``civ6_play.py --leader ...``

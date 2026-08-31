@@ -79,8 +79,15 @@ class TheDefaultObjectiveHasOneHome(unittest.TestCase):
         floor rather than Diplomacy's strength.
 
         Moving this is allowed and is meant to cost one deliberate edit here.
+
+        Moved 2026-08-30, the deliberate edit: the operator's standing
+        instruction (win a science victory on King, live) aims the ladder at
+        Science, and #2435 `science-victory-drive` (merged 08-25) rewrote the
+        launch machinery the 08-17 0/16 reading measured. The fresh
+        `victory_eval` table at the same profile and seeds is beside the value
+        in `civ6_play.py` and in PR #2824.
         """
-        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "diplomatic")
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
 
     def test_the_help_text_does_not_restate_the_value(self):
         """The help said "defaults to Science" for as long as the value was
