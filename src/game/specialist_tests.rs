@@ -175,6 +175,43 @@ fn campus_slots_are_worked_and_tier_three_yield_applies_to_every_scientist() {
 }
 
 #[test]
+fn useful_tiles_are_preferred_to_district_specialists() {
+    let (mut game, city, position) = specialist_game();
+    install_district(&mut game, city, position, "campus");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+
+    let center = game.cities[&city].pos;
+    let useful_tiles: Vec<Pos> = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|tile| *tile != center && *tile != position)
+        .take(3)
+        .collect();
+    assert_eq!(useful_tiles.len(), 3);
+    for tile_pos in &useful_tiles {
+        game.map.tiles.get_mut(tile_pos).unwrap().terrain = crate::name!("desert");
+        game.map.tiles.get_mut(tile_pos).unwrap().hills = true;
+    }
+    game.cities.get_mut(&city).unwrap().pop = 3;
+
+    let plan = game.city_citizen_plan(city);
+    assert!(
+        plan.specialists.is_empty(),
+        "a specialist should be a fallback when usable tiles remain: {plan:?}"
+    );
+    assert_eq!(plan.worked_tiles.len(), 3);
+    assert!(plan
+        .worked_tiles
+        .iter()
+        .all(|tile| useful_tiles.contains(tile)));
+}
+
+#[test]
 fn worship_and_each_power_plant_add_their_per_specialist_bonus() {
     let (mut game, city, position) = specialist_game();
     install_district(&mut game, city, position, "holy_site");
