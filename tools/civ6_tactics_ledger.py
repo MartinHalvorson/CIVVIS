@@ -346,7 +346,18 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
         preview = event.get("preview") or {}
         predicted = preview.get("damage_to_defender")
         if we_attack and isinstance(predicted, (int, float)) and isinstance(dealt, (int, float)):
-            preview_error.append(float(dealt) - float(predicted))
+            comparable = float(predicted)
+            # `SimulateAttackInto` reports the strike's potential damage, while
+            # the combat callback reports the HP delta. Civ VI caps that delta
+            # at the defender's remaining HP, so a lethal preview of 64 against
+            # a 26-HP unit is an expected 26, not a -38 combat-model mismatch.
+            # Cities and districts stay uncapped here: their preview also
+            # carries wall damage while `damage_to_defender` is the garrison
+            # readback, so the two fields are not the same quantity.
+            defender_hp = defender.get("hp")
+            if defender.get("type") == "unit" and isinstance(defender_hp, (int, float)):
+                comparable = min(comparable, max(0.0, float(defender_hp)))
+            preview_error.append(float(dealt) - comparable)
     kills = ours["kills"] + theirs["losses_attacking"]
     losses = theirs["kills"] + ours["losses_attacking"]
     mean_err = (sum(preview_error) / len(preview_error)) if preview_error else None

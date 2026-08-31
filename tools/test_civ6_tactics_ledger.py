@@ -139,6 +139,25 @@ class QueueAndCombatTest(unittest.TestCase):
         self.assertIn("landed same turn 1", text)
         self.assertIn("kills 0, losses 1", text)
 
+    def test_lethal_preview_is_capped_at_the_defenders_remaining_hp(self) -> None:
+        events = [{
+            "kind": "combat", "turn": 34,
+            "attacker": {"player": 0, "id": 1, "kind": "UNIT_ARCHER", "type": "unit"},
+            "defender": {"player": 63, "id": 900, "kind": "UNIT_BARBARIAN_HORSEMAN",
+                         "type": "unit", "hp": 26},
+            "damage_to_defender": 26, "damage_to_attacker": 0,
+            "defender_killed": True, "attacker_killed": False,
+            "preview": {"damage_to_defender": 64, "damage_to_attacker": 0},
+        }]
+
+        combat = ledger.combat_section(events, 0)
+
+        self.assertIsNotNone(combat)
+        preview = combat["host_preview"]
+        self.assertEqual(preview["strikes_previewed"], 1)
+        self.assertEqual(preview["mean_actual_minus_predicted"], 0.0)
+        self.assertEqual(preview["within_20pct_of_30"], 1)
+
 
 class SalvageableLossTest(unittest.TestCase):
     def test_a_unit_last_seen_wounded_is_a_loss_the_seat_saw_coming(self) -> None:
