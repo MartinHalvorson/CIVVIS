@@ -16612,6 +16612,32 @@ impl AdvancedAi {
                            "Offering peace to {}", g.players[*other].civ;
                            "{because}: {my_power:.0} power against their {their_power:.0}");
                 }
+                // An explicit Science seat has no offensive use for a war it
+                // did not appoint.  A losing proposal can still be refused by
+                // the attacker, which leaves the besieged city paying for the
+                // same war every turn.  Once the treaty clock is legal, end a
+                // clearly losing, locally threatened defensive war directly.
+                // Keep this narrow: ordinary adaptive seats still negotiate,
+                // and an appointed campaign or Emergency war retains its
+                // bilateral commitment.
+                let science_defensive_peace = self.victory_target == Some(VictoryTarget::Science)
+                    && self.war_plan.is_none()
+                    && plan.strategy != GrandStrategy::Conquest
+                    && plan.threatened_city.is_some()
+                    && my_power < g.military_power(*other) * 0.85
+                    && g.peace_available_at(pid, *other).is_none();
+                if science_defensive_peace
+                    && g.apply(pid, &Action::MakePeace { player: *other }).is_ok()
+                {
+                    self.peace_until = g.turn.saturating_add(30);
+                    self.major_war_since = None;
+                    if self.journal().wants(crate::reasoning::Level::Strategy) {
+                        think!(self.journal(), Diplomacy, Strategy,
+                               "Ending the defensive war with {}", g.players[*other].civ;
+                               "the Science lane cannot afford a losing siege against a threatened home city");
+                    }
+                    continue;
+                }
                 // Peace between majors is bilateral. The former direct
                 // MakePeace let an outmatched defender terminate a winning
                 // invasion on the first legal turn, even when the conqueror

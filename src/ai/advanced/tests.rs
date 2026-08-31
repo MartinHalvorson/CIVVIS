@@ -7277,6 +7277,54 @@ fn outmatched_major_must_negotiate_peace_with_the_winning_campaign() {
 }
 
 #[test]
+fn an_explicit_science_lane_ends_a_losing_threatened_war_directly() {
+    let mut game = Game::new_full(2, 24, 16, 7_923, 300, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    let staging = game.cities[&game.player_city_ids(0)[0]].pos;
+    for _ in 0..3 {
+        game.spawn_test_unit("modern_armor", 0, staging);
+    }
+    game.current = 0;
+    game.turn = 60;
+    game.record_contact(0, 1);
+    game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    game.turn = game
+        .peace_available_at(0, 1)
+        .expect("the new war has a mandatory minimum");
+    assert!(game.military_power(1) < game.military_power(0) * 0.85);
+
+    let threatened_city = game.player_city_ids(1).into_iter().next();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.major_war_since = Some(60);
+    game.current = 1;
+    science.advanced_diplomacy(&mut game, 1, &plan);
+
+    assert!(
+        !game.is_at_war(0, 1),
+        "a losing siege must not wait for the attacker to accept a peace offer"
+    );
+    assert_eq!(science.peace_until, game.turn + 30);
+    assert!(science.major_war_since.is_none());
+}
+
+#[test]
 fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
     let mut game = Game::new_full(3, 24, 16, 782, 300, 0, false);
     game.turn = 12;
