@@ -6143,7 +6143,7 @@ populations, whose intentionally bounded jobs have very different idle shapes.
 Exact rerun:
 
 ```bash
-cargo run --profile ci --locked --bin audit -- \
+cargo run --profile ci --locked --features developer-tools --bin audit -- \
   --games 2 --players 6 --width 74 --height 46 --turns 250 \
   --city-states 9 --speed online --start-seed 7330000 --quiet
 ```

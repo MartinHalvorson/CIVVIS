@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import live_divergence as ld
@@ -210,6 +211,31 @@ class BinaryLookup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             found = ld.binary_candidates(None, env={}, home_published=Path(tmp) / "absent")
             self.assertEqual(found, [ld.REPO / "target" / "release" / "live_divergence"])
+
+    def test_fallback_build_enables_developer_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target" / "release" / "live_divergence"
+
+            def build(command, **_kwargs):
+                self.assertEqual(
+                    command,
+                    [
+                        "cargo",
+                        "build",
+                        "--release",
+                        "--features",
+                        "developer-tools",
+                        "--bin",
+                        "live_divergence",
+                    ],
+                )
+                target.parent.mkdir(parents=True)
+                target.write_text("", encoding="utf-8")
+
+            with mock.patch.object(ld, "binary_candidates", return_value=[target]), \
+                    mock.patch.object(ld.subprocess, "run", side_effect=build) as run:
+                self.assertEqual(ld.find_binary(None), target)
+            run.assert_called_once()
 
 
 class CheckCommand(unittest.TestCase):

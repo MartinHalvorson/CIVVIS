@@ -187,7 +187,7 @@ an interval, the question every treatment PR ends on: *does the agent win more
 with this on than off?*
 
 ```sh
-cargo build --profile ci --bin gene_screen
+cargo build --profile ci --features developer-tools --bin gene_screen
 target/ci/gene_screen --list                                # the genes, in bit order (64 on 2026-08-19)
 target/ci/gene_screen --games 600 --jobs 8 --out screen.jsonl
                                                             # ↑ THE screen: no profile flags
