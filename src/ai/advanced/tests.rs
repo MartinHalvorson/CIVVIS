@@ -13736,6 +13736,56 @@ fn empire_with_a_capital(seed: u64) -> (Game, u32, Pos) {
     (game, city, home)
 }
 
+#[test]
+fn targeted_science_recovers_a_persistent_idle_city_with_a_civilian() {
+    let (mut game, city, _) = empire_with_a_capital(79_123);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    // Make every ordinary candidate miss the -1,000 choice bar while leaving
+    // the Builder as a real, non-military fallback above the -9,000 hard veto.
+    // This is the live failure shape: a soft refusal is still buildable, but
+    // the old branch discarded it and spent the turn idle.
+    ai.base.w.p_builder = -200.0;
+    ai.base.w.p_military = -200.0;
+    let counts = ai.counts(&game, 0);
+    let items = game.producible_items(0, city);
+    let scores = ai.production_values(&game, 0, city, &items, &plan, counts);
+    assert!(items.iter().any(|item| matches!(
+        item,
+        Item::Unit { unit } if unit == "builder"
+    )));
+    assert!(scores.iter().all(|score| *score <= -1_000.0));
+    assert!(scores.iter().all(|score| *score > PRODUCTION_VETO_FLOOR));
+
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert!(
+        game.cities[&city].queue.is_empty(),
+        "one transient idle turn remains tolerated"
+    );
+
+    // Repeating the same host turn is common while the bridge drains a
+    // blocking prompt and must not count as a second idle turn.
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert!(game.cities[&city].queue.is_empty());
+
+    game.turn += 1;
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert!(matches!(
+        game.cities[&city].queue.first(),
+        Some(Item::Unit { unit }) if unit == "builder"
+    ));
+}
+
 /// ★★★★ Two colonies founded at −19 Loyalty a turn, each lost within eight
 /// turns (civvis-20260816T123936Z: Arpinum 18 tiles from the nearest own
 /// city, Lugdunum 11), while the mirror's forecast — which sums only the
