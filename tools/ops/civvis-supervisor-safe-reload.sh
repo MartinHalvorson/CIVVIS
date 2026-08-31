@@ -14,8 +14,13 @@ LOCK=${CIVVIS_SUPERVISOR_RELOAD_LOCK:-$HOME/.civvis-supervisor-safe-reload.lock}
 PID_FILE=$LOCK/pid
 LOG=${CIVVIS_SUPERVISOR_RELOAD_LOG:-$HOME/civvis-climb-logs/supervisor-safe-reload.log}
 POLL_S=${CIVVIS_SUPERVISOR_RELOAD_POLL_S:-5}
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 
 say() { print -r -- "[supervisor-safe-reload] $(date -u +%FT%TZ) $*" >> "$LOG"; }
+
+verification_intent_running() {
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+}
 
 release_lock() {
   local holder=""
@@ -92,6 +97,10 @@ supervisor_caffeinate_pid() {
 }
 
 mkdir -p "${LOG:h}"
+if ! verification_intent_running; then
+  say "verification intent is not running; no supervisor reload requested"
+  exit 0
+fi
 acquire_lock
 case $? in
   0) ;;
@@ -103,6 +112,10 @@ trap 'exit 0' HUP INT TERM
 
 say "watching for a no-game gap"
 while true; do
+  if ! verification_intent_running; then
+    say "verification intent is not running; abandoning reload without touching the supervisor"
+    exit 0
+  fi
   supervisor=$(supervisor_pid) || { say "supervisor is already absent; no activation needed"; exit 0; }
   if game_harness_alive || supervisor_is_launching "$supervisor"; then
     sleep "$POLL_S"
@@ -111,6 +124,10 @@ while true; do
 
   # Stop first, then repeat every predicate with the parent unable to launch.
   old_caffeinate=$(supervisor_caffeinate_pid "$supervisor" || true)
+  if ! verification_intent_running; then
+    say "verification intent changed before reload; leaving supervisor untouched"
+    exit 0
+  fi
   kill -STOP "$supervisor" 2>/dev/null || { sleep "$POLL_S"; continue; }
   sleep 1
   current=$(supervisor_pid || true)

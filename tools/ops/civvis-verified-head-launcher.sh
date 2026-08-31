@@ -16,8 +16,9 @@
 #     (civvis-install-host-automation.sh) makes that name a SYMLINK to this
 #     file, so a keeper-recovered loop is the operator's loop and not the
 #     tree's stock defaults;
-#   * `civvis-games on` and `civvis-games ensure`, the same way;
-#   * an operator, by hand:  open -g -j -a Terminal ~/civvis-verification-launch.command
+#   * `civvis-games on`, which records the explicit verification intent;
+#   * an operator, by hand, only after `civvis-games on` has authorized the lane:
+#       open -g -j -a Terminal ~/civvis-verification-launch.command
 #
 # ⚠ THE POLICY LIVES IN ONE FILE, ~/.civvis-verification-policy, NOT IN A SHELL
 # PROFILE. Before this file existed, the rung, the attempts per cycle and the
@@ -63,6 +64,7 @@ OPS=${0:A:h}
 LOG=${CIVVIS_LADDER_LOG:-$HOME/Library/Logs/civvis-ladder.log}
 PIN=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 POLICY=${CIVVIS_VERIFICATION_POLICY:-$HOME/.civvis-verification-policy}
+INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 # Tests point this at a stub. A host never needs to; the sibling is the launcher.
 LAUNCHER=${CIVVIS_LADDER_LAUNCHER:-$OPS/civvis-ladder-terminal-launcher.sh}
 mkdir -p "${LOG:h}"
@@ -79,6 +81,13 @@ refuse() {
   print -u2 -r -- "civvis-verified-head-launcher: REFUSING launch: $*"
   exit "${REFUSE_STATUS:-64}"
 }
+
+# Clearing the low-level gamelock halt is not authorization to run this
+# unattended chain. Only `civvis-games on` writes the exact `running` value;
+# missing, unreadable, or any other value is a hard refusal.
+if [[ ! -r "$INTENTFILE" || "$(<"$INTENTFILE")" != running ]]; then
+  refuse "verification intent is not running at $INTENTFILE; run civvis-games on to authorize automatic verification"
+fi
 
 typeset -A policy
 policy=(

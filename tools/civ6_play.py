@@ -3340,7 +3340,8 @@ def play(args: argparse.Namespace) -> int:
     hold_macos_awake()
     wait_for_unlocked_session()
     wait_for_safe_screen_capture()
-    if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
+    if not gamelock.acquire(args.tag, wait_s=args.lock_wait,
+                            require_verification_intent=True):
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",
               file=sys.stderr)
