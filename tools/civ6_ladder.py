@@ -475,6 +475,12 @@ def open_events(events_path: Path):
 #: `orders` event: the count is on the ledger, the kind is not.
 UNATTRIBUTED = "unattributed"
 
+#: Where a postcondition verdict lands when an older control mod omitted the
+#: original order kind.  Keep this distinct from ``UNATTRIBUTED`` above: an
+#: old ``orders`` event can lack per-kind *refusal* data while still carrying
+#: a fully useful per-kind postcondition verdict, and vice versa.
+POSTCONDITION_UNATTRIBUTED = "unattributed_postcondition"
+
 
 def orders_by_kind(events_path: Path) -> dict | None:
     """Actuation per order kind, summed from the run's own `orders` events:
@@ -545,6 +551,61 @@ def orders_by_kind(events_path: Path) -> dict | None:
                     orphan["seen"] += int(n or 0)
                     orphan["refused"][str(reason)] = (
                         orphan["refused"].get(str(reason), 0) + int(n or 0))
+    return kinds if counted else None
+
+
+def postconditions_by_kind(events_path: Path) -> dict | None:
+    """Postcondition outcomes per order kind from a live event stream.
+
+    ``orders_by_kind`` deliberately answers a narrower question: which
+    requests the Lua actuator accepted or refused.  An accepted request is not
+    proof that Civilization VI changed state.  The decider checks the next
+    exported frame and the control mod writes those results as
+    ``order_verified`` and ``order_failed`` events, each with ``order_kind``
+    and, for failures, a named reason.  This function makes that receiving-side
+    evidence reusable by operational tools without pretending that it is a
+    host-return-code rate.
+
+    It returns ``{kind: {verified, failed, reasons}}`` with a ``"*"`` total
+    row.  A legacy verdict without a usable ``order_kind`` is retained under
+    :data:`POSTCONDITION_UNATTRIBUTED`; callers must not manufacture a
+    per-kind floor from it.  ``turn_verified`` is intentionally not used here:
+    its tally includes unverifiable orders but cannot associate them with a
+    kind.  Tolerant of a truncated tail line and gzip-compressed ledger runs.
+    """
+    if not events_path.is_file():
+        return None
+    kinds: dict[str, dict] = {}
+
+    def row(kind: str) -> dict:
+        return kinds.setdefault(kind, {"verified": 0, "failed": 0, "reasons": {}})
+
+    counted = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            event_kind = event.get("kind")
+            if event_kind not in ("order_verified", "order_failed"):
+                continue
+            counted = True
+            order_kind = event.get("order_kind")
+            if not isinstance(order_kind, str) or not order_kind or order_kind == "*":
+                order_kind = POSTCONDITION_UNATTRIBUTED
+            rows = [row("*"), row(order_kind)]
+            for target in rows:
+                if event_kind == "order_verified":
+                    target["verified"] += 1
+                    continue
+                target["failed"] += 1
+                reason = event.get("reason")
+                if not isinstance(reason, str) or not reason:
+                    reason = "unknown"
+                target["reasons"][reason] = target["reasons"].get(reason, 0) + 1
     return kinds if counted else None
 
 
