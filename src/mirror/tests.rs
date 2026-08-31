@@ -5431,6 +5431,80 @@ fn the_hosts_climate_level_is_the_boards_phase_and_floods_the_bands_it_names() {
     assert!(bare.game.observed_climate.is_none());
 }
 
+/// City facts and climate must be in place before host-to-model yield
+/// calibration. A fresh rebuild initially gives the first planted city the
+/// Palace, while the host can name a later city as capital; the same rebuild
+/// can flood a lowland city centre when it applies the host climate phase.
+#[test]
+fn city_yield_calibration_follows_capital_and_climate_state() {
+    let mut first = plot(5, 4, "TERRAIN_PLAINS");
+    first.o = 0;
+    let mut capital = plot(8, 4, "TERRAIN_PLAINS");
+    capital.o = 0;
+    capital.cl = 1;
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 30,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![first, capital],
+    }]);
+    let host_yields = crate::rules::Yields {
+        food: 7.0,
+        production: 6.0,
+        gold: 4.0,
+        science: 3.0,
+        culture: 2.0,
+        faith: 1.0,
+    };
+    let state = StateSnapshot {
+        turn: 30,
+        climate: Some(StateClimate {
+            level: 2,
+            ..StateClimate::default()
+        }),
+        cities: vec![
+            StateCity {
+                id: 10,
+                name: "First City".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                capital: false,
+                yields: Some(crate::rules::Yields::default()),
+                ..StateCity::default()
+            },
+            StateCity {
+                id: 11,
+                name: "Moved Palace".to_string(),
+                x: 8,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                capital: true,
+                yields: Some(host_yields),
+                ..StateCity::default()
+            },
+        ],
+        ..StateSnapshot::default()
+    };
+
+    let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    let city = recon
+        .game
+        .cities
+        .values()
+        .find(|city| city.name == "Moved Palace")
+        .expect("the moved capital is mirrored");
+    assert!(city.is_capital);
+    assert!(
+        recon.game.map.get(city.pos).unwrap().flooded,
+        "the host climate phase is applied before calibration"
+    );
+    assert_eq!(recon.game.city_yields(city.id), host_yields);
+}
+
 /// The board rolled its own quest for every pair from a hash; the host's
 /// actual request never crossed. Now it seats on the pair where
 /// `city_state_quest` and the `quest-*` genes read it.
@@ -12231,6 +12305,7 @@ fn host_state_step_list_is_the_recorded_order() {
             "strategic_stockpiles",
             "player_ages",
             "host_congress",
+            "host_climate",
             "observed_host_metrics",
             "loyalty_doomed_sites",
         ]
@@ -12249,12 +12324,13 @@ fn host_state_step_list_is_the_recorded_order() {
             "strategic_stockpiles",
             "player_ages",
             "host_congress",
+            "host_climate",
             "observed_host_metrics",
             "loyalty_doomed_sites",
         ]
     );
 
-    let finish = ["player_ages", "host_climate", "record_host_observed"];
+    let finish = ["player_ages", "record_host_observed"];
     assert_eq!(rebuild(HostPhase::Finish), finish);
     assert_eq!(sync(HostPhase::Finish), finish);
 }
