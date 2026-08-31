@@ -137,7 +137,36 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 # ⚠ Rows either side of this change are NOT comparable, and `code_rev` is what
 # separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
 # untargeted `civvis` the batch loop used to hard-code.
-DEFAULT_CIVVIS_VICTORY = "diplomatic"
+#
+# ═══ 2026-08-31: AIMED BACK AT SCIENCE, BY OPERATOR DIRECTIVE ═══
+#
+# "play indefinitely on king until you win. focus on winning a science victory."
+#
+# ⚠⚠ THE EVIDENCE ABOVE IS NOT WITHDRAWN. Science still measures 0/16 completion
+# in `victory_eval` and still loses the strength comparison to all four other
+# lanes. Nothing here claims science is the stronger lane; the aim is set because
+# it was ASKED FOR, and the 0/16 is now the defect to fix rather than a reason to
+# look away.
+#
+# What makes that tractable, and did not hold when the aim was moved off science:
+#
+#   * the live seat now LOSES to rival science victories. The one King game of
+#     2026-08-30 to reach a terminal event ended t239 on a rival's
+#     `VICTORY_TECHNOLOGY` — read from the host's own `victory_types` table, not
+#     a guessed index. The lane is completable on this exact profile; ours is the
+#     side that cannot complete it.
+#   * the seat runs 12-16 techs behind the leader from first contact onward, and
+#     that gap is the same axis the lane needs. Fixing the lane and fixing the
+#     score deficit are the same work, which was not true of diplomacy.
+#   * ⭐ the AI's science repairs are GATED ON THIS VERY FLAG —
+#     `active_victory_target == Some(VictoryTarget::Science)` in `advanced.rs`
+#     guards both the city-target adjustment and the owed-Campus-building
+#     invariant. Under `diplomatic` they have never once run on the live ladder.
+#     So the lane measured 0/16 with its own support code switched off.
+#
+# ⚠ Read `victory_eval`'s 0/16 as the bar to clear, and re-measure it before
+# claiming the lane works. Set `CIVVIS_VICTORY=diplomatic` to put the aim back.
+DEFAULT_CIVVIS_VICTORY = "science"
 # The operator's standing instruction is unambiguous: every live game plays
 # Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
 # not merely in a launcher default, so a direct ``civ6_play.py --leader ...``

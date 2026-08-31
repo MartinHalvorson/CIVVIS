@@ -79,8 +79,37 @@ class TheDefaultObjectiveHasOneHome(unittest.TestCase):
         floor rather than Diplomacy's strength.
 
         Moving this is allowed and is meant to cost one deliberate edit here.
+
+        ═══ 2026-08-31: MOVED BACK TO SCIENCE, BY OPERATOR DIRECTIVE ═══
+
+        "play indefinitely on king until you win. focus on winning a science
+        victory."
+
+        ⚠⚠ NONE OF THE EVIDENCE ABOVE IS WITHDRAWN. Science still measures 0/16
+        and still loses every strength comparison. This pin does not claim the
+        lane is strong; it records that the aim was ASKED FOR, and that the 0/16
+        is now the defect to fix rather than a reason to aim elsewhere.
+
+        Three things make that tractable now, none of which held on 2026-08-17:
+
+        * the seat LOSES to rival science victories at King. The one game of
+          2026-08-30 to reach a terminal event ended t239 on a rival's
+          `VICTORY_TECHNOLOGY`, read from the host's own `victory_types` table.
+          The lane completes on this exact profile — ours is the side that
+          cannot complete it.
+        * the seat runs 12-16 techs behind from first contact, so fixing the
+          lane and closing the score deficit are the same work.
+        * ⭐ the AI's science support is GATED ON THIS FLAG
+          (`active_victory_target == Some(VictoryTarget::Science)` in
+          `advanced.rs`, guarding the city-target adjustment and the
+          owed-Campus-building invariant). Under `diplomatic` it never ran on
+          the live ladder, so 0/16 was measured with the lane's own support
+          switched off.
+
+        Re-measure `victory_eval` before claiming the lane works, and set
+        `CIVVIS_VICTORY=diplomatic` to put the aim back.
         """
-        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "diplomatic")
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
 
     def test_the_help_text_does_not_restate_the_value(self):
         """The help said "defaults to Science" for as long as the value was
