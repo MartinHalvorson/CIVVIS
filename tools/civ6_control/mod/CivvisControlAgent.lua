@@ -7772,6 +7772,11 @@ local function exportState(player, pid, turn, frame)
 						free = isFree or nil,
 						hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 						moves = try(function() return unit:GetMovesRemaining(); end, -1),
+						-- Foreign units use the same fresh-turn movement fact as
+						-- our own units.  The mirror's threat flood must not infer
+						-- a barbarian's allowance from an ordinary stock unit when
+						-- the host has already answered it.
+						max_moves = try(function() return unit:GetMaxMoves(); end, nil),
 						xp = progress.xp, level = progress.level,
 						promotions = progress.promotions,
 						build_charges = progress.build_charges,
@@ -14370,28 +14375,49 @@ end;
 
 -- When a visible hostile already covers a Settler's CURRENT tile, merely
 -- refusing its planned leg is not a safety action: the hostile phase still
--- captures the stationary civilian.  Find a one-step destination that the
--- host can actually execute this turn and that every supplied hostile cannot
--- reach under the same conservative host-side predicate.  The caller owns
--- the threat predicate because scouts use their measured geometric floor,
--- while combat units prefer their path query and then a BaseMoves fallback.
+-- captures the stationary civilian.  Find a destination within two hexes that
+-- the host can actually execute this turn and that every supplied hostile cannot
+-- reach under the same conservative host-side predicate.  Two hexes is the
+-- ordinary Settler allowance; the host path query remains the authority, so a
+-- blocked second step is simply ignored.  The caller owns the threat predicate
+-- because scouts use their measured geometric floor, while combat units prefer
+-- their path query and then a BaseMoves fallback.
 CivvisBoard.findSettlerCaptureEscape = function(settler, fromX, fromY, wantX, wantY,
 		threats, threatReaches)
 	local candidates = {};
-	for _, plot in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
-		if CivvisBoard.reachesThisTurn(settler, plot.x, plot.y) then
-			local safe = true;
-			for _, threat in ipairs(threats) do
-				local reaches = threatReaches(threat, plot.x, plot.y);
-				if reaches then safe = false; break; end
-			end
-			if safe then
-				local distance = tonumber(try(function()
-					return Map.GetPlotDistance(plot.x, plot.y, wantX, wantY);
-				end, 9999)) or 9999;
-				candidates[#candidates + 1] = { x = plot.x, y = plot.y, distance = distance };
+	local frontier = { { x = fromX, y = fromY } };
+	local seen = { [fromX .. ":" .. fromY] = true };
+	-- Keep this bounded. Enumerating the whole map through GetMoveToPathEx on
+	-- every safety pass would make a rare emergency expensive, while two rings
+	-- cover a normal Settler's full fresh-turn movement and the live failure that
+	-- exposed this gap.
+	for _ = 1, 2 do
+		local nextFrontier = {};
+		for _, origin in ipairs(frontier) do
+			for _, plot in ipairs(CivvisBoard.adjacentPlots(origin.x, origin.y)) do
+				local key = plot.x .. ":" .. plot.y;
+				if not seen[key] then
+					seen[key] = true;
+					nextFrontier[#nextFrontier + 1] = plot;
+					if CivvisBoard.reachesThisTurn(settler, plot.x, plot.y) then
+						local safe = true;
+						for _, threat in ipairs(threats) do
+							local reaches = threatReaches(threat, plot.x, plot.y);
+							if reaches then safe = false; break; end
+						end
+						if safe then
+							local distance = tonumber(try(function()
+								return Map.GetPlotDistance(plot.x, plot.y, wantX, wantY);
+							end, 9999)) or 9999;
+							candidates[#candidates + 1] = {
+								x = plot.x, y = plot.y, distance = distance,
+							};
+						end
+					end
+				end
 			end
 		end
+		frontier = nextFrontier;
 	end
 	table.sort(candidates, function(a, b)
 		if a.distance ~= b.distance then return a.distance < b.distance; end

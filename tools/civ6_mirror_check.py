@@ -118,8 +118,12 @@ MIRRORED_WONDERS = set(json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "wonders.json").read_text()
 ))
 UNIT_MODEL_FALLBACKS = {
-    # Firaxis's barbarian Horse Archer shares the modeled Saka role; the host
-    # implementation prefix is removed before this table is consulted.
+    # These two host-only variants now have exact CIVVIS specs, so their
+    # implementation prefix must stay intact in the audit. Other barbarian
+    # variants still fall through to the ordinary stock role below.
+    "barbarian_horseman": "barbarian_horseman",
+    "barbarian_horse_archer": "barbarian_horse_archer",
+    # Firaxis's Scythian Horse Archer shares the modeled Saka role.
     "horse_archer": "saka_horse_archer",
     # Exact stock roles from Firaxis's UnitReplaces table. CIVVIS does not yet
     # carry these unique specifications, but it must not erase the visible unit.
@@ -769,11 +773,10 @@ def unit_fact_mismatches(state, board, top):
         pos = axial(source.get("x", 0), top - source.get("y", 0))
         raw_kind = civ6_id(exported_unit_kind(source), "UNIT_")
         kind = IDENTIFIER_ALIASES.get(raw_kind, raw_kind)
-        if kind.startswith("barbarian_"):
+        if kind.startswith("barbarian_") and kind not in UNIT_MODEL_FALLBACKS:
             kind = kind.removeprefix("barbarian_")
-        # Apply aliases after removing Firaxis's barbarian implementation
-        # prefix too: BARBARIAN_HORSE_ARCHER is the same modelled Saka horse
-        # archer as SCYTHIAN_HORSE_ARCHER, not an absent `horse_archer` type.
+        # Apply aliases after the host-only exact variants have been preserved;
+        # an older ordinary barbarian prefix still resolves to its stock role.
         kind = IDENTIFIER_ALIASES.get(kind, kind)
         kind = UNIT_MODEL_FALLBACKS.get(kind, kind)
         # ⚠⚠ AND THE BASE THE EXPORT ITSELF HANDS US, because the mirror

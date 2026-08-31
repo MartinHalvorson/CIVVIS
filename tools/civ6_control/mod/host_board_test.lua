@@ -29,6 +29,8 @@
 --      movement.
 --  14. A co-located combat escort queued in an earlier frame stays with an
 --      exposed Settler until the later Settler safety row is actuated.
+--  15. An exposed Settler can retreat two host-reachable hexes when every
+--      adjacent escape is covered.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -614,6 +616,29 @@ check("exposed combat leg retreats without a guard", ops(53), "UNITOPERATION_MOV
 check("exposed combat retreat identifies the threat", has(lastEvent("settler_capture_escape"), '"settler":53')
 	and has(lastEvent("settler_capture_escape"), '"sent":[1,1]'), true)
 check("exposed combat retreat is not counted as a hold", has(lastEvent("orders"), '"settler_barbarian_combat_capture_held":0'), true)
+
+-- If every adjacent escape is covered, refusing the planned leg still leaves
+-- the Settler on a capturable tile.  A normal Settler has two movement points;
+-- ask the host for a safe two-hex route before giving up and holding it.
+reset()
+host.units[56] = { id = 56, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+host.barbarians[104] = { id = 104, kind = "UNIT_HORSEMAN", x = 1, y = 4, moves = 0 }
+host.paths["56:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+host.paths["56:" .. plotIndex(3, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1) }, turns = { 0, 1, 1 } }
+-- Make the threat's current and adjacent answers explicit.  The deeper
+-- destination has no path answer and is outside the conservative two-hex
+-- BaseMoves fallback, which isolates the two-ring escape search.
+for _, p in ipairs({ { 1, 1 }, { 0, 1 }, { 2, 1 }, { 1, 0 }, { 2, 0 }, { 0, 2 }, { 1, 2 } }) do
+	host.paths["104:" .. plotIndex(p[1], p[2])] = {
+		plots = { plotIndex(1, 4), plotIndex(p[1], p[2]) }, turns = { 0, 1 } }
+end
+applyOrders(player, PID, 7, { row(56, "MOVE_TO", 2, 1) })
+check("two-ring combat retreat reaches a safe destination", ops(56), "UNITOPERATION_MOVE_TO@3,1")
+check("two-ring combat retreat identifies the escape", has(lastEvent("settler_capture_escape"), '"settler":56')
+	and has(lastEvent("settler_capture_escape"), '"sent":[3,1]'), true)
+check("two-ring combat retreat is not counted as a hold", has(lastEvent("orders"), '"settler_barbarian_combat_capture_held":0'), true)
 
 -- A co-located guard can be queued in an earlier combat frame than the
 -- Settler's later safety row.  Keep that guard on the exposed current tile;

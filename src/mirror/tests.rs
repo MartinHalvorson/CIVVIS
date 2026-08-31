@@ -25,6 +25,16 @@ fn a_unique_unit_resolves_through_its_noun() {
         Some("legion"),
         "the civ-qualifier fallback already handled this and must not regress"
     );
+    assert_eq!(
+        resolved_civvis_unit_name(&rules, "UNIT_BARBARIAN_HORSEMAN").as_deref(),
+        Some("barbarian_horseman"),
+        "the host-only barbarian horseman must keep its slower, weaker profile"
+    );
+    assert_eq!(
+        resolved_civvis_unit_name(&rules, "UNIT_BARBARIAN_HORSE_ARCHER").as_deref(),
+        Some("barbarian_horse_archer"),
+        "the host-only barbarian horse archer must not become a Saka archer"
+    );
     // A Great Person is a MODELLING gap, not a naming one — there is no
     // entry to find and inventing one would be worse than reporting none.
     assert_eq!(
@@ -7389,6 +7399,7 @@ fn a_barbarian_that_appears_after_construction_reaches_the_board() {
         x: 5,
         y: 6,
         hp: 35.0,
+        max_moves: Some(3.0),
         fortified: true,
         fortify_turns: 1,
         ..StateUnit::default()
@@ -7415,6 +7426,11 @@ fn a_barbarian_that_appears_after_construction_reaches_the_board() {
     assert_eq!(
         hostile.hp, 35,
         "a visible hostile's damage is useful combat state"
+    );
+    assert_eq!(
+        mirror.game.unit_max_moves(hostile.id),
+        3.0,
+        "a visible hostile's fresh-turn movement comes from the host export"
     );
     assert!(hostile.fortified);
     assert_eq!(hostile.fortify_turns, 1);
