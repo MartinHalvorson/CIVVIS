@@ -21088,6 +21088,18 @@ impl AdvancedAi {
         }
     }
 
+    /// A damaged outer wall is a better emergency queue than recruiting a
+    /// defender when Firaxis's three-turn post-attack cooldown has expired.
+    /// Keep the host's legality test authoritative: during an active attack
+    /// the repair project is not available and the siege picker must still
+    /// choose a unit or a wall upgrade instead.
+    fn outer_defense_repair_item(g: &Game, pid: usize, city: u32) -> Option<Item> {
+        let repair = Item::Project {
+            project: Name::new("repair_outer_defenses"),
+        };
+        g.can_produce(pid, city, &repair).then_some(repair)
+    }
+
     /// The normal siege picker waits for damage before returning a queue item.
     /// That is correct for a passing patrol, but a plan that has already named
     /// this city while a major war is active has stronger evidence: the contact
@@ -21178,22 +21190,23 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let Some(defence) = self
-                .base
-                .besieged_city_item(g, pid, city)
-                .or_else(|| self.native_emergency_item(g, pid, city))
-                .or_else(|| {
-                    self.preemptive_major_war_defense_item(
-                        g,
-                        pid,
-                        city,
-                        threatened_city,
-                        active_major_war,
-                    )
-                })
-            else {
+            let siege_defence = self.base.besieged_city_item(g, pid, city);
+            let native_defence = self.native_emergency_item(g, pid, city);
+            let preemptive_defence = self.preemptive_major_war_defense_item(
+                g,
+                pid,
+                city,
+                threatened_city,
+                active_major_war,
+            );
+            let Some(defence) = siege_defence.or(native_defence).or(preemptive_defence) else {
                 continue;
             };
+            // `besieged_city_item` intentionally answers with a defender once
+            // walls already exist. A wounded wall is the shorter local rescue
+            // when its repair project is legal, so put that answer ahead of a
+            // multi-turn unit without weakening the evidence gate above.
+            let defence = Self::outer_defense_repair_item(g, pid, city).unwrap_or(defence);
             let damage = CITY_MAX_HP.saturating_sub(g.cities[&city].hp);
             let wall_damage = g
                 .city_max_wall_hp(&g.cities[&city])
