@@ -30,6 +30,17 @@ const COASTAL_RESOURCE_SITE_VALUE: f64 = 1.0;
 /// A hex has at most six neighbours; state the cap so the score stays bounded
 /// if the local port search changes shape later.
 const COASTAL_RESOURCE_SITE_CAP: f64 = 6.0;
+/// The capital plus its first three expansions are the opening settlement
+/// window. Later cities still price water through their housing forecast, but
+/// may reasonably take specialized dry land.
+const EARLY_WATER_PRIORITY_CITY_LIMIT: usize = 4;
+/// A dry opening city that can immediately buy its Granary is viable, but
+/// still starts behind a water-backed site.
+const EARLY_DRY_SITE_GRANARY_READY_PENALTY: f64 = 6.0;
+/// Without an immediate Granary, dry land begins at only two Housing and is a
+/// much weaker opening fallback. This remains a score penalty, not a veto:
+/// exceptional yields or safety can still justify it when the map demands it.
+const EARLY_DRY_SITE_GRANARY_UNAVAILABLE_PENALTY: f64 = 20.0;
 
 impl AdvancedAi {
     /// One version of the coastal-city family plays at a time.
@@ -37,17 +48,29 @@ impl AdvancedAi {
         self.coastal_city_sites || self.coastal_city_sites_2
     }
 
-    /// The prefilter's exact fresh-water predicate, kept here because the
-    /// coastal family must replace its old coast credit without double-paying
-    /// it.  The full score's Housing term has a broader lake check; this is
-    /// intentionally the predicate used by `settlement_prefilter_score`.
-    pub(super) fn settlement_prefilter_has_fresh_water(g: &Game, pos: Pos) -> bool {
-        g.map.tiles[&pos].has_river()
-            || g.nbrs(pos).iter().any(|neighbor| {
-                g.map.get(*neighbor).is_some_and(|tile| {
-                    tile.terrain == "lake" || tile.feature.as_deref() == Some("oasis")
-                })
-            })
+    /// The prefilter and final settlement forecast read one city-site water
+    /// answer, including host-observed fresh water and Mohenjo-Daro's bonus.
+    pub(super) fn settlement_prefilter_has_fresh_water(g: &Game, pid: usize, pos: Pos) -> bool {
+        g.city_site_water(pid, pos).0
+    }
+
+    /// Early expansion favors fresh-water and coastal sites. A dry site is
+    /// softened only when its player can immediately buy the Granary that
+    /// partly repairs its two-Housing floor.
+    pub(super) fn early_city_water_adjustment(g: &Game, pid: usize, pos: Pos) -> f64 {
+        if g.player_city_ids(pid).len() >= EARLY_WATER_PRIORITY_CITY_LIMIT {
+            return 0.0;
+        }
+        let (fresh, coastal) = g.city_site_water(pid, pos);
+        if fresh || coastal {
+            return 0.0;
+        }
+        match g.new_city_granary_gold_purchase_cost(pid) {
+            Some(price) if g.players[pid].gold + f64::EPSILON >= price => {
+                -EARLY_DRY_SITE_GRANARY_READY_PENALTY
+            }
+            _ => -EARLY_DRY_SITE_GRANARY_UNAVAILABLE_PENALTY,
+        }
     }
 
     /// A Harbor is placed on `coast`, not merely any water tile.  Keeping the
@@ -103,13 +126,13 @@ impl AdvancedAi {
     /// family does.  Its old six-point coast term already covers a dry coastal
     /// site; only a fresh coastal site needs the base restored, while version
     /// 2 always needs its resource refinement carried into the shortlist.
-    pub(super) fn coastal_city_site_prefilter_bonus(&self, g: &Game, pos: Pos) -> f64 {
+    pub(super) fn coastal_city_site_prefilter_bonus(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
         if !self.coastal_city_sites_on() || !Self::has_harbor_coast(g, pos) {
             return 0.0;
         }
         let positions = g.wdisk(pos, 2);
         let family_value = self.coastal_city_site_bonus(g, pos, &positions);
-        let existing_coast_credit = if Self::settlement_prefilter_has_fresh_water(g, pos) {
+        let existing_coast_credit = if Self::settlement_prefilter_has_fresh_water(g, pid, pos) {
             0.0
         } else {
             COASTAL_CITY_SITE_BASE
@@ -122,6 +145,7 @@ impl AdvancedAi {
 mod tests {
     use super::*;
     use crate::name::Name;
+    use std::sync::Arc;
 
     /// A flat map with a safely interior city site and one of its neighbours.
     fn flat_board() -> (Game, Pos, Pos) {
@@ -198,13 +222,13 @@ mod tests {
         let first_legacy = first.legacy_settle_value(&game, 0, center);
         assert_close(first_legacy - stock_legacy, COASTAL_CITY_SITE_BASE);
 
-        let stock_prefilter = AdvancedAi::settlement_prefilter_score(&game, center);
+        let stock_prefilter = AdvancedAi::settlement_prefilter_score(&game, 0, center);
         assert_close(
-            first.settlement_prefilter_score_for(&game, center),
+            first.settlement_prefilter_score_for(&game, 0, center),
             stock_prefilter,
         );
         assert_close(
-            second.settlement_prefilter_score_for(&game, center),
+            second.settlement_prefilter_score_for(&game, 0, center),
             stock_prefilter + COASTAL_RESOURCE_SITE_VALUE,
         );
 
@@ -212,6 +236,74 @@ mod tests {
         assert_close(
             first.settlement_static_value_uncached(&plain, 0, inland)
                 - stock.settlement_static_value_uncached(&plain, 0, inland),
+            0.0,
+        );
+    }
+
+    #[test]
+    fn early_dry_sites_need_an_immediate_granary_buyout() {
+        let (mut unavailable, center, coast) = flat_board();
+        unavailable.players[0].techs.remove(&Name::new("pottery"));
+        unavailable.players[0].gold = 10_000.0;
+        assert_eq!(unavailable.new_city_granary_gold_purchase_cost(0), None);
+        assert_close(
+            AdvancedAi::early_city_water_adjustment(&unavailable, 0, center),
+            -EARLY_DRY_SITE_GRANARY_UNAVAILABLE_PENALTY,
+        );
+
+        let mut ready = unavailable.clone();
+        ready.players[0].techs.insert(Name::new("pottery"));
+        let price = ready
+            .new_city_granary_gold_purchase_cost(0)
+            .expect("Pottery unlocks a fresh city's Granary quote");
+        ready.players[0].gold = price - 0.1;
+        assert_close(
+            AdvancedAi::early_city_water_adjustment(&ready, 0, center),
+            -EARLY_DRY_SITE_GRANARY_UNAVAILABLE_PENALTY,
+        );
+        ready.players[0].gold = price;
+        assert_close(
+            AdvancedAi::early_city_water_adjustment(&ready, 0, center),
+            -EARLY_DRY_SITE_GRANARY_READY_PENALTY,
+        );
+
+        let ai = AdvancedAi::new();
+        assert_close(
+            ai.settlement_static_value_uncached(&ready, 0, center)
+                - ai.settlement_static_value_uncached(&unavailable, 0, center),
+            EARLY_DRY_SITE_GRANARY_UNAVAILABLE_PENALTY - EARLY_DRY_SITE_GRANARY_READY_PENALTY,
+        );
+        assert_close(
+            ai.settlement_prefilter_score_for(&ready, 0, center)
+                - ai.settlement_prefilter_score_for(&unavailable, 0, center),
+            EARLY_DRY_SITE_GRANARY_UNAVAILABLE_PENALTY - EARLY_DRY_SITE_GRANARY_READY_PENALTY,
+        );
+        let mut founded = ready.clone();
+        let settler = founded.spawn_test_unit("settler", 0, center);
+        founded
+            .apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("the dry test site is a legal city center");
+        let city = founded.city_at(center).expect("the settler founded a city");
+        assert_eq!(
+            founded.building_gold_purchase_cost(0, city, "granary"),
+            Some(price),
+            "the pre-found quote matches the new city's actual Granary purchase"
+        );
+
+        let mut fresh = unavailable.clone();
+        Arc::make_mut(&mut fresh.observed_fresh_water).insert(center, true);
+        assert_eq!(fresh.city_site_water(0, center), (true, false));
+        assert_eq!(AdvancedAi::settlement_base_housing(&fresh, 0, center), 5.0);
+        assert_close(
+            AdvancedAi::early_city_water_adjustment(&fresh, 0, center),
+            0.0,
+        );
+
+        let mut coastal = unavailable;
+        coastal.map.tiles.get_mut(&coast).unwrap().terrain = Name::new("coast");
+        assert_eq!(coastal.city_site_water(0, center), (false, true));
+        assert_close(
+            AdvancedAi::early_city_water_adjustment(&coastal, 0, center),
             0.0,
         );
     }

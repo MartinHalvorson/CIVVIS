@@ -135,9 +135,10 @@ impl AdvancedAi {
     /// scan's top-`limit` cut cannot drop the site the full score would
     /// prefer: the projection onto the centre and its neighbours at the
     /// prefilter's own weights, and version 2's flat credit.
-    pub(super) fn settlement_prefilter_score_for(&self, g: &Game, pos: Pos) -> f64 {
-        let score = Self::settlement_prefilter_score(g, pos)
-            + self.coastal_city_site_prefilter_bonus(g, pos);
+    pub(super) fn settlement_prefilter_score_for(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        let score = Self::settlement_prefilter_score(g, pid, pos)
+            + self.coastal_city_site_prefilter_bonus(g, pid, pos)
+            + Self::early_city_water_adjustment(g, pid, pos);
         if !self.wonder_adjacent_sites_on() {
             return score;
         }
@@ -403,14 +404,15 @@ mod tests {
         );
 
         // Both versions order a ranking scan's prefilter the same way.
-        let bare_order = AdvancedAi::settlement_prefilter_score(&game, center);
-        assert!(gene.settlement_prefilter_score_for(&game, center) > bare_order);
+        let bare_order = AdvancedAi::settlement_prefilter_score(&game, 0, center)
+            + AdvancedAi::early_city_water_adjustment(&game, 0, center);
+        assert!(gene.settlement_prefilter_score_for(&game, 0, center) > bare_order);
         assert!(
-            second.settlement_prefilter_score_for(&game, center)
-                > gene.settlement_prefilter_score_for(&game, center)
+            second.settlement_prefilter_score_for(&game, 0, center)
+                > gene.settlement_prefilter_score_for(&game, 0, center)
         );
         assert_eq!(
-            AdvancedAi::new().settlement_prefilter_score_for(&game, center),
+            AdvancedAi::new().settlement_prefilter_score_for(&game, 0, center),
             bare_order
         );
     }

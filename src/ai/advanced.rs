@@ -10399,8 +10399,7 @@ impl AdvancedAi {
             } else {
                 LAND_GRAB_CITY_CEILING
             };
-            (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(LAND_GRAB_CITY_FLOOR, ceiling)
+            (2 + land / LAND_GRAB_TILES_PER_CITY).clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
             (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
         };
@@ -25479,18 +25478,8 @@ impl AdvancedAi {
         completion_discount * raw / divisor
     }
 
-    fn settlement_base_housing(g: &Game, pos: Pos) -> f64 {
-        let fresh = g.map.tiles[&pos].has_river()
-            || g.nbrs(pos).iter().any(|neighbor| {
-                g.map.get(*neighbor).is_some_and(|tile| {
-                    tile.terrain == "lake" || tile.feature.as_deref() == Some("oasis")
-                })
-            });
-        let coastal = g.nbrs(pos).iter().any(|neighbor| {
-            g.map
-                .get(*neighbor)
-                .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
-        });
+    fn settlement_base_housing(g: &Game, pid: usize, pos: Pos) -> f64 {
+        let (fresh, coastal) = g.city_site_water(pid, pos);
         if fresh {
             5.0
         } else if coastal {
@@ -25559,7 +25548,7 @@ impl AdvancedAi {
     fn settlement_growth_forecast_from_positions(
         &self,
         g: &Game,
-        _pid: usize,
+        pid: usize,
         pos: Pos,
         positions: &[Pos],
     ) -> SettlementGrowthForecast {
@@ -25616,7 +25605,7 @@ impl AdvancedAi {
 
         let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
         let ring_two_at = g.standard_duration(SETTLEMENT_SECOND_RING_DELAY) as f64;
-        let housing = Self::settlement_base_housing(g, pos);
+        let housing = Self::settlement_base_housing(g, pid, pos);
         let mut beam = vec![SettlementForecastState {
             selected: [0; SETTLEMENT_FORECAST_POPULATION],
             selected_len: 0,
@@ -25799,7 +25788,7 @@ impl AdvancedAi {
     /// Order a global candidate scan before invoking the full growth,
     /// adjacency, and safety model. This deliberately uses only local yields
     /// and resources, so it is cheap and cannot observe hidden state.
-    fn settlement_prefilter_score(g: &Game, pos: Pos) -> f64 {
+    fn settlement_prefilter_score(g: &Game, pid: usize, pos: Pos) -> f64 {
         let value_of = |tile: &crate::world::Tile, weight: f64| {
             let yields = g.rules.tile_yields(tile);
             let resource = tile.resource.as_ref().map_or(0.0, |resource| {
@@ -25813,13 +25802,11 @@ impl AdvancedAi {
         };
         let tile = &g.map.tiles[&pos];
         let mut value = value_of(tile, 1.5);
-        let fresh = Self::settlement_prefilter_has_fresh_water(g, pos);
-        let mut coastal = false;
+        let (fresh, coastal) = g.city_site_water(pid, pos);
         for neighbor in g.nbrs(pos) {
             let Some(tile) = g.map.get(neighbor) else {
                 continue;
             };
-            coastal |= matches!(tile.terrain.as_str(), "coast" | "ocean");
             value += value_of(tile, 1.0);
         }
         value
@@ -25895,7 +25882,7 @@ impl AdvancedAi {
     fn settlement_static_value_uncached(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
         let positions = g.wdisk(pos, 2);
         let forecast = self.settlement_growth_forecast_from_positions(g, pid, pos, &positions);
-        let housing = Self::settlement_base_housing(g, pos);
+        let housing = Self::settlement_base_housing(g, pid, pos);
         let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
         let growth_readiness = forecast.turns_to_four.map_or_else(
             || {
@@ -25915,6 +25902,7 @@ impl AdvancedAi {
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
         value += self.wonder_footprint_value(g, &positions);
+        value += Self::early_city_water_adjustment(g, pid, pos);
         let enemy_distance = g
             .cities
             .values()
@@ -27095,7 +27083,7 @@ impl AdvancedAi {
                     .map(|_| {
                         // `contested_land_first`: a contested site is never
                         // cut before it is priced.
-                        self.settlement_prefilter_score_for(g, pos)
+                        self.settlement_prefilter_score_for(g, pid, pos)
                             + self.contested_land_credit(g, pid, pos)
                     })
                     .unwrap_or(0.0);
