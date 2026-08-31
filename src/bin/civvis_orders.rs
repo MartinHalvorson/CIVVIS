@@ -811,6 +811,12 @@ impl HostCityStrikes {
 /// traversable, and every path — exploration, settlers, the army — routes
 /// around it. Revealed terrain is never overridden: once the plot is seen, its
 /// real terrain governs.
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct HostUnitOrderKey {
+    verb: String,
+    pos: Option<(i32, i32)>,
+}
+
 #[derive(Default)]
 struct HostMoveRefusals {
     /// The last `MOVE_TO` sent per host unit: where it stood, the long
@@ -821,6 +827,12 @@ struct HostMoveRefusals {
     pending_probes: std::collections::BTreeMap<i64, HostFrontierProbe>,
     /// Speculative plots proved unwalkable, in host offset coordinates.
     dead: std::collections::BTreeSet<(i32, i32)>,
+    /// Unit orders already emitted during the current turn, keyed by host unit.
+    /// Same-turn frames can still carry the previous frame's positions, so an
+    /// identical movement command is a replay of a request the host has already
+    /// consumed rather than a new route decision.
+    same_turn_orders: std::collections::BTreeMap<i64, std::collections::BTreeSet<HostUnitOrderKey>>,
+    same_turn: Option<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -842,6 +854,52 @@ struct HostFrontierProbe {
 }
 
 impl HostMoveRefusals {
+    /// Drop exact, non-tactical unit replays from later frames of one turn.
+    ///
+    /// The host may apply a queued move before the next exported frame catches
+    /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
+    /// again; the host records that as `from == destination` / `move_refused`.
+    /// Waiting for the next turn is the only useful retry because this frame has
+    /// no newer authoritative position. FORTIFY and civilian CAPTURE have the
+    /// same stale-state failure mode. Attack orders are deliberately excluded:
+    /// a fresh combat frame may legitimately finish the same target.
+    fn suppress_same_turn_replays(
+        &mut self,
+        orders: &mut Vec<Order>,
+        state: &civvis::mirror::StateSnapshot,
+    ) -> usize {
+        if self.same_turn != Some(state.turn) {
+            self.same_turn = Some(state.turn);
+            self.same_turn_orders.clear();
+        }
+        let frame = state.frame;
+        let mut dropped = 0;
+        orders.retain(|order| {
+            let Some(unit) = order.subject else {
+                return true;
+            };
+            let Some(verb) = order.verb.as_deref() else {
+                return true;
+            };
+            if order.kind != "unit" || !matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
+                return true;
+            }
+            let key = HostUnitOrderKey {
+                verb: verb.to_string(),
+                pos: order.pos,
+            };
+            let seen = self.same_turn_orders.entry(unit).or_default();
+            let duplicate = !seen.insert(key);
+            if frame > 0 && duplicate {
+                dropped += 1;
+                false
+            } else {
+                true
+            }
+        });
+        dropped
+    }
+
     /// Compare this turn's positions with last turn's orders.
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
         let sent = std::mem::take(&mut self.sent);
@@ -3676,6 +3734,15 @@ fn decide(
         host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
     if host_frontier_probes > 0 {
         note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
+    }
+
+    // A same-turn replan can still be based on the previous frame's unit tile.
+    // Do this after frontier capping so a newly requested exact probe remains a
+    // real change, while an identical stale MOVE_TO/CAPTURE/FORTIFY is not sent
+    // twice to the host. Strike retries stay enabled; see the method comment.
+    let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state);
+    if same_turn_replays > 0 {
+        note_bits.push(format!("same_turn_replays={same_turn_replays}"));
     }
 
     // Remember where each move sends which host unit, so next turn's positions
@@ -8502,6 +8569,64 @@ mod tests {
             mirror.game.map.tiles[&host_destination].assumed_traversable,
             "unproven downstream frontier remains available to future exploration"
         );
+    }
+
+    #[test]
+    fn a_same_turn_replan_drops_stale_unit_replays_but_keeps_new_tactics() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 42;
+        state.frame = 0;
+        let mut refusals = HostMoveRefusals::default();
+        let mut first = vec![
+            unit_order(7, "MOVE_TO", Some((3, 3))),
+            unit_order(7, "FORTIFY", None),
+            unit_order(8, "CAPTURE", Some((4, 4))),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut first, &state),
+            0,
+            "the first frame is allowed to issue its complete plan"
+        );
+        assert_eq!(first.len(), 3);
+
+        state.frame = 1;
+        let mut replan = vec![
+            unit_order(7, "MOVE_TO", Some((3, 3))),
+            unit_order(7, "FORTIFY", None),
+            unit_order(8, "CAPTURE", Some((4, 4))),
+            // A combat frame may legitimately need another strike at the same
+            // target, so attack verbs are intentionally outside the filter.
+            unit_order(9, "ATTACK", Some((5, 5))),
+            // A changed destination is a new route decision and must survive.
+            unit_order(7, "MOVE_TO", Some((3, 4))),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state),
+            3,
+            "only exact stale MOVE_TO/CAPTURE/FORTIFY replays are removed"
+        );
+        assert_eq!(replan.len(), 2);
+        assert!(replan.iter().any(|order| {
+            order.subject == Some(9)
+                && order.verb.as_deref() == Some("ATTACK")
+                && order.pos == Some((5, 5))
+        }));
+        assert!(replan.iter().any(|order| {
+            order.subject == Some(7)
+                && order.verb.as_deref() == Some("MOVE_TO")
+                && order.pos == Some((3, 4))
+        }));
+
+        // The suppression scope is one turn. A fresh turn may retry the old
+        // destination using the newly authoritative host state.
+        state.turn = 43;
+        state.frame = 0;
+        let mut next_turn = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            0
+        );
+        assert_eq!(next_turn.len(), 1);
     }
 
     fn production_board() -> (Snapshot, StateSnapshot) {
