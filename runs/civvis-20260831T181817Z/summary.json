@@ -1,0 +1,156 @@
+{
+  "abandoned": null,
+  "cities_at_60": null,
+  "city_two_turn": null,
+  "configured": true,
+  "decider_binaries": [
+    {
+      "binary_revision": "bd62915bf34fb0619d47d45185bccb69d6260a14",
+      "binary_sha256": "538ffe647ed16df37e4fd0bf93748e2b3d725e37154b81557fe5f8cd14c13222",
+      "binary_source": "binary-checkout",
+      "revision": "bd62915bf34fb0619d47d45185bccb69d6260a14",
+      "source": "binary-checkout"
+    }
+  ],
+  "decider_revisions": [
+    "bd62915bf34fb0619d47d45185bccb69d6260a14"
+  ],
+  "difficulty": "DIFFICULTY_KING",
+  "finished_utc": "2026-08-31T19:27:30Z",
+  "forced": [
+    "escort-cap-holds",
+    "expansion-schedule",
+    "first-granary-reserve",
+    "first-research-building-reserve",
+    "government-ladder-2",
+    "hostile-memory",
+    "peacetime-deterrence",
+    "science-expansion-phase",
+    "science-opening-band"
+  ],
+  "game_stopped": true,
+  "last_score": 1,
+  "last_turn": 5,
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 250,
+  "mod_arms": {
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "ExploreGuard": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "operator_retire": null,
+  "orders": {
+    "*": {
+      "applied": 0,
+      "refused": {},
+      "seen": 0
+    }
+  },
+  "orders_applied": 0,
+  "orders_seen": 0,
+  "outcome": {
+    "ctx": "agent",
+    "kind": "defeat",
+    "local_player": 0,
+    "ours": true,
+    "reason": "no cities remain",
+    "run": "civvis-20260831T181817Z",
+    "turn": 6
+  },
+  "reason": "stopped",
+  "retire_confirmed": null,
+  "retire_requested": null,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "seat": {
+    "city_states": 9,
+    "civ": "CIVILIZATION_ROME",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_KING",
+    "is_human": true,
+    "kind": "seat",
+    "leader": "LEADER_TRAJAN",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260831T181817Z",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "tile_delta": true,
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seat_autonomy": {
+    "civvis_unit_share": 0.0,
+    "engine_explored": 5,
+    "explore_guarded": 0,
+    "unit_orders": 0,
+    "unit_orders_applied": 0
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "tag": "civvis-20260831T181817Z",
+  "victory_target": "science",
+  "withheld": []
+}
