@@ -12613,6 +12613,11 @@ impl AdvancedAi {
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid);
+            let barbarian_military_goal = if self.base.barbarian_tactics_enabled() {
+                BasicAi::barbarian_military_research_goal(g, pid)
+            } else {
+                None
+            };
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -12660,6 +12665,12 @@ impl AdvancedAi {
                 {
                     Some("horseback_riding")
                 }
+                // A nearby barbarian with a materially stronger unit is an
+                // immediate modernization problem, even when the empire is
+                // pursuing Science or another peaceful victory. The goal is
+                // the strongest upgrade supported by the army already in the
+                // field; `goal_pick` below walks its prerequisites.
+                _ if barbarian_military_goal.is_some() => barbarian_military_goal.as_deref(),
                 // `enter-the-prophet-race`: Astrology is a dead-end branch no
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
@@ -12759,11 +12770,18 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            format!(
-                                "the cheapest step toward {}, which {} needs",
-                                plain(goal),
-                                objective.as_str()
-                            )
+                            if barbarian_military_goal.as_deref() == Some(goal) {
+                                format!(
+                                    "the cheapest step toward {}, needed to catch a nearby barbarian army",
+                                    plain(goal)
+                                )
+                            } else {
+                                format!(
+                                    "the cheapest step toward {}, which {} needs",
+                                    plain(goal),
+                                    objective.as_str()
+                                )
+                            }
                         }
                         _ => {
                             let runner_up = available
@@ -36042,6 +36060,16 @@ impl AdvancedAi {
         // suppressed by an appointed war package. A defender that did not
         // choose the declaration timing gets the wartime upgrade pass now.
         self.surprise_defense_modernize(g, pid);
+        // A nearby barbarian quality gap is an undeclared war at home. Spend
+        // the upgrade budget before the strategic purchase portfolio can use
+        // it on a district or Great Person; the shared pass keeps its normal
+        // legality checks and only lowers the reserve for this emergency.
+        if self.war_plan.is_none()
+            && self.base.barbarian_tactics_enabled()
+            && BasicAi::barbarian_military_gap(g, pid)
+        {
+            BasicAi::upgrade_units(g, pid);
+        }
         // See `upgrade_the_garrison`: the same move as the line above, asked on
         // the plain condition instead of a six-turn casus-belli window. An
         // appointed package has its own bill and runs its own pass, so this
