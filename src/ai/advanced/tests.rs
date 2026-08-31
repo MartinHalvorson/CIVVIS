@@ -39071,3 +39071,74 @@ fn a_settler_stops_standing_still_for_a_guard_it_cannot_see_a_reason_to_wait_for
          SETTLER_STEP_RISK_LIMIT rather than against zero"
     );
 }
+
+/// See `SCIENCE_EXPANSION_CITY_CEILING`: under the gene the science lane's
+/// land grab widens to twenty-four cities while a founded city can still
+/// mature into the super-linear pop term, then reverts to the shared sixteen
+/// and grows what it holds. Off, on every other lane, and past the window,
+/// the target is byte-identical to `land_grab`'s.
+#[test]
+fn the_science_lane_widens_while_a_city_can_still_mature() {
+    let mut game = Game::new_full(2, 74, 46, 11, 250, 0, false);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each major starts with a settler");
+        let position = game.units[&settler].pos;
+        game.found_city_for(pid, position, None);
+        game.remove_unit(settler);
+    }
+    game.current = 0;
+    let land = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        .count();
+    let sites = 2 + AdvancedAi::fog_land_estimate(&game, land) / LAND_GRAB_TILES_PER_CITY;
+    let widened = sites.clamp(LAND_GRAB_CITY_FLOOR, SCIENCE_EXPANSION_CITY_CEILING);
+    let shared = sites.clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING);
+    assert!(
+        widened > shared,
+        "the board must be roomy enough to tell the ceilings apart: {widened} vs {shared}"
+    );
+    let until = game.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN);
+
+    let mut on = AdvancedAi::new();
+    on.enable_live_bridge();
+    on.enable_science_expansion_phase();
+    on.victory_target = Some(VictoryTarget::Science);
+    game.turn = until - 1;
+    assert_eq!(
+        on.assess(&game, 0).desired_cities,
+        widened,
+        "on the science lane the grab widens while a city can still mature"
+    );
+    let contract = shared.clamp(1, SCIENCE_CITY_TARGET_CAP);
+    game.turn = until;
+    assert_eq!(
+        on.assess(&game, 0).desired_cities,
+        contract,
+        "past the window the Science contract resumes and the empire grows what it holds"
+    );
+
+    game.turn = until - 1;
+    on.victory_target = Some(VictoryTarget::Diplomacy);
+    assert_eq!(
+        on.assess(&game, 0).desired_cities,
+        shared,
+        "every other lane keeps the shared ceiling"
+    );
+
+    let mut off = AdvancedAi::new();
+    off.enable_live_bridge();
+    off.victory_target = Some(VictoryTarget::Science);
+    assert_eq!(
+        off.assess(&game, 0).desired_cities,
+        contract,
+        "withheld, the Science contract stands from turn one"
+    );
+}
