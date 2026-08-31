@@ -2707,6 +2707,9 @@ impl Session {
         if g.is_finished() {
             return pid;
         }
+        if g.finish_at_turn_limit() {
+            return pid;
+        }
         // A simultaneous game advances one whole game turn per step: every
         // seat plans against the same frozen world and the plans commit
         // through the ordinary rules. `simultaneous_jobs` is how many
@@ -2731,12 +2734,14 @@ impl Session {
                     self.simultaneous_census.summary()
                 );
             }
+            g.finish_at_turn_limit();
             return pid;
         }
         self.ais[pid].take_turn(g, pid);
         if g.current == pid && !g.is_finished() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
+        g.finish_at_turn_limit();
         // Every way of advancing the world funnels through here — the browser
         // stepping a batch, the headless pacer running an unattended
         // exhibition, autoplay — so this is the one place a result cannot be
