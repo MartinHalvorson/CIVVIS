@@ -705,10 +705,6 @@ def build_config(args: argparse.Namespace) -> dict:
         # fire once the game's Game Core thread parks, because the polls it
         # counts are driven by that thread. See the mod for the measurement.
         "CivvisDecides": args.civvis_decides,
-        # Hand units CIVVIS gave no order to over to the game's own explore
-        # automation. A policy, and counted separately as `explored` so it is never
-        # mistaken for CIVVIS's work — see the note in the mod.
-        "ExploreUnassigned": args.explore_unassigned,
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
@@ -742,13 +738,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # settled; the brain sends the whole sequence only when the mod's `seat`
         # event says it can (`order_queue`), so an old mod keeps the old rule.
         # `OrderQueueMaxTicks` is the floor: past it the rest is refused as
-        # `queue_stalled` and the turn ends. `ExploreGuardRadius` keeps an
-        # unordered soldier off the host's explore automation while a hostile
-        # stands that close — a held unit stays held. See docs/LIVE_TACTICS.md.
+        # `queue_stalled` and the turn ends. Every unit not named by CIVVIS is
+        # explicitly held by the mod; the host never chooses its route.
         "OrderQueue": args.order_queue,
         "OrderQueueMaxTicks": args.order_queue_max_ticks,
-        "ExploreGuard": args.explore_guard,
-        "ExploreGuardRadius": args.explore_guard_radius,
         # The ledger's per-strike host preview (`CombatManager.SimulateAttackInto`)
         # is one host call per strike; this switch exists so a run can be played
         # without it if the call ever proves unsafe, and so the ledger can say
@@ -4239,7 +4232,6 @@ def _play(args: argparse.Namespace) -> int:
             # §9). Each is an A/B axis: a row that does not say which were on
             # cannot be compared with one that does.
             "OrderQueue": args.order_queue,
-            "ExploreGuard": args.explore_guard,
             "CapMovesToReach": args.cap_moves_to_reach,
             "SettlerEscortCapSync": args.settler_escort_cap_sync,
             "CancelQueuedPaths": args.cancel_queued_paths,
@@ -4270,11 +4262,9 @@ def _play(args: argparse.Namespace) -> int:
         by_kind = civ6_ladder.orders_by_kind(run_dir / "events.jsonl")
         if by_kind:
             summary["orders"] = by_kind
-        # ⭐ And WHO DROVE THE UNITS. `ExploreUnassigned` hands every unit
-        # CIVVIS gave no order to over to Civilization VI's own explore
-        # automation; the mod counts that separately so it is never mistaken
-        # for CIVVIS's work, and until now the count stopped at events.jsonl.
-        # See `civ6_ladder.seat_autonomy`.
+        # Who drove unit movement. Current mods hold unmentioned units and
+        # emit `explored: 0`; `seat_autonomy` retains the historical field so
+        # old runs with host-selected routes remain distinguishable.
         autonomy = civ6_ladder.seat_autonomy(run_dir / "events.jsonl")
         if autonomy:
             summary["seat_autonomy"] = autonomy
@@ -4520,9 +4510,11 @@ def main(argv: list[str] | None = None) -> int:
                          "defaults to <run-dir>/orders.sqlite")
     ap.add_argument("--tile-export-every", type=int, default=25,
                     help="turns between map exports (turn 1 always exports)")
-    ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
-                    action="store_false", default=True,
-                    help="leave units CIVVIS did not order standing still")
+    # Kept as a harmless compatibility spelling for existing launcher scripts.
+    # The behavior it selected is now unconditional: the bridge holds every
+    # unmentioned unit and never delegates a route to the host.
+    ap.add_argument("--no-explore-unassigned", action="store_true",
+                    help="deprecated; unmentioned units are always held")
     ap.add_argument("--no-great-people", dest="great_people",
                     action="store_false", default=True,
                     help="leave earned Great People standing instead of "
@@ -4623,13 +4615,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--order-queue-max-ticks", type=int, default=240,
                     help="ticks the turn is held for queued unit orders before the "
                          "rest are refused as queue_stalled")
-    ap.add_argument("--no-explore-guard", dest="explore_guard",
-                    action="store_false", default=True,
-                    help="hand every unordered combat unit to explore automation, "
-                         "even one standing beside a hostile (the pre-guard rule)")
-    ap.add_argument("--explore-guard-radius", type=int, default=4,
-                    help="an unordered combat unit this close to a visible hostile "
-                         "or an at-war city is held, not handed to explore automation")
     ap.add_argument("--no-strike-preview", dest="strike_preview",
                     action="store_false", default=True,
                     help="do not ask the host for its combat preview before a strike "
