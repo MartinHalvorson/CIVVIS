@@ -33,6 +33,44 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("production_progress = prodProgress", exporter)
         self.assertIn("production_cost = prodCost", exporter)
 
+    def test_unit_activity_export_names_every_stock_enum(self) -> None:
+        """A known Civ6 activity must never cross as its numeric hash.
+
+        The shipped UnitActivities.artdef contains more than the four states
+        the exporter originally named. In particular, sentry frames were
+        crossing as -793848223, which made the mirror describe a real
+        defensive action as an unknown activity. Keep the complete stock enum
+        list in the source-level install test so a future addition cannot
+        silently restore that mismatch.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        activity = source.split("-- Activity:", 1)[1].split("-- Spy:", 1)[0]
+
+        for label in (
+            "SLEEP",
+            "HOLD",
+            "OPERATION",
+            "AWAKE",
+            "HEAL",
+            "SENTRY",
+            "INTERCEPT",
+            "NO_ACTIVITY",
+            "BUILD",
+            "DIG",
+            "CUT",
+            "REPAIR",
+            "SPREAD_RELIGION",
+            "LAUNCH_INQUISITION",
+            "EVANGELIZE_BELIEF",
+            "EXCAVATE",
+            "DESIGNATE_PARK",
+            "FOUND_RELIGION",
+        ):
+            self.assertIn(f'"{label}"', activity)
+        self.assertIn("ActivityTypes.NO_ACTIVITY", activity)
+        self.assertIn("if enum ~= nil and enum == kind", activity)
+        self.assertIn("return tostring(kind);", activity)
+
     def test_state_export_has_fog_safe_public_empire_totals_for_every_major(self) -> None:
         """A standings row needs empire totals even when its cities are unseen.
 

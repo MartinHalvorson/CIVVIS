@@ -6747,14 +6747,29 @@ local function exportState(player, pid, turn, frame)
 				and tostring(reasons[1]) or "unnamed";
 		end);
 		-- Activity: `UnitManager.GetActivityType`, the WorldTracker.lua:544
-		-- status read — SLEEP, HOLD (skip turn), OPERATION (a Spy on a
-		-- mission, UnitPanel.lua:2147), AWAKE. Named through the enum, never
-		-- the raw integer, for the same reason `CivvisMilitaryFormation` is.
+		-- status read. The stock UnitActivities.artdef supplies the named
+		-- activity values below; `NO_ACTIVITY` is also exposed by ActivityTypes.
+		-- UnitPanel.lua:4054-4062 treats every non-AWAKE activity with fortify
+		-- turns as defense, so an omitted enum becomes a misleading raw hash in
+		-- the mirror precisely while a unit is standing sentry or healing.
+		-- Named through the enum, never the raw integer, for the same reason
+		-- `CivvisMilitaryFormation` is. Keep the raw fallback only for a future
+		-- host value that is genuinely unknown to this exporter.
 		local activity = try(function()
 			local kind = UnitManager.GetActivityType(unit);
 			if kind == nil then return nil; end
-			for _, label in ipairs({ "SLEEP", "HOLD", "OPERATION", "AWAKE" }) do
-				if ActivityTypes["ACTIVITY_" .. label] == kind then
+			for _, label in ipairs({
+				"SLEEP", "HOLD", "OPERATION", "AWAKE",
+				"HEAL", "SENTRY", "INTERCEPT", "NO_ACTIVITY",
+				"BUILD", "DIG", "CUT", "REPAIR",
+				"SPREAD_RELIGION", "LAUNCH_INQUISITION",
+				"EVANGELIZE_BELIEF", "EXCAVATE", "DESIGNATE_PARK",
+				"FOUND_RELIGION",
+			}) do
+				local enum = label == "NO_ACTIVITY"
+					and ActivityTypes.NO_ACTIVITY
+					or ActivityTypes["ACTIVITY_" .. label];
+				if enum ~= nil and enum == kind then
 					return string.lower(label);
 				end
 			end
