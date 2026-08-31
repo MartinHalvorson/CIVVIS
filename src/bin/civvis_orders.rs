@@ -817,6 +817,14 @@ struct HostUnitOrderKey {
     pos: Option<(i32, i32)>,
 }
 
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct HostDealOrderKey {
+    kind: &'static str,
+    subject: Option<i64>,
+    verb: Option<String>,
+    pos: Option<(i32, i32)>,
+}
+
 #[derive(Default)]
 struct HostMoveRefusals {
     /// The last `MOVE_TO` sent per host unit: where it stood, the long
@@ -832,6 +840,10 @@ struct HostMoveRefusals {
     /// identical movement command is a replay of a request the host has already
     /// consumed rather than a new route decision.
     same_turn_orders: std::collections::BTreeMap<i64, std::collections::BTreeSet<HostUnitOrderKey>>,
+    /// The diplomacy arm also has one working deal per rival and keeps an ask
+    /// pending or cooling down across same-turn frames. An identical
+    /// `sell`/`buy` in a later frame therefore cannot be a new deal request.
+    same_turn_deal_orders: std::collections::BTreeSet<HostDealOrderKey>,
     same_turn: Option<u32>,
 }
 
@@ -854,15 +866,18 @@ struct HostFrontierProbe {
 }
 
 impl HostMoveRefusals {
-    /// Drop exact, non-tactical unit replays from later frames of one turn.
+    /// Drop exact, non-tactical unit and deal replays from later frames of one
+    /// turn.
     ///
     /// The host may apply a queued move before the next exported frame catches
     /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
     /// again; the host records that as `from == destination` / `move_refused`.
     /// Waiting for the next turn is the only useful retry because this frame has
     /// no newer authoritative position. FORTIFY and civilian CAPTURE have the
-    /// same stale-state failure mode. Attack orders are deliberately excluded:
-    /// a fresh combat frame may legitimately finish the same target.
+    /// same stale-state failure mode. The diplomacy arm has the same shape:
+    /// its pending/cooldown guards mean a repeated deal order can only be
+    /// refused again. Attack orders are deliberately excluded: a fresh combat
+    /// frame may legitimately finish the same target.
     fn suppress_same_turn_replays(
         &mut self,
         orders: &mut Vec<Order>,
@@ -871,6 +886,7 @@ impl HostMoveRefusals {
         if self.same_turn != Some(state.turn) {
             self.same_turn = Some(state.turn);
             self.same_turn_orders.clear();
+            self.same_turn_deal_orders.clear();
         }
         let frame = state.frame;
         let mut dropped = 0;
@@ -881,21 +897,33 @@ impl HostMoveRefusals {
             let Some(verb) = order.verb.as_deref() else {
                 return true;
             };
-            if order.kind != "unit" || !matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
-                return true;
+            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
+                let key = HostUnitOrderKey {
+                    verb: verb.to_string(),
+                    pos: order.pos,
+                };
+                let seen = self.same_turn_orders.entry(unit).or_default();
+                let duplicate = !seen.insert(key);
+                if frame > 0 && duplicate {
+                    dropped += 1;
+                    return false;
+                }
             }
-            let key = HostUnitOrderKey {
-                verb: verb.to_string(),
-                pos: order.pos,
-            };
-            let seen = self.same_turn_orders.entry(unit).or_default();
-            let duplicate = !seen.insert(key);
-            if frame > 0 && duplicate {
-                dropped += 1;
-                false
-            } else {
-                true
+
+            if matches!(order.kind, "sell" | "buy") {
+                let key = HostDealOrderKey {
+                    kind: order.kind,
+                    subject: order.subject,
+                    verb: order.verb.clone(),
+                    pos: order.pos,
+                };
+                let duplicate = !self.same_turn_deal_orders.insert(key);
+                if frame > 0 && duplicate {
+                    dropped += 1;
+                    return false;
+                }
             }
+            true
         });
         dropped
     }
@@ -8627,6 +8655,88 @@ mod tests {
             0
         );
         assert_eq!(next_turn.len(), 1);
+    }
+
+    #[test]
+    fn a_same_turn_replan_drops_exact_deal_replays_but_keeps_changed_offers() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 44;
+        state.frame = 0;
+        let mut refusals = HostMoveRefusals::default();
+        let mut first = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((200, 0)),
+            },
+            Order {
+                kind: "buy",
+                subject: Some(3),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((60, 0)),
+            },
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut first, &state),
+            0,
+            "the first frame is allowed to issue its complete deal plan"
+        );
+
+        state.frame = 1;
+        let mut replan = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((200, 0)),
+            },
+            Order {
+                kind: "buy",
+                subject: Some(3),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((60, 0)),
+            },
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_HORSES=10".to_string()),
+                pos: Some((220, 0)),
+            },
+            // Non-deal orders retain their existing same-turn semantics.
+            Order {
+                kind: "research",
+                subject: None,
+                verb: Some("TECH_WRITING".to_string()),
+                pos: None,
+            },
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state),
+            2,
+            "only exact sell/buy replays are removed"
+        );
+        assert_eq!(replan.len(), 2);
+        assert!(replan.iter().any(|order| {
+            order.kind == "sell" && order.subject == Some(2) && order.pos == Some((220, 0))
+        }));
+        assert!(replan.iter().any(|order| {
+            order.kind == "research" && order.verb.as_deref() == Some("TECH_WRITING")
+        }));
+
+        state.turn = 45;
+        state.frame = 0;
+        let mut next_turn = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("RESOURCE_HORSES=10".to_string()),
+            pos: Some((200, 0)),
+        }];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            0,
+            "a fresh turn may retry the old offer after the host's cooldown"
+        );
     }
 
     fn production_board() -> (Snapshot, StateSnapshot) {
