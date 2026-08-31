@@ -7330,15 +7330,23 @@ mod tests {
         );
     }
 
+    /// A bare `civvis_orders` must resolve the launcher chain's lane to a real
+    /// target — not merely name it. Three of the six spellings resolved to
+    /// nothing until 2026-08-17, which is why this asserts the resolution and
+    /// not just the string.
+    ///
+    /// ⚠ Renamed from `..._the_safe_launcher_lane`: the lane is `science` by
+    /// operator directive as of 2026-08-31, and science is the lane recorded as
+    /// completing 0/16. "Safe" was never what this test checked.
     #[test]
-    fn direct_default_uses_the_safe_launcher_lane() {
-        assert_eq!(super::DEFAULT_VICTORY, "diplomatic");
+    fn direct_default_resolves_the_launcher_lane_to_a_target() {
+        assert_eq!(super::DEFAULT_VICTORY, "science");
         assert!(super::VICTORY_LANES
             .split('|')
             .any(|lane| lane == super::DEFAULT_VICTORY));
         assert_eq!(
             super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
-            Some(civvis::ai::VictoryTarget::Diplomacy)
+            Some(civvis::ai::VictoryTarget::Science)
         );
     }
 
