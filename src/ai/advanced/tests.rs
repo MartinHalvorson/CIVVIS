@@ -2089,6 +2089,11 @@ fn the_land_grab_settles_past_the_assigned_lanes_cutoff() {
         "stock: the assigned lane's window is shut at t{}",
         game.turn
     );
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        science.settler_expansion_window_open(&game, 0, capital),
+        "Science keeps a productive Settler window open past the old lane cutoff"
+    );
     targeted.enable_land_grab();
     assert!(
         targeted.settler_expansion_window_open(&game, 0, capital),
@@ -35179,14 +35184,14 @@ fn expansion_pays_back_is_a_registered_reversible_opt_in() {
     assert!(!ai.expansion_pays_back, "reversible");
 }
 
-/// ⚠⚠ THE NATIVE BOARD HAS ONLY EVER SHUT ITS SETTLER WINDOW ON A CLOCK.
+/// ⚠⚠ Stock native boards still shut their Settler window on a clock; the
+/// explicit Science contract now uses the payback test as well.
 ///
-/// `settler_expansion_window_open` takes the payback branch under `land_grab`
-/// or `expansion_pays_back`, and `land_grab` is `Kind::HostOnly` — so with
-/// both off, which is every headless configuration this repository could
-/// produce before this row, the window is a deadline and nothing else.
+/// `settler_expansion_window_open` takes the payback branch under `land_grab`,
+/// `expansion_pays_back`, or an explicit Science target. Stock and the other
+/// assigned lanes retain their historical deadline.
 #[test]
-fn the_payback_branch_was_unreachable_on_a_native_board() {
+fn the_payback_branch_is_reserved_for_expansion_and_science() {
     assert!(
         GENES
             .iter()

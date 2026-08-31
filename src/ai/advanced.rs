@@ -10892,7 +10892,15 @@ impl AdvancedAi {
         // whatever the lane. See `land_grab`: under an assigned lane the
         // window used to shut at `standard_duration(175)` — t116 Online — and
         // run T104654Z then read "7 cities of 8..11 wanted" for 130 turns.
-        if self.rapid_city_expansion || self.land_grab || self.expansion_pays_back {
+        // An explicit Science lane has the same economic contract: its six-
+        // city target is only useful if a productive city may still fund the
+        // next campus after the old clock has expired.
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        if self.rapid_city_expansion
+            || self.land_grab
+            || self.expansion_pays_back
+            || science_targeted
+        {
             self.expansion_pays_back_for(g, pid, cid)
         } else if self.victory_target.is_some() {
             // Assigned lanes have always carried a distinct cutoff. Neither
