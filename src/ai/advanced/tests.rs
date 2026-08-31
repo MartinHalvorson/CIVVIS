@@ -17753,6 +17753,50 @@ fn the_garrison_loyalty_arm_actually_slots_limitanei() {
 }
 
 #[test]
+fn live_loyalty_alarm_prioritizes_praetorium_for_a_falling_governed_city() {
+    // Arretium in civvis-20260831T093436Z was governed by Victor at t168,
+    // stood at 80.75 Loyalty, and was losing 4.73438 per turn. That is an
+    // imminent policy problem even though the old level-only alarm still
+    // considered the city healthy.
+    let (mut game, source, _) = island_colony_game();
+    let city = game.city_at(source).expect("the fixture capital exists");
+    game.turn = 10;
+    game.players[0].government = Some("classical_republic".to_string());
+    game.players[0].civics.extend([
+        crate::name!("political_philosophy"),
+        crate::name!("recorded_history"),
+    ]);
+    game.players[0].governors = vec![city];
+    game.players[0].governor_roster.insert(
+        "victor".to_string(),
+        GovernorState {
+            city: Some(city),
+            assigned_turn: 0,
+            disabled_until: 0,
+            promotions: BTreeSet::new(),
+        },
+    );
+    game.cities.get_mut(&city).unwrap().loyalty = 80.75;
+    std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(city, -4.73438);
+
+    let frozen = AdvancedAi::new();
+    assert!(!frozen.loyalty_policy_needed(&game, 0));
+    frozen.strategic_policies(&mut game, 0, GrandStrategy::Science);
+    assert!(!game.players[0]
+        .policies
+        .contains(&crate::name!("praetorium")));
+
+    let mut live_game = game.clone();
+    let mut live = AdvancedAi::new();
+    live.base.loyalty_rate_alarm = true;
+    assert!(live.loyalty_policy_needed(&live_game, 0));
+    live.strategic_policies(&mut live_game, 0, GrandStrategy::Science);
+    assert!(live_game.players[0]
+        .policies
+        .contains(&crate::name!("praetorium")));
+}
+
+#[test]
 fn live_wartime_bankruptcy_slots_the_available_maintenance_discount() {
     let build = |live_war_economy: bool, treasury: f64, successor_unlocked: bool| {
         let mut game = Game::new(2, 24, 16, 79_098, 200, 0);
