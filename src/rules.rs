@@ -3630,7 +3630,7 @@ mod tests {
         // the weaker generic Galley.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:627c58933728c2f1"
+            "fnv1a64:7c1bacacca3d4120"
         );
     }
 
@@ -4285,7 +4285,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 91);
+        assert_eq!(rules.units.len(), 93);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);

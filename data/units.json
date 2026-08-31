@@ -89,6 +89,30 @@
     "upgrade_to": "man_at_arms",
     "obsolete_tech": "replaceable_parts"
   },
+  "barbarian_horseman": {
+    "class": "military",
+    "cost": 40,
+    "maintenance": 1,
+    "moves": 3,
+    "buildable": false,
+    "strength": 20,
+    "cavalry": true,
+    "promotion_class": "light_cavalry",
+    "zone_of_control": true
+  },
+  "barbarian_horse_archer": {
+    "class": "military",
+    "cost": 35,
+    "maintenance": 1,
+    "moves": 3,
+    "buildable": false,
+    "strength": 10,
+    "ranged_strength": 15,
+    "range": 1,
+    "cavalry": true,
+    "promotion_class": "ranged",
+    "zone_of_control": false
+  },
   "horseman": {
     "class": "military",
     "cost": 80,

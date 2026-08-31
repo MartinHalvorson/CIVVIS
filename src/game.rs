@@ -6116,10 +6116,11 @@ pub struct Game {
     /// the public information without inventing hidden unit positions.
     #[serde(default)]
     pub observed_military_power: Arc<BTreeMap<usize, f64>>,
-    /// Per-unit facts an authoritative host exported about the mirrored
-    /// seat's units — the upgrade verdict and bill, the per-type upkeep, the
-    /// movement allowance, a Spy's operation and menu. See [`HostUnitFacts`]
-    /// for which decision reads each. Empty in native games.
+    /// Per-unit facts an authoritative host exported about units in a live
+    /// mirror — the upgrade verdict and bill, the per-type upkeep, the movement
+    /// allowance, a Spy's operation and menu. Own units and visible foreign
+    /// units may carry different subsets. See [`HostUnitFacts`] for which
+    /// decision reads each. Empty in native games.
     #[serde(default)]
     pub host_unit_facts: Arc<BTreeMap<u32, HostUnitFacts>>,
     /// The host treasury's bill by source for mirrored seats, read by

@@ -433,14 +433,26 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertEqual(len(mismatches), 1)
         self.assertIn("UNIT_SWORDSMAN@(1, 5) count Civ6=1 CIVVIS=0", mismatches[0])
 
-    def test_barbarian_horse_archer_uses_the_modelled_saka_unit(self) -> None:
+    def test_barbarian_horse_archer_uses_the_exact_host_variant(self) -> None:
         state = {"hostiles": [{
             "type": "UNIT_BARBARIAN_HORSE_ARCHER", "player": 63,
             "x": 3, "y": 5, "hp": 79, "fortified": False,
             "fortify_turns": 0,
         }]}
         board = {"view_player": 0, "units": [{
-            "owner": 4, "type": "saka_horse_archer", "pos": [1, 5],
+            "owner": 4, "type": "barbarian_horse_archer", "pos": [1, 5],
+            "hp": 79, "fortified": False, "fortify_turns": 0,
+        }], "visible": [[1, 5]]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+    def test_barbarian_horseman_uses_the_exact_host_variant(self) -> None:
+        state = {"hostiles": [{
+            "type": "UNIT_BARBARIAN_HORSEMAN", "player": 63,
+            "x": 3, "y": 5, "hp": 79, "fortified": False,
+            "fortify_turns": 0,
+        }]}
+        board = {"view_player": 0, "units": [{
+            "owner": 4, "type": "barbarian_horseman", "pos": [1, 5],
             "hp": 79, "fortified": False, "fortify_turns": 0,
         }], "visible": [[1, 5]]}
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])

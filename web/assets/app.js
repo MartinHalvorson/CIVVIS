@@ -323,7 +323,8 @@ function unitHasHealth(unit) {
 // `src/server.rs` makes an append that skips the cutter impossible to miss.
 const CIV6_UNIT_ICON_TYPES = [
   "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
-  "artillery", "at_crew", "battering_ram", "battleship", "biplane",
+  "artillery", "at_crew", "barbarian_horse_archer", "barbarian_horseman",
+  "battering_ram", "battleship", "biplane",
   "bireme", "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
   "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
   "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "galley",

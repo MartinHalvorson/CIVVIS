@@ -5916,23 +5916,25 @@ fn civvis_unit_name(civ6: &str) -> String {
         .strip_prefix("UNIT_")
         .unwrap_or(civ6)
         .to_ascii_lowercase();
-    // ★★★ CIVILIZATION VI'S BARBARIAN VARIANTS ARE THE ORDINARY UNIT WITH A PREFIX.
+    // ★★★ BARBARIAN CAVALRY ARE NOT THE ORDINARY UNITS WITH A PREFIX.
     //
-    // `UNIT_BARBARIAN_HORSEMAN` is a Horseman and `UNIT_BARBARIAN_HORSE_ARCHER` is a
-    // horse archer; CIVVIS models `horseman` and `saka_horse_archer` but neither
-    // `barbarian_horseman` nor `barbarian_horse_archer`, so both were dropped from the
-    // board entirely — 276 sightings across tonight's runs, every one a raider CIVVIS
-    // could not see while its settlers walked past.
-    //
-    // ⚠ This is a rename, not a substitution: the barbarian variants ARE these units
-    // in the shipped database. Where the stripped name is not modelled either it still
-    // falls through to `dropped_units` as untranslatable rather than being guessed at —
-    // `horse_archer` has no plain entry, so it resolves to the closest CIVVIS actually
-    // has rather than inventing one.
-    let base = base
-        .strip_prefix("barbarian_")
-        .map(str::to_string)
-        .unwrap_or(base);
+    // The installed game's Units.xml gives `UNIT_BARBARIAN_HORSEMAN` BaseMoves=3 /
+    // Combat=20 and `UNIT_BARBARIAN_HORSE_ARCHER` BaseMoves=3 / Combat=10 /
+    // RangedCombat=15. Ordinary Horsemen are BaseMoves=4 / Combat=36, while the
+    // modeled Saka Horse Archer is BaseMoves=4 / Combat=20 / RangedCombat=25.
+    // Collapsing the names therefore made the threat flood both too fast and too
+    // strong. Keep exact CIVVIS specs for these two host-only variants; the other
+    // barbarian-prefixed stock units still use their ordinary CIVVIS counterpart.
+    let base = if matches!(
+        base.as_str(),
+        "barbarian_horseman" | "barbarian_horse_archer"
+    ) {
+        base
+    } else {
+        base.strip_prefix("barbarian_")
+            .map(str::to_string)
+            .unwrap_or(base)
+    };
     match base.as_str() {
         // Firaxis's Scythian type name includes the civilization, whereas
         // CIVVIS stores the unit by its actual Saka name.
@@ -6901,11 +6903,12 @@ fn civvis_spy_mission_kind(operation: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Record what the host said about one of our units under the board's unit
-/// id — see `Game::host_unit_facts` for who reads which. A unit that carries
-/// none of the keys (an older mod) leaves no entry, so every reader falls back
-/// to the board's own rule; a unit that carries any of them gets an entry whose
-/// absent members are real absences — no successor, no operation.
+/// Record what the host said about one visible unit under the board's unit id —
+/// see `Game::host_unit_facts` for who reads which. A unit that carries none of
+/// the keys (an older mod) leaves no entry, so every reader falls back to the
+/// board's own rule; a unit that carries any of them gets an entry whose absent
+/// members are real absences — no successor, no operation. Foreign units use
+/// this primarily for the host's movement allowance in threat floods.
 fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
     let finite = |value: Option<f64>| value.filter(|value| value.is_finite());
     let exported = unit.upgrade_to.is_some()
@@ -11355,6 +11358,7 @@ pub fn rebuild_from_state(
             if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
                 foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
+                record_host_unit_facts(&mut game, uid, unit);
             }
         }
     }
@@ -11421,6 +11425,7 @@ pub fn rebuild_from_state(
             if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
                 foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
+                record_host_unit_facts(&mut game, uid, unit);
             }
         }
     }
@@ -11494,6 +11499,7 @@ pub fn rebuild_from_state(
         if let Some(uid) = plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped) {
             foreign_unit_ids.insert(unit.id, uid);
             placed_rival_units += 1;
+            record_host_unit_facts(&mut game, uid, unit);
             if game.players[owner].is_free_city {
                 game.players[owner].alive = true;
             }
@@ -13287,6 +13293,7 @@ impl LiveMirror {
                 self.hostile_units.push(uid);
                 self.foreign_uid_of.insert(unit.id, uid);
             }
+            record_host_unit_facts(&mut self.game, uid, unit);
         }
 
         for (index, rival) in state.rivals.iter().enumerate() {
@@ -13427,6 +13434,7 @@ impl LiveMirror {
                     self.rival_units.push(uid);
                     self.foreign_uid_of.insert(unit.id, uid);
                 }
+                record_host_unit_facts(&mut self.game, uid, unit);
             }
         }
 
@@ -13556,6 +13564,7 @@ impl LiveMirror {
                     self.rival_units.push(uid);
                     self.foreign_uid_of.insert(unit.id, uid);
                 }
+                record_host_unit_facts(&mut self.game, uid, unit);
             }
         }
         for &(minor, owner) in &minor_assignments {
