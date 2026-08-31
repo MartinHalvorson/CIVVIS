@@ -13,6 +13,8 @@
 #        migrates itself); see the wrapper for the keys
 #   ~/Library/LaunchAgents/com.civvis.keepplaying.plist  `civvis-games ensure` every 5 min
 #   ~/Library/LaunchAgents/com.civvis.run-prune.plist    civvis-run-prune.sh hourly
+#   ~/Library/LaunchAgents/com.civvis.worktree-prune.plist
+#                                                        civvis-worktree-prune.sh hourly
 # and retires the pre-repo labels com.martbot.civvis-keepplaying and
 # com.martbot.civvis-run-prune (their plists are kept as *.retired-<stamp>).
 #
@@ -53,7 +55,7 @@ POLICY=${CIVVIS_VERIFICATION_POLICY:-$HOME/.civvis-verification-policy}
 RUNS=${CIVVIS_RUNS_DIR:-$HOME/civvis-civ6-runs}
 UID_N=$(id -u)
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-NEW_LABELS=(com.civvis.keepplaying com.civvis.run-prune)
+NEW_LABELS=(com.civvis.keepplaying com.civvis.run-prune com.civvis.worktree-prune)
 OLD_LABELS=(com.martbot.civvis-keepplaying com.martbot.civvis-run-prune)
 POLICY_KEYS=(CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_PLAY_ATTEMPTS
              CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_PLAY_TIMEOUT
@@ -73,7 +75,7 @@ for part in ${(s:/:)REPO}; do
   # service pointed at a directory that is about to vanish.
   [[ "$part" == .civvis-* ]] && refuse "$REPO is an ephemeral tree; install from a durable checkout"
 done
-for need in civvis-games.sh civvis-verified-head-launcher.sh civvis-run-prune.sh; do
+for need in civvis-games.sh civvis-verified-head-launcher.sh civvis-run-prune.sh civvis-worktree-prune.sh; do
   [[ -x "$OPS/$need" ]] || refuse "$OPS/$need is missing or not executable; is this a CIVVIS tree?"
 done
 [[ -f "$REPO/Cargo.toml" ]] || refuse "$REPO has no Cargo.toml; is this a CIVVIS tree?"
