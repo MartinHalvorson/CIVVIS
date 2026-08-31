@@ -23254,15 +23254,20 @@ impl Game {
             .map_or(0, |feature| feature.sight_through)
     }
 
-    /// The nearest unwrapped image of `to`, so a ray across the seam is drawn
-    /// as the short way round rather than back across the whole cylinder.
-    fn unwrapped_toward(&self, from: Pos, to: Pos) -> Pos {
+    /// The nearest unwrapped image of `to`, plus its distance from `from`, so
+    /// a ray across the seam is drawn as the short way round rather than back
+    /// across the whole cylinder. The ray consumes both values, and retaining
+    /// the winning comparison avoids measuring the same three images again.
+    fn unwrapped_toward(&self, from: Pos, to: Pos) -> (Pos, i32) {
         let width = self.map.width;
         [-width, 0, width]
             .into_iter()
-            .map(|shift| (to.0 + shift, to.1))
-            .min_by_key(|candidate| hex::distance(from, *candidate))
-            .unwrap_or(to)
+            .map(|shift| {
+                let candidate = (to.0 + shift, to.1);
+                (candidate, hex::distance(from, candidate))
+            })
+            .min_by_key(|(_, distance)| *distance)
+            .unwrap_or_else(|| (to, hex::distance(from, to)))
     }
 
     /// Walk one hex corridor from `from` to `to`, checking every tile strictly
@@ -23420,10 +23425,16 @@ impl Game {
         viewer_height: i32,
         see_through_woods: bool,
     ) -> bool {
-        if self.wdist(from, to) <= 1 {
+        let sphere = self.map.sphere().is_some();
+        let wraps = self.map.topology.wraps_east_west();
+        // On a cylinder `unwrapped_toward` chooses the same minimum as
+        // `wdist`; let its retained distance answer this fast path below.
+        // A globe does not have a cube ray and an arena must keep its
+        // non-wrapping distance, so both retain the original check.
+        if (sphere || !wraps) && self.wdist(from, to) <= 1 {
             return true;
         }
-        if self.map.sphere().is_some() {
+        if sphere {
             let target_height = self.sight_height_via(heights, to);
             return self.arc_is_clear(
                 heights,
@@ -23434,9 +23445,8 @@ impl Game {
                 see_through_woods,
             );
         }
-        let unwrapped = self.unwrapped_toward(from, to);
-        let distance = hex::distance(from, unwrapped);
-        if distance == 0 {
+        let (unwrapped, distance) = self.unwrapped_toward(from, to);
+        if distance == 0 || (wraps && distance == 1) {
             return true;
         }
         let target_height = self.sight_height_via(heights, to);
@@ -25791,6 +25801,58 @@ impl Game {
 
     pub fn can_move(&self, uid: u32, pos: Pos) -> bool {
         self.can_move_step(uid, pos, true)
+    }
+
+    /// Whether `uid` could finish one observed host step from `from` at `to`.
+    ///
+    /// A live-state export can be older than an input event, so a conformance
+    /// audit cannot assume that the unit still stands at the position in its
+    /// latest mirror frame.  This creates an isolated branch, places the
+    /// moving formation at the host-reported source, and grants it a fresh
+    /// movement allowance.  The answer therefore covers structural movement
+    /// legality (terrain, borders, stacking, hostile units, and zone of
+    /// control) without treating previously spent movement as a disagreement.
+    ///
+    /// `None` means the observation cannot be represented by this board: the
+    /// unit or either endpoint is absent, or the event is not one map edge.
+    /// The authoritative game is never changed.
+    pub fn can_move_observed_step(&self, uid: u32, from: Pos, to: Pos) -> Option<bool> {
+        if !self.units.contains_key(&uid)
+            || !self.map.tiles.contains_key(&from)
+            || !self.map.tiles.contains_key(&to)
+            || self.wdist(from, to) != 1
+        {
+            return None;
+        }
+
+        let mut probe = self.clone();
+        // A linked support unit shares its leader's tile and movement test.
+        // Rebase both halves so a state frame from before the formation moved
+        // does not manufacture a false formation mismatch.
+        let mut movers = vec![uid];
+        if let Some(peer) = probe.units[&uid]
+            .linked_to
+            .filter(|peer| probe.units.contains_key(peer))
+        {
+            movers.push(peer);
+        }
+        for mover in movers {
+            probe.relocate(mover, from);
+            let attacks = probe.unit_max_attacks(mover);
+            let unit = probe.units.get_mut(&mover).expect("checked above");
+            unit.moves_left = 1_000.0;
+            unit.attacks_left = attacks;
+            unit.moved = false;
+            unit.acted = false;
+            unit.zoc_stopped = false;
+            unit.fortified = false;
+            unit.fortify_turns = 0;
+            // This host reading is tied to its old coordinate.  At a replayed
+            // source, let the board's terrain rule decide embarkation instead.
+            unit.host_embarked = None;
+            unit.started_turn_in_zoc = false;
+        }
+        Some(probe.can_move(uid, to))
     }
 
     /// `can_move` for a hex in the middle of a longer walk, where the unit is

@@ -36838,11 +36838,11 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     assert_ne!(safe.builder_targets.get(&builder), Some(&target));
 }
 
-/// The eight remaining version-2 families of 2026-08-24: each is a native opt-in, off in
-/// both controllers, published for `gene_screen` as `<base>-2`, and its
-/// enable turns version 1 off so a seat plays one version of the family.
+/// Native version-2 families are opt-in, off in both controllers, published
+/// for `gene_screen` as `<base>-2`, and their enables turn version 1 off so a
+/// seat plays one version of a family.
 #[test]
-fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
+fn version_two_genes_are_opt_in_and_turn_version_one_off() {
     let families = [
         "amenity-project-preemption",
         "settler-guard-holds",
@@ -36852,6 +36852,7 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
         "settler-target-hysteresis",
         "district-coverage",
         "power-the-laboratory",
+        "science-victory-drive",
     ];
     fn reads(ai: &AdvancedAi) -> Vec<(bool, bool)> {
         vec![
@@ -36872,6 +36873,7 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
             (ai.settler_target_hysteresis, ai.settler_target_hysteresis_2),
             (ai.base.district_coverage, ai.base.district_coverage_2),
             (ai.power_the_laboratory, ai.power_the_laboratory_2),
+            (ai.science_victory_drive, ai.science_victory_drive_2),
         ]
     }
     for (i, base) in families.iter().enumerate() {

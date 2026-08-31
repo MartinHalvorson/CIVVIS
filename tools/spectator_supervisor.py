@@ -182,18 +182,24 @@ def log(message: str) -> None:
 
 
 def wait_for_operator_resume(poll_seconds: float = OPERATOR_HALT_POLL_SECONDS) -> None:
-    """Stand down until an explicit operator halt has been cleared.
+    """Stand down until the operator explicitly authorizes verification.
 
-    The marker is intentionally durable rather than tied to a particular
-    terminal or launchd PID.  A supervisor that merely exits would be launched
-    again immediately by its service manager, so keep this process dormant
-    until the same operator action that halted games explicitly resumes them.
+    Both the durable halt and the separate running intent are intentionally
+    independent of a particular terminal or launchd PID. A supervisor that
+    merely exits would be launched again immediately by its service manager, so
+    keep this process dormant until `civvis-games on` explicitly authorizes the
+    verification lanes.
     """
     reported: str | None = None
-    while (halt := gamelock.operator_halt_description()) is not None:
-        if halt != reported:
-            log(f"operator halt active; no spectator will start: {halt}")
-            reported = halt
+    while True:
+        halt = gamelock.operator_halt_description()
+        intent = gamelock.verification_intent_description()
+        if halt is None and intent is None:
+            return
+        reason = halt or intent
+        if reason != reported:
+            log(f"verification not authorized; no spectator will start: {reason}")
+            reported = reason
         time.sleep(max(0.1, poll_seconds))
 
 
@@ -1320,6 +1326,8 @@ def start_server(
         # startup-only check would leave exactly that window open, so this
         # last gate is deliberately adjacent to process creation.
         raise OperatorHaltRequested(halt)
+    if intent := gamelock.verification_intent_description():
+        raise VerificationIntentDisabled(intent)
     # The server prefers loose web/ files in its working directory over the
     # page embedded in the executable. Starting in the shared checkout would
     # pair a canonical engine with whichever UI a development session is
@@ -1561,6 +1569,10 @@ class ServerPortOwnershipError(RuntimeError):
 
 class OperatorHaltRequested(RuntimeError):
     """An explicit halt reached the server-launch boundary."""
+
+
+class VerificationIntentDisabled(RuntimeError):
+    """Automatic verification is not explicitly authorized."""
 
 
 def process_alive(process: subprocess.Popen[str] | None, adopted_pid: int | None) -> bool:
@@ -2509,8 +2521,8 @@ def main() -> int:
         stop_background_prebuild(prebuild_process)
         stop_server(process, adopted_pid)
         return 0
-    except OperatorHaltRequested as halt:
-        log(f"operator halt active; stopping spectator: {halt}")
+    except (OperatorHaltRequested, VerificationIntentDisabled) as halt:
+        log(f"verification not authorized; stopping spectator: {halt}")
         stop_background_prebuild(prebuild_process)
         stop_server(process, adopted_pid)
         return 0

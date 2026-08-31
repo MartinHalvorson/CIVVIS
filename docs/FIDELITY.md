@@ -1889,7 +1889,7 @@ host's once `great_person_points_per_turn` is in the export, and whether
 Anarchy suspends the payout (the whole Faith line reads "No Faith due to
 anarchy"; the engine follows that).
 
-## Open: a behavioural rule nothing here could have checked (2026-08-26)
+## The first behavioural reverse-legality audit (2026-08-31)
 
 `tools/civ6_fidelity.py` compares this engine's **data** against the shipped
 database, and that is the whole of what it compares. Every rule this document
@@ -1900,23 +1900,38 @@ where Civilization VI forbids only *ending* a move stacked. See
 `docs/MOVEMENT.md` for the rule and `src/game/movement_rule_tests.rs` for the
 pins.
 
-**Two instruments would have caught it, and neither exists.**
+**The first of those instruments is now executable; cause-based refusal
+reporting remains open.**
 
-1. **Legality is verified in one direction.** The bridge sends the host only
-   what CIVVIS already believes is legal. Nothing ever asks the reverse
-   question — *does the host allow something we refuse?* — so a rule we are
-   missing produces no signal anywhere, and a host-blocked `MOVE_TO` is a
-   silent no-op counted as applied (`src/mirror.rs`). `tools/live_divergence.py`
-   cannot close this: it is projection-only, because "the live record carries
-   order COUNTS, not orders with targets, so nothing is replayed". Recording
-   each order's `(unit, from, to, host_result)` — and replaying every *observed*
-   host move through `Game::can_move` / `Game::path_to` to count the ones we
-   would have refused — is the missing measurement.
-2. **Refusals are counted, not attributed.** The refusal census buckets by
+1. **Legality is now verified in both directions for observed local steps.**
+   `CivvisControlAgent.lua` records `host_move` after the shipped
+   `Events.UnitMoved` callback (the same callback shape appears at
+   `Base/Assets/UI/TutorialUIRoot.lua:2733`), carrying the local unit and its
+   prior and new offset coordinates. The state export seeds each unit's first
+   position; a first sighting therefore emits no invented edge. Run
+
+   ```sh
+   target/ci/civvis_orders --mirror "$RUN" --audit-host-moves
+   ```
+
+   to replay every recorded host-admitted edge through
+   `Game::can_move_observed_step`. The probe is a clone rebased at the host's
+   reported source with a fresh allowance, so it checks structural legality
+   (terrain, borders, stacking, hostile units and zone of control) rather than
+   stale movement points, and cannot mutate the reconstructed game. Between
+   state exports the audit advances its own local-unit shadow and removes
+   recorded casualties; a previous host move is not left as a fabricated
+   blocker for the next one. Its JSON report keeps `observed`, `comparable`,
+   `model_allowed`, `model_refused`, `unverifiable`, and the full mismatching
+   edges separate. Missing tiles, a missing mapping, and a non-adjacent or
+   malformed event are uncertainty, never agreement.
+2. **Refusals are still counted, not attributed.** The refusal census buckets by
    action kind, so 1,569 refused `move` actions is the finest grain available.
    Bucketing by *cause* — `own_unit`, `foreign_unit`, `zoc`, `border`, `mp`,
    `terrain` — turns the shape this defect made into a number somebody can look
-   at. After this fix, `own_unit` on a legal path is a CI ratchet.
+   at. The reverse audit labels a *model* mismatch with the immediate visible
+   cause, but it is not a replacement for an authoritative host-refusal
+   taxonomy. After that lands, `own_unit` on a legal path is a CI ratchet.
 
 ⚠ The general lesson, and the reason this section is in this document rather
 than a commit message: **every A/B in this repository plays both arms under the
