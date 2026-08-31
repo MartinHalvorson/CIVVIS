@@ -567,6 +567,13 @@ python3 tools/civvis_worktree_audit.py --reap            # what it would remove
 python3 tools/civvis_worktree_audit.py --reap --apply    # remove it
 ```
 
+On a verification host, `civvis-install-host-automation.sh` also installs
+`com.civvis.worktree-prune`. It runs that exact reap path hourly with
+`--idle-minutes 1440`, so completed task worktrees and their build caches are
+removed within about an hour of their 24-hour inactivity window. It does not
+scan or remove loose files: the fifteen-minute rescue audit owns preserving
+those, while this job's narrow authority is registered task scaffolding.
+
 The bar is the one this document already sets — **does GitHub have the
 content**, not "is it merged" — so the reaper reuses `on_github` and inherits
 the `refs/pull/*/head` fetch. It refuses four ways, and the self-test asserts

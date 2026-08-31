@@ -40,8 +40,9 @@ import civvis_collab  # noqa: E402
 WRAPPER = OPS / "civvis-verified-head-launcher.sh"
 SWITCH = OPS / "civvis-games.sh"
 PRUNE = OPS / "civvis-run-prune.sh"
+WORKTREE_PRUNE = OPS / "civvis-worktree-prune.sh"
 INSTALLER = OPS / "civvis-install-host-automation.sh"
-LABELS = ("com.civvis.keepplaying", "com.civvis.run-prune")
+LABELS = ("com.civvis.keepplaying", "com.civvis.run-prune", "com.civvis.worktree-prune")
 TEMPLATES = {label: REPO / "deploy" / f"{label}.plist" for label in LABELS}
 GITHUB = "https://github.com/MartinHalvorson/CIVVIS.git"
 HAS_ZSH = shutil.which("zsh") is not None
@@ -78,8 +79,8 @@ def make_tree(root: Path, origin=GITHUB, branch: str = "scratch") -> Path:
 class NothingNamesAHome(unittest.TestCase):
     """A script that names its author's home directory installs nowhere else."""
 
-    def test_the_four_scripts_derive_their_paths(self):
-        for script in (WRAPPER, SWITCH, PRUNE, INSTALLER):
+    def test_the_five_scripts_derive_their_paths(self):
+        for script in (WRAPPER, SWITCH, PRUNE, WORKTREE_PRUNE, INSTALLER):
             executable = [line for line in script.read_text().splitlines()
                           if not line.lstrip().startswith("#")]
             hits = [hit for line in executable for hit in HARDCODED_HOME.findall(line)]
@@ -127,6 +128,13 @@ class NothingNamesAHome(unittest.TestCase):
                                .encode("utf-8"))
         self.assertEqual(prune["StartInterval"], 3600)
         self.assertNotIn("StartCalendarInterval", prune)
+        worktree_prune = plistlib.loads(TEMPLATES["com.civvis.worktree-prune"].read_text()
+                                         .replace("__HOME__", "/h").replace("__OPS__", "/o")
+                                         .encode("utf-8"))
+        self.assertEqual(worktree_prune["StartInterval"], 3600)
+        self.assertEqual(worktree_prune["ProgramArguments"][-1],
+                         "/o/civvis-worktree-prune.sh")
+        self.assertNotIn("StartCalendarInterval", worktree_prune)
 
 
 class _Host:
@@ -424,7 +432,7 @@ class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
             tree = make_tree(Path(raw) / "tree", branch="main")
             (tree / "tools" / "ops").mkdir(parents=True)
             (tree / "deploy").mkdir()
-            for script in (WRAPPER, SWITCH, PRUNE, INSTALLER):
+            for script in (WRAPPER, SWITCH, PRUNE, WORKTREE_PRUNE, INSTALLER):
                 shutil.copy2(script, tree / "tools" / "ops" / script.name)
             for label, template in TEMPLATES.items():
                 shutil.copy2(template, tree / "deploy" / template.name)
@@ -451,7 +459,7 @@ class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
             tree = make_tree(Path(raw) / ".civvis-batch-scratch" / "repo")
             (tree / "tools" / "ops").mkdir(parents=True)
             (tree / "deploy").mkdir()
-            for script in (WRAPPER, SWITCH, PRUNE, INSTALLER):
+            for script in (WRAPPER, SWITCH, PRUNE, WORKTREE_PRUNE, INSTALLER):
                 shutil.copy2(script, tree / "tools" / "ops" / script.name)
             for template in TEMPLATES.values():
                 shutil.copy2(template, tree / "deploy" / template.name)
@@ -651,6 +659,43 @@ class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
         with TemporaryDirectory() as raw:
             done = zsh(PRUNE, env=clean_env(HOME=raw, CIVVIS_RUNS_ROOT=str(Path(raw) / "none")))
             self.assertEqual(done.returncode, 0)
+
+
+@unittest.skipUnless(HAS_ZSH, "the worktree prune job is zsh; this runner has no zsh")
+class FinishedWorktreesHaveBoundedRetention(unittest.TestCase):
+    def test_it_calls_the_audited_reaper_after_24_hours(self):
+        with TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            ops = repo / "tools" / "ops"
+            ops.mkdir(parents=True)
+            script = ops / WORKTREE_PRUNE.name
+            shutil.copy2(WORKTREE_PRUNE, script)
+            audit = repo / "tools" / "civvis_worktree_audit.py"
+            audit.write_text(
+                "import os\n"
+                "import sys\n"
+                "from pathlib import Path\n"
+                "Path(os.environ['CIVVIS_WORKTREE_PRUNE_CAPTURE']).write_text('\\n'.join(sys.argv[1:]))\n"
+            )
+            capture = Path(raw) / "arguments"
+            done = zsh(script, env=clean_env(CIVVIS_WORKTREE_PRUNE_CAPTURE=str(capture)))
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(capture.read_text().splitlines(), [
+                "--repo", str(repo.resolve()), "--reap", "--apply", "--idle-minutes", "1440", "--no-scan",
+            ])
+
+    def test_an_invalid_retention_window_refuses_before_running_the_audit(self):
+        with TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            ops = repo / "tools" / "ops"
+            ops.mkdir(parents=True)
+            script = ops / WORKTREE_PRUNE.name
+            shutil.copy2(WORKTREE_PRUNE, script)
+            audit = repo / "tools" / "civvis_worktree_audit.py"
+            audit.write_text("raise SystemExit('the audit must not run')\n")
+            done = zsh(script, env=clean_env(CIVVIS_WORKTREE_PRUNE_MINUTES="0"))
+            self.assertEqual(done.returncode, 64, done.stdout + done.stderr)
+            self.assertIn("positive integer", done.stderr)
 
 
 if __name__ == "__main__":
