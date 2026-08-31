@@ -19,6 +19,10 @@
 # is recorded as a line rather than as the absence of one.
 
 set -u
+# The delayed terminal-document reaper below is detached. zsh otherwise starts
+# it at nice +5, so keep its small Apple Event on the same normal-priority
+# contract as every other background helper in this host chain.
+unsetopt BG_NICE
 SELF_DIR=${0:A:h}
 LOG=${CIVVIS_LADDER_LOG:-$HOME/Library/Logs/civvis-ladder.log}
 # CIVVIS_LADDER_SUPERVISOR remains a compatibility override for an operator's
