@@ -38673,12 +38673,22 @@ fn a_settler_waits_the_turn_its_guard_is_called() {
     );
     assert_eq!(game.units[&settler].pos, start);
     assert_eq!(game.units[&warrior].pos, start, "the guard arrived");
-    assert_eq!(live.settler_guards.get(&settler), Some(&warrior), "and is bound");
+    assert_eq!(
+        live.settler_guards.get(&settler),
+        Some(&warrior),
+        "and is bound"
+    );
     assert_eq!(live.summoned_guard_turn.get(&settler), Some(&game.turn));
 
     // A remap carries the memory with the unit; a fresh board drops it.
-    live.remap_unit_memory(&BTreeMap::from([(settler, settler + 1000), (warrior, warrior + 1000)]));
-    assert_eq!(live.summoned_guard_turn.get(&(settler + 1000)), Some(&game.turn));
+    live.remap_unit_memory(&BTreeMap::from([
+        (settler, settler + 1000),
+        (warrior, warrior + 1000),
+    ]));
+    assert_eq!(
+        live.summoned_guard_turn.get(&(settler + 1000)),
+        Some(&game.turn)
+    );
     live.forget_unit_memory();
     assert!(live.summoned_guard_turn.is_empty());
 }
