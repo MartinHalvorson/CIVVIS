@@ -206,12 +206,6 @@ const BARBARIAN_LOCAL_DEFENDER_RADIUS: i32 = 3;
 /// garrison ordered at this range is in place before the attacker arrives.
 pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 
-/// Own military units within `GARRISON_HOLD_RADIUS` of an unhurt city that
-/// make one more raid-response defender unnecessary. See `besieged_city_item`.
-const GARRISON_HOLD_UNITS: usize = 2;
-/// How close to the centre a unit must stand to count toward that garrison.
-const GARRISON_HOLD_RADIUS: i32 = 1;
-
 /// How many recon units [`BasicAi::recon_is_the_missing_arm`] will rebuild
 /// toward after the empire has expanded. Two independent scouts are a bounded
 /// hedge against one being killed, trapped, or forced away from the frontier;
@@ -10550,48 +10544,16 @@ impl BasicAi {
     /// Helsingborg built a Builder every turn; 172-214 gold went unspent.
     ///
     /// A count of units spread across an empire says nothing about whether
-    /// THIS city can hold, so this branch is keyed on the city's own besiegers
-    /// and answers with the two things that defend a city: walls, then a
-    /// defender.  The live under-fire treatment asks specifically for a
-    /// melee-capable land defender: a siege piece belongs at a distant enemy
-    /// wall and cannot hold the city it is being built in.
+    /// THIS city can hold. The live bridge treats lost city health as the
+    /// proof that the local defence must answer, even when fog hides the
+    /// attackers, and asks for walls first, then a melee-capable land
+    /// defender. A siege piece belongs at a distant enemy wall and cannot
+    /// hold the city it is being built in.
     fn besieged_city_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        // ⚠ Two, not one. Reacting to a single hostile in range fires on every
-        // scout that wanders past, and measured over 24 paired maps that bought
-        // city count while COSTING score: walls and defenders displace the
-        // buildings and districts score is actually made of. A raiding party is
-        // what takes a city, and a raiding party is more than one unit.
         let bleeding =
             self.garrison_under_fire && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
         if !bleeding {
             return None;
-        }
-        // ★★★★ A CITY THAT IS ALREADY GARRISONED AND UNHURT DOES NOT NEED ONE
-        // MORE DEFENDER FOR EVERY RAIDER IT SEES. Two visible hostiles within
-        // the muster radius is the raid test above, and early barbarians
-        // satisfy it every few turns. Run civvis-20260816T084206Z: Rome held
-        // three, then five military units and no damage, and this path built a
-        // Warrior on t15 and again on t21 (a Galley from the navy floor between)
-        // — the first Settler waited until t23, the second city until t37,
-        // and the tally read 204 against 352 at t97. Behind
-        // `garrison_under_fire`, the live doctrine that owns this path; the
-        // frozen controllers keep the raid test as it was.
-        if self.garrison_under_fire && !bleeding {
-            let Some(city) = g.cities.get(&cid) else {
-                return None;
-            };
-            let garrison = g
-                .units
-                .values()
-                .filter(|unit| {
-                    unit.owner == pid
-                        && g.rules.units[unit.kind].class == "military"
-                        && g.wdist(city.pos, unit.pos) <= GARRISON_HOLD_RADIUS
-                })
-                .count();
-            if garrison >= GARRISON_HOLD_UNITS {
-                return None;
-            }
         }
         for building in ["walls", "medieval_walls", "renaissance_walls"] {
             let wall = Item::Building {
@@ -10601,15 +10563,9 @@ impl BasicAi {
                 return Some(wall);
             }
         }
-        // `garrison_under_fire` is live-bridge-only.  Keep the frozen
-        // controller's historical generic military selector intact, but make
-        // the emergency path choose a unit that can occupy and defend a local
-        // tile rather than the highest-bombard siege unit.
-        let defender = if self.garrison_under_fire {
-            self.best_military(g, pid, cid, Some(false))
-        } else {
-            self.best_military(g, pid, cid, None)
-        };
+        // This damage-only path is live-bridge-only, so choose the local land
+        // defender rather than the highest-bombard siege unit.
+        let defender = self.best_military(g, pid, cid, Some(false));
         defender.map(|unit| Item::Unit {
             unit: Name::new(&unit),
         })
