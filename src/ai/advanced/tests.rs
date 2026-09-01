@@ -2224,6 +2224,33 @@ fn the_land_grab_settles_past_the_assigned_lanes_cutoff() {
 /// twelve-to-fifteen-city midgame horizon. The safe-site and hard-target caps
 /// still bound every one of those walkers.
 #[test]
+fn rapid_city_expansion_versions_are_separate_end_to_end() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.rapid_city_expansion);
+    assert!(!ai.rapid_city_expansion_2);
+    assert!(!ai.base.rapid_city_expansion);
+    assert!(!ai.base.rapid_city_expansion_2);
+
+    ai.enable_rapid_city_expansion();
+    assert!(ai.rapid_city_expansion);
+    assert!(ai.base.rapid_city_expansion);
+    assert!(!ai.rapid_city_expansion_2);
+    assert!(!ai.base.rapid_city_expansion_2);
+
+    ai.enable_rapid_city_expansion_2();
+    assert!(!ai.rapid_city_expansion);
+    assert!(!ai.base.rapid_city_expansion);
+    assert!(ai.rapid_city_expansion_2);
+    assert!(ai.base.rapid_city_expansion_2);
+
+    ai.enable_rapid_city_expansion();
+    assert!(ai.rapid_city_expansion);
+    assert!(ai.base.rapid_city_expansion);
+    assert!(!ai.rapid_city_expansion_2);
+    assert!(!ai.base.rapid_city_expansion_2);
+}
+
+#[test]
 fn rapid_city_expansion_opens_the_milestone_pipeline() {
     let mut game = Game::new_full(2, 74, 46, 11_191, 250, 0, false);
     game.game_speed = crate::setup::GameSpeed::Online;
@@ -2356,6 +2383,22 @@ fn rapid_city_expansion_reclaims_a_peacetime_queue_for_its_settler_wave() {
         ),
         "an open rapid-settlement pipeline owns this peaceful utility queue"
     );
+
+    // Version two retains the positive empty-capital reservation but never
+    // replaces work already underway. The measured-band pipeline waits for a
+    // genuinely empty queue instead of making every peaceful build disposable.
+    game.cities.get_mut(&capital).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("builder"),
+    }];
+    ai.enable_rapid_city_expansion_2();
+    ai.rapid_expansion_settler_wave(&mut game, 0, &plan);
+    assert!(
+        matches!(
+            game.cities[&capital].queue.first(),
+            Some(Item::Unit { unit }) if unit == "builder"
+        ),
+        "v2 leaves a non-empty queue intact"
+    );
 }
 
 /// Once the practical safe-site search is exhausted, rapid expansion stops
@@ -2400,6 +2443,14 @@ fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
         "a Settler already carrying the last viable city must finish its job first"
     );
     game.remove_unit(settler);
+
+    ai.enable_rapid_city_expansion_2();
+    let selective = ai.assess(&game, 0);
+    assert_ne!(
+        selective.strategy,
+        GrandStrategy::Conquest,
+        "v2 does not manufacture a war merely because the settlement frontier is full"
+    );
 }
 
 /// End-to-end tempo regression for the rapid-city-expansion gene. Geography,

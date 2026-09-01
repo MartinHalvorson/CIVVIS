@@ -3045,6 +3045,13 @@ pub struct BasicAi {
     /// handoff; this flag keeps the governor that actually queues Settlers in
     /// step with it.
     pub(crate) rapid_city_expansion: bool,
+    /// The baseline-governor half of `rapid-city-expansion-2`.
+    ///
+    /// Unlike version one, this never rewrites the opening book, pantheon, or
+    /// site ranking. It reserves the capital's next empty production choice,
+    /// uses the measured opening-band pipeline, and keeps the legal
+    /// population and payback gates in step with the strategic controller.
+    pub(crate) rapid_city_expansion_2: bool,
     /// `capital-settler-after-completion`: once the capital is population two
     /// and has no queued work, start a legal Settler instead of letting the
     /// ordinary force or infrastructure ranking fill that opening. The city
@@ -4838,6 +4845,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
@@ -4876,12 +4884,24 @@ impl BasicAi {
 
     /// Enable the baseline half of the native rapid-city-expansion gene.
     pub(crate) fn enable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion_2 = false;
         self.rapid_city_expansion = true;
     }
 
     /// Disable the baseline half of the native rapid-city-expansion gene.
     pub(crate) fn disable_rapid_city_expansion(&mut self) {
         self.rapid_city_expansion = false;
+    }
+
+    /// Enable the baseline half of the selective rapid-expansion rewrite.
+    pub(crate) fn enable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion = false;
+        self.rapid_city_expansion_2 = true;
+    }
+
+    /// Disable the baseline half of `rapid-city-expansion-2`.
+    pub(crate) fn disable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion_2 = false;
     }
 
     /// Enable the baseline half of the capital-settler-after-completion gene.
@@ -5285,6 +5305,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
@@ -8970,7 +8991,7 @@ impl BasicAi {
             // picker remains the authority on whether a Settler is presently
             // safe and useful, and the untouched book resumes after this
             // one production decision.
-            if self.capital_settler_after_completion
+            if (self.capital_settler_after_completion || self.rapid_city_expansion_2)
                 && !self.minor
                 && !self.barb
                 && g.cities[cid].is_capital
@@ -11084,7 +11105,7 @@ impl BasicAi {
         // observed to lose to an Archer despite a legal second settlement
         // slot; this gene only changes that queue choice after the previous
         // item has completed.
-        if self.capital_settler_after_completion
+        if (self.capital_settler_after_completion || self.rapid_city_expansion_2)
             && !self.minor
             && !self.barb
             && !at_major_war
@@ -11323,6 +11344,14 @@ impl BasicAi {
             let pipeline = if self.rapid_city_expansion && seats_short > 0 {
                 (RAPID_EXPANSION_PIPELINE_BASE + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
                     .min(seats_short)
+            } else if self.rapid_city_expansion_2 && seats_short > 0 {
+                advanced::rapid_city_expansion::pipeline_width(
+                    g,
+                    n_cities + seats_short,
+                    n_cities,
+                    settlers,
+                )
+                .unwrap_or(1)
             } else if self.land_grab && seats_short > 0 {
                 (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
             } else if self.parallel_settlers
@@ -11345,7 +11374,10 @@ impl BasicAi {
             // Civilization VI starts a Settler at population 2, and the live
             // genome's 2.456 held a food-poor capital at one city for forty
             // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion {
+            let settler_min_pop = if self.host_settler_pop
+                || self.rapid_city_expansion
+                || self.rapid_city_expansion_2
+            {
                 self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
             } else {
                 self.w.settler_min_pop
@@ -11354,7 +11386,7 @@ impl BasicAi {
             // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
             // REPAY, not until the genome's turn. See `land_grab`.
             let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || ((self.land_grab || self.rapid_city_expansion)
+                || ((self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
                     && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
