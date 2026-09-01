@@ -3193,7 +3193,7 @@ fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> 
     // line at the same moment.
     match civvis::ai::GENES
         .iter()
-        .find(|gene| gene.live() && gene.tag == treatment)
+        .find(|gene| withholdable(gene) && gene.tag == treatment)
     {
         Some(gene) => {
             (gene.disable)(ai);
@@ -3209,11 +3209,23 @@ fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> 
     }
 }
 
+/// Whether `--without` can form an off arm for this gene: every live gene
+/// (the repairs and the host-only adapters, which ship on), and every opt-in
+/// the ledger turns on. An opt-in the ledger leaves off is already off and a
+/// production gene has no live control at all, so neither is an arm; naming
+/// one stays the hard error above rather than a silent no-op control.
+/// `tools/genes.py arm` mirrors this rule in Python so the ladder can assign a
+/// screen's arm before a build (`docs/LIVE_SCREEN.md`).
+fn withholdable(gene: &civvis::ai::Gene) -> bool {
+    gene.live()
+        || (gene.opt_in() && civvis::ai::gene_ledger::ledger_default_on(gene.tag) == Some(true))
+}
+
 /// Every treatment `--without` accepts, in table order, for the usage line.
 fn withholdable_treatments() -> String {
     civvis::ai::GENES
         .iter()
-        .filter(|gene| gene.live())
+        .filter(|gene| withholdable(gene))
         .map(|gene| gene.tag)
         .collect::<Vec<_>>()
         .join(", ")
@@ -8092,6 +8104,48 @@ mod tests {
     /// ⚠ The unknown-name case is asserted deliberately. A typo that silently
     /// produced a control identical to the treatment would report a null that
     /// looks exactly like a real one.
+    #[test]
+    fn an_opt_in_the_ledger_turns_on_can_be_withheld_and_one_it_leaves_off_cannot() {
+        // A screen's off arm for a ledger-on opt-in is `--without`; before this
+        // the flag refused every opt-in, so the 30-odd opt-ins the ledger
+        // deploys had no live control at all (`docs/LIVE_SCREEN.md`).
+        let deployed_opt_in = civvis::ai::GENES
+            .iter()
+            .find(|gene| {
+                gene.opt_in() && civvis::ai::gene_ledger::ledger_default_on(gene.tag) == Some(true)
+            })
+            .map(|gene| gene.tag);
+        if let Some(tag) = deployed_opt_in {
+            let mut ai = civvis::ai::AdvancedAi::new();
+            ai.enable_live_bridge();
+            withhold_live_treatment(&mut ai, tag)
+                .expect("an opt-in the ledger turns on is a withholdable arm");
+            assert!(
+                withholdable_treatments().split(", ").any(|name| name == tag),
+                "the usage line must list the arm it accepts"
+            );
+        }
+        let held_opt_in = civvis::ai::GENES
+            .iter()
+            .find(|gene| {
+                gene.opt_in() && civvis::ai::gene_ledger::ledger_default_on(gene.tag) != Some(true)
+            })
+            .map(|gene| gene.tag)
+            .expect("the registry holds at least one opt-in the ledger leaves off");
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        let refused = withhold_live_treatment(&mut ai, held_opt_in)
+            .expect_err("an opt-in already off is not an arm and must not pass silently");
+        assert!(refused.contains("unknown --without treatment"), "{refused}");
+        let production = civvis::ai::GENES
+            .iter()
+            .find(|gene| gene.production())
+            .map(|gene| gene.tag)
+            .expect("the registry holds production genes");
+        withhold_live_treatment(&mut ai, production)
+            .expect_err("a production gene has no live control and stays refused");
+    }
+
     #[test]
     fn a_live_treatment_can_be_withheld_by_name() {
         let mut ai = civvis::ai::AdvancedAi::new();

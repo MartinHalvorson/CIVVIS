@@ -1881,6 +1881,54 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
 
+    def test_a_screened_gene_is_dealt_one_arm_per_game_from_its_tag(self):
+        """The arm is a function of the game's tag alone, so a `-contN`
+        continuation inherits it and the ledger can re-derive it; the arm equal
+        to the gene's live default is unarmed and the other is the gene's one
+        flag; the labels reach civ6_play either way."""
+        import genes
+        host_only = next(row.tag for row in genes.genes() if row.host_only)
+        held_opt_in = next(row.tag for row in genes.genes()
+                           if row.opt_in and genes.live_arm(row.tag)["live_default"] == "off")
+        for gene, on_words, off_words in (
+            (host_only, [], ["--civvis-without", host_only]),
+            (held_opt_in, ["--civvis-with", held_opt_in], []),
+        ):
+            arms = {climb.screen_arm(f"civvis-2026090{i}T000000Z", gene, "DIFFICULTY_KING",
+                                     "science") for i in range(1, 40)}
+            self.assertEqual(arms, {"on", "off"}, "forty tags must deal both arms")
+            tag = "civvis-20260901T132005Z"
+            arm = climb.screen_arm(tag, gene, "DIFFICULTY_KING", "science")
+            self.assertEqual(climb.screen_arm(tag + "-cont3", gene, "DIFFICULTY_KING",
+                                              "science"), arm)
+            self.assertEqual(climb.screen_stem(tag + "-cont12"), tag)
+            args = self._play_args(screen_gene=gene, difficulty="DIFFICULTY_KING")
+            for segment in (tag, tag + "-cont1"):
+                cmd = climb.play_command(args, segment, Path("db"), Path("bin"))
+                expected = on_words if arm == "on" else off_words
+                arm_words = cmd[:cmd.index("--screen-gene")]
+                self.assertEqual([w for w in arm_words
+                                  if w in ("--civvis-with", "--civvis-without", gene)],
+                                 expected, segment)
+                self.assertEqual(cmd[cmd.index("--screen-gene") + 1], gene)
+                self.assertEqual(cmd[cmd.index("--screen-arm") + 1], arm)
+        # Unscreened batches are byte-identical to before.
+        cmd = climb.play_command(self._play_args(), "t", Path("db"), Path("bin"))
+        self.assertNotIn("--screen-gene", cmd)
+
+    def test_a_screen_with_no_live_arm_is_refused_but_the_batch_is_not(self):
+        import genes
+        production = next(row.tag for row in genes.genes() if row.production)
+        host_only = next(row.tag for row in genes.genes() if row.host_only)
+        self.assertIsNone(climb.screen_refusal(self._play_args()))
+        self.assertIsNone(climb.screen_refusal(self._play_args(screen_gene=host_only)))
+        self.assertIn("cannot be screened", climb.screen_refusal(
+            self._play_args(screen_gene=production)))
+        self.assertIn("unknown tag", climb.screen_refusal(
+            self._play_args(screen_gene="no-such-gene")))
+        self.assertIn("batch's own arm", climb.screen_refusal(
+            self._play_args(screen_gene=host_only, without=[host_only])))
+
     def test_the_play_command_always_selects_rome(self):
         """Even a direct caller cannot pass another leader through the climb."""
         for requested in (None, "LEADER_TOKUGAWA", "LEADER_TRAJAN"):

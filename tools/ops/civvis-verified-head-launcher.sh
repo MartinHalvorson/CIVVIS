@@ -48,6 +48,11 @@
 #                                     250-turn game needs the room (a Warlord
 #                                     win reached t247 and hit the old 8100 s).
 #   CIVVIS_PLAY_TIMEOUT_CEILING       the hard ceiling. Default 14400.
+#   CIVVIS_SCREEN_GENE                one gene tag: every game is dealt an
+#                                     on/off arm of it from its own run tag
+#                                     and records the arm (docs/LIVE_SCREEN.md).
+#                                     Absent: no screen. ~/.civvis-live-screen-gene
+#                                     is the same switch read per batch.
 #
 # Anything else in the environment that would change WHAT the seat plays — a
 # labelled experiment, a retired strategy, an alternate host, a former restart
@@ -156,8 +161,14 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_RESTART_BELOW_LEADER_RATIO)
         [[ "$value" =~ '^(0|1|0?\.[0-9]+|1\.0+)$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a ratio from 0 to 1" ;;
+      CIVVIS_SCREEN_GENE)
+        # One registry tag: the gene a live screen deals each game an arm of
+        # (docs/LIVE_SCREEN.md). The climb refuses a tag with no live arm and
+        # plays unarmed, so this only has to be one hyphenated token.
+        [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
+          || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
         continue ;;
     esac
     policy[$key]=$value
@@ -189,7 +200,7 @@ origin=$(git -C "$HEAD_REPO" remote get-url origin 2>/dev/null || true)
 
 # Never inherit a labelled experiment, a retired strategy, an alternate host,
 # or a former restart policy from the window that opened this.
-unset CIVVIS_WITH CIVVIS_WITHOUT CIVVIS_WITH_FILE CIVVIS_STRATEGY CIVVIS_VICTORY \
+unset CIVVIS_WITH CIVVIS_WITHOUT CIVVIS_WITH_FILE CIVVIS_SCREEN_GENE CIVVIS_STRATEGY CIVVIS_VICTORY \
       CIVVIS_DIFFICULTY CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
       CIVVIS_ABANDON_BELOW_WIN_RATE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING \
       CIVVIS_HEAD_REPO CIVVIS_LADDER_HOST CIVVIS_LADDER_SUPERVISOR CIVVIS_SUPERVISOR \

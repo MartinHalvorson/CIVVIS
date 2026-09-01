@@ -126,6 +126,71 @@ resolve_forced_arm() {
     done
   fi
 }
+# `CIVVIS_SCREEN_GENE` / `~/.civvis-live-screen-gene`: one gene tag whose
+# on/off arm every game of the batch is DEALT from its own run tag
+# (`civ6_civvis_climb.py --screen-gene`, docs/LIVE_SCREEN.md).  Unlike the
+# force-on file, a bad screen loses the SCREEN and the batch plays unarmed:
+# the force file refuses a batch because a mislabelled arm would be filed as
+# deployment, whereas an undealt screen is exactly deployment, and a typo in
+# this file must not stop an unattended ladder.  Same strict one-line,
+# no-whitespace format, read at the same no-game boundary.
+SCREEN_FILE=${CIVVIS_SCREEN_GENE_FILE:-$HOME/.civvis-live-screen-gene}
+SCREEN_ENV=${CIVVIS_SCREEN_GENE:-}
+SCREEN_GENE=""
+SCREEN_SOURCE="none"
+SCREEN_ARGS=()
+
+resolve_screen_gene() {
+  local from_file=""
+  SCREEN_GENE="$SCREEN_ENV"
+  SCREEN_SOURCE="environment"
+  [[ -n "$SCREEN_GENE" ]] || SCREEN_SOURCE="none"
+  SCREEN_ARGS=()
+
+  if [[ -e "$SCREEN_FILE" ]]; then
+    if [[ ! -r "$SCREEN_FILE" ]]; then
+      say "screen-gene file exists but is unreadable ($SCREEN_FILE); no screen this batch"
+      SCREEN_GENE=""; SCREEN_SOURCE="none"
+      return 0
+    fi
+    from_file=$(<"$SCREEN_FILE")
+    if [[ "$from_file" == *[[:space:]]* ]]; then
+      say "screen-gene file contains whitespace ($SCREEN_FILE); no screen this batch"
+      SCREEN_GENE=""; SCREEN_SOURCE="none"
+      return 0
+    fi
+    if [[ -n "$from_file" ]]; then
+      if [[ -n "$SCREEN_GENE" && "$SCREEN_GENE" != "$from_file" ]]; then
+        say "screen-gene file conflicts with CIVVIS_SCREEN_GENE; no screen this batch"
+        SCREEN_GENE=""; SCREEN_SOURCE="none"
+        return 0
+      fi
+      SCREEN_GENE="$from_file"
+      SCREEN_SOURCE="file:$SCREEN_FILE"
+    fi
+  fi
+  # One gene, one arm per game. A comma would name a bundle, which is a
+  # force-on, not a screen.
+  if [[ "$SCREEN_GENE" == *,* ]]; then
+    say "screen-gene names several tags ($SCREEN_GENE); a screen deals ONE gene; no screen this batch"
+    SCREEN_GENE=""; SCREEN_SOURCE="none"
+    return 0
+  fi
+  # The batch's own arm wins: a gene both forced (or withheld) and screened
+  # would have its coin overruled on every game.
+  if [[ -n "$SCREEN_GENE" ]]; then
+    local named
+    for named in ${(s:,:)FORCED} ${(s:,:)WITHHELD}; do
+      if [[ "$named" == "$SCREEN_GENE" ]]; then
+        say "screen-gene $SCREEN_GENE is also this batch's forced/withheld arm; no screen this batch"
+        SCREEN_GENE=""; SCREEN_SOURCE="none"
+        return 0
+      fi
+    done
+    SCREEN_ARGS=(--screen-gene "$SCREEN_GENE")
+  fi
+  return 0
+}
 # Attempts per cycle. One game per source revision cannot establish
 # repeatability; the policy below advances only after a comparable trailing
 # batch. Three is the smallest useful default and can be raised or lowered for
@@ -546,6 +611,8 @@ while true; do
     sleep 60
     continue
   fi
+  # After the arm: a screen defers to a forced/withheld gene of the same name.
+  resolve_screen_gene
   HEAD_SHA=${HEAD_REVISION:0:7}
   if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
     say "build FAILED at $HEAD_SHA; retrying in 120s"
@@ -652,7 +719,7 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
-  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, log climb-$TAG.log)"
+  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, screen=${SCREEN_GENE:-none}, screen_source=$SCREEN_SOURCE, log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
   # holds the game; refusing to stop an unowned run", gone in under a second —
@@ -682,6 +749,7 @@ while true; do
       --leader LEADER_TRAJAN \
       "${WITHOUT_ARGS[@]}" \
       "${WITH_ARGS[@]}" \
+      "${SCREEN_ARGS[@]}" \
       "${TIMEOUT_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
