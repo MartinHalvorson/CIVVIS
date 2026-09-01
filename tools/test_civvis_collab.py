@@ -320,11 +320,104 @@ class FreshnessTests(unittest.TestCase):
             self.committed_repo(root)
             worker = root / ".git" / "managed.py"
             payload = collab.plistlib.loads(collab.macos_freshness_plist(root, worker))
+            # The error check must accept exactly what the plist writes, or
+            # every `start` on the fleet reports the service as outdated
+            # forever.
+            self.assertEqual(payload["ProgramArguments"],
+                             collab.macos_freshness_command(root, worker))
 
         command = payload["ProgramArguments"]
-        self.assertEqual(command[2:4], ["refresh", "--scheduled"])
-        self.assertIn("--repo", command)
+        self.assertEqual(command[:2], ["/bin/sh", "-c"])
+        script = command[2]
+        for expected in ("refresh", "--scheduled", "--repo",
+                         collab.shlex.quote(str(worker))):
+            self.assertIn(expected, script)
         self.assertEqual(payload["StartInterval"], collab.FRESHNESS_INTERVAL_SECONDS)
+        # ⚠ Nothing in the plist may name a path inside the clone: launchd
+        # resolves these BEFORE spawning, and a job that cannot spawn once the
+        # clone is deleted can never run its own self-cleanup.
+        for spawn_time_key in ("WorkingDirectory", "StandardOutPath",
+                               "StandardErrorPath"):
+            self.assertNotIn(spawn_time_key, payload)
+
+    def macos_freshness_script(self, base, root, worker):
+        """The plist's shell script, with launchctl swapped for a recorder.
+
+        `/bin/launchctl` is named absolutely in the script (launchd agents get
+        a minimal PATH), so the test substitutes the one binary it must not
+        actually call and runs everything else for real.
+        """
+        fake_home = base / "home"
+        (fake_home / "Library" / "LaunchAgents").mkdir(parents=True, exist_ok=True)
+        record = base / "launchctl-args.txt"
+        launchctl = base / "launchctl"
+        launchctl.write_text(
+            f"#!/bin/sh\nprintf '%s\\n' \"$*\" > {collab.shlex.quote(str(record))}\n",
+            encoding="utf-8",
+        )
+        launchctl.chmod(0o755)
+        with patch.object(collab.Path, "home", return_value=fake_home):
+            payload = collab.plistlib.loads(
+                collab.macos_freshness_plist(root, worker)
+            )
+            plist_path = collab.macos_freshness_plist_path(root)
+        plist_path.write_bytes(collab.plistlib.dumps(payload))
+        script = payload["ProgramArguments"][2].replace(
+            "/bin/launchctl", str(launchctl)
+        )
+        return script, plist_path, record
+
+    def test_macos_service_removes_itself_when_its_clone_is_gone(self):
+        """Six of this host's ten freshness agents pointed at deleted clones,
+        each failing every five minutes forever. The job now cleans up: worker
+        gone -> delete own plist, boot own label out."""
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "repo"
+            self.committed_repo(root)
+            worker = collab.freshness_worker_path(root)  # never written: "deleted"
+            script, plist_path, record = self.macos_freshness_script(
+                base, root, worker
+            )
+            label = collab.freshness_service_label(root)
+            subprocess.run(("/bin/sh", "-c", script), check=False,
+                           capture_output=True)
+            self.assertFalse(
+                plist_path.exists(),
+                "the agent must delete its own definition when its clone is gone",
+            )
+            self.assertEqual(
+                record.read_text(encoding="utf-8").strip(),
+                f"bootout gui/{os.getuid()}/{label}",
+                "the agent must boot its own label out of the gui domain",
+            )
+
+    def test_macos_service_leaves_itself_alone_while_its_clone_exists(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "repo"
+            self.committed_repo(root)
+            worker = collab.freshness_worker_path(root)
+            worker.parent.mkdir(parents=True)
+            ran = base / "worker-argv.txt"
+            worker.write_text(
+                "import sys, pathlib\n"
+                f"pathlib.Path({str(ran)!r}).write_text(' '.join(sys.argv[1:]))\n",
+                encoding="utf-8",
+            )
+            script, plist_path, record = self.macos_freshness_script(
+                base, root, worker
+            )
+            subprocess.run(("/bin/sh", "-c", script), check=True,
+                           capture_output=True)
+            self.assertTrue(plist_path.exists(),
+                            "a live clone's agent must not remove itself")
+            self.assertFalse(record.exists(), "and must not touch launchctl")
+            self.assertEqual(
+                ran.read_text(encoding="utf-8"),
+                f"refresh --scheduled --repo {collab.main_worktree(root)}",
+                "the guarded branch must still run the real refresh",
+            )
 
     def test_windows_service_uses_a_hidden_wscript_launcher(self):
         with tempfile.TemporaryDirectory() as temporary:
