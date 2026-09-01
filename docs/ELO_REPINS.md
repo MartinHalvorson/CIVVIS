@@ -1,5 +1,7 @@
 # The `advanced_v1` re-pin log
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 Every change that reached `src/ai.rs` or `src/ai/advanced.rs` under the frozen
 rating anchor, and the argument for why it did not change what the anchor
 plays. It was the paper trail behind `ELO_PROTOCOL_VERSION` and the ledger in

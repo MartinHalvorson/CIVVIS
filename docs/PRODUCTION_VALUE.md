@@ -1,5 +1,7 @@
 # Production as value over cost
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 The production decision's stated goal: estimate the reward of every item a
 city can produce, divide by what it costs, and build the highest ratio. This
 document records how much of that system already existed, what was missing,

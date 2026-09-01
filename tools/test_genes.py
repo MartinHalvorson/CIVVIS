@@ -926,7 +926,7 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
             batches, gene_ledger.screenable_tags()))
         self.assertEqual(set(rules["deployment_genome"]), eligible)
-        self.assertEqual(len(eligible), 62)
+        self.assertEqual(len(eligible), 70)
         self.assertIn("amenity-project-preemption", eligible)
         self.assertNotIn("amenity-project-preemption-2", eligible)
 

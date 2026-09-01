@@ -1,5 +1,7 @@
 # Historical joint-tactics design record
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 > Historical record. `joint-tactics` and its `joint-reach-lines` companion
 > were removed on 2026-08-25 after the 35,148-seat screen's −0.104 pp win
 > difference; the implementation and its live and arena arms no longer exist.
