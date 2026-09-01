@@ -15055,6 +15055,69 @@ fn targeted_science_recovers_a_persistent_idle_city_with_a_civilian() {
     ));
 }
 
+#[test]
+fn never_an_empty_queue_3_waits_for_a_persistent_non_science_stall() {
+    let (mut game, city, _) = empire_with_a_capital(79_124);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_never_an_empty_queue_3();
+    ai.base.w.p_builder = -200.0;
+    ai.base.w.p_military = -200.0;
+
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert!(
+        game.cities[&city].queue.is_empty(),
+        "v3 tolerates the first empty observation"
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert!(
+        game.cities[&city].queue.is_empty(),
+        "re-reading one host turn does not invent persistence"
+    );
+
+    game.turn += 1;
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert!(matches!(
+        game.cities[&city].queue.first(),
+        Some(Item::Unit { unit }) if unit == "builder"
+    ));
+}
+
+#[test]
+fn never_an_empty_queue_versions_are_mutually_exclusive() {
+    let mut ai = AdvancedAi::new();
+
+    ai.enable_never_an_empty_queue();
+    assert!(ai.never_an_empty_queue);
+    assert!(!ai.never_an_empty_queue_2);
+    assert!(!ai.never_an_empty_queue_3);
+
+    ai.enable_never_an_empty_queue_2();
+    assert!(!ai.never_an_empty_queue);
+    assert!(ai.never_an_empty_queue_2);
+    assert!(!ai.never_an_empty_queue_3);
+
+    ai.enable_never_an_empty_queue_3();
+    assert!(!ai.never_an_empty_queue);
+    assert!(!ai.never_an_empty_queue_2);
+    assert!(ai.never_an_empty_queue_3);
+
+    ai.enable_never_an_empty_queue();
+    assert!(ai.never_an_empty_queue);
+    assert!(!ai.never_an_empty_queue_2);
+    assert!(!ai.never_an_empty_queue_3);
+}
+
 /// ★★★★ Two colonies founded at −19 Loyalty a turn, each lost within eight
 /// turns (civvis-20260816T123936Z: Arpinum 18 tiles from the nearest own
 /// city, Lugdunum 11), while the mirror's forecast — which sums only the
