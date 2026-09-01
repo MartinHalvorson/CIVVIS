@@ -149,6 +149,10 @@ BRANCH_RE = re.compile(
     r"(?P<task>[a-z0-9][a-z0-9-]{0,47})-"
     r"(?P<stamp>\d{8}T\d{6}Z)-(?P<nonce>[a-f0-9]{4,12})$"
 )
+#: Non-task branches the fleet contract itself maintains. `ledger` is the
+#: append-only run ledger `civvis_push_guard.LEDGER_REF` lets every clone
+#: fast-forward; the audit must not flag the branch that contract invites.
+DATA_BRANCHES = frozenset({"ledger"})
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TASK_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 PUSH_GUARD_MARKER = "CIVVIS managed pre-push guard v1"
@@ -3790,7 +3794,7 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
             ok.append(f"all {len(prs)} open PR claim(s) satisfy policy")
 
         for branch in sorted(heads):
-            if branch == DEFAULT_BRANCH:
+            if branch == DEFAULT_BRANCH or branch in DATA_BRANCHES:
                 continue
             if not BRANCH_RE.fullmatch(branch):
                 errors.append(f"nonconforming remote development branch: {branch}")
@@ -3948,7 +3952,11 @@ def monitor_command(args: argparse.Namespace) -> int:
                             f"PR #{pr_number} had both required checks green before merge"
                         )
         for branch, sha in current_heads.items():
-            if branch == DEFAULT_BRANCH or previous_heads.get(branch) == sha:
+            if (
+                branch == DEFAULT_BRANCH
+                or branch in DATA_BRANCHES
+                or previous_heads.get(branch) == sha
+            ):
                 continue
             if not BRANCH_RE.fullmatch(branch):
                 findings["errors"].append(
