@@ -524,6 +524,13 @@ const SETTLEMENT_SECOND_RING_DELAY: u32 = 5;
 /// Before Shipbuilding a land Settler may widen its local eight-tile search,
 /// but may not turn a compact expansion problem into a march across the map.
 const SETTLER_LAND_FALLBACK_RADIUS: i32 = 12;
+/// While the live seat is still opening its first city, a Settler that was
+/// born from the one-city empire may pick a site only this far from the city
+/// that existed when it appeared. Six tiles is the outer edge of the
+/// colonies that held in the live record; it also leaves room for the normal
+/// four-to-six-tile expansion ring without letting a fleeing second Settler
+/// turn an escort loss into a cross-map expedition.
+pub(super) const EARLY_SETTLER_HOME_RADIUS: i32 = 6;
 const SETTLER_GLOBAL_PREMIUM: f64 = 10.0;
 const SETTLER_EXTRA_TRAVEL_PRICE: f64 = 2.5;
 
@@ -5059,6 +5066,11 @@ pub struct AdvancedAi {
     /// empire's Amenity deficit. Zero-valued with the gene off, because
     /// nothing asks for it. See `advanced/first_luxury.rs`.
     first_luxury_frame: RefCell<first_luxury::AmenityDeficitFrame>,
+    /// The one-city capital that existed when an early live Settler first
+    /// appeared. Unlike recomputing the nearest city, this keeps the second
+    /// Settler's home anchor stable after another Settler founds a city while
+    /// it is still walking. Unit-keyed and remapped with the live bridge.
+    early_settler_homes: BTreeMap<u32, Pos>,
     // ---- append: g-k ------------------------------------------------
     /// `hostile-memory`: the civilian capture envelope counts every at-war
     /// owner (barbarians, Free Cities and a major at war alike) and keeps
@@ -6553,6 +6565,7 @@ impl AdvancedAi {
         self.settler_threat_deferrals.clear();
         self.settler_dead_sites.clear();
         self.settler_last_seen.clear();
+        self.early_settler_homes.clear();
         self.settler_vanished.clear();
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
@@ -6590,6 +6603,7 @@ impl AdvancedAi {
                 .map(|(_, pos)| *pos),
         );
         self.settler_last_seen = remap(&self.settler_last_seen);
+        self.early_settler_homes = remap(&self.early_settler_homes);
         self.summoned_guard_turn = self
             .summoned_guard_turn
             .iter()
@@ -6978,6 +6992,7 @@ impl AdvancedAi {
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
             first_luxury_first: false,
             first_luxury_frame: RefCell::new(first_luxury::AmenityDeficitFrame::default()),
+            early_settler_homes: BTreeMap::new(),
 
             // ---- append: g-k ----------------------------------------
             hostile_memory: false,
@@ -27124,6 +27139,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|(position, _)| {
                 Some(*position) != avoid
+                    && self.early_settler_site_allowed(g, pid, uid, *position)
                     && !self.settler_site_is_dead(uid, *position)
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(position))
@@ -27170,6 +27186,91 @@ impl AdvancedAi {
         }
         routed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         routed.into_iter().next()
+    }
+
+    /// Remember the capital that existed when a live Settler was first
+    /// observed on its founding city while the empire still had only one
+    /// city. The bridge rebuilds unit ids every turn, so this anchor is
+    /// carried in the same remapped ledger as the target and capture memory.
+    /// A later founding must not silently make the second Settler's home
+    /// become whichever new city is nearest.
+    fn remember_early_settler_home(&mut self, g: &Game, pid: usize, uid: u32) {
+        if !self.live_settler_capture_lessons
+            || self.early_settler_homes.contains_key(&uid)
+            || !g.units.get(&uid).is_some_and(|unit| {
+                unit.owner == pid
+                    && unit.kind == "settler"
+                    && g.city_at(unit.pos)
+                        .is_some_and(|city| g.cities[&city].owner == pid)
+            })
+        {
+            return;
+        }
+        let cities = g.player_city_ids(pid);
+        if cities.len() == 1 {
+            self.early_settler_homes
+                .insert(uid, g.cities[&cities[0]].pos);
+        }
+    }
+
+    /// The capital anchor for a Settler born during the one-city opening.
+    /// This is deliberately host-only: native boards do not have the live
+    /// bridge's capture semantics that motivated the bounded home corridor.
+    pub(super) fn early_settler_home(&self, uid: u32) -> Option<Pos> {
+        self.live_settler_capture_lessons
+            .then(|| self.early_settler_homes.get(&uid).copied())
+            .flatten()
+    }
+
+    /// Whether a candidate site stays inside the early Settler's home
+    /// corridor. Emergency threat movement may briefly leave the corridor,
+    /// but deliberate target selection and exhaustion must not send it there.
+    pub(super) fn early_settler_site_allowed(
+        &self,
+        g: &Game,
+        _pid: usize,
+        uid: u32,
+        site: Pos,
+    ) -> bool {
+        self.early_settler_home(uid)
+            .is_none_or(|home| g.wdist(home, site) <= EARLY_SETTLER_HOME_RADIUS)
+    }
+
+    /// A live early Settler that was pushed outside its home corridor has a
+    /// non-negotiable objective: get back toward its original capital before
+    /// choosing another site. Returning `None` means the Settler is still
+    /// within the deliberate-march envelope.
+    pub(super) fn early_settler_homeward_target(&self, g: &Game, uid: u32) -> Option<Pos> {
+        let home = self.early_settler_home(uid)?;
+        (g.wdist(g.units[&uid].pos, home) > EARLY_SETTLER_HOME_RADIUS).then_some(home)
+    }
+
+    /// Spend the turn bringing an early Settler back toward its capital. The
+    /// live capture-aware route guard remains in charge of the actual step, so
+    /// an emergency return cannot trade distance discipline for a capture.
+    pub(super) fn return_early_settler_home(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        home: Pos,
+    ) -> bool {
+        let current = g.units[&uid].pos;
+        self.settler_targets.remove(&uid);
+        self.settler_relaxed_targets.remove(&uid);
+        self.settler_stalls.remove(&uid);
+        self.settler_closest.remove(&uid);
+        self.settler_retreats.remove(&uid);
+        think!(self.journal(), Expansion, Detail,
+               "Settler returns toward its capital";
+               "it is {} tiles from its early home at {:?}; \
+                the live safety corridor is {} tiles, so expansion waits for the \
+                return", g.wdist(current, home), home, EARLY_SETTLER_HOME_RADIUS; home);
+        if self.formationless_settler_escort() && self.settlement_safety {
+            self.settler_step_out_of_reach(g, pid, uid, home)
+        } else {
+            self.settler_step_toward_safe(g, pid, uid, home)
+        }
     }
 
     /// The price of one turn of this Settler's walk and the Settler's own
@@ -28027,6 +28128,7 @@ impl AdvancedAi {
         let current = g.units[&uid].pos;
         if self.live_settler_capture_lessons {
             self.settler_last_seen.insert(uid, current);
+            self.remember_early_settler_home(g, pid, uid);
         }
         if self.settler_never_idles {
             self.note_settler_idle(g, uid);
@@ -28123,6 +28225,9 @@ impl AdvancedAi {
             if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
                 return acted;
             }
+        }
+        if let Some(home) = self.early_settler_homeward_target(g, uid) {
+            return self.return_early_settler_home(g, pid, uid, home);
         }
         if self.formationless_settler_escort() && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
@@ -28403,6 +28508,9 @@ impl AdvancedAi {
             if Some(target) == avoid {
                 return Some("the site it is avoiding");
             }
+            if !self.early_settler_site_allowed(g, pid, uid, target) {
+                return Some("outside the early Settler's home corridor");
+            }
             // A site the host or the mirror has since blocked is not a
             // target, however it was chosen: `best_settler_target`
             // refuses `blocked_city_sites` when it PICKS a site, but a
@@ -28517,6 +28625,7 @@ impl AdvancedAi {
         // home-island target once the overseas gene finds a discovered foreign
         // landfall and the home landmass has genuinely run short of room.
         let overseas_target = if self.overseas_settlement
+            && self.early_settler_home(uid).is_none()
             && !(valid_target == Some(current) && g.can_found_city(uid))
         {
             let home_landmass = BasicAi::capital_landmass(g, pid);
@@ -28610,6 +28719,12 @@ impl AdvancedAi {
             // or change the Loyalty calculation; until then, holding preserves
             // the Settler rather than knowingly founding a doomed city.
             if loyalty_guard_active {
+                return false;
+            }
+            if self.early_settler_home(uid).is_some() {
+                // The live early corridor is a hard safety boundary, not a
+                // preference the baseline fallback may override when the
+                // local search is empty.
                 return false;
             }
             return self.base.settler_step(g, pid, uid);
