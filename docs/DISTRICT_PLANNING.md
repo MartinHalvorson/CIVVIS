@@ -58,3 +58,26 @@ ring-3 mountain nest enters the plan only when the buy actually clears.
   adds only the district-site buy its plan names, through the same `BuyPlot`
   action, and stands down where that gene already bought the plot.
 - Off, every touched path is byte-identical to before the gene existed.
+
+## Version 2: `district-planning-2` — buys that actually fire
+
+Version 1's buy never fired on the live seat: no recorded live game holds a
+single `buy_plot` order, because the spender demanded 200 Gold of surplus
+above the whole strategy reserve before it would even price a plot, and the
+live treasury (typically 200–450 Gold against a 300–400 reserve) never got
+there. Replaying Emperor game `civvis-20260901T132005Z` at t40/t44: the plan
+named the adjacency-4 Campus plot at score ~905 against the 120 floor, every
+inner gate passed, and the headroom rule alone refused the buy — the game
+then placed three campuses at adjacency ≤ 1 beside that ground.
+
+Version 2 changes only the plan's own buy:
+
+- **Affordability**: a plot the plan prices may spend into the reserve, but
+  never below half of it (`bank ≥ reserve/2 + cost` instead of
+  `bank ≥ reserve + 200 + cost`). Unplanned surplus plots keep the old rule.
+- **Bars**: raw adjacency 2 (was 3) with an edge of 1 (was 2) over the best
+  owned site. The 120-Gold-scale score floor still arbitrates, so cheap
+  ground with a real edge clears and expensive marginal ground does not.
+
+One version plays per seat; the screen prices the `v2 − v1` contrast
+directly.
