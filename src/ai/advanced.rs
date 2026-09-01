@@ -12454,6 +12454,23 @@ impl AdvancedAi {
         best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
     }
 
+    /// A quality gap alone does not make a barbarian tech an emergency for a
+    /// Science seat.  The production governor already raises a defender for a
+    /// nearby ring; research should interrupt the victory chain only when the
+    /// simulator says a visible barbarian can actually strike one of our City
+    /// Centers on its next fresh turn.  This keeps the frozen controller's
+    /// historical behavior intact while making the live gate use the same
+    /// movement- and terrain-accurate envelope as the defensive alarm.
+    fn barbarian_research_is_urgent(&self, g: &Game, pid: usize) -> bool {
+        if !self.battlefront_observation {
+            return true;
+        }
+        let visible = g.player_vision_frame(pid);
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|cid| Self::imminent_city_attack(g, pid, cid, &visible))
+    }
+
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // Explicit evaluator targets and the adaptive live plan must drive the
         // same prerequisite search.  Previously only `victory_target` enabled
@@ -12473,7 +12490,10 @@ impl AdvancedAi {
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid);
-            let barbarian_military_goal = if self.base.barbarian_tactics_enabled() {
+            let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
+                && (objective != GrandStrategy::Science
+                    || self.barbarian_research_is_urgent(g, pid))
+            {
                 BasicAi::barbarian_military_research_goal(g, pid)
             } else {
                 None
