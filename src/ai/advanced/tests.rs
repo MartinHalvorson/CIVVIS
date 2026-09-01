@@ -11638,6 +11638,192 @@ fn science_target_reserves_a_spaceport_then_queues_the_project_chain() {
     ));
 }
 
+/// The live Emperor science seat queued nine Spaceports from t149 through
+/// t169, despite the drive's one-pad opening. The dedicated pass already
+/// knew the 1→2→3 pacing; the generic production sweep did not honor it and
+/// every mature city could take the ordinary 250-point fallback. Queued pads
+/// — including one behind another item — must reserve the same small budget
+/// as standing ones, then Moon and Mars unlock the next two sites.
+#[test]
+fn science_spaceport_queues_follow_the_project_milestones() {
+    let mut game = Game::new(2, 32, 24, 71_003, 320, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found capital");
+    let mut cities = game.player_city_ids(0);
+    while cities.len() < 4 {
+        found_test_city(&mut game, 0);
+        cities = game.player_city_ids(0);
+    }
+    // New test cities inherit whatever terrain the map generator placed.
+    // Normalize their owned plots so every city has a legal Spaceport site;
+    // the test is about the empire-wide reservation, not terrain placement.
+    for city in &cities {
+        let center = game.cities[city].pos;
+        let owned = game.cities[city].owned_tiles.clone();
+        for position in owned {
+            if position == center {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+        }
+    }
+    game.players[0].techs.insert(crate::name!("rocketry"));
+    game.turn = 140;
+    game.max_turns = 100_000;
+    for city in &cities {
+        game.cities.get_mut(city).expect("test city").pop = 12;
+    }
+    let yields = std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments);
+    for (rank, city) in cities.iter().enumerate() {
+        yields.insert(
+            *city,
+            Yields {
+                production: 40.0 + rank as f64 * 20.0,
+                ..Yields::default()
+            },
+        );
+    }
+
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let spaceport_item = |board: &Game, city: u32| {
+        board
+            .producible_items(0, city)
+            .into_iter()
+            .find(|item| {
+                matches!(item, Item::District { district, .. }
+                    if board.district_family(*district) == "spaceport")
+            })
+            .expect("each mature fixture city can build a Spaceport")
+    };
+
+    // The dedicated pass chooses exactly one opening pad, and a second call
+    // cannot open another before the first has finished.
+    ai.science_production(&mut game, 0);
+    let opening = cities
+        .iter()
+        .copied()
+        .find(|city| {
+            matches!(game.cities[city].queue.first(),
+                Some(Item::District { district, .. })
+                    if game.district_family(*district) == "spaceport")
+        })
+        .expect("the science pass reserves its first launch site");
+    ai.science_production(&mut game, 0);
+    assert_eq!(
+        cities
+            .iter()
+            .filter(|city| {
+                game.cities[city].queue.iter().any(|item| {
+                    matches!(item, Item::District { district, .. }
+                        if game.district_family(*district) == "spaceport")
+                })
+            })
+            .count(),
+        1,
+        "one queued opening pad holds the empire-wide budget"
+    );
+    let counts = ai.counts(&game, 0);
+    for city in cities.iter().copied().filter(|city| *city != opening) {
+        let item = spaceport_item(&game, city);
+        assert!(
+            ai.production_value(&game, 0, city, &item, &plan, &counts) <= -10_000.0,
+            "the generic scorer must not start a second opening pad in city {city}"
+        );
+    }
+
+    // Finish the opening pad, then the normal science target opens exactly
+    // one more at the Moon milestone.
+    game.cities.get_mut(&opening).unwrap().queue.clear();
+    install_ai_test_district(&mut game, opening, "spaceport");
+    game.players[0].science_projects.extend([
+        "launch_earth_satellite".to_string(),
+        "launch_moon_landing".to_string(),
+    ]);
+    let counts = ai.counts(&game, 0);
+    let phase_two: Vec<(u32, Item, f64)> = cities
+        .iter()
+        .copied()
+        .filter(|city| *city != opening)
+        .map(|city| {
+            let item = spaceport_item(&game, city);
+            let value = ai.production_value(&game, 0, city, &item, &plan, &counts);
+            (city, item, value)
+        })
+        .collect();
+    let admitted: Vec<&(u32, Item, f64)> = phase_two
+        .iter()
+        .filter(|(_, _, value)| *value > -10_000.0)
+        .collect();
+    assert_eq!(
+        admitted.len(),
+        1,
+        "Moon permits exactly one second launch site: {phase_two:?}"
+    );
+    let second = admitted[0].0;
+    let second_item = admitted[0].1.clone();
+
+    // The second pad can sit behind another queue item and still reserves its
+    // slot; queue depth must not reopen the generic fallback in every city.
+    game.cities.get_mut(&second).unwrap().queue = vec![
+        Item::Unit {
+            unit: crate::name!("builder"),
+        },
+        second_item,
+    ];
+    let counts = ai.counts(&game, 0);
+    for city in cities
+        .iter()
+        .copied()
+        .filter(|city| *city != opening && *city != second)
+    {
+        let item = spaceport_item(&game, city);
+        assert!(
+            ai.production_value(&game, 0, city, &item, &plan, &counts) <= -10_000.0,
+            "the queued second pad must hold its slot for city {city}"
+        );
+    }
+
+    game.players[0]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    let counts = ai.counts(&game, 0);
+    let phase_three = cities
+        .iter()
+        .copied()
+        .filter(|city| *city != opening && *city != second)
+        .filter(|city| {
+            let item = spaceport_item(&game, *city);
+            ai.production_value(&game, 0, *city, &item, &plan, &counts) > -10_000.0
+        })
+        .count();
+    assert_eq!(
+        phase_three, 1,
+        "Mars unlocks one final laser-flight Spaceport, not every remaining city"
+    );
+}
+
 /// ★★★★ The last fifty turns of a Settler game are a tally, and the science
 /// lane spent them on a launch pad (civvis-20260816T093036Z: Spaceport at
 /// t226 + Manhattan Project, 871 vs 1,157; T101521Z: two Spaceports after
@@ -11755,10 +11941,10 @@ fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
 /// it counts finished districts only. Live run civvis-20260817T022159Z:
 /// Aquileia t144, Ostia t146, Arretium t146, Brundisium t157 — 119
 /// city-turns, 11% of everything that empire built, for one usable pad.
-/// See `one_launch_pad`. Two cities with Rocketry and no pad: the better
-/// producer holds the sole first-pad slot. The generic governor must reject
-/// the slower city altogether, rather than treating the second site as a
-/// harmless fallback and allowing every idle city to begin one.
+/// See `one_launch_pad`. Two cities with Rocketry and no pad: the treated
+/// seat pays 3,000 only in the better producer; the shared launch-site cap
+/// vetoes the other until the next science milestone. Once the better
+/// producer has the pad in its queue, neither city can start another one.
 #[test]
 fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
     let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
