@@ -2684,19 +2684,6 @@ impl AdvancedAi {
     pub fn disable_never_an_empty_queue(&mut self) {
         self.never_an_empty_queue = false;
     }
-    /// Reserve every empty trade route slot the empire can use, not only the
-    /// first. See `AdvancedAi::solvency_first_trade_slot_2`; opt-in gene
-    /// `solvency-first-trade-slot-2`, version two of
-    /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
-    /// append-point check reads a method line's first identifier.
-    pub fn enable_solvency_first_trade_slot_2(&mut self) {
-        self.solvency_first_trade_slot_2 = true;
-    }
-
-    /// The twin of `enable_solvency_first_trade_slot_2`.
-    pub fn disable_solvency_first_trade_slot_2(&mut self) {
-        self.solvency_first_trade_slot_2 = false;
-    }
     /// Modernize the standing army before the discretionary purchase pass
     /// spends the treasury, while a major war is being fought. See
     /// `AdvancedAi::upgrade_the_garrison`; opt-in gene `upgrade-the-garrison`.

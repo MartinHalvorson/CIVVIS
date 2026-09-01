@@ -976,11 +976,6 @@
         136,
         128
       ],
-      "solvency-first-trade-slot-2": [
-        -33,
-        -50,
-        -49
-      ],
       "stranded-settler-discount": [
         31,
         5,
@@ -1283,7 +1278,6 @@
       "skip-the-prophet-race": "remove",
       "slot-kind-tiebreak": "off",
       "solvency-first-trade-slot": "on",
-      "solvency-first-trade-slot-2": "remove",
       "stranded-settler-discount": "on",
       "strategic-wonders": "off",
       "strike-opening": "off",
@@ -1518,17 +1512,6 @@
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
-        }
-      },
-      "solvency-first-trade-slot": {
-        "rule_on": [
-          "solvency-first-trade-slot"
-        ],
-        "head": null,
-        "ships": "solvency-first-trade-slot",
-        "versions": {
-          "solvency-first-trade-slot": null,
-          "solvency-first-trade-slot-2": null
         }
       },
       "treasury-at-work": {
@@ -1837,7 +1820,8 @@
         "target_seats": 30000,
         "complete_seats": 14550,
         "partial": true
-      }
+      },
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price solvency-first-trade-slot-2, which left the code on 2026-09-01 under the batch rule (all three windows below -10), so their rows are retained as history, not as sources of runtime defaults."
     },
     {
       "path": "docs/gene_screens/2026-08-31-standard-continuous-20634-total-seats-20260831T161144Z-7738.json",
@@ -1880,7 +1864,8 @@
         "target_seats": 30000,
         "complete_seats": 20634,
         "partial": true
-      }
+      },
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price solvency-first-trade-slot-2, which left the code on 2026-09-01 under the batch rule (all three windows below -10), so their rows are retained as history, not as sources of runtime defaults."
     },
     {
       "path": "docs/gene_screens/2026-08-31-standard-continuous-14850-total-seats-20260831T105124Z-c90a.json",
@@ -1923,7 +1908,8 @@
         "target_seats": 145212,
         "complete_seats": 14850,
         "partial": true
-      }
+      },
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price solvency-first-trade-slot-2, which left the code on 2026-09-01 under the batch rule (all three windows below -10), so their rows are retained as history, not as sources of runtime defaults."
     }
   ],
   "counts": {
