@@ -4912,6 +4912,11 @@ pub struct AdvancedAi {
     /// default; opt-in gene `civilian-out-of-reach`. See
     /// `advanced/civilian_safety.rs`.
     civilian_out_of_reach: bool,
+    /// A unit the next blow could remove leaves the reach of whatever can
+    /// strike it, and a shooter or scout does not end the turn inside a
+    /// raider's reach without a melee unit beside it. See
+    /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
+    wounded_out_of_reach: bool,
 
     /// A settle site is worth more when the ground its own borders will
     /// cover holds a mountain pass, an isthmus neck or a strait. Opt-in gene
@@ -6100,6 +6105,7 @@ use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 /// into it, stack with a summoned guard when they must. Opt-in gene
 /// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
 mod civilian_safety;
+mod wounded_out_of_reach;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
@@ -7014,6 +7020,7 @@ impl AdvancedAi {
 
             district_planning: false,
             civilian_out_of_reach: false,
+            wounded_out_of_reach: false,
 
             chokepoint_siting: false,
             canal_city: false,
@@ -34372,6 +34379,15 @@ impl AdvancedAi {
         // away. `None` with the gene off. See `advanced/swap_rotation.rs`.
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.swap_rotation_step(g, pid, uid) {
+                return acted;
+            }
+        }
+        // `wounded-out-of-reach`: ahead of the recovery, because the recovery
+        // reads the mean blow from visible units and this reads the top of
+        // the roll from visible and remembered ones. `None` with the gene off.
+        // See `advanced/wounded_out_of_reach.rs`.
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.wounded_out_of_reach_step(g, pid, uid) {
                 return acted;
             }
         }

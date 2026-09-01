@@ -3417,6 +3417,19 @@ impl AdvancedAi {
     // ---- append: s-s ------------------------------------------------
 
     // ---- append: t-z ------------------------------------------------
+    /// A unit the next blow could remove leaves the reach of whatever can
+    /// strike it — the roll-top total of visible attackers, or a raider
+    /// remembered in the fog — and a shooter or scout does not end the
+    /// turn inside a raider's reach without a melee unit beside it. See
+    /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
+    pub fn enable_wounded_out_of_reach(&mut self) {
+        self.wounded_out_of_reach = true;
+    }
+
+    /// The twin of `enable_wounded_out_of_reach`.
+    pub fn disable_wounded_out_of_reach(&mut self) {
+        self.wounded_out_of_reach = false;
+    }
 }
 
 #[cfg(test)]

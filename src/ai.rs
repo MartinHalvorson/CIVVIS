@@ -107,7 +107,7 @@ const UNIT_RETREAT_TURNS: u32 = 2;
 /// this controller prices with, so the average is not the number a survival
 /// question wants: a unit that lives through the mean still dies on the good
 /// rolls. `one_shot_recovery` reads the top of the roll instead.
-const COMBAT_ROLL_MAX: f64 = 1.2;
+pub(crate) const COMBAT_ROLL_MAX: f64 = 1.2;
 
 /// The engine's own ceiling on one blow (`game::damage` clamps to it), so a
 /// roll scaled to its top cannot claim more damage than the game can deal.
@@ -1883,11 +1883,11 @@ pub struct UnitDangerMemory {
 /// same as three Archers that between them merely wound. Route safety wants
 /// `total`; whether a unit is one blow from death wants `worst`.
 #[derive(Clone, Copy, Default)]
-struct IncomingDamage {
+pub(crate) struct IncomingDamage {
     /// Every covering source's expected damage, added up.
-    total: f64,
+    pub(crate) total: f64,
     /// The largest single one of them.
-    worst: f64,
+    pub(crate) worst: f64,
 }
 
 impl IncomingDamage {
@@ -5993,7 +5993,7 @@ impl BasicAi {
     /// the three source sets [`Self::incoming_damage`] folds over, so "no" is
     /// precisely the case where all three folds are empty and the answer is
     /// `IncomingDamage::default()`.
-    fn anything_can_reach(
+    pub(crate) fn anything_can_reach(
         g: &Game,
         pid: usize,
         position: Pos,
@@ -6026,7 +6026,7 @@ impl BasicAi {
     /// changing an answer: the empty folds this replaces returned exactly
     /// `IncomingDamage::default()`, and `default().merge(default())` is
     /// `default()`.
-    fn incoming_damage(
+    pub(crate) fn incoming_damage(
         g: &Game,
         pid: usize,
         uid: u32,
@@ -6330,7 +6330,7 @@ impl BasicAi {
     /// recovery ground. `Game::reachable` and `Game::path_to` decide the same
     /// movement, so this can take a wounded unit all the way into a nearby
     /// city rather than stopping one tile short for no tactical reason.
-    fn move_to_evacuation_tile(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
+    pub(crate) fn move_to_evacuation_tile(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
         let Some(path) = g.path_to(uid, target) else {
             return false;
         };
@@ -16064,7 +16064,7 @@ impl BasicAi {
     /// spent one refused order per re-entry, up to eight a turn. Asking the
     /// engine's own predicate first changes no game state: the order it
     /// replaces was rejected before it could change any.
-    fn fortify_or_stop(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    pub(crate) fn fortify_or_stop(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         if !g.units[&uid].fortified && g.unit_can_fortify(&g.units[&uid]) {
             let _ = g.apply(pid, &Action::Fortify { unit: uid });
         }
