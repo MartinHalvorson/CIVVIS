@@ -33894,6 +33894,133 @@ fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
     assert_eq!(score, None, "two adjacency is not worth Gold");
 }
 
+/// `district-planning-2` is version 2 of `district-planning`: a registered
+/// reversible opt-in whose flag also carries the shared planning behaviour
+/// through `district_planning_on`.
+#[test]
+fn district_planning_2_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "district_planning_2"
+        && gene.tag == "district-planning-2"));
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.district_planning_2, "production ships it off");
+    assert!(!ai.district_planning_on());
+    ai.enable_district_planning_2();
+    assert!(ai.district_planning_2);
+    assert!(
+        ai.district_planning_on(),
+        "version 2 carries the planning behaviour on its own"
+    );
+    ai.disable_district_planning_2();
+    assert!(!ai.district_planning_2);
+}
+
+/// Version 2 lowers the purchase bars: the two-mountain plot version 1
+/// calls "not worth Gold" clears the adjacency-2 bar and the score floor.
+#[test]
+fn version_two_buys_the_two_mountain_ground_version_one_refuses() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .filter(|n| game.wdist(*n, center) == 3)
+                    .count()
+                    == 3
+        })
+        .expect("a ring-two corner plot");
+    raise_mountains_beside(&mut game, target, 2, |g, pos| g.wdist(pos, center) == 3);
+    game.players[0].explored.insert(target);
+    game.players[0].gold = 1_500.0;
+    let plan = district_planning_lane(game.turn);
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+
+    let mut v1 = AdvancedAi::new();
+    v1.enable_district_planning();
+    let counts = v1.counts(&game, 0);
+    let mut cache = DistrictPlanCache::default();
+    let refused =
+        v1.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
+    assert_eq!(refused, None, "version 1 holds the adjacency-3 bar");
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_district_planning_2();
+    let counts = v2.counts(&game, 0);
+    let mut cache = DistrictPlanCache::default();
+    let score =
+        v2.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
+    assert!(
+        score.is_some_and(|s| s >= 120.0),
+        "version 2 admits adjacency 2 and the floor still clears: {score:?}"
+    );
+}
+
+/// The version-2 buy spends into the reserve — never below half of it —
+/// where version 1 demands 200 Gold of surplus headroom above the whole
+/// reserve. With the treasury between the two thresholds, version 1 leaves
+/// the three-mountain nest unowned and version 2 annexes it.
+#[test]
+fn the_plans_buy_spends_into_the_reserve_only_under_version_two() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .filter(|n| game.wdist(*n, center) == 3)
+                    .count()
+                    == 3
+        })
+        .expect("a ring-two corner plot");
+    let raised = raise_mountains_beside(&mut game, target, 3, |g, pos| g.wdist(pos, center) == 3);
+    assert_eq!(raised, 3, "three ring-three mountains ring the target");
+    game.players[0].explored.insert(target);
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    let plan = district_planning_lane(game.turn);
+    // Science reserve for one city is 300; version 1 needs 500 + cost of
+    // Gold before it will buy, version 2 needs 150 + cost. Sit in between.
+    game.players[0].gold = 300.0 + cost;
+    let mut v1_game = game.clone();
+    let mut v2_game = game;
+
+    let mut v1 = AdvancedAi::new();
+    v1.enable_district_planning();
+    v1.advanced_gold_spending(&mut v1_game, 0, &plan);
+    assert_eq!(
+        v1_game.map.tiles[&target].owner_city, None,
+        "version 1 waits for surplus headroom that never comes"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_district_planning_2();
+    assert!(
+        v2.advanced_gold_spending(&mut v2_game, 0, &plan),
+        "the version-2 plan finds the buy"
+    );
+    assert_eq!(
+        v2_game.map.tiles[&target].owner_city,
+        Some(city),
+        "the nest is annexed out of the reserve"
+    );
+    assert!(
+        v2_game.players[0].gold >= 150.0 - f64::EPSILON,
+        "half the reserve is never spent"
+    );
+}
+
 /// `wonder-score-tally` is a native opt-in, off in both controllers, with a
 /// published row and two working toggles.
 #[test]
