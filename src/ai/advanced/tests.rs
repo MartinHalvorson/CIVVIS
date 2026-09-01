@@ -3919,7 +3919,10 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 #[test]
 fn production_advanced_reflects_the_recorded_bounded_recovery_selection() {
     let bare = AdvancedAi::new();
-    assert!(!bare.bounded_recovery, "the bare controller remains opt-in-off");
+    assert!(
+        !bare.bounded_recovery,
+        "the bare controller remains opt-in-off"
+    );
     assert!(bare.envoy_priority);
 
     let mut production = AdvancedAi::new();
@@ -11860,6 +11863,15 @@ fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
     // Late: thirty turns left.
     let (mut late, city) = fresh();
     late.turn = 170;
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: late.turn,
+        rush: false,
+    };
     let mut live = AdvancedAi::targeting(VictoryTarget::Science);
     live.enable_live_bridge_universe();
     assert!(live.score_horizon, "the live seat carries the treatment");
@@ -11871,7 +11883,7 @@ fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
     live.attach_journal(journal.handle());
     // The space-race governor is skipped and says why; the withheld arm
     // queues the launch pad exactly as the historical controller does.
-    live.space_race_production(&mut late, 0);
+    live.space_race_production(&mut late, 0, &science_plan);
     assert!(
         !late.cities[&city].queue.iter().any(|item| matches!(
             item,
@@ -11893,7 +11905,7 @@ fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
     let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
     withheld.enable_live_bridge_universe();
     withheld.disable_score_horizon();
-    withheld.space_race_production(&mut late_withheld, 0);
+    withheld.space_race_production(&mut late_withheld, 0, &science_plan);
     assert!(
         matches!(
             late_withheld.cities[&city_withheld].queue.first(),
@@ -11995,11 +12007,11 @@ fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
     let passed_over = live.production_value(&game, 0, passed, &pad, &plan, &counts);
     assert!(
         held > 0.0,
-        "the chosen city keeps a positive opening-pad score: {held}"
+        "the better producer retains the first launch-site slot: {held}"
     );
-    assert!(
-        passed_over <= -10_000.0,
-        "the other city cannot start a duplicate opening pad: {passed_over}"
+    assert_eq!(
+        passed_over, -10_000.0,
+        "the slower city cannot begin an unneeded second Spaceport: {passed_over}"
     );
 
     // A pad already on its way ends the rung for everyone — including the
@@ -12209,6 +12221,141 @@ fn science_target_parallelizes_lasers_across_cities_without_local_spaceport_spam
     assert!(
         ai.production_value(&game, 0, cities[0], &duplicate, &plan, &ai.counts(&game, 0))
             <= -10_000.0
+    );
+}
+
+#[test]
+fn science_spaceport_cap_reclaims_slower_queues_and_vetoes_a_fourth_site() {
+    let mut game = Game::new_full(1, 40, 24, 71_003, 320, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let mut cities = game.player_city_ids(0);
+    while cities.len() < 4 {
+        found_test_city(&mut game, 0);
+        cities = game.player_city_ids(0);
+    }
+    game.max_turns = 0;
+    game.players[0].techs.insert(crate::name!("rocketry"));
+    game.players[0]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    for (rank, city) in cities.iter().copied().enumerate() {
+        let center = game.cities[&city].pos;
+        let extra_owned = game
+            .map
+            .around(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    (tile.owner_city.is_none() || tile.owner_city == Some(city))
+                        && game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && tile.district.is_none()
+                        && tile.wonder.is_none()
+                })
+            })
+            .expect("each fixture city has a free district tile");
+        {
+            let tile = game.map.tiles.get_mut(&extra_owned).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+        }
+        if !game.cities[&city].owned_tiles.contains(&extra_owned) {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .owned_tiles
+                .push(extra_owned);
+        }
+        game.cities.get_mut(&city).unwrap().pop = 10;
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            city,
+            crate::rules::Yields {
+                production: rank as f64 * 100.0,
+                ..crate::rules::Yields::default()
+            },
+        );
+    }
+
+    let mut queued = BTreeMap::new();
+    for city in cities.iter().copied() {
+        let items = game.producible_items(0, city);
+        let pad = items
+            .iter()
+            .find(|item| matches!(item, Item::District { district, .. } if district == "spaceport"))
+            .cloned()
+            .unwrap_or_else(|| panic!("city {city} cannot start a Spaceport; legal: {items:?}"));
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: pad.clone(),
+            },
+        )
+        .expect("queue fixture Spaceport");
+        queued.insert(city, pad);
+    }
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: cities.len(),
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(
+        ai.science_spaceport_retained_cities(&game, 0),
+        cities.iter().copied().skip(1).collect(),
+        "the pre-rebalance selection must retain the three strongest producers"
+    );
+    ai.rebalance_science_spaceport_queues(&mut game, 0, &plan);
+
+    let retained: BTreeSet<u32> = cities
+        .iter()
+        .copied()
+        .filter(|city| {
+            matches!(
+                game.cities[city].queue.first(),
+                Some(Item::District { district, .. }) if district == "spaceport"
+            )
+        })
+        .collect();
+    assert_eq!(
+        retained.len(),
+        3,
+        "only three launch sites stay in progress; queues: {:?}; low legal: {:?}",
+        cities
+            .iter()
+            .map(|city| (*city, game.cities[city].queue.clone()))
+            .collect::<Vec<_>>(),
+        game.producible_items(0, cities[0])
+    );
+    assert_eq!(
+        retained,
+        cities.iter().copied().skip(1).collect(),
+        "the cap retains the three highest-production cities"
+    );
+    let slowest = cities[0];
+    assert!(
+        ai.production_value(
+            &game,
+            0,
+            slowest,
+            &queued[&slowest],
+            &plan,
+            &ai.counts(&game, 0),
+        ) <= -10_000.0,
+        "the generic scorer must not restart the fourth Spaceport"
     );
 }
 
@@ -16891,6 +17038,24 @@ fn district_project_search_extends_only_concrete_great_person_races() {
             "a project that claims and overtakes in the live race must receive an extension: {forcing} <= {far}"
         );
 
+    // A host-named Scientist overrides CIVVIS's local roster. Mary Leakey is
+    // valuable to an artifact game, not this Science plan; Carl Sagan is a
+    // direct late Space Race payoff. The project must distinguish the actual
+    // offer instead of treating both as the generic Science class.
+    game.players[0]
+        .live_great_person_offer_individuals
+        .insert("scientist".to_string(), "mary_leakey".to_string());
+    let artifact_scientist = ai.production_value(&game, 0, city, &project, &plan, &counts);
+    game.players[0]
+        .live_great_person_offer_individuals
+        .insert("scientist".to_string(), "carl_sagan".to_string());
+    let space_race_scientist = ai.production_value(&game, 0, city, &project, &plan, &counts);
+    assert!(
+        space_race_scientist > artifact_scientist + 200.0,
+        "the current named offer, not its class, must decide whether a Science project wins a GPP race: {space_race_scientist} <= {artifact_scientist}"
+    );
+    game.players[0].live_great_person_offer_individuals.clear();
+
     // The live class alone is not enough: a Campus project can be racing
     // for Hildegard of Bingen while Firaxis requires a Holy Site. The
     // mirror's named-offer blocker must remove the race tempo rather than
@@ -17627,6 +17792,75 @@ fn live_offer_list_patronizes_an_offered_class_instead_of_a_native_one() {
         game.players[0].faith >= 100.0 - f64::EPSILON,
         "the live reserve remains after the productive Faith spend ({})",
         game.players[0].faith
+    );
+}
+
+/// Industrial Zone Logistics should race for an actual Space Race Engineer,
+/// not every live Engineer class. Charles Correa gives appeal; Wernher von
+/// Braun directly accelerates Space Race projects. The former stays below the
+/// ordinary patronage threshold while the latter is worth the same close
+/// buyout.
+#[test]
+fn named_space_race_engineer_beats_an_appeal_engineer_for_patronage() {
+    let mut game = Game::new(2, 24, 16, 7_107, 200, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "industrial_zone");
+    let cost = game.gp_cost(0, "engineer");
+    game.players[0]
+        .gpp
+        .insert("engineer".to_string(), (cost * 0.70).floor());
+    game.players[0].live_great_person_offers = Some(["engineer".to_string()].into_iter().collect());
+    game.players[0].gold = 0.0;
+    let price = game
+        .great_person_patronage_price(0, "engineer", "faith")
+        .expect("the offered Engineer has a Faith quote");
+    game.players[0].faith = price + 100.0 + 50.0;
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+
+    let mut appeal = game.clone();
+    appeal.players[0]
+        .live_great_person_offer_individuals
+        .insert("engineer".to_string(), "charles_correa".to_string());
+    ai.advanced_great_people(&mut appeal, 0, GrandStrategy::Science);
+    assert_eq!(
+        appeal.players[0]
+            .gp_claimed
+            .get("engineer")
+            .copied()
+            .unwrap_or(0),
+        0,
+        "an appeal Engineer is not worth buying out for a Science victory"
+    );
+
+    game.players[0]
+        .live_great_person_offer_individuals
+        .insert("engineer".to_string(), "wernher_von_braun".to_string());
+    assert_eq!(
+        AdvancedAi::science_live_great_person_affinity(&game, 0, "engineer"),
+        Some(3.8)
+    );
+    assert!(
+        game.can_activate_current_great_person(0, "engineer"),
+        "the fixture's local stand-in for the offered Engineer must be legal: {:?}",
+        game.great_person_blocker(0, "engineer")
+    );
+    ai.advanced_great_people(&mut game, 0, GrandStrategy::Science);
+    assert_eq!(
+        game.players[0]
+            .gp_claimed
+            .get("engineer")
+            .copied()
+            .unwrap_or(0),
+        1,
+        "a named Space Race Engineer is worth the same close buyout"
     );
 }
 

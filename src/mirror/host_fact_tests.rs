@@ -993,6 +993,11 @@ fn live_offer_district_blocker_prevents_an_unusable_scientist_race() {
         "the host's named screen, not CIVVIS's whole roster, is the live offer set"
     );
     assert!(game.great_person_class_offered_now(0, "scientist"));
+    assert_eq!(
+        game.live_great_person_offer_individual(0, "scientist"),
+        Some("hildegard_of_bingen"),
+        "the live individual is retained separately from the recruitable class"
+    );
     assert!(
         !game.great_person_class_offered_now(0, "merchant"),
         "a class omitted from Firaxis's table cannot receive a local order"

@@ -4465,11 +4465,13 @@ fn apply_live_great_person_offer_blockers(
     unmapped: &mut Vec<String>,
 ) {
     let mut blockers = BTreeMap::new();
+    let mut individuals = BTreeMap::new();
     let Some(offers) = state.great_person_offers.as_ref() else {
         // A persistent mirror may have received this field last turn from a
         // newer mod and omit it after a rollback. Never keep a stale live-only
         // refusal alive when the current host frame no longer knows it.
         game.players[0].live_great_person_offers = None;
+        game.players[0].live_great_person_offer_individuals.clear();
         game.players[0].live_great_person_offer_blockers.clear();
         return;
     };
@@ -4488,6 +4490,20 @@ fn apply_live_great_person_offer_blockers(
             continue;
         };
         offered_classes.insert(kind.clone());
+        if let Some(individual) = offer
+            .individual
+            .as_deref()
+            .map(str::trim)
+            .filter(|individual| !individual.is_empty())
+            .map(|individual| {
+                individual
+                    .strip_prefix("GREAT_PERSON_INDIVIDUAL_")
+                    .unwrap_or(individual)
+                    .to_ascii_lowercase()
+            })
+        {
+            individuals.insert(kind.clone(), individual);
+        }
         let Some(required_district) = offer
             .required_district
             .as_deref()
@@ -4541,6 +4557,7 @@ fn apply_live_great_person_offer_blockers(
         );
     }
     game.players[0].live_great_person_offers = Some(offered_classes);
+    game.players[0].live_great_person_offer_individuals = individuals;
     game.players[0].live_great_person_offer_blockers = blockers;
 }
 
