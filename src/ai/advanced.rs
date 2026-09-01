@@ -28594,10 +28594,22 @@ impl AdvancedAi {
             }
             // A momentarily unavailable route is not a bad site. Under
             // `settler_commit` the stall counter decides when to give up,
-            // not a single blocked turn.
-            if !(target == current || g.route_step(uid, target, 0).is_some() || self.settler_commit)
-            {
-                return Some("no route this turn");
+            // not a single blocked turn. Without commitment, however, a
+            // geometric route whose first step cannot be paid or entered
+            // this turn must be dropped through the hysteresis path. The
+            // route planner deliberately ignores the current movement
+            // allowance, so checking only `route_step(...).is_some()` lets a
+            // live bridge remove the target and immediately pick it again.
+            let route_can_advance = target == current
+                || g.route_step(uid, target, 0).is_some_and(|next| {
+                    // Without the hysteresis gene this is the frozen
+                    // historical controller: preserve its geometric-route
+                    // behavior and routing-cache side effect exactly.
+                    !self.settler_target_hysteresis_on() || g.can_move(uid, next)
+                })
+                || self.settler_commit;
+            if !route_can_advance {
+                return Some("the route's next step is not legal this turn");
             }
             if self.settlement_safety
                 && !self.commitment_patience
