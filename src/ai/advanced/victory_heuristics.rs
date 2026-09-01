@@ -8,11 +8,22 @@ use super::{AdvancedAi, GrandStrategy, VictoryFocus, VictoryTarget};
 use crate::game::Game;
 use std::collections::BTreeMap;
 
+const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
+    "rocketry",
+    "satellites",
+    "nanotechnology",
+    "smart_materials",
+    "offworld_mission",
+];
+
 impl AdvancedAi {
-    /// The next irreducible Science milestone.  An explicit or adaptive
+    /// The next irreducible Science milestone. An explicit or adaptive
     /// Science plan can still honour a declared rush or a war breakthrough,
     /// but an unrelated live Great Person must not detour it away from the
-    /// prerequisite chain that opens the victory projects.
+    /// prerequisite chain that opens the victory projects. Keep this as the
+    /// single source for the chain: research scoring and forced-goal routing
+    /// must agree about which victory technology is next, even while its
+    /// project is still being built.
     pub(super) fn science_victory_tech_goal(
         g: &Game,
         pid: usize,
@@ -20,17 +31,41 @@ impl AdvancedAi {
     ) -> Option<&'static str> {
         (objective == GrandStrategy::Science)
             .then(|| {
-                [
-                    "rocketry",
-                    "satellites",
-                    "nanotechnology",
-                    "smart_materials",
-                    "offworld_mission",
-                ]
-                .into_iter()
-                .find(|tech| !g.players[pid].techs.contains(&crate::name::Name::new(tech)))
+                SCIENCE_VICTORY_TECH_CHAIN
+                    .into_iter()
+                    .find(|tech| !g.players[pid].techs.contains(&crate::name::Name::new(tech)))
             })
             .flatten()
+    }
+
+    /// A coastal Science seat may take the compact Harbor opening while the
+    /// next victory technology is still at least two world eras away. This is
+    /// deliberately a bounded exception to the beeline: it buys Sailing,
+    /// Astrology, and Celestial Navigation once, then returns to the first
+    /// unknown Science victory technology. Holy Sites are never part of this
+    /// support package; Astrology is only the prerequisite needed by Harbor.
+    pub(super) fn science_harbor_research_goal(
+        g: &Game,
+        pid: usize,
+        objective: GrandStrategy,
+    ) -> Option<&'static str> {
+        const MIN_WORLD_ERA: usize = 2;
+        const MIN_VICTORY_TECH_ERA_GAP: usize = 2;
+
+        if objective != GrandStrategy::Science
+            || g.world_era < MIN_WORLD_ERA
+            || !crate::ai::BasicAi::empire_is_coastal(g, pid)
+            || Self::science_harbor_reserved(g, pid)
+            || g.players[pid]
+                .techs
+                .contains(&crate::name!("celestial_navigation"))
+        {
+            return None;
+        }
+        let victory_goal = Self::science_victory_tech_goal(g, pid, objective)?;
+        let victory_era = g.rules.techs.get(victory_goal)?.era;
+        (victory_era.saturating_sub(g.world_era) >= MIN_VICTORY_TECH_ERA_GAP)
+            .then_some("celestial_navigation")
     }
 
     /// Rank every living major's strongest victory clock, rather than asking

@@ -12457,6 +12457,7 @@ impl AdvancedAi {
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
             let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
+            let science_harbor_goal = Self::science_harbor_research_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid);
@@ -12548,17 +12549,12 @@ impl AdvancedAi {
                 // the beeline walks past it every turn. Behind the luxury
                 // connection (an amenity for four cities), ahead of the lane.
                 _ if bargain_goal.is_some() => bargain_goal,
+                _ if science_harbor_goal.is_some() => science_harbor_goal,
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
-                _ if science_commitment => [
-                    "rocketry",
-                    "satellites",
-                    "nanotechnology",
-                    "smart_materials",
-                    "offworld_mission",
-                ]
-                .into_iter()
-                .find(|tech| !g.players[pid].techs.contains(&Name::new(tech))),
+                _ if science_commitment => {
+                    Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
+                }
                 GrandStrategy::Culture => ["printing", "radio", "computers"]
                     .into_iter()
                     .find(|tech| !g.players[pid].techs.contains(&Name::new(tech))),
@@ -14273,33 +14269,14 @@ impl AdvancedAi {
         if strategy == GrandStrategy::Science || self.science_drive_active() {
             // `science_victory_drive`: a driving seat keys the beeline on
             // the next UNKNOWN chain tech, whatever its plan, so research
-            // holds the chain while a project is being built; stock keys it
-            // on the next unbuilt project, and while the Earth Satellite is
-            // building nothing leads to the known Rocketry any more.
+            // holds the chain while a project is being built. Stock research
+            // uses the same next-unknown chain target as forced-goal routing;
+            // while the Earth Satellite is building, nothing should send the
+            // seat back toward the already-known Rocketry node.
             let milestone = if self.science_drive_active() {
                 Self::science_drive_milestone(g, pid)
-            } else if !g.players[pid]
-                .science_projects
-                .contains("launch_earth_satellite")
-            {
-                Some("rocketry")
-            } else if !g.players[pid]
-                .science_projects
-                .contains("launch_moon_landing")
-            {
-                Some("satellites")
-            } else if !g.players[pid]
-                .science_projects
-                .contains("launch_mars_colony")
-            {
-                Some("nanotechnology")
-            } else if !g.players[pid]
-                .science_projects
-                .contains("exoplanet_expedition")
-            {
-                Some("smart_materials")
             } else {
-                Some("offworld_mission")
+                Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
             };
             if milestone.is_some_and(|milestone| self.tech_leads_to(g, tech, milestone)) {
                 value += if self.raced_target() == Some(VictoryTarget::Science) {
@@ -19648,6 +19625,26 @@ impl AdvancedAi {
         best.map(|(cid, _)| cid)
     }
 
+    /// A Science seat gets one Harbor as empire-wide support infrastructure,
+    /// but a second one must not turn the victory lane into a coastal-district
+    /// collection project. Count both completed and queued Harbors so every
+    /// city sees the reservation as soon as the first one is claimed.
+    fn science_harbor_reserved(g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid).into_iter().any(|cid| {
+            let city = &g.cities[&cid];
+            city.districts
+                .keys()
+                .any(|district| g.district_family(*district) == "harbor")
+                || city.queue.iter().any(|item| {
+                    matches!(
+                        item,
+                        Item::District { district, .. }
+                            if g.district_family(*district) == "harbor"
+                    )
+                })
+        })
+    }
+
     /// Whether a nuclear project queued now in `cid` can end in a finished
     /// device before the turn limit: the project itself plus the device it
     /// unlocks (or the device alone), at this city's production. Always true
@@ -24472,6 +24469,7 @@ impl AdvancedAi {
             Item::District { district, pos } => {
                 let spec = &g.rules.districts[district];
                 let family = g.district_family(*district);
+                let science_harbor_reserved = Self::science_harbor_reserved(g, pid);
                 // A named Science seat has a narrower district contract than
                 // the adaptive stock lane. Once Campus buildings are caught
                 // up, generic Culture/Gold/Faith districts otherwise remain
@@ -24479,14 +24477,21 @@ impl AdvancedAi {
                 // Electricity unlocks the Research Lab. Keep genuinely
                 // enabling infrastructure (Campus, Industrial Zone,
                 // Spaceport, production/housing/defense districts, and the
-                // first Government Plaza/Diplomatic Quarter) available, but
-                // do not let a Theater Square, Commercial Hub, Harbor, Holy
-                // Site, or Preserve become a Science detour.
+                // first Government Plaza/Diplomatic Quarter) available. A
+                // single Harbor is the intentional exception: its trade
+                // capacity, gold, and coastal food make it useful support for
+                // the beeline. Holy Sites remain outside the Science lane.
                 if self.victory_target == Some(VictoryTarget::Science)
                     && matches!(
                         family.as_str(),
-                        "theater_square" | "commercial_hub" | "harbor" | "holy_site" | "preserve"
+                        "theater_square" | "commercial_hub" | "holy_site" | "preserve"
                     )
+                {
+                    return -10_000.0;
+                }
+                if self.victory_target == Some(VictoryTarget::Science)
+                    && family == "harbor"
+                    && science_harbor_reserved
                 {
                     return -10_000.0;
                 }
@@ -24721,6 +24726,11 @@ impl AdvancedAi {
                     (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") => 170.0,
+                    // One coastal Harbor pays back through empire-wide trade
+                    // capacity and gold. The reservation above makes this a
+                    // bounded support package, while leaving the research
+                    // chain ahead of generic water technology.
+                    (GrandStrategy::Science, "harbor") if !science_harbor_reserved => 260.0,
                     // See `tally_culture`: the civic tree pays three a rung.
                     (GrandStrategy::Science, "theater_square") if self.tally_culture => 170.0,
                     (GrandStrategy::Science, "industrial_zone") => 150.0,
