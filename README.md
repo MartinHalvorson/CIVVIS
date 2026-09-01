@@ -10,7 +10,12 @@ Maybe interesting -> Check out the ranking of our best Civ 6 heuristics: [GENE_H
 
 ### Summary
 
-The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of individual Civ 6 heuristics into a player's overall strategy. An individual Civ 6 heuristic might be some rule like "don't move an unescorted settler next to an enemy barbarian" or "if military strength falls below a given level then build more military units". Collecting hundreds (and probably thousands eventually) of these heuristics together forms an overall player strategy.
+The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of individual Civ 6 heuristics into a player's overall strategy. An individual Civ 6 heuristic might be some rule like "don't move an unescorted settler next to an enemy barbarian" or "if military strength falls below a given level then build more military units". Collecting hundreds (and probably thousands eventually) of these heuristics together forms an overall player strategy. Different genomes compete in tournaments and win stats are calculated for each gene.
+
+After O(1,000s) of games, a table column is generated with the win rates of each gene.
+- Winning genes are added/included in our best genome.
+- Middling genes are kept around for more testing, but not default "on" in the best genome.
+- Poor performing genes are removed from the gene pool over time, which reduce code complexity/bloat and saves some computation in future tournaments.
 
 ### Terminology
 
