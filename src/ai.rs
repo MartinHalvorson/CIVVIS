@@ -533,6 +533,18 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 /// this condition is tested again. A score-disabled world is recorded as a
 /// draw when the bounded loop reaches its cap, matching the server stepper.
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
+    run_game_observed(g, ais, |_| {});
+}
+
+/// [`run_game`] with an observer called once at the start of every turn the
+/// loop plays, before any seat acts on it — the whole world, read-only.
+///
+/// The gene screen prices science genes by research pace and needs one
+/// mid-game read (techs known at the Standard-turn-150 mark) that a finished
+/// world no longer holds; rather than teach every caller a second loop, the
+/// loop takes a visitor. `run_game` is this with a visitor that does nothing,
+/// so headless play is byte for byte what it was.
+pub fn run_game_observed<A: Ai>(g: &mut Game, ais: &mut [A], mut observe: impl FnMut(&Game)) {
     // A headless rollout never serializes a player observation between
     // actions. Explored ground, contacts and Natural-Wonder discovery remain
     // gameplay state and are still maintained; only the large last-seen tile
@@ -545,7 +557,12 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
     // Declarations, peaces, and turn boundaries still sync it, so the ledger
     // in reports and saved games is unchanged.
     g.set_war_ledger(false);
+    let mut observed_turn = None;
     while g.winner.is_none() && g.turn <= g.max_turns {
+        if observed_turn != Some(g.turn) {
+            observed_turn = Some(g.turn);
+            observe(g);
+        }
         let pid = g.current;
         ais[pid].take_turn(g, pid);
         if g.winner.is_none() && g.current == pid {
@@ -17394,6 +17411,28 @@ mod tests {
             "a Scout with a whole world left to look at goes and looks at it"
         );
         assert!(!g.units[&scout].fortified);
+    }
+
+    /// The observer sees the start of every turn exactly once, in order,
+    /// and the game it watched is the game `run_game` plays.
+    #[test]
+    fn the_observed_loop_visits_every_turn_once_and_plays_the_same_game() {
+        let mut g = Game::new_full(2, 20, 14, 90_210, 12, 0, false);
+        let first = g.turn;
+        let mut ais = AdvancedAi::fleet(&g);
+        let mut seen = Vec::new();
+        run_game_observed(&mut g, &mut ais, |world| seen.push(world.turn));
+        let last = *seen.last().expect("at least one turn was observed");
+        assert_eq!(
+            seen,
+            (first..=last).collect::<Vec<_>>(),
+            "one visit per turn, in order, with no turn skipped or repeated"
+        );
+        assert!(g.winner.is_some() || g.turn > g.max_turns);
+        let mut plain = Game::new_full(2, 20, 14, 90_210, 12, 0, false);
+        let mut plain_ais = AdvancedAi::fleet(&plain);
+        run_game(&mut plain, &mut plain_ais);
+        assert_eq!((plain.turn, plain.winner), (g.turn, g.winner));
     }
 
     #[test]
