@@ -2287,11 +2287,25 @@ impl AdvancedAi {
     /// reads a method line's first identifier.
     pub fn enable_boost_wait_research(&mut self) {
         self.boost_wait_research = true;
+        self.boost_wait_research_2 = false;
     }
 
     /// The twin of `enable_boost_wait_research`.
     pub fn disable_boost_wait_research(&mut self) {
         self.boost_wait_research = false;
+    }
+
+    /// Wait only on a two-turn node whose final boost trigger is already at
+    /// the front of an owned city queue, using the boost as a light tie-break.
+    /// Opt-in gene `boost-wait-research-2`.
+    pub fn enable_boost_wait_research_2(&mut self) {
+        self.boost_wait_research_2 = true;
+        self.boost_wait_research = false;
+    }
+
+    /// The twin of `enable_boost_wait_research_2`.
+    pub fn disable_boost_wait_research_2(&mut self) {
+        self.boost_wait_research_2 = false;
     }
 
     /// Credit a technology or civic with the boosts it makes chaseable by
