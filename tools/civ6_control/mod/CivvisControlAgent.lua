@@ -62,6 +62,20 @@ local civvisBuild = {};
 -- the control chunk is at Lua 5.1's file-local limit, and a local here can make
 -- the entire game-side agent refuse to load.
 CivvisOpeningSettlerLocks = {};
+-- A full policy request is an asynchronous host transaction.  `pcall` can
+-- succeed while the game applies only part of it (the live Communism trace
+-- repeatedly kept the old Liberalism card and omitted the newly requested New
+-- Deal).  Keep the last request on a global table so the next export can name
+-- the per-slot readback and the next turn can repair one missing card without
+-- racing another same-turn policy transaction.  Globals are intentional: this
+-- chunk is at Lua 5.1's 200-local limit.
+CivvisPolicy = {
+	signature = nil,
+	sent_signature = nil,
+	sent_turn = -1,
+	attempt_turn = -1,
+	pending = nil,
+};
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -8111,17 +8125,42 @@ local function exportState(player, pid, turn, frame)
 	-- different shape of government than one under Monarchy, and CIVVIS choosing a
 	-- military card for a slot that does not exist is not a bad choice, it is an
 	-- uninformed one.
-	local policies, policy_slots = {}, 0;
+	local policies, policy_slots, policy_slot_details = {}, 0, {};
 	local pcult = try(function() return player:GetCulture(); end);
 	if pcult ~= nil then
 		policy_slots = try(function() return pcult:GetNumPolicySlots(); end, 0) or 0;
 		for i = 0, policy_slots - 1 do
 			local index = try(function() return pcult:GetSlotPolicy(i); end, -1);
+			local slot_type = try(function()
+				local slot_id = pcult:GetSlotType(i);
+				local slot = GameInfo.GovernmentSlots[slot_id];
+				return slot ~= nil and slot.GovernmentSlotType or nil;
+			end, nil);
+			local policy_type = nil;
 			if index ~= nil and index >= 0 then
 				local row = GameInfo.Policies[index];
-				if row ~= nil then policies[#policies + 1] = row.PolicyType; end
+				if row ~= nil then
+					policy_type = row.PolicyType;
+					policies[#policies + 1] = policy_type;
+				end
 			end
+			policy_slot_details[#policy_slot_details + 1] = {
+				slot = i, slot_type = slot_type, policy = policy_type,
+			};
 		end
+	end
+	-- A same-tick read is not a verdict: Firaxis applies policy changes after
+	-- this Lua context returns.  The next opening export is the first reliable
+	-- observation, and it carries both the requested deck and the actual slot
+	-- contents so a partial host transaction cannot remain anonymous.
+	local pending_policy = CivvisPolicy.pending;
+	if pending_policy ~= nil and turn > (pending_policy.turn or turn) then
+		emit("policy_deck_readback", {
+			turn = turn, requested_turn = pending_policy.turn,
+			mode = pending_policy.mode, desired = pending_policy.desired,
+			actual = policies, slots = policy_slot_details,
+		});
+		CivvisPolicy.pending = nil;
 	end
 
 	-- Governor Titles, appointments, promotions and assignments are authoritative
@@ -11920,7 +11959,7 @@ local function applyOrder(player, pid, row, turn)
 	if kind == "policy_deck" then
 		local culture = try(function() return player:GetCulture(); end);
 		if culture == nil then return false, "no_culture"; end
-		local desired, seen = {}, {};
+		local desired, desiredNames, seen = {}, {}, {};
 		for requested in string.gmatch(verb, "[^,]+") do
 			local card, resolved = resolveType(GameInfo.Policies, requested);
 			if card == nil then return false, "unknown_" .. requested; end
@@ -11932,12 +11971,16 @@ local function applyOrder(player, pid, row, turn)
 			end
 			if not seen[card.Index] then
 				desired[#desired + 1] = card;
+				desiredNames[#desiredNames + 1] = resolved;
 				seen[card.Index] = true;
 			end
 		end
 
 		local slots = try(function() return culture:GetNumPolicySlots(); end, 0) or 0;
 		if #desired > slots then return false, "policy_deck_too_large"; end
+		local signature = table.concat(desiredNames, ",");
+		local samePlan = CivvisPolicy.signature == signature;
+		CivvisPolicy.signature = signature;
 		-- ⚠⚠ NAME THE CARD AND THE SHAPE, because "does not fit" is not a
 		-- diagnosis. `policy_deck_does_not_fit` fires on **601 of 2,068**
 		-- policy-deck orders (29%) across the 08-04/08-05 runs, and every one
@@ -11992,12 +12035,78 @@ local function applyOrder(player, pid, row, turn)
 			});
 			return fallback ~= nil, fallback or "policy_deck_does_not_fit";
 		end
-		local slotNames = {};
+		local slotNames, currentBySlot, currentSet = {}, {}, {};
+		local currentCount = 0;
 		for i = 0, slots - 1 do
 			slotNames[i] = try(function()
 				local slotId = culture:GetSlotType(i);
 				return GameInfo.GovernmentSlots[slotId].GovernmentSlotType;
 			end);
+			local current = try(function() return culture:GetSlotPolicy(i); end, -1);
+			currentBySlot[i] = current;
+			if current ~= nil and current >= 0 then
+				currentSet[current] = true;
+				currentCount = currentCount + 1;
+			end
+		end
+		local desiredSet = {};
+		for _, card in ipairs(desired) do desiredSet[card.Index] = true; end
+		local function currentName(index)
+			if index == nil or index < 0 then return nil; end
+			local row = GameInfo.Policies[index];
+			return row ~= nil and row.PolicyType or tostring(index);
+		end
+		local function fits(card, slotType)
+			-- The stock UI treats great-person policy slots as wildcards.  The
+			-- normal path rarely sees them, but the repair must use the same rule.
+			if slotType == "SLOT_GREAT_PERSON" then slotType = "SLOT_WILDCARD"; end
+			local cardType = card.GovernmentSlotType;
+			if cardType == "SLOT_GREAT_PERSON" then cardType = "SLOT_WILDCARD"; end
+			return slotType == nil or slotType == "SLOT_WILDCARD" or slotType == cardType;
+		end
+		local function exactDeck()
+			if currentCount ~= #desired then return false; end
+			for _, card in ipairs(desired) do
+				if not currentSet[card.Index] then return false; end
+			end
+			return true;
+		end
+		local function request(clearList, addList, mode, repaired)
+			local layout = {};
+			for i = 0, slots - 1 do
+				layout[#layout + 1] = {
+					slot = i, slot_type = slotNames[i],
+					current = currentName(currentBySlot[i]), add = addList[i],
+				};
+			end
+			-- Only one policy transaction may be in flight for a host turn.  The
+			-- same-turn frame/replan requests otherwise race the first transaction;
+			-- a later export, not another pcall, is the useful feedback signal.
+			CivvisPolicy.attempt_turn = turn;
+			local ok, result = pcall(function()
+				return culture:RequestPolicyChanges(clearList, addList);
+			end);
+			emit("policy_deck_request", {
+				turn = turn, mode = mode, repaired = repaired,
+				desired = desiredNames, clear = clearList, slots = layout,
+				pcall_ok = ok, pcall_result = ok and result or nil,
+			});
+			if ok then
+				CivvisPolicy.sent_signature = signature;
+				CivvisPolicy.sent_turn = turn;
+				CivvisPolicy.pending = {
+					turn = turn, mode = mode, desired = desiredNames,
+				};
+			end
+			return ok;
+		end
+		if exactDeck() then return true, "policy_deck_already_applied"; end
+		if CivvisPolicy.attempt_turn == turn then
+			emit("policy_deck_deferred", {
+				turn = turn, desired = desiredNames,
+				why = "same_turn_transaction_in_flight",
+			});
+			return false, "policy_deck_same_turn";
 		end
 
 		-- Seat constrained cards first. A typed card may fall back to a Wildcard
@@ -12034,11 +12143,49 @@ local function applyOrder(player, pid, row, turn)
 			end
 		end
 
+		-- If the same deck was sent on an earlier turn but the next export still
+		-- lacks a card, replace one unwanted/empty slot at a time.  This mirrors
+		-- the proven single-card arm and gives the host a fresh transaction after
+		-- a partial full-deck apply; it also keeps the retry bounded to one card
+		-- per turn instead of flooding the same asynchronous request.
+		if samePlan and CivvisPolicy.sent_signature == signature
+				and CivvisPolicy.sent_turn < turn then
+			local missing = {};
+			for _, card in ipairs(desired) do
+				if not currentSet[card.Index] then missing[#missing + 1] = card; end
+			end
+			for _, card in ipairs(missing) do
+				local target = nil;
+				for i = 0, slots - 1 do
+					if (currentBySlot[i] == nil or currentBySlot[i] < 0)
+							and fits(card, slotNames[i]) then
+						target = i;
+						break;
+					end
+				end
+				if target == nil then
+					for i = 0, slots - 1 do
+						local held = currentBySlot[i];
+						if held ~= nil and held >= 0 and not desiredSet[held]
+							and fits(card, slotNames[i]) then
+							target = i;
+							break;
+						end
+					end
+				end
+				if target ~= nil then
+					local repairAdd = {};
+					repairAdd[target] = card.Hash;
+					local repairClear = { target };
+					local ok = request(repairClear, repairAdd, "repair", card.PolicyType);
+					return ok, ok and "policy_deck_repair" or "throw";
+				end
+			end
+		end
+
 		local clearList = {};
 		for i = 0, slots - 1 do clearList[#clearList + 1] = i; end
-		local ok = pcall(function()
-			culture:RequestPolicyChanges(clearList, addList);
-		end);
+		local ok = request(clearList, addList, "full", nil);
 		return ok, ok and "policy_deck" or "throw";
 	end
 	if kind == "policy" then
