@@ -1193,6 +1193,19 @@ pub struct ForceGroup {
     pub local_strength_ratio: f64,
 }
 
+/// Immutable inputs for scoring the tactical contact opened by one candidate
+/// destination. Keeping this frame together makes it harder for a caller to
+/// accidentally score the move against a different group's target or vision.
+struct StrikeOpening<'a> {
+    g: &'a Game,
+    pid: usize,
+    uid: u32,
+    tile: Pos,
+    group: &'a ForceGroup,
+    enemies: &'a [usize],
+    visible: Option<&'a TileBits>,
+}
+
 /// The information available when a major civilization starts one turn.
 ///
 /// Battlefront planning creates a turn-level commitment.  It must not acquire
@@ -17422,7 +17435,7 @@ impl AdvancedAi {
         if candidates.is_empty() {
             return false;
         }
-        candidates.sort_by(|left, right| right.0.cmp(&left.0));
+        candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.0));
         let purchases = self.legal_purchase_actions(g, pid);
         let Some((rank, action, city_name, defence)) = candidates.into_iter().find_map(
             |(rank, city_id, city_name, defence)| {
@@ -22800,16 +22813,16 @@ impl AdvancedAi {
     /// STRIKE_OPENING_SCALE` = +5.2, which offsets a third of the parity
     /// threat penalty rather than erasing it: the intent is to make contact
     /// *considerable*, not automatic.
-    fn strike_opening_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        uid: u32,
-        tile: Pos,
-        group: &ForceGroup,
-        enemies: &[usize],
-        visible: Option<&crate::world::TileBits>,
-    ) -> f64 {
+    fn strike_opening_value(&self, input: StrikeOpening<'_>) -> f64 {
+        let StrikeOpening {
+            g,
+            pid,
+            uid,
+            tile,
+            group,
+            enemies,
+            visible,
+        } = input;
         if !self.strike_opening || group.posture != ForcePosture::Engage {
             return 0.0;
         }
@@ -25093,20 +25106,19 @@ impl AdvancedAi {
                 );
                 let repeatable_economic_project = spec.repeatable
                     && (!spec.completion_gpp.is_empty() || !spec.ongoing_yields.is_empty());
-                if strategic_land_force_gap && repeatable_economic_project {
-                    -10_000.0
-                } else if (space_race
-                    && self.victory_target.is_some()
-                    && self.victory_target != Some(VictoryTarget::Science)
+                let forbidden_project = (strategic_land_force_gap && repeatable_economic_project)
+                    || (space_race
+                        && self.victory_target.is_some()
+                        && self.victory_target != Some(VictoryTarget::Science)
                     // See `lane_release_when_hopeless`. The live King seat
                     // stood a Spaceport at turn 225 and launched nothing from
                     // it: on `--victory diplomatic` every launch project this
                     // arm can offer is refused here, whatever the seat's
                     // science lead. A lost lane does not get to forbid the
                     // victory that is still open.
-                    && !self.lane_lost)
-                    || turns > remaining_turns * 0.8
-                {
+                        && !self.lane_lost)
+                    || turns > remaining_turns * 0.8;
+                if forbidden_project {
                     -10_000.0
                 } else {
                     let completed = g.players[pid].science_projects.len() as f64;
@@ -26896,9 +26908,7 @@ impl AdvancedAi {
             .wdisk(from, radius)
             .into_iter()
             .filter_map(|pos| {
-                let Some(tile) = g.map.get(pos) else {
-                    return None;
-                };
+                let tile = g.map.get(pos)?;
                 // During the one-city opening the recon gene must not let the
                 // native board's complete map decide a site the player has not
                 // observed. The Warrior moves before this scan and exposes
@@ -31519,8 +31529,15 @@ impl AdvancedAi {
             if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
                 value -= crate::ai::WATER_MARCH_PENALTY;
             }
-            value +=
-                self.strike_opening_value(g, pid, uid, tile, group, enemies, visible.as_deref());
+            value += self.strike_opening_value(StrikeOpening {
+                g,
+                pid,
+                uid,
+                tile,
+                group,
+                enemies,
+                visible: visible.as_deref(),
+            });
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing

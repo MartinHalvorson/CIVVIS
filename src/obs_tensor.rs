@@ -330,7 +330,10 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
     for (slot, other) in rivals.iter().copied().enumerate() {
         rival_slots[other] = slot;
     }
-    let mut seen_by_rival = vec![0.0f32; rivals.len()];
+    // Only the fixed observation slots are serialized. Keeping their running
+    // totals inline avoids allocating entries for rivals whose values cannot
+    // reach the tensor.
+    let mut seen_by_rival = [0.0f32; MAX_RIVALS];
     for unit in g.units.values() {
         if g.rules.units[unit.kind].class != "military"
             || !vis.contains(&unit.pos)
@@ -340,7 +343,7 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
             continue;
         }
         let slot = rival_slots[unit.owner];
-        if slot == usize::MAX || slot >= seen_by_rival.len() {
+        if slot == usize::MAX || slot >= MAX_RIVALS {
             continue;
         }
         seen_by_rival[slot] += g.unit_strength(unit, false) as f32;
@@ -349,7 +352,7 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
     // so rival slots are populated for every major. Alive/war status and
     // score match the in-game public ranking screens; military is only what
     // our eyes can currently count.
-    for slot in 0..MAX_RIVALS {
+    for (slot, seen) in seen_by_rival.iter().copied().enumerate() {
         let prefix = format!("rival{slot}");
         match rivals.get(slot) {
             Some(&other) => {
@@ -372,7 +375,6 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
                     &format!("{prefix}_score"),
                     g.score(other) as f32 / 1500.0,
                 );
-                let seen = seen_by_rival[slot];
                 push(
                     &mut names,
                     &mut out,

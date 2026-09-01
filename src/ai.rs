@@ -10903,6 +10903,11 @@ impl BasicAi {
         changed
     }
 
+    // The counters deliberately remain explicit: the city loop updates them
+    // after every selected item, and the diagnostic binary probes this same
+    // decision surface. A transient aggregate would only obscure which live
+    // count a production rule reads.
+    #[allow(clippy::too_many_arguments)]
     pub fn pick_item(
         &self,
         g: &Game,
@@ -21539,7 +21544,8 @@ mod tests {
             .and_then(|n| n.parse().ok())
             .unwrap_or(8);
         let seeds: Vec<u64> = (1..=count).map(|n| 26_081_600 + n).collect();
-        let mut summary: Vec<(String, [f64; 3], [f64; 3], [f64; 3])> = Vec::new();
+        type ExploreCommitSummary = (String, [f64; 3], [f64; 3], [f64; 3]);
+        let mut summary: Vec<ExploreCommitSummary> = Vec::new();
         for (arm, commit) in arms.iter().zip([false, true]) {
             let mut revealed = [0.0f64; 3];
             let mut minors_met = [0.0f64; 3];
@@ -22139,19 +22145,6 @@ mod tests {
             "with no viable launch, do not keep forcing a naval build"
         );
     }
-
-    /// The shape live run `civvis-20260807T181839Z` was in at t115 when its
-    /// capital bled behind no walls: Masonry in, monument and granary built,
-    /// the culture lane open, and nothing hostile in vision. See
-    /// `garrison_walls_item`.
-
-    /// With the treatment on, the capital that previously spent this turn on
-    /// the culture lane orders ancient walls; with it off, behavior is
-    /// unchanged; without Masonry, nothing changes either.
-
-    /// The frontier/population-floor boundary: a small frontier city walls
-    /// up, the same city at the floor does not, an interior city never does,
-    /// and the capital is eligible at any size.
 
     #[test]
     fn even_barbarian_trades_are_taken_not_shadowed() {
