@@ -14333,36 +14333,48 @@ CivvisQueue.drain = function(player, pid, turn)
 				if ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready then
-					local row = entry.rows[entry.next];
-					local verb = tostring(row.verb or "");
-					if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or CivvisQueue.isStrike(row)) then
-						-- Nothing that needs movement can run; say why, don't ask.
-						CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
+					-- A MOVE_TO can report an operation-ended event, spend its movement,
+					-- or hit the grace cap without reaching the requested plot.  None of
+					-- those outcomes makes a follow-up safe: an IMPROVE would otherwise
+					-- run at the old tile (the live trace showed farms requested at a city
+					-- centre), and a strike could fire from the wrong tile.  The opening
+					-- walk has no follow-up and is allowed to release for re-planning, but
+					-- a real queued sequence must either arrive at its expectation or
+					-- refuse the remaining rows by name.
+					if entry.expect ~= nil and not arrived then
+						CivvisQueue.refuseRest(subject, entry, "queue_prior_not_arrived");
 					else
-						local ok, why = false, "throw";
-						local safe, res1, res2 = pcall(function()
-							return applyOrder(player, pid, row, turn);
-						end);
-						if safe then ok, why = res1, res2; end
-						ran = ran + 1;
-						q.count = q.count - 1;
-						if ok then
-							q.stats.applied = q.stats.applied + 1;
-							if CivvisQueue.isStrike(row) then
-								q.stats.strikes_landed = q.stats.strikes_landed + 1;
+						local row = entry.rows[entry.next];
+						local verb = tostring(row.verb or "");
+						if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or CivvisQueue.isStrike(row)) then
+							-- Nothing that needs movement can run; say why, don't ask.
+							CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
+						else
+							local ok, why = false, "throw";
+							local safe, res1, res2 = pcall(function()
+								return applyOrder(player, pid, row, turn);
+							end);
+							if safe then ok, why = res1, res2; end
+							ran = ran + 1;
+							q.count = q.count - 1;
+							if ok then
+								q.stats.applied = q.stats.applied + 1;
+								if CivvisQueue.isStrike(row) then
+									q.stats.strikes_landed = q.stats.strikes_landed + 1;
+								end
+							else
+								q.stats.refused = q.stats.refused + 1;
+								local key = tostring(why);
+								q.stats.refusals[key] = (q.stats.refusals[key] or 0) + 1;
 							end
-						else
-							q.stats.refused = q.stats.refused + 1;
-							local key = tostring(why);
-							q.stats.refusals[key] = (q.stats.refusals[key] or 0) + 1;
-						end
-						entry.next = entry.next + 1;
-						if entry.next > #entry.rows then
-							q.pending[subject] = nil;
-						else
-							entry.expect = ok and CivvisQueue.expectFor(row) or nil;
-							entry.ready = false;
-							entry.wait = 0;
+							entry.next = entry.next + 1;
+							if entry.next > #entry.rows then
+								q.pending[subject] = nil;
+							else
+								entry.expect = ok and CivvisQueue.expectFor(row) or nil;
+								entry.ready = false;
+								entry.wait = 0;
+							end
 						end
 					end
 				end

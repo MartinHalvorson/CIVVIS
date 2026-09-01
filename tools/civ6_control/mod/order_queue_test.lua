@@ -276,6 +276,20 @@ queue.drain(player, PID, 7)
 check("strike with no movement left refused", ops(14), "UNITOPERATION_MOVE_TO")
 check("named queue_no_moves", (lastEvent("orders_queue") or ""):find("queue_no_moves", 1, true) ~= nil, true)
 
+-- 6b. A move that never reaches its target refuses every dependent follow-up.
+-- This is the builder failure seen in the live Civ VI trace: the host ended the
+-- MOVE_TO at the origin, then the queued IMPROVE was evaluated on the city
+-- centre instead of the farm tile CIVVIS had planned.
+reset()
+host.units[141] = { id = 141, kind = "UNIT_BUILDER", x = 5, y = 5, moves = 1 }
+applyOrders(player, PID, 7, { row(141, "MOVE_TO", 6, 5), row(141, "IMPROVE:IMPROVEMENT_FARM") })
+check("stop-short move issues only the opening walk", ops(141), "UNITOPERATION_MOVE_TO")
+host.units[141].moves = 0 -- the host ended the move without reaching (6, 5)
+queue.drain(player, PID, 7)
+check("stop-short move never improves the origin", ops(141), "UNITOPERATION_MOVE_TO")
+check("stop-short follow-up is named", (lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
+check("stop-short follow-up is removed", queue.pendingCount(), 0)
+
 -- 7. The stall cap gives up by name.
 reset()
 host.units[15] = { id = 15, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
