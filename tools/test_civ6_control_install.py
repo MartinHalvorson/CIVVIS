@@ -1509,6 +1509,22 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('awaiting.source == "civvis"', generic[:completed])
         self.assertIn("driveProduction(player, turn, true)", handler[residual:])
 
+    def test_late_hard_research_and_civic_prompts_do_not_wait_for_a_second_tick(self) -> None:
+        """A blocked Game Core may never publish the escalation sighting."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split("local function answerBlocker", 1)[1].split(
+            "local function dismissBlocker", 1
+        )[0]
+        generic = handler.split(
+            "-- A CIVVIS pass is a complete decision for the mirrored state it received.", 1
+        )[1].split("-- While the current CIVVIS answer is still in flight", 1)[0]
+
+        self.assertIn('name == "ENDTURN_BLOCKING_RESEARCH"', generic)
+        self.assertIn('name == "ENDTURN_BLOCKING_CIVIC"', generic)
+        self.assertIn(
+            "return answerBlocker(player, pid, blocker, turn, true);", generic
+        )
+
     def test_empty_civvis_order_batch_completes_without_legacy_fallback(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         settle = source.split("local function settleTurn", 1)[1].split(
