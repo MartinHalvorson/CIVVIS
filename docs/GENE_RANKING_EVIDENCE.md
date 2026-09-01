@@ -247,7 +247,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `governor-victory-lanes` | -110 | 15.57% | 17.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `solvency-first-trade-slot-2` | -161 | 15.06% | 17.37% | `2026-08-31-standard-continuous-14850-total-seats-20260831T105124Z-c90a.json` |
+| `solvency-first-trade-slot-2` | -168 | 14.99% | 17.39% | `2026-08-31-standard-continuous-20634-total-seats-20260831T161144Z-7738.json` |
 | `governor-every-lane` | -173 | 14.93% | 18.38% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 
 ## How to read this

@@ -2160,7 +2160,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("skip-the-prophet-race", [Some(2), Some(-115), Some(-118)]),
     ("slot-kind-tiebreak", [Some(16), Some(-7), Some(7)]),
     ("solvency-first-trade-slot", [Some(108), Some(111), Some(136)]),
-    ("solvency-first-trade-slot-2", [Some(-61), Some(-33), Some(-50)]),
     ("stranded-settler-discount", [Some(-18), Some(31), Some(5)]),
     ("strategic-wonders", [Some(0), Some(6), Some(-11)]),
     ("strike-opening", [Some(-15), Some(-5), Some(-2)]),
