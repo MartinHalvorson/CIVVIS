@@ -28275,7 +28275,9 @@ impl AdvancedAi {
         costs: &BTreeMap<Pos, f64>,
     ) -> Option<u32> {
         let moves = g.unit_max_moves(uid).max(1.0);
-        let by_cost = costs.get(&target).map(|cost| (cost / moves).ceil() as u32)?;
+        let by_cost = costs
+            .get(&target)
+            .map(|cost| (cost / moves).ceil() as u32)?;
         Some(by_cost.max(g.wdist(from, target).max(0) as u32))
     }
 
@@ -37787,13 +37789,43 @@ mod opening_walk_tests {
     fn online_capital_walks_one_turn_for_a_real_gain_and_not_two_for_a_third_more() {
         let (budget, per_turn) = AdvancedAi::opening_walk_budget(GameSpeed::Online);
         assert_eq!(budget, 2);
-        assert!(!AdvancedAi::opening_walk_pays(86.2, 117.4, Some(2), budget, per_turn));
-        assert!(AdvancedAi::opening_walk_pays(86.2, 117.4, Some(1), budget, per_turn));
-        assert!(!AdvancedAi::opening_walk_pays(86.2, 95.0, Some(1), budget, per_turn), "+9 is under 15 %");
-        assert!(AdvancedAi::opening_walk_pays(86.2, 130.0, Some(2), budget, per_turn), "+44 clears 42 %");
-        assert!(!AdvancedAi::opening_walk_pays(86.2, 400.0, Some(3), budget, per_turn), "over budget");
-        assert!(!AdvancedAi::opening_walk_pays(86.2, 400.0, None, budget, per_turn), "unreached");
-        assert!(AdvancedAi::opening_walk_pays(86.2, 86.2, Some(0), budget, per_turn));
+        assert!(!AdvancedAi::opening_walk_pays(
+            86.2,
+            117.4,
+            Some(2),
+            budget,
+            per_turn
+        ));
+        assert!(AdvancedAi::opening_walk_pays(
+            86.2,
+            117.4,
+            Some(1),
+            budget,
+            per_turn
+        ));
+        assert!(
+            !AdvancedAi::opening_walk_pays(86.2, 95.0, Some(1), budget, per_turn),
+            "+9 is under 15 %"
+        );
+        assert!(
+            AdvancedAi::opening_walk_pays(86.2, 130.0, Some(2), budget, per_turn),
+            "+44 clears 42 %"
+        );
+        assert!(
+            !AdvancedAi::opening_walk_pays(86.2, 400.0, Some(3), budget, per_turn),
+            "over budget"
+        );
+        assert!(
+            !AdvancedAi::opening_walk_pays(86.2, 400.0, None, budget, per_turn),
+            "unreached"
+        );
+        assert!(AdvancedAi::opening_walk_pays(
+            86.2,
+            86.2,
+            Some(0),
+            budget,
+            per_turn
+        ));
     }
 
     #[test]
@@ -37802,7 +37834,19 @@ mod opening_walk_tests {
         assert_eq!(budget, 5);
         let (standard, per_turn) = AdvancedAi::opening_walk_budget(GameSpeed::Standard);
         assert_eq!(standard, 3);
-        assert!(AdvancedAi::opening_walk_pays(0.0, 3.0, Some(3), standard, per_turn));
-        assert!(!AdvancedAi::opening_walk_pays(0.0, 2.9, Some(1), standard, per_turn));
+        assert!(AdvancedAi::opening_walk_pays(
+            0.0,
+            3.0,
+            Some(3),
+            standard,
+            per_turn
+        ));
+        assert!(!AdvancedAi::opening_walk_pays(
+            0.0,
+            2.9,
+            Some(1),
+            standard,
+            per_turn
+        ));
     }
 }

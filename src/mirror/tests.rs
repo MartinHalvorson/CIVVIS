@@ -186,15 +186,26 @@ fn snapshot_reads_the_selected_turns_tiles_written_below_its_state() {
     )
     .unwrap();
     let turn_one = snapshot_from_events_at(&path, Some(1)).unwrap();
-    assert_eq!(turn_one.revealed_count(), 2, "the turn's sweep and frame-0 delta are its board");
+    assert_eq!(
+        turn_one.revealed_count(),
+        2,
+        "the turn's sweep and frame-0 delta are its board"
+    );
     assert_eq!(
         turn_one.plot((1, 1)).and_then(|plot| plot.f.as_deref()),
         Some("FEATURE_FOREST"),
         "the frame-1 delta below a frame-0 state is a later board"
     );
-    assert!(turn_one.plot((7, 7)).is_none(), "turn 1 must not see turn 2");
+    assert!(
+        turn_one.plot((7, 7)).is_none(),
+        "turn 1 must not see turn 2"
+    );
     let latest = snapshot_from_events(&path).unwrap();
-    assert_eq!(latest.revealed_count(), 2, "the latest state is still turn 1 frame 0");
+    assert_eq!(
+        latest.revealed_count(),
+        2,
+        "the latest state is still turn 1 frame 0"
+    );
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_dir(dir);
 }
