@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-surge-2` | off (unmeasured) | Version 2 of `air_surge`: the science–domination loop. | 1 \| 2 |
+| `chase-every-boost` | off (unmeasured) | Hunt every Eureka and Inspiration: the chase table reads every trigger the engine can judge (`Game::boost_progress`), a boost in hand scales the node, a boost one actionable step away is waited for, the beeline walks the goal's prerequisites by their boosted cost, and production, builders and kills are paid the research a trigger earns. | 1 \| 1 |
 | `district-planning-2` | off (unmeasured) | `district-planning-2`: the district plan's tile buy competes out of the treasury reserve (never spending below half of it) instead of needing 200 Gold of surplus headroom, and the purchase bars drop to adjacency 2 with an edge of 1 over owned ground. | 1 \| 2 |
 | `spaceport-surplus-veto` | off (unmeasured) | `spaceport-surplus-veto` (OptIn): the Science strategy's flat per-pad district bonus stops paying once the empire already holds as many Spaceports as the current race stage can use (`science_drive_desired_pads`). | 1 \| 1 |
 
