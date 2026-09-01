@@ -151,6 +151,27 @@ local function emit(kind, payload)
 	payload.kind = kind;
 	payload.ctx = "agent";
 	payload.run = cfg.RunTag or "unset";
+	-- Mod-side write time in seconds on whichever clock this Lua sandbox offers
+	-- (none of them is guaranteed; a build with none simply omits `t`). The
+	-- harness stamps receipt as `utc`; the two together separate the log's
+	-- delivery delay from the agent's own cadence, which receipt alone could not
+	-- (lines reach the harness in batches, so 13 polls read as one instant).
+	pcall(function()
+		local t = Automation.GetTime();
+		if type(t) == "number" then payload.t = t; end
+	end);
+	if payload.t == nil then
+		pcall(function()
+			local t = UI.GetElapsedTime();
+			if type(t) == "number" then payload.t = t; end
+		end);
+	end
+	if payload.t == nil then
+		pcall(function()
+			local t = os.clock();
+			if type(t) == "number" then payload.t = t; end
+		end);
+	end
 	-- ⚠⚠ THE TRAILING NEWLINE IS REQUIRED, NOT COSMETIC. `Automation.Log` does not
 	-- terminate its record — measured: the log's final byte was `}`. `watch.py`
 	-- splits on newlines and holds the unterminated tail as `partial`, so the LAST
@@ -16814,9 +16835,18 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- ended. A busy-wait on a channel whose other half needs the same thread is a
 	-- deadlock, not a delay.
 	--
-	-- Polling every `OrdersPollTicks` costs 1/30th the queries and still answers
-	-- within milliseconds of the orders landing.
-	local every = cfg.OrdersPollTicks or 30;
+	-- Polling every `OrdersPollTicks` ticks bounds the queries — but note what a
+	-- tick IS here: `settleTurn` runs from `tick()`, which `onGameCoreTick` calls
+	-- once per `TickEvery` (16) publish batches. Thirty of those was 480 publish
+	-- batches per poll, and on the live Emperor lane (run 195234Z, receipt-stamped)
+	-- that was **3.8 s** between the board going out and the first poll, paid on
+	-- the opening board AND on every replan frame while the brain had answered
+	-- 50 ms after the board reached it: state → orders median 3.95 s, replan →
+	-- frame state median 3.84 s, on turns of 13–20 s. Four ticks is 64 publish
+	-- batches per poll — still an order of magnitude short of the every-publish
+	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
+	-- scaled by the same factor so every wall-clock allowance is unchanged.
+	local every = cfg.OrdersPollTicks or 4;
 	if awaiting.ticks % every ~= 0 then return false; end
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
@@ -16880,7 +16910,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- opening board's stale-answer and built-in ladders below never apply
 	-- to a frame — a stale answer is the very board this frame replaces.
 	if frame > 0 then
-		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 20) then
+		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 150) then
 			awaiting.done = true;
 			awaiting.source = "civvis";
 			-- Every trigger, and the cap: a brain that could not answer this
@@ -16896,7 +16926,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	end
 
 	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
-	if awaiting.polls >= (cfg.OrdersWaitPolls or 40) then
+	if awaiting.polls >= (cfg.OrdersWaitPolls or 300) then
 		local stale = newestAnsweredTurn(turn);
 		local maxStale = cfg.OrdersMaxStale or 4;
 		if stale ~= nil and stale > 0 and (turn - stale) <= maxStale then
@@ -16917,7 +16947,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- a mechanism given authority with no floor for being wrong. Past the budget the
 	-- built-in heuristics run and the turn is recorded as `fallback`, which is a
 	-- number to watch — a run that is mostly fallback is not a measurement of CIVVIS.
-	if awaiting.polls >= (cfg.OrdersFallbackPolls or 120) then
+	if awaiting.polls >= (cfg.OrdersFallbackPolls or 900) then
 		-- ⚠ SET THE SOURCE *BEFORE* RUNNING THE FALLBACK. `playFallback` emits the
 		-- turn record, which reads `awaiting.source` — assigning after the call made
 		-- every fallback turn report `orders_source: pending`, so the one field that
