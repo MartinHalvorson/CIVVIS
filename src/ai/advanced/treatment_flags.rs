@@ -3461,6 +3461,31 @@ impl AdvancedAi {
         self.industrial_chain_debt = false;
     }
 
+    /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
+    /// with a body before anything else is built, bought when no defender
+    /// exists, and a recon unit is not a defender. A `BasicAi` flag; see
+    /// `advanced/siege_response.rs`.
+    pub fn enable_siege_preempts_the_queue(&mut self) {
+        self.base.enable_siege_preempts_the_queue();
+    }
+
+    /// The twin of `enable_siege_preempts_the_queue`.
+    pub fn disable_siege_preempts_the_queue(&mut self) {
+        self.base.disable_siege_preempts_the_queue();
+    }
+
+    /// `guard-breaks-the-pin`: a Settler's stacked guard strikes the raider
+    /// whose zone of control pins the pair when the trade is worth it. See
+    /// `advanced/siege_response.rs`.
+    pub fn enable_guard_breaks_the_pin(&mut self) {
+        self.guard_breaks_the_pin = true;
+    }
+
+    /// The twin of `enable_guard_breaks_the_pin`.
+    pub fn disable_guard_breaks_the_pin(&mut self) {
+        self.guard_breaks_the_pin = false;
+    }
+
     /// `settler-target-floor`: a Settler is never sent to a site not worth the
     /// walk. See `advanced/settler_target_floor.rs`.
     pub fn enable_settler_target_floor(&mut self) {

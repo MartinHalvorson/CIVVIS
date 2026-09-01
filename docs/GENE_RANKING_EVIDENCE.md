@@ -191,6 +191,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `industrial-chain-debt` | off (unmeasured) | `industrial-chain-debt` (OptIn): an Industrial Zone owes its Workshop, Factory and plant the same flat debt a Campus owes its Library, a regional building is worth the production it reaches, and the Factory and plants join the buildings a repeatable project waits behind. | 1 \| 1 |
 | `settler-site-gate` | off (unmeasured) | `settler-site-gate`: a city starts a Settler only while an acceptable, unclaimed site worth founding exists. | 1 \| 1 |
 | `settler-target-floor` | off (unmeasured) | `settler-target-floor`: a Settler is never sent to a site not worth the walk. | 1 \| 1 |
+| `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
 | `spaceport-surplus-veto` | off (unmeasured) | `spaceport-surplus-veto` (OptIn): the Science strategy's flat per-pad district bonus stops paying once the empire already holds as many Spaceports as the current race stage can use (`science_drive_desired_pads`). | 1 \| 1 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
 
