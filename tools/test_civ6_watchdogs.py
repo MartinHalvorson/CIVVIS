@@ -362,5 +362,23 @@ class InfrastructureMirrorTest(unittest.TestCase):
         self.assertTrue(any("GOVERNORS DISAGREE" in verdict for verdict in verdicts))
 
 
+class TerrainMirrorTest(unittest.TestCase):
+    def test_expected_matches_mirror_aliases_and_national_park_flag(self) -> None:
+        vocab = civ6_watchdogs.load_vocab()
+        common = {"t": "TERRAIN_GRASSLAND", "w": False, "o": 0}
+
+        beach_resort = civ6_watchdogs.expected({
+            **common,
+            "im": "IMPROVEMENT_BEACH_RESORT",
+        }, vocab)
+        self.assertEqual(beach_resort["im"], "seaside_resort")
+
+        national_park = civ6_watchdogs.expected({
+            **common,
+            "np": True,
+        }, vocab)
+        self.assertEqual(national_park["im"], "national_park")
+
+
 if __name__ == "__main__":
     unittest.main()

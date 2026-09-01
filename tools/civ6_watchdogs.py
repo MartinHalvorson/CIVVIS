@@ -411,6 +411,13 @@ def _modelled_improvements() -> set[str]:
 
 MODELLED_IMPROVEMENTS = _modelled_improvements()
 
+# Keep this translation in lockstep with `civvis_improvement_name` in
+# `src/mirror.rs`.  Firaxis retains BEACH_RESORT as the implementation id even
+# though CIVVIS calls the same improvement `seaside_resort`.
+CIV6_IMPROVEMENT_ALIASES = {
+    "beach_resort": "seaside_resort",
+}
+
 
 def _model_names(filename: str) -> set[str]:
     try:
@@ -446,6 +453,12 @@ def model_infrastructure_name(civ6: str, prefix: str, names: set[str]) -> str:
     # Deliberately cannot equal any actual ruleset name, so an unmodelled Firaxis
     # district is loud instead of being treated as correctly absent.
     return f"@unmapped:{civ6}"
+
+
+def model_improvement_name(civ6: str) -> str:
+    """Translate a Civ 6 improvement id into the mirror's ruleset name."""
+    base = civ6.removeprefix("IMPROVEMENT_").lower()
+    return CIV6_IMPROVEMENT_ALIASES.get(base, base)
 
 
 def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict:
@@ -576,8 +589,13 @@ def expected(plot: dict, vocab: dict) -> dict:
     feature = vocab["features"].get(plot.get("f") or "") if plot.get("f") else None
     resource = vocab["resources"].get(plot.get("r") or "") if plot.get("r") else None
     improvement = None
-    if plot.get("im"):
-        short = plot["im"].removeprefix("IMPROVEMENT_").lower()
+    # National Parks are a Civ 6 plot flag, not an improvement type; the mirror
+    # deliberately represents them as its `national_park` improvement so the
+    # park's tourism, amenities and unworkable tiles participate in planning.
+    if plot.get("np"):
+        improvement = "national_park" if "national_park" in MODELLED_IMPROVEMENTS else None
+    elif plot.get("im"):
+        short = model_improvement_name(plot["im"])
         improvement = short if short in MODELLED_IMPROVEMENTS else None
     return {
         "t": terrain["terrain"] if terrain else None,
