@@ -10342,6 +10342,27 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
         "the cheapest available prerequisite toward Rocketry wins"
     );
 
+    // Research must advance to the first unknown victory technology rather
+    // than stop at a known rung while its project is being built.
+    science.players[0].techs.insert(crate::name!("rocketry"));
+    science.players[0]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    assert_eq!(
+        AdvancedAi::science_victory_tech_goal(&science, 0, GrandStrategy::Science),
+        Some("satellites")
+    );
+    science.players[0].research = None;
+    ai.advanced_research(&mut science, 0, &plan(GrandStrategy::Science));
+    let next_science_tech = science.players[0]
+        .research
+        .as_deref()
+        .expect("Science should keep researching toward Satellites");
+    assert!(
+        ai.tech_leads_to(&science, next_science_tech, "satellites"),
+        "Science must keep its research slot on the next victory-tech path"
+    );
+
     let mut culture = Game::new_full(1, 20, 14, 763, 300, 0, false);
     ai.advanced_research(&mut culture, 0, &plan(GrandStrategy::Culture));
     assert_eq!(
@@ -10361,6 +10382,54 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     assert!(
         ai.civic_leads_to(&diplomacy, civic, "global_warming_mitigation"),
         "diplomatic culture must advance toward Global Warming Mitigation's victory point"
+    );
+}
+
+#[test]
+fn coastal_science_takes_one_era_gated_harbor_tech_package() {
+    let mut game = Game::new_full(1, 20, 14, 76_003, 300, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    let coast = game
+        .nbrs(game.cities[&city].pos)
+        .into_iter()
+        .next()
+        .expect("city neighbor");
+    let tile = game.map.tiles.get_mut(&coast).unwrap();
+    tile.terrain = crate::name!("coast");
+    tile.feature = None;
+    tile.resource = None;
+    tile.hills = false;
+    game.world_era = 2;
+
+    let ai = AdvancedAi::new();
+    assert_eq!(
+        AdvancedAi::science_harbor_research_goal(&game, 0, GrandStrategy::Science),
+        Some("celestial_navigation")
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut game, 0, &plan);
+    let selected = game.players[0]
+        .research
+        .as_deref()
+        .expect("the Harbor package should select a prerequisite");
+    assert!(
+        ai.tech_leads_to(&game, selected, "celestial_navigation"),
+        "the bounded support package must research Harbor prerequisites"
     );
 }
 
@@ -11858,13 +11927,7 @@ fn a_targeted_science_refuses_unrelated_specialty_districts() {
     };
     let counts = ai.counts(&game, 0);
 
-    for district in [
-        "theater_square",
-        "commercial_hub",
-        "harbor",
-        "holy_site",
-        "preserve",
-    ] {
+    for district in ["theater_square", "commercial_hub", "holy_site", "preserve"] {
         let item = Item::District {
             district: Name::new(district),
             pos: site,
@@ -11874,6 +11937,27 @@ fn a_targeted_science_refuses_unrelated_specialty_districts() {
             "Science must refuse {district}"
         );
     }
+
+    // A single Harbor is the bounded coastal-support exception. It must be
+    // available to the Science lane, while a second Harbor remains a detour.
+    let harbor = Item::District {
+        district: Name::new("harbor"),
+        pos: site,
+    };
+    let harbor_value = ai.production_value(&game, 0, city, &harbor, &plan, &counts);
+    assert!(
+        harbor_value > 0.0,
+        "Science should value its first Harbor as support infrastructure"
+    );
+    game.cities.get_mut(&city).unwrap().queue.push(harbor);
+    let second_harbor = Item::District {
+        district: Name::new("harbor"),
+        pos: site,
+    };
+    assert!(
+        ai.production_value(&game, 0, city, &second_harbor, &plan, &counts) < -9_000.0,
+        "Science should not collect multiple Harbors"
+    );
 }
 
 #[test]
