@@ -1502,7 +1502,8 @@
         "ships": "naval-recon",
         "versions": {
           "naval-recon": -0.045836,
-          "naval-recon-2": null
+          "naval-recon-2": null,
+          "naval-recon-3": null
         }
       },
       "never-an-empty-queue": {

@@ -1903,6 +1903,9 @@ pub const GENES: &[Gene] = &[
     // empty-capital reservation, refuse unworthy or already-claimed sites,
     // and leave ordinary queues, pantheons, site ranking and peace intact.
     Gene { tag: "rapid-city-expansion-2", field: "rapid_city_expansion_2", kind: Kind::OptIn, enable: AdvancedAi::enable_rapid_city_expansion_2, disable: AdvancedAi::disable_rapid_city_expansion_2 },
+    // Version 3 of `naval-recon`: yield an idle queue to a simultaneously
+    // missing land scout before reserving its one peacetime sea hull.
+    Gene { tag: "naval-recon-3", field: "naval_recon_3", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_recon_3, disable: AdvancedAi::disable_naval_recon_3 },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

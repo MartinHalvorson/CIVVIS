@@ -3542,6 +3542,35 @@ fn on_a_mirrored_board_the_sea_scout_arm_reads_the_fog_past_charted_water() {
         live.base.naval_recon_is_the_missing_arm(&game, 0),
         "fog past the coast and no hull afloat: the sea scout is the missing arm"
     );
+
+    // V3 aligns the advanced reservation path with the Basic picker: when a
+    // land eye is also missing, the broader continental frontier takes the
+    // one idle queue before the sea scout. Keep this on a clone so the v1
+    // mirror regression below still proves that its ordinary reservation is
+    // available.
+    let mut land_gap = game.clone();
+    land_gap.players[0].explored.remove(&center);
+    let mut land_first = AdvancedAi::new();
+    land_first.enable_live_bridge_universe();
+    land_first.enable_naval_recon_3();
+    assert!(
+        land_first.base.recon_is_the_missing_arm(&land_gap, 0),
+        "the fixture gives v3 an uncharted land frontier as well as the sea fog"
+    );
+    land_first.reserve_idle_naval_recon(&mut land_gap, 0, &plan);
+    assert!(
+        land_gap.cities[&city].queue.is_empty(),
+        "v3 leaves the idle coastal queue for the simultaneous land eye"
+    );
+    land_first.reserve_idle_land_recon(&mut land_gap, 0, &plan);
+    assert!(
+        matches!(
+            land_gap.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "scout"
+        ),
+        "the land scout can claim the queue that v3 declined"
+    );
+
     live.reserve_idle_naval_recon(&mut game, 0, &plan);
     assert!(
         matches!(
@@ -38778,6 +38807,57 @@ fn version_two_genes_are_opt_in_and_turn_version_one_off() {
         (v2.disable)(&mut ai);
         assert_eq!(reads(&ai)[i], (false, false), "{tag}: disabled");
     }
+}
+
+/// `naval-recon-3` is a separate, screenable land-first treatment. It
+/// replaces both earlier versions, so its one peacetime Galley cannot inherit
+/// v2's unconditional second-hull opening or preempt a missing land scout.
+#[test]
+fn naval_recon_three_is_opt_in_and_turns_prior_versions_off() {
+    let v3 = GENES
+        .iter()
+        .find(|gene| gene.tag == "naval-recon-3")
+        .expect("version 3 is published");
+    assert!(v3.opt_in() && v3.screenable() && !v3.live());
+
+    let mut ai = AdvancedAi::new();
+    assert!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ) == (true, false, false)
+    );
+    ai.enable_naval_recon_2();
+    assert_eq!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ),
+        (false, true, false),
+        "v2 has one version active"
+    );
+    ai.enable_naval_recon_3();
+    assert_eq!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ),
+        (false, false, true),
+        "v3 replaces both prior versions"
+    );
+    ai.disable_naval_recon_3();
+    assert_eq!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ),
+        (false, false, false),
+        "v3 remains independently reversible"
+    );
 }
 
 /// `power_the_laboratory_2`: a building's powered half is credited only in a
