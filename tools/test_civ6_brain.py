@@ -634,6 +634,9 @@ class LiveTurnClockTest(unittest.TestCase):
             path = Path(tmp) / "events.jsonl"
             path.write_text("".join(json.dumps(l) + "\n" for l in lines))
             rows = live_turn_clock.turn_clock(path)
+            out = io.StringIO()
+            with mock.patch("sys.stdout", out):
+                self.assertEqual(live_turn_clock.main([str(path), "--slowest", "1"]), 0)
         by_turn = {r["turn"]: r for r in rows}
         self.assertEqual(by_turn[14]["dur"], 99.0)
         self.assertEqual(by_turn[14]["wait"], 0.9)
@@ -643,8 +646,5 @@ class LiveTurnClockTest(unittest.TestCase):
                          (20.0, 19.5, 20))
         self.assertNotIn("dur", by_turn[16])   # last board has no successor
         self.assertNotIn("wait", by_turn[16])  # its orders line carried no stamp
-        out = io.StringIO()
-        with mock.patch("sys.stdout", out):
-            self.assertEqual(live_turn_clock.main([str(path), "--slowest", "1"]), 0)
         self.assertIn("turns 2", out.getvalue())
         self.assertIn("  14  18:27:54   99.0", out.getvalue())
