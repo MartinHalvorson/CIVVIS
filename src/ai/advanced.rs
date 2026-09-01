@@ -8784,8 +8784,9 @@ impl AdvancedAi {
                 // the existing 0.45 floor to avoid promoting a weak outer
                 // contact to an empire-wide recall, but let the simulator's
                 // exact attack envelope supply the missing urgency signal.
-                let imminent_attack =
-                    danger >= BASTION_PRESSURE && Self::imminent_city_attack(g, pid, cid, &visible);
+                let imminent_attack = self.battlefront_observation
+                    && danger >= BASTION_PRESSURE
+                    && Self::imminent_city_attack(g, pid, cid, &visible);
                 let critical = danger >= 0.90
                     || (danger >= BASTION_PRESSURE
                         && (breached || fresh_damage || imminent_attack));
