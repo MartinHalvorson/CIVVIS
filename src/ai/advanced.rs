@@ -6094,8 +6094,12 @@ const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research
 /// See `industrial_chain_debt`: the Industrial Zone's own chain, appended to
 /// `BUILDINGS_BEFORE_PROJECTS` under the gene and kept out of it so #1811
 /// stays exactly the treatment it was measured as.
-const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 4] =
-    ["factory", "coal_power_plant", "oil_power_plant", "nuclear_power_plant"];
+const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 4] = [
+    "factory",
+    "coal_power_plant",
+    "oil_power_plant",
+    "nuclear_power_plant",
+];
 /// See `campus_through_expansion`: the Science lane's Campus arm, paid to a
 /// Science seat's Campus while its plan still reads Expansion.
 const CAMPUS_THROUGH_EXPANSION_DISTRICT: f64 = 170.0;

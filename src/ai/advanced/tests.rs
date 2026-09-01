@@ -42131,7 +42131,9 @@ fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
         .expect("found city");
     let first = game.player_city_ids(0)[0];
     let second = found_test_city(&mut game, 0);
-    game.players[0].techs.insert(crate::name!("industrialization"));
+    game.players[0]
+        .techs
+        .insert(crate::name!("industrialization"));
     game.cities.get_mut(&first).unwrap().pop = 6;
     game.turn = 120;
     game.max_turns = 250;
@@ -42215,7 +42217,7 @@ fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
             .get_mut(&second)
             .unwrap()
             .buildings
-            .push(factory_name.clone());
+            .push(factory_name);
         assert_eq!(
             treated.regional_production_reach(
                 &game,
@@ -42229,7 +42231,10 @@ fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
             "a neighbour a standing Factory already reaches gains nothing from a second"
         );
     } else {
-        assert_eq!(reach, 0.0, "with no city in range there is nothing to reach");
+        assert_eq!(
+            reach, 0.0,
+            "with no city in range there is nothing to reach"
+        );
     }
 
     // Defaults: off for the stock and frozen controllers.
