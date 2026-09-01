@@ -680,6 +680,27 @@ def latest_tiles(events: list[dict]) -> dict[tuple[int, int], dict]:
     return plots
 
 
+def latest_state_event(events: list[dict], turn: int | None = None):
+    """Return ``(index, state)`` for the newest state in an event snapshot.
+
+    A live host can append the next turn while ``civvis_orders --dump-mirror``
+    is rebuilding the previous one.  The index is kept so callers can cut the
+    tile stream at the same state boundary Rust uses.
+    """
+    best = None
+    for index, event in enumerate(events):
+        if event.get("kind") != "state":
+            continue
+        event_turn = int(event.get("turn") or 0)
+        if turn is not None and event_turn != turn:
+            continue
+        if best is None or (event_turn, index) >= (best[1], best[0]):
+            best = (index, event_turn, event)
+    if best is None:
+        return None
+    return best[0], best[2]
+
+
 GREAT_WORK_OBJECTS = {
     "GREATWORKOBJECT_WRITING": "writing",
     "GREATWORKOBJECT_LANDSCAPE": "art",
@@ -921,12 +942,22 @@ def governor_agreement(events: list[dict], dump: dict) -> dict:
 
 def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
     """Ask CIVVIS for its board in OFFSET coordinates and diff it against the export."""
-    exported = latest_tiles(events)
+    selected = latest_state_event(events)
+    if selected is None:
+        return {"error": "run exported no state frame"}
+    state_index, selected_state = selected
+    frame_turn = int(selected_state.get("turn") or 0)
+    # Match Snapshot::from_events_at: a state owns only the tile chunks that
+    # preceded it. Using all chunks here lets a fast live game compare a board
+    # for turn N with a tile change from a later frame of N (or from N+1).
+    frame_events = events[:state_index + 1]
+    exported = latest_tiles(frame_events)
     if not exported:
         return {"error": "run exported no tiles"}
     try:
         proc = subprocess.run(
-            [str(orders_bin), "--mirror", str(run), "--dump-mirror"],
+            [str(orders_bin), "--mirror", str(run), "--dump-mirror",
+             "--turn", str(frame_turn)],
             capture_output=True, text=True, timeout=300,
         )
     except (subprocess.SubprocessError, OSError) as exc:
@@ -937,6 +968,11 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
         dump = json.loads(proc.stdout)
     except ValueError:
         return {"error": f"dump-mirror printed no JSON: {proc.stdout[:200]!r}"}
+    if int(dump.get("turn") or -1) != frame_turn:
+        return {
+            "error": f"dump-mirror returned turn {dump.get('turn')!r}, "
+                     f"expected the selected state turn {frame_turn}"
+        }
 
     vocab = load_vocab()
     mirrored = {(p["x"], p["y"]): p for p in dump.get("plots", [])}
@@ -972,7 +1008,7 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
         if not bad:
             agree += 1
 
-    expected_infra = expected_infrastructure(events)
+    expected_infra = expected_infrastructure(frame_events)
     infrastructure_fields = Counter()
     infrastructure_examples: dict[str, list] = defaultdict(list)
     infrastructure_agree = 0
@@ -1014,9 +1050,10 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
                     })
         else:
             infrastructure_agree += 1
-    economy = city_economy_agreement(events, dump)
-    governors = governor_agreement(events, dump)
+    economy = city_economy_agreement(frame_events, dump)
+    governors = governor_agreement(frame_events, dump)
     return {
+        "frame_turn": frame_turn,
         "exported_plots": len(exported),
         "mirrored_plots": len(mirrored),
         "compared": compared,

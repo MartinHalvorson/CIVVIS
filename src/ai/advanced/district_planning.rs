@@ -51,6 +51,12 @@ pub(super) const PLAN_BUY_MIN_ADJACENCY: f64 = 3.0;
 /// …and beat the best owned site for the same district by at least this
 /// much raw adjacency, so a near-equal owned plot is used instead of Gold.
 pub(super) const PLAN_BUY_MIN_EDGE: f64 = 2.0;
+/// `district-planning-2` lowers both bars — adjacency 2 with a real edge of
+/// 1 over the owned alternative is still ground worth Gold whenever the
+/// score floor below clears; the floor, not the bar, arbitrates the price.
+pub(super) const PLAN_BUY_MIN_ADJACENCY_2: f64 = 2.0;
+/// The version-2 twin of [`PLAN_BUY_MIN_EDGE`].
+pub(super) const PLAN_BUY_MIN_EDGE_2: f64 = 1.0;
 /// The floor every Gold purchase in `advanced_gold_spending` clears.
 pub(super) const PLAN_BUY_SCORE_FLOOR: f64 = 120.0;
 /// The share of the district's production value a plot purchase may claim —
@@ -332,10 +338,15 @@ impl AdvancedAi {
             .iter()
             .find(|row| row.pos == pos && row.purchase.is_some())?;
         let variant = row.district;
+        let (min_adjacency, min_edge) = if self.district_planning_2 {
+            (PLAN_BUY_MIN_ADJACENCY_2, PLAN_BUY_MIN_EDGE_2)
+        } else {
+            (PLAN_BUY_MIN_ADJACENCY, PLAN_BUY_MIN_EDGE)
+        };
         let here = g
             .district_adjacency_assuming(variant, pos, None, None)
             .total();
-        if here + f64::EPSILON < PLAN_BUY_MIN_ADJACENCY {
+        if here + f64::EPSILON < min_adjacency {
             return None;
         }
         let best_owned: Option<(Pos, f64)> = g
@@ -351,7 +362,7 @@ impl AdvancedAi {
             })
             .max_by(|a, b| a.1.total_cmp(&b.1).then_with(|| b.0.cmp(&a.0)));
         if let Some((_, owned)) = best_owned {
-            if here + f64::EPSILON < owned + PLAN_BUY_MIN_EDGE {
+            if here + f64::EPSILON < owned + min_edge {
                 return None;
             }
         }
