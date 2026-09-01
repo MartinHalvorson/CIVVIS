@@ -9124,6 +9124,7 @@ fn apply_observed_city_economy(
     snapshot: Option<&Snapshot>,
     unmapped: &mut Vec<String>,
 ) {
+    let debug_yields = std::env::var_os("CIVVIS_DEBUG_YIELD_IMPORT").is_some();
     Arc::make_mut(&mut game.observed_city_yield_adjustments).clear();
     // Clear first: the previous correction is part of `city_amenities` and
     // `city_housing`, and using it while deriving this turn's delta would
@@ -9137,8 +9138,20 @@ fn apply_observed_city_economy(
     for observed in &state.cities {
         let pos = crate::hex::offset_to_axial(observed.x, observed.y);
         let Some(cid) = game.city_at(pos) else {
+            if debug_yields {
+                eprintln!(
+                    "[yield-debug] city_at-miss name={} offset=({}, {}) axial={:?} host_yields={:?}",
+                    observed.name, observed.x, observed.y, pos, observed.yields
+                );
+            }
             continue;
         };
+        if debug_yields {
+            eprintln!(
+                "[yield-debug] city-map name={} offset=({}, {}) axial={:?} cid={} host_yields={:?}",
+                observed.name, observed.x, observed.y, pos, cid, observed.yields
+            );
+        }
         if let Some(worked) = &observed.worked {
             let positions = worked
                 .iter()
@@ -9421,6 +9434,12 @@ fn apply_observed_city_economy(
     // What remains is a local correction for host rules CIVVIS has not modeled.
     for observed in &state.cities {
         let Some(host) = observed.yields else {
+            if debug_yields {
+                eprintln!(
+                    "[yield-debug] total-yields-missing name={} offset=({}, {})",
+                    observed.name, observed.x, observed.y
+                );
+            }
             continue;
         };
         if ![
@@ -9438,6 +9457,12 @@ fn apply_observed_city_economy(
         }
         let pos = crate::hex::offset_to_axial(observed.x, observed.y);
         let Some(cid) = game.city_at(pos) else {
+            if debug_yields {
+                eprintln!(
+                    "[yield-debug] total-city_at-miss name={} offset=({}, {}) axial={:?} host={:?}",
+                    observed.name, observed.x, observed.y, pos, host
+                );
+            }
             continue;
         };
         let model = game.city_yields_model(cid);
@@ -9449,7 +9474,56 @@ fn apply_observed_city_economy(
             culture: host.culture - model.culture,
             faith: host.faith - model.faith,
         };
+        if debug_yields {
+            eprintln!(
+                "[yield-debug] total-insert name={} cid={} host={:?} model={:?} adjustment={:?}",
+                observed.name, cid, host, model, adjustment
+            );
+        }
         Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(cid, adjustment);
+    }
+}
+
+/// Apply city facts that change the modeled yield total before deriving the
+/// host-to-model correction. In particular, a fresh rebuild initially marks
+/// the first planted city as capital even when the host's current Palace moved
+/// elsewhere, and health/loyalty can change the yield band as well.
+fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot) {
+    let flagged_capitals: std::collections::BTreeSet<usize> = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
+        .filter(|observed| observed.capital)
+        .filter_map(|observed| {
+            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
+                .map(|cid| game.cities[&cid].owner)
+        })
+        .collect();
+    let cities = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
+    for observed in cities {
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else {
+            continue;
+        };
+        if observed.pop > 0 {
+            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
+        }
+        if flagged_capitals.contains(&game.cities[&cid].owner) {
+            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
+        }
+        apply_city_health(game, cid, observed);
+        if observed.loyalty_per_turn.is_finite() {
+            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
+                .insert(cid, observed.loyalty_per_turn);
+        }
+        if observed.defense.is_finite() && observed.defense >= 0.0 {
+            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
+        }
     }
 }
 
@@ -9497,11 +9571,42 @@ fn apply_observed_host_metrics(
             .map(|value| value as usize);
     }
 
+    // Population, current capital ownership, loyalty and pillage state all
+    // feed city_yields_model, so they must be settled before calibration.
+    apply_observed_city_facts(game, state);
     apply_observed_city_economy(game, state, snapshot, unmapped);
+    if std::env::var_os("CIVVIS_DEBUG_YIELD_IMPORT").is_some() {
+        eprintln!(
+            "[yield-debug] post-city-economy adjustments={:?}",
+            game.observed_city_yield_adjustments
+        );
+        for observed in state.cities.iter().filter(|city| city.name == "Arretium") {
+            let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+            if let Some(cid) = game.city_at(pos) {
+                eprintln!(
+                    "[yield-debug] before-derived model={:?} observed={:?}",
+                    game.city_yields_model(cid),
+                    game.city_yields(cid)
+                );
+            }
+        }
+    }
 
     let mut derived = crate::rules::Yields::default();
     for cid in game.player_city_ids(0) {
         derived.add(game.city_yields(cid));
+    }
+    if std::env::var_os("CIVVIS_DEBUG_YIELD_IMPORT").is_some() {
+        for observed in state.cities.iter().filter(|city| city.name == "Arretium") {
+            let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+            if let Some(cid) = game.city_at(pos) {
+                eprintln!(
+                    "[yield-debug] after-derived model={:?} observed={:?}",
+                    game.city_yields_model(cid),
+                    game.city_yields(cid)
+                );
+            }
+        }
     }
     // The empire collects founder-belief income and the Faith for unused
     // Great Person points beside its cities, and every reader of the per-turn
@@ -9547,63 +9652,6 @@ fn apply_observed_host_metrics(
     {
         Arc::make_mut(&mut game.observed_yield_adjustments).insert(0, adjustment);
     }
-    // Which seats the export names a capital for. A record that flags none
-    // (an older export, or a fixture) keeps `place_city`'s own choice rather
-    // than clearing every flag and leaving the seat capital-less.
-    let flagged_capitals: std::collections::BTreeSet<usize> = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
-        .filter(|observed| observed.capital)
-        .filter_map(|observed| {
-            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
-                .map(|cid| game.cities[&cid].owner)
-        })
-        .collect();
-    let cities = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
-    for observed in cities {
-        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
-        let Some(cid) = game.city_at(pos) else {
-            continue;
-        };
-        // Population drives Loyalty pressure in a nine-tile radius. The own-city
-        // rebuild copied it earlier, but visible rival and city-state cities stayed
-        // at `place_city`'s population-one default. In the live Cumae failure that
-        // made population-six Stirling exert one sixth of the pressure Firaxis was
-        // applying, so a forecast built on this otherwise exact board was safe only
-        // because the most important input had been dropped.
-        if observed.pop > 0 {
-            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
-        }
-        // ★★★★ WHERE THE PALACE IS. `place_city` flags the first city it seats
-        // for a player as the capital, so a seat that lost its founding city
-        // kept its Palace on whichever city the export happened to list first.
-        // Measured on run civvis-20260816T040537Z: Rome fell at t79, the host
-        // moved the Palace to Aquileia (`capital: true`), and the model paid it
-        // in Antium instead — Aquileia short 5 Gold, 2 Production, 2 Science
-        // and 1 Culture every turn to the end of the game while Antium was
-        // over by the same, the single largest persistent gap of the run. The
-        // host's `IsCapital` is the current capital, exactly what
-        // `city_has_palace` reads; every mirrored city takes it, rivals and
-        // city-states included, so their Palaces sit where the host's do.
-        if flagged_capitals.contains(&game.cities[&cid].owner) {
-            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
-        }
-        apply_city_health(game, cid, observed);
-        if observed.loyalty_per_turn.is_finite() {
-            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
-                .insert(cid, observed.loyalty_per_turn);
-        }
-        if observed.defense.is_finite() && observed.defense >= 0.0 {
-            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
-        }
-    }
-
     // ★★★★★ THE RIVALS' SEATS LAST, AFTER THEIR CITIES ARE FINISHED.
     //
     // A correction is `host − model`, and the model of a rival city moves
@@ -10234,6 +10282,10 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
             ("player_ages", BOTH, step_player_ages),
             ("host_congress", BOTH, step_host_congress),
+            // Climate changes tile yields, so it must precede the host-to-model
+            // calibration below. Applying it in Finish invalidates city and
+            // empire corrections for flooded worked plots.
+            ("host_climate", BOTH, step_host_climate),
             ("observed_host_metrics", BOTH, step_observed_host_metrics),
             ("loyalty_doomed_sites", BOTH, step_loyalty_doomed_sites),
         ],
@@ -10242,7 +10294,6 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
         HostPhase::Finish,
         &[
             ("player_ages", BOTH, step_player_ages),
-            ("host_climate", BOTH, step_host_climate),
             ("record_host_observed", BOTH, step_record_host_observed),
         ],
     ),
@@ -10272,6 +10323,31 @@ fn run_host_steps(ctx: &mut HostStepCtx<'_>, phase: HostPhase) {
                 eprintln!("[host-step] {:?} {:?} {name}", ctx.mode, phase);
             }
             run(ctx);
+            if std::env::var_os("CIVVIS_DEBUG_YIELD_IMPORT").is_some() {
+                for observed in ctx.state.cities.iter().filter(|city| city.name == "Arretium") {
+                    let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+                    if let Some(cid) = ctx.game.city_at(pos) {
+                        eprintln!(
+                            "[yield-debug] after-step {:?} {:?} {} model={:?} observed={:?} adjustment={:?} center_tile={:?}",
+                            ctx.mode,
+                            phase,
+                            name,
+                            ctx.game.city_yields_model(cid),
+                            ctx.game.city_yields(cid),
+                            ctx.game.observed_city_yield_adjustments.get(&cid),
+                            ctx.game.map.get(pos).map(|tile| {
+                                (
+                                    tile.terrain.as_str(),
+                                    tile.hills,
+                                    tile.pillaged,
+                                    tile.flooded,
+                                    tile.submerged,
+                                )
+                            })
+                        );
+                    }
+                }
+            }
         }
     }
 }
