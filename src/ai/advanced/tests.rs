@@ -14662,13 +14662,29 @@ fn a_tile_is_worth_the_attack_it_opens() {
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     assert!(!ai.strike_opening, "the shipped default must be unchanged");
     assert_eq!(
-        ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None),
+        ai.strike_opening_value(StrikeOpening {
+            g: &game,
+            pid: 0,
+            uid: ours,
+            tile: adjacent,
+            group: &group,
+            enemies: &enemies,
+            visible: None,
+        }),
         0.0,
         "the shipped agent credits nothing"
     );
 
     ai.enable_strike_opening();
-    let in_contact = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+    let in_contact = ai.strike_opening_value(StrikeOpening {
+        g: &game,
+        pid: 0,
+        uid: ours,
+        tile: adjacent,
+        group: &group,
+        enemies: &enemies,
+        visible: None,
+    });
     assert!(
         in_contact > 0.0,
         "a tile that puts the target in reach must be worth something: {in_contact}"
@@ -14682,7 +14698,15 @@ fn a_tile_is_worth_the_attack_it_opens() {
     // A tile out of reach opens nothing.
     let far = anchor_at(&game, home, 1);
     assert_eq!(
-        ai.strike_opening_value(&game, 0, ours, far, &group, &enemies, None),
+        ai.strike_opening_value(StrikeOpening {
+            g: &game,
+            pid: 0,
+            uid: ours,
+            tile: far,
+            group: &group,
+            enemies: &enemies,
+            visible: None,
+        }),
         0.0,
         "a tile the target cannot be struck from is worth nothing"
     );
@@ -14693,7 +14717,15 @@ fn a_tile_is_worth_the_attack_it_opens() {
         ..group.clone()
     };
     assert_eq!(
-        ai.strike_opening_value(&game, 0, ours, adjacent, &holding, &enemies, None),
+        ai.strike_opening_value(StrikeOpening {
+            g: &game,
+            pid: 0,
+            uid: ours,
+            tile: adjacent,
+            group: &holding,
+            enemies: &enemies,
+            visible: None,
+        }),
         0.0,
         "a held group must not be pulled into contact"
     );
@@ -14701,7 +14733,15 @@ fn a_tile_is_worth_the_attack_it_opens() {
     // A wounded defender is worth more than a fresh one, because the odds
     // of the strike are better.
     game.units.get_mut(&theirs).unwrap().hp = 30;
-    let wounded = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+    let wounded = ai.strike_opening_value(StrikeOpening {
+        g: &game,
+        pid: 0,
+        uid: ours,
+        tile: adjacent,
+        group: &group,
+        enemies: &enemies,
+        visible: None,
+    });
     assert!(
         wounded > in_contact,
         "pouncing on a wounded target must score higher: {wounded} vs {in_contact}"

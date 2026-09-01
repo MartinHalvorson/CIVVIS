@@ -963,11 +963,11 @@ fn historic_minor_spawns(
 ) -> Vec<Pos> {
     let mut available: Vec<Pos> = candidates.to_vec();
     let mut starts: Vec<Pos> = Vec::new();
-    for index in 0..count.min(sites.len()) {
+    for home in sites.iter().take(count.min(sites.len())) {
         if available.is_empty() {
             break;
         }
-        let Some(home) = sites[index] else { continue };
+        let Some(home) = home else { continue };
         let target = earth_direction(home.longitude, home.latitude);
         let closest = |pool: &mut dyn Iterator<Item = (usize, &Pos)>| {
             pool.max_by(|(_, a), (_, b)| {
@@ -7583,13 +7583,13 @@ fn assign_continents(wm: &mut WorldMap, land: &BTreeSet<Pos>, requested: usize, 
         primary.push(0);
     }
     let mut primary_land: usize = primary.iter().map(|index| components[*index].len()).sum();
-    for index in 0..components.len() {
+    for (index, component) in components.iter().enumerate() {
         if primary_land >= count || primary.len() >= count {
             break;
         }
         if !primary.contains(&index) {
             primary.push(index);
-            primary_land += components[index].len();
+            primary_land += component.len();
         }
     }
 

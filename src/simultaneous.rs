@@ -218,7 +218,7 @@ struct PlannedSeat {
 }
 
 enum PlanningMessage {
-    Plan(PlanningRequest),
+    Plan(Box<PlanningRequest>),
     Shutdown,
 }
 
@@ -316,7 +316,7 @@ impl<'scope> SeatPlannerPool<'scope> {
                                 mut world,
                                 cancelled,
                                 response,
-                            } = request;
+                            } = *request;
                             let planned = catch_unwind(AssertUnwindSafe(|| {
                                 let mut ai = ais[seat]
                                     .lock()
@@ -373,13 +373,13 @@ impl<'scope> SeatPlannerPool<'scope> {
         let (response, results) = mpsc::channel::<CycleEvent>();
         for (sequence, (seat, world)) in prepared.into_iter().enumerate() {
             self.sender
-                .send(PlanningMessage::Plan(PlanningRequest {
+                .send(PlanningMessage::Plan(Box::new(PlanningRequest {
                     sequence,
                     seat,
                     world,
                     cancelled: Arc::clone(&cancelled),
                     response: response.clone(),
-                }))
+                })))
                 .expect("the simultaneous planning worker fleet stopped unexpectedly");
         }
         drop(response);
@@ -621,13 +621,13 @@ fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<Plannin
                 world.rng = planning_stream(seed, cycle_turn, seat);
                 announced.push(seat);
                 let _ = events.send(CycleEvent::Prepared { seat });
-                let _ = planners.send(PlanningMessage::Plan(PlanningRequest {
+                let _ = planners.send(PlanningMessage::Plan(Box::new(PlanningRequest {
                     sequence,
                     seat,
                     world,
                     cancelled: Arc::clone(&cancelled),
                     response: events.clone(),
-                }));
+                })));
                 sequence += 1;
                 if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
                     break;
