@@ -8899,6 +8899,46 @@ fn recovery_requires_material_local_danger_and_ends_when_it_clears() {
 }
 
 #[test]
+fn imminent_city_attack_triggers_before_the_aggregate_ratio_is_critical() {
+    let mut game = Game::new_full(2, 30, 18, 7_219, 300, 0, false);
+    let city = found_test_city(&mut game, 0);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.turn = 90;
+    game.at_war.insert((0, 1));
+    let city_pos = game.cities[&city].pos;
+    let attack_tile = game
+        .nbrs(city_pos)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("test city needs an accessible attack tile");
+    let horseman = game.spawn_test_unit("horseman", 1, attack_tile);
+    game.spawn_test_unit("archer", 0, city_pos);
+    game.spawn_test_unit("warrior", 0, city_pos);
+
+    let pressure = AdvancedAi::city_pressure(&game, 0, city);
+    assert!(
+        (0.45..0.90).contains(&pressure),
+        "fixture must be dangerous but below the old emergency ratio: {pressure:.3}"
+    );
+    assert!(
+        game.attack_reach(horseman).contains(&city_pos),
+        "the hostile must be able to attack the City Center next turn"
+    );
+    assert_eq!(
+        AdvancedAi::new().threatened_city(&game, 0),
+        Some(city),
+        "an imminent legal city attack must not wait for a second hostile"
+    );
+}
+
+#[test]
 fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
     let (mut game, recent, enemy_city) = timed_war_fixture(7_220);
     let quiet = game

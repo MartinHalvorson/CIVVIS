@@ -104,6 +104,32 @@ impl AdvancedAi {
                 .sum::<f64>()
     }
 
+    /// Whether a visible hostile can actually strike the City Center on its
+    /// next fresh turn.  A radius-only check is too broad around terrain and
+    /// zone-of-control bottlenecks, while `attack_reach` is the simulator's
+    /// own terrain- and movement-accurate envelope.  The caller supplies the
+    /// same turn-start visibility used for live pressure so an enemy revealed
+    /// by a later action cannot retroactively rewrite this plan.
+    pub(super) fn imminent_city_attack(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        g.units.values().any(|unit| {
+            unit.owner != pid
+                && g.is_at_war(pid, unit.owner)
+                && g.wdist(city.pos, unit.pos) <= THREAT_RELIEF_RADIUS
+                && g.sees(visible, unit.pos)
+                && g.unit_visible_to(unit.id, pid)
+                && g.rules.units[unit.kind].class == "military"
+                && g.attack_reach(unit.id).contains(&city.pos)
+        })
+    }
+
     /// The stock pressure calculation sees only live contacts. The evaluator
     /// arm adds an independently auditable, decayed memory term after that
     /// calculation, so visible sightings cannot be counted twice.
