@@ -1768,6 +1768,42 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "border-parity-2", field: "border_parity_2", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_2, disable: AdvancedAi::disable_border_parity_2 },
     Gene { tag: "first-district-first", field: "first_district_first", kind: Kind::OptIn, enable: AdvancedAi::enable_first_district_first, disable: AdvancedAi::disable_first_district_first },
     Gene { tag: "walls-after-districts", field: "walls_after_districts", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_after_districts, disable: AdvancedAi::disable_walls_after_districts },
+    // ⚠ THE HOSTILE LIST IS VISIBLE-ONLY AND THE SETTLERS DIE TO WHAT IS NOT
+    // ON IT. Twenty-eight real settler losses over eleven live King runs
+    // (2026-08-29): TEN walked into a hostile with none visible within three
+    // tiles on the previous turn's state, eight were captured while parked
+    // waiting for a guard, six moved inside a visible hostile's reach
+    // unescorted, two were zone-of-control pinned, and TWO were taken by Free
+    // Cities units (player 62), which `barbarian_reach` ignored outright
+    // because it early-returned on `g.barb_pid` and skipped every unit whose
+    // owner was not the Barbarian player. The envelope now counts every
+    // at-war owner, and keeps pricing a hostile it has actually seen for
+    // `HOSTILE_MEMORY_TURNS` after it walks back into the fog — projected
+    // with `wdisk` from the last seen tile, padded by the turns since, never
+    // from where the unit really is. See `advanced/civilian_safety.rs`.
+    Gene { tag: "hostile-memory", field: "hostile_memory", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory, disable: AdvancedAi::disable_hostile_memory },
+    // The other half of the same twenty-eight: eight settlers were captured
+    // while PARKED waiting for a guard. `stacked_escort_pace` bounds that
+    // wait at `STACKED_ESCORT_PATIENCE` = 2 turns and then suspends the bound
+    // whenever `unstacked_settler_step_is_capturable` is true — the one
+    // predicate in the wait that reads the visible frame alone, which in the
+    // opening is the weather rather than the exception. Its fallback then
+    // fortifies a settler bare on open ground on `risk > 0.0`, so a zero
+    // reading (nothing VISIBLE can reach it) is treated as quiet ground when
+    // it is just as often an empty vision frame — the march itself prices the
+    // same step against `SETTLER_STEP_RISK_LIMIT` = 30. With the gene on the
+    // cap releases on schedule and an unstacked settler already outside its
+    // own city marches instead of standing still.
+    // ⚠ OptIn rather than HostOnly, unlike `escort-patience-runs-out` above,
+    // because the operator arms it as a labelled live arm (`--with`, which
+    // only a held-off opt-in or a ledger-held live treatment can seat) rather
+    // than shipping it on with the live universe. The path it sits in is
+    // still gated by `formationless_settler_escort()` ->
+    // `live_formationless_settler_shadow`, so a native screen cannot price it
+    // and it carries a fire waiver saying exactly that; the live ladder
+    // measures it directly, and the abandon rule it targets fires on 45% of
+    // King games.
+    Gene { tag: "escort-cap-holds", field: "escort_cap_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_escort_cap_holds, disable: AdvancedAi::disable_escort_cap_holds },
     Gene { tag: "first-luxury-first", field: "first_luxury_first", kind: Kind::OptIn, enable: AdvancedAi::enable_first_luxury_first, disable: AdvancedAi::disable_first_luxury_first },
 ];
 

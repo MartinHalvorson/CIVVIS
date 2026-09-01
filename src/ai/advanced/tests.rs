@@ -38298,6 +38298,254 @@ fn walls_wait_for_the_first_district_under_the_gene() {
     assert!(!ai.walls_after_districts);
 }
 
+// ---------------------------------------------------------------------------
+// Settler safety: what the live King seat's twenty-eight captures say.
+//
+// Eleven live King runs, 2026-08-29, twenty-eight real settler losses — one in
+// three of every settler built. Classified: TEN walked into a hostile with
+// none visible within three tiles on the previous turn's state, EIGHT were
+// captured while parked waiting for a guard, six moved inside a visible
+// hostile's reach unescorted, two were zone-of-control pinned, and TWO were
+// taken by Free Cities units (player 62). Median settler age at loss: ten
+// turns. Two opt-in genes answer the first, last and second groups.
+// ---------------------------------------------------------------------------
+
+/// `hostile-memory`: the capture envelope counts every at-war owner, and keeps
+/// pricing a hostile the seat has actually seen for a few turns after it walks
+/// back into the fog — from the tile it was last seen on, never from where it
+/// really is.
+#[test]
+fn a_settler_prices_the_raider_it_saw_and_the_owner_that_is_not_a_barbarian() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "hostile_memory"
+            && gene.tag == "hostile-memory"),
+        "the gene is registered as an opt-in"
+    );
+    let (mut game, _city, home) = barbarian_field(71_701);
+    game.turn = 20;
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    // Where the seat SAW it: one tile off the settler, inside a Warrior's
+    // one-turn reach of the settler's own tile.
+    let seen_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("open ground beside the settler");
+    // Where it stands NOW: far enough that nothing of ours can see it, so
+    // every arm agrees it is not a visible raider.
+    let hidden_at = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            game.wdist(*pos, start) >= 12 && game.wdist(*pos, home) >= 12 && open_land(&game, *pos)
+        })
+        .min()
+        .expect("open ground well outside the empire's sight");
+    let raider = game.spawn_test_unit("warrior", 1, hidden_at);
+
+    let mut shipped = AdvancedAi::new();
+    shipped.enable_civilian_out_of_reach();
+    assert!(
+        !shipped
+            .barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS)
+            .covers(&game, start),
+        "a raider nothing of ours can see is not in the shipped envelope"
+    );
+
+    let mut remembering = AdvancedAi::new();
+    remembering.enable_civilian_out_of_reach();
+    remembering.enable_hostile_memory();
+    assert!(
+        !remembering
+            .barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS)
+            .covers(&game, start),
+        "and it is not in the widened one either until the seat has seen it: \
+         the gene remembers sightings, it does not read the fog"
+    );
+
+    // The observation the seat makes before it has moved anything is where the
+    // memory comes from. Put the raider in plain sight for that one call.
+    let watched = game.spawn_test_unit("warrior", 1, seen_at);
+    remembering.observe_turn_start_hostiles(&game, 0);
+    assert_eq!(
+        remembering.hostile_last_seen.get(&watched),
+        Some(&(seen_at, game.turn)),
+        "the turn-start observation records what the seat could see, and where"
+    );
+    game.remove_unit(watched);
+
+    // Now the remembered fact, one turn old, standing in for the unit that
+    // walked out of sight: the tile the settler is on is still priced.
+    remembering
+        .hostile_last_seen
+        .insert(raider, (seen_at, game.turn - 1));
+    assert!(
+        remembering
+            .barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS)
+            .covers(&game, start),
+        "a raider seen beside the settler last turn still covers its tile"
+    );
+    assert!(
+        !shipped
+            .barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS)
+            .covers(&game, start),
+        "and with the gene off the same board reads exactly as it shipped"
+    );
+
+    // The window closes. A sighting older than `HOSTILE_MEMORY_TURNS` is a
+    // rumour, not a threat: by then the settler has usually walked past it.
+    remembering.hostile_last_seen.insert(
+        raider,
+        (
+            seen_at,
+            game.turn - civilian_safety::HOSTILE_MEMORY_TURNS - 1,
+        ),
+    );
+    assert!(
+        !remembering
+            .barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS)
+            .covers(&game, start),
+        "a sighting older than the memory window is forgotten"
+    );
+
+    // The other half: an at-war owner that is not the Barbarian player at all.
+    // `resolve_entered_units` has never asked who owns the unit that steps onto
+    // a civilian, and two of the twenty-eight were Free Cities captures.
+    game.players[1].is_barbarian = false;
+    game.barb_pid = None;
+    let neighbour = game.spawn_test_unit("warrior", 1, seen_at);
+    assert!(
+        shipped
+            .barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS)
+            .is_empty(),
+        "the shipped envelope early-returns on `barb_pid` and models no other owner"
+    );
+    let widened = remembering.barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS);
+    assert!(
+        widened.covers(&game, start),
+        "a visible at-war major beside the settler takes it exactly as a raider does"
+    );
+    assert_eq!(
+        widened.nearest(&game, start),
+        game.wdist(seen_at, start),
+        "and it is measured from where that unit stands"
+    );
+    let _ = neighbour;
+    let _ = settler;
+}
+
+/// `escort-cap-holds`: the two-turn escort cap releases on schedule instead of
+/// being suspended by the one predicate in the wait that reads only the
+/// visible frame, and a settler already outside its own city with nothing on
+/// its tile marches on a zero risk reading rather than fortifying bare.
+#[test]
+fn a_settler_stops_standing_still_for_a_guard_it_cannot_see_a_reason_to_wait_for() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "escort_cap_holds"
+            && gene.tag == "escort-cap-holds"),
+        "the gene is registered as an opt-in"
+    );
+    // The same geometry `a_settler_stops_waiting_for_a_guard_that_is_not_coming`
+    // uses, because it is the state the opening actually sits in: the settler
+    // is safe where it stands (nothing visible can reach its own tile), its
+    // guard is several tiles behind, and a visible hostile covers its next
+    // route step — which is what suspends the shipped cap indefinitely.
+    let held = |waited: u8, gene: bool| {
+        let (mut game, _capital, home) = empire_with_a_capital(71_711);
+        game.turn = 20;
+        let ring: Vec<Pos> = {
+            let mut r: Vec<Pos> = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|p| game.wdist(*p, home) == 3 && !game.rules.is_water(&game.map.tiles[p]))
+                .collect();
+            r.sort_unstable();
+            r
+        };
+        let source = ring[0];
+        let settler = game.spawn_test_unit("settler", 0, source);
+        let guard_pos = ring[ring.len() / 2];
+        let guard = game.spawn_test_unit("warrior", 0, guard_pos);
+        game.units.get_mut(&guard).unwrap().moves_left = 0.0;
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let mut far: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|p| game.wdist(*p, source) == 5 && !game.rules.is_water(&game.map.tiles[p]))
+            .collect();
+        far.sort_unstable();
+        let target = far[0];
+        let next = game
+            .route_step(settler, target, 0)
+            .expect("the fixture's settler must have a route to walk");
+        let mut ambush: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|p| {
+                game.wdist(*p, next) == 2
+                    && game.wdist(*p, source) == 3
+                    && !game.rules.is_water(&game.map.tiles[p])
+            })
+            .collect();
+        ambush.sort_unstable();
+        let raider = game.spawn_test_unit("warrior", 1, ambush[0]);
+        game.units.get_mut(&raider).unwrap().moves_left = 2.0;
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_formationless_settler_shadow();
+        if gene {
+            ai.enable_escort_cap_holds();
+        }
+        ai.settler_targets.insert(settler, target);
+        ai.settler_guards.insert(settler, guard);
+        ai.guard_wait
+            .insert(settler, (game.turn - 1, waited.saturating_sub(1)));
+        ai.stacked_escort_pace(&mut game, 0, settler).is_some()
+    };
+
+    // Past the shipped two-turn patience, with a visible hostile on the next
+    // step: the shipped bound is suspended and the settler stands there. Eight
+    // of the twenty-eight losses of 2026-08-29 happened in exactly this
+    // posture. The gene releases the cap on schedule.
+    assert!(
+        held(STACKED_ESCORT_PATIENCE + 1, false),
+        "shipped, a visibly capturable next step suspends the two-turn cap"
+    );
+    assert!(
+        !held(STACKED_ESCORT_PATIENCE + 1, true),
+        "with the gene the cap releases and the settler is handed to the march"
+    );
+
+    // Inside the patience, the second half: nothing visible can reach the
+    // settler's own tile (`risk == 0.0`), and its guard is far enough back that
+    // the adjacent-guard release does not fire, so the shipped path fortifies
+    // it bare on open ground outside any city. A zero reading is an empty
+    // vision frame at least as often as it is quiet ground — ten of the
+    // twenty-eight had no hostile visible at all the turn before.
+    assert!(
+        held(1, false),
+        "shipped, an unstacked settler with its guard far behind stands still"
+    );
+    assert!(
+        !held(1, true),
+        "with the gene it marches, and the route step is still priced against \
+         SETTLER_STEP_RISK_LIMIT rather than against zero"
+    );
 /// `first-luxury-first`: 46% of King city-turns are Amenity-short (11 games,
 /// 7,071 city-turns, 2026-08-29) and 93.4% of that deficit sits on a luxury
 /// the empire already OWNS and never improved — 47% of owned luxury tiles
