@@ -8777,7 +8777,19 @@ impl AdvancedAi {
                 // reserved for a locally competitive force or a damaged city
                 // whose remaining defenders cannot safely absorb another hit.
                 let fresh_damage = recently_hit && damaged;
-                let critical = danger >= 0.90 || (danger >= 0.45 && (breached || fresh_damage));
+                // A lone fast unit can be below the aggregate 0.90 ratio and
+                // still take the City Center's attack ring this turn. Civ VI
+                // resolves that movement before the next defensive turn, so
+                // waiting for a second attacker is one turn too late. Keep
+                // the existing 0.45 floor to avoid promoting a weak outer
+                // contact to an empire-wide recall, but let the simulator's
+                // exact attack envelope supply the missing urgency signal.
+                let imminent_attack = self.battlefront_observation
+                    && danger >= BASTION_PRESSURE
+                    && Self::imminent_city_attack(g, pid, cid, &visible);
+                let critical = danger >= 0.90
+                    || (danger >= BASTION_PRESSURE
+                        && (breached || fresh_damage || imminent_attack));
                 let priority = danger
                     + if fresh_damage {
                         FRESH_CITY_DAMAGE_PRIORITY
