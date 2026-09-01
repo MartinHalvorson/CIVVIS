@@ -2544,6 +2544,38 @@ fn policy_deck_order(game: &civvis::game::Game, pid: usize) -> Order {
     }
 }
 
+/// Cards in a speculative deck which Civilization VI cannot accept yet.
+///
+/// `Ai::take_turn` advances a throwaway board through a complete CIVVIS turn.
+/// That can finish the active civic on `planned_game` and make the next civic's
+/// cards look unlocked even though the authoritative mirror is still on the
+/// previous host export.  The control mod checks `IsPolicyUnlocked` at the
+/// moment it receives the order, so sending that deck creates a refusal loop
+/// until the next export catches up.  Cards already slotted, or available on
+/// the authoritative board, are legal; anything else must wait for that export.
+fn policy_deck_cards_not_currently_legal(
+    planned_game: &civvis::game::Game,
+    authoritative_game: &civvis::game::Game,
+    pid: usize,
+) -> Vec<String> {
+    let Some(planned_player) = planned_game.players.get(pid) else {
+        return Vec::new();
+    };
+    let Some(authoritative_player) = authoritative_game.players.get(pid) else {
+        return Vec::new();
+    };
+    let available = authoritative_game.available_policies(pid);
+    planned_player
+        .policies
+        .iter()
+        .filter(|policy| {
+            !authoritative_player.policies.contains(*policy)
+                && !available.iter().any(|candidate| candidate == *policy)
+        })
+        .map(|policy| format!("POLICY_{}", policy.as_str().to_ascii_uppercase()))
+        .collect()
+}
+
 impl Order {
     fn to_json(&self) -> String {
         let mut parts = vec![format!("\"kind\":{}", quote(self.kind))];
@@ -3551,7 +3583,15 @@ fn decide(
         }
     }
     if policy_changed {
-        orders.push(policy_deck_order(&planned_game, 0));
+        let deferred = policy_deck_cards_not_currently_legal(&planned_game, &mirror_state.game, 0);
+        if deferred.is_empty() {
+            orders.push(policy_deck_order(&planned_game, 0));
+        } else {
+            note_bits.push(format!(
+                "policy_deck_deferred_future_unlocks={}",
+                deferred.join(",")
+            ));
+        }
     }
 
     let production_hints =
@@ -13470,6 +13510,37 @@ mod tests {
             order.verb.as_deref(),
             Some("POLICY_AGOGE,POLICY_URBAN_PLANNING")
         );
+    }
+
+    #[test]
+    fn policy_deck_waits_for_cards_unlocked_by_the_authoritative_civic() {
+        let mut authoritative = civvis::game::Game::new(2, 12, 12, 1, 50, 0);
+        authoritative.players[0]
+            .policies
+            .insert(civvis::name!("urban_planning"));
+        let mut planned = authoritative.clone();
+        planned.players[0]
+            .policies
+            .insert(civvis::name!("new_deal"));
+
+        assert_eq!(
+            policy_deck_cards_not_currently_legal(&planned, &authoritative, 0),
+            vec!["POLICY_NEW_DEAL".to_string()]
+        );
+
+        // Once the host export reports Suffrage, the same speculative deck is
+        // legal and should cross on the next decision instead of being lost.
+        authoritative.players[0]
+            .civics
+            .insert(civvis::name!("suffrage"));
+        assert!(policy_deck_cards_not_currently_legal(&planned, &authoritative, 0).is_empty());
+
+        // Existing cards remain legal even when the mirror has not learned the
+        // civic that originally unlocked them.
+        planned.players[0]
+            .policies
+            .remove(&civvis::name!("new_deal"));
+        assert!(policy_deck_cards_not_currently_legal(&planned, &authoritative, 0).is_empty());
     }
 
     #[test]
