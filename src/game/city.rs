@@ -3782,8 +3782,40 @@ impl Game {
                     .copied()
                     .unwrap_or(0.0);
             }
-            yields.add(self.building_modifier_yields(city, b));
+            let modifier_yields = self.building_modifier_yields(city, b);
+            yields.add(modifier_yields);
+            if !apply_observation
+                && city.name == "Rome"
+                && std::env::var_os("CIVVIS_DEBUG_CITY_YIELDS").is_some()
+            {
+                eprintln!(
+                    "city-building-debug turn={} building={} raw={:?} powered={} modifier={:?} final={:?}",
+                    self.turn,
+                    b,
+                    building.yields,
+                    self.city_is_powered(city),
+                    modifier_yields,
+                    yields,
+                );
+            }
             ys.add(yields);
+        }
+        if !apply_observation
+            && city.name == "Rome"
+            && std::env::var_os("CIVVIS_DEBUG_CITY_YIELDS").is_some()
+        {
+            eprintln!(
+                "city-yield-pre-percent turn={} ys={:?} specialist_jobs={:?} district_yields={:?}",
+                self.turn,
+                ys,
+                self.city_specialist_jobs(city),
+                city.districts
+                    .iter()
+                    .map(|(district, position)| {
+                        (district, self.district_yields(district, *position))
+                    })
+                    .collect::<Vec<_>>(),
+            );
         }
         ys.add(self.regional_building_effects(city).0);
         for wonder in city.wonders.keys() {
@@ -4732,6 +4764,31 @@ impl Game {
         ys.science = apply(ys.science, pct.science);
         ys.culture = apply(ys.culture, pct.culture);
         ys.faith = apply(ys.faith, pct.faith);
+        if !apply_observation
+            && city.name == "Rome"
+            && std::env::var_os("CIVVIS_DEBUG_CITY_YIELDS").is_some()
+        {
+            eprintln!(
+                "city-yield-debug turn={} cid={} pop={} policies={:?} governors={:?} active={} established={} governor_science_pct={} governor_science_per_pop={} policy_building_pct={} policy_adjacency_pct={} power_demand={} power_supply={} powered={} counters={:?} pct={:?} model={:?}",
+                self.turn,
+                city.id,
+                city.pop,
+                self.players[city.owner].policies,
+                self.players[city.owner].governors,
+                self.city_governor_active(city.owner, city.id),
+                self.city_has_established_governor(city.owner, city.id),
+                self.governor_effect(city.owner, city.id, "science_pct"),
+                self.governor_effect(city.owner, city.id, "science_per_pop"),
+                self.policy_effect(city.owner, "campus_building_science_pct"),
+                self.policy_effect(city.owner, "campus_adjacency_pct"),
+                self.city_power_demand(city),
+                self.city_power_supply(city),
+                self.city_is_powered(city),
+                self.players[city.owner].counters,
+                pct,
+                ys,
+            );
+        }
         if apply_observation {
             if let Some(adjustment) = self.observed_city_yield_adjustments.get(&cid) {
                 ys.add(*adjustment);
