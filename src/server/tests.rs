@@ -12949,6 +12949,28 @@ fn every_viewer_engine_request_is_served_by_both_runtimes_and_the_shim() {
     }
 }
 
+/// The reasoning journal reaches both builds. `ai_reasoning` is attached in
+/// each lane's own `/state` arm, outside `decorate`, so the parity test
+/// below cannot see it drift — and it did drift: the strategy panel's
+/// decision factors were permanently empty on civvis.ai for as long as the
+/// feature existed, in exactly the silent #1301 shape, because only the
+/// socket lane ever parsed `&think=`.
+#[test]
+fn the_reasoning_feed_reaches_the_browser_build() {
+    let native = include_str!("../server.rs");
+    let browser = include_str!("../wasm.rs");
+    for source in [native, browser] {
+        assert!(
+            source.contains("query_value(") && source.contains("\"think\""),
+            "a /state lane no longer parses the reasoning cursor"
+        );
+    }
+    assert!(native.contains("observed[\"ai_reasoning\"] = session.reasoning_json(cursor);"));
+    assert!(browser.contains(
+        "o[\"ai_reasoning\"] = session.reasoning_json(cursor.parse::<u64>().unwrap_or(0));"
+    ));
+}
+
 /// Every field `decorate` attaches to `/state` is either mirrored by the
 /// browser build's `decorate_browser` or on the deliberate list below
 /// with the reason it is not. The failure this exists for is silent by
