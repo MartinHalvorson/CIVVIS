@@ -5066,6 +5066,11 @@ pub struct AdvancedAi {
     /// empire's Amenity deficit. Zero-valued with the gene off, because
     /// nothing asks for it. See `advanced/first_luxury.rs`.
     first_luxury_frame: RefCell<first_luxury::AmenityDeficitFrame>,
+    /// The one-city capital that existed when an early live Settler first
+    /// appeared. Unlike recomputing the nearest city, this keeps the second
+    /// Settler's home anchor stable after another Settler founds a city while
+    /// it is still walking. Unit-keyed and remapped with the live bridge.
+    early_settler_homes: BTreeMap<u32, Pos>,
     // ---- append: g-k ------------------------------------------------
     /// `hostile-memory`: the civilian capture envelope counts every at-war
     /// owner (barbarians, Free Cities and a major at war alike) and keeps
@@ -5508,11 +5513,6 @@ pub struct AdvancedAi {
     /// leaves the board can be told from one that founded. Recorded only
     /// under `live_settler_capture_lessons`.
     settler_last_seen: BTreeMap<u32, Pos>,
-    /// The one-city capital that existed when an early live Settler first
-    /// appeared. Unlike recomputing the nearest city, this keeps the second
-    /// Settler's home anchor stable after another Settler founds a city while
-    /// it is still walking. Unit-keyed and remapped with the live bridge.
-    early_settler_homes: BTreeMap<u32, Pos>,
     /// The turn a guard was summoned onto each settler's tile, so the pair
     /// does not march on in the same turn: on the live seat the guard's
     /// second order that turn never lands (run civvis-20260829T040648Z t43).
@@ -6992,6 +6992,7 @@ impl AdvancedAi {
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
             first_luxury_first: false,
             first_luxury_frame: RefCell::new(first_luxury::AmenityDeficitFrame::default()),
+            early_settler_homes: BTreeMap::new(),
 
             // ---- append: g-k ----------------------------------------
             hostile_memory: false,
@@ -7042,7 +7043,6 @@ impl AdvancedAi {
             science_opening_band: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
-            early_settler_homes: BTreeMap::new(),
             summoned_guard_turn: BTreeMap::new(),
             settler_vanished: Vec::new(),
             settler_capture_scars: BTreeMap::new(),
