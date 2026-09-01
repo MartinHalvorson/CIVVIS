@@ -159,6 +159,15 @@ class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
         records = [r for t in range(100, 130) for r in self._behind(t)]
         self.assertFalse(census.restart_reading(records, 0.0, {})["fired"])
 
+    def test_an_explicit_science_summary_is_not_stopped_for_a_score_gap(self):
+        floor = census.civ6_play.LEADER_SCORE_MIN_TURN
+        reading = census.restart_reading(
+            self._behind(floor), census.RESTART_RATIO,
+            {"victory_target": "science"},
+        )
+        self.assertFalse(reading["score_stop_allowed"])
+        self.assertFalse(reading["fired"])
+
     def test_the_outcome_comes_from_the_summary_not_the_stream(self):
         records = [r for t in range(100, 110) for r in self._behind(t)]
         rival_won = {"outcome": {"kind": "victory", "won": False},

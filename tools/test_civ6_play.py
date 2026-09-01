@@ -2129,6 +2129,17 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.60)
         self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 150)
 
+    def test_targeted_science_is_not_abandoned_for_a_score_gap(self):
+        self.assertFalse(civ6_play.leader_score_stop_allowed(
+            civvis_decides=True, victory_target="science"))
+
+    def test_adaptive_and_other_targeted_lanes_keep_the_score_stop(self):
+        for decides, target in ((False, "science"), (True, "civvis"),
+                                (True, "culture"), (True, None)):
+            with self.subTest(decides=decides, target=target):
+                self.assertTrue(civ6_play.leader_score_stop_allowed(
+                    civvis_decides=decides, victory_target=target))
+
     def test_one_reading_under_the_line_immediately_abandons_with_the_standing(self):
         state = {}
         verdict = civ6_play.below_leader_score_reading(
@@ -2210,6 +2221,8 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("below_leader_score_reading(\n"
                       "            state, event, args.restart_below_leader_ratio", source)
+        self.assertIn("leader_score_stop_allowed(\n"
+                      "            civvis_decides=args.civvis_decides", source)
         self.assertIn('"--restart-below-leader-ratio"', source)
         self.assertIn("default=DEFAULT_LEADER_SCORE_RATIO", source)
         self.assertIn('"abandoned": state.get("abandoned"),', source)
