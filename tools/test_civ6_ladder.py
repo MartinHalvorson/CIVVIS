@@ -1394,7 +1394,9 @@ class LatestCodeGuarantee(LedgerCase):
         self.assertEqual(
             civ6_ladder.decider_genome(why),
             {"strategy": "stock", "source": "AdvancedAi::new", "lane": None,
-             "civ": None, "strength_bound": None})
+             "civ": None, "strength_bound": None,
+             # The played lists ride along; this old record carries only one.
+             "treatments": ["a", "b"], "ledger_withheld": None, "forced": None})
         resolved = self.runs / "why2.log"
         resolved.write_text(
             '{"civ":"Rome","kind":"genome","lane":null,"source":"data/league",'
