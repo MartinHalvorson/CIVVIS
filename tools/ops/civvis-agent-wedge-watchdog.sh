@@ -158,6 +158,17 @@ player_uses_tag() {
 # turn, short enough that a game which is truly gone is not held open: the
 # strikes that got here already cost five minutes.
 NUDGE_SETTLE_S=${CIVVIS_WEDGE_NUDGE_SETTLE_S:-25}
+# ⚠⚠ THE HANDOFF IS WRITTEN DOWN, NOT INFERRED FROM A CLOCK. The climb used to
+# recognise a handoff only by the player exiting with its turn stale past
+# 240 s — the five no-progress samples above. The unit-blocker streak below
+# needs no such wait: the mod re-raises the blocker every few seconds, so six
+# sightings arrive inside two minutes, and on 2026-08-31 the climb read that
+# handoff (`civvis-20260831T085324Z-cont1`, t120, 19 sightings) as an ordinary
+# exit and filed the game as killed with two resumes unspent. So the handoff
+# branch writes this file into the run directory BEFORE it signals the player,
+# and `civ6_civvis_climb.py` (`WEDGE_HANDOFF_MARKER`) treats its presence as
+# "frozen" whatever the clock says. Same name on both sides, pinned by a test.
+HANDOFF_MARKER=${CIVVIS_WEDGE_HANDOFF_MARKER:-wedge-handoff.json}
 
 # ⚠⚠ ONE FORCED END TURN, TRIED BEFORE THE KILL, because most games die here.
 #
@@ -236,6 +247,15 @@ restart_attempt() {
     handoff_tag="$tag"
     handoff_climb="$climb"
     handoff_polls=0
+    if [[ -d "$RUNS/$tag" ]]; then
+      if printf '{"tag":"%s","turn":%s,"reason":"%s","utc":"%s"}\n' \
+          "$tag" "$turn" "${reason//\"/}" "$(date -u +%FT%TZ)" \
+          > "$RUNS/$tag/$HANDOFF_MARKER" 2>/dev/null; then
+        say "  wrote $tag/$HANDOFF_MARKER so the climb reloads rather than files it"
+      else
+        say "  could not write $tag/$HANDOFF_MARKER; the climb has only the clock"
+      fi
+    fi
     player_uses_tag "$play" "$tag" \
       && kill -INT "$play" 2>/dev/null && say "  INT civ6_play $play"
     return 0

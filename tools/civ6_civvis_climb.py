@@ -1325,6 +1325,28 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
             # Seven `-contN` runs exist, all from 08-17..19; NONE since the
             # watchdog began signalling, which is exactly the window in which
             # parked cores became the dominant way a run dies.
+            # ⚠⚠ AND THE WATCHDOG SAYS SO IN WRITING, BECAUSE ITS CLOCK IS NOT
+            # THIS ONE. The stale-turn test below assumes the handoff arrives
+            # after five one-minute no-progress samples. Its OTHER trigger — a
+            # unit blocker repeated on one turn — needs no such wait: the mod
+            # re-raises the blocker every few seconds, so six sightings arrive
+            # inside two minutes. Run `civvis-20260831T085324Z-cont1` reloaded
+            # AutoSave_0119, re-wedged at t120 on ENDTURN_BLOCKING_UNITS, and
+            # was handed over at 09:44:13 — two minutes after its first turn.
+            # The turn was stale for well under 240 s, this read "exited", and
+            # the game was filed as killed at t120 with two resumes unspent.
+            # The watchdog writes `WEDGE_HANDOFF_MARKER` into the run before it
+            # signals the player, whichever trigger fired; that is the signal,
+            # and the clock is only the fallback for a watchdog too old to
+            # write it.
+            handoff = wedge_handoff(tag)
+            if handoff is not None:
+                print(f"[watchdog] the wedge watchdog handed {tag} over at turn "
+                      f"{handoff.get('turn', last_turn)} "
+                      f"({handoff.get('reason') or 'no reason recorded'}); "
+                      f"treating the attempt as frozen so its autosave can be "
+                      f"reloaded", flush=True)
+                return "frozen"
             if (last_turn is not None
                     and time.time() - last_turn_at > EXIT_WHILE_STALE_S):
                 print(f"[watchdog] the player exited with turn {last_turn} "
@@ -1416,6 +1438,31 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 # over five one-minute samples, so anything past four minutes of no new turn is
 # its signal arriving, not a game ending on its own.
 EXIT_WHILE_STALE_S = 240.0
+
+#: The file `civvis-agent-wedge-watchdog.sh` writes into a run's directory the
+#: moment it hands that run to the climb for an autosave reload — BEFORE it
+#: signals the player, so the climb finds it however quickly the player exits.
+#: The name is pinned on both sides by `test_ops_wedge_watchdog.py`.
+WEDGE_HANDOFF_MARKER = "wedge-handoff.json"
+
+
+def wedge_handoff(tag: str) -> dict | None:
+    """What the wedge watchdog wrote when it handed this run over, or None.
+
+    Existence is the signal. The body — turn, reason, time — is for the log and
+    the forensics; a marker this cannot parse still hands the run over, because
+    the watchdog only ever writes it on the reload branch.
+    """
+    marker = RUN_ROOT / tag / WEDGE_HANDOFF_MARKER
+    try:
+        raw = marker.read_text()
+    except OSError:
+        return None
+    try:
+        detail = json.loads(raw)
+    except ValueError:
+        return {}
+    return detail if isinstance(detail, dict) else {}
 
 
 # A game frozen before this turn is redone from scratch faster than it is
