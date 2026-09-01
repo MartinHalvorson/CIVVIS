@@ -4709,6 +4709,35 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `campus-through-expansion`: a Science seat prices the Campus and its
+    /// buildings in the Science lane while its plan still reads Expansion,
+    /// and no city's first specialty district may be an Entertainment
+    /// Complex.
+    ///
+    /// MEASURED on the live Emperor seat, 2026-09-01: with
+    /// `science-expansion-phase` on, the plan reads Expansion until the
+    /// land grab is done, and under Expansion the Campus has no strategic
+    /// arm at all (`strategic_family` falls to zero) while a beaker weighs
+    /// 1.2 instead of 4.2 — a two-Science Campus plot prices at 144 against
+    /// 504. The queue went instead to the first Government Plaza (420),
+    /// the Ancestral Hall (up to +1,200), walls (+320 under threat), the
+    /// wall-repair project (a 900 floor) and an Entertainment Complex
+    /// credited its unbuilt Arena (+135 to +188): game 20260901T175154Z
+    /// held four cities and ZERO districts at turn 64, its fourth city's
+    /// first build a fifteen-turn Entertainment Complex at population one,
+    /// while the best game of the rung had four Campuses by turn 60 and
+    /// spent 35 % of its opening production on Campus and Library.
+    ///
+    /// With this on, `campus_pricing_lane` hands the Campus family (the
+    /// district, its adjacency threshold, its citizen yields, and its
+    /// Library/University/Lab) the Science lane's weights and the Science
+    /// `(Science, "campus") => 170` arm whenever the seat's victory target
+    /// is Science and the plan reads Expansion; `campus_first_veto` prices
+    /// an Entertainment Complex at −10,000 in any city of that seat that
+    /// holds no specialty district yet, and the widespread-Amenity crisis
+    /// path skips such cities. Every other family, lane and seat is
+    /// untouched. Opt-in gene `campus-through-expansion`.
+    campus_through_expansion: bool,
     /// `district-planning-2`: the plan's own tile buy competes out of the
     /// treasury reserve (never spending below half of it) instead of
     /// waiting for 200 Gold of surplus headroom, and the purchase bars
@@ -5125,6 +5154,31 @@ pub struct AdvancedAi {
     /// it is still walking. Unit-keyed and remapped with the live bridge.
     early_settler_homes: BTreeMap<u32, Pos>,
     // ---- append: g-k ------------------------------------------------
+    /// `industrial-chain-debt`: an Industrial Zone owes its Workshop,
+    /// Factory and power plant the same flat debt a Campus owes its
+    /// Library, and a regional building is worth the production it reaches.
+    ///
+    /// MEASURED on the live Emperor seat, 2026-09-01, game 20260901T132005Z:
+    /// nine Industrial Zones stood at turn 216 with four Workshops, ONE
+    /// Factory and no power plant, while the Campus chain in the same
+    /// empire ran 13 Campuses, 11 Libraries, 11 Universities. The Campus
+    /// chain is owed `RESEARCH_BUILDING_DEBT` per building; the Industrial
+    /// chain is owed nothing outside the single science-drive launch city,
+    /// a Workshop or Factory prices at 252 (three production at the lane
+    /// weight) and loses to Campus Research Grants at 60–177 a turn, and the
+    /// Factory's `regional_range` — production for every own city within
+    /// six tiles, which the engine models — was priced nowhere. The seat
+    /// entered the space race and its wars with the production base of a
+    /// six-city empire.
+    ///
+    /// With this on, a building of the Industrial Zone family in a city
+    /// holding one earns `INDUSTRIAL_BUILDING_DEBT` scaled by the building
+    /// chain horizon, plus `regional_production_reach` for the own cities
+    /// its range covers that no standing copy already reaches; the Factory
+    /// and the plants join the buildings a repeatable project waits behind
+    /// (`buildings_before_projects`). Zero with the gene off. Opt-in gene
+    /// `industrial-chain-debt`.
+    industrial_chain_debt: bool,
     /// `guard-breaks-the-pin`: a Settler's stacked guard strikes the raider
     /// whose zone of control pins the pair when the trade is worth it.
     /// Host-only; see `advanced/siege_response.rs`.
@@ -5686,6 +5740,33 @@ pub struct AdvancedAi {
     spaceport_surplus_veto: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// `trade-route-network`: a Commercial Hub (or a Harbor on a coast with
+    /// no Hub) beside a standing Campus is the Science lane's trade
+    /// capacity, and a Market or Lighthouse is worth the Trade Route it
+    /// adds.
+    ///
+    /// MEASURED across the last 22 live runs, 2026-09-01: ZERO Commercial
+    /// Hubs in every one of them, at most one Harbor, and a trade capacity
+    /// of one for the whole game — game 20260901T132005Z ran thirteen
+    /// cities on one Trade Route for 216 turns. Three gates locked it: the
+    /// Science lane's district table has no Commercial Hub arm (it falls to
+    /// zero), the named-Science contract prices every Hub at −10,000, and
+    /// the Market's `trade_route_capacity` is read only by the Gold and
+    /// Faith purchase scorers, never on the production side. The Trader arm
+    /// itself is −10,000 whenever capacity is full, so nothing in the loop
+    /// could ever ask for more capacity. The engine grants one route per
+    /// Hub (or Harbor without a Hub) and one per Market or Lighthouse.
+    ///
+    /// With this on, in a city that holds a Campus the Hub — or a Harbor
+    /// where no Hub stands — escapes the Science contract and earns
+    /// `TRADE_NETWORK_DISTRICT` under the Science and Expansion plans; the
+    /// Conquest plan pays `TRADE_NETWORK_CONQUEST_DISTRICT` for a Hub; and
+    /// a building with `trade_route_capacity` earns
+    /// `TRADE_ROUTE_CAPACITY_VALUE` per route in a city that holds no such
+    /// building yet (Market and Lighthouse are an either/or in the engine).
+    /// The Campus keeps first claim: nothing here fires in a city without
+    /// one. Zero with the gene off. Opt-in gene `trade-route-network`.
+    trade_route_network: bool,
     /// `walls-after-districts`: the barbarian pre-emption's WALL answer
     /// waits until the city holds a district; its unit answer is untouched.
     /// `barbarian_defense_item` reaches its wall loop on a mere local alarm
@@ -6018,6 +6099,35 @@ const SCIENCE_SPACEPORT_CAP: usize = 3;
 /// The buildings a district project waits behind. See
 /// `buildings_before_projects`.
 const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research_lab", "workshop"];
+/// See `industrial_chain_debt`: the Industrial Zone's own chain, appended to
+/// `BUILDINGS_BEFORE_PROJECTS` under the gene and kept out of it so #1811
+/// stays exactly the treatment it was measured as.
+const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 4] = [
+    "factory",
+    "coal_power_plant",
+    "oil_power_plant",
+    "nuclear_power_plant",
+];
+/// See `campus_through_expansion`: the Science lane's Campus arm, paid to a
+/// Science seat's Campus while its plan still reads Expansion.
+const CAMPUS_THROUGH_EXPANSION_DISTRICT: f64 = 170.0;
+/// See `trade_route_network`: a Commercial Hub, or a Harbor where no Hub
+/// stands, beside a standing Campus — below the Campus's own 170 so the
+/// research district keeps first claim on a city.
+const TRADE_NETWORK_DISTRICT: f64 = 150.0;
+/// See `trade_route_network`: the Conquest plan's Commercial Hub, below the
+/// Encampment's 170 so war infrastructure keeps first claim.
+const TRADE_NETWORK_CONQUEST_DISTRICT: f64 = 120.0;
+/// See `trade_route_network`: one Trade Route of capacity, the same flat
+/// debt a Campus owes each of its buildings (`RESEARCH_BUILDING_DEBT`).
+const TRADE_ROUTE_CAPACITY_VALUE: f64 = 240.0;
+/// See `industrial_chain_debt`: an Industrial Zone owes its Workshop,
+/// Factory and plant what a Campus owes its Library.
+const INDUSTRIAL_BUILDING_DEBT: f64 = 240.0;
+/// See `industrial_chain_debt`: a reached city's share of a regional
+/// building's production, discounted because the reach is a projection
+/// over cities whose queues and citizens this valuation cannot see.
+const REGIONAL_PRODUCTION_REACH_DISCOUNT: f64 = 0.5;
 /// The Theater Square's own chain, added to the wait by `culture_building_debt`
 /// and kept out of `BUILDINGS_BEFORE_PROJECTS` so #1811 stays exactly the
 /// treatment it was measured as.
@@ -7003,6 +7113,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            campus_through_expansion: false,
             district_planning_2: false,
             cheapest_wonder_first: false,
             connect_the_luxury: false,
@@ -7065,6 +7176,7 @@ impl AdvancedAi {
             early_settler_homes: BTreeMap::new(),
 
             // ---- append: g-k ----------------------------------------
+            industrial_chain_debt: false,
             guard_breaks_the_pin: false,
             hostile_memory: false,
             hostile_last_seen: BTreeMap::new(),
@@ -7134,6 +7246,7 @@ impl AdvancedAi {
             spaceport_surplus_veto: false,
 
             // ---- append: t-z ----------------------------------------
+            trade_route_network: false,
             walls_after_districts: false,
             threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
@@ -12197,11 +12310,22 @@ impl AdvancedAi {
             || self.active_victory_target(g) == Some(VictoryTarget::Science))
             && spec.repeatable
         {
-            let waiting_for = BUILDINGS_BEFORE_PROJECTS.iter().chain(
-                CULTURE_BUILDINGS_BEFORE_PROJECTS
-                    .iter()
-                    .take(if self.culture_building_debt { 4 } else { 0 }),
-            );
+            let waiting_for = BUILDINGS_BEFORE_PROJECTS
+                .iter()
+                .chain(
+                    CULTURE_BUILDINGS_BEFORE_PROJECTS
+                        .iter()
+                        .take(if self.culture_building_debt { 4 } else { 0 }),
+                )
+                // See `industrial_chain_debt`: the Factory and the plant wait
+                // in the same line as the Workshop.
+                .chain(INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS.iter().take(
+                    if self.industrial_chain_debt {
+                        INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS.len()
+                    } else {
+                        0
+                    },
+                ));
             let owed = waiting_for.into_iter().any(|building| {
                 g.rules.buildings.contains_key(building)
                     && g.can_produce(
@@ -19833,6 +19957,84 @@ impl AdvancedAi {
     /// but a second one must not turn the victory lane into a coastal-district
     /// collection project. Count both completed and queued Harbors so every
     /// city sees the reservation as soon as the first one is claimed.
+    /// See `campus_through_expansion`: the lane a Campus-family item is
+    /// priced in. A Science seat whose plan still reads Expansion prices the
+    /// Campus and its buildings with the Science lane's weights and arm;
+    /// every other family, lane and seat keeps the plan's strategy.
+    fn campus_pricing_lane(&self, family: &str, strategy: GrandStrategy) -> GrandStrategy {
+        if self.campus_through_expansion
+            && strategy == GrandStrategy::Expansion
+            && family == "campus"
+            && self.victory_target == Some(VictoryTarget::Science)
+        {
+            GrandStrategy::Science
+        } else {
+            strategy
+        }
+    }
+
+    /// Whether `city` holds a standing district of `family`.
+    fn city_holds_district_family(g: &Game, city: &crate::game::City, family: &str) -> bool {
+        city.districts
+            .keys()
+            .any(|built| g.district_family(*built).as_str() == family)
+    }
+
+    /// See `campus_through_expansion`: a Science seat's city with no
+    /// specialty district yet keeps that first slot for the Campus, so an
+    /// Entertainment Complex may not be its first specialty district.
+    fn campus_first_veto(&self, g: &Game, city: &crate::game::City, family: &str) -> bool {
+        self.campus_through_expansion
+            && self.victory_target == Some(VictoryTarget::Science)
+            && family == "entertainment_complex"
+            && !city
+                .districts
+                .keys()
+                .any(|built| g.rules.districts[built].specialty)
+    }
+
+    /// See `industrial_chain_debt`: the production a regional building
+    /// (Factory, power plant) adds to every other own city within its range
+    /// that no standing copy already reaches, at the lane's weight.
+    fn regional_production_reach(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        building: &Name,
+        spec: &crate::rules::BuildingSpec,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        if spec.regional_range <= 0 || spec.yields.production <= 0.0 {
+            return 0.0;
+        }
+        let range = spec.regional_range;
+        let own: Vec<&crate::game::City> = g
+            .cities
+            .values()
+            .filter(|other| other.owner == pid)
+            .collect();
+        let reached = own
+            .iter()
+            .filter(|other| other.id != city.id && g.wdist(city.pos, other.pos) <= range)
+            .filter(|other| {
+                !own.iter().any(|source| {
+                    source.buildings.contains(building) && g.wdist(source.pos, other.pos) <= range
+                })
+            })
+            .count() as f64;
+        reached
+            * self.yield_value(
+                Yields {
+                    production: spec.yields.production,
+                    ..Yields::default()
+                },
+                strategy,
+            )
+            * 42.0
+            * REGIONAL_PRODUCTION_REACH_DISCOUNT
+    }
+
     fn science_harbor_reserved(g: &Game, pid: usize) -> bool {
         g.player_city_ids(pid).into_iter().any(|cid| {
             let city = &g.cities[&cid];
@@ -22155,6 +22357,11 @@ impl AdvancedAi {
             let threatened = plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
             if threatened {
+                continue;
+            }
+            // See `campus_first_veto`: the crisis path may not make an
+            // Entertainment Complex a city's first specialty district.
+            if self.campus_first_veto(g, city, "entertainment_complex") {
                 continue;
             }
             let production = g.city_yields(cid).production.max(1.0);
@@ -24819,6 +25026,48 @@ impl AdvancedAi {
                     // a research city and declined the cheap half: the live
                     // Kongo run reached Composites holding two Campus buildings
                     // in the whole empire, and its second city had neither.
+                    let building_family = spec.district.map(|district| g.district_family(district));
+                    // See `campus_pricing_lane`: a Campus building keeps the
+                    // Science lane's beaker weight through the Expansion plan.
+                    let pricing_lane = match building_family.as_ref() {
+                        Some(family) => self.campus_pricing_lane(family.as_str(), plan.strategy),
+                        None => plan.strategy,
+                    };
+                    // See `trade_route_network`: the Market's or Lighthouse's
+                    // Trade Route, priced on the production side for the first
+                    // time; Market and Lighthouse are an either/or per city.
+                    let trade_capacity_value = if self.trade_route_network
+                        && spec.trade_route_capacity > 0
+                        && !city
+                            .buildings
+                            .iter()
+                            .any(|built| g.rules.buildings[built].trade_route_capacity > 0)
+                    {
+                        TRADE_ROUTE_CAPACITY_VALUE * spec.trade_route_capacity as f64
+                    } else {
+                        0.0
+                    };
+                    // See `industrial_chain_debt`: the same sentence as
+                    // `research_debt` for the production chain, plus the
+                    // cities a Factory or plant reaches.
+                    let industrial_debt = if self.industrial_chain_debt
+                        && building_family
+                            .as_ref()
+                            .is_some_and(|family| family.as_str() == "industrial_zone")
+                        && Self::city_holds_district_family(g, city, "industrial_zone")
+                    {
+                        INDUSTRIAL_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
+                            + self.regional_production_reach(
+                                g,
+                                pid,
+                                city,
+                                building,
+                                spec,
+                                plan.strategy,
+                            )
+                    } else {
+                        0.0
+                    };
                     let research_debt = if self.research_economy
                         && spec
                             .district
@@ -24923,12 +25172,14 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
-                    self.yield_value(spec.yields, plan.strategy) * 42.0
+                    self.yield_value(spec.yields, pricing_lane) * 42.0
                         + power_unlock
                         + powered_now
                         + multiplied_science
                         + culture_debt
                         + research_debt
+                        + trade_capacity_value
+                        + industrial_debt
                         + expansion_hall
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0 + regional_amenity_reach)
@@ -24973,6 +25224,21 @@ impl AdvancedAi {
                 let spec = &g.rules.districts[district];
                 let family = g.district_family(*district);
                 let science_harbor_reserved = Self::science_harbor_reserved(g, pid);
+                let pricing_lane = self.campus_pricing_lane(family.as_str(), plan.strategy);
+                // See `campus_first_veto`: the first specialty district of a
+                // Science seat's city is the Campus, never the Entertainment
+                // Complex the Amenity paths credit its unbuilt Arena.
+                if self.campus_first_veto(g, city, family.as_str()) {
+                    return -10_000.0;
+                }
+                // See `trade_route_network`: a Commercial Hub (or, on a coast
+                // with no Hub, a Harbor) beside a standing Campus is the
+                // Science lane's trade capacity, not a generic Gold district.
+                let trade_network_district = self.trade_route_network
+                    && Self::city_holds_district_family(g, city, "campus")
+                    && (family == "commercial_hub"
+                        || (family == "harbor"
+                            && !Self::city_holds_district_family(g, city, "commercial_hub")));
                 // A named Science seat has a narrower district contract than
                 // the adaptive stock lane. Once Campus buildings are caught
                 // up, generic Culture/Gold/Faith districts otherwise remain
@@ -24989,12 +25255,14 @@ impl AdvancedAi {
                         family.as_str(),
                         "theater_square" | "commercial_hub" | "holy_site" | "preserve"
                     )
+                    && !trade_network_district
                 {
                     return -10_000.0;
                 }
                 if self.victory_target == Some(VictoryTarget::Science)
                     && family == "harbor"
                     && science_harbor_reserved
+                    && !trade_network_district
                 {
                     return -10_000.0;
                 }
@@ -25269,6 +25537,16 @@ impl AdvancedAi {
                     // bounded support package, while leaving the research
                     // chain ahead of generic water technology.
                     (GrandStrategy::Science, "harbor") if !science_harbor_reserved => 260.0,
+                    // See `trade_route_network`: the second and every later
+                    // Hub or Harbor, beside a Campus, is trade capacity.
+                    (GrandStrategy::Science, "commercial_hub" | "harbor")
+                        if trade_network_district =>
+                    {
+                        TRADE_NETWORK_DISTRICT
+                    }
+                    (GrandStrategy::Conquest, "commercial_hub") if self.trade_route_network => {
+                        TRADE_NETWORK_CONQUEST_DISTRICT
+                    }
                     // See `tally_culture`: the civic tree pays three a rung.
                     (GrandStrategy::Science, "theater_square") if self.tally_culture => 170.0,
                     (GrandStrategy::Science, "industrial_zone") => 150.0,
@@ -25300,6 +25578,18 @@ impl AdvancedAi {
                     (GrandStrategy::Recovery, "industrial_zone") => 190.0,
                     (GrandStrategy::Recovery, "dam") => 180.0,
                     (GrandStrategy::Recovery, "aqueduct") => 120.0,
+                    // See `campus_through_expansion`: the Science lane's
+                    // Campus arm while the Science seat's plan still expands.
+                    (GrandStrategy::Expansion, "campus")
+                        if pricing_lane == GrandStrategy::Science =>
+                    {
+                        CAMPUS_THROUGH_EXPANSION_DISTRICT
+                    }
+                    (GrandStrategy::Expansion, "commercial_hub" | "harbor")
+                        if trade_network_district =>
+                    {
+                        TRADE_NETWORK_DISTRICT
+                    }
                     (GrandStrategy::Expansion, "commercial_hub" | "harbor") => 90.0,
                     (GrandStrategy::Expansion, "aqueduct" | "neighborhood") => 110.0,
                     _ => 0.0,
@@ -25365,12 +25655,12 @@ impl AdvancedAi {
                         science: self.campus_threshold_bonus(g, family, *pos),
                         ..Yields::default()
                     },
-                    plan.strategy,
+                    pricing_lane,
                 ) * 42.0
                     * Self::campus_payback_horizon(g);
-                self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
+                self.yield_value(g.district_yields(district, *pos), pricing_lane) * 60.0
                     + adjacency_threshold
-                    + self.yield_value(spec.citizen_yields, plan.strategy) * 24.0
+                    + self.yield_value(spec.citizen_yields, pricing_lane) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
                     + housing_gain * (32.0 + housing_need * 18.0)
                     + amenity_gain * (55.0 + amenity_need * 35.0)
