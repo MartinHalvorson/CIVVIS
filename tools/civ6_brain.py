@@ -111,6 +111,29 @@ class LiveRuntime:
     brain: Path
 
 
+def board_age_seconds(event: dict, now: datetime | None = None) -> float | None:
+    """Seconds between the harness receiving this board (`utc`, stamped by
+    `civ6_play.record`) and `now`; None for a board that carries no stamp.
+
+    This is the brain-side half of a slow turn: tail latency plus the decider.
+    The other half — how long the mod's `await` polls ran before the board
+    line left `Automation.log` — is the gap between the polls' own stamps.
+    """
+    stamp = event.get("utc")
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    for layout in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            received = datetime.strptime(stamp, layout).replace(tzinfo=timezone.utc)
+            break
+        except ValueError:
+            continue
+    else:
+        return None
+    now = now or datetime.now(timezone.utc)
+    return max(0.0, (now - received).total_seconds())
+
+
 def _utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -1201,8 +1224,12 @@ def main() -> int:
                 print(f"[brain] turn {turn}: bisect dropped {before - len(rows)} "
                       f"of {before} orders", flush=True)
             count = write_turn(conn, run_tag, turn, rows, frame)
+            answered = datetime.now(timezone.utc)
+            age = board_age_seconds(event, answered)
             print(f"[brain] turn {turn}{f' frame {frame}' if frame else ''}: {count} orders in "
-                  f"{time.time() - started:.2f}s", flush=True)
+                  f"{time.time() - started:.2f}s at {answered:%H:%M:%S.%f}"[:-3] + "Z"
+                  + (f", board received {age:.1f}s earlier" if age is not None else ""),
+                  flush=True)
         time.sleep(0.1)
     if decider is not None:
         decider.stop()

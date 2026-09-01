@@ -3338,6 +3338,14 @@ def _play(args: argparse.Namespace) -> int:
     atexit.register(_partial_summary_if_stopped)
 
     def record(event: dict) -> None:
+        # ★ RECEIPT TIME — the run's only wall-clock. `Automation.log` carries no
+        # clock, so events.jsonl could say an opening board waited 20 polls but
+        # never whether the 90 s between two screens went to the game, the log
+        # tail or the brain. Stamped once, the moment the line reaches this
+        # process; `civ6_brain` measures its answer against it (`brain.log`) and
+        # `tools/live_turn_clock.py` reads the per-turn profile from it.
+        event.setdefault("utc", datetime.now(timezone.utc)
+                         .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
