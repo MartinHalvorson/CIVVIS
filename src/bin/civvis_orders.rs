@@ -8376,7 +8376,11 @@ mod tests {
             .collect();
         assert_eq!(listed, registered);
         for gene in civvis::ai::GENES.iter().filter(|gene| gene.live()) {
-            assert!(listed.contains(&gene.tag.to_string()), "{} is live and unlisted", gene.tag);
+            assert!(
+                listed.contains(&gene.tag.to_string()),
+                "{} is live and unlisted",
+                gene.tag
+            );
         }
     }
 
