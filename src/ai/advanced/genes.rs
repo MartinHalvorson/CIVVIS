@@ -1846,6 +1846,17 @@ pub const GENES: &[Gene] = &[
     // improves the live universe. Appended at the END to preserve any
     // running screen's positional genome.
     Gene { tag: "early-project-restraint", field: "early_project_restraint", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint, disable: AdvancedAi::disable_early_project_restraint },
+    // `settler-site-gate` (live autopsy, 2026-09-01): a city starts a Settler
+    // only while an acceptable, unclaimed site worth founding exists for it.
+    // Run 182050Z held 5–6 cities from t45 to t105 with 2–4 Settlers alive:
+    // one walked 37 orders to 31 targets worth 14–24 and never founded, two
+    // were lost on the road, and three cities were building more at once —
+    // the arm paid `920 + 4 × site` for ANY site within eleven tiles. The gate
+    // drops the sites the walker would refuse, counts seats at settlement
+    // spacing net of the targets live Settlers hold, and vetoes a Settler
+    // unless a free seat worth the floor remains. See
+    // `advanced/settler_site_gate.rs`.
+    Gene { tag: "settler-site-gate", field: "settler_site_gate", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_site_gate, disable: AdvancedAi::disable_settler_site_gate },
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
     Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
     Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
