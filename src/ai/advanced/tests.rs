@@ -12042,11 +12042,10 @@ fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
     assert!(!AdvancedAi::legacy().one_launch_pad);
 }
 
-/// The older `spaceport_surplus_veto` bonus guard remains compatible with the
-/// complete policy here: with one pad standing and no launch yet, the hard
-/// empire-wide gate rejects a second Spaceport for every controller. The next
-/// race stage admits it again, so the cap paces useful parallelism rather than
-/// suppressing it permanently.
+/// See `spaceport_surplus_veto`. With one pad standing and no launch yet,
+/// the race stage can use exactly one Spaceport — the treated seat stops
+/// paying the flat per-pad bonus for a second, and pays it again the
+/// moment the Earth Satellite raises the stage's pad count to two.
 #[test]
 fn a_pad_beyond_the_race_stage_earns_no_science_bonus() {
     let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
@@ -12082,21 +12081,33 @@ fn a_pad_beyond_the_race_stage_earns_no_science_bonus() {
     // this opt-in still prices its own adaptive-plan experiment there.
     let mut live = AdvancedAi::new();
     live.enable_live_bridge_universe();
+    live.enable_spaceport_surplus_veto();
     live.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge_universe();
+    withheld.disable_spaceport_surplus_veto();
     withheld.refresh_research_weight(&game);
     let counts = live.counts(&game, 0);
 
     let vetoed = live.production_value(&game, 0, second, &pad, &plan, &counts);
     let unrestrained = withheld.production_value(&game, 0, second, &pad, &plan, &counts);
-    assert_eq!(
-        vetoed, -10_000.0,
-        "one pad serves the whole pre-launch chain, so the second is hard-vetoed"
+    assert!(
+        unrestrained > vetoed,
+        "one pad serves the whole pre-launch chain, so the second earns \
+         no strategic bonus: {unrestrained} withheld vs {vetoed} treated"
     );
+
+    // The Satellite is up: the stage can now use a second pad to prepare
+    // the Mars Base while the first launches the Moon Landing, and the
+    // veto stands aside.
+    game.players[0]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    let staged = live.production_value(&game, 0, second, &pad, &plan, &counts);
     assert_eq!(
-        unrestrained, -10_000.0,
-        "the cap is shared by every Science controller, not an optional bonus"
+        staged,
+        withheld.production_value(&game, 0, second, &pad, &plan, &counts),
+        "a pad the race stage can use is priced exactly as before"
     );
 
     // Defaults: off for the stock and frozen controllers.
