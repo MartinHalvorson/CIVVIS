@@ -673,3 +673,71 @@ hardest. `close-as-a-body` is the gene shaped for it and reads the right sign
 gene that paced a *siege train* specifically — hold the melee until the
 catapults are in range and the wall is going down — is the next thing this
 board can price, and it could not be priced at all before it existed.
+
+## 20. The evacuation lands (2026-09-01)
+
+Measured on the 32 live ledger runs of 2026-08-30..09-01 that reached turn
+100 (`~/.cache/civvis/ledger/runs`, `tools/live_ledger.py pull`), reading
+the `combat`, `state`, `order_verified`/`order_failed` and `host_move`
+events:
+
+| our combat deaths, 32 runs | count |
+|---|---:|
+| total, per run | 461, 14.4 |
+| killed by barbarians | 408 |
+| victim at 50 HP or less when the blow landed | 352 |
+| victim already hit on an earlier turn, left in reach | 334 |
+| victim hit twice or more on the death turn | 119 |
+| ranged units killed by a melee attacker | 135 |
+| scouts | 80 |
+| victims with a `MOVE_TO` on the death turn that never executed | 200+ |
+| victims with **no host move at all** on the turn before they died | 383 |
+
+The decider was not the failure. The recovery (`BasicAi::healing_step`,
+`retreat_step`) chose the evacuation and issued the `MOVE_TO`; the host
+accepted it (`CanStartOperation` true, `RequestOperation` returned) and the
+unit did not move. The order queue watched the leg for `grace` ticks and
+then dropped the watch in silence, and the Rust side found the standstill
+a turn later as `did_not_move` — 5,873 of them across the 32 runs, the
+largest single refusal — by which time the unit was usually dead.
+
+⚠ `live-move-refusal-break` was **on** for every one of these games: every
+`Kind::HostOnly` gene ships on the live seat (`enable_live_bridge_universe`)
+and the ledger never withholds one. It keys on a unit standing on the same
+plot for `MOVE_REFUSAL_STRIKES` = 2 *consecutive turns* and then bars that one
+step for 8 turns (`BasicAi::judge_move_refusals`). It never sees the same-turn
+case, and a wounded unit rarely has two turns. `HostMoveRefusals` in
+`civvis_orders.rs` is the same shape a turn later. Neither reads the mod's
+`move_refused`, which is emitted only when `operate()` returns false — the
+silent no-op (`operate()` true, nothing moved) reached no instrument at all.
+
+Three mechanisms, each behind its own switch:
+
+1. **The mod names and answers the no-op** (`CivvisBoard.moveNoop`,
+   `fallbackStep`, `classifyNoop`; `MoveFallback` in the mod config, on by
+   default, recorded in `mod_arms`). A `MOVE_TO` records the plot and
+   movement it left from. A watched leg whose unit is still on that plot with
+   its movement intact when the watch runs out is probed on the host —
+   `cannot_start`, `no_path`, `beyond_turn`, `occupied`, `hostile_on_plot`,
+   `zoc`, `hostile_adjacent`, `no_moves`, `unknown` — emitted as `move_noop`,
+   and in the same pass the nearest legal neighbour toward the wanted plot
+   is sent instead (`move_fallback`), once per unit per turn. A leg the host
+   refuses outright takes the same fallback at once. The Rust verdict reads
+   `move_noop` and names it `host_noop_<why>` instead of `did_not_move`.
+2. **The gene `wounded-out-of-reach`** (opt-in, off; `advanced/wounded_out_of_reach.rs`)
+   withdraws ahead of the recovery on the roll-top total of everything that
+   reaches the tile (the recovery reads the mean), remembers a raider in the
+   fog through `barbarian_reach`, and keeps a shooter or scout out of a
+   raider's reach unless a melee unit stands beside it. It stands down when
+   one attack would kill the last thing in reach.
+3. **The row says whether the evacuation happened**
+   (`civ6_tactics_ledger.evacuation_section`, lifted onto
+   `combat_totals`): `deaths_wounded_at_turn_start`,
+   `deaths_after_unexecuted_move`, `move_noop`, `move_fallback`. Read these
+   beside `kills_per_loss` on the next runs; the first two are the numbers
+   above and are computable on every run already on the ledger.
+
+What to read first: `move_noop_reasons` on the first runs with
+`MoveFallback` on. The reason distribution decides the next repair —
+`occupied` and `zoc` are pathing the mirror could model; `unknown` is a
+host behaviour still to be found.
