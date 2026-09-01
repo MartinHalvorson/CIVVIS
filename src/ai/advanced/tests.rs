@@ -15006,6 +15006,68 @@ fn empire_with_a_capital(seed: u64) -> (Game, u32, Pos) {
 }
 
 #[test]
+fn targeted_science_keeps_the_production_builder_floor_while_work_remains() {
+    let (mut game, capital, _) = empire_with_a_capital(79_122);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    for _ in 0..3 {
+        found_test_city(&mut game, 0);
+    }
+    let hill = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != game.cities[&capital].pos)
+        .expect("the capital owns an improvement tile");
+    {
+        let tile = game.map.tiles.get_mut(&hill).expect("capital hill");
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = true;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    game.players[0].techs.insert(crate::name!("mining"));
+    assert_eq!(game.player_city_ids(0).len(), 4, "fixture: four cities");
+    assert!(
+        game.valid_improvements(0, hill)
+            .contains(&crate::name!("mine")),
+        "fixture: Mining makes the owned hill a valid mine"
+    );
+    assert!(
+        BasicAi::has_builder_work(&game, 0),
+        "the owned hill is a mine the empire can still build"
+    );
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    assert!(game.can_produce(0, capital, &builder));
+    let targeted = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut without_floor = AdvancedAi::targeting(VictoryTarget::Science);
+    without_floor.production_builder_floor = false;
+    let counts = targeted.counts(&game, 0);
+    assert_eq!(counts.builders, 0, "fixture: no Builder is already active");
+
+    let with_floor = targeted.production_value(&game, 0, capital, &builder, &plan, &counts);
+    let without_floor = without_floor.production_value(&game, 0, capital, &builder, &plan, &counts);
+    assert!(
+        with_floor > without_floor,
+        "a targeted Science game must carry its 0.75-per-city Builder floor into strategic production"
+    );
+}
+
+#[test]
 fn targeted_science_recovers_a_persistent_idle_city_with_a_civilian() {
     let (mut game, city, _) = empire_with_a_capital(79_123);
     clear_barbarian_fixture(&mut game);
