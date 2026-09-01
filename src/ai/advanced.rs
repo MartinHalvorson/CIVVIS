@@ -4614,6 +4614,15 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `air-surge-2`: version two of `air_surge` — the science–domination
+    /// loop. The original one-appointment surge remains a separately
+    /// measurable family member; this continuation lets the Formal-War clock
+    /// run through the buildout even when the assessment names no rival,
+    /// prices a follow-up surge by the package still missing rather than
+    /// from scratch so the loop repeats, and keeps the Campus priced under
+    /// Conquest so each war pays for the science that armed it. See
+    /// `advanced/air_surge.rs`.
+    air_surge_2: bool,
     /// `border-parity-2`: version two of `border_parity` — the same target
     /// and Gold purchase, and when the treasury cannot pay, the contact
     /// city's idle queue starts the defender instead. See
@@ -7070,6 +7079,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            air_surge_2: false,
             border_parity_2: false,
             boosted_bargain_first: false,
             border_parity: false,
@@ -16963,7 +16973,15 @@ impl AdvancedAi {
         // the way the raid closes when it has paid. See
         // `advanced/city_campaign.rs`.
         self.city_campaign_diplomacy(g, pid);
-        let Some(target) = plan.target_player else {
+        // See `air_surge_diplomacy_target` (`air-surge-2`): while the surge
+        // beelines and arms, a lane seat assesses no rival, so without this
+        // fallback the Arm-phase denounce below was unreachable and the
+        // declaration paid the whole Formal-War clock after the wing was
+        // ready.
+        let Some(target) = plan
+            .target_player
+            .or_else(|| self.air_surge_diplomacy_target())
+        else {
             return;
         };
         // `one_war_at_a_time`: the appointment and the surge refuse a second
@@ -25463,6 +25481,13 @@ impl AdvancedAi {
                     (GrandStrategy::Diplomacy, "commercial_hub") => 150.0,
                     (GrandStrategy::Diplomacy, "harbor") => 130.0,
                     (GrandStrategy::Diplomacy, "theater_square") => 100.0,
+                    // See `air_surge_2`: the loop's wars must not starve the
+                    // labs that armed them. A Conquest window otherwise
+                    // prices no Campus at all, and a long Exploit is exactly
+                    // when conquered cities join the empire unlabbed. Below
+                    // the Encampment, so war infrastructure keeps first
+                    // claim.
+                    (GrandStrategy::Conquest, "campus") if self.air_surge_2 => 140.0,
                     (GrandStrategy::Conquest, "encampment") => 170.0,
                     (GrandStrategy::Conquest, "aerodrome") => 280.0,
                     (GrandStrategy::Conquest, "harbor") => 150.0,

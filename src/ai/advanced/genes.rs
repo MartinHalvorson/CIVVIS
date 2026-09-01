@@ -1848,6 +1848,7 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "early-project-restraint", field: "early_project_restraint", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint, disable: AdvancedAi::disable_early_project_restraint },
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
     Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
+    Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
     // Appended at the END, above the markers, so a running screen keeps its
     // positional genome. The 2026-09-01 Emperor foundations: the Campus
     // through the Expansion plan, the trade network, the Industrial chain.
