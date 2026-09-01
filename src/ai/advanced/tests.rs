@@ -41976,9 +41976,15 @@ fn settler_target_floor_charges_the_walk_and_holds_a_floor() {
     let near = (7, 10);
     let far = from.0 + SETTLER_TARGET_FREE_TILES + 12;
     let far = (far, 10);
-    assert!(g.wdist(from, far) > SETTLER_TARGET_FREE_TILES, "the fixture's far site is far");
+    assert!(
+        g.wdist(from, far) > SETTLER_TARGET_FREE_TILES,
+        "the fixture's far site is far"
+    );
     // Inside the free ring a site is judged on its worth alone.
-    assert_eq!(AdvancedAi::settler_target_worth_after_travel(&g, from, near, 13.8), 13.8);
+    assert_eq!(
+        AdvancedAi::settler_target_worth_after_travel(&g, from, near, 13.8),
+        13.8
+    );
     // Beyond it every tile costs the extra-travel price.
     let extra = (g.wdist(from, far) - SETTLER_TARGET_FREE_TILES) as f64;
     assert_eq!(
@@ -42001,7 +42007,8 @@ fn settler_target_floor_charges_the_walk_and_holds_a_floor() {
     assert!(ai.settler_target_clears_floor(&g, from, near, 13.8));
     // … and a rich far site clears with the walk charged.
     assert!(ai.settler_target_clears_floor(&g, from, far, 96.4));
-    assert!(SETTLER_TARGET_WORTH_FLOOR < 13.8);
+    // A site worth exactly the floor, inside the ring, is the least a target may be.
+    assert!(ai.settler_target_clears_floor(&g, from, near, SETTLER_TARGET_WORTH_FLOOR));
     ai.disable_settler_target_floor();
     assert!(ai.settler_target_clears_floor(&g, from, far, -35.0));
 }
@@ -42012,8 +42019,7 @@ fn settler_target_floor_never_picks_a_site_under_it() {
     let mut checked = 0;
     for map in 0..4u64 {
         let mut game = Game::new_full(4, 24, 16, 480_000 + map, 60, 1, false);
-        let mut ais: Vec<AdvancedAi> =
-            (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+        let mut ais: Vec<AdvancedAi> = (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
         ais[0].enable_settler_target_floor();
         while game.winner.is_none() && game.turn <= 40 {
             let pid = game.current;
