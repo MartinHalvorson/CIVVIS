@@ -1523,6 +1523,15 @@
           "power-the-laboratory-2": null
         }
       },
+      "rapid-city-expansion": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "rapid-city-expansion": null,
+          "rapid-city-expansion-2": null
+        }
+      },
       "science-victory-drive": {
         "rule_on": [
           "science-victory-drive"

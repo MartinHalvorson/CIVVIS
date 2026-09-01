@@ -1894,6 +1894,10 @@ pub const GENES: &[Gene] = &[
     // is gated by `live_formationless_settler_shadow`, so a native board never
     // reaches it. See `advanced/siege_response.rs`.
     Gene { tag: "guard-breaks-the-pin", field: "guard_breaks_the_pin", kind: Kind::HostOnly, enable: AdvancedAi::enable_guard_breaks_the_pin, disable: AdvancedAi::disable_guard_breaks_the_pin },
+    // Reach the measured five-city opening band with a bounded pipeline and
+    // empty-capital reservation, refuse unworthy or already-claimed sites,
+    // and leave ordinary queues, pantheons, site ranking and peace intact.
+    Gene { tag: "rapid-city-expansion-2", field: "rapid_city_expansion_2", kind: Kind::OptIn, enable: AdvancedAi::enable_rapid_city_expansion_2, disable: AdvancedAi::disable_rapid_city_expansion_2 },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

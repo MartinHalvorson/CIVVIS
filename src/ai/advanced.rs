@@ -5501,6 +5501,13 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// `rapid-city-expansion-2`: a selective rewrite of the worst-performing
+    /// gene. It follows the measured five-city opening band, reserves only an
+    /// empty capital queue, refuses unworthy or already-claimed sites, and
+    /// never turns an exhausted settlement frontier into an automatic war.
+    /// Version one remains intact for direct family comparison. See
+    /// `advanced/rapid_city_expansion.rs`.
+    rapid_city_expansion_2: bool,
     /// `relief-column-marches`: a force group standing beyond
     /// `THREAT_RELIEF_RADIUS` of the threatened city is a relief column, not
     /// part of that city's defence. It advances on the siege when it is
@@ -6406,6 +6413,9 @@ mod camp_buyout;
 /// the world is Ancient and Classical, and Archery chased until a city can
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
 mod early_archers;
+/// Version two of rapid city expansion keeps the measured-positive opening
+/// pace and safety gates without version one's forced queues, sprawl, or war.
+pub(super) mod rapid_city_expansion;
 /// `settler-never-idles`: a Settler always has somewhere to go — exhaustion
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
@@ -7216,6 +7226,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            rapid_city_expansion_2: false,
             relief_column_marches: false,
             religion_race_is_closed: false,
             peace_when_war_does_not_pay: false,
@@ -10326,6 +10337,7 @@ impl AdvancedAi {
         // it on, the target is the fog-estimated capacity itself — priced
         // denser than the wide-map ceiling — from turn one; the pipeline,
         // the practical-site search and the payback deadline pace the count.
+        let ordinary_city_target = (city_floor + g.turn as usize / city_cadence).min(city_ceiling);
         let desired_cities = if self.rapid_city_expansion {
             let land = if self.fog_land_capacity {
                 Self::fog_land_estimate(g, land)
@@ -10334,6 +10346,8 @@ impl AdvancedAi {
             };
             (2 + land / LAND_GRAB_TILES_PER_CITY)
                 .clamp(RAPID_EXPANSION_SETTLE_FLOOR, RAPID_EXPANSION_CITY_CEILING)
+        } else if self.rapid_city_expansion_2 {
+            rapid_city_expansion::city_target(g, ordinary_city_target, city_ceiling)
         } else if self.land_grab {
             let land = if self.fog_land_capacity {
                 Self::fog_land_estimate(g, land)
@@ -10354,7 +10368,7 @@ impl AdvancedAi {
             };
             (2 + land / LAND_GRAB_TILES_PER_CITY).clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
-            (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
+            ordinary_city_target
         };
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
@@ -11020,7 +11034,7 @@ impl AdvancedAi {
         // city target is only useful if a productive city may still fund the
         // next campus after the old clock has expired.
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
-        if self.rapid_city_expansion
+        if (self.rapid_city_expansion || self.rapid_city_expansion_2)
             || self.land_grab
             || self.expansion_pays_back
             || science_targeted
@@ -11044,7 +11058,7 @@ impl AdvancedAi {
     /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
     /// slower or longer games without removing the endgame reserve.
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.plan_city_target && !self.rapid_city_expansion {
+        if !self.plan_city_target && !self.rapid_city_expansion && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
             return;
         }
@@ -14003,7 +14017,7 @@ impl AdvancedAi {
         // before the normal map-capacity treatment would turn this portfolio
         // arm on.  Without it, the gene starts its second wave at the full
         // price even after Early Empire unlocks Colonization.
-        if self.wide_map_capacity || self.rapid_city_expansion {
+        if self.wide_map_capacity || self.rapid_city_expansion || self.rapid_city_expansion_2 {
             let settler_queued = city_ids.iter().any(|city| {
                 matches!(
                     g.cities[city].queue.first(),
@@ -24045,6 +24059,13 @@ impl AdvancedAi {
         city_count: usize,
         settlers: usize,
     ) -> usize {
+        if self.rapid_city_expansion_2 {
+            if let Some(width) =
+                rapid_city_expansion::pipeline_width(g, desired_cities, city_count, settlers)
+            {
+                return width;
+            }
+        }
         // `expansion_schedule`: the opening's own pace answers first, and
         // only while the empire is behind it. See
         // `advanced/expansion_schedule.rs`.
@@ -24404,12 +24425,14 @@ impl AdvancedAi {
         // one per Settler in flight, so a wider pipeline never marches alone
         // and the ground it claims is held. Wartime targets are already
         // larger and untouched.
-        let desired_military = if (self.land_grab || self.rapid_city_expansion) && !active_major_war
-        {
-            desired_military.max(city_count + counts.settlers)
-        } else {
-            desired_military
-        };
+        let desired_military =
+            if (self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
+                && !active_major_war
+            {
+                desired_military.max(city_count + counts.settlers)
+            } else {
+                desired_military
+            };
         // A camp in the home ring is already a production emergency even
         // before the next raider steps out. Keep one body per city as the
         // normal deterrent and add a second local body for a visible party.
@@ -24526,7 +24549,7 @@ impl AdvancedAi {
                     && (!self.settlement_safety
                         || Self::settler_queue_loyalty_risk(g, cid, turns).is_none())
                 {
-                    let site = if self.settler_site_gate {
+                    let site = if self.settler_site_gate || self.rapid_city_expansion_2 {
                         // `settler-site-gate`: the walker's refusals and the
                         // seats live Settlers already hold, asked before the
                         // Settler exists. See `advanced/settler_site_gate.rs`.
