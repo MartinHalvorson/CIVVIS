@@ -4709,6 +4709,17 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `district-planning-2`: the plan's own tile buy competes out of the
+    /// treasury reserve (never spending below half of it) instead of
+    /// waiting for 200 Gold of surplus headroom, and the purchase bars
+    /// drop to adjacency 2 with an edge of 1 over owned ground. Measured
+    /// motive: no recorded live game has ever bought a plot — replaying
+    /// Emperor game 20260901T132005Z at t40/t44, the plan priced the
+    /// adjacency-4 Campus plot at score 905 against a floor of 120 and the
+    /// headroom rule alone refused it, while three cities then placed
+    /// campuses at adjacency 1 or lower beside that ground. Version 2 of
+    /// `district-planning`; shared behaviour reads `district_planning_on`.
+    district_planning_2: bool,
     /// `cheapest-wonder-first`: a wonder this city can finish within
     /// `CHEAPEST_WONDER_TURNS` turns, in one of the empire's strongest
     /// cities, opens the live wonder race without the three-city and
@@ -6977,6 +6988,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            district_planning_2: false,
             cheapest_wonder_first: false,
             connect_the_luxury: false,
             commitment_patience: false,
@@ -17939,13 +17951,19 @@ impl AdvancedAi {
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
                 if let Action::BuyPlot { city, pos, cost } = &action {
-                    if bank + f64::EPSILON < reserve + 200.0 + cost {
-                        continue;
-                    }
                     // See `district_planning`: the plan may have named this
                     // very plot for a very valuable district site. That buy
-                    // competes as a strategic purchase, not a surplus one.
-                    if self.district_planning {
+                    // competes as a strategic purchase, not a surplus one —
+                    // and under `district-planning-2` it may spend into the
+                    // reserve, though never below half of it: no recorded
+                    // live treasury ever held the 200 Gold of surplus the
+                    // rule below demands, so version 1's buys never fired.
+                    let affordable_to_the_plan = if self.district_planning_2 {
+                        bank + f64::EPSILON >= reserve * 0.5 + cost
+                    } else {
+                        bank + f64::EPSILON >= reserve + 200.0 + cost
+                    };
+                    if affordable_to_the_plan && self.district_planning_on() {
                         if let Some(score) = self.district_plan_plot_score(
                             g,
                             pid,
@@ -17963,6 +17981,9 @@ impl AdvancedAi {
                             ));
                             continue;
                         }
+                    }
+                    if bank + f64::EPSILON < reserve + 200.0 + cost {
+                        continue;
                     }
                     let tile = &g.map.tiles[pos];
                     let resource = tile
@@ -22743,7 +22764,7 @@ impl AdvancedAi {
                 // See `district_planning`: the plan's sites join the menu
                 // and a reserved plot is withdrawn from a rival district —
                 // the argmax below is untouched, it only sees better.
-                if self.district_planning {
+                if self.district_planning_on() {
                     self.district_plan_shape_menu(g, pid, plan, cid, &mut items);
                 }
                 let scores = self.production_values(g, pid, cid, &items, plan, counts);
@@ -26353,6 +26374,10 @@ impl AdvancedAi {
 
     fn campus_adjacency_threshold_on(&self) -> bool {
         self.campus_adjacency_threshold || self.campus_adjacency_threshold_2
+    }
+
+    pub(super) fn district_planning_on(&self) -> bool {
+        self.district_planning || self.district_planning_2
     }
 
     fn power_the_laboratory_on(&self) -> bool {

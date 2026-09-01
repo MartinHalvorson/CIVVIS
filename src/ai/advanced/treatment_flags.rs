@@ -3367,6 +3367,24 @@ impl AdvancedAi {
         self.spaceport_surplus_veto = false;
     }
 
+    /// `district-planning-2`: the district plan's tile buy competes out of
+    /// the treasury reserve (never spending below half of it) instead of
+    /// needing 200 Gold of surplus headroom, and the purchase bars drop to
+    /// adjacency 2 with an edge of 1 over owned ground. Measured motive:
+    /// zero `buy_plot` orders in every recorded live game — replaying
+    /// Emperor game 20260901T132005Z, the plan priced the adjacency-4
+    /// Campus plot at 905 against a floor of 120 on every probed turn and
+    /// only the headroom rule refused it, while three cities placed
+    /// campuses at adjacency ≤ 1 beside that ground.
+    pub fn enable_district_planning_2(&mut self) {
+        self.district_planning_2 = true;
+    }
+
+    /// The twin of `enable_district_planning_2`.
+    pub fn disable_district_planning_2(&mut self) {
+        self.district_planning_2 = false;
+    }
+
     /// Version 2 of `air_surge`: the science–domination loop. The original
     /// one-appointment surge remains a separately measurable family member;
     /// this continuation lets the Formal-War clock run through the buildout,

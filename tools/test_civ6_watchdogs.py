@@ -130,6 +130,35 @@ class ReachVerdictTest(unittest.TestCase):
 
 
 class InfrastructureMirrorTest(unittest.TestCase):
+    def test_latest_state_event_cuts_the_stream_at_the_selected_frame(self) -> None:
+        events = [
+            {"kind": "tiles", "turn": 10, "plots": [{"x": 1, "y": 1}]},
+            {"kind": "state", "turn": 10},
+            {"kind": "tiles", "turn": 11, "plots": [{"x": 2, "y": 2}]},
+            {"kind": "state", "turn": 11},
+        ]
+
+        index, state = civ6_watchdogs.latest_state_event(events)
+
+        self.assertEqual(index, 3)
+        self.assertEqual(state["turn"], 11)
+        self.assertEqual(
+            civ6_watchdogs.latest_tiles(events[:index + 1]),
+            {(1, 1): events[0]["plots"][0], (2, 2): events[2]["plots"][0]},
+        )
+
+    def test_latest_state_event_can_select_an_older_same_turn_frame(self) -> None:
+        events = [
+            {"kind": "state", "turn": 40, "frame": 0},
+            {"kind": "tiles", "turn": 40, "plots": [{"x": 4, "y": 5}]},
+            {"kind": "state", "turn": 40, "frame": 1},
+        ]
+
+        index, state = civ6_watchdogs.latest_state_event(events, turn=40)
+
+        self.assertEqual(index, 2)
+        self.assertEqual(state["frame"], 1)
+
     def test_audit_resolves_truncated_district_and_firaxis_wonder_names(self) -> None:
         self.assertEqual(
             civ6_watchdogs.model_infrastructure_name(
