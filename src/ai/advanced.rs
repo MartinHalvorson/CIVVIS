@@ -32963,8 +32963,13 @@ impl AdvancedAi {
         }
         let value = match action {
             Action::Attack { .. } | Action::Ranged { .. } | Action::PriorityTarget { .. } => {
-                let exact =
-                    Self::tactical_attack_result_owned(g.speculative_clone(), pid, uid, action, plan);
+                let exact = Self::tactical_attack_result_owned(
+                    g.speculative_clone(),
+                    pid,
+                    uid,
+                    action,
+                    plan,
+                );
                 // `chase-every-boost`: the kill premium, on a kill the attacker
                 // survives. See `advanced/chase_every_boost.rs`.
                 if exact.attacker_survives && exact.value.is_finite() {
@@ -34850,7 +34855,10 @@ impl AdvancedAi {
         let mut scored = Vec::with_capacity(candidates.len());
         for (
             order,
-            ((pos, action), (attack_value, eliminates_enemy_unit, attacker_survives, reply_penalty)),
+            (
+                (pos, action),
+                (attack_value, eliminates_enemy_unit, attacker_survives, reply_penalty),
+            ),
         ) in candidates.into_iter().zip(evaluations).enumerate()
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
