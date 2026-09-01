@@ -145,6 +145,20 @@ class InfrastructureMirrorTest(unittest.TestCase):
             ),
             "statue_of_liberty",
         )
+        self.assertEqual(
+            civ6_watchdogs.model_infrastructure_name(
+                "DISTRICT_WATER_ENTERTAINMENT_COMPLEX", "DISTRICT_",
+                civ6_watchdogs.MODELLED_DISTRICTS,
+            ),
+            "water_park",
+        )
+        self.assertEqual(
+            civ6_watchdogs.model_infrastructure_name(
+                "DISTRICT_WATER_STREET_CARNIVAL", "DISTRICT_",
+                civ6_watchdogs.MODELLED_DISTRICTS,
+            ),
+            "copacabana",
+        )
 
     def test_city_roster_distinguishes_completed_foundation_and_wonder_plots(self) -> None:
         events = [{
@@ -360,6 +374,24 @@ class InfrastructureMirrorTest(unittest.TestCase):
         verdicts = civ6_watchdogs.verdicts(report, 0.35, 0.98)
 
         self.assertTrue(any("GOVERNORS DISAGREE" in verdict for verdict in verdicts))
+
+
+class TerrainMirrorTest(unittest.TestCase):
+    def test_expected_matches_mirror_aliases_and_national_park_flag(self) -> None:
+        vocab = civ6_watchdogs.load_vocab()
+        common = {"t": "TERRAIN_GRASSLAND", "w": False, "o": 0}
+
+        beach_resort = civ6_watchdogs.expected({
+            **common,
+            "im": "IMPROVEMENT_BEACH_RESORT",
+        }, vocab)
+        self.assertEqual(beach_resort["im"], "seaside_resort")
+
+        national_park = civ6_watchdogs.expected({
+            **common,
+            "np": True,
+        }, vocab)
+        self.assertEqual(national_park["im"], "national_park")
 
 
 if __name__ == "__main__":
