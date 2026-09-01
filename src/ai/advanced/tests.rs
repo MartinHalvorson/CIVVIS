@@ -20697,6 +20697,227 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
     );
 }
 
+/// Long routes are not quiet local walks. The live formationless escort used
+/// to return this Warrior to ordinary military work before the first step
+/// whenever no raider was already visible, leaving the whole crossing and
+/// arrival uncovered.
+#[test]
+fn a_quiet_long_settler_journey_keeps_its_land_guard() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let guard = game.spawn_test_unit("warrior", 0, source);
+    for uid in [settler, guard] {
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.moves_left = 2.0;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_formationless_settler_shadow();
+    ai.settler_targets.insert(settler, target);
+
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    assert_eq!(ai.settler_guards.get(&settler), Some(&guard));
+    assert_eq!(
+        ai.settler_escort_journeys
+            .get(&settler)
+            .map(|journey| journey.target),
+        Some(target),
+        "the first long route commits the escort before the quiet middle"
+    );
+    assert_eq!(
+        game.units[&guard].pos, game.units[&settler].pos,
+        "the land guard follows the first move instead of merely being reserved"
+    );
+}
+
+#[test]
+fn a_long_overseas_journey_adds_a_naval_guard_after_embarkation() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let harbor = game
+        .nbrs(source)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| game.rules.is_water(tile))
+        })
+        .expect("the home city has a water departure tile");
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let land_guard = game.spawn_test_unit("warrior", 0, source);
+    let sea_guard = game.spawn_test_unit("galley", 0, harbor);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_formationless_settler_shadow();
+    ai.settler_targets.insert(settler, target);
+
+    for uid in [settler, land_guard, sea_guard] {
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.moves_left = 2.0;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    assert!(
+        game.map
+            .get(game.units[&settler].pos)
+            .is_some_and(|tile| game.rules.is_water(tile)),
+        "the first long-route step embarks from the home city"
+    );
+    assert_eq!(ai.settler_guards.get(&settler), Some(&land_guard));
+
+    game.turn += 1;
+    for uid in [settler, land_guard, sea_guard] {
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.moves_left = 2.0;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+    let _ = ai.advanced_settler_step(&mut game, 0, settler);
+    assert_eq!(ai.settler_guards.get(&settler), Some(&land_guard));
+    assert_eq!(
+        ai.settler_sea_guards.get(&settler),
+        Some(&sea_guard),
+        "the naval unit joins the water layer without replacing the land guard"
+    );
+}
+
+#[test]
+fn expedition_guard_memory_remaps_and_releases_both_layers() {
+    let (_game, home, target) = stacked_escort_fixture();
+    let old_settler = 41;
+    let old_land_guard = 42;
+    let old_sea_guard = 43;
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_formationless_settler_shadow();
+    ai.settler_targets.insert(old_settler, target);
+    ai.settler_guards.insert(old_settler, old_land_guard);
+    ai.settler_sea_guards.insert(old_settler, old_sea_guard);
+    ai.settler_escort_journeys
+        .insert(old_settler, SettlerEscortJourney { home, target });
+    ai.guard_wait.insert(old_settler, (3, 1));
+
+    let new_settler = 141;
+    let new_land_guard = 142;
+    let new_sea_guard = 143;
+    ai.remap_unit_memory(&BTreeMap::from([
+        (old_settler, new_settler),
+        (old_land_guard, new_land_guard),
+        (old_sea_guard, new_sea_guard),
+    ]));
+    assert_eq!(ai.settler_guards.get(&new_settler), Some(&new_land_guard));
+    assert_eq!(
+        ai.settler_sea_guards.get(&new_settler),
+        Some(&new_sea_guard)
+    );
+    assert_eq!(
+        ai.settler_escort_journeys.get(&new_settler).copied(),
+        Some(SettlerEscortJourney { home, target })
+    );
+
+    assert!(ai.clear_settler_guard_bindings(new_settler));
+    assert!(!ai.settler_guards.contains_key(&new_settler));
+    assert!(!ai.settler_sea_guards.contains_key(&new_settler));
+    assert!(!ai.guard_wait.contains_key(&new_settler));
+
+    ai.disable_live_formationless_settler_shadow();
+    assert!(ai.settler_escort_journeys.is_empty());
+}
+
+/// On an overseas expedition the land and naval military layers can share an
+/// embarked Settler's water tile. The naval guard must stop at shore while
+/// the land guard disembarks, covers the hostile turn, and lets the Settler
+/// found on its next turn.
+#[test]
+fn an_overseas_settler_uses_both_guard_layers_and_lands_with_the_land_guard() {
+    let (mut game, source, island_center) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    let shore = game
+        .nbrs(island_center)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.nbrs(*pos).into_iter().any(|neighbour| {
+                    game.map
+                        .get(neighbour)
+                        .is_some_and(|tile| game.rules.is_water(tile))
+                })
+        })
+        .expect("the colony has a shoreline tile");
+    let water = game
+        .nbrs(shore)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| game.rules.is_water(tile))
+        })
+        .expect("the shoreline has an adjacent water tile");
+    let settler = game.spawn_test_unit("settler", 0, water);
+    let land_guard = game.spawn_test_unit("warrior", 0, water);
+    let sea_guard = game.spawn_test_unit("galley", 0, water);
+    for uid in [settler, land_guard, sea_guard] {
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.moves_left = 2.0;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_formationless_settler_shadow();
+    ai.settler_targets.insert(settler, shore);
+    // This is the water-to-land middle of a route that began at the home
+    // city; the route's distance was measured and committed at departure.
+    ai.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target: shore,
+        },
+    );
+    ai.settler_guards.insert(settler, land_guard);
+    ai.settler_sea_guards.insert(settler, sea_guard);
+
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    assert_eq!(game.units[&settler].pos, shore);
+    assert_eq!(
+        game.units[&land_guard].pos, shore,
+        "the embarked land guard disembarks with the Settler"
+    );
+    assert_eq!(
+        game.units[&sea_guard].pos, water,
+        "the naval guard remains on its water layer at the shore"
+    );
+    assert_eq!(ai.settler_guards.get(&settler), Some(&land_guard));
+    assert_eq!(ai.settler_sea_guards.get(&settler), Some(&sea_guard));
+
+    // The naval unit gets its turn after the Settler. Seeing the Settler on
+    // land releases the sea binding in that same turn, before it can be
+    // diverted by normal naval work.
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, sea_guard), None);
+    assert!(!ai.settler_sea_guards.contains_key(&settler));
+
+    for uid in [settler, land_guard] {
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.moves_left = 2.0;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    assert!(
+        game.city_at(shore).is_some(),
+        "the protected one-turn landfall becomes a city immediately next turn"
+    );
+}
+
 /// A live stack is only protection while its military unit can actually hold
 /// the tile.  `stacked_escort_pace` used to retain any living land unit,
 /// including the 21-HP Warrior killed on t37 of civvis-20260826T225804Z and
