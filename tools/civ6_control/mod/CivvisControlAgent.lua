@@ -5782,6 +5782,50 @@ CivvisMenus.queue = function(city)
 	return out;
 end;
 
+-- `GetActivationHighlightPlots` returns every matching district the host UI
+-- can highlight, including districts behind a closed border.  Great People
+-- can activate only in our empire, so crossing a foreign highlight would
+-- make the bridge issue the same MOVE_TO forever while the host correctly
+-- refuses to move the unit.  Keep this ownership gate at the host export
+-- boundary; the planner should never have to infer legality from a failed
+-- movement order.
+CivvisGreatPersonActivationPlots = function(unit, gp, pid, gwSurvey, openPlots)
+	local activationPlots = {};
+	local districtPlots = gwSurvey ~= nil and gwSurvey.district_plots or nil;
+	for _, plotIndex in ipairs(try(function()
+		return gp:GetActivationHighlightPlots();
+	end, {}) or {}) do
+		local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+		local owner = plot ~= nil and try(function() return plot:GetOwner(); end, -1) or -1;
+		if plot ~= nil and owner == pid then
+			local px = try(function() return plot:GetX(); end, -1);
+			local py = try(function() return plot:GetY(); end, -1);
+			if px >= 0 and py >= 0 then
+				-- Three-valued on purpose, and only for slot consumers:
+				-- true = a compatible empty slot stands here; false =
+				-- one of our districts with no such slot; nil/absent =
+				-- unknown (a wonder tile, or no survey). The brain must
+				-- never read absence as either claim.
+				local slotOpen = nil;
+				if openPlots ~= nil then
+					if openPlots[plotIndex] then slotOpen = true;
+					elseif districtPlots ~= nil and districtPlots[plotIndex] then
+						slotOpen = false;
+					end
+				end
+				activationPlots[#activationPlots + 1] = {
+					x = px, y = py,
+					distance = try(function()
+						return Map.GetPlotDistance(unit:GetX(), unit:GetY(), px, py);
+					end, 9999),
+					slot_open = slotOpen,
+				};
+			end
+		end
+	end
+	return activationPlots;
+end;
+
 local function exportState(player, pid, turn, frame)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
@@ -6658,38 +6702,8 @@ local function exportState(player, pid, turn, frame)
 			local emptySlots, openPlots = CivvisGreatWorks.matches(gwSurvey,
 				CivvisGreatWorks.objectsFor(individualRow ~= nil
 					and individualRow.GreatPersonIndividualType or nil, classType));
-			local activationPlots = {};
-			for _, plotIndex in ipairs(try(function()
-				return gp:GetActivationHighlightPlots();
-			end, {}) or {}) do
-				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
-				if plot ~= nil then
-					local px = try(function() return plot:GetX(); end, -1);
-					local py = try(function() return plot:GetY(); end, -1);
-					if px >= 0 and py >= 0 then
-						-- Three-valued on purpose, and only for slot consumers:
-						-- true = a compatible empty slot stands here; false =
-						-- one of our districts with no such slot (the tile
-						-- eleven people wedged on); nil/absent = unknown (a
-						-- wonder tile, or no survey). The brain must never
-						-- read absence as either claim.
-						local slotOpen = nil;
-						if openPlots ~= nil then
-							if openPlots[plotIndex] then slotOpen = true;
-							elseif gwSurvey.district_plots[plotIndex] then
-								slotOpen = false;
-							end
-						end
-						activationPlots[#activationPlots + 1] = {
-							x = px, y = py,
-							distance = try(function()
-								return Map.GetPlotDistance(unit:GetX(), unit:GetY(), px, py);
-							end, 9999),
-							slot_open = slotOpen,
-						};
-					end
-				end
-			end
+			local activationPlots = CivvisGreatPersonActivationPlots(
+				unit, gp, pid, gwSurvey, openPlots);
 			greatPerson = {
 				individual = individualRow ~= nil
 					and individualRow.GreatPersonIndividualType or nil,
