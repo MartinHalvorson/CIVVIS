@@ -28066,8 +28066,13 @@ impl AdvancedAi {
         // `opening_walk_budget` for the table and `opening_walk_pays` for the
         // price; both are gated to the FIRST city of a Settler that can found
         // where it stands, so a Settler that cannot found in place is never
-        // left without a candidate.
-        if g.player_city_ids(pid).is_empty()
+        // left without a candidate. It rides the `settle-sooner` gene — the
+        // gene that already prices every Settler's walk in turns — which the
+        // deployment genome and the live seat carry and `legacy()` does not,
+        // so the Elo anchor's play is untouched
+        // (`advanced_v1_plays_the_same_game_it_always_did`).
+        if self.settle_sooner
+            && g.player_city_ids(pid).is_empty()
             && g.can_found_city(uid)
             && self.opening_settlement_footprint_known(g, pid, from)
         {
