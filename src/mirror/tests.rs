@@ -162,6 +162,35 @@ fn historical_snapshot_does_not_read_tiles_from_a_future_turn() {
     let _ = std::fs::remove_dir(dir);
 }
 
+#[test]
+fn snapshot_stops_at_the_selected_state_before_a_later_mid_turn_delta() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-mirror-state-boundary-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    std::fs::write(
+        &path,
+        [
+            r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","f":"FEATURE_FOREST"}]}"#,
+            r#"{"kind":"state","turn":5,"frame":0}"#,
+            r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"frame":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","f":null}]}"#,
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+
+    let snapshot = snapshot_from_events_at(&path, Some(5)).unwrap();
+    assert_eq!(
+        snapshot.plot((1, 1)).and_then(|plot| plot.f.as_deref()),
+        Some("FEATURE_FOREST"),
+        "the selected state must not be paired with a later frame delta",
+    );
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_dir(dir);
+}
+
 /// ★★★★ A TILES DELTA IS NEW GROUND, NOT A NEW SWEEP. The mod sends what
 /// a unit revealed since the last board went out, every turn and frame,
 /// stamped `delta`. It must merge onto the map like any chunk — that is

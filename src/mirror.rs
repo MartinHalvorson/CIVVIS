@@ -476,24 +476,32 @@ impl Snapshot {
 
 /// Read every `tiles` chunk out of a run's `events.jsonl`.
 ///
-/// The stream is append-only and a chunk is self-describing, so re-reading from
-/// the start is both simplest and correct — later chunks overwrite earlier ones
-/// for the same plot, which is what [`Snapshot::from_chunks`] does.
+/// When a run has state events, the snapshot is cut at the stream position of
+/// the selected state. A state and a later mid-turn tile delta carry the same
+/// turn number but describe different boards; pairing the state with that
+/// later delta makes a replay judge one frame against another. Runs without
+/// state events retain the old whole-stream behaviour.
 pub fn snapshot_from_events(path: &std::path::Path) -> std::io::Result<Snapshot> {
     snapshot_from_events_at(path, None)
 }
 
-/// Read the explored map as it existed through `turn`, never from its future.
+/// Read the explored map as it existed at the selected state, never from its
+/// future. If the run has no matching state event, this falls back to the
+/// historical turn-only boundary.
 pub fn snapshot_from_events_at(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> std::io::Result<Snapshot> {
     let raw = std::fs::read_to_string(path)?;
+    let state_line = latest_state_line(&raw, turn);
     // In stream order, so a later chunk's plot wins whichever kind it is;
     // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
     // see `Snapshot::merge_delta`.
     let mut snapshot = Snapshot::default();
-    for line in raw.lines() {
+    for (line_number, line) in raw.lines().enumerate() {
+        if state_line.is_some_and(|limit| line_number > limit) {
+            break;
+        }
         if !line.contains("\"tiles\"") {
             continue;
         }
@@ -509,8 +517,36 @@ pub fn snapshot_from_events_at(
             }
         }
     }
-    apply_finished_improvements(&raw, turn, &mut snapshot);
+    apply_finished_improvements(&raw, turn, state_line, &mut snapshot);
     Ok(snapshot)
+}
+
+/// The line at which [`state_from_events`] selects its state.
+///
+/// State selection is newest-wins for a turn, and highest-turn-wins when no
+/// turn was requested. Keeping the same rule here makes a snapshot and a state
+/// share one exact point in the append-only event stream.
+fn latest_state_line(raw: &str, turn: Option<u32>) -> Option<usize> {
+    let mut best: Option<(u32, usize)> = None;
+    for (line_number, line) in raw.lines().enumerate() {
+        if !line.contains("\"state\"") {
+            continue;
+        }
+        let Ok(state) = state_from_json(line) else {
+            continue;
+        };
+        if turn.is_some_and(|want| state.turn != want) {
+            continue;
+        }
+        if best
+            .as_ref()
+            .map(|(best_turn, _)| state.turn >= *best_turn)
+            .unwrap_or(true)
+        {
+            best = Some((state.turn, line_number));
+        }
+    }
+    best.map(|(_, line_number)| line_number)
 }
 
 /// Fold `improved` events onto the assembled map, so a finished improvement is
@@ -540,8 +576,16 @@ pub fn snapshot_from_events_at(
 /// corrects it. Pillaging is far rarer than building, the window is the same few
 /// turns, and the sweep is authoritative either way — so this trades a common
 /// error for a rare one rather than removing error altogether.
-fn apply_finished_improvements(raw: &str, turn: Option<u32>, snapshot: &mut Snapshot) {
-    for line in raw.lines() {
+fn apply_finished_improvements(
+    raw: &str,
+    turn: Option<u32>,
+    state_line: Option<usize>,
+    snapshot: &mut Snapshot,
+) {
+    for (line_number, line) in raw.lines().enumerate() {
+        if state_line.is_some_and(|limit| line_number > limit) {
+            break;
+        }
         if !line.contains("\"improved\"") {
             continue;
         }
