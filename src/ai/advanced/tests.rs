@@ -3933,7 +3933,10 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 #[test]
 fn production_advanced_reflects_the_recorded_bounded_recovery_selection() {
     let bare = AdvancedAi::new();
-    assert!(!bare.bounded_recovery, "the bare controller remains opt-in-off");
+    assert!(
+        !bare.bounded_recovery,
+        "the bare controller remains opt-in-off"
+    );
     assert!(bare.envoy_priority);
 
     let mut production = AdvancedAi::new();
