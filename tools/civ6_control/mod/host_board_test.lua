@@ -753,6 +753,22 @@ check("visible combat: builder hold is an explicit refusal", has(lastEvent("orde
 check("visible combat: builder hold is counted", has(lastEvent("orders"),
 	'"builder_barbarian_capture_held":1'), true)
 
+-- A civilian-occupied destination can make the host path query return no
+-- answer even though Civ VI accepts the same MOVE_TO.  The geometric fallback
+-- must still protect a Builder inside a visible barbarian combat envelope.
+reset()
+host.cities[1] = { x = 16, y = 17 }
+host.units[65] = { id = 65, kind = "UNIT_BUILDER", x = 16, y = 18, moves = 2 }
+host.units[66] = { id = 66, kind = "UNIT_WARRIOR", x = 15, y = 18, moves = 2 }
+host.units[67] = { id = 67, kind = "UNIT_SETTLER", x = 15, y = 18, moves = 2 }
+host.barbarians[110] = { id = 110, kind = "UNIT_SLINGER", x = 15, y = 17, moves = 0 }
+-- No Builder path is registered: the fake host still accepts the operation,
+-- which models the live occupied-tile path-probe failure.
+applyOrders(player, PID, 32, { row(65, "MOVE_TO", 15, 18) })
+check("occupied destination fallback: builder stays out of capture leg", ops(65), "")
+check("occupied destination fallback: event names fallback", has(lastEvent("builder_barbarian_capture_hold"),
+	'"builder_reach":"distance_fallback"'), true)
+
 -- A later replan frame must not bypass a hold established by the first row
 -- for the same Builder.
 reset()
