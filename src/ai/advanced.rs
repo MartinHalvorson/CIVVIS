@@ -5650,6 +5650,11 @@ pub struct AdvancedAi {
     /// window closes. Opt-in gene `science-expansion-phase`; the timing
     /// argument is on the constant.
     science_expansion_phase: bool,
+    /// A Settler out of a city past `SETTLER_WALK_DEADLINE_STANDARD` founds
+    /// the best legal site within reach instead of chasing a ranked one.
+    /// Opt-in gene `settler-walk-deadline`; the forensic that motivates it is
+    /// on `advanced/settler_walk_deadline.rs`.
+    settler_walk_deadline: bool,
     /// `science-opening-band`: the assigned Science lane keeps the
     /// expansion-first posture until `SCIENCE_OPENING_BAND_CITY_TARGET`
     /// cities or `SCIENCE_OPENING_BAND_STANDARD_TURNS`, instead of the
@@ -6469,6 +6474,9 @@ mod settler_target_floor;
 /// is built, and a Settler's guard cuts down the raider pinning it. Two
 /// genes; see `advanced/siege_response.rs`.
 mod siege_response;
+/// An opening Settler that has walked too long founds within reach. One
+/// opt-in gene; see `advanced/settler_walk_deadline.rs`.
+mod settler_walk_deadline;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -7285,6 +7293,7 @@ impl AdvancedAi {
             settler_site_gate: false,
             settler_target_floor: false,
             science_expansion_phase: false,
+            settler_walk_deadline: false,
             science_opening_band: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
@@ -29571,9 +29580,10 @@ impl AdvancedAi {
         if self.settler_never_idles {
             self.note_settler_idle(g, uid);
         }
-        if self.settle_sooner {
+        if self.settle_sooner || self.settler_walk_deadline {
             // The walk clock starts the first turn the Settler is stepped,
-            // whichever branch below steps it. See `settle_sooner`.
+            // whichever branch below steps it. See `settle_sooner`; the
+            // `settler_walk_deadline` reads the same clock.
             self.settler_walk_started.entry(uid).or_insert(g.turn);
         }
         if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
@@ -29929,6 +29939,13 @@ impl AdvancedAi {
                 return moved;
             }
             return false;
+        }
+        // See `settler_walk_deadline`: a walker past its deadline founds the
+        // best legal site within reach before the target search runs.
+        if self.settler_walk_deadline {
+            if let Some(acted) = self.settler_walk_deadline_step(g, pid, uid) {
+                return acted;
+            }
         }
         let visible = self.battlefront_visibility(g, pid);
         // The checks in dropping order, each with a name. Run 212725Z spent
