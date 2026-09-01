@@ -24645,8 +24645,7 @@ impl AdvancedAi {
                         // parallelism.
                         return -10_000.0;
                     }
-                    let races_science = plan.strategy == GrandStrategy::Science
-                        || self.science_drive_active()
+                    let races_science = self.science_drive_active()
                         || self.space_race_lane(g, pid)
                         || self.raced_target() == Some(VictoryTarget::Science);
                     let current_queued_spaceport = city.queue.first().is_some_and(|queued| {

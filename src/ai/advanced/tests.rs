@@ -12065,11 +12065,13 @@ fn a_pad_beyond_the_race_stage_earns_no_science_bonus() {
         pos: game.cities[&second].pos,
     };
 
-    let mut live = AdvancedAi::targeting(VictoryTarget::Science);
+    // An unassigned Science plan leaves the explicit-race reservation alone;
+    // this opt-in still prices its own adaptive-plan experiment there.
+    let mut live = AdvancedAi::new();
     live.enable_live_bridge_universe();
     live.enable_spaceport_surplus_veto();
     live.refresh_research_weight(&game);
-    let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge_universe();
     withheld.disable_spaceport_surplus_veto();
     withheld.refresh_research_weight(&game);
