@@ -428,16 +428,19 @@ while true; do
   # A wedged core is invisible until a game fails to start, so recycle the game
   # cleanly whenever the previous attempt did not play a turn.
   if (( consecutive_failures > 0 )); then
-    # ⚠ --stop, NOT --restart. The climb's `busy()` refuses to touch a running
-    # Civ 6 it cannot prove it owns ("refusing to stop an unowned run", exit 3)
-    # — and --restart hands it exactly that: a relaunched, unowned game parked
-    # at the menu. Measured 2026-08-15 12:30–12:35Z: restart → climb refuses →
-    # failure → restart, four times in five minutes into the ten-minute nap,
-    # with each "attempt" lasting under a second. The remedy must leave the
-    # game DOWN; the climb launches Civ 6 itself and then owns what it
-    # launched. A wedged core is equally cleared by a stop.
-    say "previous attempt started no game; stopping Civ 6 so the next climb owns its launch"
-    python3 tools/civ6_launch.py --stop >>"$SUP" 2>&1
+    # The next climb must own its launch: an unowned game parked at the menu
+    # makes `busy()` refuse to start it. But a failed graceful quit is not
+    # authority to SIGKILL Civ VI — that can leave its saves half-written. The
+    # environment helper sends one ordinary TERM and reports failure; preserve
+    # a game that does not exit and retry the verified boundary later.
+    say "previous attempt started no game; requesting a graceful Civ 6 stop before the next owned launch"
+    if ! PYTHONPATH="$HEAD_REPO/tools${PYTHONPATH:+:$PYTHONPATH}" \
+        python3 -c 'import civ6_env, sys; sys.exit(0 if civ6_env.quit_game(timeout_s=45.0) else 1)' \
+        >>"$SUP" 2>&1; then
+      say "Civ 6 did not exit after the graceful stop; preserving it and retrying in 60s"
+      sleep 60
+      continue
+    fi
   fi
 
   PIN=$(cat "$PINFILE" 2>/dev/null || print -r -- head)
