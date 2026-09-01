@@ -1898,6 +1898,9 @@ pub const GENES: &[Gene] = &[
     // empty-capital reservation, refuse unworthy or already-claimed sites,
     // and leave ordinary queues, pantheons, site ranking and peace intact.
     Gene { tag: "rapid-city-expansion-2", field: "rapid_city_expansion_2", kind: Kind::OptIn, enable: AdvancedAi::enable_rapid_city_expansion_2, disable: AdvancedAi::disable_rapid_city_expansion_2 },
+    // Repair only a persistent two-turn stall, accept only civilian work above
+    // the hard veto, and ignore repeated observations of the same host turn.
+    Gene { tag: "never-an-empty-queue-3", field: "never_an_empty_queue_3", kind: Kind::OptIn, enable: AdvancedAi::enable_never_an_empty_queue_3, disable: AdvancedAi::disable_never_an_empty_queue_3 },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

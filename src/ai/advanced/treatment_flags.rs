@@ -2667,7 +2667,9 @@ impl AdvancedAi {
     /// here rather than under a marker: the append-point check reads a method
     /// line's first identifier.
     pub fn enable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue = false;
         self.never_an_empty_queue_2 = true;
+        self.never_an_empty_queue_3 = false;
     }
 
     /// The twin of `enable_never_an_empty_queue_2`.
@@ -2681,6 +2683,8 @@ impl AdvancedAi {
     /// method line's first identifier.
     pub fn enable_never_an_empty_queue(&mut self) {
         self.never_an_empty_queue = true;
+        self.never_an_empty_queue_2 = false;
+        self.never_an_empty_queue_3 = false;
     }
 
     /// The twin of `enable_never_an_empty_queue`.
@@ -3513,6 +3517,20 @@ impl AdvancedAi {
     pub fn disable_rapid_city_expansion_2(&mut self) {
         self.rapid_city_expansion_2 = false;
         self.base.disable_rapid_city_expansion_2();
+    }
+
+    /// Version three of `never-an-empty-queue`: tolerate one transient empty
+    /// turn, then recover a persistent stall with a civilian candidate above
+    /// the hard veto. Enabling it selects this family version exclusively.
+    pub fn enable_never_an_empty_queue_3(&mut self) {
+        self.never_an_empty_queue = false;
+        self.never_an_empty_queue_2 = false;
+        self.never_an_empty_queue_3 = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue_3`.
+    pub fn disable_never_an_empty_queue_3(&mut self) {
+        self.never_an_empty_queue_3 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

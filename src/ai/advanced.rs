@@ -1636,9 +1636,8 @@ pub struct AdvancedAi {
     /// strategic queue remained empty.  Host bridge calls can revisit one
     /// turn several times while a blocking production prompt is settling, so
     /// the turn stamp is part of the value rather than a separate global
-    /// counter.  The recovery is deliberately narrow: only an explicitly
-    /// targeted Science seat consumes it, and only after the second distinct
-    /// idle turn.
+    /// counter. The deployed Science recovery and the version-three idle-queue
+    /// challenger consume it only after the second distinct idle turn.
     idle_production_streak: BTreeMap<u32, (u32, u32)>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -5442,6 +5441,20 @@ pub struct AdvancedAi {
     /// ships. Opt-in gene `never-an-empty-queue-2`.
     never_an_empty_queue_2: bool,
 
+    /// Version 3 of `never-an-empty-queue`: repair a persistent stall, not a
+    /// transient empty observation.
+    ///
+    /// The first two versions act on the first idle turn and consistently
+    /// lose in the latest three batch windows. A narrower deployed repair now
+    /// establishes the useful boundary: a Science-targeted seat waits for two
+    /// distinct idle turns, ignores repeated bridge observations of one turn,
+    /// and then accepts only a civilian above the hard veto. Version three
+    /// extends exactly that persistence rule to the other strategies. It does
+    /// nothing on the first idle turn, never manufactures a surplus soldier,
+    /// and is identical to the already-deployed path on a Science seat.
+    /// Opt-in gene `never-an-empty-queue-3`.
+    never_an_empty_queue_3: bool,
+
     /// A city with nothing above the ordinary bar builds the best real
     /// candidate instead of standing idle for the turn.
     ///
@@ -7215,6 +7228,7 @@ impl AdvancedAi {
             lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
+            never_an_empty_queue_3: false,
             never_an_empty_queue: false,
             native_emergency_purchase: false,
             order_retry: false,
@@ -18519,7 +18533,7 @@ impl AdvancedAi {
     /// observations of the same host turn.  A gap or a rewind breaks the
     /// streak: a city that built something in between must not inherit an old
     /// idle debt when its next queue completes.
-    fn science_idle_production_recovery_due(&mut self, cid: u32, turn: u32) -> bool {
+    fn idle_production_recovery_due(&mut self, cid: u32, turn: u32) -> bool {
         const RECOVERY_AFTER_IDLE_TURNS: u32 = 2;
         let streak = match self.idle_production_streak.get_mut(&cid) {
             Some((last_turn, count)) if *last_turn == turn => *count,
@@ -23133,25 +23147,25 @@ impl AdvancedAi {
             };
             // See `never_an_empty_queue`: nothing cleared the bar, so this city
             // is about to spend the turn producing nothing at all. A targeted
-            // Science seat gets the same least-bad civilian answer after two
-            // distinct idle turns. That turns a persistent queue stall into a
-            // bounded one-turn delay without making every ordinary refusal a
-            // new unit-maintenance bill.
-            let persistent_science_idle = chosen.is_none()
+            // Science seat -- or the version-three challenger under any plan
+            // -- gets the same least-bad civilian answer after two distinct
+            // idle turns. That turns a persistent queue stall into a bounded
+            // one-turn delay without making every transient refusal a build.
+            let persistent_idle_recovery = chosen.is_none()
                 && committed.is_none()
-                && science_targeted
-                && self.science_idle_production_recovery_due(cid, g.turn);
+                && (science_targeted || self.never_an_empty_queue_3)
+                && self.idle_production_recovery_due(cid, g.turn);
             let chosen = match chosen {
                 Some(found) => Some(found),
                 None if (self.never_an_empty_queue
                     || self.never_an_empty_queue_2
-                    || persistent_science_idle)
+                    || persistent_idle_recovery)
                     && committed.is_none() =>
                 {
                     // See `never_an_empty_queue_2`: version two will not answer
                     // an idle turn with a soldier the empire did not want and
                     // then owes upkeep on, and would rather stay idle.
-                    let civilian_only = self.never_an_empty_queue_2 || persistent_science_idle;
+                    let civilian_only = self.never_an_empty_queue_2 || persistent_idle_recovery;
                     let fallback = {
                         let _memo = g.query_memo();
                         let items = g.producible_items(pid, cid);
@@ -23211,7 +23225,7 @@ impl AdvancedAi {
                 // idle-queue gene, or after the targeted Science recovery
                 // streak; otherwise this line is the only trace the idle
                 // turn leaves.
-                if persistent_science_idle {
+                if persistent_idle_recovery {
                     think!(self.journal(), Cities, Detail,
                            "{} builds nothing", g.cities[&cid].name;
                            "two distinct idle turns reached, but no civilian candidate cleared the hard veto");

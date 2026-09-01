@@ -1511,7 +1511,8 @@
         "ships": null,
         "versions": {
           "never-an-empty-queue": null,
-          "never-an-empty-queue-2": null
+          "never-an-empty-queue-2": null,
+          "never-an-empty-queue-3": null
         }
       },
       "power-the-laboratory": {
