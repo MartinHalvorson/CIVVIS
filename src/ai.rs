@@ -6330,7 +6330,13 @@ impl BasicAi {
     /// recovery ground. `Game::reachable` and `Game::path_to` decide the same
     /// movement, so this can take a wounded unit all the way into a nearby
     /// city rather than stopping one tile short for no tactical reason.
-    pub(crate) fn move_to_evacuation_tile(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
+    pub(crate) fn move_to_evacuation_tile(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
         let Some(path) = g.path_to(uid, target) else {
             return false;
         };
