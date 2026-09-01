@@ -3851,17 +3851,21 @@ fn restore_incoming_foreign_routes(
 ) -> Vec<String> {
     let ends = game.turn.saturating_add(game.max_turns.max(1));
     let mut unresolved = Vec::new();
+    // The route origins are visibility-limited, but the host's destination
+    // counts are not. The count delta is reconciled after all known routes,
+    // including rival outgoing routes, have been seated below.
+    Arc::make_mut(&mut game.observed_incoming_route_deltas).clear();
     for city in cities {
         let Some(incoming) = city.incoming_routes.as_ref() else {
+            continue;
+        };
+        let Some(dest) = game.city_at(crate::hex::offset_to_axial(city.x, city.y)) else {
+            unresolved.push(format!("incoming_route:{}:destination", city.name));
             continue;
         };
         if incoming.origins.is_empty() {
             continue;
         }
-        let Some(dest) = game.city_at(crate::hex::offset_to_axial(city.x, city.y)) else {
-            unresolved.push(format!("incoming_route:{}:destination", city.name));
-            continue;
-        };
         let dest_owner = game.cities[&dest].owner;
         for origin in &incoming.origins {
             if origin.x < 0 || origin.y < 0 {
@@ -3944,6 +3948,42 @@ fn restore_rival_outgoing_routes(game: &mut crate::game::Game, rivals: &[StateRi
                 game.routes.push(route);
             }
         }
+    }
+}
+
+/// Reconcile the host's incoming-route totals with the route entities that
+/// could be materialized on the mirrored board. Positive deltas are normally
+/// routes whose origin is fogged; negative deltas keep a stale or partial
+/// route export from making the model over-count. Keeping a delta instead of
+/// replacing the derived count means a counterfactual route action still moves
+/// the projected destination-side yields by exactly one route.
+fn reconcile_incoming_route_deltas(game: &mut crate::game::Game, cities: &[StateCity]) {
+    Arc::make_mut(&mut game.observed_incoming_route_deltas).clear();
+    for city in cities {
+        let Some(incoming) = city.incoming_routes.as_ref() else {
+            continue;
+        };
+        let Some(dest) = game.city_at(crate::hex::offset_to_axial(city.x, city.y)) else {
+            continue;
+        };
+        let dest_owner = game.cities[&dest].owner;
+        let known_foreign = game
+            .routes
+            .iter()
+            .filter(|route| route.dest == dest && route.owner != dest_owner)
+            .count() as i64;
+        let known_domestic = game
+            .routes
+            .iter()
+            .filter(|route| route.dest == dest && route.owner == dest_owner)
+            .count() as i64;
+        Arc::make_mut(&mut game.observed_incoming_route_deltas).insert(
+            dest,
+            (
+                incoming.foreign.saturating_sub(known_foreign),
+                incoming.domestic.saturating_sub(known_domestic),
+            ),
+        );
     }
 }
 
@@ -10593,6 +10633,7 @@ fn step_trade_routes(ctx: &mut HostStepCtx<'_>) {
             ctx.unmapped.extend(active);
             ctx.unmapped.extend(incoming);
             restore_rival_outgoing_routes(ctx.game, &ctx.state.rivals);
+            reconcile_incoming_route_deltas(ctx.game, &ctx.state.cities);
             let options = restore_route_options(
                 ctx.game,
                 ctx.state.route_options.as_deref(),
@@ -10615,6 +10656,7 @@ fn step_trade_routes(ctx: &mut HostStepCtx<'_>) {
                 }
             }
             restore_rival_outgoing_routes(ctx.game, &ctx.state.rivals);
+            reconcile_incoming_route_deltas(ctx.game, &ctx.state.cities);
         }
     }
 }

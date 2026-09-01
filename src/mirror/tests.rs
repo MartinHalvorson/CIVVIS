@@ -4962,6 +4962,11 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     );
     assert_eq!(seated[0].origin, auckland);
     assert_eq!(seated[0].owner, 1);
+    assert_eq!(
+        mirror.game.observed_incoming_route_deltas.get(&cumae),
+        Some(&(0, 0)),
+        "a fully seated route needs no incoming-count correction"
+    );
     // The host's Congress is the model's Congress: Trade Policy A on our
     // seat, Luxury Policy B on silk, and the resolution the model has no
     // rule for is reported rather than guessed.
@@ -5012,10 +5017,48 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
             .count(),
         1
     );
-    assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
+    // An incoming route may remain visible at the destination while its
+    // origin city is outside the seat's visibility. Keep the authoritative
+    // count even though there is no safe city entity to invent for it.
+    state.cities[0].incoming_routes = Some(StateIncomingRoutes {
+        foreign: 1,
+        domestic: 0,
+        origins: vec![StateRouteOrigin {
+            x: 19,
+            y: 19,
+            player: 42,
+        }],
+    });
     state.turn = 92;
-    state.resolutions = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror
+            .game
+            .routes
+            .iter()
+            .filter(|route| route.dest == cumae)
+            .count(),
+        0,
+        "an unseen origin is not guessed into a city"
+    );
+    assert_eq!(
+        mirror.game.observed_incoming_route_deltas.get(&cumae),
+        Some(&(1, 0))
+    );
+    let with_unseen_route = mirror.game.city_yields_model(cumae).gold;
+    std::sync::Arc::make_mut(&mut mirror.game.observed_incoming_route_deltas).clear();
+    let without_unseen_route = mirror.game.city_yields_model(cumae).gold;
+    assert!(
+        (with_unseen_route - without_unseen_route - 4.0).abs() < 1e-9,
+        "Trade Policy A must count a foreign route whose origin is fogged: {} vs {}",
+        with_unseen_route,
+        without_unseen_route
+    );
+    // Restore the observation before the ordinary no-route sync below.
     state.cities[0].incoming_routes = Some(StateIncomingRoutes::default());
+    assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
+    state.resolutions = Some(vec![]);
+    state.turn = 93;
     mirror.sync(&snapshot, &state, 0);
     assert!(mirror.game.active_congress_effects.is_empty());
     assert_eq!(
