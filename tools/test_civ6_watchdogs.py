@@ -104,6 +104,99 @@ class IdleStackTest(unittest.TestCase):
         }))
 
 
+class CivilianLossTest(unittest.TestCase):
+    def test_founder_is_excluded_but_precise_and_heuristic_losses_are_loud(self) -> None:
+        events = [
+            {"kind": "found", "turn": 2, "unit": 10},
+            {"kind": "unit_lost", "turn": 2, "unit": 10,
+             "unit_kind": "UNIT_SETTLER"},
+            {"kind": "unit_lost", "turn": 3, "unit": 11,
+             "unit_kind": "UNIT_SETTLER"},
+            {"kind": "unit_captured", "turn": 3, "unit": 11,
+             "unit_kind": "UNIT_SETTLER", "captor": 63,
+             "captor_is_barbarian": True},
+            # Older ledgers have only the Settler removal witness; retain that
+            # established heuristic separately from the precise callback.
+            {"kind": "unit_lost", "turn": 3, "unit": 15,
+             "unit_kind": "UNIT_SETTLER"},
+            {"kind": "unit_lost", "turn": 4, "unit": 12,
+             "unit_kind": "UNIT_BUILDER"},
+            {"kind": "unit_captured", "turn": 4, "unit": 12,
+             "unit_kind": "UNIT_BUILDER", "captor": 63,
+             "captor_is_barbarian": True},
+            # A precise callback without its paired removal witness is still a
+            # loss signal, rather than silently disappearing from the report.
+            {"kind": "unit_captured", "turn": 5, "unit": 13,
+             "unit_kind": "UNIT_BUILDER", "captor": 63,
+             "captor_is_barbarian": True},
+            {"kind": "state", "turn": 6, "units": [
+                {"id": 14, "kind": "UNIT_BUILDER", "build_charges": 1},
+            ]},
+            # One remaining charge alone is not enough to infer consumption;
+            # the verified improvement is the second witness.
+            {"kind": "unit_lost", "turn": 6, "unit": 14,
+             "unit_kind": "UNIT_BUILDER"},
+            {"kind": "state", "turn": 7, "units": [
+                {"id": 16, "kind": "UNIT_BUILDER", "build_charges": 1},
+            ]},
+            {"kind": "order_verified", "turn": 7, "subject": 16,
+             "verb": "IMPROVE:IMPROVEMENT_FARM"},
+            {"kind": "unit_lost", "turn": 7, "unit": 16,
+             "unit_kind": "UNIT_BUILDER"},
+        ]
+
+        report = civ6_watchdogs.civilian_losses(events)
+
+        self.assertTrue(report["checked"])
+        self.assertEqual(report["unit_lost_events"], 6)
+        self.assertEqual(report["founding_losses"], 1)
+        self.assertEqual(report["non_founding_losses"], 5)
+        self.assertEqual(report["expected_builder_consumptions"], 1)
+        self.assertEqual(report["explicit_captures"], 3)
+        self.assertEqual(report["inferred_settler_captures"], 1)
+        self.assertEqual(report["unresolved_losses"], 1)
+        self.assertEqual(report["by_kind"], {"UNIT_BUILDER": 3, "UNIT_SETTLER": 2})
+        self.assertEqual(report["by_reason"], {
+            "unit_captured": 2,
+            "unit_captured_without_loss_witness": 1,
+            "settler_loss_without_found": 1,
+            "unresolved_loss": 1,
+        })
+
+    def test_terminal_unit_removals_are_not_called_captures(self) -> None:
+        events = [
+            {"kind": "defeat", "turn": 10, "ours": True},
+            {"kind": "unit_lost", "turn": 10, "unit": 20,
+             "unit_kind": "UNIT_BUILDER"},
+        ]
+
+        report = civ6_watchdogs.civilian_losses(events)
+
+        self.assertEqual(report["non_founding_losses"], 0)
+        self.assertEqual(report["terminal_disposals"], 1)
+        self.assertFalse(any(
+            "CIVILIAN LOSSES" in verdict
+            for verdict in civ6_watchdogs.verdicts(
+                {"civilian_losses": report}, 0.35, 0.98
+            )
+        ))
+
+    def test_civilian_loss_is_a_loud_verdict(self) -> None:
+        report = {"civilian_losses": {
+            "non_founding_losses": 2,
+            "explicit_captures": 1,
+            "inferred_settler_captures": 1,
+            "unresolved_losses": 1,
+            "founding_losses": 3,
+            "by_kind": {"UNIT_BUILDER": 2},
+            "examples": [],
+        }}
+
+        found = civ6_watchdogs.verdicts(report, 0.35, 0.98)
+
+        self.assertTrue(any("CIVILIAN LOSSES" in verdict for verdict in found))
+
+
 class ReachVerdictTest(unittest.TestCase):
     @staticmethod
     def report(first: int, last: int) -> dict:

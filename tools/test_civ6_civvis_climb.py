@@ -1709,14 +1709,15 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
         self.assertEqual([r["from_turn"] for r in row["resumes"]],
                          [102, 140, 151, 158, 159, 160])
-        # One back, four back, nine back — RESUME_STEPS = (0, 3, 8) against the
-        # list with the parked turn's own save removed; every resume past the
-        # third keeps the widest stride. Each of the first three attempts
-        # reaches a board the last one did not.
+        # One, four, nine, sixteen, twenty-five and thirty-six back —
+        # RESUME_STEPS = (0, 3, 8, 15, 24, 35) against the list with the parked
+        # turn's own save removed. Every attempt reaches a board the last one
+        # did not, and the sixth, whose stride runs past the thirty saves on
+        # disk, clamps to the oldest (t131) rather than replaying the fifth's.
         self.assertEqual([r["save"] for r in row["resumes"]],
                          ["AutoSave_0160.Civ6Save", "AutoSave_0157.Civ6Save",
-                          "AutoSave_0152.Civ6Save", "AutoSave_0151.Civ6Save",
-                          "AutoSave_0151.Civ6Save", "AutoSave_0151.Civ6Save"])
+                          "AutoSave_0152.Civ6Save", "AutoSave_0144.Civ6Save",
+                          "AutoSave_0135.Civ6Save", "AutoSave_0131.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont6"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
@@ -2090,12 +2091,14 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
         def kill(self):
             pass
 
-    def _run(self, die_on, step=60.0, frozen_s=900.0):
+    def _run(self, die_on, step=60.0, frozen_s=900.0, handoff=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "run").mkdir()
             (root / "run" / "events.jsonl").write_text(
                 json.dumps({"kind": "turn", "turn": 102}) + "\n")
+            if handoff is not None:
+                (root / "run" / climb.WEDGE_HANDOFF_MARKER).write_text(handoff)
             original = climb.RUN_ROOT
             climb.RUN_ROOT = root
             clock = {"t": 0.0}
@@ -2124,6 +2127,52 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
         so its signal is what arrives, and above a normal end."""
         self.assertLess(climb.EXIT_WHILE_STALE_S, 5 * 60)
         self.assertGreaterEqual(climb.EXIT_WHILE_STALE_S, 3 * 60)
+
+    def test_a_written_handoff_is_frozen_however_fresh_the_turn(self):
+        """⚠⚠ THE WATCHDOG'S OTHER TRIGGER DOES NOT WAIT FOR THE CLOCK.
+
+        A unit blocker repeated on one turn hands the run over after six
+        sightings, and the mod re-raises it every few seconds. Run
+        `civvis-20260831T085324Z-cont1` reloaded AutoSave_0119, re-wedged at
+        t120 on ENDTURN_BLOCKING_UNITS and was handed to the climb at 09:44:13,
+        two minutes after its first turn: the stale test read "exited", the
+        game was filed as killed at t120, and two of three resumes went unused.
+        The marker the watchdog now writes before signalling is the handoff.
+        """
+        marker = json.dumps({"tag": "run", "turn": 120,
+                             "reason": "repeating unit blocker "
+                                       "ENDTURN_BLOCKING_UNITS at t120 "
+                                       "(19 sightings)"})
+        # Stale for only 60 s — the exact case the clock alone files as exited.
+        self.assertEqual(self._run(die_on=2, handoff=marker), "frozen")
+
+    def test_an_unreadable_handoff_still_hands_the_run_over(self):
+        """Existence is the signal; the body is for the log. The watchdog only
+        ever writes the file on its reload branch, so a torn or odd body must
+        not turn a handoff back into a discarded game."""
+        self.assertEqual(self._run(die_on=2, handoff="not json"), "frozen")
+        self.assertEqual(self._run(die_on=2, handoff="[1, 2]"), "frozen")
+
+    def test_without_a_handoff_the_clock_still_decides(self):
+        """An older watchdog writes nothing; the stale-turn rule stays."""
+        self.assertEqual(self._run(die_on=2), "exited")
+        self.assertEqual(self._run(die_on=6), "frozen")
+
+    def test_the_handoff_is_read_from_the_runs_own_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a").mkdir()
+            (root / "a" / climb.WEDGE_HANDOFF_MARKER).write_text(
+                json.dumps({"turn": 88, "reason": "NO GAME PROGRESS"}))
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            try:
+                self.assertEqual(climb.wedge_handoff("a"),
+                                 {"turn": 88, "reason": "NO GAME PROGRESS"})
+                self.assertIsNone(climb.wedge_handoff("a-cont1"),
+                                  "a continuation is a new run with no handoff")
+            finally:
+                climb.RUN_ROOT = original
 
 
 class AbandonedGamesAreNotReloaded(unittest.TestCase):
@@ -2369,6 +2418,62 @@ class TheThirdResumeSamplesSomewhereNew(unittest.TestCase):
         self.assertIsNone(climb.resume_from_autosave(
             {"last_turn": 93}, "frozen", 3, self._args(), 0.0,
             recent=lambda newer_than=None: list(self.SAVES)))
+
+
+class ResumesPastTheThirdKeepWalkingBack(unittest.TestCase):
+    """⚠⚠ A DETERMINISTIC PARK SURVIVES STRIDES, AND THE BUDGET IS SIX.
+
+    On 2026-08-31 three of seven parks (t88, t147, t40) replayed into the same
+    deadlock from one back AND four back, and were escaped only by the nine-back
+    stride. With three stride entries and a six-resume budget (#2861), resumes
+    four to six all clamped to the last index and reloaded the very board the
+    third attempt had just failed on — the front-of-rotation waste #2817 removed,
+    back at the tail. Each later attempt now reaches strictly further back.
+    """
+
+    def _args(self, budget=6):
+        import argparse
+        return argparse.Namespace(max_resumes=budget,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    # A game that parked at t88 with an autosave for every turn since t40.
+    SAVES = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(88, 39, -1)]
+
+    def _pick(self, attempt, saves=None):
+        return climb.resume_from_autosave(
+            {"last_turn": 88}, "frozen", attempt, self._args(), 0.0,
+            recent=lambda newer_than=None: list(saves or self.SAVES))
+
+    def test_the_fourth_resume_is_strictly_older_than_the_third(self):
+        third, fourth = self._pick(2), self._pick(3)
+        self.assertEqual(third, Path("AutoSave_0079.Civ6Save"))
+        self.assertLess(climb._autosave_turn(fourth), climb._autosave_turn(third),
+                        f"the fourth attempt replayed the third's board: {fourth}")
+        self.assertEqual(fourth, Path("AutoSave_0072.Civ6Save"))
+
+    def test_every_attempt_in_the_budget_reaches_a_strictly_older_board(self):
+        turns = [climb._autosave_turn(self._pick(i)) for i in range(6)]
+        self.assertEqual(turns, [87, 84, 79, 72, 63, 52])
+        self.assertEqual(turns, sorted(turns, reverse=True))
+        self.assertEqual(len(set(turns)), 6)
+
+    def test_a_stride_past_the_oldest_autosave_clamps_to_the_oldest(self):
+        """A short list is still a different board from the one that parked;
+        running out of stride must not turn into running out of resumes."""
+        short = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(88, 76, -1)]
+        # Eleven candidates once t88's own save is dropped: indexes 15, 24 and
+        # 35 are all past the end and every one takes the oldest, t77.
+        for attempt in (3, 4, 5):
+            with self.subTest(attempt=attempt):
+                self.assertEqual(self._pick(attempt, short),
+                                 Path("AutoSave_0077.Civ6Save"))
+        # The strides inside the list are untouched by the clamp.
+        self.assertEqual(self._pick(2, short), Path("AutoSave_0079.Civ6Save"))
+
+    def test_the_budget_still_ends_the_rotation(self):
+        self.assertIsNone(self._pick(6))
+        self.assertEqual(len(climb.RESUME_STEPS), 6,
+                         "one distinct stride per resume in the default budget")
 
 
 class TheOperatorsLaneOutlivesAStaleEnvironment(unittest.TestCase):

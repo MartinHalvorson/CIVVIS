@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -155,6 +156,61 @@ class DeepWedgeIsHandedToTheClimb(unittest.TestCase):
         source = self._source()
         self.assertIn("HANDOFF_GRACE=${CIVVIS_WEDGE_HANDOFF_GRACE:-12}", source)
         self.assertIn('kill -TERM "$handoff_climb"', source)
+
+    def test_the_handoff_is_written_down_before_the_player_is_signalled(self):
+        """⚠⚠ THE CLIMB READS THE MARKER, NOT THE CLOCK.
+
+        The climb recognised a handoff only by the player exiting with its turn
+        stale past 240 s — true of the five no-progress samples, false of the
+        unit-blocker streak, which the mod feeds every few seconds. Run
+        `civvis-20260831T085324Z-cont1` was handed over two minutes after its
+        first turn, read as an ordinary exit, and filed as killed at t120 with
+        two resumes unspent. The marker is written BEFORE the INT so it is on
+        disk however fast the player goes.
+        """
+        source = self._source()
+        handoff = source.index('t${turn} is worth reloading')
+        block = source[handoff:source.index('kill -TERM "$climb"')]
+        self.assertIn('"$RUNS/$tag/$HANDOFF_MARKER"', block)
+        self.assertLess(block.index("$HANDOFF_MARKER"),
+                        block.index('kill -INT "$play"'),
+                        "the marker must be on disk before the player is signalled")
+
+    def test_the_marker_name_is_the_climbs(self):
+        """One name on both sides, or the handoff is written and never read."""
+        self.assertIn("HANDOFF_MARKER=${CIVVIS_WEDGE_HANDOFF_MARKER:-wedge-handoff.json}",
+                      self._source())
+        climb = (WATCHDOG.parent.parent / "civ6_civvis_climb.py").read_text(
+            encoding="utf-8")
+        self.assertIn('WEDGE_HANDOFF_MARKER = "wedge-handoff.json"', climb)
+
+    def test_the_handoff_branch_writes_a_marker_the_climb_can_read(self):
+        """The branch itself, under the zsh the watchdog runs: the file lands
+        in the run directory, parses as JSON, and names the turn and reason."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = self._source()
+        start = source.index('    if [[ -d "$RUNS/$tag" ]]; then')
+        end = source.index('    player_uses_tag "$play" "$tag" \\\n      && kill -INT')
+        branch = source[start:end].replace("say ", "print -r -- ")
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp)
+            (runs / "civvis-test").mkdir()
+            script = (f'RUNS={runs}\ntag=civvis-test\nturn=120\n'
+                      f'HANDOFF_MARKER=wedge-handoff.json\n'
+                      f'reason=\'civvis-test repeating unit blocker '
+                      f'ENDTURN_BLOCKING_UNITS at t120 (19 sightings)\'\n'
+                      + branch)
+            done = subprocess.run(["zsh", "-c", script], capture_output=True,
+                                  text=True, timeout=30)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("wrote civvis-test/wedge-handoff.json", done.stdout)
+            written = json.loads(
+                (runs / "civvis-test" / "wedge-handoff.json").read_text())
+        self.assertEqual(written["tag"], "civvis-test")
+        self.assertEqual(written["turn"], 120)
+        self.assertIn("ENDTURN_BLOCKING_UNITS", written["reason"])
+        self.assertRegex(written["utc"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
 
 if __name__ == "__main__":
