@@ -129,7 +129,7 @@ impl AdvancedAi {
             .iter()
             .filter(|(uid, _)| {
                 g.units
-                    .get(*uid)
+                    .get(uid)
                     .is_some_and(|unit| unit.owner == pid && unit.kind == "settler")
             })
             .map(|(_, target)| *target)

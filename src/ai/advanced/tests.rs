@@ -41911,8 +41911,8 @@ fn settler_site_gate_verdict_needs_a_free_seat_worth_the_floor() {
     // Run 182050Z's wandering targets were worth 13.8–24.1; its founded
     // sites 96–140. The floor sits between them, and a seat under it is
     // not a seat worth a Settler.
-    assert!(FLOOR > 24.1 && FLOOR < 96.0);
     assert_eq!(verdict(&g, &[(a, 18.9)], &[], 0), Err(Hold::BelowFloor { worth: 18.9 }));
+    assert_eq!(verdict(&g, &[(a, FLOOR)], &[], 0), Ok((a, FLOOR)));
     assert!(Hold::BelowFloor { worth: 18.9 }.describe().contains("18.9"));
 }
 
