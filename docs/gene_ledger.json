@@ -27,1064 +27,1069 @@
     "batch_rule_remove_below": -10,
     "batch_columns": {
       "age-closer": [
+        -11,
         0,
-        21,
-        -3
+        21
       ],
       "air-surge": [
+        18,
         30,
-        16,
-        0
+        16
       ],
       "amenity-district-path": [
+        35,
         9,
-        4,
-        5
+        4
       ],
       "amenity-project-preemption": [
+        11,
         24,
-        7,
-        22
+        7
       ],
       "amenity-project-preemption-2": [
+        -17,
         -14,
-        -2,
-        18
+        -2
       ],
       "apostle-promotion-by-role": [
+        -1,
         7,
-        6,
-        15
+        6
       ],
       "army-target-weighs-enemy": [
+        19,
         1,
-        20,
-        9
+        20
       ],
       "barbarian-bargain": [
         14,
-        -16,
-        38
+        14,
+        -16
       ],
       "barbarian-ranged-answer": [
+        -14,
         20,
-        5,
-        -10
-      ],
-      "barbarian-scouts-are-scouts": [
-        11,
-        -2,
         5
       ],
+      "barbarian-scouts-are-scouts": [
+        -23,
+        11,
+        -2
+      ],
       "barbarian-settler-capture": [
+        35,
         34,
-        34,
-        32
+        34
       ],
       "blind-objective-strength": [
+        -19,
         9,
-        16,
-        7
+        16
       ],
       "blind-objective-units": [
+        20,
         0,
-        4,
-        -7
+        4
       ],
       "boost-first-research": [
+        4,
         -12,
-        -3,
         -3
       ],
       "boost-unlock-research": [
+        -23,
         1,
-        -38,
-        -35
+        -38
       ],
       "boost-wait-research": [
+        -8,
         -23,
-        -19,
-        -18
+        -19
       ],
       "boosted-bargain-first": [
+        -39,
         9,
-        -21,
-        -14
+        -21
       ],
       "border-parity": [
+        9,
         -5,
-        -10,
-        9
-      ],
-      "border-parity-2": [
-        -13,
-        -12,
         -10
       ],
+      "border-parity-2": [
+        -10,
+        -13,
+        -12
+      ],
       "bounded-recovery": [
+        9,
         10,
-        4,
-        -9
+        4
       ],
       "build-what-cards-boost": [
         -9,
-        31,
-        -21
+        -9,
+        31
       ],
       "builder-barbarian-safety": [
+        -5,
         1,
-        9,
-        -23
+        9
       ],
       "builder-supply-floor": [
+        -17,
         -26,
-        -9,
-        0
-      ],
-      "builder-tries-the-next-tile": [
-        -3,
-        -7,
-        15
-      ],
-      "buildings-before-projects": [
-        19,
-        0,
-        1
-      ],
-      "buy-what-cards-cannot-boost": [
-        -7,
-        21,
-        4
-      ],
-      "camp-party": [
-        -14,
-        -4,
-        8
-      ],
-      "camp-tile-buyout": [
-        19,
-        -5,
         -9
       ],
-      "campaign-pillage": [
+      "builder-tries-the-next-tile": [
+        -23,
+        -3,
+        -7
+      ],
+      "buildings-before-projects": [
+        -26,
+        19,
+        0
+      ],
+      "buy-what-cards-cannot-boost": [
+        24,
+        -7,
+        21
+      ],
+      "camp-party": [
+        -3,
         -14,
-        -1,
-        18
+        -4
+      ],
+      "camp-tile-buyout": [
+        -22,
+        19,
+        -5
+      ],
+      "campaign-pillage": [
+        -6,
+        -14,
+        -1
       ],
       "campus-adjacency-threshold": [
+        22,
         -25,
-        19,
-        5
+        19
       ],
       "campus-adjacency-threshold-2": [
+        -20,
         13,
-        -5,
-        -12
+        -5
       ],
       "canal-city": [
+        19,
         5,
-        9,
-        -3
+        9
       ],
       "capital-settler-after-completion": [
+        23,
         -16,
-        null,
         null
       ],
       "capture-go-or-stand-down": [
+        -25,
         -1,
-        -8,
-        11
-      ],
-      "capture-go-or-stand-down-2": [
-        8,
-        1,
-        -7
-      ],
-      "chain-payback-window": [
-        -5,
-        -1,
-        4
-      ],
-      "chain-payback-window-2": [
-        -19,
-        6,
-        -9
-      ],
-      "cheapest-wonder-first": [
-        -11,
-        -4,
-        11
-      ],
-      "chokepoint-claim": [
-        2,
-        0,
-        -13
-      ],
-      "chokepoint-garrison": [
-        -6,
-        -7,
-        -5
-      ],
-      "chokepoint-siting": [
-        -5,
-        24,
-        7
-      ],
-      "chop-into-the-queue": [
-        -22,
-        -24,
         -8
       ],
-      "city-campaign": [
-        -16,
-        -7,
-        -2
-      ],
-      "city-target-meets-the-map": [
-        6,
-        2,
-        11
-      ],
-      "civilian-out-of-reach": [
-        2,
-        4,
-        -4
-      ],
-      "close-as-a-body": [
-        -5,
-        12,
+      "capture-go-or-stand-down-2": [
+        25,
+        8,
         1
       ],
-      "coalition-before-war": [
-        -5,
-        13,
-        1
-      ],
-      "coastal-city-sites": [
-        9,
+      "chain-payback-window": [
         -6,
-        -10
+        -5,
+        -1
       ],
-      "coastal-city-sites-2": [
-        -1,
-        -3,
-        -16
-      ],
-      "come-ashore": [
-        10,
-        1,
-        26
-      ],
-      "commitment-patience": [
-        1,
-        2,
+      "chain-payback-window-2": [
+        -26,
+        -19,
         6
       ],
-      "competition-victory-points": [
-        36,
-        7,
-        -19
-      ],
-      "congress-counter-leader": [
+      "cheapest-wonder-first": [
+        -10,
         -11,
-        27,
-        5
+        -4
       ],
-      "connect-the-luxury": [
-        29,
-        27,
+      "chokepoint-claim": [
+        -19,
+        2,
+        0
+      ],
+      "chokepoint-garrison": [
+        -1,
+        -6,
+        -7
+      ],
+      "chokepoint-siting": [
+        22,
+        -5,
+        24
+      ],
+      "chop-into-the-queue": [
+        -17,
+        -22,
+        -24
+      ],
+      "city-campaign": [
+        -19,
+        -16,
+        -7
+      ],
+      "city-target-meets-the-map": [
+        -14,
+        6,
+        2
+      ],
+      "civilian-out-of-reach": [
+        14,
+        2,
+        4
+      ],
+      "close-as-a-body": [
+        -10,
+        -5,
+        12
+      ],
+      "coalition-before-war": [
+        -20,
+        -5,
         13
       ],
-      "contested-land-first": [
-        4,
+      "coastal-city-sites": [
         -2,
-        -10
+        9,
+        -6
       ],
-      "conversion-majority-alarm": [
-        -9,
-        -2,
+      "coastal-city-sites-2": [
+        -8,
+        -1,
+        -3
+      ],
+      "come-ashore": [
+        -42,
+        10,
         1
       ],
+      "commitment-patience": [
+        26,
+        1,
+        2
+      ],
+      "competition-victory-points": [
+        12,
+        36,
+        7
+      ],
+      "congress-counter-leader": [
+        -23,
+        -11,
+        27
+      ],
+      "connect-the-luxury": [
+        66,
+        29,
+        27
+      ],
+      "contested-land-first": [
+        41,
+        4,
+        -2
+      ],
+      "conversion-majority-alarm": [
+        6,
+        -9,
+        -2
+      ],
       "coordinated-finish": [
+        -2,
         -7,
+        0
+      ],
+      "culture-building-debt": [
+        24,
+        -22,
+        4
+      ],
+      "culture-floor": [
+        8,
+        4,
+        -15
+      ],
+      "culture-lane-forecast": [
+        29,
+        24,
+        -3
+      ],
+      "deals-at-the-ceiling": [
+        7,
+        23,
+        8
+      ],
+      "deals-for-our-gain": [
+        -2,
+        -12,
+        8
+      ],
+      "defend-where-you-stand": [
+        -44,
+        -4,
+        7
+      ],
+      "defensible-sites": [
+        3,
+        24,
+        26
+      ],
+      "diplomatic-lane-forecast": [
+        -30,
+        -14,
+        -13
+      ],
+      "district-coverage": [
+        -18,
+        -7,
+        13
+      ],
+      "district-coverage-2": [
+        17,
+        -2,
+        -6
+      ],
+      "district-planning": [
+        1,
         0,
         14
       ],
-      "culture-building-debt": [
-        -22,
-        4,
-        -6
-      ],
-      "culture-floor": [
-        4,
-        -15,
-        -8
-      ],
-      "culture-lane-forecast": [
-        24,
-        -3,
-        12
-      ],
-      "deals-at-the-ceiling": [
-        23,
-        8,
-        -3
-      ],
-      "deals-for-our-gain": [
-        -12,
-        8,
-        -15
-      ],
-      "defend-where-you-stand": [
-        -4,
-        7,
-        -9
-      ],
-      "defensible-sites": [
-        24,
-        26,
-        29
-      ],
-      "diplomatic-lane-forecast": [
-        -14,
-        -13,
-        -2
-      ],
-      "district-coverage": [
-        -7,
-        13,
-        -11
-      ],
-      "district-coverage-2": [
-        -2,
-        -6,
-        -3
-      ],
-      "district-planning": [
-        0,
-        14,
-        4
-      ],
       "domination-city-count": [
+        26,
         20,
-        17,
-        3
+        17
       ],
       "early-archers": [
+        -15,
         18,
-        29,
-        47
+        29
       ],
       "early-contact-window": [
+        8,
         17,
-        -18,
-        20
+        -18
       ],
       "early-project-restraint": [
+        -9,
         -10,
-        null,
         null
       ],
       "elective-war-in-reach": [
-        6,
-        3,
-        -2
-      ],
-      "elective-war-yields-to-a-lane": [
-        32,
-        27,
-        34
-      ],
-      "encampment-seals-the-pass": [
-        13,
-        10,
-        -3
-      ],
-      "enemy-of-my-enemy": [
-        15,
         -5,
-        -12
-      ],
-      "engine-faith-price": [
-        17,
-        41,
-        10
-      ],
-      "enhancer-for-the-corps": [
-        -15,
-        -5,
-        -23
-      ],
-      "enter-the-prophet-race": [
-        35,
-        16,
-        35
-      ],
-      "escort-cap-holds": [
-        -9,
-        -13,
-        -4
-      ],
-      "escort-unstick": [
-        19,
         6,
-        24
-      ],
-      "eureka-chasing-builder": [
-        -16,
-        -32,
-        -6
-      ],
-      "eureka-chasing-production": [
-        19,
-        -8,
-        9
-      ],
-      "exchange-is-the-engines": [
-        13,
-        -1,
         3
       ],
-      "exhaustion-loyalty-guard": [
-        2,
-        -11,
+      "elective-war-yields-to-a-lane": [
+        24,
+        32,
+        27
+      ],
+      "encampment-seals-the-pass": [
+        18,
+        13,
+        10
+      ],
+      "enemy-of-my-enemy": [
+        6,
+        15,
         -5
       ],
-      "expansion-pays-back": [
-        -10,
-        -5,
-        -3
-      ],
-      "expansion-schedule": [
-        8,
-        3,
-        16
-      ],
-      "fire-plan": [
-        -10,
-        -10,
-        7
-      ],
-      "first-builder-reserve": [
-        -18,
-        -6,
-        -1
-      ],
-      "first-district-first": [
-        -8,
-        7,
-        9
-      ],
-      "first-granary-reserve": [
-        -5,
-        13,
-        -6
-      ],
-      "first-luxury-first": [
-        1,
+      "engine-faith-price": [
         5,
+        17,
+        41
+      ],
+      "enhancer-for-the-corps": [
+        14,
+        -15,
+        -5
+      ],
+      "enter-the-prophet-race": [
+        -30,
+        35,
         16
       ],
-      "first-research-building-reserve": [
-        7,
-        -3,
-        7
+      "escort-cap-holds": [
+        46,
+        -9,
+        -13
       ],
-      "flip-nearby-city-states": [
-        -6,
-        -15,
-        11
+      "escort-unstick": [
+        -28,
+        19,
+        6
       ],
-      "founder-temple": [
-        18,
-        -24,
-        18
-      ],
-      "frontier-massing-alarm": [
-        -12,
-        0,
-        17
-      ],
-      "garrison-under-fire": [
-        -8,
-        -8,
-        -1
-      ],
-      "gold-for-the-young-city": [
-        8,
-        -6,
-        12
-      ],
-      "gold-income-floor": [
-        -15,
-        -1,
-        -12
-      ],
-      "government-capacity-fallback": [
-        -13,
-        3,
-        12
-      ],
-      "government-ladder": [
-        -25,
+      "eureka-chasing-builder": [
+        -20,
         -16,
-        -6
+        -32
       ],
-      "government-ladder-2": [
-        36,
-        27,
-        12
-      ],
-      "great-person-housing": [
-        22,
-        20,
-        11
-      ],
-      "growth-to-settle": [
-        0,
-        20,
-        -20
-      ],
-      "guru-heals-the-corps-2": [
-        12,
-        -2,
-        -6
-      ],
-      "holy-lane-parity": [
-        3,
-        0,
-        -22
-      ],
-      "holy-site-where-the-threat-is": [
-        12,
-        -7,
-        -1
-      ],
-      "holy-site-where-the-threat-is-2": [
-        -10,
-        8,
-        2
-      ],
-      "hostile-memory": [
-        -5,
-        -7,
-        0
-      ],
-      "housing-research": [
-        2,
-        -7,
-        -6
-      ],
-      "idle-faith-patronage": [
-        9,
-        1,
-        -3
-      ],
-      "improvement-housing-value": [
-        -12,
-        -5,
+      "eureka-chasing-production": [
+        -19,
+        19,
         -8
       ],
-      "island-exploration": [
-        0,
-        -8,
-        -33
+      "exchange-is-the-engines": [
+        2,
+        13,
+        -1
       ],
-      "lane-culture-spending": [
-        22,
-        9,
-        -18
-      ],
-      "lane-great-people": [
+      "exhaustion-loyalty-guard": [
         -7,
-        -11,
-        4
+        2,
+        -11
       ],
-      "lane-policy-deck": [
-        -1,
-        -20,
-        -7
-      ],
-      "lane-release-when-hopeless": [
-        -28,
-        6,
-        0
-      ],
-      "lane-space-race": [
-        -12,
-        11,
-        -18
-      ],
-      "lane-votes-its-favor": [
-        1,
-        5,
-        -14
-      ],
-      "loyalty-rate-alarm": [
-        54,
-        42,
-        26
-      ],
-      "maintenance-aware-deck": [
-        35,
-        12,
-        20
-      ],
-      "missionary-evades-raiders": [
+      "expansion-pays-back": [
         21,
-        32,
-        -2
-      ],
-      "missionary-last-charge-explores": [
-        16,
         -10,
+        -5
+      ],
+      "expansion-schedule": [
+        17,
+        8,
+        3
+      ],
+      "fire-plan": [
+        -6,
+        -10,
+        -10
+      ],
+      "first-builder-reserve": [
+        9,
+        -18,
         -6
       ],
-      "moksha-defends-the-faithless": [
-        -24,
-        -11,
-        6
+      "first-district-first": [
+        -5,
+        -8,
+        7
       ],
-      "native-emergency-purchase": [
-        2,
-        9,
-        -12
+      "first-granary-reserve": [
+        -8,
+        -5,
+        13
       ],
-      "naval-recon": [
-        9,
-        -1,
-        1
+      "first-luxury-first": [
+        15,
+        1,
+        5
       ],
-      "naval-recon-2": [
-        -10,
-        13,
+      "first-research-building-reserve": [
+        -5,
+        7,
+        -3
+      ],
+      "flip-nearby-city-states": [
+        3,
+        -6,
+        -15
+      ],
+      "founder-temple": [
+        17,
+        18,
+        -24
+      ],
+      "frontier-massing-alarm": [
+        0,
+        -12,
+        0
+      ],
+      "garrison-under-fire": [
+        10,
+        -8,
+        -8
+      ],
+      "gold-for-the-young-city": [
+        30,
+        8,
+        -6
+      ],
+      "gold-income-floor": [
+        18,
+        -15,
+        -1
+      ],
+      "government-capacity-fallback": [
+        -23,
+        -13,
+        3
+      ],
+      "government-ladder": [
+        -9,
+        -25,
         -16
       ],
-      "naval-threat-triage": [
-        1,
+      "government-ladder-2": [
+        -9,
+        36,
+        27
+      ],
+      "great-person-housing": [
+        26,
+        22,
+        20
+      ],
+      "growth-to-settle": [
+        -8,
+        0,
+        20
+      ],
+      "guru-heals-the-corps-2": [
         5,
+        12,
+        -2
+      ],
+      "holy-lane-parity": [
+        4,
+        3,
+        0
+      ],
+      "holy-site-where-the-threat-is": [
+        -6,
+        12,
         -7
       ],
-      "never-an-empty-queue": [
-        -18,
-        -8,
+      "holy-site-where-the-threat-is-2": [
+        37,
+        -10,
+        8
+      ],
+      "hostile-memory": [
+        -23,
+        -5,
+        -7
+      ],
+      "housing-research": [
+        8,
+        2,
+        -7
+      ],
+      "idle-faith-patronage": [
+        26,
+        9,
+        1
+      ],
+      "improvement-housing-value": [
+        18,
+        -12,
+        -5
+      ],
+      "island-exploration": [
+        46,
+        0,
+        -8
+      ],
+      "lane-culture-spending": [
+        -11,
+        22,
+        9
+      ],
+      "lane-great-people": [
+        -24,
+        -7,
+        -11
+      ],
+      "lane-policy-deck": [
+        -13,
+        -1,
+        -20
+      ],
+      "lane-release-when-hopeless": [
+        3,
+        -28,
         6
       ],
+      "lane-space-race": [
+        -13,
+        -12,
+        11
+      ],
+      "lane-votes-its-favor": [
+        6,
+        1,
+        5
+      ],
+      "loyalty-rate-alarm": [
+        8,
+        54,
+        42
+      ],
+      "maintenance-aware-deck": [
+        25,
+        35,
+        12
+      ],
+      "missionary-evades-raiders": [
+        10,
+        21,
+        32
+      ],
+      "missionary-last-charge-explores": [
+        42,
+        16,
+        -10
+      ],
+      "moksha-defends-the-faithless": [
+        18,
+        -24,
+        -11
+      ],
+      "native-emergency-purchase": [
+        -33,
+        2,
+        9
+      ],
+      "naval-recon": [
+        29,
+        9,
+        -1
+      ],
+      "naval-recon-2": [
+        -17,
+        -10,
+        13
+      ],
+      "naval-threat-triage": [
+        14,
+        1,
+        5
+      ],
+      "never-an-empty-queue": [
+        -19,
+        -18,
+        -8
+      ],
       "never-an-empty-queue-2": [
+        -21,
         -11,
-        0,
-        8
+        0
       ],
       "no-free-passage": [
         -2,
-        14,
-        -18
-      ],
-      "one-launch-pad": [
-        -7,
-        -4,
-        -24
-      ],
-      "one-shot-recovery": [
-        -14,
-        14,
-        3
-      ],
-      "one-war-at-a-time": [
-        7,
-        -1,
-        -18
-      ],
-      "opening-warrior-recon": [
-        -27,
-        -17,
-        -27
-      ],
-      "opportunistic-war": [
-        0,
-        8,
-        5
-      ],
-      "order-retry": [
-        -14,
-        -17,
-        1
-      ],
-      "overseas-settlement": [
-        -7,
-        12,
-        16
-      ],
-      "pantheon-board": [
-        6,
-        31,
-        -10
-      ],
-      "pass-picket": [
-        0,
-        0,
-        -9
-      ],
-      "peace-when-the-war-does-not-pay": [
-        25,
-        -7,
-        40
-      ],
-      "peacetime-deterrence": [
-        10,
-        0,
-        4
-      ],
-      "power-the-laboratory": [
-        -8,
-        -8,
-        18
-      ],
-      "power-the-laboratory-2": [
-        -7,
-        -3,
-        12
-      ],
-      "price-the-suzerainty": [
-        1,
-        20,
-        39
-      ],
-      "promote-when-wounded": [
-        0,
-        7,
-        3
-      ],
-      "quest-boost": [
-        -13,
-        -8,
-        -18
-      ],
-      "quest-camp-errand": [
-        11,
-        -18,
-        25
-      ],
-      "quest-production": [
-        -25,
         -2,
-        -13
-      ],
-      "quest-trade-route": [
-        19,
-        -4,
-        -7
-      ],
-      "raid-pillage-prizes": [
-        -7,
-        0,
-        12
-      ],
-      "rapid-city-expansion": [
-        -104,
-        -83,
-        -66
-      ],
-      "recon-replacement": [
-        -4,
-        2,
-        10
-      ],
-      "recorded-tactical-step": [
-        25,
-        -5,
-        -24
-      ],
-      "recovery-reads-the-war": [
-        -26,
-        3,
-        -30
-      ],
-      "relief-column-marches": [
-        12,
-        10,
-        -6
-      ],
-      "relief-targets-the-siege": [
-        13,
-        -2,
-        19
-      ],
-      "religion-race-is-closed": [
-        21,
-        -15,
-        13
-      ],
-      "religion-sues-peace": [
-        -8,
-        5,
-        -3
-      ],
-      "religious-defence-scales": [
-        -5,
-        18,
-        10
-      ],
-      "religious-units-heal-first": [
-        -26,
-        -4,
-        -7
-      ],
-      "religious-veto-defence": [
-        12,
-        42,
-        33
-      ],
-      "research-tier-premium": [
-        3,
-        -6,
-        4
-      ],
-      "rival-suzerainty-alarm": [
-        -4,
-        -10,
         14
       ],
-      "science-building-first": [
-        28,
+      "one-launch-pad": [
         -2,
-        -9
-      ],
-      "science-chain-alarm": [
-        12,
-        1,
-        -20
-      ],
-      "science-expansion-phase": [
-        -1,
-        -3,
-        4
-      ],
-      "science-multiplier-payoff": [
-        1,
-        -10,
-        3
-      ],
-      "science-opening-band": [
-        12,
-        -5,
-        6
-      ],
-      "science-victory-drive": [
-        16,
-        18,
-        13
-      ],
-      "science-victory-drive-2": [
-        12,
-        null,
-        null
-      ],
-      "score-horizon": [
-        -27,
-        2,
-        -18
-      ],
-      "screen-the-shooters": [
-        18,
-        -13,
-        13
-      ],
-      "settle-sooner": [
-        18,
-        -5,
+        -7,
         -4
       ],
-      "settlement-gap-target": [
-        12,
-        9,
+      "one-shot-recovery": [
+        17,
+        -14,
+        14
+      ],
+      "one-war-at-a-time": [
+        -1,
+        7,
+        -1
+      ],
+      "opening-warrior-recon": [
+        4,
+        -27,
+        -17
+      ],
+      "opportunistic-war": [
+        18,
+        0,
+        8
+      ],
+      "order-retry": [
+        -11,
+        -14,
+        -17
+      ],
+      "overseas-settlement": [
+        -20,
+        -7,
+        12
+      ],
+      "pantheon-board": [
+        36,
+        6,
+        31
+      ],
+      "pass-picket": [
+        14,
+        0,
         0
       ],
-      "settler-backlog-brake": [
-        0,
-        5,
-        -12
+      "peace-when-the-war-does-not-pay": [
+        -27,
+        25,
+        -7
       ],
-      "settler-factory-coordination": [
-        -21,
-        -26,
-        -11
+      "peacetime-deterrence": [
+        -37,
+        10,
+        0
       ],
-      "settler-guard-holds": [
-        -31,
-        4,
-        5
-      ],
-      "settler-guard-holds-2": [
-        6,
+      "power-the-laboratory": [
+        15,
         -8,
-        -6
+        -8
       ],
-      "settler-never-idles": [
-        27,
-        3,
-        -23
+      "power-the-laboratory-2": [
+        -23,
+        -7,
+        -3
       ],
-      "settler-screen": [
-        7,
+      "price-the-suzerainty": [
+        51,
+        1,
+        20
+      ],
+      "promote-when-wounded": [
+        1,
         0,
-        -13
+        7
       ],
-      "settler-second-look": [
-        4,
+      "quest-boost": [
+        25,
+        -13,
+        -8
+      ],
+      "quest-camp-errand": [
+        -16,
+        11,
+        -18
+      ],
+      "quest-production": [
+        -40,
+        -25,
+        -2
+      ],
+      "quest-trade-route": [
+        10,
+        19,
+        -4
+      ],
+      "raid-pillage-prizes": [
+        7,
+        -7,
+        0
+      ],
+      "rapid-city-expansion": [
+        -118,
+        -104,
+        -83
+      ],
+      "recon-replacement": [
+        46,
         -4,
         2
       ],
-      "settler-target-hysteresis": [
+      "recorded-tactical-step": [
+        45,
+        25,
+        -5
+      ],
+      "recovery-reads-the-war": [
+        36,
+        -26,
+        3
+      ],
+      "relief-column-marches": [
+        -12,
+        12,
+        10
+      ],
+      "relief-targets-the-siege": [
         -2,
+        13,
+        -2
+      ],
+      "religion-race-is-closed": [
+        37,
+        21,
+        -15
+      ],
+      "religion-sues-peace": [
+        17,
+        -8,
+        5
+      ],
+      "religious-defence-scales": [
+        23,
+        -5,
+        18
+      ],
+      "religious-units-heal-first": [
+        18,
+        -26,
+        -4
+      ],
+      "religious-veto-defence": [
+        -4,
+        12,
+        42
+      ],
+      "research-tier-premium": [
+        -33,
+        3,
+        -6
+      ],
+      "rival-suzerainty-alarm": [
+        11,
+        -4,
+        -10
+      ],
+      "science-building-first": [
+        25,
+        28,
+        -2
+      ],
+      "science-chain-alarm": [
+        10,
+        12,
+        1
+      ],
+      "science-expansion-phase": [
+        -22,
+        -1,
+        -3
+      ],
+      "science-multiplier-payoff": [
+        5,
+        1,
+        -10
+      ],
+      "science-opening-band": [
+        40,
+        12,
+        -5
+      ],
+      "science-victory-drive": [
+        20,
+        16,
+        18
+      ],
+      "science-victory-drive-2": [
+        -13,
+        12,
+        null
+      ],
+      "score-horizon": [
+        -32,
+        -27,
+        2
+      ],
+      "screen-the-shooters": [
+        0,
+        18,
+        -13
+      ],
+      "settle-sooner": [
+        29,
+        18,
+        -5
+      ],
+      "settlement-gap-target": [
+        -17,
+        12,
+        9
+      ],
+      "settler-backlog-brake": [
+        -12,
+        0,
+        5
+      ],
+      "settler-factory-coordination": [
+        7,
+        -21,
+        -26
+      ],
+      "settler-guard-holds": [
+        -16,
+        -31,
+        4
+      ],
+      "settler-guard-holds-2": [
+        13,
+        6,
+        -8
+      ],
+      "settler-never-idles": [
+        -27,
+        27,
+        3
+      ],
+      "settler-screen": [
+        -29,
+        7,
+        0
+      ],
+      "settler-second-look": [
+        28,
+        4,
+        -4
+      ],
+      "settler-target-hysteresis": [
+        -5,
         -2,
         -2
       ],
       "settler-target-hysteresis-2": [
+        -1,
         0,
-        2,
-        -2
+        2
       ],
       "settler-threat-detour": [
+        10,
         1,
-        -11,
         -11
       ],
       "siege-commitment": [
+        -21,
         -26,
-        -6,
-        1
-      ],
-      "siege-is-progress-2": [
-        -16,
-        -3,
-        8
-      ],
-      "skip-the-prophet-race": [
-        -115,
-        -118,
-        -95
-      ],
-      "slot-kind-tiebreak": [
-        -7,
-        7,
-        -14
-      ],
-      "solvency-first-trade-slot": [
-        111,
-        136,
-        128
-      ],
-      "stranded-settler-discount": [
-        31,
-        5,
-        6
-      ],
-      "strategic-wonders": [
-        6,
-        -11,
-        3
-      ],
-      "strike-opening": [
-        -5,
-        -2,
-        5
-      ],
-      "surprise-war-mobilization": [
-        -4,
-        7,
-        3
-      ],
-      "swap-rotation": [
-        -2,
-        -3,
-        8
-      ],
-      "threatened-city-reserve": [
-        10,
-        3,
-        -26
-      ],
-      "treasury-at-work": [
-        -1,
-        8,
         -6
       ],
-      "treasury-at-work-2": [
-        4,
-        17,
-        13
-      ],
-      "unchosen-war-keeps-the-lane": [
-        8,
-        -9,
-        11
-      ],
-      "unit-cost-efficiency": [
-        -17,
-        9,
-        -14
-      ],
-      "unit-objective-memory": [
-        14,
-        16,
-        28
-      ],
-      "upgrade-the-garrison": [
-        7,
-        -5,
-        -18
-      ],
-      "walls-after-districts": [
-        -9,
-        -1,
-        5
-      ],
-      "war-economy": [
-        -8,
-        21,
-        -10
-      ],
-      "war-needs-a-treasury": [
-        15,
-        19,
-        -15
-      ],
-      "war-reinforcement": [
-        8,
-        26,
+      "siege-is-progress-2": [
+        -19,
+        -16,
         -3
       ],
-      "whole-turn-backtrack-guard": [
-        0,
+      "skip-the-prophet-race": [
+        2,
+        -115,
+        -118
+      ],
+      "slot-kind-tiebreak": [
+        16,
         -7,
-        -21
+        7
       ],
-      "wide-map-capacity": [
-        30,
-        52,
-        22
+      "solvency-first-trade-slot": [
+        108,
+        111,
+        136
       ],
-      "wonder-adjacent-sites": [
-        15,
-        29,
-        10
+      "solvency-first-trade-slot-2": [
+        -61,
+        -33,
+        -50
       ],
-      "wonder-adjacent-sites-2": [
-        -12,
-        -17,
-        21
+      "stranded-settler-discount": [
+        -18,
+        31,
+        5
       ],
-      "wonder-ring-recon": [
-        -2,
-        -8,
+      "strategic-wonders": [
+        0,
+        6,
+        -11
+      ],
+      "strike-opening": [
+        -15,
+        -5,
         -2
       ],
-      "wonder-score-tally": [
-        3,
+      "surprise-war-mobilization": [
+        18,
+        -4,
+        7
+      ],
+      "swap-rotation": [
+        -15,
+        -2,
+        -3
+      ],
+      "threatened-city-reserve": [
+        -3,
+        10,
+        3
+      ],
+      "treasury-at-work": [
+        10,
+        -1,
+        8
+      ],
+      "treasury-at-work-2": [
+        29,
+        4,
+        17
+      ],
+      "unchosen-war-keeps-the-lane": [
+        1,
+        8,
+        -9
+      ],
+      "unit-cost-efficiency": [
+        -9,
+        -17,
+        9
+      ],
+      "unit-objective-memory": [
         -5,
+        14,
+        16
+      ],
+      "upgrade-the-garrison": [
+        -33,
+        7,
+        -5
+      ],
+      "walls-after-districts": [
+        -14,
+        -9,
+        -1
+      ],
+      "war-economy": [
+        -1,
+        -8,
+        21
+      ],
+      "war-needs-a-treasury": [
+        -27,
+        15,
+        19
+      ],
+      "war-reinforcement": [
+        15,
+        8,
+        26
+      ],
+      "whole-turn-backtrack-guard": [
+        -3,
+        0,
+        -7
+      ],
+      "wide-map-capacity": [
+        21,
+        30,
+        52
+      ],
+      "wonder-adjacent-sites": [
+        32,
+        15,
         29
+      ],
+      "wonder-adjacent-sites-2": [
+        -6,
+        -12,
+        -17
+      ],
+      "wonder-ring-recon": [
+        5,
+        -2,
+        -8
+      ],
+      "wonder-score-tally": [
+        1,
+        3,
+        -5
       ]
     },
     "batch_decisions": {
@@ -1093,56 +1098,56 @@
       "amenity-district-path": "on",
       "amenity-project-preemption": "on",
       "amenity-project-preemption-2": "off",
-      "apostle-promotion-by-role": "on",
+      "apostle-promotion-by-role": "off",
       "army-target-weighs-enemy": "on",
-      "barbarian-bargain": "on",
+      "barbarian-bargain": "off",
       "barbarian-ranged-answer": "off",
       "barbarian-scouts-are-scouts": "off",
       "barbarian-settler-capture": "on",
-      "blind-objective-strength": "on",
-      "blind-objective-units": "off",
+      "blind-objective-strength": "off",
+      "blind-objective-units": "on",
       "boost-first-research": "off",
       "boost-unlock-research": "off",
-      "boost-wait-research": "remove",
+      "boost-wait-research": "off",
       "boosted-bargain-first": "off",
       "border-parity": "off",
       "border-parity-2": "off",
-      "bounded-recovery": "off",
+      "bounded-recovery": "on",
       "build-what-cards-boost": "off",
       "builder-barbarian-safety": "off",
       "builder-supply-floor": "off",
       "builder-tries-the-next-tile": "off",
       "buildings-before-projects": "off",
-      "buy-what-cards-cannot-boost": "off",
+      "buy-what-cards-cannot-boost": "on",
       "camp-party": "off",
       "camp-tile-buyout": "off",
       "campaign-pillage": "off",
       "campus-adjacency-threshold": "off",
       "campus-adjacency-threshold-2": "off",
-      "canal-city": "off",
+      "canal-city": "on",
       "capital-settler-after-completion": "off",
       "capture-go-or-stand-down": "off",
-      "capture-go-or-stand-down-2": "off",
+      "capture-go-or-stand-down-2": "on",
       "chain-payback-window": "off",
       "chain-payback-window-2": "off",
       "cheapest-wonder-first": "off",
       "chokepoint-claim": "off",
       "chokepoint-garrison": "off",
       "chokepoint-siting": "on",
-      "chop-into-the-queue": "off",
+      "chop-into-the-queue": "remove",
       "city-campaign": "off",
-      "city-target-meets-the-map": "on",
-      "civilian-out-of-reach": "off",
+      "city-target-meets-the-map": "off",
+      "civilian-out-of-reach": "on",
       "close-as-a-body": "off",
       "coalition-before-war": "off",
       "coastal-city-sites": "off",
       "coastal-city-sites-2": "off",
-      "come-ashore": "on",
+      "come-ashore": "off",
       "commitment-patience": "on",
       "competition-victory-points": "on",
       "congress-counter-leader": "off",
       "connect-the-luxury": "on",
-      "contested-land-first": "off",
+      "contested-land-first": "on",
       "conversion-majority-alarm": "off",
       "coordinated-finish": "off",
       "culture-building-debt": "off",
@@ -1152,7 +1157,7 @@
       "deals-for-our-gain": "off",
       "defend-where-you-stand": "off",
       "defensible-sites": "on",
-      "diplomatic-lane-forecast": "off",
+      "diplomatic-lane-forecast": "remove",
       "district-coverage": "off",
       "district-coverage-2": "off",
       "district-planning": "off",
@@ -1162,14 +1167,14 @@
       "early-project-restraint": "off",
       "elective-war-in-reach": "off",
       "elective-war-yields-to-a-lane": "on",
-      "encampment-seals-the-pass": "off",
+      "encampment-seals-the-pass": "on",
       "enemy-of-my-enemy": "off",
       "engine-faith-price": "on",
       "enhancer-for-the-corps": "off",
-      "enter-the-prophet-race": "on",
+      "enter-the-prophet-race": "off",
       "escort-cap-holds": "off",
-      "escort-unstick": "on",
-      "eureka-chasing-builder": "off",
+      "escort-unstick": "off",
+      "eureka-chasing-builder": "remove",
       "eureka-chasing-production": "off",
       "exchange-is-the-engines": "off",
       "exhaustion-loyalty-guard": "off",
@@ -1185,7 +1190,7 @@
       "founder-temple": "off",
       "frontier-massing-alarm": "off",
       "garrison-under-fire": "off",
-      "gold-for-the-young-city": "off",
+      "gold-for-the-young-city": "on",
       "gold-income-floor": "off",
       "government-capacity-fallback": "off",
       "government-ladder": "off",
@@ -1195,10 +1200,10 @@
       "guru-heals-the-corps-2": "off",
       "holy-lane-parity": "off",
       "holy-site-where-the-threat-is": "off",
-      "holy-site-where-the-threat-is-2": "off",
+      "holy-site-where-the-threat-is-2": "on",
       "hostile-memory": "off",
       "housing-research": "off",
-      "idle-faith-patronage": "off",
+      "idle-faith-patronage": "on",
       "improvement-housing-value": "off",
       "island-exploration": "off",
       "lane-culture-spending": "off",
@@ -1206,29 +1211,29 @@
       "lane-policy-deck": "off",
       "lane-release-when-hopeless": "off",
       "lane-space-race": "off",
-      "lane-votes-its-favor": "off",
+      "lane-votes-its-favor": "on",
       "loyalty-rate-alarm": "on",
       "maintenance-aware-deck": "on",
       "missionary-evades-raiders": "on",
-      "missionary-last-charge-explores": "off",
+      "missionary-last-charge-explores": "on",
       "moksha-defends-the-faithless": "off",
       "native-emergency-purchase": "off",
-      "naval-recon": "off",
+      "naval-recon": "on",
       "naval-recon-2": "off",
-      "naval-threat-triage": "off",
+      "naval-threat-triage": "on",
       "never-an-empty-queue": "off",
       "never-an-empty-queue-2": "off",
       "no-free-passage": "off",
       "one-launch-pad": "off",
       "one-shot-recovery": "off",
       "one-war-at-a-time": "off",
-      "opening-warrior-recon": "remove",
-      "opportunistic-war": "off",
-      "order-retry": "off",
+      "opening-warrior-recon": "off",
+      "opportunistic-war": "on",
+      "order-retry": "remove",
       "overseas-settlement": "off",
       "pantheon-board": "on",
       "pass-picket": "off",
-      "peace-when-the-war-does-not-pay": "on",
+      "peace-when-the-war-does-not-pay": "off",
       "peacetime-deterrence": "off",
       "power-the-laboratory": "off",
       "power-the-laboratory-2": "off",
@@ -1237,48 +1242,49 @@
       "quest-boost": "off",
       "quest-camp-errand": "off",
       "quest-production": "off",
-      "quest-trade-route": "off",
+      "quest-trade-route": "on",
       "raid-pillage-prizes": "off",
       "rapid-city-expansion": "remove",
-      "recon-replacement": "off",
-      "recorded-tactical-step": "off",
+      "recon-replacement": "on",
+      "recorded-tactical-step": "on",
       "recovery-reads-the-war": "off",
       "relief-column-marches": "off",
-      "relief-targets-the-siege": "on",
-      "religion-race-is-closed": "off",
+      "relief-targets-the-siege": "off",
+      "religion-race-is-closed": "on",
       "religion-sues-peace": "off",
       "religious-defence-scales": "on",
       "religious-units-heal-first": "off",
       "religious-veto-defence": "on",
       "research-tier-premium": "off",
       "rival-suzerainty-alarm": "off",
-      "science-building-first": "off",
-      "science-chain-alarm": "off",
+      "science-building-first": "on",
+      "science-chain-alarm": "on",
       "science-expansion-phase": "off",
       "science-multiplier-payoff": "off",
-      "science-opening-band": "off",
+      "science-opening-band": "on",
       "science-victory-drive": "on",
-      "science-victory-drive-2": "on",
+      "science-victory-drive-2": "off",
       "score-horizon": "off",
       "screen-the-shooters": "off",
-      "settle-sooner": "off",
+      "settle-sooner": "on",
       "settlement-gap-target": "off",
       "settler-backlog-brake": "off",
-      "settler-factory-coordination": "remove",
+      "settler-factory-coordination": "off",
       "settler-guard-holds": "off",
       "settler-guard-holds-2": "off",
       "settler-never-idles": "off",
       "settler-screen": "off",
-      "settler-second-look": "off",
+      "settler-second-look": "on",
       "settler-target-hysteresis": "off",
       "settler-target-hysteresis-2": "off",
       "settler-threat-detour": "off",
       "siege-commitment": "off",
       "siege-is-progress-2": "off",
-      "skip-the-prophet-race": "remove",
+      "skip-the-prophet-race": "off",
       "slot-kind-tiebreak": "off",
       "solvency-first-trade-slot": "on",
-      "stranded-settler-discount": "on",
+      "solvency-first-trade-slot-2": "remove",
+      "stranded-settler-discount": "off",
       "strategic-wonders": "off",
       "strike-opening": "off",
       "surprise-war-mobilization": "off",
@@ -1299,7 +1305,7 @@
       "wonder-adjacent-sites": "on",
       "wonder-adjacent-sites-2": "off",
       "wonder-ring-recon": "off",
-      "wonder-score-tally": "on"
+      "wonder-score-tally": "off"
     },
     "removals_due": [],
     "operator_default_on": [],
@@ -1308,68 +1314,76 @@
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
     "deployment_policy": "operator-retained-selection",
     "deployment_genome": [
-      "age-closer",
       "air-surge",
       "amenity-district-path",
       "amenity-project-preemption",
-      "apostle-promotion-by-role",
       "army-target-weighs-enemy",
-      "barbarian-bargain",
-      "barbarian-ranged-answer",
       "barbarian-settler-capture",
-      "blind-objective-strength",
-      "buildings-before-projects",
+      "blind-objective-units",
+      "bounded-recovery",
       "buy-what-cards-cannot-boost",
+      "campus-adjacency-threshold",
+      "canal-city",
+      "capture-go-or-stand-down-2",
       "chokepoint-siting",
-      "city-target-meets-the-map",
-      "come-ashore",
+      "civilian-out-of-reach",
+      "commitment-patience",
       "competition-victory-points",
-      "congress-counter-leader",
       "connect-the-luxury",
+      "contested-land-first",
       "culture-lane-forecast",
       "deals-at-the-ceiling",
       "defensible-sites",
       "district-planning",
       "domination-city-count",
       "early-archers",
-      "early-contact-window",
       "elective-war-yields-to-a-lane",
       "encampment-seals-the-pass",
+      "enemy-of-my-enemy",
       "engine-faith-price",
       "enter-the-prophet-race",
-      "escort-unstick",
-      "eureka-chasing-production",
-      "exchange-is-the-engines",
+      "escort-cap-holds",
       "expansion-schedule",
       "first-luxury-first",
+      "gold-for-the-young-city",
       "government-ladder-2",
       "great-person-housing",
+      "guru-heals-the-corps-2",
+      "holy-site-where-the-threat-is-2",
+      "idle-faith-patronage",
+      "island-exploration",
+      "lane-culture-spending",
       "loyalty-rate-alarm",
       "maintenance-aware-deck",
       "missionary-evades-raiders",
-      "overseas-settlement",
+      "missionary-last-charge-explores",
+      "naval-recon",
+      "naval-threat-triage",
+      "one-shot-recovery",
+      "opportunistic-war",
       "pantheon-board",
-      "peace-when-the-war-does-not-pay",
       "price-the-suzerainty",
-      "quest-camp-errand",
-      "relief-column-marches",
-      "relief-targets-the-siege",
+      "quest-trade-route",
+      "recon-replacement",
+      "recorded-tactical-step",
       "religion-race-is-closed",
       "religious-defence-scales",
       "religious-veto-defence",
       "science-building-first",
+      "science-chain-alarm",
+      "science-opening-band",
       "science-victory-drive",
-      "screen-the-shooters",
-      "settlement-gap-target",
+      "settle-sooner",
+      "settler-second-look",
+      "slot-kind-tiebreak",
       "solvency-first-trade-slot",
       "stranded-settler-discount",
+      "surprise-war-mobilization",
       "treasury-at-work-2",
       "unit-objective-memory",
-      "war-needs-a-treasury",
       "war-reinforcement",
       "wide-map-capacity",
-      "wonder-adjacent-sites",
-      "wonder-score-tally"
+      "wonder-adjacent-sites"
     ],
     "versions": "every version's batch-rule reading remains recorded on its own row; this reporting-only rotation retains the already selected version, one per family, while a family still holds at most 3 versions and a fourth requires a cull of the third-best",
     "family_heads": {
@@ -1394,18 +1408,22 @@
         }
       },
       "campus-adjacency-threshold": {
-        "rule_on": [],
+        "rule_on": [
+          "campus-adjacency-threshold"
+        ],
         "head": "campus-adjacency-threshold",
-        "ships": null,
+        "ships": "campus-adjacency-threshold",
         "versions": {
           "campus-adjacency-threshold": -0.007025,
           "campus-adjacency-threshold-2": null
         }
       },
       "capture-go-or-stand-down": {
-        "rule_on": [],
+        "rule_on": [
+          "capture-go-or-stand-down-2"
+        ],
         "head": null,
-        "ships": null,
+        "ships": "capture-go-or-stand-down-2",
         "versions": {
           "capture-go-or-stand-down": null,
           "capture-go-or-stand-down-2": null
@@ -1450,18 +1468,22 @@
         }
       },
       "holy-site-where-the-threat-is": {
-        "rule_on": [],
+        "rule_on": [
+          "holy-site-where-the-threat-is-2"
+        ],
         "head": "holy-site-where-the-threat-is",
-        "ships": null,
+        "ships": "holy-site-where-the-threat-is-2",
         "versions": {
           "holy-site-where-the-threat-is": -0.031224,
           "holy-site-where-the-threat-is-2": null
         }
       },
       "naval-recon": {
-        "rule_on": [],
+        "rule_on": [
+          "naval-recon"
+        ],
         "head": "naval-recon",
-        "ships": null,
+        "ships": "naval-recon",
         "versions": {
           "naval-recon": -0.045836,
           "naval-recon-2": null
@@ -1512,6 +1534,17 @@
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
+        }
+      },
+      "solvency-first-trade-slot": {
+        "rule_on": [
+          "solvency-first-trade-slot"
+        ],
+        "head": null,
+        "ships": "solvency-first-trade-slot",
+        "versions": {
+          "solvency-first-trade-slot": null,
+          "solvency-first-trade-slot-2": null
         }
       },
       "treasury-at-work": {
@@ -1780,6 +1813,49 @@
   ],
   "reporting_batches": [
     {
+      "path": "docs/gene_screens/2026-09-01-standard-continuous-5424-total-seats-20260901T043243Z-7b6c.json",
+      "shape": "standard",
+      "seats": 5424,
+      "complete_pairs": 2712,
+      "family_wise_z": 3.678,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 20260901000000,
+        "difficulty": "prince"
+      },
+      "games": 904,
+      "continuous_batch_timing": {
+        "schema": "continuous_batch_timing/v1",
+        "started_at": "2026-09-01T04:32:43Z",
+        "completed_at": "2026-09-01T12:17:14Z",
+        "elapsed_seconds": 27871,
+        "completed_games": 904
+      },
+      "build": {
+        "commit": "c07688aca429df5b04d8248d0c20fb2446fff938",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "04bc9d549fbeedab66f80e2127cfab8d17bb58b85ecaaed2cffaae546f94c848",
+        "binary_sha256": "46513da315a8dfee1f30723b6650c15b291070112dd468bd0097b64b7418ddaa"
+      },
+      "batch": {
+        "target_seats": 60000,
+        "complete_seats": 5424,
+        "partial": true
+      }
+    },
+    {
       "path": "docs/gene_screens/2026-09-01-standard-continuous-14550-total-seats-20260831T233655Z-0374.json",
       "shape": "standard",
       "seats": 14550,
@@ -1820,8 +1896,7 @@
         "target_seats": 30000,
         "complete_seats": 14550,
         "partial": true
-      },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price solvency-first-trade-slot-2, which left the code on 2026-09-01 under the batch rule (all three windows below -10), so their rows are retained as history, not as sources of runtime defaults."
+      }
     },
     {
       "path": "docs/gene_screens/2026-08-31-standard-continuous-20634-total-seats-20260831T161144Z-7738.json",
@@ -1864,59 +1939,14 @@
         "target_seats": 30000,
         "complete_seats": 20634,
         "partial": true
-      },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price solvency-first-trade-slot-2, which left the code on 2026-09-01 under the batch rule (all three windows below -10), so their rows are retained as history, not as sources of runtime defaults."
-    },
-    {
-      "path": "docs/gene_screens/2026-08-31-standard-continuous-14850-total-seats-20260831T105124Z-c90a.json",
-      "shape": "standard",
-      "seats": 14850,
-      "complete_pairs": 7425,
-      "family_wise_z": 3.675,
-      "profile": {
-        "players": 6,
-        "map": "continents",
-        "width": 74,
-        "height": 46,
-        "city_states": 9,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "independent",
-        "start_seed": 20260831104800,
-        "difficulty": "prince"
-      },
-      "games": 2475,
-      "continuous_batch_timing": {
-        "schema": "continuous_batch_timing/v1",
-        "started_at": "2026-08-31T10:51:24Z",
-        "completed_at": "2026-08-31T15:26:52Z",
-        "elapsed_seconds": 16528,
-        "completed_games": 2475
-      },
-      "build": {
-        "commit": "a59429c2b8d4f671887e62b6f856a2eb53caa272",
-        "commit_source": "build-tree",
-        "dirty": false,
-        "genes_sha256": "80985fe0f95b6391376e8ed4fc31f8bef74270d449543e13dfee44273d3cdeaa",
-        "binary_sha256": "93d27f59e09d6aa3139aa5246f1f40960811137a192a61cd6e2289b66e21fcb3"
-      },
-      "batch": {
-        "target_seats": 145212,
-        "complete_seats": 14850,
-        "partial": true
-      },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price solvency-first-trade-slot-2, which left the code on 2026-09-01 under the batch rule (all three windows below -10), so their rows are retained as history, not as sources of runtime defaults."
+      }
     }
   ],
   "counts": {
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 62
+    "default_on": 70
   },
   "genes": [
     {
@@ -2057,7 +2087,7 @@
     {
       "tag": "apostle-promotion-by-role",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 12,
       "wins_prior_10k": 16,
       "wins_third_10k": 14,
@@ -2147,7 +2177,7 @@
     {
       "tag": "barbarian-bargain",
       "verdict": "helps",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 22,
       "wins_prior_10k": 10,
       "wins_third_10k": 5,
@@ -2192,7 +2222,7 @@
     {
       "tag": "barbarian-ranged-answer",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": -2,
       "wins_prior_10k": 17,
       "wins_third_10k": 14,
@@ -2282,7 +2312,7 @@
     {
       "tag": "blind-objective-strength",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": -23,
       "wins_prior_10k": 0,
       "wins_third_10k": 30,
@@ -2327,7 +2357,7 @@
     {
       "tag": "blind-objective-units",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 2,
       "wins_prior_10k": 0,
       "wins_third_10k": -7,
@@ -2372,7 +2402,7 @@
     {
       "tag": "bounded-recovery",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": 29,
       "wins_third_10k": 19,
@@ -2462,7 +2492,7 @@
     {
       "tag": "buildings-before-projects",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 13,
       "wins_prior_10k": 61,
       "wins_third_10k": -2,
@@ -2552,7 +2582,7 @@
     {
       "tag": "campus-adjacency-threshold",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 21,
       "wins_prior_10k": -18,
       "wins_third_10k": null,
@@ -2597,7 +2627,7 @@
     {
       "tag": "come-ashore",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": -3,
       "wins_prior_10k": 5,
       "wins_third_10k": 11,
@@ -2867,7 +2897,7 @@
     {
       "tag": "early-contact-window",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 17,
       "wins_prior_10k": 2,
       "wins_third_10k": null,
@@ -3002,7 +3032,7 @@
     {
       "tag": "escort-unstick",
       "verdict": "helps",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 38,
       "wins_prior_10k": 36,
       "wins_third_10k": 72,
@@ -3317,7 +3347,7 @@
     {
       "tag": "idle-faith-patronage",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -1,
       "wins_prior_10k": 39,
       "wins_third_10k": 36,
@@ -3362,7 +3392,7 @@
     {
       "tag": "lane-culture-spending",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 9,
       "wins_prior_10k": 8,
       "wins_third_10k": null,
@@ -3632,7 +3662,7 @@
     {
       "tag": "naval-recon",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": -20,
       "wins_third_10k": 16,
@@ -3722,7 +3752,7 @@
     {
       "tag": "one-shot-recovery",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 8,
       "wins_prior_10k": -8,
       "wins_third_10k": null,
@@ -3767,7 +3797,7 @@
     {
       "tag": "opportunistic-war",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 39,
       "wins_prior_10k": 49,
       "wins_third_10k": 23,
@@ -4082,7 +4112,7 @@
     {
       "tag": "recon-replacement",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 36,
       "wins_prior_10k": 30,
       "wins_third_10k": 48,
@@ -4127,7 +4157,7 @@
     {
       "tag": "recorded-tactical-step",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 11,
       "wins_prior_10k": 18,
       "wins_third_10k": 30,
@@ -4172,7 +4202,7 @@
     {
       "tag": "relief-targets-the-siege",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 18,
       "wins_prior_10k": 6,
       "wins_third_10k": 14,
@@ -4487,7 +4517,7 @@
     {
       "tag": "settle-sooner",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 19,
       "wins_prior_10k": 28,
       "wins_third_10k": 41,
@@ -4532,7 +4562,7 @@
     {
       "tag": "settlement-gap-target",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 14,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -4757,7 +4787,7 @@
     {
       "tag": "slot-kind-tiebreak",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 25,
       "wins_prior_10k": -1,
       "wins_third_10k": -12,

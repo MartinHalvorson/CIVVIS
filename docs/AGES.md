@@ -1,5 +1,7 @@
 # Ages, Era Score and Dedications
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 What Gathering Storm's age system does in CIVVIS, what was checked against the
 shipped game, and what the AI does with it.
 

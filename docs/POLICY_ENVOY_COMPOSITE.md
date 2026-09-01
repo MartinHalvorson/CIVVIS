@@ -1,5 +1,7 @@
 # Live policy plus direct envoy production
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 > Historical experiment record: the composite below was promoted on
 > 2026-08-01. Its `envoy-infrastructure` valuation later measured null at 800
 > games and was removed from the production constructor on 2026-08-17;

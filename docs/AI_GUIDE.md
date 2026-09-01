@@ -1,5 +1,9 @@
 # AI Development Guide
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
+⚠ `civvis tournament`, `civvis league`, `civvis arena` and `civvis rating` were removed in #2357 (2026-08-23) with the league and the Elo ledgers (`docs/closed/LEAGUE.md`, `docs/closed/RATING.md`). Their commands in this document are likewise the record, not instructions.
+
 The engine exists so you can develop advanced AI strategies against a
 Civ-6-like game without a UI in the loop.
 
