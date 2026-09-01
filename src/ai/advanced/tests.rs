@@ -8939,6 +8939,80 @@ fn imminent_city_attack_triggers_before_the_aggregate_ratio_is_critical() {
 }
 
 #[test]
+fn science_lane_keeps_its_beeline_for_a_barbarian_that_cannot_strike_this_turn() {
+    let mut game = Game::new_full(1, 30, 18, 7_221, 300, 0, true);
+    let city = found_test_city(&mut game, 0);
+    clear_barbarian_fixture(&mut game);
+    let city_pos = game.cities[&city].pos;
+    let barbarian = game.barb_pid.expect("the fixture has a barbarian seat");
+    let outer_tile =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(city_pos, *position) == 3
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the city needs visible outer ground");
+    // A city-center sight ring is deliberately short on this fixture. Keep a
+    // cheap observer beside the contact so the test proves the gate is
+    // reacting to a known non-imminent raider, rather than merely ignoring
+    // fog.
+    let observer_tile =
+        game.nbrs(outer_tile)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the contact needs an observer tile");
+    game.spawn_test_unit("scout", 0, observer_tile);
+    let raider = game.spawn_test_unit("crossbowman", barbarian, outer_tile);
+    let visible = game.player_vision_frame(0);
+    assert!(
+        BasicAi::barbarian_military_gap(&game, 0),
+        "the fixture must still contain a real barbarian quality gap"
+    );
+    assert!(
+        !AdvancedAi::imminent_city_attack(&game, 0, city, &visible),
+        "a strong contact three tiles out must not be treated as a next-turn strike"
+    );
+    assert!(
+        !game.attack_reach(raider).contains(&city_pos),
+        "the fixture's outer contact must remain outside the attack envelope"
+    );
+
+    game.players[0].research = None;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ai = AdvancedAi::new();
+    ai.advanced_research(&mut game, 0, &plan);
+    let selected = game.players[0]
+        .research
+        .as_deref()
+        .expect("the Science seat should still choose a technology");
+    assert!(
+        ai.tech_leads_to(&game, selected, "rocketry"),
+        "a non-imminent barbarian contact must not displace the Science beeline; selected {selected}"
+    );
+}
+
+#[test]
 fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
     let (mut game, recent, enemy_city) = timed_war_fixture(7_220);
     let quiet = game
