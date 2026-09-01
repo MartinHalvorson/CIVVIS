@@ -1699,10 +1699,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "overseas-settlement", field: "overseas_settlement", kind: Kind::OptIn, enable: AdvancedAi::enable_overseas_settlement, disable: AdvancedAi::disable_overseas_settlement },    // The live seat never researched Astrology (1 of 130 games, at t244):
     // every explicit lane goal is a far-era tech Astrology is not an
     // ancestor of, so the beeline skips it for the whole game and no Holy
-    // Site, Shrine, Prophet or Missionary is ever reachable. Take Astrology
-    // after the opening techs while a Prophet slot is open, put the first
-    // Holy Site at the front of the district order, price the Prophet as a
-    // lane great person, and keep the prize (`pursue_religion`) once won.
+    // Site, Shrine, Prophet or Missionary is ever reachable. A secondary
+    // Prophet race remains available to eligible lanes, but an explicit
+    // Science lane must keep the beeline rather than pay that dead-end cost.
     Gene { tag: "enter-the-prophet-race", field: "enter_the_prophet_race", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_enter_the_prophet_race, disable: AdvancedAi::disable_enter_the_prophet_race },
     // `settler-never-idles` (operator, 2026-08-27): a Settler always has
     // somewhere to go. `advanced_settler_step` held a Settler on more than a

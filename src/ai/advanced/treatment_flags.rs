@@ -3113,10 +3113,11 @@ impl AdvancedAi {
         self.settler_never_idles = false;
     }
 
-    /// Enter the Great Prophet race from an explicit victory lane: Astrology
+    /// Enter the secondary Great Prophet race for eligible lanes: Astrology
     /// after the opening techs, the empire's first Holy Site at the front of
     /// the district order, the Prophet priced as a lane great person, and
-    /// `pursue_religion` for the prize. See `enter_the_prophet_race`.
+    /// `pursue_religion` for the prize. An explicit Science lane stays on its
+    /// pure beeline. See `enter_the_prophet_race`.
     pub fn enable_enter_the_prophet_race(&mut self) {
         self.enter_the_prophet_race = true;
     }
