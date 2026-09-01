@@ -1169,14 +1169,6 @@ pub const GENES: &[Gene] = &[
     // UPGRADE orders per whole game, Heavy Chariots still the commonest unit at
     // turn 150, and 28 of 40 lost cities lost to conquest.
     Gene { tag: "upgrade-the-garrison", field: "upgrade_the_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_upgrade_the_garrison, disable: AdvancedAi::disable_upgrade_the_garrison },
-    // Version two of the pool's best-measured gene. Version one's reservation
-    // arm is guarded by `counts.traders == 0`, so it fires at most once per
-    // empire and never again while one Trader lives; the ordinary menu cannot
-    // make up the difference, because the Trader arm's 280 loses the argmax to
-    // almost every district. Live King seat, 2026-08-25: 49% of trade capacity
-    // unused across 59 games and 0.02 science per city from routes, a route
-    // paying Science only when it is international and lands on a Campus.
-    Gene { tag: "solvency-first-trade-slot-2", field: "solvency_first_trade_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_solvency_first_trade_slot_2, disable: AdvancedAi::disable_solvency_first_trade_slot_2 },
     // `advanced_production` ranks the menu, walks it while the score clears
     // -1,000, and then `if let Some(..)` -- with no `else`. A city whose whole
     // menu is priced at a refusal sentinel produces NOTHING, silently, with no
@@ -2168,7 +2160,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("skip-the-prophet-race", [Some(2), Some(-115), Some(-118)]),
     ("slot-kind-tiebreak", [Some(16), Some(-7), Some(7)]),
     ("solvency-first-trade-slot", [Some(108), Some(111), Some(136)]),
-    ("solvency-first-trade-slot-2", [Some(-61), Some(-33), Some(-50)]),
     ("stranded-settler-discount", [Some(-18), Some(31), Some(5)]),
     ("strategic-wonders", [Some(0), Some(6), Some(-11)]),
     ("strike-opening", [Some(-15), Some(-5), Some(-2)]),

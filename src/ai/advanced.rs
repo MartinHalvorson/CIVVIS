@@ -5586,33 +5586,6 @@ pub struct AdvancedAi {
     /// this only removes the unconditional yes. Opt-in gene
     /// `skip-the-prophet-race`.
     skip_the_prophet_race: bool,
-
-    /// Version 2 of `solvency-first-trade-slot`: reserve EVERY empty trade
-    /// slot the empire can actually use, not only the first.
-    ///
-    /// ★★★★ THE BEST GENE IN THE POOL STOPS AFTER ONE TRADER. Version one is
-    /// rank 1 by pooled Diff (+8.07 pp) and its reservation arm is guarded by
-    /// `counts.traders == 0` — it fires at most once per empire, and never
-    /// again while a single Trader is alive. An empire with four capacity and
-    /// one Trader reserves nothing for the rest of the game, and the ordinary
-    /// menu cannot make up the difference: the Trader arm's base is 280
-    /// against a Settler's 920 and a Spy's 1,500, so it loses the argmax to
-    /// almost every district, and capacity simply stays open.
-    ///
-    /// MEASURED on the live King seat, 2026-08-25: 49% of trade-route capacity
-    /// sat unused across 59 games, and science from trade routes was 0.02 per
-    /// city — a route only pays Science when it is INTERNATIONAL and lands on
-    /// a Campus, so an empire that opens one domestic route and stops earns
-    /// none of it.
-    ///
-    /// A second implementation rather than a patch, as the versioning recipe
-    /// requires: it asks the capacity question directly — how many usable
-    /// slots are open against how many Traders exist — and judges barbarian
-    /// safety at the producing city, which is version one's own repair. It
-    /// also carries that repair into `advanced_trader_step`, where a built
-    /// Trader is still sent walking home by the pre-gene empire-wide veto.
-    /// Opt-in gene `solvency-first-trade-slot-2`.
-    solvency_first_trade_slot_2: bool,
     /// A seen rival Settler near our cities is screened: up to four of our
     /// nearby land units, recon first, take the stands that add the most
     /// expected steps to its likeliest walks, and hold them. Opt-in gene
@@ -7064,7 +7037,6 @@ impl AdvancedAi {
             screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
-            solvency_first_trade_slot_2: false,
             settler_screen: false,
             settler_second_look: false,
             science_victory_drive: false,
@@ -22176,33 +22148,19 @@ impl AdvancedAi {
             // is covered, reserve it in a city that can start a safe route now.
             // `counts.add_item` closes the reservation before the next city is
             // visited, so parallel governors cannot all answer the same debt.
-            // See `solvency_first_trade_slot_2`: version two asks the capacity
-            // question directly instead of stopping at the first Trader, and
-            // judges safety at the producing city the way version one does.
-            let reserve_a_trade_slot = if self.solvency_first_trade_slot_2 {
-                let open = g
-                    .trade_capacity(pid)
-                    .saturating_sub(g.active_routes(pid))
-                    .max(0) as usize;
-                let usable = open.min(self.trade_route_opportunity_count(g, pid));
-                counts.traders < usable && self.base.safe_trade_origin_for_controller(g, pid, cid)
-            } else {
-                self.base.solvency_first_trade_slot
-                    && counts.traders == 0
-                    && self.base.should_add_trader_in_city_for_controller(
-                        g,
-                        pid,
-                        cid,
-                        counts.traders,
-                    )
-            };
+            let reserve_a_trade_slot = self.base.solvency_first_trade_slot
+                && counts.traders == 0
+                && self
+                    .base
+                    .should_add_trader_in_city_for_controller(g, pid, cid, counts.traders);
             // The same sentence for the other two assets the argmax
             // chronically under-buys. See `first_builder_reserve` and
             // `first_research_building_reserve`: `solvency_first_trade_slot`
             // measured +4.04 pp wins by reserving ONE Trader ahead of ordinary
-            // production, and its own version two measured WORSE by reserving
-            // every slot -- so the win is buying one compounding asset early,
-            // not buying more of it. A Builder is priced at 260 and a Library
+            // production, and its culled version two (the ranking's Removed
+            // from the code table) measured WORSE by reserving every slot --
+            // so the win is buying one compounding asset early, not buying
+            // more of it. A Builder is priced at 260 and a Library
             // at about 960 against a Settler's 1,560 by the same argmax, for
             // the same reason.
             if committed.is_none() && self.first_builder_reserve && counts.builders == 0 {
@@ -30125,26 +30083,13 @@ impl AdvancedAi {
         // camp/raider makes the exposed path a bad trade: return to a friendly
         // city before searching for a route. Starting from the city itself is
         // still allowed because route creation is immediate there.
-        // See `solvency_first_trade_slot_2`: the empire-wide veto below is the
-        // pre-gene shape, and it is what walks a finished Trader home because
-        // some distant frontier has an alarm. Version two asks the same
-        // city-local question the reservation arm asks.
-        let barbarian_trade_safe = if self.solvency_first_trade_slot_2 {
-            !self.base.barbarian_tactics_enabled()
-                || g.city_at(current).is_some_and(|city| {
-                    g.cities[&city].owner == pid
-                        && self.base.safe_trade_origin_for_controller(g, pid, city)
-                })
-                || !self.base.barbarian_trade_risk_for_controller(g, pid)
-        } else {
-            !self.base.barbarian_tactics_enabled()
-                || (!self.base.barbarian_trade_risk_for_controller(g, pid)
-                    && g.player_city_ids(pid).into_iter().all(|city| {
-                        self.base
-                            .barbarian_threat_pressure_for_controller(g, pid, city)
-                            == 0
-                    }))
-        };
+        let barbarian_trade_safe = !self.base.barbarian_tactics_enabled()
+            || (!self.base.barbarian_trade_risk_for_controller(g, pid)
+                && g.player_city_ids(pid).into_iter().all(|city| {
+                    self.base
+                        .barbarian_threat_pressure_for_controller(g, pid, city)
+                        == 0
+                }));
         if !barbarian_trade_safe
             && g.city_at(current)
                 .is_none_or(|city| g.cities[&city].owner != pid)
