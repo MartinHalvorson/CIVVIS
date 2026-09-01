@@ -3486,6 +3486,17 @@ impl AdvancedAi {
         self.guard_breaks_the_pin = false;
     }
 
+    /// `settler-target-floor`: a Settler is never sent to a site not worth the
+    /// walk. See `advanced/settler_target_floor.rs`.
+    pub fn enable_settler_target_floor(&mut self) {
+        self.settler_target_floor = true;
+    }
+
+    /// The twin of `enable_settler_target_floor`.
+    pub fn disable_settler_target_floor(&mut self) {
+        self.settler_target_floor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

@@ -1857,6 +1857,16 @@ pub const GENES: &[Gene] = &[
     // unless a free seat worth the floor remains. See
     // `advanced/settler_site_gate.rs`.
     Gene { tag: "settler-site-gate", field: "settler_site_gate", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_site_gate, disable: AdvancedAi::disable_settler_site_gate },
+    // `settler-target-floor` (live autopsy, 2026-09-01): a Settler is never
+    // sent to a site not worth the walk. Run 182050Z changed settler targets
+    // on 61 of 100 marching turns; once the four-tile ring was empty,
+    // `rapid-city-expansion` took the global best with no premium and no
+    // floor and marched Settlers 14–18 tiles to sites worth −35.0, −4.1 and
+    // 17.7 (founded sites: 96–140); two were lost on those roads. Candidates
+    // are charged the walk beyond eight tiles at the extra-travel price and
+    // must clear a floor of 10 to be a target, in the ranked and the
+    // exhaustion search alike. See `advanced/settler_target_floor.rs`.
+    Gene { tag: "settler-target-floor", field: "settler_target_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_target_floor, disable: AdvancedAi::disable_settler_target_floor },
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
     Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
     Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
