@@ -21780,7 +21780,9 @@ impl AdvancedAi {
             let origin = g.cities[city].pos;
             if self.settler_site_gate {
                 // `settler-site-gate`: the wave fills seats, not queues.
-                return self.settler_site_gate(g, pid, origin, counts.settlers).is_ok();
+                return self
+                    .settler_site_gate(g, pid, origin, counts.settlers)
+                    .is_ok();
             }
             self.settle_site_exists(g, pid, origin, 10)
                 || (shipbuilding

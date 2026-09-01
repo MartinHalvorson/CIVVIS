@@ -97,7 +97,10 @@ impl AdvancedAi {
         // for the free ones ahead of any Settler this city would start now.
         let unseated = settlers.saturating_sub(claimed.len());
         if seats.len() <= unseated {
-            return Err(SettlerSiteGateHold::AllClaimed { seats: seats.len(), unseated });
+            return Err(SettlerSiteGateHold::AllClaimed {
+                seats: seats.len(),
+                unseated,
+            });
         }
         let best = seats[unseated];
         if best.1 < SETTLER_SITE_GATE_FLOOR {

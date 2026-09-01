@@ -41901,17 +41901,26 @@ fn settler_site_gate_verdict_needs_a_free_seat_worth_the_floor() {
     assert_eq!(verdict(&g, &[(a, 90.0), (b, 60.0)], &[], 0), Ok((a, 90.0)));
     // A claimed seat is taken, and so is every plot within settlement
     // spacing of it: two candidate plots one tile apart are one seat.
-    assert_eq!(verdict(&g, &[(a, 90.0), (near_a, 85.0), (b, 60.0)], &[a], 1), Ok((b, 60.0)));
+    assert_eq!(
+        verdict(&g, &[(a, 90.0), (near_a, 85.0), (b, 60.0)], &[a], 1),
+        Ok((b, 60.0))
+    );
     // A Settler alive without a target queues ahead of a new one.
     assert_eq!(verdict(&g, &[(a, 90.0), (b, 60.0)], &[], 1), Ok((b, 60.0)));
     assert_eq!(
         verdict(&g, &[(a, 90.0), (b, 60.0)], &[a], 2),
-        Err(Hold::AllClaimed { seats: 1, unseated: 1 })
+        Err(Hold::AllClaimed {
+            seats: 1,
+            unseated: 1
+        })
     );
     // Run 182050Z's wandering targets were worth 13.8–24.1; its founded
     // sites 96–140. The floor sits between them, and a seat under it is
     // not a seat worth a Settler.
-    assert_eq!(verdict(&g, &[(a, 18.9)], &[], 0), Err(Hold::BelowFloor { worth: 18.9 }));
+    assert_eq!(
+        verdict(&g, &[(a, 18.9)], &[], 0),
+        Err(Hold::BelowFloor { worth: 18.9 })
+    );
     assert_eq!(verdict(&g, &[(a, FLOOR)], &[], 0), Ok((a, FLOOR)));
     assert!(Hold::BelowFloor { worth: 18.9 }.describe().contains("18.9"));
 }
