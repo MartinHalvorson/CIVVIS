@@ -75,6 +75,22 @@ pub const COMMITMENT_PATIENCE: u32 = 3;
 /// hex a turn, the pessimistic reading.
 const WALK_PRICE_RADIUS: i32 = 16;
 
+/// The census fields [`CommitmentLedger::export`] writes under `commit:`;
+/// any other `commit:` counter is a ledger-acting gene's own.
+const EXPORTED_FIELDS: [&str; 11] = [
+    "made",
+    "completed",
+    "retargeted",
+    "abandoned",
+    "lost",
+    "open_turns",
+    "forgotten_turns",
+    "stalled_turns",
+    "late_turns",
+    "completion_turns",
+    "eta_turns",
+];
+
 /// The ETA a Conquest target carries when no appointed war priced one: the
 /// campaign layer's own patience (`CAMPAIGN_PATIENCE`), the longest the
 /// controller lets a planned city wait before it drops the plan.
@@ -619,6 +635,16 @@ impl CommitmentLedger {
         }
     }
 
+    /// Whether `key` is one of the counters [`Self::export`] writes, as
+    /// opposed to one a ledger-acting gene writes beside them.
+    pub fn exports(&self, key: &str) -> bool {
+        let Some(rest) = key.strip_prefix("commit:") else {
+            return false;
+        };
+        let field = rest.rsplit(':').next().unwrap_or(rest);
+        EXPORTED_FIELDS.contains(&field)
+    }
+
     /// Write the running census into the seat's counters so a screen row
     /// carries it. Keys are `commit:<kind>:<field>` per kind and
     /// `commit:<field>` summed. Overwrites, so the value is the seat's total.
@@ -634,6 +660,7 @@ impl CommitmentLedger {
             }
         };
         let fields = |c: KindCensus| {
+            debug_assert_eq!(EXPORTED_FIELDS.len(), 11);
             [
                 ("made", c.made),
                 ("completed", c.completed),
@@ -1803,6 +1830,9 @@ mod tests {
         let mut endings: BTreeMap<(Kind, &'static str), u32> = BTreeMap::new();
         let mut still_open: BTreeMap<Kind, u32> = BTreeMap::new();
         let mut forgotten_why: BTreeMap<(Kind, &'static str), u32> = BTreeMap::new();
+        // What the ledger-acting genes did: every `commit:` counter that is
+        // not one of the census's own exported fields.
+        let mut gene_counters: BTreeMap<String, i64> = BTreeMap::new();
         for map in 0..maps {
             let seed = 98_500_000 + map;
             let mut game = Game::new_with(GameOptions {
@@ -1854,6 +1884,11 @@ mod tests {
                 for (key, n) in &ai.commitments().forgotten_why {
                     *forgotten_why.entry(*key).or_default() += n;
                 }
+                for (key, n) in &game.players[pid].counters {
+                    if key.starts_with("commit:") && !ai.commitments().exports(key) {
+                        *gene_counters.entry(key.clone()).or_default() += n;
+                    }
+                }
             }
             println!("map {seed} t{}:", game.turn);
             for line in census.lines() {
@@ -1883,6 +1918,10 @@ mod tests {
         println!("forgotten, by hold:");
         for ((kind, why), n) in &forgotten_why {
             println!("  {:<8}{why:<32}{n}", kind.as_str());
+        }
+        println!("gene counters:");
+        for (key, n) in &gene_counters {
+            println!("  {key:<40}{n}");
         }
     }
 }

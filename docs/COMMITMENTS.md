@@ -324,6 +324,82 @@ left, never scratched it" 78 → 60. "Always present, never scratched it"
 blocks: win −5.4 / −2.0 pp, share −3.5 / +2.5 — probe noise; the standard
 screen prices it.
 
+### `commitment-owner-acts` (opt-in, ships off)
+
+The class the two civilian genes above leave standing, re-measured on
+2026-09-01 at the deployment genome as it then shipped (`commitment-patience`
+and `capture-go-or-stand-down-2` on; `civilian-out-of-reach` off), twelve
+6-player 60×38 Online maps, seeds 98500000–98500011:
+
+```
+settle  made 2064 done 311 (15%) retargeted 784 dropped 939 lost 14 · open turns 6394: forgotten 1481 (23%) stalled 233 (3%) late 711 (11%) · done in 3.4 turns v eta 2.8
+improve made 6106 done 4173 (69%) retargeted 176 dropped 1387 lost 234 · open turns 18105: forgotten 2873 (15%) stalled 1514 (8%) late 4366 (24%) · done in 3.4 turns v eta 2.8
+capture made 366 done 4 (1%)    retargeted 115 dropped 217 lost 0   · open turns 2185: forgotten 501 (22%)  stalled 146 (6%)  late 90 (4%)    · done in 13.8 turns v eta 20.0
+```
+
+Forgotten, by hold: settle — hostile within two **1,372**, stall counted 50,
+unexplained 34, threat forecast 19, in a city 6; improve — hostile within
+two **2,400**, walk refused or not attempted 442, at the tile 16, in a city
+15; capture — nobody at the objective 501. Endings: settle retired 340,
+improve retired 690 (`commitment-patience`); capture stood down 217.
+
+The forgotten turn is still the largest open class on both civilian kinds,
+and 87% of it is one hold: **a hostile within two hexes and the owner does
+not act** — `commitment-patience` retires the target after three such turns
+(1,030 retirements), and for those three turns the owner stands still with
+movement to spend and an order it was given but never carried out. The
+remainder is a pin the Builder never walks to and the settler holds the
+observer cannot name.
+
+With the gene on, **every open settle or improve commitment whose owner the
+unit pass left with movement and no order acts on it, or resolves it, the
+same turn.** After `advanced_units` and before the ledger's reading, each
+such owner gets the commitment's own next step:
+
+- standing on the target: the city is founded (under the same step-risk and
+  loyalty bars the unit pass applies) or the best improvement that fits the
+  tile is laid;
+- otherwise one route step toward the target, when no hostile can reach that
+  step (`barbarian_reach` / `civilian_safe_at`, the civilian-safety envelope)
+  and, for a settler, the step is under `SETTLER_STEP_RISK_LIMIT`;
+- or the commitment is **released** with a recorded reason: the step is
+  illegal (no route step, a refused order, a site that cannot be founded, a
+  tile nothing fits) or the owner itself stands inside a hostile's reach —
+  where the civilian-safety flee keeps priority and a decision must not pull
+  the unit deeper in. A released site is parked for the hysteresis window
+  the way `commitment-patience` parks a retired one.
+
+The one hold it leaves standing is a next step that is itself inside a
+hostile's reach or over the settler risk limit: a passing raider is a wait,
+not a new decision, and `commitment-patience` prices how long. Journal line
+per act (`… acts on the decision the unit pass left standing`, `… releases
+the decision it was not acting on`), `commit:<kind>:owner_{stepped,
+completed,held,released}` counters, and a `released` ending in the census.
+
+**Same twelve maps, gene off → on** (same seeds; a gene that changes a
+decision changes the game, so these are magnitudes, not a paired test):
+
+| | made | done | retargets (en route) | dropped | lost | forgotten turns | stalled | late | turns to complete (v eta) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| settle, off | 2,064 | 311 (15%) | 784 (419) | 939 | 14 | 1,481 (23%) | 233 | 711 (11%) | 3.4 (v 2.8) |
+| settle, on | 1,875 | 301 (16%) | 708 (366) | 835 | 22 | **847 (15%)** | 242 | 595 (11%) | 3.6 (v 2.9) |
+| improve, off | 6,106 | 4,173 (69%) | 176 (46) | 1,387 | 234 | 2,873 (15%) | 1,514 | 4,366 (24%) | 3.4 (v 2.8) |
+| improve, on | 5,954 | 4,147 (71%) | 160 (67) | 1,303 | 181 | **1,846 (11%)** | 1,197 | 3,910 (23%) | 3.4 (v 2.7) |
+
+Forgotten, by hold (off → on): settle — hostile within two 1,372 → **782**,
+stall counted 50 → 31, unexplained 34 → 25, threat forecast 19 → 3; improve
+— hostile within two 2,400 → **1,684**, walk refused or not attempted
+442 → **155**, at the tile 16 → 7, in a city 15 → 0. Endings: released 159
+settle / 187 improve; retired (`commitment-patience`) 340 → 157 settle,
+690 → 427 improve — the patience gene now retires what the owner could not
+act on, not what it was never asked to. Civilian forgotten turns
+4,354 → 2,693 (−38%); civilians lost 248 → 203; done 15% → 16% settle,
+69% → 71% improve; the completion pace is flat (3.4 → 3.6 / 3.4 → 3.4
+turns) — the class that closed was the standing still, and what remains is
+the wait the gene leaves on purpose: the next step is inside a hostile's
+reach (782 + 1,684 of the 2,693). The capture kind is untouched by the gene
+(done 4 → 13 is trajectory noise).
+
 ### Still open
 
 - **The assault that never starts** (above): 169 of 244 failed conquests
