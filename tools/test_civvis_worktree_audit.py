@@ -319,5 +319,154 @@ class LooseFilesAreScanned(unittest.TestCase):
                     audit.stranded_blobs(str(repo), ["/a", "/b", "/c"])
 
 
+class ASettledPullRequestShortensTheClock(unittest.TestCase):
+    """The merged/closed-PR fast path, and every way it must decline.
+
+    Measured on `mbp-m5-max-128` on 2026-09-01: 47 registered worktrees on
+    already MERGED or CLOSED branches held 143 GB of `target/`, because the
+    hourly job's 24-hour idle window never catches up with ~10 new worktrees a
+    day. A settled pull request is GitHub's own statement that the task is
+    over, so such a tree may go after SETTLED_PR_IDLE_MINUTES instead — with
+    `gh` silent or doubtful, behaviour must be byte-for-byte the old one.
+    """
+
+    def reap(self, repo, *, apply=False, settled=None, idle_minutes=1440,
+             settled_idle=60, idle_for_minutes=90.0):
+        with mock.patch.object(audit, "process_is_running_from", lambda p: False), \
+             mock.patch.object(audit, "on_github", lambda repo, head: True), \
+             mock.patch.object(audit, "newest_edit",
+                               lambda p: audit.time.time() - idle_for_minutes * 60), \
+             mock.patch.object(audit, "branch_pr_settled_heads",
+                               lambda repo, branch: settled):
+            return audit.reap(str(repo), [], idle_minutes=idle_minutes,
+                              apply=apply, settled_idle_minutes=settled_idle)
+
+    def test_a_settled_pr_is_reaped_inside_the_general_window(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            repo = a_repo_with(tmp, {"task": "agent/m/a/settled-thing"})
+            head = run("git", "-C", str(tmp / "task"), "rev-parse",
+                       "HEAD").stdout.strip()
+            rows = self.reap(repo, settled=[head])
+            self.assertEqual(len(rows), 1, rows)
+            self.assertIn("PR settled", rows[0]["why"],
+                          "the log must say WHY the short window applied")
+
+    def test_no_answer_from_gh_means_todays_behaviour_exactly(self):
+        """gh missing, erroring, no PR, or an OPEN PR all return None."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            repo = a_repo_with(tmp, {"task": "agent/m/a/no-answer"})
+            self.assertEqual(self.reap(repo, settled=None), [],
+                             "without a positive settled answer the general "
+                             "idle window stands")
+
+    def test_the_short_window_is_still_a_window(self):
+        """A settled PR does not excuse a tree edited minutes ago."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            repo = a_repo_with(tmp, {"task": "agent/m/a/still-warm"})
+            head = run("git", "-C", str(tmp / "task"), "rev-parse",
+                       "HEAD").stdout.strip()
+            self.assertEqual(
+                self.reap(repo, settled=[head], idle_for_minutes=5.0), [],
+                "an agent may still be sitting in the tree")
+
+    def test_gh_is_not_asked_once_the_general_window_has_passed(self):
+        """The fast path must add zero API calls to the already-eligible case."""
+        def explode(repo, branch):
+            raise AssertionError("gh must not be consulted past --idle-minutes")
+
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            repo = a_repo_with(tmp, {"task": "agent/m/a/long-idle"})
+            with mock.patch.object(audit, "process_is_running_from",
+                                   lambda p: False), \
+                 mock.patch.object(audit, "on_github", lambda repo, head: True), \
+                 mock.patch.object(audit, "newest_edit", lambda p: 0.0), \
+                 mock.patch.object(audit, "branch_pr_settled_heads", explode):
+                rows = audit.reap(str(repo), [], idle_minutes=1440, apply=False)
+            self.assertEqual(len(rows), 1, rows)
+            self.assertNotIn("PR settled", rows[0]["why"])
+
+    def test_apply_deletes_the_branch_only_when_the_pr_head_matches(self):
+        """The tip a settled PR holds at refs/pull/N/head may go; a tip the PR
+        never saw may be local-only work and keeps its name."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            repo = a_repo_with(tmp, {"task": "agent/m/a/tip-matches"})
+            head = run("git", "-C", str(tmp / "task"), "rev-parse",
+                       "HEAD").stdout.strip()
+            rows = self.reap(repo, apply=True, settled=[head])
+            self.assertEqual([r["removed"] for r in rows], [True], rows)
+            self.assertFalse((tmp / "task").is_dir())
+            heads = run("git", "-C", str(repo), "for-each-ref",
+                        "--format=%(refname:short)", "refs/heads").stdout.split()
+            self.assertNotIn("agent/m/a/tip-matches", heads,
+                             "a tip the PR holds forever needs no local name")
+
+    def test_apply_keeps_a_branch_whose_tip_the_pr_never_saw(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            repo = a_repo_with(tmp, {"task": "agent/m/a/tip-differs"})
+            rows = self.reap(repo, apply=True, settled=["f" * 40])
+            self.assertEqual([r["removed"] for r in rows], [True], rows)
+            self.assertFalse((tmp / "task").is_dir(),
+                             "the worktree and its target/ still go")
+            heads = run("git", "-C", str(repo), "for-each-ref",
+                        "--format=%(refname:short)", "refs/heads").stdout.split()
+            self.assertIn("agent/m/a/tip-differs", heads,
+                          "a tip no settled PR preserves must keep its branch")
+
+
+class SettledHeadsAreEstablishedConservatively(unittest.TestCase):
+    """`branch_pr_settled_heads` answers None on every doubt, and doubt is the
+    default: the fast path may only ever fire on a positive `gh` answer."""
+
+    def with_gh_saying(self, stdout, returncode=0):
+        class Answer:
+            pass
+
+        answer = Answer()
+        answer.stdout = stdout
+        answer.returncode = returncode
+        with mock.patch.object(audit.shutil, "which", lambda n: "/usr/bin/gh"), \
+             mock.patch.object(audit.subprocess, "run", lambda *a, **k: answer):
+            return audit.branch_pr_settled_heads("/repo", "agent/m/a/x")
+
+    def test_every_pr_settled_yields_their_heads(self):
+        self.assertEqual(
+            self.with_gh_saying(
+                '[{"state": "MERGED", "headRefOid": "aaa"},'
+                ' {"state": "CLOSED", "headRefOid": "bbb"}]'),
+            ["aaa", "bbb"])
+
+    def test_one_open_pr_blocks_the_fast_path(self):
+        self.assertIsNone(
+            self.with_gh_saying(
+                '[{"state": "MERGED", "headRefOid": "aaa"},'
+                ' {"state": "OPEN", "headRefOid": "bbb"}]'),
+            "an open PR is a task still in play, whatever the mtime says")
+
+    def test_no_pr_at_all_is_not_settled(self):
+        self.assertIsNone(self.with_gh_saying("[]"),
+                          "a branch that never shipped waits the full window")
+
+    def test_a_gh_error_is_not_settled(self):
+        self.assertIsNone(self.with_gh_saying("", returncode=1))
+
+    def test_garbage_json_is_not_settled(self):
+        self.assertIsNone(self.with_gh_saying("not json"))
+
+    def test_no_gh_binary_is_not_settled(self):
+        with mock.patch.object(audit.shutil, "which", lambda n: None):
+            self.assertIsNone(
+                audit.branch_pr_settled_heads("/repo", "agent/m/a/x"))
+
+    def test_main_and_detached_are_never_settled(self):
+        for branch in ("", "HEAD", "main"):
+            self.assertIsNone(audit.branch_pr_settled_heads("/repo", branch))
+
+
 if __name__ == "__main__":
     unittest.main()
