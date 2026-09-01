@@ -1,5 +1,7 @@
 # A gene for every victory lane
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 The controller is treated as a genome (`docs/GENE_SCREEN.md`): every behaviour
 is a gene, on or off, priced regularly by a randomised screen. This file asks
 a question that ranking never asks — **which victory is each gene for?** — and
