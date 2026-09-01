@@ -17113,6 +17113,57 @@ local function playTurn(player, pid, turn)
 	});
 end
 
+-- ★★★★ THE TURN-START BOARD READ EVERY UNIT'S MOVEMENT BEFORE THE ENGINE
+-- RESTORED IT.
+--
+-- `tick` reaches `beginTurn` from `LocalPlayerTurnBegin` with `IsTurnActive()`
+-- already true, and `GetMovesRemaining()` still answers LAST turn's leftover:
+-- a Warrior that spent both moves reads 0, a Scout that spent one of three
+-- reads 2. The board trusts that export (`Seat::moves_at_turn_start`), plans
+-- the unit as it stands, and leaves it unmentioned, so the unit is skipped.
+-- Measured on `civvis-20260901T212354Z`: the first Settler read 0 on turns 3
+-- and 5, walked on 2, 4 and 6 only, and founded the capital on turn 6 for a
+-- two-hex walk. Across turns 20-60 of a mature run a quarter of frame-0 unit
+-- rows were 0-move rows; the frame published later the same turn read full
+-- movement for 290 of 293 of them.
+--
+-- So the turn is not opened until every unit reads its full allowance, or
+-- `MOVES_RESTORED_PATIENCE` ticks have passed — a unit the engine walked on a
+-- queued path before `cancelQueuedPaths` ran is legitimately short and must
+-- not hold the turn. `lastTurnSeen` is left at the previous turn so the next
+-- tick retries; ticks come undivided from `EndTurnBlockingChanged` and 1-in-16
+-- from `GameCoreEventPublishComplete`, so the wait is a fraction of a second.
+-- On `CivvisBoard` rather than as locals: the main chunk is at Lua's
+-- 199-local ceiling (`test_main_chunk_locals_stay_under_the_limit`).
+CivvisBoard.MOVES_RESTORED_PATIENCE = 12;
+CivvisBoard.movesRestoredWait = { turn = -1, ticks = 0 };
+function CivvisBoard.movementNotYetRestored(player, turn)
+	local movesRestoredWait = CivvisBoard.movesRestoredWait;
+	if movesRestoredWait.turn ~= turn then
+		movesRestoredWait.turn = turn;
+		movesRestoredWait.ticks = 0;
+	end
+	local short = 0;
+	eachUnit(player, function(unit)
+		local max = tonumber(try(function() return unit:GetMaxMoves(); end, 0)) or 0;
+		local left = tonumber(try(function() return unit:GetMovesRemaining(); end, -1)) or -1;
+		if max > 0 and left >= 0 and left < max then short = short + 1; end
+	end);
+	if short == 0 then
+		if movesRestoredWait.ticks > 0 then
+			emit("moves_restored", { turn = turn, ticks = movesRestoredWait.ticks });
+		end
+		return false;
+	end
+	movesRestoredWait.ticks = movesRestoredWait.ticks + 1;
+	if movesRestoredWait.ticks > CivvisBoard.MOVES_RESTORED_PATIENCE then
+		emit("moves_restored", { turn = turn, ticks = movesRestoredWait.ticks,
+		                         short = short, gave_up = true });
+		return false;
+	end
+	return true;
+end
+
 local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
@@ -17681,6 +17732,9 @@ local function tick()
 
 		local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 		if turn ~= lastTurnSeen then
+			-- See `movementNotYetRestored`: the board waits for the engine to
+			-- hand the units their turn's movement, not the previous turn's dregs.
+			if cfg.CivvisDecides and CivvisBoard.movementNotYetRestored(player, turn) then return; end
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
