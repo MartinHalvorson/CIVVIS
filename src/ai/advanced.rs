@@ -10090,6 +10090,7 @@ impl AdvancedAi {
                     && player.religion.is_some()
             });
         let active_victory_target = self.active_victory_target(g);
+        let specialization_active = Self::victory_specialization_active(g);
         let science_targeted = active_victory_target == Some(VictoryTarget::Science);
         let map_capacity = if self.wide_map_capacity && !conversion_race_live {
             // Live-bridge pricing: one city per 45 passable tiles, ceiling
@@ -10215,6 +10216,7 @@ impl AdvancedAi {
         // contract is deferred — the widened land-grab ceiling above sets the
         // window's target — and the cap resumes when the window closes.
         let desired_cities = if science_targeted
+            && specialization_active
             && !(self.science_expansion_phase
                 && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN))
         {
@@ -10352,19 +10354,10 @@ impl AdvancedAi {
                     GrandStrategy::Religion,
                     "the religion lane still needs a religion",
                 )
-            } else if cities.len() < desired_cities
-                && has_site
-                && g.turn < g.standard_duration(175)
-                && (!science_targeted
-                    || (cities.len() < SCIENCE_OPENING_CITY_TARGET
-                        && g.turn < g.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS))
-                    || (self.science_opening_band
-                        && cities.len() < SCIENCE_OPENING_BAND_CITY_TARGET
-                        && g.turn < g.standard_duration(SCIENCE_OPENING_BAND_STANDARD_TURNS)))
-            {
+            } else if !specialization_active && cities.len() < desired_cities && has_site {
                 (
                     GrandStrategy::Expansion,
-                    "the assigned lane can still afford to expand first",
+                    "the first half is reserved for expansion and defense",
                 )
             } else {
                 (target.strategy(), "following the assigned victory lane")
@@ -10442,16 +10435,17 @@ impl AdvancedAi {
                 GrandStrategy::Religion,
                 "a Prophet is a finite race worth entering now",
             )
-        } else if victory.progress >= 65 {
-            (victory.strategy, "already well down its best victory lane")
-        } else if cities.len() < desired_cities
+        } else if !specialization_active
+            && cities.len() < desired_cities
             && has_site
             && self.adaptive_expansion_window_open(g)
         {
             (
                 GrandStrategy::Expansion,
-                "short of cities with land still open",
+                "the first half is reserved for expansion and defense",
             )
+        } else if victory.progress >= 65 {
+            (victory.strategy, "already well down its best victory lane")
         } else {
             (victory.strategy, "its best available victory lane")
         };
@@ -12067,7 +12061,8 @@ impl AdvancedAi {
         // treatment remains configurable for other lanes; Science gets the
         // same invariant from its target contract.
         if (self.buildings_before_projects
-            || self.active_victory_target(g) == Some(VictoryTarget::Science))
+            || (Self::victory_specialization_active(g)
+                && self.active_victory_target(g) == Some(VictoryTarget::Science)))
             && spec.repeatable
         {
             let waiting_for = BUILDINGS_BEFORE_PROJECTS.iter().chain(
@@ -12485,7 +12480,13 @@ impl AdvancedAi {
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
-            let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
+            let science_lane_active =
+                Self::victory_specialization_active(g) || self.science_drive_active();
+            let science_victory_goal = if science_lane_active {
+                Self::science_victory_tech_goal(g, pid, objective)
+            } else {
+                None
+            };
             let science_harbor_goal = Self::science_harbor_research_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
@@ -12584,19 +12585,23 @@ impl AdvancedAi {
                 _ if science_harbor_goal.is_some() => science_harbor_goal,
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
-                _ if science_commitment => {
+                _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
                 }
-                GrandStrategy::Culture => ["printing", "radio", "computers"]
-                    .into_iter()
-                    .find(|tech| !g.players[pid].techs.contains(&Name::new(tech))),
+                GrandStrategy::Culture if Self::victory_specialization_active(g) => {
+                    ["printing", "radio", "computers"]
+                        .into_iter()
+                        .find(|tech| !g.players[pid].techs.contains(&Name::new(tech)))
+                }
                 GrandStrategy::Diplomacy
-                    if !g.players[pid].techs.contains(&crate::name!("seasteads")) =>
+                    if Self::victory_specialization_active(g)
+                        && !g.players[pid].techs.contains(&crate::name!("seasteads")) =>
                 {
                     Some("seasteads")
                 }
                 GrandStrategy::Religion
-                    if !g.players[pid].techs.contains(&crate::name!("astrology")) =>
+                    if Self::victory_specialization_active(g)
+                        && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
                     Some("astrology")
                 }
@@ -12609,8 +12614,11 @@ impl AdvancedAi {
             // see `unreachable_science_building_tech`. `goal_pick` below walks
             // the cheapest legal step toward it, which is what crosses the
             // worthless prerequisite the argmax will never take on merit.
-            let forced_goal =
-                forced_goal.or_else(|| self.unreachable_science_building_tech(g, pid));
+            let forced_goal = forced_goal.or_else(|| {
+                science_lane_active
+                    .then(|| self.unreachable_science_building_tech(g, pid))
+                    .flatten()
+            });
             // And after THAT, the growth ceiling: a Campus the empire can reach
             // still only makes beakers out of citizens it is allowed to have.
             // Behind the science goals on purpose — this never takes a slot the
@@ -14298,7 +14306,9 @@ impl AdvancedAi {
                 };
             }
         }
-        if strategy == GrandStrategy::Science || self.science_drive_active() {
+        if (strategy == GrandStrategy::Science && Self::victory_specialization_active(g))
+            || self.science_drive_active()
+        {
             // `science_victory_drive`: a driving seat keys the beeline on
             // the next UNKNOWN chain tech, whatever its plan, so research
             // holds the chain while a project is being built. Stock research
@@ -19657,10 +19667,22 @@ impl AdvancedAi {
         best.map(|(cid, _)| cid)
     }
 
-    /// A Science seat gets one Harbor as empire-wide support infrastructure,
-    /// but a second one must not turn the victory lane into a coastal-district
-    /// collection project. Count both completed and queued Harbors so every
-    /// city sees the reservation as soon as the first one is claimed.
+    /// Whether the game has entered the victory-specialization half of its
+    /// clock. The turn limit is the cleanest common denominator across game
+    /// speeds; an unlimited game has no clock boundary, so its Industrial-era
+    /// fallback keeps the same early-development/midgame split.
+    fn victory_specialization_active(g: &Game) -> bool {
+        if g.max_turns > 0 {
+            g.turn.saturating_mul(2) >= g.max_turns
+        } else {
+            g.world_era >= 4
+        }
+    }
+
+    /// Count completed and queued Harbors so the late Science lane can see a
+    /// Harbor reservation as soon as the first one is claimed. Early in the
+    /// game this is intentionally only a soft signal: multiple Harbors can be
+    /// sensible expansion infrastructure on a coastal map.
     fn science_harbor_reserved(g: &Game, pid: usize) -> bool {
         g.player_city_ids(pid).into_iter().any(|cid| {
             let city = &g.cities[&cid];
@@ -22066,6 +22088,7 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        let science_specialized = Self::victory_specialization_active(g) && science_targeted;
         // The baseline `amenity_districts` policy is otherwise unreachable
         // from this targeted/science governor. Claim at most one legal,
         // unthreatened repair before the generic scorer fills the queues.
@@ -22301,7 +22324,10 @@ impl AdvancedAi {
             // can spend the queue on a Theater Square or another unrelated
             // item. Adaptive seats still need the independently screenable
             // gene; only a named Science lane gets this invariant for free.
-            if committed.is_none() && (self.first_research_building_reserve || science_targeted) {
+            if committed.is_none()
+                && (self.first_research_building_reserve
+                    || (science_specialized && science_targeted))
+            {
                 let owed = Self::first_owed_campus_building(g, pid, cid);
                 if let Some(building) = owed {
                     let item = Item::Building { building };
@@ -23692,6 +23718,7 @@ impl AdvancedAi {
     ) -> f64 {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
+        let specialization_active = Self::victory_specialization_active(g);
         let production = g.city_yields(cid).production.max(1.0);
         let turns = g.item_remaining_cost_for_city(pid, cid, item) / production;
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
@@ -23755,6 +23782,16 @@ impl AdvancedAi {
             GrandStrategy::Conquest => 2 * city_count,
             GrandStrategy::Recovery => 2 * city_count,
             _ => city_count,
+        };
+        // The first half is the foundation window for every peaceful lane:
+        // settlers claim room, while two land bodies per city keep those
+        // claims from becoming undefended liabilities. Conquest and Recovery
+        // already ask for this wartime floor; the phase floor only raises
+        // peaceful plans and never changes an emergency response.
+        let desired_military = if self.victory_planning && !specialization_active {
+            desired_military.max(city_count.saturating_mul(2))
+        } else {
+            desired_military
         };
         let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
@@ -24539,19 +24576,25 @@ impl AdvancedAi {
                 // Electricity unlocks the Research Lab. Keep genuinely
                 // enabling infrastructure (Campus, Industrial Zone,
                 // Spaceport, production/housing/defense districts, and the
-                // first Government Plaza/Diplomatic Quarter) available. A
-                // single Harbor is the intentional exception: its trade
-                // capacity, gold, and coastal food make it useful support for
-                // the beeline. Holy Sites remain outside the Science lane.
+                // first Government Plaza/Diplomatic Quarter) available.
+                // Harbors are useful expansion infrastructure in the opening,
+                // especially when several coastal cities can exploit them;
+                // only the late specialized lane bounds them. Holy Sites
+                // remain outside the Science lane.
+                if self.victory_target == Some(VictoryTarget::Science) && family == "holy_site" {
+                    return -10_000.0;
+                }
                 if self.victory_target == Some(VictoryTarget::Science)
+                    && specialization_active
                     && matches!(
                         family.as_str(),
-                        "theater_square" | "commercial_hub" | "holy_site" | "preserve"
+                        "theater_square" | "commercial_hub" | "preserve"
                     )
                 {
                     return -10_000.0;
                 }
                 if self.victory_target == Some(VictoryTarget::Science)
+                    && specialization_active
                     && family == "harbor"
                     && science_harbor_reserved
                 {
@@ -24768,6 +24811,7 @@ impl AdvancedAi {
                     + effects.get("unlock_apprenticeship").copied().unwrap_or(0.0) * 120.0;
 
                 let strategic_family = match (plan.strategy, family.as_str()) {
+                    (GrandStrategy::Science, "spaceport") if !specialization_active => 0.0,
                     // See `score_horizon`: a launch pad that cannot launch in
                     // time is two points of district and nothing else.
                     (GrandStrategy::Science, "spaceport")
@@ -24787,11 +24831,14 @@ impl AdvancedAi {
                     }
                     (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
                     (GrandStrategy::Science, "spaceport") => 250.0,
-                    (GrandStrategy::Science, "campus") => 170.0,
+                    (GrandStrategy::Science, "campus") if specialization_active => 170.0,
+                    (GrandStrategy::Science, "campus") => 0.0,
                     // One coastal Harbor pays back through empire-wide trade
-                    // capacity and gold. The reservation above makes this a
-                    // bounded support package, while leaving the research
-                    // chain ahead of generic water technology.
+                    // capacity and gold. During the foundation half the first
+                    // one gets a strong nudge, but additional Harbors remain
+                    // legal and fall back to ordinary district value. Once
+                    // specialization begins, the reservation makes this a
+                    // bounded support package.
                     (GrandStrategy::Science, "harbor") if !science_harbor_reserved => 260.0,
                     // See `tally_culture`: the civic tree pays three a rung.
                     (GrandStrategy::Science, "theater_square") if self.tally_culture => 170.0,
@@ -36135,6 +36182,7 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
+        let specialization_active = Self::victory_specialization_active(g);
         // See `skip_the_prophet_race`: an adaptive seat pursues a religion
         // unconditionally, and in this regime that trade is measured negative.
         // See `religion_race_is_closed`: the world's religions are all
@@ -36170,8 +36218,8 @@ impl AdvancedAi {
         // finish the Campus chain before spending its cities on unrelated
         // buildings. Keep the opt-in available for adaptive seats while
         // making the named Science lane self-consistent.
-        self.base.science_building_first =
-            self.science_building_first || active_victory_target == Some(VictoryTarget::Science);
+        self.base.science_building_first = self.science_building_first
+            || (specialization_active && active_victory_target == Some(VictoryTarget::Science));
         // A targeted Science seat also has to get through the Advanced
         // governor's reservation path. `science-building-first` only
         // partitions BasicAi's final building list; districts are ranked
@@ -36179,7 +36227,7 @@ impl AdvancedAi {
         // a Theater or another unrelated district. Keep the gene opt-in for
         // adaptive seats while making the named lane self-consistent.
         self.first_research_building_reserve = self.first_research_building_reserve
-            || active_victory_target == Some(VictoryTarget::Science);
+            || (specialization_active && active_victory_target == Some(VictoryTarget::Science));
         // One reading a turn: `Game::victory_races` walks every city of every
         // major, and `production_value` asks this question per item per city.
         self.lane_lost = self.assigned_lane_is_lost(g, pid);
@@ -36412,7 +36460,7 @@ impl AdvancedAi {
                 self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
                 self.redirect_repeatable_projects_for_settlement_gap(g, pid, &plan);
             }
-            if active_victory_target == Some(VictoryTarget::Science) {
+            if specialization_active && active_victory_target == Some(VictoryTarget::Science) {
                 // The named research chain owns an idle Campus city before
                 // ancillary reservations such as Envoy infrastructure, so a
                 // one-off district cannot hide the Library/University debt.
@@ -36462,10 +36510,11 @@ impl AdvancedAi {
             // empire racing Science that has not finished settling. The
             // `score_horizon` refusal inside it is unchanged.
             if self.victory_planning
-                && (plan.strategy == GrandStrategy::Science
-                    || self.diplomatic_science_backup(g, pid, &plan)
-                    || self.space_race_lane_opens(g, pid, &plan)
-                    || self.science_drive_opens(plan.strategy))
+                && (self.science_drive_opens(plan.strategy)
+                    || (specialization_active
+                        && (plan.strategy == GrandStrategy::Science
+                            || self.diplomatic_science_backup(g, pid, &plan)
+                            || self.space_race_lane_opens(g, pid, &plan))))
             {
                 self.space_race_production(g, pid);
             }
