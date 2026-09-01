@@ -3473,6 +3473,18 @@ impl AdvancedAi {
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
+    /// Version 2 of `skip-the-prophet-race`: retain version 1's published
+    /// behavior, but screen the narrower last-call decision independently.
+    /// One version per family is active in a screen.
+    pub fn enable_skip_the_prophet_race_2(&mut self) {
+        self.skip_the_prophet_race = false;
+        self.skip_the_prophet_race_2 = true;
+    }
+
+    /// The twin of `enable_skip_the_prophet_race_2`.
+    pub fn disable_skip_the_prophet_race_2(&mut self) {
+        self.skip_the_prophet_race_2 = false;
+    }
 
     // ---- append: t-z ------------------------------------------------
 }

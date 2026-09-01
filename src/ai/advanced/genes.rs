@@ -1881,6 +1881,11 @@ pub const GENES: &[Gene] = &[
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
+    // Version 2 replaces v1's unconditional withdrawal with an observed,
+    // last-call forecast: every remaining religion slot must have an active
+    // rival projected to claim the current Prophet soon. Appended so the
+    // published positional genome is unchanged.
+    Gene { tag: "skip-the-prophet-race-2", field: "skip_the_prophet_race_2", kind: Kind::OptIn, enable: AdvancedAi::enable_skip_the_prophet_race_2, disable: AdvancedAi::disable_skip_the_prophet_race_2 },
     // ---- append: t-z ------------------------------------------------
 ];
 

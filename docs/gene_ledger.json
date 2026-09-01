@@ -1554,6 +1554,15 @@
           "settler-target-hysteresis-2": null
         }
       },
+      "skip-the-prophet-race": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "skip-the-prophet-race": null,
+          "skip-the-prophet-race-2": null
+        }
+      },
       "treasury-at-work": {
         "rule_on": [
           "treasury-at-work-2"

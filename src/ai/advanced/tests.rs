@@ -10715,6 +10715,90 @@ fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
 }
 
 #[test]
+fn skip_the_prophet_race_2_leaves_only_a_last_call_race() {
+    let mut game = Game::new_full(6, 74, 46, 76_107, 250, 0, false);
+    let mut cities = Vec::new();
+    for pid in 0..6 {
+        cities.push(found_test_city(&mut game, pid));
+    }
+    game.current = 0;
+    for tech in ["animal_husbandry", "mining"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+
+    let open_slots = game.max_religions();
+    assert!(open_slots < cities.len());
+    for (rival, city) in cities.iter().copied().enumerate().skip(1).take(open_slots) {
+        install_ai_test_district(&mut game, city, "holy_site");
+        let rate = game
+            .great_person_points_per_turn(rival)
+            .get("prophet")
+            .copied()
+            .expect("an active Holy Site earns Prophet points");
+        let cost = game.gp_cost(rival, "prophet");
+        game.players[rival].gpp.insert(
+            "prophet".to_string(),
+            cost - rate * (PROPHET_RACE_LAST_CALL_TURNS - 1.0),
+        );
+    }
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    v2.enable_enter_the_prophet_race();
+    v2.enable_skip_the_prophet_race();
+    v2.enable_skip_the_prophet_race_2();
+
+    assert!(
+        !v2.skip_the_prophet_race,
+        "v2 screens independently from v1"
+    );
+    assert!(v2.skip_the_prophet_race_2);
+    assert!(v2.skip_prophet_race_2_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    assert!(!v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    assert!(
+        !v2.skip_prophet_race_2_for(&game, 0, Some(VictoryTarget::Religion)),
+        "an explicit Religion lane keeps its Prophet race"
+    );
+
+    v2.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "the last-call gate blocks the race's research entry fee too"
+    );
+    v2.take_turn_inner(&mut game, 0);
+    assert!(
+        v2.base.skip_prophet_race,
+        "the late call also closes the Holy Site reservation"
+    );
+    assert!(
+        !v2.base.enter_prophet_race,
+        "the bridge does not reopen the race after v2 withdrew"
+    );
+    assert!(
+        !v2.base.pursue_religion,
+        "the prize gate follows the same last-call decision"
+    );
+
+    // One unfilled slot leaves the non-committed seat a genuine race, so v2
+    // does not repeat version 1's unconditional withdrawal.
+    let last_rival = open_slots;
+    game.players[last_rival]
+        .gpp
+        .insert("prophet".to_string(), 0.0);
+    assert!(!v2.skip_prophet_race_2_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    assert!(v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+}
+
+#[test]
 fn an_explicit_science_seat_stays_out_of_the_prophet_race() {
     let mut game = Game::new_full(4, 30, 18, 76_106, 120, 0, false);
     let settler = game
