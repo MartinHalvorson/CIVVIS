@@ -21730,8 +21730,17 @@ fn settler_target_hysteresis_v2_keeps_guarded_routes_available_to_other_settlers
 #[test]
 fn settler_target_hysteresis_v2_shares_a_permanently_blocked_site() {
     let (mut game, source, target) = stacked_escort_fixture();
-    let dropping = game.spawn_test_unit("settler", 0, source);
-    let other = game.spawn_test_unit("settler", 0, source);
+    // Keep this synthetic hysteresis pair off the founded city. A live
+    // Settler first observed on its own city is intentionally classified as
+    // an early-opening Settler and receives the capital corridor; this test
+    // is about sharing a host-blocked site, not that opening policy.
+    let staging = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| game.city_at(*position).is_none())
+        .expect("fixture has a non-city staging tile");
+    let dropping = game.spawn_test_unit("settler", 0, staging);
+    let other = game.spawn_test_unit("settler", 0, staging);
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge();
     ai.enable_settler_target_hysteresis_2();
