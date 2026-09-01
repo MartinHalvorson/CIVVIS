@@ -517,9 +517,170 @@ def load_cache_database(path: Path, *, require_gathering_storm: bool = True) -> 
     return database
 
 
+def content_pack_database_files(pack_root: Path) -> list[Path]:
+    """Return a content pack's gameplay files in the order Civ VI loads them.
+
+    Content packs do not use lexical filename order.  Their ``.modinfo``
+    declares one ``UpdateDatabase`` action for the base pack and later actions
+    for each expansion; a later action is allowed to update rows introduced by
+    the earlier one.  Sorting the directory made those overlays run first:
+    ``Byzantium_Gaul_Expansion2.xml`` preceded ``Byzantium_Gaul_Units.xml`` and
+    was then overwritten by the latter.  The same failure inverted Prasat,
+    Sukiennice, Tlachtli, and Eyjafjallajökull.
+
+    A priority on a ``File`` is a descending load priority (the shipped
+    ``RemoveData`` files use 2 so they retire rows before the ordinary overlay
+    at the default priority).  Packs without a manifest retain the old sorted
+    fallback; the shipped roster has one manifest for every pack whose data
+    needs a staged overlay.
+    """
+    data_directory = pack_root / "Data"
+    if not data_directory.is_dir():
+        data_directory = pack_root
+    manifests = sorted(pack_root.glob("*.modinfo"))
+    if not manifests:
+        return [
+            path
+            for path in sorted(data_directory.rglob("*.xml"))
+            if not PACK_EXCLUDE.search(path.name)
+        ]
+
+    try:
+        root = ET.parse(manifests[0]).getroot()
+    except ET.ParseError as exc:
+        print(f"warning: {manifests[0].name}: {exc}", file=sys.stderr)
+        return [
+            path
+            for path in sorted(data_directory.rglob("*.xml"))
+            if not PACK_EXCLUDE.search(path.name)
+        ]
+
+    ordered: list[Path] = []
+    seen: set[Path] = set()
+    in_game_actions = root.find("InGameActions")
+    actions = (
+        in_game_actions.findall("UpdateDatabase")
+        if in_game_actions is not None
+        else []
+    )
+    for action in actions:
+        action_files: list[tuple[int, int, Path]] = []
+        for index, file_node in enumerate(action.findall("File")):
+            relative = (file_node.text or "").strip()
+            if not relative or not relative.lower().endswith(".xml"):
+                continue
+            path = pack_root / relative
+            if (
+                not path.is_file()
+                or PACK_EXCLUDE.search(path.name)
+                or path in seen
+            ):
+                continue
+            try:
+                priority = int(file_node.attrib.get("Priority", "0"))
+            except ValueError:
+                priority = 0
+            action_files.append((-priority, index, path))
+        action_files.sort()
+        for _, _, path in action_files:
+            seen.add(path)
+            ordered.append(path)
+
+    # A manifest can omit a tracked data file on older ports.  Keep the audit
+    # complete without allowing the omitted file to leap ahead of a declared
+    # overlay: append only such files, in the historical lexical fallback.
+    for path in sorted(data_directory.rglob("*.xml")):
+        if not PACK_EXCLUDE.search(path.name) and path not in seen:
+            ordered.append(path)
+    return ordered
+
+
+def core_database_files(pack_root: Path) -> list[Path]:
+    """Return an expansion core's gameplay files in manifest order.
+
+    ``Expansion1_Expansion2.xml`` is declared before ``Expansion1_CoreContent``
+    in the Expansion 1 manifest.  Deferring it until the end, as the old
+    loader did, made its updates appear to win even though the game's later
+    content row correctly wins.  That is why the installed cache has Pike and
+    Shot upkeep 4 while the old XML audit claimed 3.
+    """
+    data_directory = pack_root / "Data"
+    if not data_directory.is_dir():
+        data_directory = pack_root
+    manifests = sorted(pack_root.glob("*.modinfo"))
+    if not manifests:
+        return [
+            path
+            for path in sorted(data_directory.rglob("*.xml"))
+            if REMOVE_DATA.match(path.name)
+            or FILE_PATTERN.match(path.name)
+            or CROSS_EXPANSION.search(path.name)
+        ]
+
+    try:
+        root = ET.parse(manifests[0]).getroot()
+    except ET.ParseError as exc:
+        print(f"warning: {manifests[0].name}: {exc}", file=sys.stderr)
+        return [
+            path
+            for path in sorted(data_directory.rglob("*.xml"))
+            if REMOVE_DATA.match(path.name)
+            or FILE_PATTERN.match(path.name)
+            or CROSS_EXPANSION.search(path.name)
+        ]
+
+    in_game_actions = root.find("InGameActions")
+    actions = (
+        in_game_actions.findall("UpdateDatabase")
+        if in_game_actions is not None
+        else []
+    )
+    ordered: list[Path] = []
+    seen: set[Path] = set()
+    for action in actions:
+        action_files: list[tuple[int, int, Path]] = []
+        for index, file_node in enumerate(action.findall("File")):
+            relative = (file_node.text or "").strip()
+            if not relative or not relative.lower().endswith(".xml"):
+                continue
+            path = pack_root / relative
+            if (
+                not path.is_file()
+                or PACK_EXCLUDE.search(path.name)
+                or path in seen
+                or not (
+                    REMOVE_DATA.match(path.name)
+                    or FILE_PATTERN.match(path.name)
+                    or CROSS_EXPANSION.search(path.name)
+                )
+            ):
+                continue
+            try:
+                priority = int(file_node.attrib.get("Priority", "0"))
+            except ValueError:
+                priority = 0
+            action_files.append((-priority, index, path))
+        action_files.sort()
+        for _, _, path in action_files:
+            seen.add(path)
+            ordered.append(path)
+
+    for path in sorted(data_directory.rglob("*.xml")):
+        if (
+            path not in seen
+            and not PACK_EXCLUDE.search(path.name)
+            and (
+                REMOVE_DATA.match(path.name)
+                or FILE_PATTERN.match(path.name)
+                or CROSS_EXPANSION.search(path.name)
+            )
+        ):
+            ordered.append(path)
+    return ordered
+
+
 def load_database(install: Path) -> Database:
     database = Database()
-    deferred: list[Path] = []
     for relative in LOAD_ORDER:
         directory = install / relative
         if not directory.is_dir():
@@ -543,25 +704,22 @@ def load_database(install: Path) -> Database:
         # Boost is deleted here and re-declared in Expansion2_Technologies);
         # it is applied first here for the same reason.
         if core:
-            for path in sorted(directory.rglob("*.xml")):
+            paths = core_database_files(directory.parent)
+            for path in paths:
                 if REMOVE_DATA.match(path.name):
                     database.apply_file(path)
-        for path in sorted(directory.rglob("*.xml")):
-            if core:
-                if REMOVE_DATA.match(path.name):
-                    continue
-                if not FILE_PATTERN.match(path.name) and CROSS_EXPANSION.search(path.name):
-                    deferred.append(path)
-                elif FILE_PATTERN.match(path.name):
+            for path in paths:
+                if not REMOVE_DATA.match(path.name):
                     database.apply_file(path)
-            elif not PACK_EXCLUDE.search(path.name):
+        else:
+            for path in content_pack_database_files(directory.parent):
                 # Content packs interleave tables freely (and ship
-                # ``<Pack>_Expansion2.xml`` compat overlays), so parse
-                # everything that is not clearly cosmetic; apply_file skips
-                # tables the audit does not track.
+                # ``<Pack>_Expansion2.xml`` compat overlays).  The manifest
+                # order matters: an expansion action updates rows from the
+                # pack's base action, so lexical rglob order can silently
+                # erase the final value.  apply_file still skips tables the
+                # audit does not track.
                 database.apply_file(path)
-    for path in deferred:
-        database.apply_file(path)
     return database
 
 

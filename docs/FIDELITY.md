@@ -750,12 +750,12 @@ reported fifteen. Five are fixed here; the rest are triaged below.
   2, government plaza 1, strategic 1), which is what makes the one outlier
   convincing rather than a projection artifact.
 
-- **`Buildings` — the complete installed Gathering Storm rows supersede the
-  earlier cache reading.** The installed load order ships the Prasat with Faith
-  **4** and two Relic slots, the Sukiennice with **3** Gold, and the Tlachtli
-  with **1** Culture; CIVVIS now matches all three. The compiled database used
-  by that earlier cache run was Vanilla, so its zero result was not evidence for
-  the Gathering Storm values.
+- **`Buildings` — the manifest-ordered Gathering Storm rows match the cache.**
+  The effective load order ships the Prasat with Faith **6** and one Relic
+  slot, the Sukiennice with **2** Gold, and the Tlachtli with **2** Culture;
+  CIVVIS matches all three. The earlier XML route applied content-pack files
+  alphabetically, so an expansion overlay ran before the base row and was
+  silently overwritten. The cache exposed the ordering error.
 - **`Improvements` / `sphinx` terrain.** CIVVIS allowed Snow;
   `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
   their Hills variants, and no Snow.
@@ -1233,24 +1233,17 @@ found two defects in **this audit**, not in the engine:
   never listed as "only in Civ VI", and never modelled. The table is now keyed
   by (improvement, yield, tech, civic) and `compare` treats a grant we pay that
   the game does not as a divergence rather than an unmeasured field.
-- **The XML route never applied `<Expansion>_RemoveData.xml`.** The core
-  directories are filtered by `FILE_PATTERN`, which names the rules files and
-  not the retirement file each expansion ships at modinfo `Priority="1"` (394
-  and 572 `<Delete>` rows). Every retired base row therefore stayed in the XML
-  reference: Robotics granting Pasture Production (moved to Replaceable Parts by
-  Gathering Storm) "confirmed" a CIVVIS grant the game no longer makes;
-  Cartography and Mass Production kept a Shipbuilding prerequisite the game
-  removed; Niter kept a Floodplains feature; the Sphinx kept Snow; the
-  Industrial Zone kept a 1.5 mine adjacency; every base Boost was compared
-  against a row the expansion re-declares. Applied first, as the modinfo does,
-  the XML route now agrees with the installed database on all of them, and the
-  four "divergences" the earlier fingerprint notes had recorded as CIVVIS
-  corrections were CIVVIS being right against a stale reference. A later
-  complete installed-load-order audit showed that the cache on this machine
-  was Vanilla, not the running Gathering Storm ruleset: the authoritative rows
-  are Pike and Shot upkeep 3, Tagma 180/3/Tank, the three corrected unique
-  buildings, and Eyjafjallajökull adjacent Food 2. The cache-only route remains
-  useful, but it must first pass its Gathering Storm identity guard.
+- **The XML route once ignored `<Expansion>_RemoveData.xml` and ordered content
+  packs lexically.** The core directories are filtered by `FILE_PATTERN`, which
+  omitted the retirement files at modinfo `Priority="1"` (394 and 572
+  `<Delete>` rows), while content packs such as Byzantium & Gaul declared their
+  base rows and expansion overlays in `.modinfo`, not in filename order. The
+  loader now follows those manifests, including priorities, so retired rows are
+  removed and later overlays update the rows they actually follow. The complete
+  installed Gathering Storm audit is zero divergent fields; the effective rows
+  are Pike and Shot upkeep 4, Tagma 220/4/Cuirassier, Prasat 6 Faith with one
+  Relic, Sukiennice 2 Gold, Tlachtli 2 Culture, and Eyjafjallajökull adjacent
+  Food 1.
 
 Both engine-side corrections that fell out are in `tree_effects.json`:
 Colonialism `fishing_boats_production: 1` (and the engine's Fishing Boats
@@ -2049,14 +2042,11 @@ wonder.** Fixed together with the roster:
 
 - An expansion ships a compatibility overlay that applies only when the *other*
   expansion is installed. `DLC/Expansion1/Data/Expansion1_Expansion2.xml` is
-  Gathering Storm's rebalance of Rise and Fall content, and sorted filename
-  order applied it *before* the rows it edits existed — so every `<Update>` in
-  it silently matched nothing. The Eye of the Sahara kept Rise and Fall's 1
-  Production against CIVVIS' correct 2. The complete installed Gathering Storm
-  route reads Pike and Shot's maintenance as 3; the cache present on this
-  machine read 4 because it was Vanilla, and the earlier cache interpretation
-  incorrectly called the installed value a CIVVIS error. Cross-expansion
-  overlays are applied last.
+  Gathering Storm's rebalance of Rise and Fall content, but the Expansion 1
+  manifest declares it before `Expansion1_CoreContent`; Pike and Shot's later
+  row therefore remains at the shipped 4 upkeep. The old XML route deferred
+  that overlay until the end and falsely produced 3. The loader now follows
+  the manifest, and its result agrees with the compiled cache.
 - `RemoveData` files were excluded as cosmetic. They are how the later packs
   retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
   Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
@@ -2091,7 +2081,7 @@ were already exact; the rest surfaced 62 divergences, all resolved:
 |---|---|
 | Naval Raider and Carrier promotion trees rearranged | Loot is tier 1 with no prerequisite, Homing Torpedoes tier 2, Silent Running tier 3, Wolfpack tier 4 — plus five wrong prerequisite lists (Armor Piercing, Hangar Deck, Folding Wings, Observation, Swift Keel) |
 | Reactor-era project costs | Coal/Oil/Uranium conversions 300/360/480 → 200/300/400, Recommission Reactor 200 → 400, Operation Ivy 1200 → 1000 |
-| Gathering Storm building values reconciled | Palace grants 2 Amenities (not 1), Biosphère +8 Science, and the installed Gathering Storm rows are Prasat 2 Relic slots and 4 Faith, Sukiennice 3 Gold, Tlachtli 1 Culture |
+| Gathering Storm building values reconciled | Palace grants 2 Amenities (not 1), Biosphère +8 Science, and the effective Gathering Storm rows are Prasat 1 Relic slot and 6 Faith, Sukiennice 2 Gold, Tlachtli 2 Culture |
 | Jebel Barkal double-counted | Its +4 Faith reaches every city within 6 tiles including its host; CIVVIS carried a local copy on top of the regional effect |
 | Estádio do Maracanã was local | The game gives its 6 Culture and 2 Amenities to every city in the empire (regional range 100000) |
 | Improvement siting was intersection-based | Civ 6 sites improvements through any of three routes — valid terrain OR valid feature OR valid resource. Farms on desert Floodplains and flat resource mines now place exactly as shipped |
@@ -3223,18 +3213,20 @@ check likewise reports no unconsumed belief effect keys. The older Round 11
 and 2026-08-18 tables above remain historical snapshots of the queue before
 this follow-up; they are not the current coverage count.
 
-### The rules-data re-pin was corrected after identifying a Vanilla cache (2026-09-01)
+### The rules-data re-pin follows the installed manifests (2026-09-01)
 
-The complete installed Gathering Storm load order reports **0 divergent fields
-across 29 tables** after correcting nine previously unwaived fields: Pike and
-Shot upkeep 3; Tagma cost 180, upkeep 3 and upgrade to Tank; Prasat Faith 4
-with two Relic slots; Sukiennice Gold 3; Tlachtli Culture 1; and
-Eyjafjallajökull adjacent Food 2. The compiled cache check still rejects the
-local Vanilla database rather than treating it as Gathering Storm. The many
-rows in the audit's “only in Civ VI” columns remain intentionally outside the
-model when they are unique Great People, policies, or other systems CivVis does
-not yet simulate; they are not field divergences in rows the model claims to
-ship.
+The XML audit now follows each expansion and content pack's `.modinfo` order,
+including the priority of `RemoveData` files and the order of expansion
+overlays. That fixes the nine false divergences introduced when the old loader
+applied those files lexically or deferred the cross-expansion overlay: Pike and
+Shot upkeep 4; Tagma cost 220, upkeep 4 and Cuirassier upgrade; Prasat Faith 6
+with one Relic slot; Sukiennice Gold 2; Tlachtli Culture 2; and
+Eyjafjallajökull adjacent Food 1. The complete installed Gathering Storm audit
+and the compatible cache audit both report **0 divergent fields across 29
+tables**. The many rows in the audit's “only in Civ VI” columns remain
+intentionally outside the model when they are unique Great People, policies, or
+other systems CivVis does not yet simulate; they are not field divergences in
+rows the model claims to ship.
 
 ### How to re-measure
 
