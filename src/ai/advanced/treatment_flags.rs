@@ -3385,6 +3385,24 @@ impl AdvancedAi {
         self.district_planning_2 = false;
     }
 
+    /// Version 2 of `air_surge`: the science–domination loop. The original
+    /// one-appointment surge remains a separately measurable family member;
+    /// this continuation lets the Formal-War clock run through the buildout,
+    /// prices a follow-up surge by the package still missing so the loop
+    /// repeats, and keeps the Campus priced under Conquest. One version of
+    /// the family plays, so this turns version 1 off. Opt-in gene
+    /// `air-surge-2`. (Filed above the letter markers like every toggle pair
+    /// here — the append-point guard reads a method line's first identifier.)
+    pub fn enable_air_surge_2(&mut self) {
+        self.air_surge = false;
+        self.air_surge_2 = true;
+    }
+
+    /// The twin of `enable_air_surge_2`.
+    pub fn disable_air_surge_2(&mut self) {
+        self.air_surge_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

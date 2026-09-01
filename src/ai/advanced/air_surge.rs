@@ -236,6 +236,36 @@ impl AdvancedAi {
         self.air_surge_plan.is_some()
     }
 
+    /// Whether any version of the family is on. `air-surge-2` plays INSTEAD
+    /// of version one (its enable turns `air_surge` off, the way
+    /// `science_victory_drive_2` replaces its v1), so every gate that used to
+    /// read the v1 flag reads this instead.
+    pub(crate) fn air_surge_enabled(&self) -> bool {
+        self.air_surge || self.air_surge_2
+    }
+
+    /// `air-surge-2`: the target the diplomacy pass should consult when the
+    /// assessment supplies none.
+    ///
+    /// ★★★ THE FORMAL-WAR CLOCK NEVER RAN ON A LANE SEAT. The Arm-phase
+    /// denounce below (`air_surge_opening`) exists so the five-turn Formal War
+    /// countdown and the buildout run together — but `advanced_diplomacy`
+    /// reaches it through `plan.target_player`, and the strategy overlay only
+    /// writes that in Strike/Exploit. A seat on a victory lane assesses no
+    /// rival at all, so through Beeline and Arm the opening was never called,
+    /// the denounce never happened, and the declaration paid the whole clock
+    /// AFTER the wing was ready. Version two hands the diplomacy pass the
+    /// surge's own target whenever the assessment names nobody.
+    pub(crate) fn air_surge_diplomacy_target(&self) -> Option<usize> {
+        if !self.air_surge_2 {
+            return None;
+        }
+        let surge = self.air_surge_plan.as_ref()?;
+        // A counter appointed into a running war has nothing to open, so it
+        // borrows no decision the assessment did not give it.
+        (!surge.opened_at_war).then_some(surge.target_player)
+    }
+
     /// How many technologies still stand between the empire and the Bomber.
     /// Zero means it is already unlocked.
     pub(crate) fn air_surge_missing_techs(g: &Game, pid: usize) -> usize {
@@ -395,7 +425,7 @@ impl AdvancedAi {
     /// no second front, no surge while the homeland is already in trouble, and
     /// nothing that cannot finish before the endgame reserve.
     pub(crate) fn air_surge_open(&self, g: &Game, pid: usize) -> bool {
-        if !self.air_surge
+        if !self.air_surge_enabled()
             || self.air_surge_plan.is_some()
             // A stand-down whose cause is still true must not be undone by the
             // very call that recorded it. See `AIR_SURGE_ABORT_COOLDOWN`.
@@ -454,21 +484,68 @@ impl AdvancedAi {
         let research = (Self::war_remaining_research_cost(g, pid, Name::new(AIR_SURGE_GOAL_TECH))
             / Self::war_science_per_turn(g, pid))
         .ceil() as u32;
+        // `air-surge-2` prices only the package still missing. Version one
+        // re-prices the whole wing from scratch every time, which is honest
+        // for the first appointment and wrong for every one after it: the
+        // empire that just took a city with three Bombers alive is told a
+        // second surge costs another full wing, and the endgame reserve
+        // refuses the follow-up exactly when it is nearly free. This is the
+        // arithmetic that lets the loop repeat.
+        let (missing_field, missing_bombers, missing_bodies) = if self.air_surge_2 {
+            let standing = self.air_surge_standing_package(g, pid);
+            (
+                usize::from(standing.0 == 0),
+                AIR_SURGE_BOMBERS.saturating_sub(standing.1),
+                AIR_SURGE_BODIES.saturating_sub(standing.2),
+            )
+        } else {
+            (1, AIR_SURGE_BOMBERS, AIR_SURGE_BODIES)
+        };
         let field_cost = Self::air_surge_field(g, pid)
             .map(|field| g.rules.districts[field].cost)
-            .unwrap_or(0.0);
+            .unwrap_or(0.0)
+            * missing_field as f64;
         let wing_cost = Self::air_surge_bomber(g, pid)
             .map(|bomber| g.rules.units[bomber].cost)
             .unwrap_or(0.0)
-            * AIR_SURGE_BOMBERS as f64;
+            * missing_bombers as f64;
         let escort_cost = Self::air_surge_body(g, pid)
             .map(|(body, _)| g.rules.units[body].cost)
             .unwrap_or(0.0)
-            * AIR_SURGE_BODIES as f64;
+            * missing_bodies as f64;
         let production = ((field_cost + wing_cost + escort_cost)
             / Self::war_production_per_turn(g, pid))
         .ceil() as u32;
         (research, production)
+    }
+
+    /// The package members already standing, counted without an appointment:
+    /// `(airfields, bombers, escort bodies)`. The estimate above runs before
+    /// any plan exists, so unlike [`Self::air_surge_status`] this cannot read
+    /// a plan's chosen body and asks [`Self::air_surge_body`] what the escort
+    /// would be today.
+    fn air_surge_standing_package(&self, g: &Game, pid: usize) -> (usize, usize, usize) {
+        let field = Self::air_surge_field(g, pid);
+        let bomber = Self::air_surge_bomber(g, pid);
+        let body = Self::air_surge_body(g, pid);
+        let airfields = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                field.is_some_and(|family| g.city_has_district_family(&g.cities[cid], family))
+            })
+            .count();
+        let mut bombers = 0;
+        let mut bodies = 0;
+        for uid in g.player_unit_ids(pid) {
+            let kind = g.units[&uid].kind;
+            if Some(kind) == bomber {
+                bombers += 1;
+            } else if body.is_some_and(|(unit, _)| Self::war_unit_is_at_least(g, pid, kind, unit)) {
+                bodies += 1;
+            }
+        }
+        (airfields, bombers, bodies)
     }
 
     /// Whether the whole appointment — the chain and the package — fits in the
@@ -577,7 +654,7 @@ impl AdvancedAi {
     /// This is the lifecycle authority: research, production, diplomacy and
     /// movement only read the resulting phase.
     pub(crate) fn maintain_air_surge(&mut self, g: &Game, pid: usize) {
-        if !self.air_surge {
+        if !self.air_surge_enabled() {
             self.air_surge_plan = None;
             self.air_surge_status = AirSurgeStatus::default();
             return;
