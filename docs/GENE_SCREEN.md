@@ -417,6 +417,14 @@ Python reader, and `gene_screen.rs`'s
 `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables` holds
 the Rust and Python readings of the registry to one answer.
 
+**Keep the existing order.** Genome bits are positional, so never insert or
+reorder an existing row. Add a new row directly below the tail
+`// ---- append: a-b ----` marker whose range contains the tag's first letter.
+All eight markers follow the current rows, so this still appends the tag while
+separate ranges give concurrent gene PRs separate merge points. The append
+point test constructs and merges those synthetic row additions; a same-range
+pair remains the intentional collision control.
+
 | flag | meaning |
 |---|---|
 | `--games N` | the batch size; `--target-games N` declares the whole screen when it is split over `--append` sessions |
