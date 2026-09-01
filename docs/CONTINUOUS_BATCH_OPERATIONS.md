@@ -58,3 +58,12 @@ running state directory: rotation is what it is for.
 - Do not edit `scheduler-state.json` by hand.
 - Do not delete `cut-request*.json` files; they are the audit trail.
 - Do not start a second `run` against a live state directory; the lock refuses it.
+
+## Upgrading the tool under a live run
+
+`launchctl kickstart -k gui/$(id -u)/<label>` restarts only the daemon. The
+game process runs in its own session, so it survives; the new daemon reads the
+live reservation, sees its PID alive and re-adopts it (`active_segment`). Pull
+the checkout named by the service's `--repo` first, then kickstart. `cut` and
+the rate/ETA in `status` need the daemon (and, for the ETA, the segment) to
+have started under the new code.
