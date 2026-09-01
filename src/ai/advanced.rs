@@ -1636,9 +1636,8 @@ pub struct AdvancedAi {
     /// strategic queue remained empty.  Host bridge calls can revisit one
     /// turn several times while a blocking production prompt is settling, so
     /// the turn stamp is part of the value rather than a separate global
-    /// counter.  The recovery is deliberately narrow: only an explicitly
-    /// targeted Science seat consumes it, and only after the second distinct
-    /// idle turn.
+    /// counter. The deployed Science recovery and the version-three idle-queue
+    /// challenger consume it only after the second distinct idle turn.
     idle_production_streak: BTreeMap<u32, (u32, u32)>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -5442,6 +5441,20 @@ pub struct AdvancedAi {
     /// ships. Opt-in gene `never-an-empty-queue-2`.
     never_an_empty_queue_2: bool,
 
+    /// Version 3 of `never-an-empty-queue`: repair a persistent stall, not a
+    /// transient empty observation.
+    ///
+    /// The first two versions act on the first idle turn and consistently
+    /// lose in the latest three batch windows. A narrower deployed repair now
+    /// establishes the useful boundary: a Science-targeted seat waits for two
+    /// distinct idle turns, ignores repeated bridge observations of one turn,
+    /// and then accepts only a civilian above the hard veto. Version three
+    /// extends exactly that persistence rule to the other strategies. It does
+    /// nothing on the first idle turn, never manufactures a surplus soldier,
+    /// and is identical to the already-deployed path on a Science seat.
+    /// Opt-in gene `never-an-empty-queue-3`.
+    never_an_empty_queue_3: bool,
+
     /// A city with nothing above the ordinary bar builds the best real
     /// candidate instead of standing idle for the turn.
     ///
@@ -7229,6 +7242,7 @@ impl AdvancedAi {
             lane_votes_its_favor: false,
             lane_release_when_hopeless: false,
             never_an_empty_queue_2: false,
+            never_an_empty_queue_3: false,
             never_an_empty_queue: false,
             native_emergency_purchase: false,
             order_retry: false,
@@ -18607,7 +18621,7 @@ impl AdvancedAi {
     /// observations of the same host turn.  A gap or a rewind breaks the
     /// streak: a city that built something in between must not inherit an old
     /// idle debt when its next queue completes.
-    fn science_idle_production_recovery_due(&mut self, cid: u32, turn: u32) -> bool {
+    fn idle_production_recovery_due(&mut self, cid: u32, turn: u32) -> bool {
         const RECOVERY_AFTER_IDLE_TURNS: u32 = 2;
         let streak = match self.idle_production_streak.get_mut(&cid) {
             Some((last_turn, count)) if *last_turn == turn => *count,
@@ -23221,25 +23235,25 @@ impl AdvancedAi {
             };
             // See `never_an_empty_queue`: nothing cleared the bar, so this city
             // is about to spend the turn producing nothing at all. A targeted
-            // Science seat gets the same least-bad civilian answer after two
-            // distinct idle turns. That turns a persistent queue stall into a
-            // bounded one-turn delay without making every ordinary refusal a
-            // new unit-maintenance bill.
-            let persistent_science_idle = chosen.is_none()
+            // Science seat -- or the version-three challenger under any plan
+            // -- gets the same least-bad civilian answer after two distinct
+            // idle turns. That turns a persistent queue stall into a bounded
+            // one-turn delay without making every transient refusal a build.
+            let persistent_idle_recovery = chosen.is_none()
                 && committed.is_none()
-                && science_targeted
-                && self.science_idle_production_recovery_due(cid, g.turn);
+                && (science_targeted || self.never_an_empty_queue_3)
+                && self.idle_production_recovery_due(cid, g.turn);
             let chosen = match chosen {
                 Some(found) => Some(found),
                 None if (self.never_an_empty_queue
                     || self.never_an_empty_queue_2
-                    || persistent_science_idle)
+                    || persistent_idle_recovery)
                     && committed.is_none() =>
                 {
                     // See `never_an_empty_queue_2`: version two will not answer
                     // an idle turn with a soldier the empire did not want and
                     // then owes upkeep on, and would rather stay idle.
-                    let civilian_only = self.never_an_empty_queue_2 || persistent_science_idle;
+                    let civilian_only = self.never_an_empty_queue_2 || persistent_idle_recovery;
                     let fallback = {
                         let _memo = g.query_memo();
                         let items = g.producible_items(pid, cid);
@@ -23299,7 +23313,7 @@ impl AdvancedAi {
                 // idle-queue gene, or after the targeted Science recovery
                 // streak; otherwise this line is the only trace the idle
                 // turn leaves.
-                if persistent_science_idle {
+                if persistent_idle_recovery {
                     think!(self.journal(), Cities, Detail,
                            "{} builds nothing", g.cities[&cid].name;
                            "two distinct idle turns reached, but no civilian candidate cleared the hard veto");
@@ -28140,6 +28154,46 @@ impl AdvancedAi {
                     && self.settler_target_clears_floor(g, from, *position, *value)
             })
             .collect::<Vec<_>>();
+        // ★★★★ THE CAPITAL'S WALK IS PRICED IN TURNS, AT THE GAME'S SPEED.
+        //
+        // Before this, the first Settler walked to any site worth +3 within
+        // two hexes (`current_value + 3.0` in `settler_step`), whatever the
+        // walk cost in turns. Live `civvis-20260901T212354Z` (Online, 250
+        // turns): a site worth 117 against 86 in place, two floodplain hexes
+        // away, founded the capital on turn 6 — every turn without a capital
+        // is a turn of no yields, no research and no production, and on
+        // Online each is a larger share of the game than on Standard. The
+        // operator's rule: Online settles on turn 1 or 2, turn 3 at a
+        // stretch; slower speeds may spend a few more. See
+        // `opening_walk_budget` for the table and `opening_walk_pays` for the
+        // price; both are gated to the FIRST city of a Settler that can found
+        // where it stands, so a Settler that cannot found in place is never
+        // left without a candidate. It rides the `settle-sooner` gene — the
+        // gene that already prices every Settler's walk in turns — which the
+        // deployment genome and the live seat carry and `legacy()` does not,
+        // so the Elo anchor's play is untouched
+        // (`advanced_v1_plays_the_same_game_it_always_did`).
+        if self.settle_sooner
+            && g.player_city_ids(pid).is_empty()
+            && g.can_found_city(uid)
+            && self.opening_settlement_footprint_known(g, pid, from)
+        {
+            let stand = self.settle_value(g, pid, from);
+            let costs = Self::settle_sooner_walk_costs(g, uid, radius);
+            let (budget, per_turn) = Self::opening_walk_budget(g.game_speed);
+            // Priced on `settle_value` itself — the number the journal prints —
+            // not on the scan's ranking score, which carries its own terms.
+            candidates.retain(|(position, _)| {
+                *position == from
+                    || Self::opening_walk_pays(
+                        stand,
+                        self.settle_value(g, pid, *position),
+                        Self::opening_walk_turns(g, uid, from, *position, &costs),
+                        budget,
+                        per_turn,
+                    )
+            });
+        }
         // See `settle_sooner`: the walk is priced in TURNS as well as tiles,
         // each turn dearer the longer this Settler has already been out, and
         // the price is applied to the ranking itself — `path_to` below is a
@@ -28293,6 +28347,73 @@ impl AdvancedAi {
     /// the price `settle_sooner_walk_price` set. Zero when the gene is off.
     fn settle_sooner_walk_cost(turn_price: Option<(f64, f64)>, movement_cost: f64) -> f64 {
         turn_price.map_or(0.0, |(price, moves)| (movement_cost / moves).ceil() * price)
+    }
+
+    /// How long the first Settler may walk, by game speed: (turns of walking
+    /// allowed, gain fraction required per turn of walking). Online and Quick
+    /// found on turn 1 or 2, turn 3 only for a site worth ~40 % more; the
+    /// slower speeds may spend proportionally more turns because each is a
+    /// smaller share of the game. Natural wonders are not modelled on the
+    /// board, so there is no wonder exception — a site that good simply has
+    /// to clear the price.
+    fn opening_walk_budget(speed: crate::setup::GameSpeed) -> (u32, f64) {
+        use crate::setup::GameSpeed;
+        match speed {
+            GameSpeed::Online | GameSpeed::Quick => (2, 0.15),
+            GameSpeed::Standard => (3, 0.10),
+            GameSpeed::Epic => (4, 0.08),
+            GameSpeed::Marathon => (5, 0.06),
+        }
+    }
+
+    /// How many turns the first Settler spends reaching `target`: the flood's
+    /// movement cost in turns, floored at the hex distance. The floor is
+    /// deliberate: the sites the scorer likes sit on rivers, the host charges a
+    /// river crossing the unit's whole turn, and the board's river edges are
+    /// read off a mask that has been wrong before (`rv` in `mirror.rs`). On
+    /// `civvis-20260901T212354Z` the board priced a two-hex floodplain walk
+    /// at one turn; the host took a turn per hex. A hex a turn is what the
+    /// opening walk costs in practice, and pricing it so errs toward founding.
+    fn opening_walk_turns(
+        g: &Game,
+        uid: u32,
+        from: Pos,
+        target: Pos,
+        costs: &BTreeMap<Pos, f64>,
+    ) -> Option<u32> {
+        let moves = g.unit_max_moves(uid).max(1.0);
+        let by_cost = costs
+            .get(&target)
+            .map(|cost| (cost / moves).ceil() as u32)?;
+        Some(by_cost.max(g.wdist(from, target).max(0) as u32))
+    }
+
+    /// Whether a capital site `turns` away is worth the walk from a tile
+    /// worth `stand`: within the speed's budget, and better by at least
+    /// `per_turn × turns^1.5` of the standing value (never less than +3, the
+    /// pre-existing floor). `None` turns means the flood never reached it.
+    fn opening_walk_pays(
+        stand: f64,
+        value: f64,
+        turns: Option<u32>,
+        budget: u32,
+        per_turn: f64,
+    ) -> bool {
+        let Some(turns) = turns else {
+            return false;
+        };
+        if turns == 0 {
+            return true;
+        }
+        if turns > budget {
+            return false;
+        }
+        let needed = if stand.is_finite() && stand > 0.0 {
+            stand * per_turn * (turns as f64).powf(1.5)
+        } else {
+            0.0
+        };
+        value - stand >= needed.max(3.0)
     }
 
     /// Movement points from the Settler's tile to every tile it can walk to
@@ -29633,11 +29754,21 @@ impl AdvancedAi {
                 return founded;
             }
             if let Some(target) = target {
+                // The walk's length in TURNS is what `opening_walk_pays`
+                // priced; it is journaled so a replay can be read against it.
+                let walk_turns = Self::opening_walk_turns(
+                    g,
+                    uid,
+                    current,
+                    target,
+                    &Self::settle_sooner_walk_costs(g, uid, 3),
+                );
                 think!(self.journal(), Expansion, Detail,
                        "Walking the first settler toward {target:?}";
-                       "worth {:.1} against {:.1} where it stands",
+                       "worth {:.1} against {:.1} where it stands, {} turn(s) away",
                        self.settle_value(g, pid, target),
-                       self.settle_value(g, pid, current); target);
+                       self.settle_value(g, pid, current),
+                       walk_turns.map_or("?".to_string(), |turns| turns.to_string()); target);
                 let moved = self.settler_step_toward_safe(g, pid, uid, target);
                 if moved {
                     self.settler_stalls.remove(&uid);
@@ -37755,3 +37886,76 @@ mod settler_idle_census;
 
 #[cfg(test)]
 mod research_probe;
+
+#[cfg(test)]
+mod opening_walk_tests {
+    use super::AdvancedAi;
+    use crate::setup::GameSpeed;
+
+    /// The live case: Online, a site worth 117 against 86 in place, two turns
+    /// of walking — not worth it. One turn away it would be.
+    #[test]
+    fn online_capital_walks_one_turn_for_a_real_gain_and_not_two_for_a_third_more() {
+        let (budget, per_turn) = AdvancedAi::opening_walk_budget(GameSpeed::Online);
+        assert_eq!(budget, 2);
+        assert!(!AdvancedAi::opening_walk_pays(
+            86.2,
+            117.4,
+            Some(2),
+            budget,
+            per_turn
+        ));
+        assert!(AdvancedAi::opening_walk_pays(
+            86.2,
+            117.4,
+            Some(1),
+            budget,
+            per_turn
+        ));
+        assert!(
+            !AdvancedAi::opening_walk_pays(86.2, 95.0, Some(1), budget, per_turn),
+            "+9 is under 15 %"
+        );
+        assert!(
+            AdvancedAi::opening_walk_pays(86.2, 130.0, Some(2), budget, per_turn),
+            "+44 clears 42 %"
+        );
+        assert!(
+            !AdvancedAi::opening_walk_pays(86.2, 400.0, Some(3), budget, per_turn),
+            "over budget"
+        );
+        assert!(
+            !AdvancedAi::opening_walk_pays(86.2, 400.0, None, budget, per_turn),
+            "unreached"
+        );
+        assert!(AdvancedAi::opening_walk_pays(
+            86.2,
+            86.2,
+            Some(0),
+            budget,
+            per_turn
+        ));
+    }
+
+    #[test]
+    fn slower_speeds_buy_more_turns_and_a_worthless_stand_only_needs_the_floor() {
+        let (budget, _) = AdvancedAi::opening_walk_budget(GameSpeed::Marathon);
+        assert_eq!(budget, 5);
+        let (standard, per_turn) = AdvancedAi::opening_walk_budget(GameSpeed::Standard);
+        assert_eq!(standard, 3);
+        assert!(AdvancedAi::opening_walk_pays(
+            0.0,
+            3.0,
+            Some(3),
+            standard,
+            per_turn
+        ));
+        assert!(!AdvancedAi::opening_walk_pays(
+            0.0,
+            2.9,
+            Some(1),
+            standard,
+            per_turn
+        ));
+    }
+}
