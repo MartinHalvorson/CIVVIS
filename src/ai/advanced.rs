@@ -25764,7 +25764,7 @@ impl AdvancedAi {
         // as the line above, and independent of it. See
         // `advanced/city_state_quests.rs`.
         let raw = if raw > 0.0 {
-            raw + self.production_boost_premium(g, pid, cid, item)
+            raw + self.production_boost_premium(g, pid, cid, item, raw)
                 + self.quest_production_premium(g, pid, item, plan.strategy)
                 + self.quest_boost_premium(g, pid, item, plan.strategy)
         } else {
@@ -29912,7 +29912,7 @@ impl AdvancedAi {
         // line above prices, and independent of it. See
         // `advanced/city_state_quests.rs`.
         value
-            + self.eureka_builder_premium(g, pos, improvement)
+            + self.builder_boost_premium(g, pos, improvement, value)
             + self.quest_boost_builder_premium(g, pos, improvement, strategy)
     }
 

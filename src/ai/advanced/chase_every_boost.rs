@@ -60,18 +60,32 @@ use crate::Pos;
 
 /// Kill premium: what one research point of an open boost is worth on the
 /// tactical scale, where a clean kill of a cheap unit scores ~190. Archery
-/// (50 × 0.4 = 20 points) pays a Slinger kill +40; Military Tactics (300 ×
-/// 0.4 = 120) would pay +240 and is capped below.
-pub(super) const CHASE_KILL_VALUE_PER_POINT: f64 = 2.0;
-/// The ceiling on the kill premium: under a kill's own base value, so the
-/// premium re-orders which kill is taken and never invents one.
-pub(super) const CHASE_KILL_VALUE_CAP: f64 = 120.0;
-/// Production premium per research point, on `production_value`'s raw scale
-/// (a Library reads ~600, a Settler ~1,600): the same rate
-/// `eureka-chasing-production` measured, kept so the two are comparable.
-pub(super) const CHASE_PRODUCTION_VALUE_PER_POINT: f64 = 4.0;
-/// The production premium's ceiling, on the same scale.
-pub(super) const CHASE_PRODUCTION_VALUE_CAP: f64 = 400.0;
+/// (50 × 0.4 = 20 points) pays a Slinger kill +20; Military Tactics (300 ×
+/// 0.4 = 120) would pay +120 and is capped below.
+pub(super) const CHASE_KILL_VALUE_PER_POINT: f64 = 1.0;
+/// The ceiling on the kill premium: a third of a kill's own base value, so
+/// the premium re-orders which kill is taken and never invents one.
+pub(super) const CHASE_KILL_VALUE_CAP: f64 = 60.0;
+/// Production premium per research point, on `production_value`'s raw
+/// scale. ⚠ THAT SCALE IS SMALL: measured on the probe's own board at turns
+/// 60–180, an Archer reads 68, a Campus 51, an Amphitheater 46, a Trebuchet
+/// 95–161, a Crossbowman 180. `eureka-chasing-production`'s 4.0 per point
+/// (capped at 400) added +234 to a Trebuchet and +400 to an Entertainment
+/// Complex — three to eight times the item's own worth — and a two-city
+/// empire built the trigger instead of the Settler; that is why that gene
+/// measured a null. A quarter point per beaker makes a 40-point step worth
+/// +10 against items worth 50–200: a nudge among comparable builds.
+pub(super) const CHASE_PRODUCTION_VALUE_PER_POINT: f64 = 0.25;
+/// The production premium's absolute ceiling, on the same scale.
+pub(super) const CHASE_PRODUCTION_VALUE_CAP: f64 = 60.0;
+/// The production premium's relative ceiling: never more than this share
+/// of the item's own positive value, so a trigger can only re-order builds
+/// of comparable worth and never lifts a marginal item over a Settler or a
+/// Campus.
+pub(super) const CHASE_PRODUCTION_RAW_FRACTION: f64 = 0.5;
+/// The builder premium's relative ceiling under this gene, against the
+/// improvement's own yield value: the same discipline as production.
+pub(super) const CHASE_BUILDER_VALUE_FRACTION: f64 = 0.5;
 /// How much of a step's value survives for each further step the trigger
 /// still needs: the third Archer is worth its full step only once two are
 /// standing, and a chase three builds out may never be finished.
@@ -188,11 +202,31 @@ impl AdvancedAi {
         pid: usize,
         cid: u32,
         item: &Item,
+        raw: f64,
     ) -> f64 {
         if self.chase_every_boost {
             self.chase_production_premium(g, pid, cid, item)
+                .min(raw.max(0.0) * CHASE_PRODUCTION_RAW_FRACTION)
         } else {
             self.eureka_production_premium(g, pid, item)
+        }
+    }
+
+    /// The builder premium `improvement_value_with_appeal` adds: the old
+    /// `eureka-chasing-builder` rate when that gene is on, the same rate held
+    /// under half the improvement's own value when only this gene is on.
+    pub(super) fn builder_boost_premium(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        value: f64,
+    ) -> f64 {
+        let premium = self.eureka_builder_premium(g, pos, improvement);
+        if self.chase_every_boost && !self.eureka_chasing_builder {
+            premium.min(value.max(0.0) * CHASE_BUILDER_VALUE_FRACTION)
+        } else {
+            premium
         }
     }
 
@@ -554,7 +588,7 @@ mod tests {
             "Guilds' Market is priced"
         );
         assert_eq!(
-            AdvancedAi::new().production_boost_premium(&game, 0, cid, &market),
+            AdvancedAi::new().production_boost_premium(&game, 0, cid, &market, 100.0),
             0.0,
             "off, the premium is the old genes' zero"
         );
@@ -584,6 +618,45 @@ mod tests {
     }
 
     #[test]
+    fn the_premiums_never_exceed_half_the_items_own_value() {
+        let game = capital_board(57_013);
+        let ai = armed();
+        let cid = game.player_city_ids(0)[0];
+        let market = Item::Building {
+            building: name!("market"),
+        };
+        let open = ai.chase_production_premium(&game, 0, cid, &market);
+        assert!(open > 0.0);
+        // A marginal item (raw 10) can gain at most 5; a strong one keeps
+        // the whole premium, under the absolute cap.
+        assert!(
+            (ai.production_boost_premium(&game, 0, cid, &market, 10.0) - open.min(5.0)).abs()
+                < 1e-9
+        );
+        assert!((ai.production_boost_premium(&game, 0, cid, &market, 1_000.0) - open).abs() < 1e-9);
+        assert!(open <= CHASE_PRODUCTION_VALUE_CAP);
+        // A refused item (raw below zero) gains nothing.
+        assert_eq!(
+            ai.production_boost_premium(&game, 0, cid, &market, -5.0),
+            0.0
+        );
+        // The builder premium under this gene alone is held the same way.
+        let capital = game.cities[&cid].pos;
+        let tile = game.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| *pos != capital)
+            .expect("the capital owns a work tile");
+        let raw = ai.eureka_builder_premium(&game, tile, "farm");
+        let held = ai.builder_boost_premium(&game, tile, "farm", 4.0);
+        assert!(held <= raw && held <= 2.0);
+        let mut both = armed();
+        both.enable_eureka_chasing_builder();
+        assert!((both.builder_boost_premium(&game, tile, "farm", 4.0) - raw).abs() < 1e-9);
+    }
+
+    #[test]
     fn a_wonder_is_worth_the_inspiration_it_completes() {
         let game = capital_board(57_010);
         let ai = armed();
@@ -594,7 +667,7 @@ mod tests {
         };
         assert!(ai.chase_production_premium(&game, 0, cid, &wonder) > 0.0);
         assert_eq!(
-            AdvancedAi::new().production_boost_premium(&game, 0, cid, &wonder),
+            AdvancedAi::new().production_boost_premium(&game, 0, cid, &wonder, 100.0),
             0.0
         );
     }
@@ -641,6 +714,171 @@ mod tests {
         let ai = armed();
         let banked = ai.chase_kill_premium(&game, 0, slinger, camp);
         assert!((banked - ai.chase_kill_premium(&game, 0, warrior, camp)).abs() < 1e-9);
+    }
+
+    /// Diagnostic, never in CI: one screen-shaped game (the probe's own
+    /// board) with the gene on seat 0 against the same seed with it off,
+    /// printing the boosted share and every unboosted node's trigger, plus
+    /// the chase table at three turns. `cargo test --profile ci --lib --
+    /// --ignored diagnostic_boost_share --nocapture`.
+    #[test]
+    #[ignore]
+    fn diagnostic_boost_share_on_vs_off() {
+        use crate::ai::Ai;
+        use crate::game::GameOptions;
+        use crate::setup::MapScript;
+        let seed: u64 = std::env::var("CIVVIS_DIAG_SEED")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(26090140);
+        for on in [false, true] {
+            if !on && std::env::var("CIVVIS_DIAG_SKIP_OFF").is_ok() {
+                continue;
+            }
+            let mut world = Game::new_with(GameOptions {
+                speed: "online".to_string(),
+                map_script: MapScript::Continents,
+                difficulty: "prince".to_string(),
+                ..GameOptions::new(6, 74, 46, seed, 250, 9)
+            });
+            let mut ais: Vec<AdvancedAi> = (0..world.players.len())
+                .map(|pid| {
+                    let mut ai = AdvancedAi::new();
+                    if on && pid == 0 {
+                        ai.enable_chase_every_boost();
+                    }
+                    ai
+                })
+                .collect();
+            world.set_fog_memory(false);
+            world.set_war_ledger(false);
+            let mut reported = std::collections::BTreeSet::new();
+            while world.winner.is_none() && world.turn <= world.max_turns {
+                let pid = world.current;
+                if pid == 0
+                    && [60u32, 120, 180].contains(&world.turn)
+                    && !reported.contains(&world.turn)
+                {
+                    reported.insert(world.turn);
+                    let chases = ais[0].eureka_chases(&world, 0);
+                    let mut brief: Vec<String> = chases
+                        .iter()
+                        .map(|c| format!("{}[{} left {}]", c.node, c.trigger, c.remaining))
+                        .collect();
+                    brief.sort();
+                    if std::env::var("CIVVIS_DIAG_PRODUCTION").is_ok() {
+                        let cid = world.player_city_ids(0)[0];
+                        let plan =
+                            ais[0]
+                                .current_plan()
+                                .cloned()
+                                .unwrap_or(super::super::StrategicPlan {
+                                    strategy: super::super::GrandStrategy::Science,
+                                    target_player: None,
+                                    target_city: None,
+                                    threatened_city: None,
+                                    desired_cities: 4,
+                                    assessed_turn: world.turn,
+                                    rush: false,
+                                });
+                        let counts = ais[0].counts(&world, 0);
+                        let items = world.producible_items(0, cid);
+                        let values =
+                            ais[0].production_values(&world, 0, cid, &items, &plan, counts);
+                        let mut table: Vec<(f64, f64, String)> = items
+                            .iter()
+                            .zip(values.iter())
+                            .map(|(item, value)| {
+                                (
+                                    *value,
+                                    ais[0].chase_production_premium(&world, 0, cid, item),
+                                    format!("{item:?}"),
+                                )
+                            })
+                            .collect();
+                        table.sort_by(|a, b| b.0.total_cmp(&a.0));
+                        let brief: Vec<String> = table
+                            .iter()
+                            .take(14)
+                            .map(|(v, prem, name)| {
+                                format!(
+                                    "{}={:.0}(+{:.0})",
+                                    name.replace("Item::", "").replace(' ', ""),
+                                    v,
+                                    prem
+                                )
+                            })
+                            .collect();
+                        eprintln!("on={on} t{} PRODUCTION {}", world.turn, brief.join(" "));
+                    }
+                    let p = &world.players[0];
+                    eprintln!(
+                        "on={on} t{} cities {} score {} techs {} boosted∩ {} | civics {} inspired∩ {} | chases {}: {}",
+                        world.turn,
+                        world.player_city_ids(0).len(),
+                        world.score(0),
+                        p.techs.len(),
+                        p.techs.iter().filter(|t| p.boosted_techs.contains(t)).count(),
+                        p.civics.len(),
+                        p.civics.iter().filter(|c| p.boosted_civics.contains(c)).count(),
+                        chases.len(),
+                        brief.join(" ")
+                    );
+                }
+                ais[pid].take_turn(&mut world, pid);
+                if world.winner.is_none() && world.current == pid {
+                    let _ = world.apply(pid, &Action::EndTurn);
+                }
+            }
+            world.finish_at_turn_limit();
+            let p = &world.players[0];
+            let mut unboosted: Vec<String> = p
+                .techs
+                .iter()
+                .filter(|t| !p.boosted_techs.contains(t))
+                .map(|t| {
+                    let trig = world.rules.techs[t]
+                        .boost
+                        .as_ref()
+                        .map(|b| format!("{}x{}", b.trigger, b.count))
+                        .unwrap_or_else(|| "no-boost".into());
+                    format!("{t}[{trig}]")
+                })
+                .collect();
+            unboosted.sort();
+            let mut unboosted_civics: Vec<String> = p
+                .civics
+                .iter()
+                .filter(|c| !p.boosted_civics.contains(c))
+                .map(|c| {
+                    let trig = world.rules.civics[c]
+                        .boost
+                        .as_ref()
+                        .map(|b| format!("{}x{}", b.trigger, b.count))
+                        .unwrap_or_else(|| "no-boost".into());
+                    format!("{c}[{trig}]")
+                })
+                .collect();
+            unboosted_civics.sort();
+            eprintln!(
+                "on={on} END t{} score {} cities {} techs {} boosted∩ {} civics {} inspired∩ {}",
+                world.turn,
+                world.score(0),
+                world.player_city_ids(0).len(),
+                p.techs.len(),
+                p.techs
+                    .iter()
+                    .filter(|t| p.boosted_techs.contains(t))
+                    .count(),
+                p.civics.len(),
+                p.civics
+                    .iter()
+                    .filter(|c| p.boosted_civics.contains(c))
+                    .count(),
+            );
+            eprintln!("on={on} UNBOOSTED TECHS: {}", unboosted.join(" "));
+            eprintln!("on={on} UNINSPIRED CIVICS: {}", unboosted_civics.join(" "));
+        }
     }
 
     #[test]
