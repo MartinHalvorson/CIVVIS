@@ -93,18 +93,31 @@ release_lock() {
   [[ "$holder" == "$$" ]] && rm -rf -- "$LOCK"
 }
 
+stop_owned_process_tree() {
+  local signal=$1 pid=$2 child
+  # The background command can have a zsh job wrapper, caffeinate, and then the
+  # actual supervisor below the PID returned by `$!`. Signal descendants first:
+  # killing only the wrapper lets a deeper child become launchd-owned and keep
+  # running after this host exits. A process-group kill is not safe here: a
+  # Terminal-launched shell can put the background job in the host's group.
+  for child in ${(f)"$(pgrep -P "$pid" 2>/dev/null)"}; do
+    stop_owned_process_tree "$signal" "$child"
+  done
+  kill -"$signal" "$pid" 2>/dev/null || true
+}
+
 stop_children() {
   # An audit can reopen this host after the ladder launcher has already started
   # a valid supervisor. Adopt that supervisor, but never signal it on host exit:
   # this host did not create it and may otherwise end a healthy game.
   (( mirror_keeper_owned )) && [[ -n "$mirror_keeper_pid" ]] \
-      && kill -TERM "$mirror_keeper_pid" 2>/dev/null || true
+      && stop_owned_process_tree TERM "$mirror_keeper_pid"
   (( wedge_watchdog_owned )) && [[ -n "$wedge_watchdog_pid" ]] \
-      && kill -TERM "$wedge_watchdog_pid" 2>/dev/null || true
+      && stop_owned_process_tree TERM "$wedge_watchdog_pid"
   (( popup_keeper_owned )) && [[ -n "$popup_keeper_pid" ]] \
-      && kill -TERM "$popup_keeper_pid" 2>/dev/null || true
+      && stop_owned_process_tree TERM "$popup_keeper_pid"
   (( supervisor_owned )) && [[ -n "$supervisor_pid" ]] \
-      && kill -TERM "$supervisor_pid" 2>/dev/null || true
+      && stop_owned_process_tree TERM "$supervisor_pid"
 }
 
 if ! mkdir "$LOCK" 2>/dev/null; then

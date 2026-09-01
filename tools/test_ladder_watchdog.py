@@ -559,13 +559,16 @@ class InteractiveHostOwnership(unittest.TestCase):
             tmp = Path(raw)
             log = tmp / "host.log"
             started = tmp / "supervisor.started"
+            supervisor_child = tmp / "supervisor.child.pid"
             lock = tmp / "host.lock"
             supervisor_lock = tmp / "supervisor.lock"
             supervisor = tmp / "civvis-game-supervisor.sh"
             supervisor.write_text(
                 "#!/bin/zsh\n"
                 f"print -r -- started > {started}\n"
-                "sleep 30\n")
+                "sleep 30 &\n"
+                f"print -r -- $! > {supervisor_child}\n"
+                "wait\n")
             supervisor.chmod(0o755)
             gamelock = tmp / "gamelock.py"
             gamelock.write_text(
@@ -604,6 +607,18 @@ class InteractiveHostOwnership(unittest.TestCase):
                 finally:
                     host.terminate()
                     host.wait(timeout=5)
+                    child_pid = int(supervisor_child.read_text())
+                    deadline = time.monotonic() + 2.0
+                    while time.monotonic() < deadline:
+                        try:
+                            os.kill(child_pid, 0)
+                        except ProcessLookupError:
+                            break
+                        time.sleep(0.05)
+                    else:
+                        self.fail(
+                            "stopping the host must not orphan its supervisor descendants "
+                            f"(pid {child_pid})")
 
     def test_an_adopted_supervisor_survives_the_host(self):
         with TemporaryDirectory() as raw:
