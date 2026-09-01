@@ -131,6 +131,21 @@ SCAN_MAX_BYTES = 2_000_000
 #: `--scan-depth`; a deeper sweep by hand now and then is worth the noise.
 SCAN_DEPTH = 0
 
+#: How long a clean, reap-eligible task worktree must sit idle before `--reap`
+#: takes it when its branch's every pull request is already MERGED or CLOSED.
+#:
+#: The general `--idle-minutes` window exists because an idle-looking tree
+#: might still be somebody's task. A SETTLED pull request is the strongest
+#: available statement that it is not — the task is over, by GitHub's own
+#: record — so waiting the full window on it only stores build output. Measured
+#: on `mbp-m5-max-128` on 2026-09-01: 47 registered worktrees on already
+#: merged or closed branches held 143 GB of `target/`, because at ~10 new
+#: worktrees a day the hourly job's 24-hour window never catches up with the
+#: churn. Every other refusal in `reap` still applies at full strength; this
+#: only shortens the clock, and only when `gh` positively answers. Override
+#: with CIVVIS_SETTLED_PR_IDLE_MINUTES or `--settled-idle-minutes`.
+SETTLED_PR_IDLE_MINUTES = int(os.environ.get("CIVVIS_SETTLED_PR_IDLE_MINUTES", 60))
+
 
 def git(*args: str, repo: str | None = None, env: dict | None = None,
         check: bool = False) -> str:
@@ -256,6 +271,56 @@ def branch_pr_is_merged(branch: str) -> bool:
     except ValueError:
         return False
     return view.get("state") == "MERGED" and bool(view.get("mergedAt"))
+
+
+def branch_pr_settled_heads(repo: str, branch: str) -> list[str] | None:
+    """The head oids of this branch's pull requests, when EVERY one is settled.
+
+    "Settled" means MERGED or CLOSED: GitHub's own record that the task this
+    worktree was scaffolding for is over. `reap` uses that answer to shorten
+    the idle clock (see SETTLED_PR_IDLE_MINUTES) and to decide whether the
+    LOCAL branch may go with the worktree — it may only when its tip is one of
+    the oids returned here, because then `refs/pull/N/head` holds that exact
+    commit forever and deleting the branch loses nothing.
+
+    ⚠ None on any doubt, and None means "no fast path — behave exactly as
+    before this function existed": no `gh`, no network, a `gh` error, no pull
+    request at all, an unparseable answer, or ANY open pull request for the
+    branch. An open PR is a task still in play whatever the tree's mtime says,
+    and a branch with no PR ever was never shipped — both wait out the general
+    `--idle-minutes` window like today.
+
+    ⚠ `gh` resolves the repository from the working directory's remotes, and
+    launchd starts this tool with no useful cwd — so the query runs with
+    `cwd=repo` rather than inheriting whatever the scheduler had.
+    """
+    if not branch or branch in ("HEAD", "main"):
+        return None
+    if shutil.which("gh") is None:
+        return None
+    try:
+        out = subprocess.run(
+            ["gh", "pr", "list", "--head", branch, "--state", "all",
+             "--json", "state,headRefOid", "--limit", "20"],
+            capture_output=True, text=True, timeout=30, cwd=repo)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        prs = json.loads(out.stdout or "[]")
+    except ValueError:
+        return None
+    if not isinstance(prs, list) or not prs:
+        return None
+    heads: list[str] = []
+    for pr in prs:
+        if not isinstance(pr, dict) or pr.get("state") not in ("MERGED", "CLOSED"):
+            return None
+        oid = pr.get("headRefOid")
+        if isinstance(oid, str) and oid:
+            heads.append(oid)
+    return heads
 
 
 def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
@@ -674,8 +739,8 @@ def process_is_running_from(path: str) -> bool:
     return bool(cwds.strip())
 
 
-def reap(repo: str, findings: list[dict], idle_minutes: int,
-         apply: bool) -> list[dict]:
+def reap(repo: str, findings: list[dict], idle_minutes: int, apply: bool,
+         settled_idle_minutes: int = SETTLED_PR_IDLE_MINUTES) -> list[dict]:
     """Remove worktrees whose work is already safe on GitHub.
 
     ⚠⚠⚠ THE FLEET NEVER REMOVED A FINISHED WORKTREE, AND IT ADDS ONE PER TASK.
@@ -720,6 +785,17 @@ def reap(repo: str, findings: list[dict], idle_minutes: int,
         may be mid-task in a tree whose HEAD happens to be landed;
       * `--reap` reports; `--reap --apply` removes. A destructive default is
         how a tool like this ends up famous.
+
+    One shortening, never a widening: a candidate that has passed EVERY refusal
+    above but is still inside `idle_minutes` gets one more question — is every
+    pull request for its branch already MERGED or CLOSED? A settled PR is
+    GitHub's own record that the task is over, so such a tree is taken after
+    `settled_idle_minutes` (default SETTLED_PR_IDLE_MINUTES) instead. When `gh`
+    is missing or gives any doubtful answer, `branch_pr_settled_heads` returns
+    None and the behaviour is exactly the old one. On this path the local
+    branch is deleted only when its tip is one of the settled PRs' head oids —
+    `refs/pull/N/head` then holds that exact commit forever — and is otherwise
+    left standing, so a local-only fix-up commit survives its worktree.
     """
     # ⚠ A tree flagged ONLY with COMMIT-NOT-ON-GITHUB, whose branch's pull
     # request has MERGED, is `ship` scaffolding rather than lost work: the
@@ -768,20 +844,34 @@ def reap(repo: str, findings: list[dict], idle_minutes: int,
         if git("status", "--porcelain", repo=path).strip():
             continue
         idle_for = (now - newest_edit(path)) / 60.0
+        settled_heads = None
         if idle_for < idle_minutes:
-            continue
+            # The settled-PR shortening — see the docstring. `gh` is asked
+            # only here, after every refusal has already passed, so a fleet
+            # with nothing nearly-eligible costs no API calls at all.
+            if idle_for < settled_idle_minutes:
+                continue
+            settled_heads = branch_pr_settled_heads(repo, branch)
+            if settled_heads is None:
+                continue
+        # Two different claims, and a log a person reads should not blur
+        # them: "GitHub can reach this commit" is not the same statement as
+        # "this branch's pull request merged".
+        why = "HEAD is on GitHub" if reachable else "its pull request merged"
+        if settled_heads is not None:
+            why += "; PR settled, short idle window"
         row = {"path": path, "branch": branch, "head": head,
-               "idle_minutes": idle_for, "removed": False,
-               # Two different claims, and a log a person reads should not
-               # blur them: "GitHub can reach this commit" is not the same
-               # statement as "this branch's pull request merged".
-               "why": "HEAD is on GitHub" if reachable
-                      else "its pull request merged"}
+               "idle_minutes": idle_for, "removed": False, "why": why}
         if apply:
             # `--force` because a task worktree legitimately holds build output
             # git does not track; the clean check above is the real gate.
             git("worktree", "remove", "--force", path, repo=repo)
-            if branch not in ("HEAD", "main"):
+            if branch not in ("HEAD", "main") and (
+                    settled_heads is None or head in settled_heads):
+                # On the settled-PR path the branch goes only when its tip IS
+                # a settled PR's head — preserved at refs/pull/N/head forever.
+                # A tip the PR never saw may be local-only work; the worktree
+                # is gone but the commits keep their name.
                 git("branch", "-D", branch, repo=repo)
             row["removed"] = True
         reaped.append(row)
@@ -1017,6 +1107,12 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true",
                     help="with --reap, actually remove. Off by default: a "
                          "destructive default is how a tool like this ends up famous")
+    ap.add_argument("--settled-idle-minutes", type=int,
+                    default=SETTLED_PR_IDLE_MINUTES,
+                    help="a clean, otherwise-eligible tree whose branch's every "
+                         "pull request is MERGED or CLOSED is reaped after this "
+                         "many idle minutes instead of --idle-minutes; without "
+                         "a positive answer from gh the general window applies")
     ap.add_argument("--no-fetch", action="store_true",
                     help="skip the fetch; only for tests, a stale ref voids the run")
     ap.add_argument("--scan-root", default=None,
@@ -1069,7 +1165,8 @@ def main() -> int:
                   and not (f["kind"] == "STRANDED-ON-DISK" and f.get("saved"))
                   and f["kind"] != "SCAN-BOUNDS"]
     if args.reap:
-        reaped = reap(args.repo, findings, args.idle_minutes, args.apply)
+        reaped = reap(args.repo, findings, args.idle_minutes, args.apply,
+                      settled_idle_minutes=args.settled_idle_minutes)
         verb = "removed" if args.apply else "would remove"
         for row in reaped:
             print(f"REAP: {verb} {os.path.basename(row['path'])} "
