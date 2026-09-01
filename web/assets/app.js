@@ -6217,6 +6217,10 @@ async function boot() {
   bootBusy = true;
   try {
     RULES = await fetchJSON("/rules");
+    // The gene program rides in beside the rules: one static answer per
+    // server naming the heuristic genes that steer the seats. A server too
+    // old to have the route costs nothing but the hidden track.
+    try { GENE_PROGRAM = await fetchJSON("/gene-program"); } catch { GENE_PROGRAM = null; }
     // The engine's stock opening setup: the single description of the world
     // nobody has decided anything about. The controls below stamp their
     // defaults from it rather than repeating its values here, so tweaking
@@ -26945,6 +26949,114 @@ function tacticsSideHtml(p, picked) {
     `</div>`;
 }
 
+// The gene program — how the AI is actually steered. Since 2026 the CIVVIS
+// agent is tuned as a pool of published heuristic "genes": each is screened
+// in thousands of self-play games, a ledger of verdicts decides which ship
+// on, and an operator can arm a ledger-held gene for the live seat while a
+// question is still open. `/gene-program` reports that program once per
+// server; null against a server too old to answer, and the track stays
+// hidden.
+let GENE_PROGRAM = null;
+
+// The registry publishes kebab-case tags; the panel speaks words.
+function geneTitle(tag) {
+  return titleCase(String(tag).replaceAll("-", "_"));
+}
+
+const GENE_KIND_STORY = {
+  "repair-war": "a war repair in the live bundle",
+  "repair-economy": "an economy repair in the live bundle",
+  "host-only": "reads the live Civilization VI host, so it acts only on the live seat and no headless screen can price it",
+  "production": "stock behaviour the agent always carries",
+  "opt-in": "an opt-in, off everywhere until the ledger turns it on",
+};
+
+// One gene as a chip. The tint is the ledger's verdict — an armed chip wears
+// the plan track's gold instead, because it is the operator's live bet, not a
+// settled default — and the small figure is the pooled measured effect in
+// win-rate points per seat, the panel's working definition of dominance. The
+// ledger records that effect in wins per 10,000 seats; the chip speaks
+// percentage points, the ranking table's own display unit.
+function geneChipHtml(gene) {
+  const effect = typeof gene.posterior_pp === "number" ? gene.posterior_pp / 100 : null;
+  const spread = typeof gene.posterior_se_pp === "number" ? gene.posterior_se_pp / 100 : null;
+  const signed = value => `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
+  // P(>0) as the ranking prints it, from the pooled effect and its spread —
+  // Abramowitz–Stegun 7.1.26 is plenty for a two-digit percentage.
+  const helpsOdds = effect === null || !spread ? null : (() => {
+    const z = Math.abs(effect / spread) / Math.SQRT2;
+    const t = 1 / (1 + 0.3275911 * z);
+    const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+      - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+    const positive = 0.5 * (1 + (effect >= 0 ? erf : -erf));
+    return Math.round(positive * 1000) / 10;
+  })();
+  const facts = [];
+  if (gene.description) facts.push(gene.description);
+  facts.push(GENE_KIND_STORY[gene.kind] || gene.kind);
+  if (gene.verdict) {
+    facts.push(`ledger verdict ${gene.verdict}` + (effect === null ? ""
+      : ` · measured ${signed(effect)} win-rate points per seat${spread === null ? "" : ` ±${spread.toFixed(1)}`}`) +
+      (helpsOdds === null ? "" : ` · P(helps) ${helpsOdds}%`));
+  }
+  facts.push(gene.armed
+    ? "ARMED — held off by the ledger, forced on for live Civilization VI games by the operator's current arm; the simulator's own seats play the plain ledger program"
+    : gene.on ? "on in the deployment genome" : "held off by the gene ledger");
+  const cls = gene.armed ? " armed"
+    : gene.verdict === "helps" ? " helps"
+    : gene.verdict === "hurts" ? " hurts" : "";
+  const figure = effect === null ? "" : `<small>${signed(effect)}</small>`;
+  return `<span class="gene-chip${cls}" title="${reasonEscape(
+    `${geneTitle(gene.tag)} — ${facts.join(" · ")}`)}">` +
+    `${gene.armed ? "⚡ " : ""}${reasonEscape(geneTitle(gene.tag))}${figure}</span>`;
+}
+
+// The program read whole: armed genes first — the operator's open experiment
+// deserves to be seen before the settled defaults — then the deployed genes
+// by the size of their measured effect. That ranking is the closest honest
+// "dominant right now": the engine keeps no per-decision fire ledger, so the
+// panel reports which hands are on the wheel and how hard each one has been
+// measured to steer, never which one turned it this turn.
+function drawGeneProgram() {
+  const track = document.getElementById("geneprogramtrack");
+  const holder = document.getElementById("geneprogram");
+  const sum = document.getElementById("geneprogramsum");
+  if (!track || !holder || !sum) return;
+  const program = GENE_PROGRAM;
+  const genes = program && Array.isArray(program.genes) ? program.genes : [];
+  if (!genes.length) {
+    track.hidden = true;
+    return;
+  }
+  track.hidden = false;
+  const armed = genes.filter(gene => gene.armed);
+  const key = `${program.policy || ""}|${genes.length}|${armed.map(gene => gene.tag).join(",")}`;
+  if (holder.dataset.programKey === key) return;
+  holder.dataset.programKey = key;
+  const on = genes.filter(gene => gene.on && !gene.armed);
+  const held = genes.filter(gene => !gene.on && !gene.armed);
+  const measured = on.filter(gene => typeof gene.posterior_pp === "number")
+    .sort((a, b) => Math.abs(b.posterior_pp) - Math.abs(a.posterior_pp));
+  const unmeasured = on.filter(gene => typeof gene.posterior_pp !== "number");
+  const CHIP_CAP = 14, NAME_CAP = 40;
+  const lead = [...armed, ...measured, ...unmeasured].slice(0, CHIP_CAP);
+  const over = armed.length + on.length - lead.length;
+  const names = list => list.slice(0, NAME_CAP).map(gene => geneTitle(gene.tag)).join(", ") +
+    (list.length > NAME_CAP ? ` … ${list.length - NAME_CAP} more` : "");
+  sum.textContent = `${armed.length + on.length} on` + (armed.length ? ` · ${armed.length} armed` : "");
+  sum.title = `${armed.length + on.length} genes steer every CIVVIS seat` +
+    (program.policy ? ` under the ${program.policy} deployment policy` : "") +
+    (armed.length ? `; ${armed.length} are armed — ledger-held genes the operator forced on for live Civilization VI games` : "") +
+    (held.length ? `. The ledger holds ${held.length} more off.` : ".");
+  holder.innerHTML =
+    `<div class="dossier-note">` + lead.map(geneChipHtml).join("") +
+    (over > 0 ? ` <span class="dossier-empty" title="${reasonEscape(
+        names([...measured, ...unmeasured].slice(Math.max(0, CHIP_CAP - armed.length))))}">+${over} more on</span>` : "") +
+    `</div>` +
+    (held.length ? `<div class="dossier-note dossier-empty" title="${reasonEscape(
+        `Live genes the ledger's measurements hold out of deployment: ${names(held)}`)}">Ledger holds ${held.length} off</div>` : "");
+}
+
 function drawStrategyPanel() {
   const scope = document.getElementById("strategyscope");
   const track = document.getElementById("strategyplantrack");
@@ -26954,6 +27066,10 @@ function drawStrategyPanel() {
   if (!scope || !track || !planEl || !rdiv || !cdiv) return;
   const tactics = watchingBattlefield();
   setStrategyPanelMode(tactics);
+  // The program is the whole fleet's, not one seat's, so it renders whatever
+  // seat is picked; on a battlefield the stylesheet retires its track with
+  // the other study tracks.
+  drawGeneProgram();
   const seats = strategySeats();
   const seat = strategyViewSeat();
   syncStrategyOptions(seats, seat);
