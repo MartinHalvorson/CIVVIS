@@ -5648,6 +5648,14 @@ pub struct AdvancedAi {
     /// campaign still walking to its target is not offered away as stalled.
     /// Opt-in gene `siege-is-progress-2`.
     siege_is_progress_2: bool,
+    /// The Science strategy's per-pad district bonus stops once the empire
+    /// holds as many Spaceports as the race stage can use — one until the
+    /// Earth Satellite is up, two until the Mars Base is away, three for the
+    /// laser chase (`science_drive_desired_pads`). Without this the flat
+    /// 250-a-pad arm bought NINE pads in one live game and was still
+    /// ordering more after the race was lost. Opt-in gene
+    /// `spaceport-surplus-veto`.
+    spaceport_surplus_veto: bool,
 
     // ---- append: t-z ------------------------------------------------
     /// `walls-after-districts`: the barbarian pre-emption's WALL answer
@@ -7079,6 +7087,7 @@ impl AdvancedAi {
             settler_guard_holds_2: false,
             settler_target_hysteresis_2: false,
             siege_is_progress_2: false,
+            spaceport_surplus_veto: false,
 
             // ---- append: t-z ----------------------------------------
             walls_after_districts: false,
@@ -24789,6 +24798,19 @@ impl AdvancedAi {
                         250.0
                     }
                     (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
+                    // See `spaceport_surplus_veto`: a pad beyond what the
+                    // race stage can use is two points of district and a
+                    // dead queue — the flat arm below kept paying for a
+                    // ninth pad while the launch chain fit in two cities.
+                    (GrandStrategy::Science, "spaceport")
+                        if self.spaceport_surplus_veto
+                            && district_count
+                                >= Self::science_drive_desired_pads(
+                                    &g.players[pid].science_projects,
+                                ) =>
+                    {
+                        0.0
+                    }
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") => 170.0,
                     // One coastal Harbor pays back through empire-wide trade

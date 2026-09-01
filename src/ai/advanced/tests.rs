@@ -11856,6 +11856,77 @@ fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
     assert!(!AdvancedAi::legacy().one_launch_pad);
 }
 
+/// See `spaceport_surplus_veto`. With one pad standing and no launch yet,
+/// the race stage can use exactly one Spaceport — the treated seat stops
+/// paying the flat per-pad bonus for a second, and pays it again the
+/// moment the Earth Satellite raises the stage's pad count to two.
+#[test]
+fn a_pad_beyond_the_race_stage_earns_no_science_bonus() {
+    let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let first = game.player_city_ids(0)[0];
+    let second = found_test_city(&mut game, 0);
+    game.players[0].techs.insert(crate::name!("rocketry"));
+    game.turn = 140;
+    game.max_turns = 100_000;
+    install_ai_test_district(&mut game, first, "spaceport");
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let pad = Item::District {
+        district: crate::name!("spaceport"),
+        pos: game.cities[&second].pos,
+    };
+
+    let mut live = AdvancedAi::targeting(VictoryTarget::Science);
+    live.enable_live_bridge_universe();
+    live.enable_spaceport_surplus_veto();
+    live.refresh_research_weight(&game);
+    let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
+    withheld.enable_live_bridge_universe();
+    withheld.disable_spaceport_surplus_veto();
+    withheld.refresh_research_weight(&game);
+    let counts = live.counts(&game, 0);
+
+    let vetoed = live.production_value(&game, 0, second, &pad, &plan, &counts);
+    let unrestrained = withheld.production_value(&game, 0, second, &pad, &plan, &counts);
+    assert!(
+        unrestrained > vetoed,
+        "one pad serves the whole pre-launch chain, so the second earns \
+         no strategic bonus: {unrestrained} withheld vs {vetoed} treated"
+    );
+
+    // The Satellite is up: the stage can now use a second pad to prepare
+    // the Mars Base while the first launches the Moon Landing, and the
+    // veto stands aside.
+    game.players[0]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    let staged = live.production_value(&game, 0, second, &pad, &plan, &counts);
+    assert_eq!(
+        staged,
+        withheld.production_value(&game, 0, second, &pad, &plan, &counts),
+        "a pad the race stage can use is priced exactly as before"
+    );
+
+    // Defaults: off for the stock and frozen controllers.
+    assert!(!AdvancedAi::new().spaceport_surplus_veto);
+    assert!(!AdvancedAi::legacy().spaceport_surplus_veto);
+}
+
 #[test]
 fn science_target_parallelizes_lasers_across_cities_without_local_spaceport_spam() {
     let mut game = Game::new_full(1, 34, 20, 71_002, 320, 0, false);
