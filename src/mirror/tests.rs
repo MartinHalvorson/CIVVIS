@@ -4652,10 +4652,12 @@ fn the_age_and_its_dedications_reach_the_seat() {
             "COMMEMORATION_ECONOMIC".to_string(),
             "COMMEMORATION_NOT_A_THING".to_string(),
         ]),
+        dedication_choices: Some(1),
         ..StateSnapshot::default()
     };
     let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
     assert_eq!(mirror.game.players[0].age, "golden");
+    assert_eq!(mirror.game.players[0].dedication_choices, 1);
     assert!(mirror.game.players[0]
         .dedications
         .contains("heartbeat_of_steam"));

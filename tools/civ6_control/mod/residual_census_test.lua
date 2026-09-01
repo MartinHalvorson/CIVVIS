@@ -268,6 +268,20 @@ assert(hold:find("voted_turn", 1, true),
 	"the hold must lift once the ballot is cast for this turn")
 print("forfeit: the congress session is not forced before its ballot")
 
+-- A live era prompt is owned by CIVVIS, but it can only be owned when the
+-- mirrored board carries Firaxis's actual remaining choice count.  Older
+-- exports left the model at zero, so it emitted no dedication order while the
+-- ownership guard returned `civvis_complete` forever. Keep both halves: the
+-- export makes the normal CIVVIS order possible and the residual bridge clears
+-- a prompt that still survives a completed reply.
+local dedicationCount = agentSrc:find("dedication_choices = try(function()", 1, true)
+local dedicationAllowance = agentSrc:find("GetPlayerNumAllowedCommemorations(pid)", 1, true)
+assert(dedicationCount and dedicationAllowance and dedicationCount < dedicationAllowance,
+	"the state export must carry the native dedication allowance")
+assert(agentSrc:find('or name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then', 1, true),
+	"a standing owned commemoration must re-enter the native residual ladder")
+print("dedication: exports the allowance and bridges a standing completed prompt")
+
 print("blocker ownership: " ..
 	#(function() local n = {} for _ in pairs(answers) do n[#n + 1] = 1 end return n end)() ..
 	" answered prompts owned, no soft overlap, every order kind real")
