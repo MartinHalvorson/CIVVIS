@@ -275,7 +275,8 @@ print("forfeit: the congress session is not forced before its ballot")
 -- export makes the normal CIVVIS order possible and the residual bridge clears
 -- a prompt that still survives a completed reply.
 local dedicationCount = agentSrc:find("dedication_choices = try(function()", 1, true)
-local dedicationAllowance = agentSrc:find("GetPlayerNumAllowedCommemorations(pid)", 1, true)
+local dedicationAllowance = dedicationCount
+	and agentSrc:find("GetPlayerNumAllowedCommemorations(pid)", dedicationCount, true)
 assert(dedicationCount and dedicationAllowance and dedicationCount < dedicationAllowance,
 	"the state export must carry the native dedication allowance")
 assert(agentSrc:find('or name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then', 1, true),
