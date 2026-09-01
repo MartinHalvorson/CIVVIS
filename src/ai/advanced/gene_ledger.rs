@@ -1033,4 +1033,58 @@ mod tests {
             "an explicit arm cannot report its restored gene as withheld"
         );
     }
+
+    /// ★ EVERY HOST-ONLY GENE SHIPS ON. `enable_live_bridge_universe` turns on
+    /// every `live()` gene and `apply_gene_ledger` holds off only a tag whose
+    /// `ledger_default_on` is `Some(false)`, which a host-only row never
+    /// returns — so the `off` that `genes.py list` used to print for those
+    /// rows was membership in `deployment_genome`, not the seat's default.
+    /// `tools/genes.py live_arm` mirrors exactly these rules for the live
+    /// screen's arm dealing (`docs/LIVE_SCREEN.md`); `tools/test_genes.py`
+    /// (`TheLiveArm`) holds the Python half against the same registry and
+    /// ledger, this holds the Rust half.
+    #[test]
+    fn every_host_only_gene_ships_on_and_the_arm_rules_are_the_pythons() {
+        let deployed = deployment_treatments();
+        let mut seat = AdvancedAi::new();
+        seat.enable_live_bridge();
+        for gene in super::super::GENES.iter() {
+            let tag = gene.tag;
+            if gene.host_only() {
+                assert_eq!(
+                    ledger_default_on(tag),
+                    None,
+                    "{tag}: no screen prices a host-only row"
+                );
+                assert!(deployed.contains(&tag), "{tag}: a host-only row ships on");
+                assert!(
+                    !ledger_held_live_treatment(tag),
+                    "{tag}: nothing holds it off"
+                );
+            }
+            if gene.live() {
+                assert_eq!(
+                    deployed.contains(&tag),
+                    ledger_default_on(tag) != Some(false),
+                    "{tag}: a live gene is on unless the ledger holds it off"
+                );
+            } else if gene.opt_in() {
+                assert_eq!(
+                    deployed.contains(&tag),
+                    ledger_default_on(tag) == Some(true),
+                    "{tag}: an opt-in is on only when the ledger turns it on"
+                );
+                assert_eq!(
+                    ledger_held_opt_in(tag),
+                    ledger_default_on(tag) != Some(true),
+                    "{tag}: a held opt-in is exactly one the ledger does not turn on"
+                );
+            } else {
+                assert!(
+                    !deployed.contains(&tag),
+                    "{tag}: a production gene is not a treatment"
+                );
+            }
+        }
+    }
 }

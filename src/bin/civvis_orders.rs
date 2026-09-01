@@ -3193,7 +3193,7 @@ fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> 
     // line at the same moment.
     match civvis::ai::GENES
         .iter()
-        .find(|gene| gene.live() && gene.tag == treatment)
+        .find(|gene| withholdable(gene) && gene.tag == treatment)
     {
         Some(gene) => {
             (gene.disable)(ai);
@@ -3209,11 +3209,23 @@ fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> 
     }
 }
 
+/// Whether `--without` can form an off arm for this gene: every live gene
+/// (the repairs and the host-only adapters, which ship on), and every opt-in
+/// the ledger turns on. An opt-in the ledger leaves off is already off and a
+/// production gene has no live control at all, so neither is an arm; naming
+/// one stays the hard error above rather than a silent no-op control.
+/// `tools/genes.py arm` mirrors this rule in Python so the ladder can assign a
+/// screen's arm before a build (`docs/LIVE_SCREEN.md`).
+fn withholdable(gene: &civvis::ai::Gene) -> bool {
+    gene.live()
+        || (gene.opt_in() && civvis::ai::gene_ledger::ledger_default_on(gene.tag) == Some(true))
+}
+
 /// Every treatment `--without` accepts, in table order, for the usage line.
 fn withholdable_treatments() -> String {
     civvis::ai::GENES
         .iter()
-        .filter(|gene| gene.live())
+        .filter(|gene| withholdable(gene))
         .map(|gene| gene.tag)
         .collect::<Vec<_>>()
         .join(", ")
@@ -3276,15 +3288,43 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
     if selected.is_empty() && !already_deployed.is_empty() {
         return Err(format!(
             "--with treatment(s) {} already ship in the deployment genome; name at least one \
-             ledger-held live treatment or held-off opt-in to form a distinct arm",
+             ledger-held live treatment or held-off opt-in to form a distinct arm{}",
             already_deployed
                 .iter()
                 .map(|tag| format!("{tag:?}"))
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", "),
+            host_only_already_on(&already_deployed)
         ));
     }
     Ok(selected)
+}
+
+/// The clause a refused `--with` carries when a named row is host-only.
+///
+/// A `Kind::HostOnly` gene is on in every live seat: `enable_live_bridge_universe`
+/// turns on every `live()` gene, and `apply_gene_ledger` withholds only a tag
+/// the ledger reads as off, which an unscreened row never is. `genes.py list`
+/// printed such rows as `off` (the deployment genome holds only screenable
+/// tags), and that reading put host-only tags into `~/.civvis-live-force-on`
+/// twice (2026-08-30, 09-01). Say what the seat already plays and which flag
+/// moves it. Empty when no named row is host-only.
+fn host_only_already_on(tags: &[&str]) -> String {
+    let host_only: Vec<String> = tags
+        .iter()
+        .filter(|tag| civvis::ai::gene(tag).is_some_and(|gene| gene.host_only()))
+        .map(|tag| format!("{tag:?}"))
+        .collect();
+    if host_only.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; {} {} host-only and already on in every live seat (the live bridge turns on \
+         every host-only gene and no screen row can hold one off) — `--without <tag>` \
+         is what withholds one",
+        host_only.join(", "),
+        if host_only.len() == 1 { "is" } else { "are" }
+    )
 }
 
 /// Every name a live `--with` arm can seat, in canonical registry order.
@@ -8114,6 +8154,50 @@ mod tests {
     /// produced a control identical to the treatment would report a null that
     /// looks exactly like a real one.
     #[test]
+    fn an_opt_in_the_ledger_turns_on_can_be_withheld_and_one_it_leaves_off_cannot() {
+        // A screen's off arm for a ledger-on opt-in is `--without`; before this
+        // the flag refused every opt-in, so the 30-odd opt-ins the ledger
+        // deploys had no live control at all (`docs/LIVE_SCREEN.md`).
+        let deployed_opt_in = civvis::ai::GENES
+            .iter()
+            .find(|gene| {
+                gene.opt_in() && civvis::ai::gene_ledger::ledger_default_on(gene.tag) == Some(true)
+            })
+            .map(|gene| gene.tag);
+        if let Some(tag) = deployed_opt_in {
+            let mut ai = civvis::ai::AdvancedAi::new();
+            ai.enable_live_bridge();
+            withhold_live_treatment(&mut ai, tag)
+                .expect("an opt-in the ledger turns on is a withholdable arm");
+            assert!(
+                withholdable_treatments()
+                    .split(", ")
+                    .any(|name| name == tag),
+                "the usage line must list the arm it accepts"
+            );
+        }
+        let held_opt_in = civvis::ai::GENES
+            .iter()
+            .find(|gene| {
+                gene.opt_in() && civvis::ai::gene_ledger::ledger_default_on(gene.tag) != Some(true)
+            })
+            .map(|gene| gene.tag)
+            .expect("the registry holds at least one opt-in the ledger leaves off");
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        let refused = withhold_live_treatment(&mut ai, held_opt_in)
+            .expect_err("an opt-in already off is not an arm and must not pass silently");
+        assert!(refused.contains("unknown --without treatment"), "{refused}");
+        let production = civvis::ai::GENES
+            .iter()
+            .find(|gene| gene.production())
+            .map(|gene| gene.tag)
+            .expect("the registry holds production genes");
+        withhold_live_treatment(&mut ai, production)
+            .expect_err("a production gene has no live control and stays refused");
+    }
+
+    #[test]
     fn a_live_treatment_can_be_withheld_by_name() {
         let mut ai = civvis::ai::AdvancedAi::new();
         // The universe, not the deployment genome: the ledger already holds
@@ -8322,7 +8406,8 @@ mod tests {
     }
 
     /// And the usage line is the same list, so a name the binary accepts is
-    /// never one the error message hides.
+    /// never one the error message hides: every live gene, and every opt-in
+    /// the ledger turns on (`withholdable`), in registry order.
     #[test]
     fn the_usage_line_names_every_treatment_the_binary_accepts() {
         let listed: Vec<String> = super::withholdable_treatments()
@@ -8331,10 +8416,21 @@ mod tests {
             .collect();
         let registered: Vec<String> = civvis::ai::GENES
             .iter()
-            .filter(|gene| gene.live())
+            .filter(|gene| {
+                gene.live()
+                    || (gene.opt_in()
+                        && civvis::ai::gene_ledger::ledger_default_on(gene.tag) == Some(true))
+            })
             .map(|gene| gene.tag.to_string())
             .collect();
         assert_eq!(listed, registered);
+        for gene in civvis::ai::GENES.iter().filter(|gene| gene.live()) {
+            assert!(
+                listed.contains(&gene.tag.to_string()),
+                "{} is live and unlisted",
+                gene.tag
+            );
+        }
     }
 
     /// The ledger's best genome remains the default, but a verification arm
@@ -8450,6 +8546,21 @@ mod tests {
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
             .expect_err("a treatment already in the live genome cannot form a force-on arm");
         assert!(host_only.contains("deployment genome"), "{host_only}");
+        assert!(
+            host_only.contains("host-only") && host_only.contains("--without"),
+            "a host-only row says the seat already plays it and what withholds it: {host_only}"
+        );
+        let deployed_screenable = civvis::ai::GENES
+            .iter()
+            .find(|gene| !gene.host_only() && civvis::ai::ledger_default_on(gene.tag) == Some(true))
+            .map(|gene| gene.tag)
+            .expect("the deployment genome selects a screenable gene");
+        let refused = super::forced_live_treatments(&[deployed_screenable.to_string()])
+            .expect_err("a deployed screenable gene cannot form a force-on arm either");
+        assert!(
+            refused.contains("deployment genome") && !refused.contains("host-only"),
+            "{refused}"
+        );
 
         let mixed = super::forced_live_treatments(&[
             "science-victory-drive".to_string(),

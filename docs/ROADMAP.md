@@ -280,4 +280,6 @@ lane provenance (`build.json`) — are the shipped `published-build` +
 `tools/civ6_control` (a Lua mod + macOS input/vision harness) configures and
 plays real Civ 6 games unattended: `docs/CIV6_COMPUTER_CONTROL.md` is the
 contract, `docs/CIV6_LADDER.md` the record, and a supervisor loop plays one
-game per fresh build of head.
+game per fresh build of head. Since 2026-09-01 that loop is also a screening
+instrument: one gene per screen, every game dealt an on/off arm from its own
+tag, both arms read back with intervals — `docs/LIVE_SCREEN.md`.

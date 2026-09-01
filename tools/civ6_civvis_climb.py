@@ -77,6 +77,7 @@ from civ6_brain import binary_provenance, binary_sha256  # noqa: E402
 # The settler-capture detector: one module, imported here so the ladder row
 # and the per-run dossier count the same captures the CLI does.
 import civ6_settler_captures  # noqa: E402
+import genes  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
 # is a Steam client that is coming back up on its own; the last is long because if
@@ -1325,6 +1326,28 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
             # Seven `-contN` runs exist, all from 08-17..19; NONE since the
             # watchdog began signalling, which is exactly the window in which
             # parked cores became the dominant way a run dies.
+            # ⚠⚠ AND THE WATCHDOG SAYS SO IN WRITING, BECAUSE ITS CLOCK IS NOT
+            # THIS ONE. The stale-turn test below assumes the handoff arrives
+            # after five one-minute no-progress samples. Its OTHER trigger — a
+            # unit blocker repeated on one turn — needs no such wait: the mod
+            # re-raises the blocker every few seconds, so six sightings arrive
+            # inside two minutes. Run `civvis-20260831T085324Z-cont1` reloaded
+            # AutoSave_0119, re-wedged at t120 on ENDTURN_BLOCKING_UNITS, and
+            # was handed over at 09:44:13 — two minutes after its first turn.
+            # The turn was stale for well under 240 s, this read "exited", and
+            # the game was filed as killed at t120 with two resumes unspent.
+            # The watchdog writes `WEDGE_HANDOFF_MARKER` into the run before it
+            # signals the player, whichever trigger fired; that is the signal,
+            # and the clock is only the fallback for a watchdog too old to
+            # write it.
+            handoff = wedge_handoff(tag)
+            if handoff is not None:
+                print(f"[watchdog] the wedge watchdog handed {tag} over at turn "
+                      f"{handoff.get('turn', last_turn)} "
+                      f"({handoff.get('reason') or 'no reason recorded'}); "
+                      f"treating the attempt as frozen so its autosave can be "
+                      f"reloaded", flush=True)
+                return "frozen"
             if (last_turn is not None
                     and time.time() - last_turn_at > EXIT_WHILE_STALE_S):
                 print(f"[watchdog] the player exited with turn {last_turn} "
@@ -1416,6 +1439,31 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 # over five one-minute samples, so anything past four minutes of no new turn is
 # its signal arriving, not a game ending on its own.
 EXIT_WHILE_STALE_S = 240.0
+
+#: The file `civvis-agent-wedge-watchdog.sh` writes into a run's directory the
+#: moment it hands that run to the climb for an autosave reload — BEFORE it
+#: signals the player, so the climb finds it however quickly the player exits.
+#: The name is pinned on both sides by `test_ops_wedge_watchdog.py`.
+WEDGE_HANDOFF_MARKER = "wedge-handoff.json"
+
+
+def wedge_handoff(tag: str) -> dict | None:
+    """What the wedge watchdog wrote when it handed this run over, or None.
+
+    Existence is the signal. The body — turn, reason, time — is for the log and
+    the forensics; a marker this cannot parse still hands the run over, because
+    the watchdog only ever writes it on the reload branch.
+    """
+    marker = RUN_ROOT / tag / WEDGE_HANDOFF_MARKER
+    try:
+        raw = marker.read_text()
+    except OSError:
+        return None
+    try:
+        detail = json.loads(raw)
+    except ValueError:
+        return {}
+    return detail if isinstance(detail, dict) else {}
 
 
 # A game frozen before this turn is redone from scratch faster than it is
@@ -1521,6 +1569,69 @@ def batch_refresh_seconds(refresh_seconds: float | None, pinned: str | None,
     return None
 
 
+#: The two arms of a live screen. See `screen_arm` and `docs/LIVE_SCREEN.md`.
+SCREEN_ARMS = ("on", "off")
+
+
+def screen_stem(tag: str) -> str:
+    """The game's own tag under a `<tag>-contN` continuation: the arm belongs
+    to the GAME, so every autosave segment of it hashes to the same arm."""
+    return re.sub(r"-cont\d+$", "", tag)
+
+
+def screen_arm(tag: str, gene: str, difficulty: str, lane: str) -> str:
+    """Which arm this run plays for `gene`: `on` or `off`, from the run tag.
+
+    ★★★ THE ARM IS DEALT BY THE TAG, NOT CHOSEN. Fifty-nine ledger rows carry a
+    `forced` bundle and not one carries a `withheld` control: every live
+    "arm" so far was a batch-wide switch rotated by hand against a moving code
+    revision, which is a before/after, not an A/B. Hashing the tag gives every
+    game an independent coin the operator cannot lean on, keeps the two arms
+    interleaved through the same days, builds and rungs, and lets a screen be
+    reconstructed from the ledger alone: the recorded `screen_arm` is a fact
+    the tag can re-derive. The difficulty and lane are in the hash so a
+    screen re-dealt at the next rung or lane is a fresh draw rather than a
+    replay of the same coins.
+    """
+    key = f"{screen_stem(tag)}|{gene}|{difficulty}|{lane}".encode()
+    digest = hashlib.blake2b(key, digest_size=8).digest()
+    return "on" if int.from_bytes(digest, "big") % 2 else "off"
+
+
+def screen_words(args, tag: str) -> list[str]:
+    """The `civ6_play` words that realise this run's arm of `args.screen_gene`:
+    the gene's one flag when the arm differs from its live default (an arm
+    equal to the default is unarmed), plus the labels the summary records."""
+    gene = getattr(args, "screen_gene", None)
+    if not gene:
+        return []
+    arm = screen_arm(tag, gene, args.difficulty, args.victory)
+    return (genes.screen_arm_flag(gene, arm)
+            + ["--screen-gene", gene, "--screen-arm", arm])
+
+
+def screen_refusal(args) -> str | None:
+    """Why this batch cannot screen `args.screen_gene`, or None.
+
+    ⚠ A refusal here loses the SCREEN, never the batch. `civvis_orders` exits 2
+    on a `--with`/`--without` it cannot seat, and by then the supervisor has
+    fetched, built and launched — a bad tag in the screen file would stop the
+    ladder exactly as a bad force-on tag does (`~/.civvis-live-force-on`
+    refuses the whole batch on purpose; a screen must not). `genes.live_arm`
+    answers seatability from the registry and the ledger without a build.
+    """
+    gene = getattr(args, "screen_gene", None)
+    if not gene:
+        return None
+    info = genes.live_arm(gene)
+    if info["arm_flag"] is None:
+        return f"{gene!r} cannot be screened live: {info['reason']}"
+    if gene in getattr(args, "with_", []) or gene in getattr(args, "without", []):
+        return (f"{gene!r} is also named by this batch's --with/--without; "
+                f"the batch's own arm wins and no coin is dealt")
+    return None
+
+
 def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
                  load_save: Path | None = None) -> list[str]:
     """The `civ6_play` command line for one attempt — or its continuation.
@@ -1569,6 +1680,9 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
            for flag in ("--civvis-with", treatment)]
         + [flag for treatment in args.without
            for flag in ("--civvis-without", treatment)]
+        # The dealt arm of a live screen, from the tag: `<tag>-contN` hashes
+        # to the game's own arm, so a continuation inherits it by construction.
+        + screen_words(args, tag)
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
         + (["--settler-escort-cap-sync"] if args.settler_escort_cap_sync
            else ["--no-settler-escort-cap-sync"])
@@ -1679,7 +1793,18 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
 # deadlock, not a replay of the first. Without a distinct third index the extra
 # attempt would reload the same save as the second.
-RESUME_STEPS: tuple[int, ...] = (0, 3, 8)
+#
+# ⚠⚠ AND THE STRIDES PAST THE THIRD MUST KEEP WALKING, because the budget is six
+# (#2861) and a deterministic park survives strides. Three of the seven parks on
+# 2026-08-31 (t88, t147, t40) were escaped only by the NINE-BACK stride after
+# one-back and four-back both replayed into the same deadlock. With only three
+# entries, resumes four to six all clamped to the last index and reloaded the
+# very board the third attempt had just failed on — the waste #2817 removed at
+# the front of the rotation, reintroduced at its tail. So every later entry
+# reaches strictly further back (16, 25 and 36 turns), and a stride past the
+# oldest autosave on disk clamps to the oldest rather than giving up: a short
+# list is still a different board from the one that parked.
+RESUME_STEPS: tuple[int, ...] = (0, 3, 8, 15, 24, 35)
 
 
 def _autosave_turn(save: Path) -> int | None:
@@ -1765,6 +1890,13 @@ def main() -> int:
                     help="restore one ledger-held live treatment for every attempt "
                          "in this labeled verification arm; repeatable and validated "
                          "by civvis_orders")
+    ap.add_argument("--screen-gene", default=None, metavar="TAG",
+                    help="deal every attempt of this batch an on/off arm of one "
+                         "gene from its run tag and record it in the summary; the "
+                         "arm that equals the gene's live default is unarmed, the "
+                         "other is its --civvis-with/--civvis-without; a tag with "
+                         "no live arm refuses the screen, not the batch "
+                         "(docs/LIVE_SCREEN.md)")
     ap.add_argument("--refresh-seconds", type=float, default=None,
                     help="forwarded to civ6_play as --civvis-refresh-seconds; "
                          "defaults to 0 for a pinned batch of more than one "
@@ -1892,9 +2024,10 @@ def main() -> int:
     # civvis-20260831T140630Z parked FOUR times by t118 (t87, t112, t112,
     # t118), ran out of budget mid-recovery, and was killed while standing at
     # 0.589 of the leader — a game the abandon rule would have let play to its
-    # t150 verdict. Resumes past the third reuse the widest stride, so the
-    # extra budget costs only the ~13 minutes a genuinely dead park wastes per
-    # attempt, against losing a live game's whole remaining arc.
+    # t150 verdict. Each resume past the third walks further back still (see
+    # `RESUME_STEPS`), so the extra budget costs only the ~13 minutes a
+    # genuinely dead park wastes per attempt plus the turns it replays, against
+    # losing a live game's whole remaining arc.
     ap.add_argument("--max-resumes", type=int, default=6,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
@@ -2045,6 +2178,11 @@ def main() -> int:
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
     args.victory = operator_victory_lane(args.victory)
+    refusal = screen_refusal(args)
+    if refusal is not None:
+        print(f"⚠ live screen refused: {refusal}; this batch plays unarmed",
+              file=sys.stderr, flush=True)
+        args.screen_gene = None
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -2335,6 +2473,12 @@ def main() -> int:
         # solely on a graceful child summary: a crashed force-on arm is still
         # an arm, not an unexplained deployment row.
         record["forced"] = sorted(args.with_)
+        # The dealt arm, on the climb's own row as well as the summary, so a
+        # screened game that never wrote a summary still counts as dealt.
+        record["screen_gene"] = args.screen_gene or None
+        record["screen_arm"] = (screen_arm(tag, args.screen_gene, args.difficulty,
+                                           args.victory)
+                                if args.screen_gene else None)
         record["code_rev"] = code_rev
 
         # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.
