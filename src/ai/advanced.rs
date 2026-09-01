@@ -2155,6 +2155,10 @@ pub struct AdvancedAi {
     /// `settle_sooner` can price how long it has already been out of a city
     /// when it picks (or re-picks) a site. See `best_reachable_settle_site_except_cached`.
     settler_walk_started: BTreeMap<u32, u32>,
+    /// Each Settler's walk for `settler-walk-deadline`: (turn the walk
+    /// began, turn last noted, turns spent out of a city). See
+    /// `advanced/settler_walk_deadline.rs`.
+    settler_walk_clock: BTreeMap<u32, (u32, u32, u32)>,
     /// Where each Settler stood and for how many turns, for the
     /// `settler-never-idles` watchdog: (tile, turn last noted, streak). See
     /// `advanced/settler_never_idles.rs`.
@@ -6800,6 +6804,7 @@ impl AdvancedAi {
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
+        self.settler_walk_clock.clear();
         self.settler_idle_streak.clear();
         self.settler_stranded_at.clear();
         self.settler_relaxed_targets.clear();
@@ -6911,6 +6916,11 @@ impl AdvancedAi {
             .settler_walk_started
             .iter()
             .filter_map(|(uid, started)| map.get(uid).map(|new| (*new, *started)))
+            .collect();
+        self.settler_walk_clock = self
+            .settler_walk_clock
+            .iter()
+            .filter_map(|(uid, clock)| map.get(uid).map(|new| (*new, *clock)))
             .collect();
         self.settler_idle_streak = self
             .settler_idle_streak
@@ -7031,6 +7041,7 @@ impl AdvancedAi {
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             settler_walk_started: BTreeMap::new(),
+            settler_walk_clock: BTreeMap::new(),
             settler_idle_streak: BTreeMap::new(),
             settler_stranded_at: BTreeMap::new(),
             settler_relaxed_targets: BTreeMap::new(),
@@ -29580,10 +29591,9 @@ impl AdvancedAi {
         if self.settler_never_idles {
             self.note_settler_idle(g, uid);
         }
-        if self.settle_sooner || self.settler_walk_deadline {
+        if self.settle_sooner {
             // The walk clock starts the first turn the Settler is stepped,
-            // whichever branch below steps it. See `settle_sooner`; the
-            // `settler_walk_deadline` reads the same clock.
+            // whichever branch below steps it. See `settle_sooner`.
             self.settler_walk_started.entry(uid).or_insert(g.turn);
         }
         if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
@@ -37004,6 +37014,8 @@ impl AdvancedAi {
         self.settler_closest
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_walk_started
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_walk_clock
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_idle_streak
             .retain(|uid, _| g.units.contains_key(uid));

@@ -43085,10 +43085,13 @@ fn settler_target_floor_never_picks_a_site_under_it() {
     assert!(checked > 0, "the fixture never offered a settler a target");
 // ── settler-walk-deadline ────────────────────────────────────────────────
 //
-// See `advanced/settler_walk_deadline.rs`: a Settler out of a city past the
-// deadline founds the best legal site within reach.
+// See `advanced/settler_walk_deadline.rs`: an opening Settler out of a city
+// past the deadline founds the best legal site within reach.
 
-use super::settler_walk_deadline::{SETTLER_WALK_DEADLINE_RADIUS, SETTLER_WALK_DEADLINE_STEP_MARGIN};
+use super::settler_walk_deadline::{
+    SETTLER_WALK_DEADLINE_RADIUS, SETTLER_WALK_DEADLINE_STEP_MARGIN,
+    SETTLER_WALK_DEADLINE_VALUE_SHARE,
+};
 
 /// A board with two settled capitals and a lone Settler on open ground far
 /// enough from both that the tiles around it are legal city sites.
@@ -43097,6 +43100,11 @@ fn walk_deadline_board(seed: u64) -> (Game, u32) {
     let far = open_ground_at(&game, home, 7);
     let settler = game.spawn_test_unit("settler", 0, far);
     (game, settler)
+}
+
+/// A walk clock that began on turn one and has run `out` turns.
+fn walk_out(ai: &mut AdvancedAi, game: &Game, settler: u32, out: u32) {
+    ai.settler_walk_clock.insert(settler, (1, game.turn, out));
 }
 
 #[test]
@@ -43117,24 +43125,61 @@ fn settler_walk_deadline_is_off_by_default_and_toggles() {
 }
 
 #[test]
+fn the_walk_clock_counts_turns_out_of_a_city_and_follows_the_unit() {
+    let (mut game, home) = camp_bounty_board(93_200);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    // On the city tile: the clock starts but a turn at home is not a turn out.
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (game.turn, 0));
+    game.turn += 1;
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (game.turn - 1, 0));
+    // Out on open ground: one turn out per turn, noted once however often
+    // the step runs in a turn.
+    let began = game.turn - 1;
+    game.units.get_mut(&settler).unwrap().pos = open_ground_at(&game, home, 5);
+    game.turn += 1;
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (began, 1));
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (began, 1));
+    game.turn += 1;
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (began, 2));
+    assert_eq!(ai.settler_turns_out(settler), 2);
+    // Settler memory: it follows a live-bridge id remap and dies with the unit.
+    let mut map = BTreeMap::new();
+    map.insert(settler, settler + 1000);
+    ai.remap_unit_memory(&map);
+    assert_eq!(ai.settler_turns_out(settler + 1000), 2);
+    assert_eq!(ai.settler_turns_out(settler), 0);
+    ai.forget_unit_memory();
+    assert!(ai.settler_walk_clock.is_empty());
+}
+
+#[test]
 fn a_settler_inside_its_deadline_is_left_to_the_ordinary_step() {
     let (mut game, settler) = walk_deadline_board(93_201);
     let mut ai = AdvancedAi::new();
     ai.enable_settler_walk_deadline();
     let cities = game.cities.len();
-    // No clock yet: nothing to measure against.
-    assert_eq!(ai.settler_turns_out(&game, settler), 0);
+    // No clock yet: the first step starts it at zero turns out.
     assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
+    assert_eq!(ai.settler_turns_out(settler), 0);
     // A clock one turn short of the deadline is still inside it.
     let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
     assert!(deadline >= 2, "the deadline is turns, not a moment: {deadline}");
-    game.turn += deadline;
-    ai.settler_walk_started
-        .insert(settler, game.turn - deadline + 1);
-    assert_eq!(ai.settler_turns_out(&game, settler), deadline - 1);
+    game.turn += 1;
+    walk_out(&mut ai, &game, settler, deadline - 1);
     assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
     assert_eq!(game.cities.len(), cities, "nothing founded inside the deadline");
     assert!(game.units.contains_key(&settler));
+    // A walk that began after the band turn is the ordinary search's, however
+    // long it runs: the gene is about the opening.
+    game.turn += 1;
+    ai.settler_walk_clock.insert(
+        settler,
+        (AdvancedAi::expansion_band_turn(&game) + 1, game.turn, deadline + 5),
+    );
+    assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
+    assert_eq!(game.cities.len(), cities);
 }
 
 #[test]
@@ -43171,8 +43216,21 @@ fn the_deadline_pick_is_the_best_legal_site_within_reach() {
         game.wdist(picked.0, here) <= SETTLER_WALK_DEADLINE_RADIUS,
         "never farther than the radius"
     );
-    // A tile another own Settler already owns is not taken from it.
+    // The site the Settler was walking to sets a floor: a plan worth far
+    // more than anything within reach is not traded for a wasteland.
     let mut game = game;
+    let rich = open_ground_at(&game, here, 6);
+    let rich_value = ai.settle_value(&game, 0, rich);
+    if rich_value * SETTLER_WALK_DEADLINE_VALUE_SHARE > picked.1 {
+        ai.settler_targets.insert(settler, rich);
+        assert_eq!(
+            ai.settler_walk_deadline_site(&game, 0, settler),
+            None,
+            "nothing within reach clears half of {rich_value:.1}"
+        );
+        ai.settler_targets.remove(&settler);
+    }
+    // A tile another own Settler already owns is not taken from it.
     let other = game.spawn_test_unit("settler", 0, open_ground_at(&game, here, 5));
     ai.settler_targets.insert(other, picked.0);
     let again = ai.settler_walk_deadline_site(&game, 0, settler);
@@ -43190,7 +43248,7 @@ fn a_settler_past_its_deadline_founds_within_reach_and_says_so() {
     let cities = game.cities.len();
     let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
     game.turn += deadline;
-    ai.settler_walk_started.insert(settler, game.turn - deadline);
+    walk_out(&mut ai, &game, settler, deadline);
     let (site, _) = ai
         .settler_walk_deadline_site(&game, 0, settler)
         .expect("a site within reach");
@@ -43253,14 +43311,13 @@ fn the_walk_deadline_off_leaves_the_clock_and_the_step_alone() {
     ai.attach_journal(journal.handle());
     let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
     game.turn += deadline;
-    let cities = game.cities.len();
     ai.advanced_settler_step(&mut game, 0, settler);
     assert!(
-        !ai.settler_walk_started.contains_key(&settler),
-        "without the gene (or settle-sooner) the walk clock is never stamped"
+        ai.settler_walk_clock.is_empty(),
+        "without the gene the walk clock is never kept"
     );
-    // Even with a clock stamped past the deadline, the gene off is inert.
-    ai.settler_walk_started.insert(settler, game.turn - deadline);
+    // Even with a clock past the deadline, the gene off is inert.
+    walk_out(&mut ai, &game, settler, deadline + 3);
     if let Some(unit) = game.units.get_mut(&settler) {
         unit.moves_left = 2.0;
         unit.acted = false;
@@ -43275,5 +43332,4 @@ fn the_walk_deadline_off_leaves_the_clock_and_the_step_alone() {
             .any(|thought| thought.headline.contains("walk deadline")),
         "the deadline never speaks while the gene is off"
     );
-    let _ = cities;
 }

@@ -93,3 +93,38 @@ so it does **not** clear the deployment-profile gate. In particular, it does
 not justify a production policy change. The artifact and corpus establish that
 the full-cost mechanism is measurable without an oracle shortcut; a separately
 predeclared, larger cohort is needed before acting on it.
+
+## 2026-09-01: the live opening, settler by settler
+
+The oracle above asks whether a Settler should be *built*. The latest live
+runs were read to ask what happens after it is: the 08-31 King runs on this
+machine and the 09-01 Emperor runs on the fleet (`tools/live_ledger.py`),
+with `expansion-schedule` forced on and every host-only expansion gene
+(`parallel-settlers`, `land-grab`, `host-settler-pop`,
+`opening-settler-waits`, `fog-land-capacity`, `era-paced-expansion`,
+`escort-patience-runs-out`, `live-move-refusal-break`) live in the seat.
+Settlers counted are those built by turn 60, the first excluded; a walk is
+built → founded.
+
+| corpus | runs | cities@60 | built | founded | lost | mean walk | turns per tile | walker-turns still |
+|---|---:|---|---:|---:|---:|---:|---:|---:|
+| King 08-31 | 7 | 4, 2, 4, 4, 5, 4, 5 | 35 | 33 | 2 | 14.9 | 1.60 | 32% |
+| Emperor 09-01 | 9 | 2, 4, 3, 2, 3, 2, 7, 3, 4 | 41 | 27 | 13 | 12.7 | 2.83 | 48% |
+
+Classified against the schedule's own pace, city-turn by city-turn to turn
+60: on pace (cities plus walkers) 402 of 407 locally and 501 of 528 on
+Emperor; behind with a Settler building 4 and 11; behind at the population
+floor 0 and 0; behind with a Settler buildable and nothing building it 1 and
+16. Every one of the sixteen runs stood at 4–7 by turn 60 counting walkers
+and at 2–5 counting cities. The build side of the opening is answered; the
+walk is not. Where a walker's still turns go, on the corpus with a journal:
+the host's capture hold 31%, the planner's own "HELD short" and "holds …
+every step is in a hostile's reach" 26%, a guard it waits for 6%, a refused
+host move 5%.
+
+What shipped for it is `settler-walk-deadline`
+(`src/ai/advanced/settler_walk_deadline.rs`): a Settler out of a city past
+twelve Online turns founds the best legal site within two tiles. The
+pipeline genes are not the lever left in the opening; the walk is. To read
+it live, put the tag in `~/.civvis-live-force-on` when the halt lifts and
+compare cities@60 and the settler fates above on the next runs.

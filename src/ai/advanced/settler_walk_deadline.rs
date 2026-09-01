@@ -1,6 +1,6 @@
-//! `settler-walk-deadline`: a Settler that has been out of a city longer
-//! than the walk that wins stops chasing a ranked site and founds the best
-//! legal one it can reach at once.
+//! `settler-walk-deadline`: an opening Settler that has been out of a city
+//! longer than the walk that wins stops chasing a ranked site and founds
+//! the best legal one it can reach at once.
 //!
 //! ## What the latest live runs say (forensic of 2026-09-01)
 //!
@@ -27,7 +27,11 @@
 //! city had reached the population floor **0 and 0**; behind with a Settler
 //! buildable and nothing building it 1 and 16 (one Emperor run). Counting
 //! walkers as cities, every one of the sixteen runs stood at 4–7 by turn 60.
-//! Counting cities, they stood at 2–5.
+//! Counting cities, they stood at 2–5. On the live seat
+//! `settler_in_flight_allowed` is answered by `expansion-schedule`, then
+//! `land-grab` (two walkers plus one per three cities); `parallel-settlers`
+//! never decides and `host-settler-pop` already lowers the floor to the
+//! host's two — none of the host-only pipeline genes is the lever left.
 //!
 //! **The walkers do not convert.** The ten longest local walks (over 15
 //! turns) took 311 of the 491 turns walked for 185 straight-line tiles; on
@@ -46,39 +50,42 @@
 //!
 //! ## What the gene does
 //!
-//! It puts a clock on the walk. Once a Settler has been out of a city for
-//! [`SETTLER_WALK_DEADLINE_STANDARD`] standard turns (twelve on the ladder's
-//! Online speed — above the median live walk and under every long one), the
-//! ordinary site search is set aside and it takes the best legal site within
-//! [`SETTLER_WALK_DEADLINE_RADIUS`] tiles of where it stands, the tile it
-//! stands on included: founding at once if that is the best, else one safe
-//! step and founding on arrival. A site within reach must beat the tile
+//! It puts a clock on the walk. A Settler whose walk began by the band turn
+//! ([`AdvancedAi::expansion_band_turn`], turn 60 of the ladder's clock) and
+//! that has spent [`SETTLER_WALK_DEADLINE_STANDARD`] standard turns out of a
+//! city (twelve on Online speed — above the median live walk and under every
+//! long one) sets the ordinary site search aside and takes the best legal
+//! site within [`SETTLER_WALK_DEADLINE_RADIUS`] tiles of where it stands, the
+//! tile underfoot included: founding at once if that is the best, else one
+//! safe step and founding on arrival. A site within reach must beat the tile
 //! underfoot by [`SETTLER_WALK_DEADLINE_STEP_MARGIN`] to be worth the extra
-//! turn.
+//! turn, and must be worth at least [`SETTLER_WALK_DEADLINE_VALUE_SHARE`] of
+//! the site the Settler was walking to — a city near enough is taken over a
+//! better one it has not reached in twelve turns, but not a wasteland over a
+//! plan.
 //!
-//! The choice keeps every legality and Loyalty guard the exhaustion search
-//! keeps (`settler_never_idles`): the host's blocked plots, this Settler's
-//! dead sites, another Settler's reservation, the capture scars, a rival's
-//! sphere on a Science lane, and the engine's own revolt forecast at the same
-//! twenty-turn floor. The step is the ordinary safe step, so it still refuses
-//! a tile a visible hostile can take. What it does NOT keep is the ranking:
-//! at the deadline a city within reach beats the better city it has not
-//! reached in twelve turns, and the corpus above says that trade is the
-//! whole opening.
+//! Turns spent standing on an own city tile or embarked do not count: the
+//! clock measures the walk, not a guard wait at home or a crossing to
+//! another landmass (the first fires probe of this gene, without those two
+//! exclusions and the value floor, packed cities beside the capital and cut
+//! overseas colonies short — 0.56 fewer cities a seat, −18 wins per hundred).
 //!
-//! It runs after the emergency flee and the retreat from a threatened tile,
-//! before the target search, so a Settler in a raider's reach still leaves
-//! first. It never touches the pipeline, the Settler's production value, or
-//! `desired_cities`; the walk clock is the one `settle-sooner` already keeps
-//! (`settler_walk_started`), stamped for either gene. Off, every path is
-//! byte-identical.
+//! The choice keeps every legality and Loyalty guard the ordinary founding
+//! keeps: the host's blocked plots, this Settler's dead sites, another
+//! Settler's reservation, the capture scars, a rival's sphere on a Science
+//! lane, the frontier or rate Loyalty verdict, and the engine's own revolt
+//! forecast at the twenty-turn floor of the exhaustion search. The step is
+//! the ordinary safe step, so it still refuses a tile a visible hostile can
+//! take. It runs after the emergency flee and the retreat from a threatened
+//! tile, before the target search, so a Settler in a raider's reach still
+//! leaves first. It never touches the pipeline, the Settler's production
+//! value, or `desired_cities`. Off, every path is byte-identical.
 //!
 //! ⚠ Native walks are shorter (mean 7.3, p90 16 in `settler_walk_census`),
 //! so on the screen this fires on the tail — that is the fires probe under
 //! `docs/gene_screens/fires/settler-walk-deadline.json`. The live claim is
 //! the table above; the live measurement to read is cities@60 and the
-//! settler-fate columns of `tools/civ6_run_report.py` on the next runs with
-//! the tag in `~/.civvis-live-force-on`.
+//! settler fates on the next runs with the tag in `~/.civvis-live-force-on`.
 
 use super::settler_never_idles::STRANDED_SITE_MIN_HOLD_TURNS;
 use super::{AdvancedAi, VictoryTarget};
@@ -86,10 +93,11 @@ use crate::game::{Action, Game};
 use crate::think;
 use crate::Pos;
 
-/// Standard turns a Settler may be out of a city before the deadline: twelve
-/// on Online speed. The live walks that founded averaged 12.7–14.9 turns with
-/// the long tail (over 15) taking 63% of all turns walked; the median walk
-/// is well under this and the walks that cost the band are all over it.
+/// Standard turns a Settler may spend out of a city before the deadline:
+/// twelve on Online speed. The live walks that founded averaged 12.7–14.9
+/// turns with the long tail (over 15) taking 63% of all turns walked; the
+/// median walk is well under this and the walks that cost the band are all
+/// over it.
 pub const SETTLER_WALK_DEADLINE_STANDARD: u32 = 24;
 
 /// How far the deadline looks: two tiles, one turn of a Settler's walk on
@@ -100,18 +108,48 @@ pub const SETTLER_WALK_DEADLINE_RADIUS: i32 = 2;
 /// Settler stands on to be worth another turn out of a city.
 pub const SETTLER_WALK_DEADLINE_STEP_MARGIN: f64 = 3.0;
 
+/// The least a site within reach may be worth, as a share of the site the
+/// Settler was walking to. Half: the deadline trades a better city for a
+/// nearer one, never a plan for a wasteland.
+pub const SETTLER_WALK_DEADLINE_VALUE_SHARE: f64 = 0.5;
+
 impl AdvancedAi {
     /// The deadline in this game's turns.
     pub(super) fn settler_walk_deadline_turns(g: &Game) -> u32 {
         g.standard_duration(SETTLER_WALK_DEADLINE_STANDARD).max(1)
     }
 
-    /// Turns this Settler has been walking, by the clock
-    /// `advanced_settler_step` stamps the first turn it steps the unit.
-    pub(super) fn settler_turns_out(&self, g: &Game, uid: u32) -> u32 {
-        self.settler_walk_started
+    /// Advance this Settler's walk clock, once per turn, and return
+    /// `(turn the walk began, turns out of a city)`. A turn on an own city
+    /// tile or embarked is not a turn out. Entries follow the unit
+    /// (`remap_unit_memory`) and die with it.
+    pub(super) fn note_settler_walk(&mut self, g: &Game, pid: usize, uid: u32) -> (u32, u32) {
+        let unit = &g.units[&uid];
+        let at_home = g
+            .city_at(unit.pos)
+            .is_some_and(|cid| g.cities[&cid].owner == pid);
+        let out = !at_home && !g.is_embarked(unit);
+        let turn = g.turn;
+        self.settler_walk_clock
+            .retain(|other, _| g.units.contains_key(other));
+        let entry = self
+            .settler_walk_clock
+            .entry(uid)
+            .or_insert((turn, turn, 0));
+        if entry.1 != turn {
+            entry.1 = turn;
+            if out {
+                entry.2 += 1;
+            }
+        }
+        (entry.0, entry.2)
+    }
+
+    /// Turns this Settler has spent out of a city, as last noted.
+    pub(super) fn settler_turns_out(&self, uid: u32) -> u32 {
+        self.settler_walk_clock
             .get(&uid)
-            .map_or(0, |started| g.turn.saturating_sub(*started))
+            .map_or(0, |(_, _, out)| *out)
     }
 
     /// Every legal site within the deadline radius and what it is worth,
@@ -126,6 +164,7 @@ impl AdvancedAi {
         let here = g.units[&uid].pos;
         let avoid = self.settler_avoid.get(&uid).map(|(pos, _)| *pos);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        let loyalty_rate = self.base.loyalty_rate_alarm || science_targeted;
         g.wdisk(here, SETTLER_WALK_DEADLINE_RADIUS)
             .into_iter()
             .filter(|pos| {
@@ -138,6 +177,12 @@ impl AdvancedAi {
                     && (*pos == here || g.route_step(uid, *pos, 0).is_some())
                     && self.exhaustion_site_unpriceable(g, *pos).is_none()
                     && !(science_targeted && Self::inside_rival_sphere(g, pid, *pos))
+                    && if loyalty_rate {
+                        self.settle_site_loyalty_verdict(g, pid, *pos).is_none()
+                    } else {
+                        self.settle_site_frontier_loyalty_verdict(g, pid, *pos)
+                            .is_none()
+                    }
                     && Self::settle_site_forecast_revolt(g, pid, *pos)
                         .filter(|(_, turns)| {
                             science_targeted || *turns < STRANDED_SITE_MIN_HOLD_TURNS
@@ -155,22 +200,32 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// The best of [`Self::settler_walk_deadline_candidates`].
+    /// The best of [`Self::settler_walk_deadline_candidates`] that clears
+    /// the value floor set by the site the Settler was walking to, skipping
+    /// the tile underfoot when the engine will not take a city there.
     pub(super) fn settler_walk_deadline_site(
         &self,
         g: &Game,
         pid: usize,
         uid: u32,
     ) -> Option<(Pos, f64)> {
+        let here = g.units[&uid].pos;
+        let floor = self
+            .settler_targets
+            .get(&uid)
+            .map(|target| self.settle_value(g, pid, *target) * SETTLER_WALK_DEADLINE_VALUE_SHARE);
         self.settler_walk_deadline_candidates(g, pid, uid)
             .into_iter()
+            .filter(|(pos, worth)| {
+                (*pos != here || g.can_found_city(uid)) && floor.is_none_or(|floor| *worth >= floor)
+            })
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
     }
 
     /// The deadline's turn, when it has come: `Some(acted)` when the Settler
     /// founded or stepped toward the site within reach, `None` when the walk
-    /// is still inside its deadline or nothing within reach may be founded —
-    /// the ordinary step then runs untouched.
+    /// began after the band turn, is still inside its deadline, or nothing
+    /// within reach may be founded — the ordinary step then runs untouched.
     pub(super) fn settler_walk_deadline_step(
         &mut self,
         g: &mut Game,
@@ -180,12 +235,15 @@ impl AdvancedAi {
         if !self.settler_walk_deadline {
             return None;
         }
-        let out = self.settler_turns_out(g, uid);
+        let (began, out) = self.note_settler_walk(g, pid, uid);
         let deadline = Self::settler_walk_deadline_turns(g);
-        if out < deadline {
+        if began > Self::expansion_band_turn(g) || out < deadline {
             return None;
         }
         let here = g.units[&uid].pos;
+        if g.is_embarked(&g.units[&uid]) {
+            return None;
+        }
         let (site, worth) = self.settler_walk_deadline_site(g, pid, uid)?;
         if site == here {
             return Some(self.found_at_walk_deadline(g, pid, uid, out, deadline, worth));
