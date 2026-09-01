@@ -1,5 +1,7 @@
 # Evaluation integrity: what failed, why it was possible, and what closes it
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 > **2026-08-23.** The paired evaluator this plan remediated — `ai_eval`, its
 > promotion matrix and its typed arm registry in `src/elo.rs` — has been
 > retired; the gene screen (`docs/GENE_SCREEN.md`) is the one instrument that
