@@ -396,7 +396,7 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let mut score = Self::settlement_prefilter_score(g, pos)
+            let mut score = Self::settlement_prefilter_score(g, rival, pos)
                 - SITE_DISTANCE_WEIGHT * f64::from(g.wdist(settler.pos, pos));
             if let Some(was) = heading {
                 let progress = g.wdist(was, pos) - g.wdist(settler.pos, pos);

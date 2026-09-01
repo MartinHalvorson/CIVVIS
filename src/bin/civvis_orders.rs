@@ -2544,6 +2544,38 @@ fn policy_deck_order(game: &civvis::game::Game, pid: usize) -> Order {
     }
 }
 
+/// Cards in a speculative deck which Civilization VI cannot accept yet.
+///
+/// `Ai::take_turn` advances a throwaway board through a complete CIVVIS turn.
+/// That can finish the active civic on `planned_game` and make the next civic's
+/// cards look unlocked even though the authoritative mirror is still on the
+/// previous host export.  The control mod checks `IsPolicyUnlocked` at the
+/// moment it receives the order, so sending that deck creates a refusal loop
+/// until the next export catches up.  Cards already slotted, or available on
+/// the authoritative board, are legal; anything else must wait for that export.
+fn policy_deck_cards_not_currently_legal(
+    planned_game: &civvis::game::Game,
+    authoritative_game: &civvis::game::Game,
+    pid: usize,
+) -> Vec<String> {
+    let Some(planned_player) = planned_game.players.get(pid) else {
+        return Vec::new();
+    };
+    let Some(authoritative_player) = authoritative_game.players.get(pid) else {
+        return Vec::new();
+    };
+    let available = authoritative_game.available_policies(pid);
+    planned_player
+        .policies
+        .iter()
+        .filter(|policy| {
+            !authoritative_player.policies.contains(*policy)
+                && !available.iter().any(|candidate| candidate == *policy)
+        })
+        .map(|policy| format!("POLICY_{}", policy.as_str().to_ascii_uppercase()))
+        .collect()
+}
+
 impl Order {
     fn to_json(&self) -> String {
         let mut parts = vec![format!("\"kind\":{}", quote(self.kind))];
@@ -3196,8 +3228,15 @@ fn withholdable_treatments() -> String {
 /// universe — seating one is an addition, and it is the only route a gene
 /// priced on the arena has to the live board before the whole-game screen
 /// answers (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
+///
+/// A caller can also name a treatment that already ships in deployment. That
+/// is an idempotent part of a wider profile, not a reason to kill the live
+/// decider: retain only the rows that actually change the genome. A list made
+/// entirely of deployed rows remains an error, since it is a mislabeled
+/// no-op arm rather than a force-on experiment.
 fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
     let mut selected = Vec::new();
+    let mut already_deployed = Vec::new();
     for treatment in forced {
         let tag = match civvis::ai::GENES
             .iter()
@@ -3211,10 +3250,16 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
                 tag
             }
             Some(tag) => {
+                if civvis::ai::gene_ledger::deployment_treatments().contains(&tag) {
+                    if !already_deployed.contains(&tag) {
+                        already_deployed.push(tag);
+                    }
+                    continue;
+                }
                 return Err(format!(
-                    "--with treatment {treatment:?} already ships in the deployment genome \
-                     (tag {tag:?}); only a ledger-held live treatment or a held-off opt-in \
-                     forms a distinct arm"
+                    "--with treatment {treatment:?} is not a ledger-held live treatment or \
+                     held-off opt-in (tag {tag:?}); this binary can force: {}",
+                    forceable_live_treatments()
                 ));
             }
             None => {
@@ -3227,6 +3272,17 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
         if !selected.contains(&tag) {
             selected.push(tag);
         }
+    }
+    if selected.is_empty() && !already_deployed.is_empty() {
+        return Err(format!(
+            "--with treatment(s) {} already ship in the deployment genome; name at least one \
+             ledger-held live treatment or held-off opt-in to form a distinct arm",
+            already_deployed
+                .iter()
+                .map(|tag| format!("{tag:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     Ok(selected)
 }
@@ -3527,7 +3583,15 @@ fn decide(
         }
     }
     if policy_changed {
-        orders.push(policy_deck_order(&planned_game, 0));
+        let deferred = policy_deck_cards_not_currently_legal(&planned_game, &mirror_state.game, 0);
+        if deferred.is_empty() {
+            orders.push(policy_deck_order(&planned_game, 0));
+        } else {
+            note_bits.push(format!(
+                "policy_deck_deferred_future_unlocks={}",
+                deferred.join(",")
+            ));
+        }
     }
 
     let production_hints =
@@ -6363,6 +6427,327 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         })
     );
 }
+
+/// One movement edge the host actually completed.  Unlike an outbound order,
+/// this is evidence in the reverse direction: Civilization VI admitted the
+/// step, so the reconstructed board must be able to admit it too.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ObservedHostMove {
+    turn: u32,
+    unit: i64,
+    from: (i32, i32),
+    to: (i32, i32),
+}
+
+/// The outcome of asking the reconstructed board about one host-observed step.
+/// `Unverifiable` is deliberately distinct from agreement: a move that crossed
+/// ground the mirror never received cannot validate either engine.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum HostMoveAuditVerdict {
+    ModelAllowed,
+    ModelRefused(String),
+    Unverifiable(String),
+}
+
+fn observed_host_move(event: &serde_json::Value) -> Option<ObservedHostMove> {
+    if event.get("kind").and_then(|kind| kind.as_str()) != Some("host_move") {
+        return None;
+    }
+    let nonnegative = |key: &str| {
+        event
+            .get(key)
+            .and_then(|value| value.as_i64())
+            .filter(|value| *value >= 0 && *value <= i64::from(i32::MAX))
+            .map(|value| value as i32)
+    };
+    let turn = nonnegative("turn")? as u32;
+    Some(ObservedHostMove {
+        turn,
+        unit: event.get("unit")?.as_i64()?,
+        from: (nonnegative("from_x")?, nonnegative("from_y")?),
+        to: (nonnegative("x")?, nonnegative("y")?),
+    })
+}
+
+/// Advance the audit's local state shadow after a host-observed movement edge.
+/// State exports are periodic while `UnitMoved` can fire several times between
+/// them; without this, a unit that has already vacated a tile remains an
+/// invented blocker for the next observed edge.
+fn advance_observed_host_position(
+    state: &mut civvis::mirror::StateSnapshot,
+    observed: &ObservedHostMove,
+) -> bool {
+    let Some(unit) = state.units.iter_mut().find(|unit| unit.id == observed.unit) else {
+        return false;
+    };
+    unit.x = observed.to.0;
+    unit.y = observed.to.1;
+    true
+}
+
+/// A `unit_lost` ledger row is explicitly one of our units, so it only affects
+/// the local unit list.  Keeping it in the shadow would make a later observed
+/// move into its former tile look like a false stacking mismatch.
+fn remove_observed_local_unit(state: &mut civvis::mirror::StateSnapshot, unit: i64) -> bool {
+    let before = state.units.len();
+    state.units.retain(|candidate| candidate.id != unit);
+    state.units.len() != before
+}
+
+/// Remove a known foreign combat casualty without confusing equal per-player
+/// Civilization VI unit ids.  The combat ledger gives the owner, while each
+/// foreign export stores units under that owner (or gives a hostile its player).
+/// An old hostile row without an owner is intentionally retained rather than
+/// guessing that an equally numbered casualty was it.
+fn remove_observed_foreign_unit(
+    state: &mut civvis::mirror::StateSnapshot,
+    player: i64,
+    unit: i64,
+) -> bool {
+    let mut removed = false;
+    for rival in &mut state.rivals {
+        if rival.player as i64 != player {
+            continue;
+        }
+        let before = rival.units.len();
+        rival.units.retain(|candidate| candidate.id != unit);
+        removed |= rival.units.len() != before;
+    }
+    for minor in &mut state.minors {
+        if minor.player as i64 != player {
+            continue;
+        }
+        let before = minor.units.len();
+        minor.units.retain(|candidate| candidate.id != unit);
+        removed |= minor.units.len() != before;
+    }
+    let before = state.hostiles.len();
+    state
+        .hostiles
+        .retain(|candidate| candidate.id != unit || candidate.player != player);
+    removed || state.hostiles.len() != before
+}
+
+/// Reconcile combat casualties that arrive between two state exports.  `combat`
+/// names both component type and owner, so this never treats a city/district
+/// id as a unit or removes another player's equally numbered unit.
+fn advance_observed_combat_deaths(
+    state: &mut civvis::mirror::StateSnapshot,
+    event: &serde_json::Value,
+) {
+    for (side, killed, local) in [
+        ("attacker", "attacker_killed", "ours"),
+        ("defender", "defender_killed", "against_us"),
+    ] {
+        if event.get(killed).and_then(|value| value.as_bool()) != Some(true) {
+            continue;
+        }
+        let Some(participant) = event.get(side) else {
+            continue;
+        };
+        if participant.get("type").and_then(|value| value.as_str()) != Some("unit") {
+            continue;
+        }
+        let (Some(player), Some(unit)) = (
+            participant.get("player").and_then(|value| value.as_i64()),
+            participant.get("id").and_then(|value| value.as_i64()),
+        ) else {
+            continue;
+        };
+        if event.get(local).and_then(|value| value.as_bool()) == Some(true) {
+            remove_observed_local_unit(state, unit);
+        } else {
+            remove_observed_foreign_unit(state, player, unit);
+        }
+    }
+}
+
+/// Give a model refusal the most immediate visible explanation.  This is an
+/// audit label, never a replacement for the host's own operation-result
+/// reason: the mirror can prove that a blocker is present, but not that it was
+/// the first check the host would have made.
+fn model_move_refusal_reason(game: &civvis::game::Game, uid: u32, to: civvis::Pos) -> String {
+    let Some(mover) = game.units.get(&uid) else {
+        return "unit_gone".to_string();
+    };
+    let occupants = game.unit_ids_at(to).to_vec();
+    let own: Vec<u32> = occupants
+        .iter()
+        .copied()
+        .filter(|other| game.units[other].owner == mover.owner)
+        .collect();
+    if !own.is_empty() {
+        return "own_unit".to_string();
+    }
+    let foreign: Vec<u32> = occupants
+        .iter()
+        .copied()
+        .filter(|other| game.units[other].owner != mover.owner)
+        .collect();
+    if !foreign.is_empty() {
+        return "foreign_unit".to_string();
+    }
+    let Some(tile) = game.map.get(to) else {
+        return "unmapped_destination".to_string();
+    };
+    if !game.rules.is_passable(tile) {
+        return "terrain".to_string();
+    }
+    if game.closed_borders.contains(&to) {
+        return "border".to_string();
+    }
+    if game.in_enemy_zoc(mover.owner, to) {
+        return "zoc".to_string();
+    }
+    "model_refused".to_string()
+}
+
+/// Replay one host-observed adjacent step against the mirror reconstructed from
+/// the state that preceded it.  A probe copy of the unit starts at the host's
+/// `from` coordinate with ample movement: this tests structural legality
+/// (terrain, borders, stacking and foreign units), not whether an earlier host
+/// action had already spent its movement allowance.
+fn audit_host_move(
+    snapshot: &civvis::mirror::Snapshot,
+    state: &civvis::mirror::StateSnapshot,
+    fallback_players: usize,
+    fallback_turns: u32,
+    frontier: u32,
+    observed: &ObservedHostMove,
+) -> HostMoveAuditVerdict {
+    let from = civvis::hex::offset_to_axial(observed.from.0, observed.from.1);
+    let to = civvis::hex::offset_to_axial(observed.to.0, observed.to.1);
+    let (players, turns) = mirror_setup(state, fallback_players, fallback_turns);
+    let mirror = civvis::mirror::LiveMirror::new(snapshot, state, players, 1, turns, frontier);
+    if !mirror.game.map.tiles.contains_key(&from) || !mirror.game.map.tiles.contains_key(&to) {
+        return HostMoveAuditVerdict::Unverifiable("unrevealed_ground".to_string());
+    }
+    if mirror.game.wdist(from, to) != 1 {
+        return HostMoveAuditVerdict::Unverifiable("non_adjacent_event".to_string());
+    }
+    let Some(uid) = mirror.uid_of.get(&observed.unit).copied() else {
+        return HostMoveAuditVerdict::Unverifiable("unit_unmapped".to_string());
+    };
+    match mirror.game.can_move_observed_step(uid, from, to) {
+        Some(true) => HostMoveAuditVerdict::ModelAllowed,
+        Some(false) => {
+            HostMoveAuditVerdict::ModelRefused(model_move_refusal_reason(&mirror.game, uid, to))
+        }
+        None => HostMoveAuditVerdict::Unverifiable("unit_missing".to_string()),
+    }
+}
+
+/// Audit every `host_move` event in a recorded run.  The mod only emits one
+/// after it knows both endpoints, and this command preserves the remaining
+/// uncertainty as a count instead of silently calling it agreement.
+fn audit_host_moves(events: &Path, fallback_players: usize, fallback_turns: u32, frontier: u32) {
+    let Ok(raw) = std::fs::read_to_string(events) else {
+        eprintln!("civvis-orders: cannot read {}", events.display());
+        return;
+    };
+    let mut snapshots: std::collections::BTreeMap<u32, civvis::mirror::Snapshot> =
+        Default::default();
+    let mut current: Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> = None;
+    let mut observed = 0usize;
+    let mut comparable = 0usize;
+    let mut model_allowed = 0usize;
+    let mut model_refused = 0usize;
+    let mut unverifiable: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut mismatches: Vec<serde_json::Value> = Vec::new();
+
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        match event.get("kind").and_then(|kind| kind.as_str()) {
+            Some("state") => {
+                let Ok(state) = serde_json::from_value::<civvis::mirror::StateSnapshot>(event)
+                else {
+                    continue;
+                };
+                let snapshot = snapshots
+                    .entry(state.turn)
+                    .or_insert_with(|| {
+                        civvis::mirror::snapshot_from_events_at(events, Some(state.turn))
+                            .unwrap_or_default()
+                    })
+                    .clone();
+                current = Some((snapshot, state));
+            }
+            Some("host_move") => {
+                observed += 1;
+                let Some(host_move) = observed_host_move(&event) else {
+                    *unverifiable
+                        .entry("malformed_event".to_string())
+                        .or_default() += 1;
+                    continue;
+                };
+                let Some((snapshot, state)) = current.as_mut() else {
+                    *unverifiable
+                        .entry("no_prior_state".to_string())
+                        .or_default() += 1;
+                    continue;
+                };
+                match audit_host_move(
+                    snapshot,
+                    state,
+                    fallback_players,
+                    fallback_turns,
+                    frontier,
+                    &host_move,
+                ) {
+                    HostMoveAuditVerdict::ModelAllowed => {
+                        comparable += 1;
+                        model_allowed += 1;
+                    }
+                    HostMoveAuditVerdict::ModelRefused(reason) => {
+                        comparable += 1;
+                        model_refused += 1;
+                        mismatches.push(serde_json::json!({
+                            "turn": host_move.turn,
+                            "unit": host_move.unit,
+                            "from": host_move.from,
+                            "to": host_move.to,
+                            "reason": reason,
+                        }));
+                    }
+                    HostMoveAuditVerdict::Unverifiable(reason) => {
+                        *unverifiable.entry(reason).or_default() += 1;
+                    }
+                }
+                // Later host moves in this state interval must see the earlier
+                // mover at its observed destination, even if this particular
+                // edge was not comparable because the mirror lacked some fact.
+                advance_observed_host_position(state, &host_move);
+            }
+            Some("unit_lost") | Some("unit_captured") => {
+                if let (Some((_, state)), Some(unit)) = (
+                    current.as_mut(),
+                    event.get("unit").and_then(|value| value.as_i64()),
+                ) {
+                    remove_observed_local_unit(state, unit);
+                }
+            }
+            Some("combat") => {
+                if let Some((_, state)) = current.as_mut() {
+                    advance_observed_combat_deaths(state, &event);
+                }
+            }
+            _ => {}
+        }
+    }
+    println!(
+        "{}",
+        serde_json::json!({
+            "observed": observed,
+            "comparable": comparable,
+            "model_allowed": model_allowed,
+            "model_refused": model_refused,
+            "unverifiable": unverifiable,
+            "mismatches": mismatches,
+        })
+    );
+}
 /// `--strategy` named a league genome for this seat to play. The league is
 /// retired (#2357): the live seat plays the deployment genome — `AdvancedAi`
 /// with the gene ledger applied — and the gene screen prices everything else.
@@ -6382,7 +6767,10 @@ fn refuse_retired_strategy_flag(args: &[String]) {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(dir) = arg_text(&args, "--mirror") else {
-        eprintln!("usage: civvis-orders --mirror <run-dir> [--turn N] [--serve] [--audit-orders <orders.jsonl>]");
+        eprintln!(
+            "usage: civvis-orders --mirror <run-dir> [--turn N] [--serve] \\
+             [--audit-orders <orders.jsonl>] [--audit-host-moves]"
+        );
         std::process::exit(2);
     };
     let players: usize = arg_text(&args, "--players")
@@ -6552,6 +6940,14 @@ fn main() {
     // Offline: replay a recorded run's orders through the postcondition checks.
     if let Some(orders_path) = arg_text(&args, "--audit-orders") {
         audit_orders(&events, Path::new(&orders_path));
+        return;
+    }
+    // Offline behavioural conformance: every host-observed unit step is checked
+    // against the preceding reconstructed board, including moves not proposed by
+    // CIVVIS.  This is the reverse direction the outbound order verifier cannot
+    // see on its own.
+    if args.iter().any(|arg| arg == "--audit-host-moves") {
+        audit_host_moves(&events, players, max_turns, frontier);
         return;
     }
     let serve = args.iter().any(|a| a == "--serve");
@@ -7972,7 +8368,7 @@ mod tests {
     }
 
     #[test]
-    fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
+    fn a_live_arm_forces_held_treatments_and_tolerates_deployment_members() {
         // The exact held live genes move with the deployment selection.
         let held_live = civvis::ai::gene_ledger::ledger_held_live_treatments()
             .first()
@@ -8004,7 +8400,19 @@ mod tests {
 
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
             .expect_err("a treatment already in the live genome cannot form a force-on arm");
-        assert!(host_only.contains("already ships"), "{host_only}");
+        assert!(host_only.contains("deployment genome"), "{host_only}");
+
+        let mixed = super::forced_live_treatments(&[
+            "science-victory-drive".to_string(),
+            held_live.to_string(),
+            "science-victory-drive".to_string(),
+        ])
+        .expect("a wider profile may repeat a gene deployment already supplies");
+        assert_eq!(mixed, vec![held_live]);
+        assert!(
+            civvis::ai::gene_ledger::deployment_treatments().contains(&"science-victory-drive"),
+            "the regression needs a deployment-provided member alongside the held treatment"
+        );
 
         // A held-off opt-in is the other thing an arm may name: it is the
         // only route a gene priced on the arena has to the live board
@@ -13105,6 +13513,37 @@ mod tests {
     }
 
     #[test]
+    fn policy_deck_waits_for_cards_unlocked_by_the_authoritative_civic() {
+        let mut authoritative = civvis::game::Game::new(2, 12, 12, 1, 50, 0);
+        authoritative.players[0]
+            .policies
+            .insert(civvis::name!("urban_planning"));
+        let mut planned = authoritative.clone();
+        planned.players[0]
+            .policies
+            .insert(civvis::name!("new_deal"));
+
+        assert_eq!(
+            policy_deck_cards_not_currently_legal(&planned, &authoritative, 0),
+            vec!["POLICY_NEW_DEAL".to_string()]
+        );
+
+        // Once the host export reports Suffrage, the same speculative deck is
+        // legal and should cross on the next decision instead of being lost.
+        authoritative.players[0]
+            .civics
+            .insert(civvis::name!("suffrage"));
+        assert!(policy_deck_cards_not_currently_legal(&planned, &authoritative, 0).is_empty());
+
+        // Existing cards remain legal even when the mirror has not learned the
+        // civic that originally unlocked them.
+        planned.players[0]
+            .policies
+            .remove(&civvis::name!("new_deal"));
+        assert!(policy_deck_cards_not_currently_legal(&planned, &authoritative, 0).is_empty());
+    }
+
+    #[test]
     fn renamed_units_and_improvements_use_firaxis_type_ids() {
         let winged_hussar = civvis::game::Item::Unit {
             unit: civvis::name!("winged_hussar"),
@@ -13224,6 +13663,222 @@ mod tests {
             np: false,
             vis: false,
         }
+    }
+
+    #[test]
+    fn a_host_accepted_edge_replays_from_its_reported_source() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 7,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 7,
+            cities: vec![StateCity {
+                id: 1,
+                name: "Rome".to_string(),
+                x: 1,
+                y: 1,
+                pop: 3,
+                capital: true,
+                ..StateCity::default()
+            }],
+            units: vec![StateUnit {
+                id: 42,
+                kind: "UNIT_WARRIOR".to_string(),
+                // The last state can be stale; the observed source below is
+                // deliberately a different, adjacent host coordinate.
+                x: 2,
+                y: 3,
+                hp: 100.0,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let observed = ObservedHostMove {
+            turn: 7,
+            unit: 42,
+            from: (3, 3),
+            to: (4, 3),
+        };
+
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &observed),
+            HostMoveAuditVerdict::ModelAllowed,
+            "the host source, not the old state position, is replayed"
+        );
+
+        state.units.push(StateUnit {
+            id: 43,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 4,
+            y: 3,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &observed),
+            HostMoveAuditVerdict::ModelRefused("own_unit".to_string()),
+            "a host-accepted edge exposes a model stacking disagreement"
+        );
+    }
+
+    #[test]
+    fn successive_host_moves_do_not_leave_vacated_units_as_audit_blockers() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            cities: vec![StateCity {
+                id: 1,
+                name: "Rome".to_string(),
+                x: 0,
+                y: 0,
+                pop: 3,
+                capital: true,
+                ..StateCity::default()
+            }],
+            units: vec![
+                StateUnit {
+                    id: 42,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 2,
+                    y: 3,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 43,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 1,
+                    y: 3,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let first = ObservedHostMove {
+            turn: 8,
+            unit: 42,
+            from: (2, 3),
+            to: (3, 3),
+        };
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &first),
+            HostMoveAuditVerdict::ModelAllowed
+        );
+        assert!(advance_observed_host_position(&mut state, &first));
+
+        let second = ObservedHostMove {
+            turn: 8,
+            unit: 43,
+            from: (1, 3),
+            to: (2, 3),
+        };
+        assert_eq!(
+            audit_host_move(&snapshot, &state, 2, 250, 0, &second),
+            HostMoveAuditVerdict::ModelAllowed,
+            "the first mover has already vacated this destination in the shadow"
+        );
+        assert!(advance_observed_host_position(&mut state, &second));
+        assert_eq!(state.units[0].x, 3);
+        assert_eq!(state.units[1].x, 2);
+    }
+
+    #[test]
+    fn combat_shadow_removes_only_the_named_foreign_unit() {
+        let mut state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 7,
+                kind: "UNIT_WARRIOR".to_string(),
+                ..StateUnit::default()
+            }],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    units: vec![StateUnit {
+                        id: 7,
+                        kind: "UNIT_WARRIOR".to_string(),
+                        ..StateUnit::default()
+                    }],
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 3,
+                    units: vec![StateUnit {
+                        id: 7,
+                        kind: "UNIT_WARRIOR".to_string(),
+                        ..StateUnit::default()
+                    }],
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        advance_observed_combat_deaths(
+            &mut state,
+            &serde_json::json!({
+                "kind": "combat", "defender_killed": true, "against_us": false,
+                "defender": {"type": "unit", "player": 2, "id": 7},
+            }),
+        );
+        assert_eq!(state.units.len(), 1, "our same-numbered unit remains");
+        assert!(
+            state.rivals[0].units.is_empty(),
+            "the dead defender is gone"
+        );
+        assert_eq!(
+            state.rivals[1].units.len(),
+            1,
+            "a different player's same-numbered unit remains"
+        );
+
+        assert!(remove_observed_local_unit(&mut state, 7));
+        assert!(
+            state.units.is_empty(),
+            "local removal uses the local roster only"
+        );
+    }
+
+    #[test]
+    fn host_move_events_require_complete_nonnegative_coordinates() {
+        let event = serde_json::json!({
+            "kind": "host_move", "turn": 7, "unit": 42,
+            "from_x": 3, "from_y": 3, "x": 4, "y": 3,
+        });
+        assert_eq!(
+            observed_host_move(&event),
+            Some(ObservedHostMove {
+                turn: 7,
+                unit: 42,
+                from: (3, 3),
+                to: (4, 3),
+            })
+        );
+        assert!(
+            observed_host_move(&serde_json::json!({
+                "kind": "host_move", "turn": 7, "unit": 42,
+                "from_x": -1, "from_y": 3, "x": 4, "y": 3,
+            }))
+            .is_none(),
+            "an absent source must stay uncomparable"
+        );
+        assert!(
+            observed_host_move(&serde_json::json!({"kind": "move_refused"})).is_none(),
+            "outbound refusal telemetry is not reverse-legality evidence"
+        );
     }
 
     #[test]

@@ -1,5 +1,7 @@
 # The `advanced_v1` re-pin log
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 Every change that reached `src/ai.rs` or `src/ai/advanced.rs` under the frozen
 rating anchor, and the argument for why it did not change what the anchor
 plays. It was the paper trail behind `ELO_PROTOCOL_VERSION` and the ledger in
@@ -1904,3 +1906,27 @@ be hidden behind a gene: every simulated seat uses the same assignment logic.
 The anchor therefore moves from v28's 18,515 decisions and
 `0x04f5_da2a_c86b_099c` to **18,508 and `0x66d9_754b_9443_6085`** across its
 five profiles. The shipped ruleset fingerprint does not move.
+
+## v30 (2026-09-01) — superseded manifest-order re-pin
+
+The direct installed audit in v30 changed nine rows after applying content-pack
+files alphabetically. That was an audit-loader bug: expansion overlays ran
+before the base rows they update, and the cross-expansion overlay was deferred
+past the later Expansion 1 content. The resulting values (Pike and Shot 3;
+Tagma 180/3/Tank; and the inverted unique-building and wonder rows) were not
+the effective Gathering Storm rules.
+
+## v31 (2026-09-01) — follow the game's `.modinfo` database order
+
+`tools/civ6_fidelity.py` now follows the `UpdateDatabase` actions in each
+expansion/content-pack manifest, including descending file priorities. The
+shared rules are restored to the effective values: Pike and Shot upkeep 4;
+Tagma 220 Production, 4 upkeep and Cuirassier upgrade; Prasat 6 Faith with one
+Relic slot; Sukiennice 2 Gold; Tlachtli 2 Culture; and Eyjafjallajökull adjacent
+Food 1. Both the complete installed audit and the compatible cache audit report
+**0 divergent fields across 29 tables**.
+
+This is a fidelity-tool correction plus a shared-rules re-pin, not a controller
+treatment. The `advanced_v1` anchor returns to **18,508 decisions and
+`0x66d9_754b_9443_6085`**; the shipped ruleset fingerprint returns to
+`fnv1a64:7c1bacacca3d4120`.

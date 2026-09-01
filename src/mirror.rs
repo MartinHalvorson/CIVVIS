@@ -476,24 +476,32 @@ impl Snapshot {
 
 /// Read every `tiles` chunk out of a run's `events.jsonl`.
 ///
-/// The stream is append-only and a chunk is self-describing, so re-reading from
-/// the start is both simplest and correct — later chunks overwrite earlier ones
-/// for the same plot, which is what [`Snapshot::from_chunks`] does.
+/// When a run has state events, the snapshot is cut at the stream position of
+/// the selected state. A state and a later mid-turn tile delta carry the same
+/// turn number but describe different boards; pairing the state with that
+/// later delta makes a replay judge one frame against another. Runs without
+/// state events retain the old whole-stream behaviour.
 pub fn snapshot_from_events(path: &std::path::Path) -> std::io::Result<Snapshot> {
     snapshot_from_events_at(path, None)
 }
 
-/// Read the explored map as it existed through `turn`, never from its future.
+/// Read the explored map as it existed at the selected state, never from its
+/// future. If the run has no matching state event, this falls back to the
+/// historical turn-only boundary.
 pub fn snapshot_from_events_at(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> std::io::Result<Snapshot> {
     let raw = std::fs::read_to_string(path)?;
+    let state_line = latest_state_line(&raw, turn);
     // In stream order, so a later chunk's plot wins whichever kind it is;
     // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
     // see `Snapshot::merge_delta`.
     let mut snapshot = Snapshot::default();
-    for line in raw.lines() {
+    for (line_number, line) in raw.lines().enumerate() {
+        if state_line.is_some_and(|limit| line_number > limit) {
+            break;
+        }
         if !line.contains("\"tiles\"") {
             continue;
         }
@@ -509,8 +517,36 @@ pub fn snapshot_from_events_at(
             }
         }
     }
-    apply_finished_improvements(&raw, turn, &mut snapshot);
+    apply_finished_improvements(&raw, turn, state_line, &mut snapshot);
     Ok(snapshot)
+}
+
+/// The line at which [`state_from_events`] selects its state.
+///
+/// State selection is newest-wins for a turn, and highest-turn-wins when no
+/// turn was requested. Keeping the same rule here makes a snapshot and a state
+/// share one exact point in the append-only event stream.
+fn latest_state_line(raw: &str, turn: Option<u32>) -> Option<usize> {
+    let mut best: Option<(u32, usize)> = None;
+    for (line_number, line) in raw.lines().enumerate() {
+        if !line.contains("\"state\"") {
+            continue;
+        }
+        let Ok(state) = state_from_json(line) else {
+            continue;
+        };
+        if turn.is_some_and(|want| state.turn != want) {
+            continue;
+        }
+        if best
+            .as_ref()
+            .map(|(best_turn, _)| state.turn >= *best_turn)
+            .unwrap_or(true)
+        {
+            best = Some((state.turn, line_number));
+        }
+    }
+    best.map(|(_, line_number)| line_number)
 }
 
 /// Fold `improved` events onto the assembled map, so a finished improvement is
@@ -540,8 +576,16 @@ pub fn snapshot_from_events_at(
 /// corrects it. Pillaging is far rarer than building, the window is the same few
 /// turns, and the sweep is authoritative either way — so this trades a common
 /// error for a rare one rather than removing error altogether.
-fn apply_finished_improvements(raw: &str, turn: Option<u32>, snapshot: &mut Snapshot) {
-    for line in raw.lines() {
+fn apply_finished_improvements(
+    raw: &str,
+    turn: Option<u32>,
+    state_line: Option<usize>,
+    snapshot: &mut Snapshot,
+) {
+    for (line_number, line) in raw.lines().enumerate() {
+        if state_line.is_some_and(|limit| line_number > limit) {
+            break;
+        }
         if !line.contains("\"improved\"") {
             continue;
         }
@@ -2689,6 +2733,16 @@ pub struct StateRival {
     /// load-bearing: without it any older export fails to deserialize whole.
     #[serde(default)]
     pub science_projects: Option<Vec<String>>,
+    /// Civilization VI's exact World Rankings science-victory position and
+    /// current movement. These are not inferred from repeatable laser project
+    /// counts: a Terrestrial Laser Station only helps while it is powered.
+    /// `-1` is a refused host read; NaN means an older export omitted the key.
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_per_turn: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_needed: f64,
     /// The culture victory's own two numbers as the shipped screen shows them
     /// for every major: tourists visiting this rival, and its staycationers
     /// (which set the bar every other civilization must clear). `-1` when the
@@ -2985,6 +3039,17 @@ pub struct StateSnapshot {
     /// fact, while `Some([])` is an authoritative early-game answer.
     #[serde(default)]
     pub science_projects: Option<Vec<String>>,
+    /// Exact science-victory readings from Civilization VI's World Rankings:
+    /// current points, their active per-turn increase, and the target for this
+    /// game speed. These make the live tracker truthful after the Exoplanet
+    /// Expedition, including the actual effects of laser stations.
+    /// `-1` is a refused host read; NaN means an older export omitted the key.
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_per_turn: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_needed: f64,
     /// Civ 6 type names whose **boost is triggered but which are NOT yet
     /// researched** — the eureka discount waiting to be collected.
     ///
@@ -3240,8 +3305,8 @@ pub struct StateSnapshot {
     /// was in.
     ///
     /// Two decisions read exactly these fields, so both ran on fiction live:
-    /// `ai::choose_dedications` is gated on `dedication_choices` (0 live, so a
-    /// Dedication was never once chosen), and `ai/advanced.rs` filters
+    /// `ai::choose_dedications` is gated on `dedication_choices` (which must
+    /// cross from the host at an era boundary), and `ai/advanced.rs` filters
     /// `rules.policies[card].dark_age`, so a real Dark Age's wildcard cards were
     /// never slotted — the same shape as the housing and loyalty cards that are
     /// never slotted.
@@ -3275,6 +3340,10 @@ pub struct StateSnapshot {
     /// older export; an empty list is a seat with none.
     #[serde(default)]
     pub dedications: Option<Vec<String>>,
+    /// How many dedication choices the host currently permits. `None` means an
+    /// older export; a real zero means the seat has no pending era choice.
+    #[serde(default)]
+    pub dedication_choices: Option<i64>,
     /// The World Congress resolutions binding this turn (`GetResolutions`),
     /// mapped onto the model's own `active_congress_effects`. `None` on an
     /// older export leaves the model's Congress alone; `Some([])` is a world
@@ -3637,6 +3706,16 @@ fn apply_rival_public_economy(
             .military_no_treasury
             .filter(|value| value.is_finite() && *value >= 0.0);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
+        // World Rankings owns the science-race distance, target, and current
+        // rate. Do not derive the rate from a laser-project count: repeatable
+        // Terrestrial stations contribute only while the host has them powered.
+        observed.science_victory_points =
+            known(rival.science_victory_points).then_some(rival.science_victory_points);
+        observed.science_victory_points_per_turn = known(rival.science_victory_points_per_turn)
+            .then_some(rival.science_victory_points_per_turn);
+        observed.science_victory_points_needed = (rival.science_victory_points_needed.is_finite()
+            && rival.science_victory_points_needed > 0.0)
+            .then_some(rival.science_victory_points_needed);
         if known(rival.tourism) {
             Arc::make_mut(&mut game.observed_tourism_per_turn).insert(owner, rival.tourism);
         } else {
@@ -3851,17 +3930,21 @@ fn restore_incoming_foreign_routes(
 ) -> Vec<String> {
     let ends = game.turn.saturating_add(game.max_turns.max(1));
     let mut unresolved = Vec::new();
+    // The route origins are visibility-limited, but the host's destination
+    // counts are not. The count delta is reconciled after all known routes,
+    // including rival outgoing routes, have been seated below.
+    Arc::make_mut(&mut game.observed_incoming_route_deltas).clear();
     for city in cities {
         let Some(incoming) = city.incoming_routes.as_ref() else {
+            continue;
+        };
+        let Some(dest) = game.city_at(crate::hex::offset_to_axial(city.x, city.y)) else {
+            unresolved.push(format!("incoming_route:{}:destination", city.name));
             continue;
         };
         if incoming.origins.is_empty() {
             continue;
         }
-        let Some(dest) = game.city_at(crate::hex::offset_to_axial(city.x, city.y)) else {
-            unresolved.push(format!("incoming_route:{}:destination", city.name));
-            continue;
-        };
         let dest_owner = game.cities[&dest].owner;
         for origin in &incoming.origins {
             if origin.x < 0 || origin.y < 0 {
@@ -3944,6 +4027,42 @@ fn restore_rival_outgoing_routes(game: &mut crate::game::Game, rivals: &[StateRi
                 game.routes.push(route);
             }
         }
+    }
+}
+
+/// Reconcile the host's incoming-route totals with the route entities that
+/// could be materialized on the mirrored board. Positive deltas are normally
+/// routes whose origin is fogged; negative deltas keep a stale or partial
+/// route export from making the model over-count. Keeping a delta instead of
+/// replacing the derived count means a counterfactual route action still moves
+/// the projected destination-side yields by exactly one route.
+fn reconcile_incoming_route_deltas(game: &mut crate::game::Game, cities: &[StateCity]) {
+    Arc::make_mut(&mut game.observed_incoming_route_deltas).clear();
+    for city in cities {
+        let Some(incoming) = city.incoming_routes.as_ref() else {
+            continue;
+        };
+        let Some(dest) = game.city_at(crate::hex::offset_to_axial(city.x, city.y)) else {
+            continue;
+        };
+        let dest_owner = game.cities[&dest].owner;
+        let known_foreign = game
+            .routes
+            .iter()
+            .filter(|route| route.dest == dest && route.owner != dest_owner)
+            .count() as i64;
+        let known_domestic = game
+            .routes
+            .iter()
+            .filter(|route| route.dest == dest && route.owner == dest_owner)
+            .count() as i64;
+        Arc::make_mut(&mut game.observed_incoming_route_deltas).insert(
+            dest,
+            (
+                incoming.foreign.saturating_sub(known_foreign),
+                incoming.domestic.saturating_sub(known_domestic),
+            ),
+        );
     }
 }
 
@@ -5189,7 +5308,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     #[rustfmt::skip]
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "frame", "techs", "civics", "research",
-        "science_projects", "boosted_techs", "boosted_civics",
+        "science_projects", "science_victory_points", "science_victory_points_per_turn",
+        "science_victory_points_needed", "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
@@ -5220,7 +5340,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
         "golden_age_threshold", "world_era", "dark_age", "golden_age",
-        "heroic_golden_age", "dedications", "resolutions", "congress_turns_left",
+        "heroic_golden_age", "dedications", "dedication_choices", "resolutions",
+        "congress_turns_left",
         // The host's climate and its trade-route projections (2026-08-26).
         "climate", "route_options",
         "emergencies",
@@ -5352,6 +5473,9 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
         "science_projects",
+        "science_victory_points",
+        "science_victory_points_per_turn",
+        "science_victory_points_needed",
         "foreign_tourists",
         "domestic_tourists",
         // Both border fields: `open_borders` had crossed since the buy lane
@@ -8174,6 +8298,9 @@ fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
             }
         }
     }
+    if let Some(choices) = state.dedication_choices.filter(|value| *value >= 0) {
+        player.dedication_choices = choices as usize;
+    }
     if let Some(era) = state.world_era.filter(|value| *value >= 0) {
         // `ERA_NAMES` bounds the model's era ladder; a build that reports an era
         // past its end is clamped rather than allowed to index out of range.
@@ -8358,14 +8485,48 @@ fn apply_player_religion(
 }
 
 fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
+    // `City::pressure` is the model's only existing representation of a
+    // conversion in progress.  The host gives us the more useful clock, but
+    // not the individual pressure values, so retain the exact majority above
+    // and add only a bounded warning signal for a flip that is close enough to
+    // require a response.  A marker of 1.0 keeps a religionless city below its
+    // 50-point atheist pressure and therefore cannot invent a majority; when a
+    // city already has a majority, 60.0 is the smallest value that reaches
+    // AdvancedAi's existing 60%-of-top-pressure defense threshold while the
+    // observed majority remains at 100.0.
+    const ACTIONABLE_CONVERSION_TURNS: i64 = 20;
+    const RELIGIONLESS_CONVERSION_MARKER: f64 = 1.0;
+    const MAJORITY_CONVERSION_MARKER: f64 = 60.0;
+
+    let current = state.religion.as_deref().and_then(civvis_religion_name);
     live.pressure.clear();
-    match state.religion.as_deref().and_then(civvis_religion_name) {
+    match current.as_ref() {
         Some(religion) => {
             live.atheist_pressure = 0.0;
-            live.pressure.insert(religion, 100.0);
+            live.pressure.insert(religion.clone(), 100.0);
         }
         None => live.atheist_pressure = 50.0,
     }
+
+    let Some(next) = state
+        .religion_next
+        .as_deref()
+        .and_then(civvis_religion_name)
+    else {
+        return;
+    };
+    if current.as_deref() == Some(next.as_str())
+        || state.religion_turns < 0
+        || state.religion_turns > ACTIONABLE_CONVERSION_TURNS
+    {
+        return;
+    }
+    let marker = if current.is_some() {
+        MAJORITY_CONVERSION_MARKER
+    } else {
+        RELIGIONLESS_CONVERSION_MARKER
+    };
+    live.pressure.insert(next, marker);
 }
 
 /// Apply a city's districts and wonders to both representations CIVVIS uses.
@@ -8768,11 +8929,15 @@ fn apply_unit_observation(
     if let Some(religion) = progress.religion {
         live.religion = Some(religion);
     }
+    // Zero is an authoritative observation: a Builder or religious unit that
+    // spent its final charge must not regain the ruleset default on a fresh
+    // rebuild, or retain the previous turn's charge count on sync. Negative
+    // values remain the mod's "could not read" sentinel.
     let observed_charges = state
         .build_charges
         .into_iter()
         .chain(state.spread_charges)
-        .filter(|charges| *charges > 0)
+        .filter(|charges| *charges >= 0)
         .max();
     if let Some(charges) = observed_charges {
         live.charges = charges;
@@ -9559,6 +9724,18 @@ fn apply_observed_host_metrics(
             .or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
+        // Match the local player's World Rankings science lane to the host
+        // instead of treating its reconstructed fifty-light-year trip as fact.
+        observed.science_victory_points = (state.science_victory_points.is_finite()
+            && state.science_victory_points >= 0.0)
+            .then_some(state.science_victory_points);
+        observed.science_victory_points_per_turn =
+            (state.science_victory_points_per_turn.is_finite()
+                && state.science_victory_points_per_turn >= 0.0)
+                .then_some(state.science_victory_points_per_turn);
+        observed.science_victory_points_needed = (state.science_victory_points_needed.is_finite()
+            && state.science_victory_points_needed > 0.0)
+            .then_some(state.science_victory_points_needed);
         observed.cities_following_religion = state
             .cities_following_religion
             .filter(|value| *value >= 0)
@@ -10555,6 +10732,7 @@ fn step_trade_routes(ctx: &mut HostStepCtx<'_>) {
             ctx.unmapped.extend(active);
             ctx.unmapped.extend(incoming);
             restore_rival_outgoing_routes(ctx.game, &ctx.state.rivals);
+            reconcile_incoming_route_deltas(ctx.game, &ctx.state.cities);
             let options = restore_route_options(
                 ctx.game,
                 ctx.state.route_options.as_deref(),
@@ -10577,6 +10755,7 @@ fn step_trade_routes(ctx: &mut HostStepCtx<'_>) {
                 }
             }
             restore_rival_outgoing_routes(ctx.game, &ctx.state.rivals);
+            reconcile_incoming_route_deltas(ctx.game, &ctx.state.cities);
         }
     }
 }

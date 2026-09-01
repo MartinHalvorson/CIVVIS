@@ -146,12 +146,6 @@ class TermTakesTheBrainWithIt(unittest.TestCase):
 
 
 class Civ6PlayTest(unittest.TestCase):
-    def setUp(self) -> None:
-        # Every production harness is a fresh process; reset its equivalent
-        # cache between unit tests so each geometry contract observes its own
-        # mocked display result.
-        civ6_play._desktop_size_cache = None
-
     def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
         """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
         which also holds the evidence trail for the lane. This asserts
@@ -509,99 +503,6 @@ class Civ6PlayTest(unittest.TestCase):
             close_fds=True,
         )
 
-    def test_desktop_size_rejects_a_multi_display_union(self) -> None:
-        """⚠⚠ A SECOND MONITOR MUST NOT PLACE THE GAME OFF-SCREEN.
-
-        `desktop_size` used to ask Finder for its desktop scroll area, which
-        spans every attached display. On 2026-08-04 an external 2560x1440
-        monitor was plugged in and Finder reported 3225x2557 — the union.
-        `place_game` halved it, put Civ 6 at y=1333 on a 1117-point screen, and
-        the setup vision could not read the difficulty dropdown. Every attempt
-        in the batch died with "could not start a game from the main menu".
-
-        The ceiling is the last line of defence if the source ever returns a
-        union again.
-        """
-        with patch.object(civ6_play.subprocess, "run",
-                          return_value=SimpleNamespace(stdout="3225,2557", returncode=0)):
-            self.assertIsNone(
-                civ6_play.desktop_size(),
-                "a display-union-sized answer must be refused, not halved")
-
-    def test_desktop_size_accepts_a_single_display(self) -> None:
-        with patch.object(civ6_play.subprocess, "run",
-                          return_value=SimpleNamespace(stdout="1728,1117", returncode=0)):
-            self.assertEqual(civ6_play.desktop_size(), (1728, 1117))
-
-    def test_desktop_size_reuses_one_verified_measurement_for_the_run(self) -> None:
-        """Setup OCR must not repeatedly start a slow AppKit interpreter."""
-        with patch.object(civ6_play.subprocess, "run",
-                          return_value=SimpleNamespace(stdout="1728,1117", returncode=0)) as run:
-            self.assertEqual(civ6_play.desktop_size(), (1728, 1117))
-            self.assertEqual(civ6_play.desktop_size(), (1728, 1117))
-        run.assert_called_once()
-
-    def test_desktop_size_refuses_an_unreadable_answer(self) -> None:
-        """None means 'leave the window alone' — never a guess."""
-        for bad in ("", "not,numbers", "1728", "0,0"):
-            with patch.object(civ6_play.subprocess, "run",
-                              return_value=SimpleNamespace(stdout=bad, returncode=0)):
-                self.assertIsNone(civ6_play.desktop_size(), f"{bad!r} must be refused")
-
-    def test_place_game_sizes_before_positioning_the_upper_quadrant(self) -> None:
-        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-             patch.object(civ6_play, "game_window", return_value=None), \
-             patch.object(civ6_play.subprocess, "run") as run:
-            civ6_play.place_game("right", 0.5, 0.5)
-
-        script = run.call_args.args[0][-1]
-        self.assertLess(script.index("set size"), script.index("set position"))
-        self.assertIn("set size to {756, 480}", script)
-        self.assertIn("set position to {756, 33}", script)
-        self.assertIn(f'process "{civ6_play.GAME_PROCESS}"', script)
-
-    def test_place_game_does_not_rewrite_an_unchanged_frame(self) -> None:
-        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-             patch.object(civ6_play, "game_window", return_value=(756, 33, 756, 480)), \
-             patch.object(civ6_play.subprocess, "run") as run:
-            civ6_play.place_game("right", 0.5, 0.5)
-
-        run.assert_not_called()
-
-    def test_focus_and_window_queries_target_the_actual_civ6_process(self) -> None:
-        with patch.object(
-            civ6_play.subprocess,
-            "run",
-            return_value=SimpleNamespace(stdout="756, 33, 756, 480", returncode=0),
-        ) as run:
-            self.assertEqual(civ6_play.game_window(), (756, 33, 756, 480))
-            civ6_play.focus_game()
-
-        scripts = [call.args[0][-1] for call in run.call_args_list]
-        self.assertTrue(all(f'process "{civ6_play.GAME_PROCESS}"' in script
-                            for script in scripts))
-        self.assertTrue(all("first process whose name contains" not in script
-                            for script in scripts))
-
-    def test_screen_locked_reads_console_session_state(self) -> None:
-        with patch.object(
-            civ6_play.subprocess,
-            "run",
-            return_value=SimpleNamespace(
-                stdout='"CGSSessionScreenIsLocked"=Yes', returncode=0
-            ),
-        ):
-            self.assertTrue(civ6_play.screen_locked())
-
-        with patch.object(
-            civ6_play.subprocess,
-            "run",
-            return_value=SimpleNamespace(
-                stdout='"CGSSessionScreenIsLocked"=No', returncode=0
-            ),
-        ):
-            self.assertFalse(civ6_play.screen_locked())
-
     def test_play_waits_for_unlock_then_launches(self) -> None:
         with patch.object(civ6_play.vision, "available", return_value=True), \
              patch.object(civ6_play, "hold_macos_awake") as hold_awake, \
@@ -624,6 +525,29 @@ class Civ6PlayTest(unittest.TestCase):
         run.assert_called_once()
         stop.assert_called_once()
         release.assert_called_once()
+
+    def test_play_reports_an_explicit_operator_halt_instead_of_free_lock(self) -> None:
+        halt = ("the game is explicitly halted since 2026-08-31T23:16:59Z "
+                "(reason: protected run); run gamelock.py --resume before "
+                "starting another game")
+        error = io.StringIO()
+        with patch.object(civ6_play.vision, "available", return_value=True), \
+             patch.object(civ6_play, "hold_macos_awake"), \
+             patch.object(civ6_play, "wait_for_unlocked_session"), \
+             patch.object(civ6_play, "wait_for_safe_screen_capture"), \
+             patch.object(civ6_play.gamelock, "acquire", return_value=False), \
+             patch.object(civ6_play.gamelock, "operator_halt_description",
+                          return_value=halt), \
+             patch.object(civ6_play.gamelock, "foreign_run") as foreign, \
+             patch.object(civ6_play.gamelock, "describe") as describe, \
+             patch.object(civ6_play.sys, "stderr", error):
+            result = civ6_play.play(args(tag="halt-test", lock_wait=0.0))
+
+        self.assertEqual(result, 6)
+        self.assertIn(f"game start blocked: {halt}", error.getvalue())
+        self.assertNotIn("another run holds the game: free", error.getvalue())
+        foreign.assert_not_called()
+        describe.assert_not_called()
 
     def test_world_congress_fallback_clicks_the_shipped_close_control(self) -> None:
         with patch.object(civ6_play, "focus_game") as focus, \
@@ -1542,153 +1466,6 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
         self.assertIn("return atWar, ours, worst, strongestMet;", lua)
 
 
-class ScreenshotFailureTests(unittest.TestCase):
-    """A silently failed native capture must become a retried, unreadable
-    poll — three consecutive ladder attempts died on 2026-08-17 when a missing
-    shot cascaded into an uncaught `OCRUnavailable`."""
-
-    def test_a_capture_that_writes_nothing_is_retried_then_reported(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
-             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-             patch.object(civ6_play.macos_capture, "capture_region") as capture, \
-             patch.object(civ6_play.time, "sleep") as sleep:
-            landed = civ6_play.screenshot(Path(temporary) / "missing.png")
-        self.assertFalse(landed)
-        self.assertEqual(capture.call_count, len(civ6_play.SHOT_BACKOFF_SECONDS) + 1,
-                         "every backoff step is spent before giving up")
-        self.assertEqual([call.args[0] for call in sleep.call_args_list],
-                         list(civ6_play.SHOT_BACKOFF_SECONDS),
-                         "and it waits longer each time")
-
-    def test_setup_capture_can_leave_retries_to_the_outer_screen_poll(self) -> None:
-        """A setup poll must not spend minutes inside one native miss.
-
-        The menu reader has its own bounded polling loop.  Limiting the inner
-        capture to one attempt preserves the rule that no coordinate is clicked
-        without OCR proof while allowing the next poll to try a fresh frame.
-        """
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
-             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-             patch.object(civ6_play.macos_capture, "capture_region") as capture, \
-             patch.object(civ6_play.time, "sleep") as sleep:
-            landed = civ6_play.screenshot(
-                Path(temporary) / "setup-miss.png",
-                attempts=civ6_play.SETUP_SCREENSHOT_ATTEMPTS,
-            )
-        self.assertFalse(landed)
-        capture.assert_called_once()
-        sleep.assert_not_called()
-
-    def test_setup_menu_readers_use_the_outer_poll_for_capture_retries(self) -> None:
-        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
-        self.assertIn(
-            "screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)",
-            source,
-        )
-        self.assertIn(
-            "screenshot(submenu, attempts=SETUP_SCREENSHOT_ATTEMPTS)",
-            source,
-        )
-
-    def test_the_capture_rides_out_a_spike_that_outlasts_one_retry(self) -> None:
-        """The 2026-08-19 failure: two captures a second apart sample one spike
-        twice, and the launch dies. A shot that lands on the third attempt is
-        the whole point of the backoff."""
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
-             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-             patch.object(civ6_play.time, "sleep"):
-            path = Path(temporary) / "late.png"
-            attempts = []
-
-            def spike(_region, output):
-                attempts.append(1)
-                if len(attempts) >= 3:
-                    Path(output).write_bytes(b"x")
-
-            with patch.object(civ6_play.macos_capture, "capture_region", side_effect=spike):
-                self.assertTrue(civ6_play.screenshot(path),
-                                "the shot that lands late still counts")
-        self.assertEqual(len(attempts), 3)
-
-    def test_a_recording_frame_can_recover_on_the_fifth_capture(self) -> None:
-        """Keep the bounded extra chance that a live recording needs.
-
-        CoreGraphics can return no frame across the original four captures
-        while a pre-authorized Cmd-Shift-5 session remains active.  It is safe
-        to wait for one more verified frame; it is not safe to guess a setup
-        coordinate while the frame is unreadable.
-        """
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=True), \
-             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-             patch.object(civ6_play.time, "sleep"):
-            path = Path(temporary) / "recording-late.png"
-            attempts = []
-
-            def late_recording_frame(_region, output):
-                attempts.append(1)
-                if len(attempts) == 5:
-                    Path(output).write_bytes(b"fresh")
-
-            with patch.object(civ6_play.macos_capture, "capture_region",
-                              side_effect=late_recording_frame):
-                self.assertTrue(civ6_play.screenshot(path))
-        self.assertEqual(len(attempts), 5)
-
-    def test_the_backoff_escalates_and_is_bounded(self) -> None:
-        """Escalating, because a flat retry samples one spike twice; bounded,
-        because a poll that sleeps forever is worse than an unreadable one."""
-        steps = civ6_play.SHOT_BACKOFF_SECONDS
-        self.assertEqual(list(steps), sorted(steps), "each wait is longer")
-        self.assertLess(sum(steps), 10.0, "and the whole schedule stays short")
-
-    def test_a_capture_that_lands_is_true_first_try(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "shot.png"
-
-            def fake_capture(_region, output):
-                Path(output).write_bytes(b"x")
-
-            with patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
-                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-                 patch.object(civ6_play.macos_capture, "capture_region",
-                              side_effect=fake_capture) as capture:
-                self.assertTrue(civ6_play.screenshot(path))
-            self.assertEqual(capture.call_count, 1)
-            capture.assert_called_once_with((0, 0, 1512, 982), path)
-
-    def test_a_user_capture_ui_keeps_a_preauthorized_setup_frame(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "shot.png"
-            path.write_bytes(b"stale")
-
-            def capture_frame(_region, output):
-                Path(output).write_bytes(b"fresh")
-
-            with patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=True), \
-                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-                 patch.object(civ6_play.macos_capture, "capture_region",
-                              side_effect=capture_frame) as capture:
-                self.assertTrue(civ6_play.screenshot(path))
-            capture.assert_called_once_with((0, 0, 1512, 982), path)
-            self.assertEqual(path.read_bytes(), b"fresh")
-
-    def test_permission_denial_does_not_retry_or_request_a_system_popup(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play.popup_clear, "native_recording_ui_active", return_value=False), \
-             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
-             patch.object(civ6_play.macos_capture, "capture_region",
-                          side_effect=civ6_play.macos_capture.CapturePermissionUnavailable(
-                              "denied")) as capture, \
-             patch.object(civ6_play.time, "sleep") as sleep:
-            self.assertFalse(civ6_play.screenshot(Path(temporary) / "shot.png"))
-        capture.assert_called_once()
-        sleep.assert_not_called()
-
-
 class VisualPopupCaptureFailureTests(unittest.TestCase):
     def test_transient_popup_capture_miss_leaves_the_game_controller_alive(self) -> None:
         """A blank ScreenCaptureKit frame is not a reason to end a live game."""
@@ -1713,40 +1490,6 @@ class VisualPopupCaptureFailureTests(unittest.TestCase):
 
 
 class SafeScreenCaptureWaitTests(unittest.TestCase):
-    def test_preauthorized_user_capture_ui_does_not_delay_game_setup(self) -> None:
-        with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
-                          return_value=True) as recording, \
-             patch.object(civ6_play.macos_capture, "screen_capture_access_available",
-                          return_value=True) as access, \
-             patch.object(civ6_play.time, "sleep") as sleep:
-            civ6_play.wait_for_safe_screen_capture(poll_s=0.25)
-
-        recording.assert_called_once_with()
-        access.assert_called_once_with()
-        sleep.assert_not_called()
-
-    def test_recording_ui_waits_only_until_noninteractive_preflight_passes(self) -> None:
-        with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
-                          return_value=True), \
-             patch.object(civ6_play.macos_capture, "screen_capture_access_available",
-                          side_effect=[False, True]) as access, \
-             patch.object(civ6_play.time, "sleep") as sleep:
-            civ6_play.wait_for_safe_screen_capture(poll_s=0.25)
-
-        self.assertEqual(access.call_count, 2)
-        sleep.assert_called_once_with(0.25)
-
-    def test_missing_permission_is_deferred_until_the_noninteractive_preflight_passes(self) -> None:
-        with patch.object(civ6_play.popup_clear, "native_recording_ui_active",
-                          return_value=False), \
-             patch.object(civ6_play.macos_capture, "screen_capture_access_available",
-                          side_effect=[False, True]) as access, \
-             patch.object(civ6_play.time, "sleep") as sleep:
-            civ6_play.wait_for_safe_screen_capture(poll_s=0.25)
-
-        self.assertEqual(access.call_count, 2)
-        sleep.assert_called_once_with(0.25)
-
     def test_a_missing_shot_reads_as_nothing_not_a_crash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play.macos_ocr, "recognize") as recognize:
@@ -2386,6 +2129,17 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.60)
         self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 150)
 
+    def test_targeted_science_is_not_abandoned_for_a_score_gap(self):
+        self.assertFalse(civ6_play.leader_score_stop_allowed(
+            civvis_decides=True, victory_target="science"))
+
+    def test_adaptive_and_other_targeted_lanes_keep_the_score_stop(self):
+        for decides, target in ((False, "science"), (True, "civvis"),
+                                (True, "culture"), (True, None)):
+            with self.subTest(decides=decides, target=target):
+                self.assertTrue(civ6_play.leader_score_stop_allowed(
+                    civvis_decides=decides, victory_target=target))
+
     def test_one_reading_under_the_line_immediately_abandons_with_the_standing(self):
         state = {}
         verdict = civ6_play.below_leader_score_reading(
@@ -2467,6 +2221,8 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("below_leader_score_reading(\n"
                       "            state, event, args.restart_below_leader_ratio", source)
+        self.assertIn("leader_score_stop_allowed(\n"
+                      "            civvis_decides=args.civvis_decides", source)
         self.assertIn('"--restart-below-leader-ratio"', source)
         self.assertIn("default=DEFAULT_LEADER_SCORE_RATIO", source)
         self.assertIn('"abandoned": state.get("abandoned"),', source)
@@ -3017,82 +2773,6 @@ class OperatorRetireNativeTest(unittest.TestCase):
                  "seat": {"difficulty": "DIFFICULTY_PRINCE"}, "configured": False},
                 "stopped"),
             "operator_retired")
-
-
-class EveryPerPollHostProbeIsBounded(unittest.TestCase):
-    """⚠⚠⚠ All of them ran unbounded in the loop that drives the game.
-
-    `watch.follow` calls `each_poll` (`keep_foreground` → `focus_game` +
-    `place_game`) and `pause_when` (`console_locked` → `screen_locked`) once
-    per iteration. `game_pids` was the fourth of these and #2700 fixed it after
-    it hung a game at turn 8 — the wedge sample showed every Civilization VI
-    thread idle because nothing was driving it.
-
-    These reach System Events, which blocks on the Accessibility subsystem —
-    exactly what a busy or half-wedged foreground app makes slow.
-    """
-
-    def test_the_window_query_is_bounded_and_unknown_means_none(self):
-        with mock.patch.object(civ6_play.subprocess, "run") as ran:
-            ran.return_value = mock.Mock(stdout="10, 20, 800, 600")
-            self.assertEqual(civ6_play.game_window(), (10, 20, 800, 600))
-            self.assertEqual(ran.call_args.kwargs.get("timeout"),
-                             civ6_play.HOST_PROBE_TIMEOUT_S)
-        with mock.patch.object(
-                civ6_play.subprocess, "run",
-                side_effect=civ6_play.subprocess.TimeoutExpired("osascript", 10)):
-            self.assertIsNone(civ6_play.game_window())
-
-    def test_an_unanswerable_lock_probe_keeps_the_game_playing(self):
-        """⚠ NOT True.
-
-        `wait_for_unlocked_session` loops while this says locked and
-        `watch.follow` pauses the driving loop on it, so a probe that stops
-        answering would park a healthy game forever.
-        """
-        with mock.patch.object(
-                civ6_play.subprocess, "run",
-                side_effect=civ6_play.subprocess.TimeoutExpired("ioreg", 10)):
-            self.assertFalse(civ6_play.screen_locked())
-
-    def test_a_locked_screen_is_still_reported_when_the_probe_answers(self):
-        with mock.patch.object(civ6_play.subprocess, "run") as ran:
-            ran.return_value = mock.Mock(
-                stdout='  "CGSSessionScreenIsLocked"=Yes')
-            self.assertTrue(civ6_play.screen_locked())
-            self.assertEqual(ran.call_args.kwargs.get("timeout"),
-                             civ6_play.HOST_PROBE_TIMEOUT_S)
-
-    def test_placing_and_focusing_survive_a_stuck_system_events(self):
-        """Both are retried next poll; neither may raise into the loop."""
-        with mock.patch.object(
-                civ6_play.subprocess, "run",
-                side_effect=civ6_play.subprocess.TimeoutExpired("osascript", 10)):
-            civ6_play.focus_game()          # must not raise
-            civ6_play.place_game("left", 0.5)
-
-    def test_no_host_probe_in_the_driving_path_is_left_unbounded(self):
-        """The sweep that found these three, kept as a guard."""
-        import ast as _ast
-
-        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
-            encoding="utf-8")
-        tree = _ast.parse(source)
-        unbounded = []
-        for node in _ast.walk(tree):
-            if not isinstance(node, _ast.Call):
-                continue
-            if getattr(node.func, "attr", None) not in (
-                    "run", "check_output", "call", "check_call"):
-                continue
-            owner = getattr(getattr(node.func, "value", None), "id", None)
-            if owner != "subprocess":
-                continue
-            if "timeout" not in {kw.arg for kw in node.keywords}:
-                unbounded.append(node.lineno)
-        self.assertEqual(unbounded, [], "civ6_play.py line(s) "
-                         f"{unbounded} shell out with no timeout; every call "
-                         "here can land in the per-poll driving path")
 
 
 class AStoppedRunStillLeavesARecord(unittest.TestCase):

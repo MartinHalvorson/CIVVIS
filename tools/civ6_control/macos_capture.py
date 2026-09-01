@@ -27,6 +27,10 @@ class CapturePermissionUnavailable(CaptureUnavailable):
 
 
 SCREEN_CAPTURE_PERMISSION_DENIED = 77
+#: The preferred ScreenCaptureKit backend returned no frame. This is distinct
+#: from a permission denial: a freshly spawned window-list helper may still
+#: capture safely while native recording is active.
+SCREEN_CAPTURE_FALLBACK_NEEDED = 78
 
 
 _SWIFT_SOURCE = r'''
@@ -36,14 +40,16 @@ import Foundation
 import ImageIO
 import ScreenCaptureKit
 
-let args = Array(CommandLine.arguments.dropFirst())
-if args == ["--preflight"] {
+let rawArguments = Array(CommandLine.arguments.dropFirst())
+if rawArguments == ["--preflight"] {
     if CGPreflightScreenCaptureAccess() {
         exit(0)
     }
     FileHandle.standardError.write(Data("screen capture permission unavailable".utf8))
     exit(77)
 }
+let fallbackMode = rawArguments.first == "--fallback"
+let args = fallbackMode ? Array(rawArguments.dropFirst()) : rawArguments
 guard args.count == 5 else { exit(64) }
 
 // The interactive request API would open the system permission dialog.  This
@@ -130,17 +136,28 @@ func screenCaptureKitImage() -> CGImage? {
 // Cmd-Shift-5 can block or empty CGWindowListCreateImage while this process is
 // still authorized to capture. ScreenCaptureKit takes a one-frame, exact
 // display-space rectangle without interacting with the recording UI, so it is
-// the current-macOS path. Older systems retain the direct-display and
-// window-list paths without introducing a permission request.
+// the preferred current-macOS path. But a native recording can also leave
+// ScreenCaptureKit with a granted preflight and a nil frame. That callback can
+// poison CoreGraphics work attempted in the same process, so Python starts a
+// fresh `--fallback` helper instead of chaining the window-list call here.
 let image: CGImage?
-if #available(macOS 15.0, *) {
+let signalFallback: Bool
+if fallbackMode {
+    // Window-list capture is the fast recording-safe alternate backend. Do
+    // not reach direct-display capture from this fast retry: it can block
+    // behind the native recorder for tens of seconds.
+    image = windowListImage()
+    signalFallback = false
+} else if #available(macOS 15.0, *) {
     image = screenCaptureKitImage()
+    signalFallback = true
 } else {
     image = mainDisplayImage() ?? windowListImage()
+    signalFallback = false
 }
 guard let image else {
     FileHandle.standardError.write(Data("CoreGraphics capture returned no image".utf8))
-    exit(1)
+    exit(signalFallback ? 78 : 1)
 }
 guard let destination = CGImageDestinationCreateWithURL(
     output as CFURL,
@@ -266,16 +283,40 @@ NATIVE_GUARD_SECONDS = 3.5
 NATIVE_TIMEOUT_SECONDS = NATIVE_GUARD_SECONDS + 4.0
 
 
+def _capture_command(box_points, output: str | Path, *, fallback: bool) -> list[str]:
+    x, y, width, height = box_points
+    command = [str(_native_binary())]
+    if fallback:
+        command.append("--fallback")
+    command.extend([str(x), str(y), str(width), str(height), str(output)])
+    return command
+
+
+def _capture_once(command: list[str]) -> subprocess.CompletedProcess | None:
+    """Run one native capture backend without letting a hung helper persist."""
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=NATIVE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+
+
 def capture_region(box_points, output: str | Path) -> None:
     """Write one screen-point region to ``output`` as a PNG."""
-    x, y, width, height = box_points
-    result = subprocess.run(
-        [str(_native_binary()), str(x), str(y), str(width), str(height), str(output)],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=NATIVE_TIMEOUT_SECONDS,
-    )
+    result = _capture_once(_capture_command(box_points, output, fallback=False))
+    if result is not None and result.returncode == SCREEN_CAPTURE_FALLBACK_NEEDED:
+        # ScreenCaptureKit can preflight successfully yet yield no image while
+        # Cmd-Shift-5 owns the native recording stream. Start the CoreGraphics
+        # fallback in a fresh helper because the first attempt can leave the
+        # original process's capture state wedged.
+        result = _capture_once(_capture_command(box_points, output, fallback=True))
+    if result is None:
+        raise CaptureUnavailable("native region capture timed out")
     if result.returncode:
         detail = (result.stderr or result.stdout).strip()
         if result.returncode == SCREEN_CAPTURE_PERMISSION_DENIED:

@@ -11,26 +11,30 @@
 --   2. a two-turn path is sent as its first turn's leg, the row is rewritten
 --      so the queue expects the capped plot, and `move_capped` is emitted;
 --   3. a path whose first step is already next turn is refused by name;
---   4. a melee ATTACK is never capped;
---   5. an explicit opt-out leaves the two capped paths alone;
---   6. a matching explicit guard keeps pace with the setter;
---   7. a missing guard row is synthesized before a one-step setter move;
---   8. an unreachable or differently-targeted guard remains untouched;
---   9. queued paths: combat units are cancelled, civilians are not, and the
+--   4. a one-entry no-route path is refused instead of being sent to the host;
+--   5. a melee ATTACK is never capped;
+--   6. an explicit opt-out leaves the two capped paths alone;
+--   7. a matching explicit guard keeps pace with the setter;
+--   8. a missing guard row is synthesized before a one-step setter move;
+--   9. an unreachable or differently-targeted guard remains untouched;
+--  10. queued paths: combat units are cancelled, civilians are not, and the
 --      count is reported;
---  10. a refused settler move cannot draw its guard into a synthetic move;
---  11. the `orders` event carries the cap and shadow counters.
---  12. a rows-less asynchronous watch releases when the host lands the unit
+--  11. a refused settler move cannot draw its guard into a synthetic move;
+--  12. the `orders` event carries the cap and shadow counters.
+--  13. a rows-less asynchronous watch releases when the host lands the unit
 --      on a different plot, so the brain can re-plan from the actual board.
---  13. an unguarded settler will not step into the measured two-plot reach of
+--  14. an unguarded settler will not step into the measured two-plot reach of
 --      a visible barbarian scout; any settler leg reachable by a visible
 --      barbarian combat unit is held even with a synchronized single escort,
 --      while invisible, distant, and proven-scout-escort cases retain ordinary
 --      movement.
---  14. A co-located combat escort queued in an earlier frame stays with an
+--  15. A co-located combat escort queued in an earlier frame stays with an
 --      exposed Settler until the later Settler safety row is actuated.
---  15. An exposed Settler can retreat two host-reachable hexes when every
+--  16. An exposed Settler can retreat two host-reachable hexes when every
 --      adjacent escape is covered.
+--  17. A Builder cannot enter visible barbarian capture reach without a
+--      proven escort; an exposed travelling Builder gets the same bounded
+--      escape treatment, and a safe escort preserves the move.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -265,7 +269,19 @@ check("no-reach move issues nothing", ops(12), "")
 check("refused as move_no_moves_this_turn", has(lastEvent("orders"), "move_no_moves_this_turn"), true)
 check("orders event counts no_reach", has(lastEvent("orders"), '"move_no_reach":1'), true)
 
--- 4. A melee ATTACK is never capped, whatever the path says.
+-- 4. A present one-entry path is the host's explicit no-route result. It must
+-- be refused rather than sent, otherwise Civ VI accepts the request and spins
+-- on its no-path sentinel forever.
+reset()
+host.units[26] = { id = 26, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.paths["26:" .. plotIndex(8, 8)] = {
+	plots = { plotIndex(1, 1) }, turns = { 0 } }
+applyOrders(player, PID, 7, { row(26, "MOVE_TO", 8, 8) })
+check("one-entry no-route issues nothing", ops(26), "")
+check("one-entry no-route is named", has(lastEvent("orders"), "move_no_path"), true)
+check("one-entry no-route increments no_reach", has(lastEvent("orders"), '"move_no_reach":1'), true)
+
+-- 5. A melee ATTACK is never capped, whatever the path says.
 reset()
 host.units[13] = { id = 13, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.paths["13:" .. plotIndex(4, 1)] = { plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1) }, turns = { 0, 1, 2, 2 } }
@@ -731,6 +747,85 @@ applyOrders(player, PID, 7, { row(34, "MOVE_TO", 1, 2) })
 check("proven escort: guard shares exposed leg", ops(35), "UNITOPERATION_MOVE_TO@1,2")
 check("proven escort: setter still moves", ops(34), "UNITOPERATION_MOVE_TO@1,2")
 check("proven escort: no scout capture hold", lastEvent("settler_scout_capture_hold"), nil)
+
+-- Builders are civilians too.  A Builder leaving a city for a tile inside a
+-- visible barbarian combat unit's next-turn reach must not be accepted merely
+-- because the host can execute the MOVE_TO.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[60] = { id = 60, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.barbarians[106] = { id = 106, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 2 }
+host.paths["60:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(60, "MOVE_TO", 1, 2) })
+check("visible combat: builder stays out of capture leg", ops(60), "")
+check("visible combat: builder hold names the hostile", has(lastEvent("builder_barbarian_capture_hold"),
+	'"builder":60') and has(lastEvent("builder_barbarian_capture_hold"), '"hostile":106'), true)
+check("visible combat: builder hold is an explicit refusal", has(lastEvent("orders"),
+	'builder_barbarian_capture_hold'), true)
+check("visible combat: builder hold is counted", has(lastEvent("orders"),
+	'"builder_barbarian_capture_held":1'), true)
+
+-- A civilian-occupied destination can make the host path query return no
+-- answer even though Civ VI accepts the same MOVE_TO.  The geometric fallback
+-- must still protect a Builder inside a visible barbarian combat envelope.
+reset()
+host.cities[1] = { x = 16, y = 17 }
+host.units[65] = { id = 65, kind = "UNIT_BUILDER", x = 16, y = 18, moves = 2 }
+host.units[66] = { id = 66, kind = "UNIT_WARRIOR", x = 15, y = 18, moves = 2 }
+host.units[67] = { id = 67, kind = "UNIT_SETTLER", x = 15, y = 18, moves = 2 }
+host.barbarians[110] = { id = 110, kind = "UNIT_SLINGER", x = 15, y = 17, moves = 0 }
+-- No Builder path is registered: the fake host still accepts the operation,
+-- which models the live occupied-tile path-probe failure.
+applyOrders(player, PID, 32, { row(65, "MOVE_TO", 15, 18) })
+check("occupied destination fallback: builder stays out of capture leg", ops(65), "")
+check("occupied destination fallback: event names fallback", has(lastEvent("builder_barbarian_capture_hold"),
+	'"builder_reach":"distance_fallback"'), true)
+
+-- A later replan frame must not bypass a hold established by the first row
+-- for the same Builder.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[64] = { id = 64, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.barbarians[109] = { id = 109, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 2 }
+host.paths["64:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(64, "MOVE_TO", 1, 2), row(64, "MOVE_TO", 1, 2) })
+check("duplicate builder frame: every exposed row stays held", ops(64), "")
+check("duplicate builder frame: both rows are refused", has(lastEvent("orders"),
+	'"refused":2') and has(lastEvent("orders"), '"builder_barbarian_capture_hold":1')
+	and has(lastEvent("orders"), '"queue_prior_refused":1'), true)
+
+-- A travelling Builder already inside a visible combat envelope can retreat
+-- when the host proves a safe two-move answer, rather than waiting in place.
+reset()
+host.units[61] = { id = 61, kind = "UNIT_BUILDER", x = 1, y = 2, moves = 2 }
+host.barbarians[107] = { id = 107, kind = "UNIT_WARRIOR", x = 1, y = 4, moves = 0 }
+host.paths["61:" .. plotIndex(1, 3)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 3) }, turns = { 0, 1 } }
+host.paths["61:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(61, "MOVE_TO", 1, 3) })
+check("exposed builder retreats to a safe neighbour", ops(61), "UNITOPERATION_MOVE_TO@1,1")
+check("exposed builder escape keeps the original target", has(lastEvent("builder_capture_escape"),
+	'"want":[1,3]') and has(lastEvent("builder_capture_escape"), '"sent":[1,1]'), true)
+check("exposed builder escape is not counted as a hold", has(lastEvent("orders"),
+	'"builder_barbarian_capture_held":0'), true)
+
+-- A host-proven co-located combat escort keeps an otherwise exposed Builder
+-- mobile; the bridge must not turn a safe explicit escort into a freeze.
+reset()
+host.units[62] = { id = 62, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.units[63] = { id = 63, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[108] = { id = 108, kind = "UNIT_WARRIOR", x = 2, y = 3, moves = 2 }
+host.paths["62:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+host.paths["63:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(62, "MOVE_TO", 1, 2), row(63, "MOVE_TO", 1, 2) })
+check("proven builder escort: builder still moves", ops(62), "UNITOPERATION_MOVE_TO@1,2")
+check("proven builder escort: guard still moves", ops(63), "UNITOPERATION_MOVE_TO@1,2")
+check("proven builder escort: no hold", lastEvent("builder_barbarian_capture_hold"), nil)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))

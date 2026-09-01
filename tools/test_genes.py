@@ -909,13 +909,13 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
 class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
     """The checked-in ledger's selection follows its recorded policy.
 
-    The current reporting-only selection keeps exactly the genes whose on arm
-    beat baseline in each of the latest three batches and whose displayed Diff
-    is positive. Both policy forms preserve the one-version-per-family
+    The current reporting-only selection keeps exactly the genes averaging at
+    least +5 wins per 10,000 total seats over their available latest-three
+    batch readings. Both policy forms preserve the one-version-per-family
     invariant and expose the legacy batch-rule reading as evidence.
     """
 
-    def test_the_current_selection_is_exactly_three_positive_baseline_batches_and_diff(self):
+    def test_the_current_selection_is_exactly_the_available_batch_average_rule(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         self.assertEqual(rules["deployment_policy"], gene_ledger.RETAINED_DEPLOYMENT_POLICY)
@@ -923,19 +923,17 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         self.assertEqual(rules["operator_default_off"], [])
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
-        displayed, _ = ranking.load_display_sources(ledger)
-        eligible = {
-            tag
-            for tag in gene_ledger.screenable_tags()
-            if tag in displayed
-            and all(
-                tag in batch["rows"] and batch["rows"][tag]["win_delta_pp"] > 0
-                for batch in batches
-            )
-            and ranking.pooled_win_diff_pp(displayed[tag]) > 0
-        }
+        eligible = set(gene_ledger.retained_deployment_genome_from_batches(
+            batches, gene_ledger.screenable_tags()))
         self.assertEqual(set(rules["deployment_genome"]), eligible)
-        self.assertEqual(len(eligible), 31)
+        self.assertEqual(len(eligible), 70)
+        self.assertIn("amenity-project-preemption", eligible)
+        self.assertNotIn("amenity-project-preemption-2", eligible)
+
+    def test_retained_selection_averages_only_available_batch_readings(self):
+        self.assertEqual(gene_ledger.retained_selection_average([5, None, None]), 5)
+        self.assertEqual(gene_ledger.retained_selection_average([4, 6, None]), 5)
+        self.assertIsNone(gene_ledger.retained_selection_average([None, None, None]))
 
     def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())

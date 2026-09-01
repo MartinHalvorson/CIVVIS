@@ -187,7 +187,7 @@ an interval, the question every treatment PR ends on: *does the agent win more
 with this on than off?*
 
 ```sh
-cargo build --profile ci --bin gene_screen
+cargo build --profile ci --features developer-tools --bin gene_screen
 target/ci/gene_screen --list                                # the genes, in bit order (64 on 2026-08-19)
 target/ci/gene_screen --games 600 --jobs 8 --out screen.jsonl
                                                             # ↑ THE screen: no profile flags
@@ -416,6 +416,14 @@ the manifest without touching any of them: `tools/genes.py` is the one
 Python reader, and `gene_screen.rs`'s
 `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables` holds
 the Rust and Python readings of the registry to one answer.
+
+**Keep the existing order.** Genome bits are positional, so never insert or
+reorder an existing row. Add a new row directly below the tail
+`// ---- append: a-b ----` marker whose range contains the tag's first letter.
+All eight markers follow the current rows, so this still appends the tag while
+separate ranges give concurrent gene PRs separate merge points. The append
+point test constructs and merges those synthetic row additions; a same-range
+pair remains the intentional collision control.
 
 | flag | meaning |
 |---|---|

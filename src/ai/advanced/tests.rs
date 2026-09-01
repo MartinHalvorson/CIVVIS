@@ -3917,16 +3917,20 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 }
 
 #[test]
-fn production_advanced_omits_measured_null_arms() {
-    let production = AdvancedAi::new();
-    assert!(!production.bounded_recovery);
-    assert!(production.envoy_priority);
+fn production_advanced_reflects_the_recorded_bounded_recovery_selection() {
+    let bare = AdvancedAi::new();
+    assert!(!bare.bounded_recovery, "the bare controller remains opt-in-off");
+    assert!(bare.envoy_priority);
+
+    let mut production = AdvancedAi::new();
+    production.enable_engine_repairs();
+    assert!(production.bounded_recovery);
 
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        !live_bridge.bounded_recovery,
-        "the explicit three-batch selection withholds this unqualified arm"
+        live_bridge.bounded_recovery,
+        "the explicit three-batch selection enables this qualifying arm"
     );
 }
 
@@ -8899,6 +8903,120 @@ fn recovery_requires_material_local_danger_and_ends_when_it_clears() {
 }
 
 #[test]
+fn imminent_city_attack_triggers_before_the_aggregate_ratio_is_critical() {
+    let mut game = Game::new_full(2, 30, 18, 7_219, 300, 0, false);
+    let city = found_test_city(&mut game, 0);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.turn = 90;
+    game.at_war.insert((0, 1));
+    let city_pos = game.cities[&city].pos;
+    let attack_tile = game
+        .nbrs(city_pos)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("test city needs an accessible attack tile");
+    let horseman = game.spawn_test_unit("horseman", 1, attack_tile);
+    game.spawn_test_unit("archer", 0, city_pos);
+    game.spawn_test_unit("warrior", 0, city_pos);
+
+    let pressure = AdvancedAi::city_pressure(&game, 0, city);
+    assert!(
+        (0.45..0.90).contains(&pressure),
+        "fixture must be dangerous but below the old emergency ratio: {pressure:.3}"
+    );
+    assert!(
+        game.attack_reach(horseman).contains(&city_pos),
+        "the hostile must be able to attack the City Center next turn"
+    );
+    assert_eq!(
+        AdvancedAi::new().threatened_city(&game, 0),
+        Some(city),
+        "an imminent legal city attack must not wait for a second hostile"
+    );
+}
+
+#[test]
+fn science_lane_keeps_its_beeline_for_a_barbarian_that_cannot_strike_this_turn() {
+    let mut game = Game::new_full(1, 30, 18, 7_221, 300, 0, true);
+    let city = found_test_city(&mut game, 0);
+    clear_barbarian_fixture(&mut game);
+    let city_pos = game.cities[&city].pos;
+    let barbarian = game.barb_pid.expect("the fixture has a barbarian seat");
+    let outer_tile =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(city_pos, *position) == 3
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the city needs visible outer ground");
+    // A city-center sight ring is deliberately short on this fixture. Keep a
+    // cheap observer beside the contact so the test proves the gate is
+    // reacting to a known non-imminent raider, rather than merely ignoring
+    // fog.
+    let observer_tile =
+        game.nbrs(outer_tile)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the contact needs an observer tile");
+    game.spawn_test_unit("scout", 0, observer_tile);
+    let raider = game.spawn_test_unit("crossbowman", barbarian, outer_tile);
+    let visible = game.player_vision_frame(0);
+    assert!(
+        BasicAi::barbarian_military_gap(&game, 0),
+        "the fixture must still contain a real barbarian quality gap"
+    );
+    assert!(
+        !AdvancedAi::imminent_city_attack(&game, 0, city, &visible),
+        "a strong contact three tiles out must not be treated as a next-turn strike"
+    );
+    assert!(
+        !game.attack_reach(raider).contains(&city_pos),
+        "the fixture's outer contact must remain outside the attack envelope"
+    );
+
+    game.players[0].research = None;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ai = AdvancedAi::new();
+    ai.advanced_research(&mut game, 0, &plan);
+    let selected = game.players[0]
+        .research
+        .as_deref()
+        .expect("the Science seat should still choose a technology");
+    assert!(
+        ai.tech_leads_to(&game, selected, "rocketry"),
+        "a non-imminent barbarian contact must not displace the Science beeline; selected {selected}"
+    );
+}
+
+#[test]
 fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
     let (mut game, recent, enemy_city) = timed_war_fixture(7_220);
     let quiet = game
@@ -9588,15 +9706,15 @@ fn settlement_forecast_delays_second_ring_jobs_and_models_water_housing() {
         Some(first[0]),
         "the rich second-ring tile is not owned for the first citizen"
     );
-    assert_eq!(AdvancedAi::settlement_base_housing(&game, center), 2.0);
+    assert_eq!(AdvancedAi::settlement_base_housing(&game, 0, center), 2.0);
 
     let mut coast = game.clone();
     shape_forecast_tile(&mut coast, first[5], "coast", false, None);
-    assert_eq!(AdvancedAi::settlement_base_housing(&coast, center), 3.0);
+    assert_eq!(AdvancedAi::settlement_base_housing(&coast, 0, center), 3.0);
 
     let mut fresh = game;
     assert!(fresh.map.set_river_edge(center, first[5], true));
-    assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
+    assert_eq!(AdvancedAi::settlement_base_housing(&fresh, 0, center), 5.0);
 }
 
 #[test]
@@ -10342,6 +10460,27 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
         "the cheapest available prerequisite toward Rocketry wins"
     );
 
+    // Research must advance to the first unknown victory technology rather
+    // than stop at a known rung while its project is being built.
+    science.players[0].techs.insert(crate::name!("rocketry"));
+    science.players[0]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    assert_eq!(
+        AdvancedAi::science_victory_tech_goal(&science, 0, GrandStrategy::Science),
+        Some("satellites")
+    );
+    science.players[0].research = None;
+    ai.advanced_research(&mut science, 0, &plan(GrandStrategy::Science));
+    let next_science_tech = science.players[0]
+        .research
+        .as_deref()
+        .expect("Science should keep researching toward Satellites");
+    assert!(
+        ai.tech_leads_to(&science, next_science_tech, "satellites"),
+        "Science must keep its research slot on the next victory-tech path"
+    );
+
     let mut culture = Game::new_full(1, 20, 14, 763, 300, 0, false);
     ai.advanced_research(&mut culture, 0, &plan(GrandStrategy::Culture));
     assert_eq!(
@@ -10361,6 +10500,54 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     assert!(
         ai.civic_leads_to(&diplomacy, civic, "global_warming_mitigation"),
         "diplomatic culture must advance toward Global Warming Mitigation's victory point"
+    );
+}
+
+#[test]
+fn coastal_science_takes_one_era_gated_harbor_tech_package() {
+    let mut game = Game::new_full(1, 20, 14, 76_003, 300, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    let coast = game
+        .nbrs(game.cities[&city].pos)
+        .into_iter()
+        .next()
+        .expect("city neighbor");
+    let tile = game.map.tiles.get_mut(&coast).unwrap();
+    tile.terrain = crate::name!("coast");
+    tile.feature = None;
+    tile.resource = None;
+    tile.hills = false;
+    game.world_era = 2;
+
+    let ai = AdvancedAi::new();
+    assert_eq!(
+        AdvancedAi::science_harbor_research_goal(&game, 0, GrandStrategy::Science),
+        Some("celestial_navigation")
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut game, 0, &plan);
+    let selected = game.players[0]
+        .research
+        .as_deref()
+        .expect("the Harbor package should select a prerequisite");
+    assert!(
+        ai.tech_leads_to(&game, selected, "celestial_navigation"),
+        "the bounded support package must research Harbor prerequisites"
     );
 }
 
@@ -10521,6 +10708,42 @@ fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
         game.players[0].research.as_deref(),
         Some("astrology"),
         "a closed race is not entered"
+    );
+}
+
+#[test]
+fn an_explicit_science_seat_stays_out_of_the_prophet_race() {
+    let mut game = Game::new_full(4, 30, 18, 76_106, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    game.players[0].research = None;
+    game.players[0].techs.clear();
+    for tech in ["animal_husbandry", "mining"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+
+    let mut treated = AdvancedAi::targeting(VictoryTarget::Science);
+    treated.enable_enter_the_prophet_race();
+
+    assert!(!treated.prophet_race_enabled_for(Some(VictoryTarget::Science)));
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "an explicit Science lane must not take the Prophet dead end"
     );
 }
 
@@ -11858,13 +12081,7 @@ fn a_targeted_science_refuses_unrelated_specialty_districts() {
     };
     let counts = ai.counts(&game, 0);
 
-    for district in [
-        "theater_square",
-        "commercial_hub",
-        "harbor",
-        "holy_site",
-        "preserve",
-    ] {
+    for district in ["theater_square", "commercial_hub", "holy_site", "preserve"] {
         let item = Item::District {
             district: Name::new(district),
             pos: site,
@@ -11874,6 +12091,27 @@ fn a_targeted_science_refuses_unrelated_specialty_districts() {
             "Science must refuse {district}"
         );
     }
+
+    // A single Harbor is the bounded coastal-support exception. It must be
+    // available to the Science lane, while a second Harbor remains a detour.
+    let harbor = Item::District {
+        district: Name::new("harbor"),
+        pos: site,
+    };
+    let harbor_value = ai.production_value(&game, 0, city, &harbor, &plan, &counts);
+    assert!(
+        harbor_value > 0.0,
+        "Science should value its first Harbor as support infrastructure"
+    );
+    game.cities.get_mut(&city).unwrap().queue.push(harbor);
+    let second_harbor = Item::District {
+        district: Name::new("harbor"),
+        pos: site,
+    };
+    assert!(
+        ai.production_value(&game, 0, city, &second_harbor, &plan, &counts) < -9_000.0,
+        "Science should not collect multiple Harbors"
+    );
 }
 
 #[test]
@@ -12374,6 +12612,42 @@ fn envoy_priority_reaches_adaptive_production_and_obeys_safety_gates() {
     assert!(treatment.prioritize_envoy_infrastructure(&mut quarter, 0, &plan));
     assert!(matches!(
         quarter.cities[&city].queue.first(),
+        Some(Item::District { district, .. }) if district == "diplomatic_quarter"
+    ));
+
+    // A named Science lane must establish its first Campus/Library chain
+    // before the ancillary Envoy reservation can consume an empty queue. The
+    // ordinary adaptive controller above remains unchanged: this gate belongs
+    // only to an explicit Science target.
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut science_before_foundation = game.clone();
+    science_before_foundation.record_contact(0, minor);
+    assert!(!science.prioritize_envoy_infrastructure(&mut science_before_foundation, 0, &plan));
+    assert!(science_before_foundation.cities[&city].queue.is_empty());
+
+    let mut science_bare_campus = game.clone();
+    science_bare_campus.record_contact(0, minor);
+    science_bare_campus.cities.get_mut(&city).unwrap().pop = 4;
+    install_ai_test_district(&mut science_bare_campus, city, "campus");
+    assert!(!science.prioritize_envoy_infrastructure(&mut science_bare_campus, 0, &plan));
+    assert!(science_bare_campus.cities[&city].queue.is_empty());
+
+    let mut science_after_foundation = game.clone();
+    science_after_foundation.record_contact(0, minor);
+    // The fixture's freshly founded city is still at the one-specialty
+    // district cap. Give it a second slot so the post-foundation assertion
+    // can exercise the envoy choice rather than a population refusal.
+    science_after_foundation.cities.get_mut(&city).unwrap().pop = 4;
+    install_ai_test_district(&mut science_after_foundation, city, "campus");
+    science_after_foundation
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    assert!(science.prioritize_envoy_infrastructure(&mut science_after_foundation, 0, &plan));
+    assert!(matches!(
+        science_after_foundation.cities[&city].queue.first(),
         Some(Item::District { district, .. }) if district == "diplomatic_quarter"
     ));
 
@@ -14662,13 +14936,29 @@ fn a_tile_is_worth_the_attack_it_opens() {
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     assert!(!ai.strike_opening, "the shipped default must be unchanged");
     assert_eq!(
-        ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None),
+        ai.strike_opening_value(StrikeOpening {
+            g: &game,
+            pid: 0,
+            uid: ours,
+            tile: adjacent,
+            group: &group,
+            enemies: &enemies,
+            visible: None,
+        }),
         0.0,
         "the shipped agent credits nothing"
     );
 
     ai.enable_strike_opening();
-    let in_contact = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+    let in_contact = ai.strike_opening_value(StrikeOpening {
+        g: &game,
+        pid: 0,
+        uid: ours,
+        tile: adjacent,
+        group: &group,
+        enemies: &enemies,
+        visible: None,
+    });
     assert!(
         in_contact > 0.0,
         "a tile that puts the target in reach must be worth something: {in_contact}"
@@ -14682,7 +14972,15 @@ fn a_tile_is_worth_the_attack_it_opens() {
     // A tile out of reach opens nothing.
     let far = anchor_at(&game, home, 1);
     assert_eq!(
-        ai.strike_opening_value(&game, 0, ours, far, &group, &enemies, None),
+        ai.strike_opening_value(StrikeOpening {
+            g: &game,
+            pid: 0,
+            uid: ours,
+            tile: far,
+            group: &group,
+            enemies: &enemies,
+            visible: None,
+        }),
         0.0,
         "a tile the target cannot be struck from is worth nothing"
     );
@@ -14693,7 +14991,15 @@ fn a_tile_is_worth_the_attack_it_opens() {
         ..group.clone()
     };
     assert_eq!(
-        ai.strike_opening_value(&game, 0, ours, adjacent, &holding, &enemies, None),
+        ai.strike_opening_value(StrikeOpening {
+            g: &game,
+            pid: 0,
+            uid: ours,
+            tile: adjacent,
+            group: &holding,
+            enemies: &enemies,
+            visible: None,
+        }),
         0.0,
         "a held group must not be pulled into contact"
     );
@@ -14701,7 +15007,15 @@ fn a_tile_is_worth_the_attack_it_opens() {
     // A wounded defender is worth more than a fresh one, because the odds
     // of the strike are better.
     game.units.get_mut(&theirs).unwrap().hp = 30;
-    let wounded = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+    let wounded = ai.strike_opening_value(StrikeOpening {
+        g: &game,
+        pid: 0,
+        uid: ours,
+        tile: adjacent,
+        group: &group,
+        enemies: &enemies,
+        visible: None,
+    });
     assert!(
         wounded > in_contact,
         "pouncing on a wounded target must score higher: {wounded} vs {in_contact}"
@@ -16359,6 +16673,107 @@ fn district_project_search_extends_only_concrete_great_person_races() {
         disabled < far,
         "a Congress-disabled class must not retain Great Person race value: {disabled} >= {far}"
     );
+}
+
+#[test]
+fn opening_gpp_projects_wait_except_for_prophets_and_exceptional_scientists() {
+    let mut game = Game::new(2, 24, 16, 7_105, 200, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "campus");
+    install_ai_test_district(&mut game, city, "holy_site");
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("library"), crate::name!("shrine")];
+    game.players[0]
+        .techs
+        .extend([crate::name!("writing"), crate::name!("astrology")]);
+    game.turn = 51;
+    assert!(
+        game.turn < game.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS),
+        "the fixture must cover the turn-51 Online opening"
+    );
+
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let religion_plan = StrategicPlan {
+        strategy: GrandStrategy::Religion,
+        ..science_plan.clone()
+    };
+    let ordinary = AdvancedAi::new();
+    let mut restrained = AdvancedAi::new();
+    restrained.enable_early_project_restraint();
+
+    let ordinary_science =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    let restrained_science =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert!(ordinary_science > EARLY_GPP_PROJECT_FALLBACK_CAP);
+    assert_eq!(restrained_science, EARLY_GPP_PROJECT_FALLBACK_CAP);
+
+    let prophet =
+        restrained.district_project_value(&game, 0, city, "holy_site_prayers", &religion_plan);
+    assert!(
+        prophet > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "an open Prophet race must remain worth its production: {prophet}"
+    );
+
+    let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
+    assert_eq!(
+        game.current_great_person("scientist").map(|(id, _)| id),
+        Some("aryabhata"),
+        "the fixture's current early Scientist must be the three-boost prize"
+    );
+    let cost = game.gp_cost(0, "scientist");
+    assert!(
+        cost > award,
+        "one project must be a clutch, not a finished race"
+    );
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), cost - award);
+    let exceptional_clutch =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert!(
+        exceptional_clutch > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "a one-project claim on an exceptional Scientist must escape the opening cap"
+    );
+
+    game.retired_great_people.insert("aryabhata".to_string());
+    assert_eq!(
+        game.current_great_person("scientist").map(|(id, _)| id),
+        Some("euclid"),
+        "the comparison Scientist supplies only two boosts"
+    );
+    let euclid_cost = game.gp_cost(0, "scientist");
+    assert!(euclid_cost > award);
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), euclid_cost - award);
+    let ordinary_clutch =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert_eq!(ordinary_clutch, EARLY_GPP_PROJECT_FALLBACK_CAP);
+
+    game.players[0].gpp.insert("scientist".to_string(), 0.0);
+    game.turn = game.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS);
+    let after_opening =
+        restrained.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    let stock_after_opening =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert_eq!(after_opening, stock_after_opening);
 }
 
 #[test]
@@ -21486,6 +21901,7 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         let settler = probe.spawn_test_unit("settler", 0, source);
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
+        ai.remember_early_settler_home(&probe, 0, settler);
         ai.disable_frontier_loyalty();
         ai.best_settler_target(&probe, 0, settler, 8, None)
             .map(|(pos, _)| pos)
@@ -21496,6 +21912,7 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         let settler = game.spawn_test_unit("settler", 0, source);
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
+        ai.remember_early_settler_home(&game, 0, settler);
         // Isolate the hysteresis: the fogged-frontier rule would retire a
         // far site on this small board for its own reason.
         ai.disable_frontier_loyalty();
@@ -21547,6 +21964,163 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
     assert!(!AdvancedAi::legacy().settler_target_hysteresis);
 }
 
+/// `route_step` is a multi-turn geometric answer and can still return a
+/// first tile the unit cannot enter with its remaining movement. The live
+/// non-commit path used to remove that target without writing hysteresis, so
+/// the next frame selected the same site again.
+#[test]
+fn a_settler_does_not_repick_a_route_it_cannot_enter_this_turn() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let first = game
+        .route_step(settler, target, 0)
+        .expect("the fixture has a geometric route to the target");
+    game.units
+        .get_mut(&settler)
+        .expect("the test Settler")
+        .moves_left = 0.5;
+    assert!(
+        game.route_step(settler, target, 0).is_some(),
+        "the geometric route remains available"
+    );
+    assert!(
+        !game.can_move(settler, first),
+        "the first route step cannot be paid this turn"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.enable_settler_never_idles();
+    assert!(
+        ai.settler_target_hysteresis_on(),
+        "the live bridge's route recovery owns hysteresis"
+    );
+    ai.settler_targets.insert(settler, target);
+
+    assert!(
+        !ai.advanced_settler_step(&mut game, 0, settler),
+        "an unpayable first step is not reported as movement"
+    );
+    assert_eq!(
+        ai.settler_avoid
+            .get(&settler)
+            .map(|(position, _)| *position),
+        Some(target),
+        "the locally blocked route receives the normal hysteresis cooldown"
+    );
+    assert_ne!(
+        ai.settler_targets.get(&settler),
+        Some(&target),
+        "the same unmovable target is not immediately retained"
+    );
+}
+
+/// A cached destination can fail safety for an unguarded Settler even while a
+/// second Settler's bound guard makes that same site safe. Version-2
+/// hysteresis used to copy the first unit's transient risk drop into the
+/// second unit's dead-site memory, leaving all available Settlers unable to
+/// use the guarded route.
+#[test]
+fn settler_target_hysteresis_v2_keeps_guarded_routes_available_to_other_settlers() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    let unguarded = game.spawn_test_unit("settler", 0, source);
+    let guarded = game.spawn_test_unit("settler", 0, source);
+    let guard = game.spawn_test_unit("warrior", 0, source);
+    let raider_at =
+        game.nbrs(target)
+            .into_iter()
+            .find(|position| {
+                game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a visible raider post beside the settle site");
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let observer_at =
+        game.nbrs(raider_at)
+            .into_iter()
+            .find(|position| {
+                *position != target
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a clear observation post beside the raider");
+    let _observer = game.spawn_test_unit("scout", 0, observer_at);
+    game.players[0].explored.insert(raider_at);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.enable_settler_guard_holds();
+    ai.enable_settler_target_hysteresis_2();
+    ai.settler_targets.insert(unguarded, target);
+    ai.settler_targets.insert(guarded, target);
+    ai.settler_guards.insert(guarded, guard);
+
+    let visible = ai.battlefront_visibility(&game, 0);
+    assert!(game.sees(&visible, raider_at), "the raider is visible");
+    let unguarded_risk = ai.settlement_tile_risk(&game, 0, Some(unguarded), target, &visible);
+    let guarded_risk = ai.settlement_tile_risk(&game, 0, Some(guarded), target, &visible);
+    assert!(
+        unguarded_risk > SETTLER_STEP_RISK_LIMIT,
+        "the unguarded Settler must reject the threatened site ({unguarded_risk})"
+    );
+    assert!(
+        guarded_risk <= SETTLER_STEP_RISK_LIMIT,
+        "the bound guard must make the same site safe ({guarded_risk})"
+    );
+
+    let _ = ai.advanced_settler_step(&mut game, 0, unguarded);
+    assert_eq!(
+        ai.settler_avoid
+            .get(&unguarded)
+            .map(|(position, _)| *position),
+        Some(target),
+        "ordinary hysteresis still sets the unsafe route aside for its mover"
+    );
+    assert!(
+        !ai.settler_dead_sites
+            .get(&guarded)
+            .is_some_and(|sites| sites.contains_key(&target)),
+        "a guarded Settler must not inherit another Settler's transient risk drop"
+    );
+}
+
+/// Version-2 hysteresis still shares a site that is intrinsically unavailable.
+/// This is deliberately distinct from a risk rejection: the host's block is
+/// true for every Settler, so keeping it out of all their picks avoids a
+/// redundant march without suppressing a route another guard can protect.
+#[test]
+fn settler_target_hysteresis_v2_shares_a_permanently_blocked_site() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    // Keep this synthetic hysteresis pair off the founded city. A live
+    // Settler first observed on its own city is intentionally classified as
+    // an early-opening Settler and receives the capital corridor; this test
+    // is about sharing a host-blocked site, not that opening policy.
+    let staging = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| game.city_at(*position).is_none())
+        .expect("fixture has a non-city staging tile");
+    let dropping = game.spawn_test_unit("settler", 0, staging);
+    let other = game.spawn_test_unit("settler", 0, staging);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.enable_settler_target_hysteresis_2();
+    ai.settler_targets.insert(dropping, target);
+    std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(target);
+
+    let _ = ai.advanced_settler_step(&mut game, 0, dropping);
+    assert!(
+        ai.settler_dead_sites
+            .get(&other)
+            .is_some_and(|sites| sites.contains_key(&target)),
+        "a host-blocked destination is invalid for every Settler"
+    );
+}
+
 /// The target can remain a fine city site while a visible raider makes only
 /// its first route step unsafe. Waiting for the three-stall retirement loses
 /// turns and lets another settler choose the same corridor. The opt-in sends
@@ -21560,6 +22134,11 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
         let (mut game, home) = camp_bounty_board(if barbarian { 92_041 } else { 92_042 });
         game.record_contact(0, 1);
         game.at_war.insert((0, 1));
+        // The route fixture intentionally makes all nearby sites dry. Keep
+        // that geometry eligible under the opening settlement policy so this
+        // remains a route-detour test rather than a water-site test.
+        game.players[0].techs.insert(crate::name!("pottery"));
+        game.players[0].gold = 1_000.0;
         // Make the nearby alternative sites comparable open ground. The
         // chosen target is cached deliberately: this test isolates a route
         // blocker that appears AFTER an otherwise valid target was selected.
@@ -21589,7 +22168,11 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
         // the blocker after that decision, which is the live failure shape:
         // an attractive target becomes route-dangerous rather than never
         // qualifying as a settlement site at all.
-        let picker = AdvancedAi::new();
+        let mut picker = AdvancedAi::new();
+        if live {
+            picker.enable_live_bridge();
+            picker.remember_early_settler_home(&game, 0, settler);
+        }
         let target = picker
             .best_settler_target(&game, 0, settler, 8, None)
             .map(|(position, _)| position)
@@ -21705,7 +22288,6 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
             ai.settler_target_has_visible_route_threat(&game, 0, settler, target),
             "the route-specific gate sees the blocker even though the target itself is safe"
         );
-
         ai.settler_targets.insert(settler, target);
         game.units.get_mut(&settler).unwrap().moves_left = 2.0;
         assert!(
@@ -21713,6 +22295,18 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
             "the detour immediately spends the Settler's turn on the safe route"
         );
         let fallback = ai.settler_targets[&settler];
+        if live && fallback == target {
+            // The live opening corridor is narrower than this historical
+            // route-detour fixture. If every in-corridor runner-up is also
+            // covered, staying local is the intended answer; taking a
+            // distant runner-up would recreate the captured-second-Settler
+            // failure this test now guards against.
+            assert!(
+                ai.early_settler_site_allowed(&game, 0, settler, fallback),
+                "a live detour may keep the target only inside the early corridor"
+            );
+            return;
+        }
         assert_ne!(fallback, target, "the unsafe corridor is not the runner-up");
         assert_eq!(
             ai.settler_threat_deferrals.get(&target).copied(),
@@ -21779,18 +22373,24 @@ fn settler_threat_detour_is_a_native_opt_in_withheld_by_the_ledger() {
 /// on the safe-runner detour while the separately screened short target hold
 /// remains governed by the published default.
 #[test]
-fn live_capture_lessons_enable_route_recovery_without_hysteresis() {
+fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
     assert!(live.settlement_safety);
     assert!(live.settler_routing_recovery_on());
-    assert!(!live.settler_target_hysteresis_on());
+    assert!(
+        !live.settler_target_hysteresis_2,
+        "the average-based deployment selection keeps the hysteresis arm off"
+    );
+    live.disable_settler_target_hysteresis_2();
+    assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_threat_detour_on());
 
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge();
     withheld.disable_live_settler_capture_lessons();
+    withheld.disable_settler_target_hysteresis_2();
     assert!(!withheld.settler_routing_recovery_on());
     assert!(!withheld.settler_target_hysteresis_on());
     assert!(!withheld.settler_threat_detour_on());
@@ -21820,18 +22420,18 @@ fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!ai.base.one_shot_recovery);
 }
 
-/// `settle_sooner` is a native opt-in: off in both bare controllers and in
-/// the current deployment genome, yet flippable by name through
+/// `settle_sooner` is a native opt-in: off in both bare controllers, enabled
+/// by the current deployment genome, and still flippable by name through
 /// `PRODUCTION_OPT_INS`.
 #[test]
-fn settle_sooner_is_a_native_opt_in_withheld_by_the_ledger() {
+fn settle_sooner_is_a_native_opt_in_enabled_by_the_ledger() {
     assert!(!AdvancedAi::new().settle_sooner);
     assert!(!AdvancedAi::legacy().settle_sooner);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        !deployed.settle_sooner,
-        "the explicit three-batch selection leaves this arm off"
+        deployed.settle_sooner,
+        "the explicit three-batch selection enables this qualifying arm"
     );
     let enable = GENES
         .iter()
@@ -36238,8 +36838,8 @@ fn builder_tries_the_next_tile_follows_the_ledger() {
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
     assert!(
-        deployment.base.builder_tries_the_next_tile,
-        "selected by the current three-batch deployment policy"
+        !deployment.base.builder_tries_the_next_tile,
+        "not selected by the current three-batch deployment policy"
     );
 }
 
@@ -36366,6 +36966,158 @@ fn open_land(game: &Game, pos: Pos) -> bool {
             .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
 }
 
+/// The second Settler's home is the capital that existed when it appeared,
+/// not whichever city happens to be nearest after another Settler founds.
+/// The live bridge keeps its deliberate targets inside the six-tile opening
+/// corridor and carries that anchor through its rebuilt unit ids.
+#[test]
+fn a_live_early_settler_keeps_a_capital_home_corridor() {
+    let (mut game, _city, home) = barbarian_field(71_308);
+    let far = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 8 && open_land(&game, *pos))
+        .expect("open ground eight tiles from the capital");
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.remember_early_settler_home(&game, 0, settler);
+
+    assert_eq!(live.early_settler_home(settler), Some(home));
+    assert!(!live.early_settler_site_allowed(&game, 0, settler, far));
+    let near = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == EARLY_SETTLER_HOME_RADIUS && open_land(&game, *pos))
+        .expect("open ground on the edge of the opening corridor");
+    assert!(live.early_settler_site_allowed(&game, 0, settler, near));
+    let selected = live
+        .best_settler_target(&game, 0, settler, 20, None)
+        .expect("the capital has an in-corridor site");
+    assert!(
+        game.wdist(home, selected.0) <= EARLY_SETTLER_HOME_RADIUS,
+        "the picker never chooses a remote opening site: {:?}",
+        selected.0
+    );
+
+    let remapped = settler + 1_000;
+    live.remap_unit_memory(&BTreeMap::from([(settler, remapped)]));
+    assert_eq!(live.early_settler_home(remapped), Some(home));
+}
+
+/// Reconstruct the current-game failure after the escort is gone: an early
+/// Settler outside its capital corridor must return home, even when its old
+/// target points farther away. The capture-aware route remains in charge of
+/// the return step, so a visible raider cannot turn the correction into a
+/// second exposed march.
+#[test]
+fn a_live_early_settler_returns_home_after_it_is_pushed_too_far() {
+    let (mut game, _city, home) = barbarian_field(71_309);
+    let far = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 8 && open_land(&game, *pos))
+        .expect("open ground eight tiles from the capital");
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let remote_target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) >= 10 && open_land(&game, *pos))
+        .expect("a remote stale target");
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.remember_early_settler_home(&game, 0, settler);
+    game.relocate(settler, far);
+    live.settler_targets.insert(settler, remote_target);
+
+    let before = game.units[&settler].pos;
+    assert!(live.advanced_settler_step(&mut game, 0, settler));
+    let after = game.units[&settler].pos;
+    assert!(
+        game.wdist(after, home) < game.wdist(before, home),
+        "the early Settler moves home: {before:?} -> {after:?}"
+    );
+    assert!(
+        !live.settler_targets.contains_key(&settler),
+        "the remote target is cleared while the Settler returns"
+    );
+}
+
+/// Once the early Settler is outside its corridor, the live flee goal is the
+/// capital rather than the stale frontier site. With a visible raider beside
+/// it, the full-turn escape first leaves capture reach if necessary, then the
+/// next Settler step turns home instead of continuing the frontier march.
+#[test]
+fn a_live_early_settler_flees_homeward_out_of_capture_reach() {
+    let (mut game, _city, home) = barbarian_field(71_310);
+    let start = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 8 && open_land(&game, *pos))
+        .expect("open ground eight tiles from the capital");
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.remember_early_settler_home(&game, 0, settler);
+    game.relocate(settler, start);
+    let raider_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("an open tile beside the early Settler");
+    let raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let remote_target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) >= 10 && open_land(&game, *pos))
+        .expect("a remote stale target");
+
+    live.settler_targets.insert(settler, remote_target);
+    let reach = live.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the raider can capture the Settler"
+    );
+
+    assert_eq!(
+        live.civilian_flee_step(&mut game, 0, settler),
+        Some(true),
+        "the live Settler spends the turn escaping"
+    );
+    let after = game.units[&settler].pos;
+    assert!(
+        !reach.covers(&game, after),
+        "the full-turn escape ends outside the raider's reach: {after:?}"
+    );
+    assert!(
+        game.wdist(after, home) > EARLY_SETTLER_HOME_RADIUS,
+        "the fixture exercises the emergency excursion"
+    );
+    game.remove_unit(raider);
+    game.turn += 1;
+    game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+    game.units.get_mut(&settler).unwrap().moved = false;
+    assert!(live.advanced_settler_step(&mut game, 0, settler));
+    let homeward = game.units[&settler].pos;
+    assert!(
+        game.wdist(homeward, home) < game.wdist(after, home),
+        "the following step returns home rather than following {remote_target:?}: {after:?} -> {homeward:?}"
+    );
+}
+
 /// A settler two tiles from home with a Warrior two tiles away flees to a
 /// tile the Warrior cannot reach, before anything else in its step.
 #[test]
@@ -36405,13 +37157,13 @@ fn a_settler_inside_a_raiders_reach_flees_out_of_it() {
     );
 }
 
-/// With its broader civilian-safety opt-in explicitly withheld, the live
+/// After explicitly withholding its broader civilian-safety opt-in, the live
 /// bridge must not leave an unguarded Settler inside a visible direct-capture
 /// envelope merely because every *one-step* retreat is also covered. This is
 /// the narrow emergency floor for a live Settler that will otherwise be taken
 /// before it receives another turn.
 #[test]
-fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() {
+fn a_live_settler_escapes_a_direct_barbarian_capture_after_explicit_withhold() {
     let (mut game, _city, home) = barbarian_field(71_026);
     for unit in game.player_unit_ids(0) {
         if game.rules.units[game.units[&unit].kind].class == "military" {
@@ -36447,8 +37199,13 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() 
         "the deployed seat uses the live shadow"
     );
     assert!(
+        ai.civilian_out_of_reach,
+        "the average-based deployment selection enables the broader civilian-safety opt-in"
+    );
+    ai.disable_civilian_out_of_reach();
+    assert!(
         !ai.civilian_out_of_reach,
-        "the explicit selection withholds the broader civilian-safety opt-in"
+        "the fixture explicitly withholds the broader civilian-safety opt-in"
     );
     let reach = ai.barbarian_reach(&game, 0, start, 10);
     assert!(
@@ -36833,11 +37590,11 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     assert_ne!(safe.builder_targets.get(&builder), Some(&target));
 }
 
-/// The eight remaining version-2 families of 2026-08-24: each is a native opt-in, off in
-/// both controllers, published for `gene_screen` as `<base>-2`, and its
-/// enable turns version 1 off so a seat plays one version of the family.
+/// Native version-2 families are opt-in, off in both controllers, published
+/// for `gene_screen` as `<base>-2`, and their enables turn version 1 off so a
+/// seat plays one version of a family.
 #[test]
-fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
+fn version_two_genes_are_opt_in_and_turn_version_one_off() {
     let families = [
         "amenity-project-preemption",
         "settler-guard-holds",
@@ -36847,6 +37604,7 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
         "settler-target-hysteresis",
         "district-coverage",
         "power-the-laboratory",
+        "science-victory-drive",
     ];
     fn reads(ai: &AdvancedAi) -> Vec<(bool, bool)> {
         vec![
@@ -36867,6 +37625,7 @@ fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
             (ai.settler_target_hysteresis, ai.settler_target_hysteresis_2),
             (ai.base.district_coverage, ai.base.district_coverage_2),
             (ai.power_the_laboratory, ai.power_the_laboratory_2),
+            (ai.science_victory_drive, ai.science_victory_drive_2),
         ]
     }
     for (i, base) in families.iter().enumerate() {
@@ -39807,6 +40566,9 @@ fn the_science_lane_widens_while_a_city_can_still_mature() {
     let mut on = AdvancedAi::new();
     on.enable_live_bridge();
     on.enable_science_expansion_phase();
+    // `city-target-meets-the-map` is separately selected and clamps this
+    // fixture to its reachable sites; withhold it to isolate this ceiling.
+    on.disable_city_target_meets_the_map();
     on.victory_target = Some(VictoryTarget::Science);
     game.turn = until - 1;
     assert_eq!(

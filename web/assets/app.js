@@ -12322,6 +12322,27 @@ function cityIconInk(fill, cityState) {
   if (cityState) return "#e7e9e3";
   return lightness(fill) < .55 ? "#fff4d4" : "#11161b";
 }
+// Civilization VI changes a city's ordinary fortification mark to this pair
+// of shields once it has outer defenses. The source is the exact
+// `Banner_StrengthIcon_Shields` sprite its CityBannerManager selects from
+// `Base/Platforms/Windows/BLPs/UI/InWorld.blp`, cut by
+// tools/civ6_city_banner_art.py rather than redrawn here.
+const CIV6_CITY_BANNER_WALL_SHIELDS_WIDTH = 21;
+const CIV6_CITY_BANNER_WALL_SHIELDS_HEIGHT = 18;
+const CIV6_CITY_BANNER_WALL_SHIELDS = new Image();
+let CIV6_CITY_BANNER_WALL_SHIELDS_READY = false;
+CIV6_CITY_BANNER_WALL_SHIELDS.onload = () => {
+  CIV6_CITY_BANNER_WALL_SHIELDS_READY = true;
+  if (state) draw();
+};
+CIV6_CITY_BANNER_WALL_SHIELDS.src = "/assets/civ6-city-banner-shields.png";
+function drawCiv6CityBannerWallShields(context, x, y, width) {
+  if (!CIV6_CITY_BANNER_WALL_SHIELDS_READY) return;
+  const height = width * CIV6_CITY_BANNER_WALL_SHIELDS_HEIGHT /
+    CIV6_CITY_BANNER_WALL_SHIELDS_WIDTH;
+  context.drawImage(CIV6_CITY_BANNER_WALL_SHIELDS,
+                    x - width / 2, y - height / 2, width, height);
+}
 function drawCityIcon(context, x, y, radius, fill, outline, cityState = false,
                       capital = false, badge = true) {
   const r = Math.max(.75, radius);
@@ -21666,8 +21687,17 @@ function drawScene() {
       }
       if ((c.wall_max || 0) > 0) {
         const wallFraction = Math.max(0, Math.min(1, (c.wall_hp || 0) / c.wall_max));
-        cx.fillStyle = "#071b2b"; cx.fillRect(bx, statusY, tw, 3);
-        cx.fillStyle = "#59aee1"; cx.fillRect(bx, statusY, tw * wallFraction, 3);
+        // Civ VI puts its double-shield marker directly beside this blue outer
+        // defense meter. Reserving its own seat means the marker explains the
+        // bar without extending a city banner into its faith or spy markers.
+        const wallIconWidth = Math.min(15 * UI_K(), Math.max(10, tw * .24));
+        const wallBarX = bx + wallIconWidth + 2;
+        const wallBarWidth = Math.max(1, tw - wallIconWidth - 2);
+        drawCiv6CityBannerWallShields(cx, bx + wallIconWidth / 2,
+                                      statusY + 1.5, wallIconWidth);
+        cx.fillStyle = "#071b2b"; cx.fillRect(wallBarX, statusY, wallBarWidth, 3);
+        cx.fillStyle = "#59aee1";
+        cx.fillRect(wallBarX, statusY, wallBarWidth * wallFraction, 3);
         statusY += 4;
       }
       // Production lives in the medallion alone — one circle on the plate's
@@ -23131,11 +23161,18 @@ function victoryMeter(victory, metric, progress) {
     const total = Math.max(1, +metric.tech_total || 0);
     const launches = +metric.project_target || 4;
     const done = +metric.projects || 0;
+    const distanceTarget = Math.max(1, +metric.distance_target || 50);
     const dots = Array.from({ length: launches },
       (_, i) => `<i${i < done ? ' class="on"' : ""}></i>`).join("");
+    // The launch dots are a useful checklist before the expedition leaves.
+    // Once it has, leaving all four lit makes an active race look frozen. The
+    // host's World Rankings points now give this half a real moving meter.
+    const race = done >= launches
+      ? `<span class="victory-half">${bar(100 * (+metric.distance || 0) / distanceTarget)}</span>`
+      : `<span class="victory-dots">${dots}</span>`;
     return `<div class="victory-meter split"><span class="victory-half">` +
       `${bar(100 * (+metric.techs || 0) / total)}</span>` +
-      `<span class="victory-dots">${dots}</span></div>`;
+      `${race}</div>`;
   }
   if (victory === "culture") {
     const total = Math.max(1, +metric.civic_total || 0);
@@ -23169,7 +23206,7 @@ function victoryValue(victory, metric) {
 }
 
 function victoryTrackerSubheading(victory) {
-  if (victory === "science") return `<span>Techs</span><span>Launches</span>`;
+  if (victory === "science") return `<span>Techs</span><span>Race</span>`;
   if (victory === "culture") return `<span>Civics</span><span>Tourism</span>`;
   if (victory === "religious") return `<span></span><span>Civs</span>`;
   if (victory === "diplomatic") return `<span></span><span>Score</span>`;
@@ -23195,9 +23232,14 @@ function victoryDescription(victory, metric) {
   if (victory === "science") {
     const tree = `${metric.techs || 0} of ${metric.tech_total || 0} technologies researched`;
     const launches = `${metric.projects || 0} of ${metric.project_target || 4} space-race missions launched`;
-    return metric.projects >= metric.project_target
-      ? `${tree} · ${compactStat(metric.distance)} of ${compactStat(metric.distance_target)} light-years travelled`
-      : `${tree} · ${launches}`;
+    if (metric.projects >= metric.project_target) {
+      const speed = Number(metric.speed);
+      const rate = Number.isFinite(speed)
+        ? ` · ${compactStat(Math.max(0, speed))} light-years per turn`
+        : "";
+      return `${tree} · ${compactStat(metric.distance)} of ${compactStat(metric.distance_target)} light-years travelled${rate}`;
+    }
+    return `${tree} · ${launches}`;
   }
   if (victory === "culture") {
     return `${metric.civics || 0} of ${metric.civic_total || 0} civics researched · ` +

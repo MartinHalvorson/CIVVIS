@@ -18,6 +18,7 @@ from pathlib import Path
 import plistlib
 import re
 import secrets
+import shlex
 import shutil
 import stat
 import subprocess
@@ -2737,27 +2738,75 @@ def freshness_service_label(repo: Path) -> str:
     return f"com.civvis.freshness.{freshness_key(repo)}"
 
 
-def macos_freshness_plist(repo: Path, worker: Path) -> bytes:
+def macos_freshness_plist_path(repo: Path) -> Path:
+    return (
+        Path.home()
+        / "Library"
+        / "LaunchAgents"
+        / f"{freshness_service_label(repo)}.plist"
+    )
+
+
+def macos_freshness_command(repo: Path, worker: Path) -> List[str]:
+    """The launchd invocation, wrapped so the agent cleans up after its clone.
+
+    ⚠⚠ PER-CLONE AGENTS OUTLIVE THEIR CLONES. `freshness_key` hashes the git
+    directory path, so every clone `bootstrap` touches installs its own
+    `com.civvis.freshness.<hash>` agent — including session scratch clones that
+    are deleted days later. Nothing ever deleted the agent: measured on
+    `mbp-m5-max-128` on 2026-09-01, six of the host's ten freshness agents
+    pointed at directories that no longer exist, each failing every five
+    minutes forever. launchd cannot express "unload yourself when a path
+    disappears", so the job itself checks: when its worker script or its
+    target worktree is gone, it deletes its own plist and boots itself out
+    instead of attempting the refresh.
+
+    The order inside the guard matters. The plist is removed FIRST, because
+    `bootout` kills this very process and nothing after it would run; a
+    `bootout` that then fails (or does not exist, off macOS) still leaves the
+    definition gone, so the job is dead at the next login either way.
+
+    The refresh's log lands in the same `service.log` as before, via a shell
+    redirection rather than launchd's StandardOutPath — see
+    `macos_freshness_plist` for why the plist must not name it.
+    """
     label = freshness_service_label(repo)
-    log = freshness_dir(repo) / "service.log"
-    payload = {
-        "EnvironmentVariables": {"CIVVIS_FRESHNESS_MARKER": FRESHNESS_MARKER},
-        "Label": label,
-        "ProcessType": "Background",
-        "ProgramArguments": [
+    refresh = shlex.join(
+        [
             sys.executable,
             str(worker),
             "refresh",
             "--scheduled",
             "--repo",
             str(main_worktree(repo)),
-        ],
+        ]
+    )
+    guard = (
+        f"if [ ! -e {shlex.quote(str(worker))} ] || "
+        f"[ ! -d {shlex.quote(str(main_worktree(repo)))} ]; then "
+        f"/bin/rm -f -- {shlex.quote(str(macos_freshness_plist_path(repo)))}; "
+        f'exec /bin/launchctl bootout "gui/$(id -u)/{label}"; '
+        f"fi; "
+        f"exec {refresh} >> {shlex.quote(str(freshness_dir(repo) / 'service.log'))} 2>&1"
+    )
+    return ["/bin/sh", "-c", guard]
+
+
+def macos_freshness_plist(repo: Path, worker: Path) -> bytes:
+    # ⚠ Nothing in this plist may name a path inside the clone. launchd
+    # resolves WorkingDirectory and StandardOut/ErrorPath BEFORE spawning, so a
+    # job that carried them could never run once the clone was deleted — which
+    # is exactly the moment the self-cleanup in `macos_freshness_command` has
+    # to run. The refresh does not need a cwd (`--repo` is absolute) and the
+    # log is applied by the shell only on the branch where the clone exists.
+    payload = {
+        "EnvironmentVariables": {"CIVVIS_FRESHNESS_MARKER": FRESHNESS_MARKER},
+        "Label": freshness_service_label(repo),
+        "ProcessType": "Background",
+        "ProgramArguments": macos_freshness_command(repo, worker),
         "RunAtLoad": True,
-        "StandardErrorPath": str(log),
-        "StandardOutPath": str(log),
         "StartInterval": FRESHNESS_INTERVAL_SECONDS,
         "ThrottleInterval": 60,
-        "WorkingDirectory": str(main_worktree(repo)),
     }
     return plistlib.dumps(payload, sort_keys=True)
 
@@ -3328,7 +3377,7 @@ def install_freshness_service(repo: Path) -> List[Path]:
     key = freshness_key(root)
     if sys.platform == "darwin":
         label = freshness_service_label(root)
-        path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        path = macos_freshness_plist_path(root)
         domain = f"gui/{os.getuid()}"
         changed = write_managed_service(path, macos_freshness_plist(root, worker))
         loaded = not run(
@@ -3395,24 +3444,21 @@ def freshness_service_error(repo: Path) -> Optional[str]:
     key = freshness_key(root)
     if sys.platform == "darwin":
         label = freshness_service_label(root)
-        path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        path = macos_freshness_plist_path(root)
         if not path.is_file() or FRESHNESS_MARKER.encode("utf-8") not in path.read_bytes():
             return "managed Git freshness LaunchAgent is missing or stale; run bootstrap"
         try:
             payload = plistlib.loads(path.read_bytes())
         except (TypeError, ValueError):
             return "managed Git freshness LaunchAgent is unreadable; run bootstrap"
-        expected_tail = [
-            str(worker),
-            "refresh",
-            "--scheduled",
-            "--repo",
-            str(main_worktree(root)),
-        ]
+        # The expected invocation comes from the one function that writes it,
+        # so this check and the plist cannot drift apart — a plist from before
+        # the self-cleanup guard existed reads as outdated and bootstrap
+        # rewrites it.
         if (
-            list(payload.get("ProgramArguments") or [])[1:] != expected_tail
+            list(payload.get("ProgramArguments") or [])
+            != macos_freshness_command(root, worker)
             or payload.get("StartInterval") != FRESHNESS_INTERVAL_SECONDS
-            or payload.get("WorkingDirectory") != str(main_worktree(root))
         ):
             return "managed Git freshness LaunchAgent is outdated; run bootstrap"
         domain = f"gui/{os.getuid()}/{label}"

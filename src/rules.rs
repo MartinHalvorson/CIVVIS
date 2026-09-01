@@ -3349,14 +3349,13 @@ mod tests {
         // DOUBLED — a ratio checked across all 16 housing improvements before either
         // was touched, since matching the raw column would have doubled every one.
         //
-        // Moved again by the installed Gathering Storm load order: Pike and
-        // Shot maintenance is 4, Tagma costs 220 with 4 maintenance and upgrades
-        // to Cuirassier, Prasat is Faith 6 with one Relic slot, Sukiennice
-        // is Gold 2, Tlachtli is Culture 2, Eyjafjallajökull gives adjacent Food
-        // 1, and Armagh's Monastery permits Hills. Mine accepts Hills, a valid
-        // resource, or Volcanic Soil; Terrace Farm and Rock-Hewn Church accept
-        // Hills or Volcanic Soil. The historical XML snippets that suggested
-        // the opposite values are not the effective ruleset.
+        // Moved again by fixing the fidelity audit's content-pack load order:
+        // Pike and Shot maintenance is 4, Tagma costs 220 with 4 maintenance
+        // and upgrades to Cuirassier, Prasat is Faith 6 with one Relic slot,
+        // Sukiennice is Gold 2, Tlachtli is Culture 2, and Eyjafjallajökull
+        // gives adjacent Food 1. These are the effective rows after the
+        // complete Gathering Storm manifest order, rather than values from an
+        // overlay that was accidentally applied before its base row.
         //
         // Rock-Hewn Church's Hills and Volcanic Soil alternatives are carried
         // as one semantic field (`hills_or_feature`) in both the ruleset and
@@ -3588,14 +3587,9 @@ mod tests {
         // on `GreatPeople`, not a balance change.
         // Moved again by wiring `tools/civ6_fidelity.py --check --max 0` into
         // CI, whose first run found ten divergences nothing had reported
-        // because nothing ran it: the Tagma cost 180 and upgraded to a Tank
-        // (shipped: 220, Cuirassier, 4 Gold upkeep), the Pike and Shot paid 3
-        // upkeep (4), the Prasat held two Relics at +4 Faith (one, +6), the
-        // Sukiennice paid +3 Gold (+2), the Tlachtli +1 Culture (+2), and
-        // Eyjafjallajökull's neighbours took +2 Food (+1). The new
-        // `Difficulties` projection added the human's camp Gold above Prince,
-        // which `BARBARIAN_CAMP_GOLD_SCALING` runs to -20 at Deity and the
-        // data had stopped transcribing at Warlord's +5.
+        // because nothing ran it. The direct install audit now follows each
+        // expansion's manifest order; the cache-only audit remains useful as
+        // an independent check but is refused when it is a foreign ruleset.
         // Moved again by reading the disasters' fertility table instead of
         // guessing it. `RandomEvent_Yields` in
         // `DLC/Expansion2/Data/Expansion2_RandomEvents.xml` rates each YIELD

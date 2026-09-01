@@ -1,5 +1,9 @@
 # The genome, and why breeding it has not worked
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
+⚠ `civvis tournament`, `civvis league`, `civvis arena` and `civvis rating` were removed in #2357 (2026-08-23) with the league and the Elo ledgers (`docs/closed/LEAGUE.md`, `docs/closed/RATING.md`). Their commands in this document are likewise the record, not instructions.
+
 > ⚠ Vocabulary note (2026-08-23): "genome" in this document means the legacy
 > continuous `Weights` vector searched by `civvis evolve` and the league —
 > not the behaviour-gene genome. In current vocabulary the **gene pool** is
@@ -635,6 +639,18 @@ is not. Breeding on score selects for padding; breeding on league rating
 selected for something −98 Elo. `Game::victory_threat` is the one statistic
 validated against both a known null and a known positive, and it is the only
 one worth pointing a search at.
+
+> **Superseded in deployment (2026-09-01).** The shipped breeder does not
+> select on wins only. `FitnessObservation::selection_value` in
+> `src/evolve.rs` deliberately breeds on 50·score_share + 12·combat_share
+> with no win term: on two disjoint 64-game blocks the historical 100-point
+> win bonus made the full leader win only 8/16 independent K=8 selections,
+> and removing it raised stability to 12/16 while roughly halving the paired
+> best-vs-runner SE (rationale in the `selection_value` doc comment and on
+> `eval_game_observation`). Wins still own champion *promotion* through
+> `sprt_confirm` — the continuous shares only propose the candidate worth
+> confirming. The analysis above stands as written; its recommendation was
+> superseded by that measurement.
 
 ## ★★★ REFUTED: lane progress is also a correlate, and a search finds that out
 

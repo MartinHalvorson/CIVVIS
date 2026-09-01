@@ -206,12 +206,6 @@ const BARBARIAN_LOCAL_DEFENDER_RADIUS: i32 = 3;
 /// garrison ordered at this range is in place before the attacker arrives.
 pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 
-/// Own military units within `GARRISON_HOLD_RADIUS` of an unhurt city that
-/// make one more raid-response defender unnecessary. See `besieged_city_item`.
-const GARRISON_HOLD_UNITS: usize = 2;
-/// How close to the centre a unit must stand to count toward that garrison.
-const GARRISON_HOLD_RADIUS: i32 = 1;
-
 /// How many recon units [`BasicAi::recon_is_the_missing_arm`] will rebuild
 /// toward after the empire has expanded. Two independent scouts are a bounded
 /// hedge against one being killed, trapped, or forced away from the frontier;
@@ -282,6 +276,13 @@ const VILLAGE_SEEK_RADIUS: i32 = 6;
 /// turns lets an adjacent army cash in a discovery without replacing the recon
 /// arm or pulling it away from its actual job.
 const VILLAGE_MILITARY_SEEK_RADIUS: i32 = 4;
+
+/// A meteor site is not an ordinary tribal-village roll: its one-entry table
+/// grants a free, most-advanced Heavy Cavalry unit. Four turns is still a
+/// bounded errand, but gives the nearby army a real chance to deny this rare
+/// prize to a rival.
+const METEOR_SEEK_RADIUS: i32 = 12;
+const METEOR_MILITARY_SEEK_RADIUS: i32 = 8;
 
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
@@ -529,7 +530,8 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 /// off — a setting that is serialized and restored from saves. Without the
 /// bound such a game runs past its limit forever. With score enabled the bound
 /// never fires first, because `set_winner` runs inside `do_end_turn` before
-/// this condition is tested again.
+/// this condition is tested again. A score-disabled world is recorded as a
+/// draw when the bounded loop reaches its cap, matching the server stepper.
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
     // A headless rollout never serializes a player observation between
     // actions. Explored ground, contacts and Natural-Wonder discovery remain
@@ -550,6 +552,7 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
             let _ = g.apply(pid, &Action::EndTurn);
         }
     }
+    g.finish_at_turn_limit();
 }
 
 // ----------------------------------------------------------------- RandomAi
@@ -3019,6 +3022,13 @@ pub struct BasicAi {
     /// handoff; this flag keeps the governor that actually queues Settlers in
     /// step with it.
     pub(crate) rapid_city_expansion: bool,
+    /// `capital-settler-after-completion`: once the capital is population two
+    /// and has no queued work, start a legal Settler instead of letting the
+    /// ordinary force or infrastructure ranking fill that opening. The city
+    /// target, normal settlement window, site search, and all earlier
+    /// emergency choices remain authoritative. Set through
+    /// `AdvancedAi::enable_capital_settler_after_completion`.
+    pub(crate) capital_settler_after_completion: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -4804,6 +4814,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -4847,6 +4858,16 @@ impl BasicAi {
     /// Disable the baseline half of the native rapid-city-expansion gene.
     pub(crate) fn disable_rapid_city_expansion(&mut self) {
         self.rapid_city_expansion = false;
+    }
+
+    /// Enable the baseline half of the capital-settler-after-completion gene.
+    pub(crate) fn enable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = true;
+    }
+
+    /// Disable the baseline half of the capital-settler-after-completion gene.
+    pub(crate) fn disable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = false;
     }
 
     /// Lead the pantheon prefix with the two that found a city (see
@@ -5228,6 +5249,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -8905,6 +8927,47 @@ impl BasicAi {
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
+            // The normal production picker sits after the scripted opening
+            // book. Let `capital-settler-after-completion` reserve the first
+            // newly empty capital queue once it reaches population two,
+            // rather than letting that book immediately fill it again. The
+            // picker remains the authority on whether a Settler is presently
+            // safe and useful, and the untouched book resumes after this
+            // one production decision.
+            if self.capital_settler_after_completion
+                && !self.minor
+                && !self.barb
+                && g.cities[cid].is_capital
+                && g.cities[cid].pop >= 2
+                && self.book_pos < 4
+            {
+                let opening_item = self.pick_item(
+                    g,
+                    pid,
+                    *cid,
+                    n_cities,
+                    settlers,
+                    builders,
+                    traders,
+                    siege_support,
+                    military,
+                    melee,
+                    ranged,
+                );
+                if matches!(
+                    &opening_item,
+                    Some(Item::Unit { unit }) if unit == "settler"
+                ) {
+                    let item = opening_item.expect("the matched opening item is a Settler");
+                    if g.apply(pid, &Action::Produce { city: *cid, item }).is_ok() {
+                        settlers += 1;
+                        think!(self.journal, Cities, Decision,
+                               "{} starts a Settler after completing its prior production", g.cities[cid].name;
+                               "the capital is population two with an empty queue; the capital-settler-after-completion gene reserves this next build while preserving the rest of the opening book");
+                        continue;
+                    }
+                }
+            }
             // The live land-grab policy already opens two Settler seats from
             // the first city, but the opening book used to spend its next
             // Builder/Warrior slot before `pick_item` could fill that second
@@ -10481,48 +10544,16 @@ impl BasicAi {
     /// Helsingborg built a Builder every turn; 172-214 gold went unspent.
     ///
     /// A count of units spread across an empire says nothing about whether
-    /// THIS city can hold, so this branch is keyed on the city's own besiegers
-    /// and answers with the two things that defend a city: walls, then a
-    /// defender.  The live under-fire treatment asks specifically for a
-    /// melee-capable land defender: a siege piece belongs at a distant enemy
-    /// wall and cannot hold the city it is being built in.
+    /// THIS city can hold. The live bridge treats lost city health as the
+    /// proof that the local defence must answer, even when fog hides the
+    /// attackers, and asks for walls first, then a melee-capable land
+    /// defender. A siege piece belongs at a distant enemy wall and cannot
+    /// hold the city it is being built in.
     fn besieged_city_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        // ⚠ Two, not one. Reacting to a single hostile in range fires on every
-        // scout that wanders past, and measured over 24 paired maps that bought
-        // city count while COSTING score: walls and defenders displace the
-        // buildings and districts score is actually made of. A raiding party is
-        // what takes a city, and a raiding party is more than one unit.
         let bleeding =
             self.garrison_under_fire && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
         if !bleeding {
             return None;
-        }
-        // ★★★★ A CITY THAT IS ALREADY GARRISONED AND UNHURT DOES NOT NEED ONE
-        // MORE DEFENDER FOR EVERY RAIDER IT SEES. Two visible hostiles within
-        // the muster radius is the raid test above, and early barbarians
-        // satisfy it every few turns. Run civvis-20260816T084206Z: Rome held
-        // three, then five military units and no damage, and this path built a
-        // Warrior on t15 and again on t21 (a Galley from the navy floor between)
-        // — the first Settler waited until t23, the second city until t37,
-        // and the tally read 204 against 352 at t97. Behind
-        // `garrison_under_fire`, the live doctrine that owns this path; the
-        // frozen controllers keep the raid test as it was.
-        if self.garrison_under_fire && !bleeding {
-            let Some(city) = g.cities.get(&cid) else {
-                return None;
-            };
-            let garrison = g
-                .units
-                .values()
-                .filter(|unit| {
-                    unit.owner == pid
-                        && g.rules.units[unit.kind].class == "military"
-                        && g.wdist(city.pos, unit.pos) <= GARRISON_HOLD_RADIUS
-                })
-                .count();
-            if garrison >= GARRISON_HOLD_UNITS {
-                return None;
-            }
         }
         for building in ["walls", "medieval_walls", "renaissance_walls"] {
             let wall = Item::Building {
@@ -10532,15 +10563,9 @@ impl BasicAi {
                 return Some(wall);
             }
         }
-        // `garrison_under_fire` is live-bridge-only.  Keep the frozen
-        // controller's historical generic military selector intact, but make
-        // the emergency path choose a unit that can occupy and defend a local
-        // tile rather than the highest-bombard siege unit.
-        let defender = if self.garrison_under_fire {
-            self.best_military(g, pid, cid, Some(false))
-        } else {
-            self.best_military(g, pid, cid, None)
-        };
+        // This damage-only path is live-bridge-only, so choose the local land
+        // defender rather than the highest-bombard siege unit.
+        let defender = self.best_military(g, pid, cid, Some(false));
         defender.map(|unit| Item::Unit {
             unit: Name::new(&unit),
         })
@@ -10878,6 +10903,11 @@ impl BasicAi {
         changed
     }
 
+    // The counters deliberately remain explicit: the city loop updates them
+    // after every selected item, and the diagnostic binary probes this same
+    // decision surface. A transient aggregate would only obscure which live
+    // count a production rule reads.
+    #[allow(clippy::too_many_arguments)]
     pub fn pick_item(
         &self,
         g: &Game,
@@ -10970,6 +11000,38 @@ impl BasicAi {
             return self
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
+        }
+        // `capital-settler-after-completion` opens one specific expansion
+        // window: when the capital's whole queue has drained and it has
+        // reached the engine's population-two floor, a Settler gets the next
+        // build. This deliberately comes after repairs, local defense, and
+        // economic recovery, and it declines during a major war. It also keeps
+        // the normal city target, time window, and practical-site gate, so it
+        // is an opening heuristic rather than an unbounded Settler order.
+        //
+        // The ordinary Settler arm below serializes the pipeline unless a
+        // different gene widens it. That is the ranking the live seat was
+        // observed to lose to an Archer despite a legal second settlement
+        // slot; this gene only changes that queue choice after the previous
+        // item has completed.
+        if self.capital_settler_after_completion
+            && !self.minor
+            && !self.barb
+            && !at_major_war
+            && !emergency_defense
+            && g.cities[&cid].is_capital
+            && g.cities[&cid].queue.is_empty()
+            && g.cities[&cid].pop >= 2
+            && ((n_cities + settlers) as f64) < self.w.city_target
+            && (g.turn as f64) < self.w.settler_stop_turn
+            && self.has_practical_settle_site(g, pid)
+        {
+            let settler = Item::Unit {
+                unit: crate::name!("settler"),
+            };
+            if g.can_produce(pid, cid, &settler) {
+                return Some(settler);
+            }
         }
         let can_add_military = !self.minor || military < Self::minor_military_budget(g, pid);
         // An ancient rush needs a stack, not a garrison. While one is planned
@@ -14535,12 +14597,16 @@ impl BasicAi {
         )
     }
 
+    fn is_meteor_site(g: &Game, pos: Pos) -> bool {
+        g.map.get(pos).and_then(|tile| tile.improvement.as_deref()) == Some("meteor_goody")
+    }
+
     /// A village is an explorer's prize first. A nearby ordinary military unit
     /// may collect one only as a bounded fallback, and never while escorting a
     /// civilian. Settlers, Builders, and every other civilian role are absent
     /// by construction: their dedicated movement must not turn into a distant
     /// goody-hut chase.
-    fn village_collector_role(g: &Game, pid: usize, uid: u32) -> Option<(u8, i32)> {
+    fn village_collector_role(g: &Game, pid: usize, uid: u32) -> Option<u8> {
         let unit = g.units.get(&uid)?;
         let spec = &g.rules.units[unit.kind];
         if unit.owner != pid
@@ -14551,88 +14617,133 @@ impl BasicAi {
         {
             return None;
         }
-        Some(if Self::unit_doctrine(g, uid) == UnitDoctrine::Recon {
-            (0, VILLAGE_SEEK_RADIUS)
-        } else {
-            (1, VILLAGE_MILITARY_SEEK_RADIUS)
-        })
+        Some(u8::from(Self::unit_doctrine(g, uid) != UnitDoctrine::Recon))
+    }
+
+    fn village_seek_radius(role: u8, meteor: bool) -> i32 {
+        match (role, meteor) {
+            (0, false) => VILLAGE_SEEK_RADIUS,
+            (0, true) => METEOR_SEEK_RADIUS,
+            (_, false) => VILLAGE_MILITARY_SEEK_RADIUS,
+            (_, true) => METEOR_MILITARY_SEEK_RADIUS,
+        }
     }
 
     /// Deterministic ownership of a longer village errand. Recon has first
-    /// claim, then the closest eligible unit of that role; the ID only settles
-    /// an exact tie. A unit that has already spent its movement cannot keep a
-    /// live collector from taking the prize now.
+    /// claim to an ordinary village, while a meteor goes to the closest
+    /// eligible military unit: its guaranteed free unit is too valuable to
+    /// leave for a farther Scout. The ID only settles an exact tie. A unit
+    /// that has already spent its movement cannot keep a live collector from
+    /// taking the prize now.
     fn village_collector_rank(
         g: &Game,
         pid: usize,
         uid: u32,
         village: Pos,
     ) -> Option<(u8, i32, u32)> {
-        let (role, radius) = Self::village_collector_role(g, pid, uid)?;
+        let role = Self::village_collector_role(g, pid, uid)?;
+        let meteor = Self::is_meteor_site(g, village);
+        let radius = Self::village_seek_radius(role, meteor);
         let distance = g.wdist(g.units[&uid].pos, village);
-        (distance > 0 && distance <= radius && g.unit_can_traverse(uid, village))
-            .then_some((role, distance, uid))
+        (distance > 0 && distance <= radius && g.unit_can_traverse(uid, village)).then_some((
+            if meteor { 0 } else { role },
+            distance,
+            uid,
+        ))
+    }
+
+    fn village_collector_owns(g: &Game, pid: usize, uid: u32, village: Pos) -> bool {
+        let Some(own) = Self::village_collector_rank(g, pid, uid, village) else {
+            return false;
+        };
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|other| Self::village_collector_rank(g, pid, other, village))
+            .min()
+            == Some(own)
     }
 
     /// Return the village this military unit should collect now. A reachable,
-    /// actually seen village is taken immediately by whichever unit can enter
-    /// it; for a longer detour, a Scout wins the claim and an ordinary military
-    /// unit is used only when no suitable Scout can do so.
+    /// actually seen site is taken immediately by whichever unit can enter it.
+    /// For a longer detour, a Scout wins ordinary villages, while a meteor
+    /// outranks them and goes to the closest eligible military collector.
     fn village_collection_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         if self.minor || self.barb || g.players[pid].is_barbarian {
             return None;
         }
-        let (_, radius) = Self::village_collector_role(g, pid, uid)?;
+        let role = Self::village_collector_role(g, pid, uid)?;
         let origin = g.units[&uid].pos;
-        let known_villages: Vec<Pos> = g
-            .wdisk(origin, radius)
-            .into_iter()
-            .filter(|pos| *pos != origin)
-            .filter(|pos| g.players[pid].explored.contains(pos))
-            .filter(|pos| Self::is_village(g, *pos))
-            .collect();
-
-        // Production has charted the target already, so do not clone player
-        // vision for every military unit with no local village. The legacy
-        // immediate-pickup arms still use current sight below, preserving the
-        // old information boundary when bounded seeking is off.
-        if self.village_seeking && !known_villages.is_empty() {
-            if let Some(village) = g
-                .reachable(uid)
-                .into_iter()
-                .filter(|pos| known_villages.contains(pos))
-                .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
-            {
-                return Some(village);
+        if !self.village_seeking {
+            if !self.hut_collection {
+                return None;
             }
-        } else if self.hut_collection {
             let visible = g.player_vision_frame(pid);
-            if let Some(village) = g
+            return g
                 .reachable(uid)
                 .into_iter()
                 .filter(|pos| g.sees(&visible, *pos))
                 .filter(|pos| Self::is_village(g, *pos))
-                .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+                .min_by_key(|pos| (!Self::is_meteor_site(g, *pos), g.wdist(origin, *pos), *pos));
+        }
+        let known_sites: Vec<(Pos, bool)> = g
+            .wdisk(origin, Self::village_seek_radius(role, true))
+            .into_iter()
+            .filter(|pos| *pos != origin)
+            .filter(|pos| g.players[pid].explored.contains(pos))
+            .filter(|pos| Self::is_village(g, *pos))
+            .map(|pos| (pos, Self::is_meteor_site(g, pos)))
+            .collect();
+        let known_meteors: Vec<Pos> = known_sites
+            .iter()
+            .filter_map(|(pos, meteor)| (*meteor).then_some(*pos))
+            .collect();
+        let known_villages: Vec<Pos> = known_sites
+            .into_iter()
+            .filter(|(pos, meteor)| {
+                !meteor && g.wdist(origin, *pos) <= Self::village_seek_radius(role, false)
+            })
+            .map(|(pos, _)| pos)
+            .collect();
+
+        // Production has charted the target already, so do not clone player
+        // vision for every military unit with no local site. A meteor takes
+        // precedence even over a reachable ordinary village: the former is a
+        // guaranteed free advanced unit, while the latter is a random roll.
+        // The legacy immediate-pickup arm still uses current sight below,
+        // preserving its information boundary when bounded seeking is off.
+        let reachable = g.reachable(uid);
+        if let Some(meteor) = known_meteors
+            .into_iter()
+            .filter(|pos| {
+                reachable.contains(pos) || Self::village_collector_owns(g, pid, uid, *pos)
+            })
+            .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+        {
+            return Some(meteor);
+        }
+        if let Some(village) = reachable
+            .iter()
+            .copied()
+            .filter(|pos| known_villages.contains(pos))
+            .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+        {
+            return Some(village);
+        }
+        if self.hut_collection {
+            let visible = g.player_vision_frame(pid);
+            if let Some(village) = reachable
+                .into_iter()
+                .filter(|pos| g.sees(&visible, *pos))
+                .filter(|pos| Self::is_village(g, *pos))
+                .min_by_key(|pos| (!Self::is_meteor_site(g, *pos), g.wdist(origin, *pos), *pos))
             {
                 return Some(village);
             }
         }
 
-        if !self.village_seeking {
-            return None;
-        }
-
         known_villages
             .into_iter()
-            .filter(|pos| Self::village_collector_rank(g, pid, uid, *pos).is_some())
-            .filter(|pos| {
-                let own = Self::village_collector_rank(g, pid, uid, *pos);
-                g.player_unit_ids(pid)
-                    .into_iter()
-                    .filter_map(|other| Self::village_collector_rank(g, pid, other, *pos))
-                    .min()
-                    == own
-            })
+            .filter(|pos| Self::village_collector_owns(g, pid, uid, *pos))
             .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
     }
 
@@ -19065,6 +19176,93 @@ mod tests {
         assert!(matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"));
     }
 
+    /// The capital-settler-after-completion gene acts only after the capital
+    /// has finished its queued work. It bypasses the ordinary one-walker
+    /// serialisation, but does not interrupt a current build or outgrow the
+    /// normal city target.
+    #[test]
+    fn capital_settler_after_completion_waits_for_an_empty_capital_queue() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("CAPITALSETTLER", 91_779),
+            250,
+            0,
+            false,
+        );
+        let founding = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: founding })
+            .unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        game.cities.get_mut(&capital).unwrap().pop = 2;
+        game.turn = 20;
+        // One walker fills the ordinary one-at-a-time pipeline. The Scout and
+        // Warrior keep unrelated early capability gaps out of this fixture.
+        game.spawn_unit("settler", 0, home);
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let ask =
+            |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, capital, 1, 1, 6, 2, 1, 20, 10, 10);
+
+        let mut stock = BasicAi::new();
+        stock.book_pos = 1;
+        stock.w.city_target = 4.0;
+        assert!(stock.has_practical_settle_site(&game, 0));
+        assert!(
+            !matches!(ask(&game, &stock), Some(Item::Unit { unit }) if unit == "settler"),
+            "the ordinary picker leaves the second walker to its one-at-a-time gate"
+        );
+
+        let mut treated = BasicAi::new();
+        treated.book_pos = 1;
+        treated.w.city_target = 4.0;
+        treated.enable_capital_settler_after_completion();
+        assert!(treated.capital_settler_after_completion);
+
+        // A queued Builder is left alone, even after the capital reaches the
+        // population floor: this is a next-build reservation, not preemption.
+        game.cities.get_mut(&capital).unwrap().queue = vec![builder.clone()];
+        assert!(
+            !matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the reservation requires a fully empty capital queue"
+        );
+        treated.cities(&mut game, 0);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+
+        // Once the current item has completed and the queue is empty, the
+        // legal population-two capital starts the next Settler immediately.
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        treated.cities(&mut game, 0);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&settler));
+        assert_eq!(
+            treated.book_pos, 1,
+            "the reservation takes one empty queue without consuming the rest of the opening book"
+        );
+
+        // The screenable wrapper remains off in every normal constructor until
+        // explicitly enabled; the registry invokes its toggle pair.
+        let mut strategic = AdvancedAi::new();
+        assert!(!strategic.capital_settler_after_completion);
+        assert!(!AdvancedAi::legacy().capital_settler_after_completion);
+        strategic.enable_capital_settler_after_completion();
+        assert!(strategic.capital_settler_after_completion);
+        strategic.disable_capital_settler_after_completion();
+        assert!(!strategic.capital_settler_after_completion);
+    }
+
     /// The land grab's early Cities route: the pipeline is two walkers from
     /// the first city and one more per three cities, bounded by the seats
     /// still short; the window stays open until a settler can no longer
@@ -20536,6 +20734,120 @@ mod tests {
         (game, ours, front, home)
     }
 
+    /// A Quadrireme has one tile of ranged reach, not two, and must retain a
+    /// movement point to fire. A wounded land unit that has actually entered
+    /// that full envelope must recover away from the shore, rather than
+    /// fortifying for another naval volley.
+    #[test]
+    fn a_wounded_land_unit_leaves_a_coast_under_quadrireme_fire() {
+        let mut game = Game::new_full(2, 20, 14, 91_485, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.road = 0;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let shore = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.wdisk(*position, 4).len() == 61)
+            .expect("fixture needs an interior shore");
+        let water = game.nbrs(shore)[0];
+        let water_after_one_move = game
+            .nbrs(water)
+            .into_iter()
+            .find(|position| game.wdist(*position, shore) == 2)
+            .expect("fixture needs a coast one move out");
+        let water_after_two_moves = game
+            .nbrs(water_after_one_move)
+            .into_iter()
+            .find(|position| game.wdist(*position, shore) == 3)
+            .expect("fixture needs a coast two moves out");
+        for position in [water, water_after_one_move, water_after_two_moves] {
+            game.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("coast");
+        }
+        let inland = game
+            .nbrs(shore)
+            .into_iter()
+            .find(|position| {
+                *position != water
+                    && game
+                        .nbrs(*position)
+                        .into_iter()
+                        .all(|neighbor| !game.rules.is_water(&game.map.tiles[&neighbor]))
+            })
+            .expect("fixture needs a land step behind the shore");
+
+        let defender = game.spawn_test_unit("swordsman", 0, shore);
+        game.units.get_mut(&defender).unwrap().hp = 45;
+        // A friendly observer gives the controller sight of the ship even
+        // though its target is two sea steps beyond the wounded defender.
+        let observer = game
+            .nbrs(water_after_two_moves)
+            .into_iter()
+            .find(|position| {
+                *position != water_after_one_move && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .expect("fixture needs a land observer next to the ship");
+        game.spawn_test_unit("scout", 0, observer);
+        let quadrireme = game.spawn_test_unit("quadrireme", 1, water_after_two_moves);
+        assert_eq!(
+            game.unit_attack_range(quadrireme),
+            1,
+            "the shipped Quadrireme record has Range=1"
+        );
+        assert!(
+            game.attack_reach(quadrireme).contains(&shore),
+            "two sea moves leave the one point needed for its adjacent shot"
+        );
+        assert!(
+            !game.attack_reach(quadrireme).contains(&inland),
+            "the tile behind that shore is outside its actual firing envelope"
+        );
+
+        let probe = BasicAi::new();
+        let envelopes = probe.enemy_attack_envelopes(&game, 0);
+        let incoming = BasicAi::evacuation_incoming_damage(&game, 0, defender, shore, &envelopes);
+        assert!(
+            incoming > 0.0 && incoming < f64::from(game.units[&defender].hp),
+            "the current volley is harmful but not an average lethal pool: {incoming:.1}"
+        );
+
+        let mut ai = BasicAi::new();
+        assert_eq!(ai.healing_step(&mut game, 0, defender), Some(true));
+        let retreat = game.units[&defender].pos;
+        assert_ne!(
+            retreat, shore,
+            "the wounded unit does not fortify on the shore"
+        );
+        assert!(
+            game.nbrs(retreat)
+                .into_iter()
+                .all(|position| !game.rules.is_water(&game.map.tiles[&position])),
+            "the recovery step leaves the exposed coast"
+        );
+        let envelopes = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            envelopes.iter().all(|(_, reach)| !reach.contains(&retreat)),
+            "the recovery tile is outside every observed next-turn attack envelope"
+        );
+    }
+
     /// ★★★ THE CASE BOTH EXISTING TESTS ABOVE MISS. `withdraw_hp` is 45 and
     /// the pool this tile invites is 45, so a Warrior on 50 is healthy by the
     /// floor and safe by the lethal-pool test — and dies to the next shot
@@ -21232,7 +21544,8 @@ mod tests {
             .and_then(|n| n.parse().ok())
             .unwrap_or(8);
         let seeds: Vec<u64> = (1..=count).map(|n| 26_081_600 + n).collect();
-        let mut summary: Vec<(String, [f64; 3], [f64; 3], [f64; 3])> = Vec::new();
+        type ExploreCommitSummary = (String, [f64; 3], [f64; 3], [f64; 3]);
+        let mut summary: Vec<ExploreCommitSummary> = Vec::new();
         for (arm, commit) in arms.iter().zip([false, true]) {
             let mut revealed = [0.0f64; 3];
             let mut minors_met = [0.0f64; 3];
@@ -21832,19 +22145,6 @@ mod tests {
             "with no viable launch, do not keep forcing a naval build"
         );
     }
-
-    /// The shape live run `civvis-20260807T181839Z` was in at t115 when its
-    /// capital bled behind no walls: Masonry in, monument and granary built,
-    /// the culture lane open, and nothing hostile in vision. See
-    /// `garrison_walls_item`.
-
-    /// With the treatment on, the capital that previously spent this turn on
-    /// the culture lane orders ancient walls; with it off, behavior is
-    /// unchanged; without Masonry, nothing changes either.
-
-    /// The frontier/population-floor boundary: a small frontier city walls
-    /// up, the same city at the floor does not, an interior city never does,
-    /// and the capital is eligible at any size.
 
     #[test]
     fn even_barbarian_trades_are_taken_not_shadowed() {
@@ -22640,6 +22940,90 @@ mod tests {
         yielding.village_seeking = true;
         assert!(!yielding.explore_step(&mut crowded, 0, scout));
         assert_eq!(crowded.units[&scout].pos, origin);
+    }
+
+    #[test]
+    fn a_meteor_ruin_outranks_a_nearer_village_and_uses_the_closest_collector() {
+        let mut g = Game::new_full(1, 48, 32, 38_007, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.map.clear_rivers();
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let (meteor, scout_origin, hut, warrior_origin) = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find_map(|meteor| {
+                let scout_origin = g
+                    .wdisk(meteor, METEOR_SEEK_RADIUS)
+                    .into_iter()
+                    .filter(|pos| g.wdist(meteor, *pos) == METEOR_SEEK_RADIUS)
+                    .min()?;
+                let warrior_origin = g
+                    .wdisk(meteor, METEOR_MILITARY_SEEK_RADIUS)
+                    .into_iter()
+                    .filter(|pos| g.wdist(meteor, *pos) == METEOR_MILITARY_SEEK_RADIUS)
+                    .min()?;
+                let hut = g
+                    .nbrs(scout_origin)
+                    .into_iter()
+                    .filter(|pos| *pos != meteor && *pos != warrior_origin)
+                    .min()?;
+                Some((meteor, scout_origin, hut, warrior_origin))
+            })
+            .expect("test map needs a meteor ring wider than an ordinary village chase");
+        g.map.tiles.get_mut(&meteor).unwrap().improvement = Some(crate::name!("meteor_goody"));
+        g.map.tiles.get_mut(&hut).unwrap().improvement = Some(crate::name!("goody_hut"));
+        let scout = g.spawn_test_unit("scout", 0, scout_origin);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+
+        assert!(g.reachable(scout).contains(&hut));
+        assert!(!g.reachable(scout).contains(&meteor));
+        assert!(
+            g.wdist(scout_origin, meteor) > VILLAGE_SEEK_RADIUS,
+            "the meteor must be beyond the ordinary village horizon"
+        );
+
+        let mut ai = BasicAi::new();
+        ai.village_seeking = true;
+        assert_eq!(
+            ai.village_collection_target(&g, 0, scout),
+            Some(meteor),
+            "the guaranteed free Heavy Cavalry should outrank the adjacent random village"
+        );
+        let mut scout_board = g.clone();
+        assert!(ai.village_collection_step(&mut scout_board, 0, scout));
+        assert!(
+            scout_board.wdist(scout_board.units[&scout].pos, meteor)
+                < scout_board.wdist(scout_origin, meteor),
+            "the Scout must close on the distant meteor instead of taking the nearer hut"
+        );
+
+        let warrior = g.spawn_test_unit("warrior", 0, warrior_origin);
+        assert_eq!(
+            ai.village_collection_target(&g, 0, warrior),
+            Some(meteor),
+            "a nearby field unit should chase the meteor within its extended horizon"
+        );
+        assert_eq!(
+            ai.village_collection_target(&g, 0, scout),
+            Some(hut),
+            "the farther Scout should release the meteor to the closer Warrior"
+        );
+        let before = g.wdist(warrior_origin, meteor);
+        assert!(ai.village_collection_step(&mut g, 0, warrior));
+        assert!(
+            g.wdist(g.units[&warrior].pos, meteor) < before,
+            "the field unit must close on the meteor"
+        );
     }
 
     #[test]

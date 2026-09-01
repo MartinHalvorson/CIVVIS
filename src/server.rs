@@ -466,6 +466,8 @@ const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-
 const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
 const EMBEDDED_CIV6_UNIT_FLAG_PLATES: &[u8] =
     include_bytes!("../web/assets/civ6-unit-flag-plates.png");
+const EMBEDDED_CIV6_CITY_BANNER_SHIELDS: &[u8] =
+    include_bytes!("../web/assets/civ6-city-banner-shields.png");
 
 /// The agents that exist in every build, with a friendly handle each.
 /// `crate::elo::builtin_send_ai` resolves the id, and the auto-play control
@@ -2707,6 +2709,9 @@ impl Session {
         if g.is_finished() {
             return pid;
         }
+        if g.finish_at_turn_limit() {
+            return pid;
+        }
         // A simultaneous game advances one whole game turn per step: every
         // seat plans against the same frozen world and the plans commit
         // through the ordinary rules. `simultaneous_jobs` is how many
@@ -2731,12 +2736,14 @@ impl Session {
                     self.simultaneous_census.summary()
                 );
             }
+            g.finish_at_turn_limit();
             return pid;
         }
         self.ais[pid].take_turn(g, pid);
         if g.current == pid && !g.is_finished() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
+        g.finish_at_turn_limit();
         // Every way of advancing the world funnels through here — the browser
         // stepping a batch, the headless pacer running an unattended
         // exhibition, autoplay — so this is the one place a result cannot be
@@ -3056,6 +3063,11 @@ fn civ6_yield_icons() -> Vec<u8> {
 fn civ6_unit_flag_plates() -> Vec<u8> {
     std::fs::read("web/assets/civ6-unit-flag-plates.png")
         .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAG_PLATES.to_vec())
+}
+
+fn civ6_city_banner_shields() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-city-banner-shields.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_CITY_BANNER_SHIELDS.to_vec())
 }
 
 /// Where a single-player game keeps its own saves, relative to the process's
@@ -4183,6 +4195,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("GET", "/assets/civ6-unit-flag-plates.png") => {
             respond(stream, "200 OK", "image/png", &civ6_unit_flag_plates());
+        }
+        ("GET", "/assets/civ6-city-banner-shields.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_city_banner_shields());
         }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and

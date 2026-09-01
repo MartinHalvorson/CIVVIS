@@ -45,8 +45,9 @@
 //!    (`settler_exhaustion_target`, tier 2). An explicit Science lane keeps the
 //!    full growth-horizon Loyalty guard instead of accepting that compromise.
 //!    Then any legal reachable site at all, nearest first (tier 3). Failing
-//!    both it founds where it stands if the engine allows, and otherwise says
-//!    so in the journal — a Settler that holds is never silent.
+//!    both it asks the explored frontier for a safe reveal step after its idle
+//!    patience. It founds where it stands only if the engine allows, and
+//!    otherwise says so in the journal — a Settler that holds is never silent.
 //! 2. **A watchdog bounds every other hold.** A Settler that has stood on
 //!    the same tile for [`SETTLER_IDLE_PATIENCE`] turns stops trusting the
 //!    branch that held it and marches on one rule only: never end the turn
@@ -71,6 +72,7 @@ use crate::ai::BasicAi;
 use crate::game::{Action, Game};
 use crate::think;
 use crate::Pos;
+use std::collections::HashSet;
 
 /// Turns a Settler may stand on one tile before the watchdog marches it on
 /// the exact-reach rule alone. Two: one turn is the ordinary weather of a
@@ -87,6 +89,10 @@ pub(super) const SETTLER_IDLE_PATIENCE: u32 = 2;
 pub(super) const STRANDED_SITE_MIN_HOLD_TURNS: f64 = 20.0;
 /// How far a stranded Settler looks for any legal site before Shipbuilding.
 const STRANDED_SITE_RADIUS: i32 = 14;
+/// The bounded reveal radius used when no legal city target survives. Reusing
+/// the exhaustion radius keeps the recovery cheap and ensures it can expose
+/// the same nearby ground the next search will price.
+const STRANDED_FRONTIER_RADIUS: i32 = STRANDED_SITE_RADIUS;
 /// How many forecast refusals the exhaustion search pays before it stops
 /// asking the forecast; each is a speculative founding on a cloned board.
 const STRANDED_FORECAST_RETRIES: usize = 4;
@@ -284,6 +290,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|(pos, _)| {
                 !g.blocked_city_sites.contains(pos)
+                    && self.early_settler_site_allowed(g, pid, uid, *pos)
                     && !self.settler_site_is_dead(uid, *pos)
                     && Some(*pos) != avoided
                     && (!self.settler_threat_detour_on()
@@ -333,6 +340,7 @@ impl AdvancedAi {
             .filter(|pos| {
                 self.base.valid_settle_site(g, pid, *pos)
                     && !g.blocked_city_sites.contains(pos)
+                    && self.early_settler_site_allowed(g, pid, uid, *pos)
                     && !self.settler_site_is_dead(uid, *pos)
                     && Some(*pos) != avoided
                     && (!self.settler_threat_detour_on()
@@ -444,11 +452,15 @@ impl AdvancedAi {
     /// would hold, else say so. Never silent.
     pub(super) fn settler_stranded(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let here = g.units[&uid].pos;
+        if let Some(home) = self.early_settler_homeward_target(g, uid) {
+            return self.return_early_settler_home(g, pid, uid, home);
+        }
         let science_targeted = self.science_targeted(g);
         self.settler_targets.remove(&uid);
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
-        if g.can_found_city(uid)
+        if self.early_settler_site_allowed(g, pid, uid, here)
+            && g.can_found_city(uid)
             && self.exhaustion_site_unpriceable(g, here).is_none()
             && !((self.exhaustion_loyalty_guard || science_targeted)
                 && Self::inside_rival_sphere(g, pid, here))
@@ -468,6 +480,65 @@ impl AdvancedAi {
                 the board changes"; here);
         self.settler_stranded_at.insert(uid, (here, g.turn));
         false
+    }
+
+    /// Reveal nearby dry frontier when no city target survived the exhausted
+    /// search. `settler_stranded` is intentionally allowed to hold when the
+    /// board has no legal city site, but that used to make the outer watchdog
+    /// unreachable: it removes the target before returning, and the watchdog
+    /// treated a missing target as a reason not to run. On the live bridge a
+    /// fogged Loyalty horizon can therefore park several Settlers forever even
+    /// though one safe movement would expose the next site.
+    ///
+    /// This is deliberately narrower than ordinary exploration. It is only
+    /// reached by `settler-never-idles` after its patience expires, asks only
+    /// for unexplored, land-traversable plots inside the exhaustion radius,
+    /// respects each Settler's retired-site and blocked-plot memory, and uses
+    /// the watchdog's exact visible-threat test before applying one step.
+    /// Fully explored boards and boards where every frontier tile is retired
+    /// remain a named stranded hold, preserving the existing safety behavior.
+    pub(super) fn settler_frontier_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if unit.moves_left <= 0.0 {
+            return false;
+        }
+        let current = unit.pos;
+        let goals: HashSet<Pos> = {
+            let _memo = g.query_memo();
+            g.wdisk(current, STRANDED_FRONTIER_RADIUS)
+                .into_iter()
+                .filter(|pos| {
+                    !g.players[pid].explored.contains(pos)
+                        && !g.blocked_city_sites.contains(pos)
+                        && !self.settler_site_is_dead(uid, *pos)
+                        && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+                        && g.unit_can_traverse(uid, *pos)
+                })
+                .collect()
+        };
+        let Some(next) = g
+            .route_step_to_any(uid, &goals)
+            .filter(|next| g.can_move(uid, *next))
+        else {
+            return false;
+        };
+        let reach = self.barbarian_reach(g, pid, current, REACH_SCAN_RADIUS);
+        if !self.watchdog_tile_is_safe(g, pid, uid, next, &reach) {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler holds before exploring the frontier";
+                   "the nearest unexplored land is unsafe to enter this turn; it keeps its \
+                    current tile until the visible threat changes"; current);
+            return false;
+        }
+        if !self.base.path_move(g, pid, uid, next) {
+            return false;
+        }
+        think!(self.journal(), Expansion, Detail, "Settler explores the frontier";
+               "no legal city site was reachable, so it steps toward unseen land at {next:?} \
+                and will re-price sites after the next board reveal"; next);
+        true
     }
 
     /// The watchdog's one rule: a tile is safe to end the turn on when no
@@ -508,8 +579,10 @@ impl AdvancedAi {
 
     /// A Settler past its patience marches: toward its target if it holds a
     /// legal one, else toward what the exhaustion search finds, onto the
-    /// first progressing tile the exact-reach rule allows. Founds when it
-    /// stands on its target. Returns whether it acted.
+    /// first progressing tile the exact-reach rule allows. If no city target
+    /// survives, the outer watchdog asks the bounded frontier recovery to
+    /// reveal nearby land. Founds when it stands on its target. Returns
+    /// whether it acted.
     /// Neighbours worth giving ground for, best first, when raiders already
     /// cover the tile the settler stands on. Empty whenever holding is not the
     /// losing move — nothing covers this tile, or nothing reachable beats it.
@@ -559,8 +632,12 @@ impl AdvancedAi {
         if g.units[&uid].moves_left <= 0.0 {
             return false;
         }
+        if let Some(home) = self.early_settler_homeward_target(g, uid) {
+            return self.return_early_settler_home(g, pid, uid, home);
+        }
         let cached = self.settler_targets.get(&uid).copied().filter(|target| {
-            !self.settler_site_is_dead(uid, *target)
+            self.early_settler_site_allowed(g, pid, uid, *target)
+                && !self.settler_site_is_dead(uid, *target)
                 && (!self.settler_threat_detour_on()
                     || !self.settler_threat_deferrals.contains_key(target))
                 && !self.settler_target_reserved_by_other(g, pid, uid, *target)
@@ -584,6 +661,12 @@ impl AdvancedAi {
             },
         };
         if target == current {
+            if !self.early_settler_site_allowed(g, pid, uid, current) {
+                let home = self
+                    .early_settler_homeward_target(g, uid)
+                    .expect("an out-of-corridor watchdog target has an early home");
+                return self.return_early_settler_home(g, pid, uid, home);
+            }
             if self.science_targeted(g) {
                 if let Some(why) = self.settle_site_loyalty_verdict(g, pid, current) {
                     think!(self.journal(), Expansion, Detail,
@@ -1252,6 +1335,87 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A no-target Settler must still be able to learn the ground that made
+    /// every known city site unavailable. The old outer watchdog returned
+    /// before this point because `settler_stranded` had removed its target;
+    /// after patience the live gene now takes one safe step toward unseen land.
+    #[test]
+    fn a_stranded_settler_reveals_an_unexplored_land_frontier_after_patience() {
+        let mut g = Game::new_full(1, 16, 10, 91_307, 120, 0, false);
+        let founding = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .expect("a starting Settler");
+        g.apply(0, &Action::FoundCity { unit: founding })
+            .expect("the starting Settler founds");
+        let home = g.cities.values().next().expect("a capital").pos;
+        let settler = g.spawn_test_unit("settler", 0, home);
+        g.units
+            .get_mut(&settler)
+            .expect("the test Settler")
+            .moves_left = 2.0;
+
+        // The mirror knows only the capital tile. The adjacent hidden land is
+        // deliberately not itself a city site (the capital's spacing ring),
+        // so the exhaustion search has no answer until the Settler reveals it.
+        g.players[0].explored.clear();
+        g.players[0].explored.insert(home);
+        let mut ai = AdvancedAi::new();
+        ai.enable_engine_repairs();
+        ai.enable_settler_never_idles();
+        ai.attach_journal(Journal::recording());
+
+        let all: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for pos in all {
+            if ai.base.valid_settle_site(&g, 0, pos) {
+                ai.settler_dead_sites
+                    .entry(settler)
+                    .or_default()
+                    .insert(pos, g.turn + 1000);
+            }
+        }
+        let frontier = g
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                !g.players[0].explored.contains(pos)
+                    && !g.blocked_city_sites.contains(pos)
+                    && !ai.settler_site_is_dead(settler, *pos)
+                    && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+                    && g.unit_can_traverse(settler, *pos)
+            })
+            .expect("the fixture leaves an adjacent unexplored land tile");
+        assert_eq!(
+            ai.settler_exhaustion_target(&g, 0, settler),
+            None,
+            "all known city sites are retired before the reveal"
+        );
+
+        for turn in 0..=SETTLER_IDLE_PATIENCE {
+            g.turn = turn;
+            g.units
+                .get_mut(&settler)
+                .expect("the test Settler")
+                .moves_left = 2.0;
+            let acted = ai.advanced_settler_step(&mut g, 0, settler);
+            if turn < SETTLER_IDLE_PATIENCE {
+                assert!(!acted, "patience does not fire early at turn {turn}");
+                assert_eq!(g.units[&settler].pos, home);
+            } else {
+                assert!(acted, "the watchdog takes the frontier recovery step");
+            }
+        }
+        assert_ne!(
+            g.units[&settler].pos, home,
+            "the no-target Settler is no longer parked at the capital"
+        );
+        assert!(
+            g.wdist(g.units[&settler].pos, frontier) <= 1,
+            "the recovery step heads toward the hidden land frontier"
+        );
     }
 
     /// Exhaustion is a relaxed search, not permission to resurrect a target

@@ -119,6 +119,16 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("local scienceProjects = {};", exporter)
         self.assertIn("playerStats:GetNumProjectsAdvanced(project.Index)", exporter)
         self.assertIn("science_projects = scienceProjects,", exporter)
+        self.assertIn("playerStats:GetScienceVictoryPoints();", exporter)
+        self.assertIn("playerStats:GetScienceVictoryPointsPerTurn();", exporter)
+        self.assertIn("playerStats:GetScienceVictoryPointsTotalNeeded();", exporter)
+        self.assertIn("science_victory_points = scienceVictoryPoints,", exporter)
+        self.assertIn(
+            "science_victory_points_per_turn = scienceVictoryPointsPerTurn,", exporter
+        )
+        self.assertIn(
+            "science_victory_points_needed = scienceVictoryPointsNeeded,", exporter
+        )
         for project in (
             "PROJECT_MANHATTAN_PROJECT",
             "PROJECT_OPERATION_IVY",
@@ -950,6 +960,15 @@ class ProtectedInstallTest(unittest.TestCase):
         # Manhattan and Ivy are strategic programs, not public victory rows.
         self.assertNotIn("PROJECT_MANHATTAN_PROJECT", block)
         self.assertNotIn("PROJECT_OPERATION_IVY", block)
+        # World Rankings reports the real post-launch position and acceleration
+        # per rival, rather than treating repeatable laser completion counts as
+        # a proxy for whether a station is active this turn.
+        self.assertIn("science_victory_points = try(function()", block)
+        self.assertIn("stats:GetScienceVictoryPoints();", block)
+        self.assertIn("science_victory_points_per_turn = try(function()", block)
+        self.assertIn("stats:GetScienceVictoryPointsPerTurn();", block)
+        self.assertIn("science_victory_points_needed = try(function()", block)
+        self.assertIn("stats:GetScienceVictoryPointsTotalNeeded();", block)
         self.assertIn("foreign_tourists = try(function()", block)
         self.assertIn("other:GetCulture():GetTouristsTo();", block)
         self.assertIn("domestic_tourists = try(function()", block)
@@ -1508,6 +1527,22 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("CIVVIS_OWNED_BLOCKERS[name]", generic[:completed])
         self.assertIn('awaiting.source == "civvis"', generic[:completed])
         self.assertIn("driveProduction(player, turn, true)", handler[residual:])
+
+    def test_late_hard_research_and_civic_prompts_do_not_wait_for_a_second_tick(self) -> None:
+        """A blocked Game Core may never publish the escalation sighting."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split("local function answerBlocker", 1)[1].split(
+            "local function dismissBlocker", 1
+        )[0]
+        generic = handler.split(
+            "-- A CIVVIS pass is a complete decision for the mirrored state it received.", 1
+        )[1].split("-- While the current CIVVIS answer is still in flight", 1)[0]
+
+        self.assertIn('name == "ENDTURN_BLOCKING_RESEARCH"', generic)
+        self.assertIn('name == "ENDTURN_BLOCKING_CIVIC"', generic)
+        self.assertIn(
+            "return answerBlocker(player, pid, blocker, turn, true);", generic
+        )
 
     def test_empty_civvis_order_batch_completes_without_legacy_fallback(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

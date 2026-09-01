@@ -750,11 +750,12 @@ reported fifteen. Five are fixed here; the rest are triaged below.
   2, government plaza 1, strategic 1), which is what makes the one outlier
   convincing rather than a projection artifact.
 
-- **`Buildings` — the effective cache rows supersede the earlier XML reading.**
-  The compiled Gathering Storm cache ships the Prasat with Faith **6** and one
-  Relic slot, the Sukiennice with **2** Gold, and the Tlachtli with **2** Culture;
-  CIVVIS now matches all three. An earlier XML-oriented reading inverted these
-  values, which is why the cache audit remains the authority for the running game.
+- **`Buildings` — the manifest-ordered Gathering Storm rows match the cache.**
+  The effective load order ships the Prasat with Faith **6** and one Relic
+  slot, the Sukiennice with **2** Gold, and the Tlachtli with **2** Culture;
+  CIVVIS matches all three. The earlier XML route applied content-pack files
+  alphabetically, so an expansion overlay ran before the base row and was
+  silently overwritten. The cache exposed the ordering error.
 - **`Improvements` / `sphinx` terrain.** CIVVIS allowed Snow;
   `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
   their Hills variants, and no Snow.
@@ -1232,25 +1233,17 @@ found two defects in **this audit**, not in the engine:
   never listed as "only in Civ VI", and never modelled. The table is now keyed
   by (improvement, yield, tech, civic) and `compare` treats a grant we pay that
   the game does not as a divergence rather than an unmeasured field.
-- **The XML route never applied `<Expansion>_RemoveData.xml`.** The core
-  directories are filtered by `FILE_PATTERN`, which names the rules files and
-  not the retirement file each expansion ships at modinfo `Priority="1"` (394
-  and 572 `<Delete>` rows). Every retired base row therefore stayed in the XML
-  reference: Robotics granting Pasture Production (moved to Replaceable Parts by
-  Gathering Storm) "confirmed" a CIVVIS grant the game no longer makes;
-  Cartography and Mass Production kept a Shipbuilding prerequisite the game
-  removed; Niter kept a Floodplains feature; the Sphinx kept Snow; the
-  Industrial Zone kept a 1.5 mine adjacency; every base Boost was compared
-  against a row the expansion re-declares. Applied first, as the modinfo does,
-  the XML route now agrees with the compiled cache on all of them, and the
-  four "divergences" the earlier fingerprint notes had recorded as CIVVIS
-  corrections were CIVVIS being right against a stale reference. What remains
-  between the two routes (12 fields, all matching the compiled cache: Pike and
-  Shot upkeep 4, the Tagma's 220/4/Cuirassier row, the three unique buildings,
-  and Eyjafjallajökull's adjacent Food 1) is content-pack rebalancing the XML
-  route still misses; the cache
-  route — `--cache`, which now also finds the Aspyr build's nested path — is
-  the reference for the running game.
+- **The XML route once ignored `<Expansion>_RemoveData.xml` and ordered content
+  packs lexically.** The core directories are filtered by `FILE_PATTERN`, which
+  omitted the retirement files at modinfo `Priority="1"` (394 and 572
+  `<Delete>` rows), while content packs such as Byzantium & Gaul declared their
+  base rows and expansion overlays in `.modinfo`, not in filename order. The
+  loader now follows those manifests, including priorities, so retired rows are
+  removed and later overlays update the rows they actually follow. The complete
+  installed Gathering Storm audit is zero divergent fields; the effective rows
+  are Pike and Shot upkeep 4, Tagma 220/4/Cuirassier, Prasat 6 Faith with one
+  Relic, Sukiennice 2 Gold, Tlachtli 2 Culture, and Eyjafjallajökull adjacent
+  Food 1.
 
 Both engine-side corrections that fell out are in `tree_effects.json`:
 Colonialism `fishing_boats_production: 1` (and the engine's Fishing Boats
@@ -1889,7 +1882,7 @@ host's once `great_person_points_per_turn` is in the export, and whether
 Anarchy suspends the payout (the whole Faith line reads "No Faith due to
 anarchy"; the engine follows that).
 
-## Open: a behavioural rule nothing here could have checked (2026-08-26)
+## The first behavioural reverse-legality audit (2026-08-31)
 
 `tools/civ6_fidelity.py` compares this engine's **data** against the shipped
 database, and that is the whole of what it compares. Every rule this document
@@ -1900,23 +1893,38 @@ where Civilization VI forbids only *ending* a move stacked. See
 `docs/MOVEMENT.md` for the rule and `src/game/movement_rule_tests.rs` for the
 pins.
 
-**Two instruments would have caught it, and neither exists.**
+**The first of those instruments is now executable; cause-based refusal
+reporting remains open.**
 
-1. **Legality is verified in one direction.** The bridge sends the host only
-   what CIVVIS already believes is legal. Nothing ever asks the reverse
-   question — *does the host allow something we refuse?* — so a rule we are
-   missing produces no signal anywhere, and a host-blocked `MOVE_TO` is a
-   silent no-op counted as applied (`src/mirror.rs`). `tools/live_divergence.py`
-   cannot close this: it is projection-only, because "the live record carries
-   order COUNTS, not orders with targets, so nothing is replayed". Recording
-   each order's `(unit, from, to, host_result)` — and replaying every *observed*
-   host move through `Game::can_move` / `Game::path_to` to count the ones we
-   would have refused — is the missing measurement.
-2. **Refusals are counted, not attributed.** The refusal census buckets by
+1. **Legality is now verified in both directions for observed local steps.**
+   `CivvisControlAgent.lua` records `host_move` after the shipped
+   `Events.UnitMoved` callback (the same callback shape appears at
+   `Base/Assets/UI/TutorialUIRoot.lua:2733`), carrying the local unit and its
+   prior and new offset coordinates. The state export seeds each unit's first
+   position; a first sighting therefore emits no invented edge. Run
+
+   ```sh
+   target/ci/civvis_orders --mirror "$RUN" --audit-host-moves
+   ```
+
+   to replay every recorded host-admitted edge through
+   `Game::can_move_observed_step`. The probe is a clone rebased at the host's
+   reported source with a fresh allowance, so it checks structural legality
+   (terrain, borders, stacking, hostile units and zone of control) rather than
+   stale movement points, and cannot mutate the reconstructed game. Between
+   state exports the audit advances its own local-unit shadow and removes
+   recorded casualties; a previous host move is not left as a fabricated
+   blocker for the next one. Its JSON report keeps `observed`, `comparable`,
+   `model_allowed`, `model_refused`, `unverifiable`, and the full mismatching
+   edges separate. Missing tiles, a missing mapping, and a non-adjacent or
+   malformed event are uncertainty, never agreement.
+2. **Refusals are still counted, not attributed.** The refusal census buckets by
    action kind, so 1,569 refused `move` actions is the finest grain available.
    Bucketing by *cause* — `own_unit`, `foreign_unit`, `zoc`, `border`, `mp`,
    `terrain` — turns the shape this defect made into a number somebody can look
-   at. After this fix, `own_unit` on a legal path is a CI ratchet.
+   at. The reverse audit labels a *model* mismatch with the immediate visible
+   cause, but it is not a replacement for an authoritative host-refusal
+   taxonomy. After that lands, `own_unit` on a legal path is a CI ratchet.
 
 ⚠ The general lesson, and the reason this section is in this document rather
 than a commit message: **every A/B in this repository plays both arms under the
@@ -2034,13 +2042,11 @@ wonder.** Fixed together with the roster:
 
 - An expansion ships a compatibility overlay that applies only when the *other*
   expansion is installed. `DLC/Expansion1/Data/Expansion1_Expansion2.xml` is
-  Gathering Storm's rebalance of Rise and Fall content, and sorted filename
-  order applied it *before* the rows it edits existed — so every `<Update>` in
-  it silently matched nothing. The Eye of the Sahara kept Rise and Fall's 1
-  Production against CIVVIS' correct 2. The XML route reads Pike and Shot's
-  maintenance as 3, while the effective compiled cache used by the running
-  game reads 4; the earlier XML-only reconciliation incorrectly called the
-  cache value a CIVVIS error. Cross-expansion overlays are applied last.
+  Gathering Storm's rebalance of Rise and Fall content, but the Expansion 1
+  manifest declares it before `Expansion1_CoreContent`; Pike and Shot's later
+  row therefore remains at the shipped 4 upkeep. The old XML route deferred
+  that overlay until the end and falsely produced 3. The loader now follows
+  the manifest, and its result agrees with the compiled cache.
 - `RemoveData` files were excluded as cosmetic. They are how the later packs
   retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
   Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
@@ -2075,7 +2081,7 @@ were already exact; the rest surfaced 62 divergences, all resolved:
 |---|---|
 | Naval Raider and Carrier promotion trees rearranged | Loot is tier 1 with no prerequisite, Homing Torpedoes tier 2, Silent Running tier 3, Wolfpack tier 4 — plus five wrong prerequisite lists (Armor Piercing, Hangar Deck, Folding Wings, Observation, Swift Keel) |
 | Reactor-era project costs | Coal/Oil/Uranium conversions 300/360/480 → 200/300/400, Recommission Reactor 200 → 400, Operation Ivy 1200 → 1000 |
-| Gathering Storm building values reconciled | Palace grants 2 Amenities (not 1), Biosphère +8 Science, and the effective cache rows are Prasat 1 Relic slot and 6 Faith, Sukiennice 2 Gold, Tlachtli 2 Culture |
+| Gathering Storm building values reconciled | Palace grants 2 Amenities (not 1), Biosphère +8 Science, and the effective Gathering Storm rows are Prasat 1 Relic slot and 6 Faith, Sukiennice 2 Gold, Tlachtli 2 Culture |
 | Jebel Barkal double-counted | Its +4 Faith reaches every city within 6 tiles including its host; CIVVIS carried a local copy on top of the regional effect |
 | Estádio do Maracanã was local | The game gives its 6 Culture and 2 Amenities to every city in the empire (regional range 100000) |
 | Improvement siting was intersection-based | Civ 6 sites improvements through any of three routes — valid terrain OR valid feature OR valid resource. Farms on desert Floodplains and flat resource mines now place exactly as shipped |
@@ -3207,17 +3213,20 @@ check likewise reports no unconsumed belief effect keys. The older Round 11
 and 2026-08-18 tables above remain historical snapshots of the queue before
 this follow-up; they are not the current coverage count.
 
-### The rules-data re-pin was corrected after cache verification (2026-08-29)
+### The rules-data re-pin follows the installed manifests (2026-09-01)
 
-The effective compiled Gathering Storm cache now reports **0 divergent fields
-across 29 tables**. A prior re-pin interpreted nine cache/XML discrepancies in
-the wrong direction; direct cache reads restored the values the running game
-uses: Pike and Shot upkeep 4; Tagma cost 220, upkeep 4 and upgrade to
-Cuirassier; Prasat Faith 6 with one Relic slot; Sukiennice Gold 2; Tlachtli
-Culture 2; and Eyjafjallajökull adjacent Food 1. The many rows in the audit's
-“only in Civ VI” columns remain intentionally outside the model when they are
-unique Great People, policies, or other systems CivVis does not yet simulate;
-they are not field divergences in rows the model claims to ship.
+The XML audit now follows each expansion and content pack's `.modinfo` order,
+including the priority of `RemoveData` files and the order of expansion
+overlays. That fixes the nine false divergences introduced when the old loader
+applied those files lexically or deferred the cross-expansion overlay: Pike and
+Shot upkeep 4; Tagma cost 220, upkeep 4 and Cuirassier upgrade; Prasat Faith 6
+with one Relic slot; Sukiennice Gold 2; Tlachtli Culture 2; and
+Eyjafjallajökull adjacent Food 1. The complete installed Gathering Storm audit
+and the compatible cache audit both report **0 divergent fields across 29
+tables**. The many rows in the audit's “only in Civ VI” columns remain
+intentionally outside the model when they are unique Great People, policies, or
+other systems CivVis does not yet simulate; they are not field divergences in
+rows the model claims to ship.
 
 ### How to re-measure
 

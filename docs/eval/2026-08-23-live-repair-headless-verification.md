@@ -345,6 +345,15 @@ behind an off gene — but (1) makes the gene untestable as documented, so a
 future screen of `garrison-under-fire` would be pricing something other than
 what the comment describes.
 
+### Resolution (2026-09-01)
+
+#2915 removes the unreachable garrison-hold branch and its two private
+constants. Retiring `siege-muster` deliberately made this a damage-only
+live-bridge path, so the early return meant neither the old raid-response
+claim nor the frozen-controller selector could ever run. The cleanup preserves
+the current behaviour: only a `garrison-under-fire` city below 200 HP reaches
+the wall-or-local-defender choice.
+
 ## `governor-victory-lanes` is not the common cause: measured
 
 The gene reads **−4.73 pp at win z −15.37** on the standard 23,622-seat screen

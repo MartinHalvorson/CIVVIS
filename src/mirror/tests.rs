@@ -162,6 +162,35 @@ fn historical_snapshot_does_not_read_tiles_from_a_future_turn() {
     let _ = std::fs::remove_dir(dir);
 }
 
+#[test]
+fn snapshot_stops_at_the_selected_state_before_a_later_mid_turn_delta() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-mirror-state-boundary-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    std::fs::write(
+        &path,
+        [
+            r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","f":"FEATURE_FOREST"}]}"#,
+            r#"{"kind":"state","turn":5,"frame":0}"#,
+            r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"frame":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","f":null}]}"#,
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+
+    let snapshot = snapshot_from_events_at(&path, Some(5)).unwrap();
+    assert_eq!(
+        snapshot.plot((1, 1)).and_then(|plot| plot.f.as_deref()),
+        Some("FEATURE_FOREST"),
+        "the selected state must not be paired with a later frame delta",
+    );
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_dir(dir);
+}
+
 /// ★★★★ A TILES DELTA IS NEW GROUND, NOT A NEW SWEEP. The mod sends what
 /// a unit revealed since the last board went out, every turn and frame,
 /// stamped `delta`. It must merge onto the map like any chunk — that is
@@ -4623,10 +4652,12 @@ fn the_age_and_its_dedications_reach_the_seat() {
             "COMMEMORATION_ECONOMIC".to_string(),
             "COMMEMORATION_NOT_A_THING".to_string(),
         ]),
+        dedication_choices: Some(1),
         ..StateSnapshot::default()
     };
     let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
     assert_eq!(mirror.game.players[0].age, "golden");
+    assert_eq!(mirror.game.players[0].dedication_choices, 1);
     assert!(mirror.game.players[0]
         .dedications
         .contains("heartbeat_of_steam"));
@@ -4962,6 +4993,11 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     );
     assert_eq!(seated[0].origin, auckland);
     assert_eq!(seated[0].owner, 1);
+    assert_eq!(
+        mirror.game.observed_incoming_route_deltas.get(&cumae),
+        Some(&(0, 0)),
+        "a fully seated route needs no incoming-count correction"
+    );
     // The host's Congress is the model's Congress: Trade Policy A on our
     // seat, Luxury Policy B on silk, and the resolution the model has no
     // rule for is reported rather than guessed.
@@ -5012,10 +5048,48 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
             .count(),
         1
     );
-    assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
+    // An incoming route may remain visible at the destination while its
+    // origin city is outside the seat's visibility. Keep the authoritative
+    // count even though there is no safe city entity to invent for it.
+    state.cities[0].incoming_routes = Some(StateIncomingRoutes {
+        foreign: 1,
+        domestic: 0,
+        origins: vec![StateRouteOrigin {
+            x: 19,
+            y: 19,
+            player: 42,
+        }],
+    });
     state.turn = 92;
-    state.resolutions = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror
+            .game
+            .routes
+            .iter()
+            .filter(|route| route.dest == cumae)
+            .count(),
+        0,
+        "an unseen origin is not guessed into a city"
+    );
+    assert_eq!(
+        mirror.game.observed_incoming_route_deltas.get(&cumae),
+        Some(&(1, 0))
+    );
+    let with_unseen_route = mirror.game.city_yields_model(cumae).gold;
+    std::sync::Arc::make_mut(&mut mirror.game.observed_incoming_route_deltas).clear();
+    let without_unseen_route = mirror.game.city_yields_model(cumae).gold;
+    assert!(
+        (with_unseen_route - without_unseen_route - 4.0).abs() < 1e-9,
+        "Trade Policy A must count a foreign route whose origin is fogged: {} vs {}",
+        with_unseen_route,
+        without_unseen_route
+    );
+    // Restore the observation before the ordinary no-route sync below.
     state.cities[0].incoming_routes = Some(StateIncomingRoutes::default());
+    assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
+    state.resolutions = Some(vec![]);
+    state.turn = 93;
     mirror.sync(&snapshot, &state, 0);
     assert!(mirror.game.active_congress_effects.is_empty());
     assert_eq!(
@@ -9018,6 +9092,79 @@ fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
     assert_eq!(plain.religion_turns, 0);
 }
 
+#[test]
+fn an_actionable_conversion_clock_warns_without_inventing_a_majority() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 30,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![
+            plot(5, 5, "TERRAIN_GRASS"),
+            plot(10, 5, "TERRAIN_GRASS"),
+            plot(15, 5, "TERRAIN_GRASS"),
+        ],
+    }]);
+    let state = StateSnapshot {
+        turn: 30,
+        cities: vec![
+            StateCity {
+                id: 1,
+                name: "Faithless".to_string(),
+                x: 5,
+                y: 5,
+                pop: 4,
+                religion_next: Some("RELIGION_BUDDHISM".to_string()),
+                religion_turns: 20,
+                ..StateCity::default()
+            },
+            StateCity {
+                id: 2,
+                name: "Catholic".to_string(),
+                x: 10,
+                y: 5,
+                pop: 4,
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                religion_next: Some("RELIGION_BUDDHISM".to_string()),
+                religion_turns: 20,
+                ..StateCity::default()
+            },
+            StateCity {
+                id: 3,
+                name: "Distant".to_string(),
+                x: 15,
+                y: 5,
+                pop: 4,
+                religion_next: Some("RELIGION_HINDUISM".to_string()),
+                religion_turns: 21,
+                ..StateCity::default()
+            },
+        ],
+        ..StateSnapshot::default()
+    };
+    let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    let city = |name: &str| {
+        rebuilt
+            .game
+            .cities
+            .values()
+            .find(|city| city.name == name)
+            .unwrap_or_else(|| panic!("missing mirrored city {name}"))
+    };
+
+    let faithless = city("Faithless");
+    assert_eq!(faithless.pressure.get("Buddhism").copied(), Some(1.0));
+    assert_eq!(rebuilt.game.city_religion(faithless), None);
+
+    let catholic = city("Catholic");
+    assert_eq!(catholic.pressure.get("Catholicism").copied(), Some(100.0));
+    assert_eq!(catholic.pressure.get("Buddhism").copied(), Some(60.0));
+    assert_eq!(rebuilt.game.city_religion(catholic), Some("Catholicism"));
+
+    let distant = city("Distant");
+    assert!(!distant.pressure.contains_key("Hinduism"));
+}
+
 /// ★★★★ A border that grows after the mirror is built must still be learned.
 ///
 /// `apply_territory` ran only in `rebuild_from_state`, which a persistent mirror
@@ -11018,23 +11165,34 @@ fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
         width: 12,
         height: 12,
         chunk: 1,
-        plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(6, 5, "TERRAIN_GRASS")],
     }]);
     let state = StateSnapshot {
         turn: 93,
-        units: vec![StateUnit {
-            id: 91,
-            kind: "UNIT_APOSTLE".to_string(),
-            x: 5,
-            y: 5,
-            xp: Some(37),
-            level: Some(2),
-            promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
-            build_charges: Some(0),
-            spread_charges: Some(2),
-            religion: Some("RELIGION_CATHOLICISM".to_string()),
-            ..StateUnit::default()
-        }],
+        units: vec![
+            StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                xp: Some(37),
+                level: Some(2),
+                promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
+                build_charges: Some(0),
+                spread_charges: Some(2),
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                ..StateUnit::default()
+            },
+            StateUnit {
+                id: 92,
+                kind: "UNIT_BUILDER".to_string(),
+                x: 6,
+                y: 5,
+                build_charges: Some(0),
+                spread_charges: Some(0),
+                ..StateUnit::default()
+            },
+        ],
         ..StateSnapshot::default()
     };
 
@@ -11056,6 +11214,16 @@ fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
             .map(|promotion| (*promotion).as_str())
             .collect::<Vec<_>>(),
         vec!["translator"]
+    );
+    let builder = mirror
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "builder")
+        .expect("the zero-charge Builder is mirrored");
+    assert_eq!(
+        builder.charges, 0,
+        "a host-reported zero must clear the builder's default charges"
     );
 }
 

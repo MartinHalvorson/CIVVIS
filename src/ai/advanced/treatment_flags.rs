@@ -530,9 +530,10 @@ impl AdvancedAi {
         self.settler_guard_holds_2 = false;
     }
 
-    /// A settle site one settler drops for danger is set aside for every own
-    /// settler for the same window, so a second settler does not march to the
-    /// tile the first just fled.
+    /// A settle site one settler drops for an empire-wide invalidation is set
+    /// aside for every own settler for the same window. Route safety remains
+    /// local, so an escorted Settler can still use a site an unguarded one
+    /// cannot approach.
     ///
     /// Version 2 of `settler_target_hysteresis`; one version of a family plays, so this
     /// turns version 1 off. Opt-in gene `settler-target-hysteresis-2`. See `AdvancedAi::settler_target_hysteresis_2`.
@@ -1342,6 +1343,20 @@ impl AdvancedAi {
         self.base.disable_rapid_city_expansion();
     }
 
+    /// After its current production completes, let a population-two capital
+    /// start the next legal Settler before ordinary production ranking. The
+    /// baseline governor retains the city-target, site, and emergency gates.
+    pub fn enable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = true;
+        self.base.enable_capital_settler_after_completion();
+    }
+
+    /// The twin of [`AdvancedAi::enable_capital_settler_after_completion`].
+    pub fn disable_capital_settler_after_completion(&mut self) {
+        self.capital_settler_after_completion = false;
+        self.base.disable_capital_settler_after_completion();
+    }
+
     /// Take the pantheon that founds cities and keep the God-King card until
     /// its Faith is paid. Sets both halves: the strategic portfolio's God-King
     /// want, and `BasicAi`'s pantheon prefix.
@@ -2128,6 +2143,33 @@ impl AdvancedAi {
         self.science_victory_drive = false;
     }
 
+    /// Version 2 of `science_victory_drive`: the original planner remains a
+    /// separately measurable family member, while this continuation uses a
+    /// meaningful lead, legal launch sites, a research funnel, and an estimate
+    /// that can keep a live chain moving. One version of the family plays, so
+    /// this turns version 1 off. Opt-in gene `science-victory-drive-2`.
+    pub fn enable_science_victory_drive_2(&mut self) {
+        self.science_victory_drive = false;
+        self.science_victory_drive_2 = true;
+    }
+
+    /// The twin of `enable_science_victory_drive_2`.
+    pub fn disable_science_victory_drive_2(&mut self) {
+        self.science_victory_drive_2 = false;
+    }
+
+    /// In the opening, ordinary repeatable Great-Person projects wait for
+    /// city development; an open Prophet race and a clutch for an exceptional
+    /// Scientist remain forcing. Opt-in gene `early-project-restraint`.
+    pub fn enable_early_project_restraint(&mut self) {
+        self.early_project_restraint = true;
+    }
+
+    /// The twin of `enable_early_project_restraint`.
+    pub fn disable_early_project_restraint(&mut self) {
+        self.early_project_restraint = false;
+    }
+
     /// Let a Builder whose nearest improvable tile cannot be routed to try the
     /// next-nearest instead of standing still for the rest of the game. See
     /// `BasicAi::builder_tries_the_next_tile`; opt-in gene
@@ -2642,19 +2684,6 @@ impl AdvancedAi {
     pub fn disable_never_an_empty_queue(&mut self) {
         self.never_an_empty_queue = false;
     }
-    /// Reserve every empty trade route slot the empire can use, not only the
-    /// first. See `AdvancedAi::solvency_first_trade_slot_2`; opt-in gene
-    /// `solvency-first-trade-slot-2`, version two of
-    /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
-    /// append-point check reads a method line's first identifier.
-    pub fn enable_solvency_first_trade_slot_2(&mut self) {
-        self.solvency_first_trade_slot_2 = true;
-    }
-
-    /// The twin of `enable_solvency_first_trade_slot_2`.
-    pub fn disable_solvency_first_trade_slot_2(&mut self) {
-        self.solvency_first_trade_slot_2 = false;
-    }
     /// Modernize the standing army before the discretionary purchase pass
     /// spends the treasury, while a major war is being fought. See
     /// `AdvancedAi::upgrade_the_garrison`; opt-in gene `upgrade-the-garrison`.
@@ -3084,10 +3113,11 @@ impl AdvancedAi {
         self.settler_never_idles = false;
     }
 
-    /// Enter the Great Prophet race from an explicit victory lane: Astrology
+    /// Enter the secondary Great Prophet race for eligible lanes: Astrology
     /// after the opening techs, the empire's first Holy Site at the front of
     /// the district order, the Prophet priced as a lane great person, and
-    /// `pursue_religion` for the prize. See `enter_the_prophet_race`.
+    /// `pursue_religion` for the prize. An explicit Science lane stays on its
+    /// pure beeline. See `enter_the_prophet_race`.
     pub fn enable_enter_the_prophet_race(&mut self) {
         self.enter_the_prophet_race = true;
     }
@@ -3114,7 +3144,7 @@ impl AdvancedAi {
         self.live_barbarian_scouts_capture = false;
     }
 
-    /// A lost settler retires its ground for every settler; fleeing prefers a friendly stack; guards stay near known camps.
+    /// A lost settler retires its ground for every settler; fleeing prefers a friendly stack; guards stay near known camps; early settlers stay within a six-tile capital corridor.
     ///
     /// Host-only `live-settler-capture-lessons`: what twenty-four live captures
     /// on 2026-08-28 taught. A settler that leaves the board with no city
@@ -3124,7 +3154,9 @@ impl AdvancedAi {
     /// of our units holds to the least exposed bare one and never holds beside
     /// a raider while a farther tile exists; the strongest guard that can reach
     /// the settler this turn is summoned, not the nearest; a guard is not
-    /// released while a known barbarian camp is within eight tiles. See
+    /// released while a known barbarian camp is within eight tiles; a Settler
+    /// first seen during the one-city opening stays within six tiles of its
+    /// capital and returns if an emergency flee pushes it farther. See
     /// `advanced/civilian_safety.rs`.
     pub fn enable_live_settler_capture_lessons(&mut self) {
         self.live_settler_capture_lessons = true;

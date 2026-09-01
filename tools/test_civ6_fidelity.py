@@ -103,6 +103,90 @@ class TheReferenceIsChecked(unittest.TestCase):
         self.assertIn("expansion sentinels", source)
 
 
+class ManifestLoadOrderIsHonored(unittest.TestCase):
+    def test_a_content_pack_overlay_follows_its_base_rows(self):
+        """Lexical order would apply the update before the row it edits."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "Data"
+            data.mkdir()
+            (data / "Demo_GameplayData.xml").write_text(
+                "<GameInfo><Units><Row UnitType='UNIT_TEST' Maintenance='4'/>"
+                "</Units></GameInfo>",
+                encoding="utf-8",
+            )
+            (data / "Demo_Expansion2.xml").write_text(
+                "<GameInfo><Units><Update><Where UnitType='UNIT_TEST'/>"
+                "<Set><Maintenance>3</Maintenance></Set></Update>"
+                "</Units></GameInfo>",
+                encoding="utf-8",
+            )
+            (root / "Demo.modinfo").write_text(
+                "<Mod><InGameActions>"
+                "<UpdateDatabase id='base'><File>Data/Demo_GameplayData.xml</File>"
+                "</UpdateDatabase>"
+                "<UpdateDatabase id='xp2'><File>Data/Demo_Expansion2.xml</File>"
+                "</UpdateDatabase>"
+                "</InGameActions></Mod>",
+                encoding="utf-8",
+            )
+
+            paths = civ6_fidelity.content_pack_database_files(root)
+            self.assertEqual(
+                [path.name for path in paths],
+                ["Demo_GameplayData.xml", "Demo_Expansion2.xml"],
+            )
+            database = civ6_fidelity.Database()
+            for path in paths:
+                database.apply_file(path)
+            self.assertEqual(
+                database.tables["Units"][("UNIT_TEST",)]["Maintenance"], "3"
+            )
+
+    def test_an_expansion_overlay_stays_before_later_core_content(self):
+        """The shipped Expansion 1 manifest makes this order intentional."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "Data"
+            data.mkdir()
+            (data / "Expansion1_Expansion2.xml").write_text(
+                "<GameInfo><Units><Update><Where UnitType='UNIT_TEST'/>"
+                "<Set><Maintenance>3</Maintenance></Set></Update>"
+                "</Units></GameInfo>",
+                encoding="utf-8",
+            )
+            (data / "Expansion1_Units.xml").write_text(
+                "<GameInfo><Units><Row UnitType='UNIT_TEST' Maintenance='4'/>"
+                "</Units></GameInfo>",
+                encoding="utf-8",
+            )
+            (root / "Expansion1.modinfo").write_text(
+                "<Mod><InGameActions>"
+                "<UpdateDatabase id='xp2'><File>Data/Expansion1_Expansion2.xml</File>"
+                "</UpdateDatabase>"
+                "<UpdateDatabase id='content'><File>Data/Expansion1_Units.xml</File>"
+                "</UpdateDatabase>"
+                "</InGameActions></Mod>",
+                encoding="utf-8",
+            )
+
+            paths = civ6_fidelity.core_database_files(root)
+            self.assertEqual(
+                [path.name for path in paths],
+                ["Expansion1_Expansion2.xml", "Expansion1_Units.xml"],
+            )
+            database = civ6_fidelity.Database()
+            for path in paths:
+                database.apply_file(path)
+            self.assertEqual(
+                database.tables["Units"][("UNIT_TEST",)]["Maintenance"], "4"
+            )
+
+
 class ResourcePlacementWeightsAreAudited(unittest.TestCase):
     def test_projected_resources_keep_land_and_sea_weights_distinct(self):
         database = database_with({

@@ -14,11 +14,10 @@
 --   5. a settler's refused FOUND_CITY is retried behind its walk;
 --   6. the turn is held while a queue is pending and released when it drains;
 --   7. the stall cap gives up by name;
---   8. unmentioned combat units near a hostile are NOT handed to explore
---      automation but ARE given a holding order, and units far from one still
---      explore. A held unit with no order at all blocks the end of the turn;
---   8b. an unmentioned civilian is never explored but IS told to skip, for the
---      same reason: exclusion is not a disposition.
+--   8. every unmentioned combat unit is given a holding order, regardless of
+--      location. A held unit with no order at all blocks the end of the turn;
+--   8b. an unmentioned civilian is told to skip for the same reason:
+--      exclusion is not a disposition.
 --
 -- Run: lua5.1 tools/civ6_control/mod/order_queue_test.lua
 
@@ -277,6 +276,20 @@ queue.drain(player, PID, 7)
 check("strike with no movement left refused", ops(14), "UNITOPERATION_MOVE_TO")
 check("named queue_no_moves", (lastEvent("orders_queue") or ""):find("queue_no_moves", 1, true) ~= nil, true)
 
+-- 6b. A move that never reaches its target refuses every dependent follow-up.
+-- This is the builder failure seen in the live Civ VI trace: the host ended the
+-- MOVE_TO at the origin, then the queued IMPROVE was evaluated on the city
+-- centre instead of the farm tile CIVVIS had planned.
+reset()
+host.units[141] = { id = 141, kind = "UNIT_BUILDER", x = 5, y = 5, moves = 1 }
+applyOrders(player, PID, 7, { row(141, "MOVE_TO", 6, 5), row(141, "IMPROVE:IMPROVEMENT_FARM") })
+check("stop-short move issues only the opening walk", ops(141), "UNITOPERATION_MOVE_TO")
+host.units[141].moves = 0 -- the host ended the move without reaching (6, 5)
+queue.drain(player, PID, 7)
+check("stop-short move never improves the origin", ops(141), "UNITOPERATION_MOVE_TO")
+check("stop-short follow-up is named", (lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
+check("stop-short follow-up is removed", queue.pendingCount(), 0)
+
 -- 7. The stall cap gives up by name.
 reset()
 host.units[15] = { id = 15, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
@@ -285,12 +298,13 @@ queue.giveUp(7)
 check("give-up empties the queue", queue.pendingCount(), 0)
 check("give-up named queue_stalled", (lastEvent("orders_queue") or ""):find("queue_stalled", 1, true) ~= nil, true)
 
--- 8. Explore hand-off: a soldier beside a hostile HOLDS; a far one explores.
+-- 8. CIVVIS owns movement: both a soldier beside a hostile and one far away
+-- hold until the planner gives either one an explicit destination.
 --
 -- ⚠⚠⚠ THIS ONCE ASSERTED THE HELD SOLDIER GOT NOTHING, AND NOTHING IS WHAT
 -- BLOCKED THE TURN. Civilization VI will not end a turn while a unit still
--- awaits orders, so a soldier CIVVIS did not mention and the guard kept off
--- explore automation had no disposition at all. Measured 2026-08-28, run
+-- awaits orders, so a soldier CIVVIS did not mention had no disposition at
+-- all. Measured 2026-08-28, run
 -- civvis-20260828T161408Z at turn 105 with five such units:
 -- blocked(ENDTURN_BLOCKING_UNITS) -> dismissed(forced) -> residual_unblock ->
 -- blocked, repeating until the wedge watchdog killed a game that had reached
@@ -298,18 +312,16 @@ check("give-up named queue_stalled", (lastEvent("orders_queue") or ""):find("que
 reset()
 host.units[16] = { id = 16, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }   -- near
 host.units[17] = { id = 17, kind = "UNIT_WARRIOR", x = 30, y = 30, moves = 2 } -- far
-host.contacts = { { id = 900, kind = "UNIT_WARRIOR", x = 7, y = 5, moves = 2 } }
 applyOrders(player, PID, 7, {})
-check("held soldier not handed to explore automation",
-      ops(16):find("AUTOMATE_EXPLORE", 1, true) ~= nil, false)
-check("held soldier is given a holding order", ops(16), "UNITOPERATION_FORTIFY")
-check("far soldier explored", ops(17), "UNITOPERATION_AUTOMATE_EXPLORE")
-check("orders event counts the guard", field(lastEvent("orders"), "explore_guarded"), 1)
-check("the guard reports the unit HELD, not merely counted",
-      field(lastEvent("orders"), "explore_guarded_held"), 1)
+check("near soldier is given a holding order", ops(16), "UNITOPERATION_FORTIFY")
+check("far soldier is given a holding order", ops(17), "UNITOPERATION_FORTIFY")
+check("orders event counts every unmentioned hold",
+      field(lastEvent("orders"), "unmentioned_held"), 2)
+check("every unmentioned hold is accepted",
+      field(lastEvent("orders"), "unmentioned_held_applied"), 2)
 
--- 8b. An unmentioned CIVILIAN is excluded from the explore hand-off — a settler
--- that wanders never founds — but exclusion is not a disposition. Civilization
+-- 8b. An unmentioned CIVILIAN is held with SKIP_TURN — a settler that wanders
+-- never founds — but exclusion is not a disposition. Civilization
 -- VI will not end a turn while any unit awaits orders, civilian included, so it
 -- has to be told to skip. Seven of the nineteen ENDTURN_BLOCKING_UNITS turns in
 -- run civvis-20260828T165926Z had an unordered civilian on them.
@@ -317,8 +329,6 @@ reset()
 host.units[18] = { id = 18, kind = "UNIT_SETTLER", x = 40, y = 40, moves = 2 }
 host.units[19] = { id = 19, kind = "UNIT_BUILDER", x = 41, y = 41, moves = 2 }
 applyOrders(player, PID, 7, {})
-check("idle settler is not explored",
-      ops(18):find("AUTOMATE_EXPLORE", 1, true) ~= nil, false)
 check("idle settler is told to skip", ops(18), "UNITOPERATION_SKIP_TURN")
 check("idle builder is told to skip", ops(19), "UNITOPERATION_SKIP_TURN")
 check("the orders event counts both", field(lastEvent("orders"), "civilians_skipped"), 2)
