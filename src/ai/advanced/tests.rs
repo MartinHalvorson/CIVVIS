@@ -8963,17 +8963,17 @@ fn science_lane_keeps_its_beeline_for_a_barbarian_that_cannot_strike_this_turn()
     // cheap observer beside the contact so the test proves the gate is
     // reacting to a known non-imminent raider, rather than merely ignoring
     // fog.
-    let observer_tile = game
-        .nbrs(outer_tile)
-        .into_iter()
-        .find(|position| {
-            game.city_at(*position).is_none()
-                && game.unit_ids_at(*position).is_empty()
-                && game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                })
-        })
-        .expect("the contact needs an observer tile");
+    let observer_tile =
+        game.nbrs(outer_tile)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the contact needs an observer tile");
     game.spawn_test_unit("scout", 0, observer_tile);
     let raider = game.spawn_test_unit("crossbowman", barbarian, outer_tile);
     let visible = game.player_vision_frame(0);
