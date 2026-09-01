@@ -574,7 +574,12 @@ tried where it matters. `ledger_held_opt_in` / `forceable_treatments`
 (`gene_ledger.rs`) name the other half, and `--with <opt-in>` now seats one —
 an *addition*, recorded as such: `apply_gene_ledger_with_forced_live` puts it
 in `applied.forced`, `deployment_treatments_with_forced_live` names it in the
-arm's genome, and the deployment genome itself does not move.
+arm's genome, and the deployment genome itself does not move. A
+`Kind::HostOnly` gene is neither half: no screen row can hold one off, so every
+live seat already plays it (`enable_live_bridge_universe` turns on every
+`live()` gene), `--with` refuses it as already shipping, and `--without <tag>`
+is the one lever that moves it — `python3 tools/genes.py list` prints such a
+row `on(live)`, never `off`.
 
 **The ladder row said nothing about the fighting.** It has carried
 `applied_pct` since the bridge existed and nothing about the army, so every
