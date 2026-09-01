@@ -23160,6 +23160,22 @@ impl AdvancedAi {
         {
             return false;
         }
+        // An explicit Science lane has a compounding prerequisite that the
+        // envoy stream does not: at least one Campus must be carrying its
+        // first science building. The old ordering let a Diplomatic Quarter
+        // claim the capital before any Campus existed, and then let its
+        // Consulate claim the same queue before the first Library completed.
+        // On the live Civ VI trace that left five cities with one Campus and
+        // 32.8 Science against Qin's 84.3 at turn 64. The generic production
+        // scorer already values a missing Campus and the targeted reserve
+        // already finishes a Campus chain, so defer this ancillary one-off
+        // until that foundation is present. Adaptive and non-Science seats
+        // retain the measured envoy policy unchanged.
+        if self.active_victory_target(g) == Some(VictoryTarget::Science)
+            && !self.science_campus_foundation_ready(g, pid)
+        {
+            return false;
+        }
 
         let city_ids = g.player_city_ids(pid);
         let diplomatic_city = city_ids.iter().copied().find(|city| {
@@ -23288,6 +23304,20 @@ impl AdvancedAi {
             return false;
         };
         g.apply(pid, &Action::Produce { city, item }).is_ok()
+    }
+
+    /// Whether an explicitly targeted Science seat has established its first
+    /// useful Campus chain. A bare Campus is still a queue debt: until its
+    /// Library is complete, an envoy district is the wrong ancillary claim.
+    fn science_campus_foundation_ready(&self, g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid).into_iter().any(|cid| {
+            let city = &g.cities[&cid];
+            g.city_has_district_family(city, crate::name!("campus"))
+                && city
+                    .buildings
+                    .iter()
+                    .any(|building| g.building_is_family(*building, crate::name!("library")))
+        })
     }
 
     /// Does this turn resolve the delay `settler_blocked_turns` measures?
