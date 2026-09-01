@@ -28165,13 +28165,17 @@ impl AdvancedAi {
         // A Settler the routine left without a target already ran the
         // exhaustion search this turn (`settler_stranded`), or retired a
         // doomed arrival for next turn's pick; asking again would only
-        // repeat the scan and the journal line.
+        // repeat the scan and the journal line. Once its patience expires,
+        // however, a missing target is exactly the fog/frontier recovery
+        // case the watchdog must handle — see `settler_frontier_step`.
         if unit.owner != pid
             || unit.moves_left <= 0.0
-            || !self.settler_targets.contains_key(&uid)
             || self.settler_idle_streak(uid) < settler_never_idles::SETTLER_IDLE_PATIENCE
         {
             return acted;
+        }
+        if !self.settler_targets.contains_key(&uid) {
+            return self.settler_frontier_step(g, pid, uid);
         }
         self.settler_watchdog_step(g, pid, uid)
     }
