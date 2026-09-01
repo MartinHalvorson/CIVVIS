@@ -5324,7 +5324,11 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
 
     #[rustfmt::skip]
     const STATE: &[&str] = &[
-        "kind", "event", "run", "ctx", "turn", "frame", "techs", "civics", "research",
+        // Wall-clock stamps are telemetry metadata, not mirrored game facts,
+        // but they are intentional top-level keys on every live state export.
+        // Keep them out of the gap stream so a real state-schema addition is
+        // not buried under `schema:state.t` and `schema:state.utc` noise.
+        "kind", "event", "run", "ctx", "turn", "frame", "t", "utc", "techs", "civics", "research",
         "science_projects", "science_victory_points", "science_victory_points_per_turn",
         "science_victory_points_needed", "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "used_governments",
