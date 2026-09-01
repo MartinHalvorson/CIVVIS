@@ -3917,16 +3917,20 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 }
 
 #[test]
-fn production_advanced_omits_measured_null_arms() {
-    let production = AdvancedAi::new();
-    assert!(!production.bounded_recovery);
-    assert!(production.envoy_priority);
+fn production_advanced_reflects_the_recorded_bounded_recovery_selection() {
+    let bare = AdvancedAi::new();
+    assert!(!bare.bounded_recovery, "the bare controller remains opt-in-off");
+    assert!(bare.envoy_priority);
+
+    let mut production = AdvancedAi::new();
+    production.enable_engine_repairs();
+    assert!(production.bounded_recovery);
 
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        !live_bridge.bounded_recovery,
-        "the explicit three-batch selection withholds this unqualified arm"
+        live_bridge.bounded_recovery,
+        "the explicit three-batch selection enables this qualifying arm"
     );
 }
 
@@ -22380,18 +22384,18 @@ fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!ai.base.one_shot_recovery);
 }
 
-/// `settle_sooner` is a native opt-in: off in both bare controllers and in
-/// the current deployment genome, yet flippable by name through
+/// `settle_sooner` is a native opt-in: off in both bare controllers, enabled
+/// by the current deployment genome, and still flippable by name through
 /// `PRODUCTION_OPT_INS`.
 #[test]
-fn settle_sooner_is_a_native_opt_in_withheld_by_the_ledger() {
+fn settle_sooner_is_a_native_opt_in_enabled_by_the_ledger() {
     assert!(!AdvancedAi::new().settle_sooner);
     assert!(!AdvancedAi::legacy().settle_sooner);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        !deployed.settle_sooner,
-        "the explicit three-batch selection leaves this arm off"
+        deployed.settle_sooner,
+        "the explicit three-batch selection enables this qualifying arm"
     );
     let enable = GENES
         .iter()
@@ -37117,13 +37121,13 @@ fn a_settler_inside_a_raiders_reach_flees_out_of_it() {
     );
 }
 
-/// With its broader civilian-safety opt-in explicitly withheld, the live
+/// After explicitly withholding its broader civilian-safety opt-in, the live
 /// bridge must not leave an unguarded Settler inside a visible direct-capture
 /// envelope merely because every *one-step* retreat is also covered. This is
 /// the narrow emergency floor for a live Settler that will otherwise be taken
 /// before it receives another turn.
 #[test]
-fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() {
+fn a_live_settler_escapes_a_direct_barbarian_capture_after_explicit_withhold() {
     let (mut game, _city, home) = barbarian_field(71_026);
     for unit in game.player_unit_ids(0) {
         if game.rules.units[game.units[&unit].kind].class == "military" {
@@ -37159,8 +37163,8 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() 
         "the deployed seat uses the live shadow"
     );
     assert!(
-        !ai.civilian_out_of_reach,
-        "the average-based deployment selection keeps the broader civilian-safety opt-in off"
+        ai.civilian_out_of_reach,
+        "the average-based deployment selection enables the broader civilian-safety opt-in"
     );
     ai.disable_civilian_out_of_reach();
     assert!(
