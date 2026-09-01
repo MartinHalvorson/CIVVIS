@@ -1577,6 +1577,15 @@ struct TurnStartHostile {
     sea: bool,
 }
 
+/// A committed expansion route that is long enough to keep its guards even
+/// when no hostile is visible yet.  The destination is part of the record so
+/// a retarget cannot accidentally carry an old expedition's escort along.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SettlerEscortJourney {
+    home: Pos,
+    target: Pos,
+}
+
 /// A visible Barbarian's one-turn civilian-capture envelope. Builder safety
 /// snapshots these once per Builder decision, rather than rebuilding them for
 /// each route and retreat safety query.
@@ -2065,12 +2074,22 @@ pub struct AdvancedAi {
     /// the bridge from re-entering that broken channel without restoring the
     /// native gene.  The threat-scoped guard logic remains the existing one.
     live_formationless_settler_shadow: bool,
-    /// The military unit assigned to shadow each settler under
+    /// The land military unit assigned to shadow each settler under
     /// `stacked_escort`, keyed by settler id. Values are unique: a guard
-    /// serves one settler. No `linked_to` is involved, so this survives the
+    /// serves one settler. A land guard stays with an overseas expedition
+    /// through its landing, where it covers the one hostile turn before the
+    /// Settler can found. No `linked_to` is involved, so this survives the
     /// live bridge's fresh-board rebuild via `remap_unit_memory` rather than
     /// depending on Firaxis reporting a formation that does not exist.
     settler_guards: BTreeMap<u32, u32>,
+    /// The naval half of an overseas Settler expedition. It is deliberately
+    /// separate from `settler_guards`: land and sea military units occupy
+    /// different stacking layers, so both can protect the civilian while it
+    /// is afloat, then the naval guard stands down at landfall.
+    settler_sea_guards: BTreeMap<u32, u32>,
+    /// Long routes keep their escorts through quiet ground. Short local walks
+    /// retain the threat-scoped policy that the native screen already priced.
+    settler_escort_journeys: BTreeMap<u32, SettlerEscortJourney>,
     /// Per-settler guard-wait bookkeeping under `stacked_escort`: the last
     /// turn counted and how many consecutive turns the settler has held
     /// position waiting for its guard to re-stack. Counted once per turn —
@@ -6554,6 +6573,8 @@ impl AdvancedAi {
         self.settler_stalls.clear();
         self.escort_march.clear();
         self.settler_guards.clear();
+        self.settler_sea_guards.clear();
+        self.settler_escort_journeys.clear();
         self.guard_wait.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
@@ -6628,6 +6649,16 @@ impl AdvancedAi {
             .settler_guards
             .iter()
             .filter_map(|(settler, guard)| Some((*map.get(settler)?, *map.get(guard)?)))
+            .collect();
+        self.settler_sea_guards = self
+            .settler_sea_guards
+            .iter()
+            .filter_map(|(settler, guard)| Some((*map.get(settler)?, *map.get(guard)?)))
+            .collect();
+        self.settler_escort_journeys = self
+            .settler_escort_journeys
+            .iter()
+            .filter_map(|(settler, journey)| map.get(settler).map(|new| (*new, *journey)))
             .collect();
         self.guard_wait = self
             .guard_wait
@@ -6775,6 +6806,8 @@ impl AdvancedAi {
             escort_unstick: false,
             live_formationless_settler_shadow: false,
             settler_guards: BTreeMap::new(),
+            settler_sea_guards: BTreeMap::new(),
+            settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
@@ -7183,6 +7216,7 @@ impl AdvancedAi {
         }
         self.settler_guards
             .iter()
+            .chain(self.settler_sea_guards.iter())
             .filter(|(settler, _)| {
                 g.units
                     .get(settler)
@@ -25947,7 +25981,7 @@ impl AdvancedAi {
     }
 
     /// Would `guard`, standing on `pos`, be broken by the first visible
-    /// hostile land unit that can reach it? The same bar
+    /// hostile military unit that can reach it on that surface? The same bar
     /// `settlement_unit_step_toward_safe` applies to a formation leader:
     /// a reachable attacker at more than one and a half times the guard's
     /// effective strength. See `settler_guard_holds`.
@@ -26032,6 +26066,7 @@ impl AdvancedAi {
         visible: &TileBits,
     ) -> bool {
         let defender = crate::game::effective_strength(g.unit_strength(guard, false), guard.hp);
+        let water = g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile));
         // See `settler_guard_holds_2`: two matching hostiles in reach break a
         // guard as surely as one at 1.5×.
         let mut matching = 0;
@@ -26044,7 +26079,15 @@ impl AdvancedAi {
                 return false;
             }
             let spec = &g.rules.units[unit.kind];
-            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            let sea = spec.domain.as_deref() == Some("sea");
+            if spec.class != "military"
+                || spec.domain.as_deref() == Some("air")
+                // Land units may embark with a civilian but cannot initiate a
+                // water attack; sea units likewise cannot break the guard a
+                // Settler has already landed with. Price each stacking layer
+                // against the hostiles that can actually attack it.
+                || sea != water
+            {
                 return false;
             }
             if self.barbarian_scouts_are_scouts
@@ -26120,9 +26163,14 @@ impl AdvancedAi {
         let stacked_guard = civilian_mover
             && uid.is_some_and(|settler| {
                 let settler_pos = g.units[&settler].pos;
-                self.settler_guards.get(&settler).is_some_and(|guard| {
-                    g.units.get(guard).is_some_and(|guard| {
-                        guard.owner == pid
+                let target_is_water = g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile));
+                self.settler_guard_ids(settler)
+                    .into_iter()
+                    .flatten()
+                    .any(|guard| {
+                        g.units.get(&guard).is_some_and(|guard| {
+                            let sea = g.rules.units[guard.kind].domain.as_deref() == Some("sea");
+                            guard.owner == pid
                             // See `settler_guard_holds`: the guard mirrors the
                             // settler's step from its tile, or already stands
                             // on the destination and holds there.
@@ -26130,16 +26178,17 @@ impl AdvancedAi {
                                 || (self.settler_guard_holds_on() && guard.pos == pos))
                             && guard.hp >= STACKED_GUARD_MIN_HP
                             && g.rules.units[guard.kind].class == "military"
-                            && !matches!(
-                                g.rules.units[guard.kind].domain.as_deref(),
-                                Some("sea" | "air")
-                            )
+                            && g.rules.units[guard.kind].domain.as_deref() != Some("air")
+                            // The naval layer protects the water leg only.
+                            // The embarked land guard is the one that walks
+                            // ashore with the Settler.
+                            && (!sea || target_is_water)
                             // See `settler_guard_holds`: a guard the first
                             // hostile in reach would break is no protection.
                             && (!self.settler_guard_holds_on()
                                 || !self.guard_outmatched_at(g, pid, guard, pos, visible))
+                        })
                     })
-                })
             });
         // See `settler_guard_holds`: for a civilian only the bound guard counts —
         // any other own unit on the tile follows its own doctrine and walks
@@ -27632,6 +27681,128 @@ impl AdvancedAi {
         self.live_formationless_settler_shadow
     }
 
+    /// The two military stacking layers a Settler expedition can use. A land
+    /// guard may embark with the civilian; a naval guard shares only the
+    /// water leg and releases at shore.
+    fn settler_guard_ids(&self, settler: u32) -> [Option<u32>; 2] {
+        [
+            self.settler_guards.get(&settler).copied(),
+            self.settler_sea_guards.get(&settler).copied(),
+        ]
+    }
+
+    fn guard_is_bound_to_settler(&self, settler: u32, guard: u32) -> bool {
+        self.settler_guard_ids(settler)
+            .into_iter()
+            .flatten()
+            .any(|bound| bound == guard)
+    }
+
+    fn guard_is_bound_to_any_settler(&self, guard: u32) -> bool {
+        self.settler_guards
+            .values()
+            .chain(self.settler_sea_guards.values())
+            .any(|bound| *bound == guard)
+    }
+
+    fn all_bound_settler_guards(&self) -> BTreeSet<u32> {
+        self.settler_guards
+            .values()
+            .chain(self.settler_sea_guards.values())
+            .copied()
+            .collect()
+    }
+
+    fn clear_settler_guard_bindings(&mut self, settler: u32) -> bool {
+        let land = self.settler_guards.remove(&settler).is_some();
+        let sea = self.settler_sea_guards.remove(&settler).is_some();
+        let cleared = land || sea;
+        if cleared {
+            self.guard_wait.remove(&settler);
+        }
+        cleared
+    }
+
+    /// Bind a military unit to the stacking layer its domain actually uses.
+    /// A guard cannot serve two settlers, even when it is being rebound after
+    /// a live-board ID remap.
+    fn bind_settler_guard(&mut self, g: &Game, settler: u32, guard: u32) {
+        let Some(unit) = g.units.get(&guard) else {
+            return;
+        };
+        let sea = g.rules.units[unit.kind].domain.as_deref() == Some("sea");
+        self.settler_guards.retain(|bound_settler, bound_guard| {
+            *bound_settler == settler || *bound_guard != guard
+        });
+        self.settler_sea_guards
+            .retain(|bound_settler, bound_guard| {
+                *bound_settler == settler || *bound_guard != guard
+            });
+        if sea {
+            self.settler_sea_guards.insert(settler, guard);
+        } else {
+            self.settler_guards.insert(settler, guard);
+        }
+    }
+
+    fn long_settler_escort_journey(&mut self, g: &Game, uid: u32) -> Option<SettlerEscortJourney> {
+        let target = self.settler_targets.get(&uid).copied()?;
+        if let Some(journey) = self.settler_escort_journeys.get(&uid).copied() {
+            if journey.target == target {
+                return Some(journey);
+            }
+            self.settler_escort_journeys.remove(&uid);
+            self.clear_settler_guard_bindings(uid);
+        }
+        let distance = g.route_distance(uid, target, 0)?;
+        if distance < SETTLER_ESCORT_DISTANCE as usize {
+            return None;
+        }
+        let journey = SettlerEscortJourney {
+            home: g.units[&uid].pos,
+            target,
+        };
+        self.settler_escort_journeys.insert(uid, journey);
+        let home = journey.home;
+        think!(self.journal(), Expansion, Detail, "Settler begins an escorted expedition";
+               "the route from {home:?} to {target:?} is {distance} tiles, so a land guard stays \
+                with it and a naval guard joins while it is afloat");
+        Some(journey)
+    }
+
+    fn long_settler_escort_active(&self, uid: u32, target: Pos) -> bool {
+        self.settler_escort_journeys
+            .get(&uid)
+            .is_some_and(|journey| journey.target == target)
+    }
+
+    fn guard_matches_escort_layer(g: &Game, unit: &crate::game::Unit, sea: bool) -> bool {
+        let spec = &g.rules.units[unit.kind];
+        spec.class == "military"
+            && spec.domain.as_deref() != Some("air")
+            && (spec.domain.as_deref() == Some("sea")) == sea
+    }
+
+    fn escort_guard_can_hold(
+        &self,
+        g: &Game,
+        pid: usize,
+        guard: u32,
+        pos: Pos,
+        sea: bool,
+        visible: Option<&Arc<TileBits>>,
+    ) -> bool {
+        g.units.get(&guard).is_some_and(|unit| {
+            unit.owner == pid
+                && Self::guard_matches_escort_layer(g, unit, sea)
+                && (!self.settler_guard_holds_on()
+                    || (unit.hp >= STACKED_GUARD_MIN_HP
+                        && visible.is_some_and(|visible| {
+                            !self.guard_outmatched_at(g, pid, unit, pos, visible)
+                        })))
+        })
+    }
+
     /// Whether a visible hostile can capture the Settler's next ordinary
     /// route step before its unstacked guard can protect it.  This deliberately
     /// does not treat the Settler's current city tile as safe enough to release
@@ -27749,16 +27920,30 @@ impl AdvancedAi {
                     .keys()
                     .any(|camp| g.wdist(*camp, position) <= SETTLER_ESCORT_THREAT_RADIUS)
         };
-        if !threatened && !camp_near {
-            if self.settler_guards.remove(&uid).is_some() {
-                self.guard_wait.remove(&uid);
+        // A quiet local walk still gives its guard back to the army. A route
+        // that was long when the Settler left home is different: the point of
+        // the escort is to make the unobserved middle and the first island
+        // night survivable, not merely to react after a raider is visible.
+        let journey = self.long_settler_escort_journey(g, uid);
+        if !threatened && !camp_near && journey.is_none() {
+            if self.clear_settler_guard_bindings(uid) {
                 think!(self.journal(), Expansion, Detail, "The settler's guard stands down";
-                       "no visible hostile within {SETTLER_ESCORT_THREAT_RADIUS} tiles; \
-                        the army gets its body back");
+                       "no visible hostile within {SETTLER_ESCORT_THREAT_RADIUS} tiles and \
+                        this is not a long expedition; the army gets its body back");
             }
             return None;
         }
         let current = g.units[&uid].pos;
+        let afloat = g
+            .map
+            .get(current)
+            .is_some_and(|tile| g.rules.is_water(tile));
+        // A naval guard cannot shield a Settler after it disembarks. The land
+        // guard remains assigned so it can cover the one hostile turn before
+        // the city is founded.
+        if !afloat {
+            self.settler_sea_guards.remove(&uid);
+        }
         // The live safety floor already refuses to price a stacked guard as
         // protection when it is wounded or a visible hostile can break it.
         // Keep the assignment itself to that same definition: otherwise a
@@ -27768,30 +27953,61 @@ impl AdvancedAi {
             .settler_guard_holds_on()
             .then(|| self.battlefront_visibility(g, pid));
         if let Some(guard) = self.settler_guards.get(&uid).copied() {
-            let can_hold = g.units.get(&guard).is_some_and(|unit| {
-                unit.owner == pid
-                    && g.rules.units[unit.kind].class == "military"
-                    && !matches!(
-                        g.rules.units[unit.kind].domain.as_deref(),
-                        Some("sea" | "air")
-                    )
-                    && (!self.settler_guard_holds_on()
-                        || (unit.hp >= STACKED_GUARD_MIN_HP
-                            && !self.guard_outmatched_at(
-                                g,
-                                pid,
-                                unit,
-                                current,
-                                visible.as_ref().expect("computed under the flag"),
-                            )))
-            });
-            if !can_hold {
+            if !self.escort_guard_can_hold(g, pid, guard, current, false, visible.as_ref()) {
                 self.settler_guards.remove(&uid);
                 self.guard_wait.remove(&uid);
             }
         }
+        if let Some(guard) = self.settler_sea_guards.get(&uid).copied() {
+            if !afloat
+                || !self.escort_guard_can_hold(g, pid, guard, current, true, visible.as_ref())
+            {
+                self.settler_sea_guards.remove(&uid);
+            }
+        }
+        // On water, a naval military unit occupies a second legal stack with
+        // the embarked land guard and Settler. The sea guard is best effort:
+        // a shortage must not make the expedition stop before it can found.
+        if afloat && !self.settler_sea_guards.contains_key(&uid) {
+            let taken = self.all_bound_settler_guards();
+            let sea_guard = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|candidate| {
+                    let unit = &g.units[candidate];
+                    unit.linked_to.is_none()
+                        && !taken.contains(candidate)
+                        && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
+                        && Self::guard_matches_escort_layer(g, unit, true)
+                        && (!self.settler_guard_holds_on()
+                            || (unit.hp >= STACKED_GUARD_MIN_HP
+                                && !self.guard_outmatched_at(
+                                    g,
+                                    pid,
+                                    unit,
+                                    current,
+                                    visible.as_ref().expect("computed under the flag"),
+                                )))
+                })
+                .min_by_key(|candidate| {
+                    let unit = &g.units[candidate];
+                    let spec = &g.rules.units[unit.kind];
+                    (
+                        g.wdist(unit.pos, current),
+                        spec.has_ranged_attack(),
+                        std::cmp::Reverse(g.unit_strength(unit, true) as i64),
+                        *candidate,
+                    )
+                });
+            if let Some(guard) = sea_guard {
+                self.bind_settler_guard(g, uid, guard);
+                think!(self.journal(), Expansion, Detail, "A naval guard joins the settler";
+                       "the sea layer shares the water leg while the land guard remains \
+                        responsible for the landing");
+            }
+        }
         if !self.settler_guards.contains_key(&uid) {
-            let taken: BTreeSet<u32> = self.settler_guards.values().copied().collect();
+            let taken = self.all_bound_settler_guards();
             let threatened = self.plan.as_ref().and_then(|plan| plan.threatened_city);
             let holds_threatened_city = |position: Pos| {
                 threatened.is_some_and(|city| {
@@ -27833,15 +28049,30 @@ impl AdvancedAi {
                         *candidate,
                     )
                 });
-            {
-                let guard = guard?;
+            if let Some(guard) = guard {
                 think!(self.journal(), Expansion, Detail, "A guard joins the settler";
                        "it will share the settler's tile; a stacked civilian cannot \
                         be captured");
-                self.settler_guards.insert(uid, guard);
+                self.bind_settler_guard(g, uid, guard);
             }
         }
-        let guard = self.settler_guards[&uid];
+        // The water leg paces against the naval guard when it has one. At a
+        // shoreline, switch back to the land guard before moving ashore: the
+        // latter is the unit that can survive beside the new city overnight.
+        let next_is_water = self
+            .settler_targets
+            .get(&uid)
+            .and_then(|target| g.route_step(uid, *target, 0))
+            .is_some_and(|next| g.map.get(next).is_some_and(|tile| g.rules.is_water(tile)));
+        let guard = if afloat && next_is_water {
+            self.settler_sea_guards
+                .get(&uid)
+                .copied()
+                .or_else(|| self.settler_guards.get(&uid).copied())
+        } else {
+            self.settler_guards.get(&uid).copied()
+        };
+        let guard = guard?;
         if g.units[&guard].pos == current {
             self.guard_wait.remove(&uid);
             return None;
@@ -28329,7 +28560,12 @@ impl AdvancedAi {
                                 // hold. Anyone else walks off; an outmatched
                                 // guard is broken and the settler taken.
                                 && (!self.settler_guard_holds_on()
-                                    || (self.settler_guards.get(&uid) == Some(other)
+                                    || (self.guard_is_bound_to_settler(uid, *other)
+                                        && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                                        && (g.rules.units[unit.kind].domain.as_deref() != Some("sea")
+                                            || g.map.get(current).is_some_and(|tile| {
+                                                g.rules.is_water(tile)
+                                            }))
                                         && unit.hp >= STACKED_GUARD_MIN_HP
                                         && !self.guard_outmatched_at(
                                             g,
@@ -28960,7 +29196,7 @@ impl AdvancedAi {
                g.wdist(current, target), self.settle_value(g, pid, target); target);
         // See `civilian_out_of_reach`: the step is refused inside a raider's
         // reach unless the guard walks in too or the city is founded now.
-        let moved = if self.civilian_out_of_reach {
+        let moved = if self.civilian_out_of_reach || self.long_settler_escort_active(uid, target) {
             self.settler_step_out_of_reach(g, pid, uid, target)
         } else {
             self.settler_step_toward_safe(g, pid, uid, target)
@@ -33372,13 +33608,26 @@ impl AdvancedAi {
     fn stacked_guard_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
         let unit = g.units.get(&uid)?.clone();
         let spec = &g.rules.units[unit.kind];
-        if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+        if spec.class != "military" || spec.domain.as_deref() == Some("air") {
             return None;
         }
-        let settler = self
+        let (settler, naval_binding) = self
             .settler_guards
             .iter()
-            .find_map(|(settler, guard)| (*guard == uid).then_some(*settler))?;
+            .find_map(|(settler, guard)| (*guard == uid).then_some((*settler, false)))
+            .or_else(|| {
+                self.settler_sea_guards
+                    .iter()
+                    .find_map(|(settler, guard)| (*guard == uid).then_some((*settler, true)))
+            })?;
+        if (spec.domain.as_deref() == Some("sea")) != naval_binding {
+            if naval_binding {
+                self.settler_sea_guards.remove(&settler);
+            } else {
+                self.settler_guards.remove(&settler);
+            }
+            return None;
+        }
         let Some(settler_pos) = g
             .units
             .get(&settler)
@@ -33386,10 +33635,22 @@ impl AdvancedAi {
             .map(|unit| unit.pos)
         else {
             // Founded, died, or was captured: the guard goes back to the army.
-            self.settler_guards.remove(&settler);
-            self.guard_wait.remove(&settler);
+            self.clear_settler_guard_bindings(settler);
+            self.settler_escort_journeys.remove(&settler);
             return None;
         };
+        if naval_binding
+            && !g
+                .map
+                .get(settler_pos)
+                .is_some_and(|tile| g.rules.is_water(tile))
+        {
+            // The settler has reached shore. A naval unit cannot guard the
+            // landfall, and keeping its movement reserved would only strand
+            // it beside a city that the land escort already covers.
+            self.settler_sea_guards.remove(&settler);
+            return None;
+        }
         if unit.pos == settler_pos {
             think!(self.journal(), Expansion, Detail, "Guard stands with its settler";
                    "sharing the tile blocks capture outright"; settler_pos);
@@ -33713,7 +33974,7 @@ impl AdvancedAi {
         // so its formationless shadow must do the same without changing the
         // deployed genome.
         if spec.class == "military"
-            && self.settler_guards.values().any(|guard| *guard == uid)
+            && self.guard_is_bound_to_any_settler(uid)
             && (self.civilian_out_of_reach
                 || (self.settler_guard_holds_on() && self.formationless_settler_escort()))
         {
@@ -35563,6 +35824,12 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_guards
             .retain(|settler, guard| g.units.contains_key(settler) && g.units.contains_key(guard));
+        self.settler_sea_guards
+            .retain(|settler, guard| g.units.contains_key(settler) && g.units.contains_key(guard));
+        self.settler_escort_journeys.retain(|settler, journey| {
+            g.units.contains_key(settler)
+                && self.settler_targets.get(settler) == Some(&journey.target)
+        });
         self.guard_wait.retain(|uid, _| g.units.contains_key(uid));
         self.settler_stalls
             .retain(|uid, _| g.units.contains_key(uid));

@@ -573,6 +573,8 @@ impl AdvancedAi {
     pub fn disable_live_formationless_settler_shadow(&mut self) {
         self.live_formationless_settler_shadow = false;
         self.settler_guards.clear();
+        self.settler_sea_guards.clear();
+        self.settler_escort_journeys.clear();
         self.guard_wait.clear();
     }
     /// In peacetime let the whole army answer home threats, ranking a nearby
