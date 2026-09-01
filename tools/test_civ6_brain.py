@@ -587,3 +587,64 @@ class SeatCivTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BoardAgeTest(unittest.TestCase):
+    """The brain measures its answer against the harness's receipt stamp."""
+
+    def test_a_millisecond_stamp_gives_the_age_in_seconds(self) -> None:
+        from datetime import datetime, timezone
+        now = datetime(2026, 9, 1, 18, 29, 40, 500000, tzinfo=timezone.utc)
+        event = {"kind": "state", "turn": 15, "utc": "2026-09-01T18:29:25.250Z"}
+        self.assertAlmostEqual(civ6_brain.board_age_seconds(event, now), 15.25)
+
+    def test_a_whole_second_stamp_is_accepted(self) -> None:
+        from datetime import datetime, timezone
+        now = datetime(2026, 9, 1, 18, 29, 40, tzinfo=timezone.utc)
+        event = {"utc": "2026-09-01T18:29:30Z"}
+        self.assertEqual(civ6_brain.board_age_seconds(event, now), 10.0)
+
+    def test_a_missing_or_garbled_stamp_is_none_not_a_guess(self) -> None:
+        self.assertIsNone(civ6_brain.board_age_seconds({"kind": "state"}))
+        self.assertIsNone(civ6_brain.board_age_seconds({"utc": "yesterday"}))
+        self.assertIsNone(civ6_brain.board_age_seconds({"utc": 1756751380}))
+
+
+class LiveTurnClockTest(unittest.TestCase):
+    """`live_turn_clock` reads the per-turn wall-clock from the receipt stamps."""
+
+    def test_board_to_board_and_opening_wait_are_measured(self) -> None:
+        import live_turn_clock
+        lines = [
+            {"kind": "state", "turn": 14, "frame": 0, "utc": "2026-09-01T18:27:54.000Z"},
+            {"kind": "await", "turn": 14, "polls": 1, "utc": "2026-09-01T18:27:54.400Z"},
+            {"kind": "orders", "turn": 14, "frame": 0, "utc": "2026-09-01T18:27:54.900Z"},
+            {"kind": "turn", "turn": 14, "orders_polls": 1, "utc": "2026-09-01T18:27:55.000Z"},
+            {"kind": "replan_frame", "turn": 14, "frame": 1, "utc": "2026-09-01T18:27:58.000Z"},
+            {"kind": "autoclose", "turn": 14, "screen": "DiplomacyActionView",
+             "utc": "2026-09-01T18:28:10.000Z"},
+            {"kind": "state", "turn": 15, "frame": 0, "utc": "2026-09-01T18:29:33.000Z"},
+            {"kind": "orders", "turn": 15, "frame": 0, "utc": "2026-09-01T18:29:52.500Z"},
+            {"kind": "turn", "turn": 15, "orders_polls": 20, "utc": "2026-09-01T18:29:52.600Z"},
+            {"kind": "state", "turn": 16, "frame": 0, "utc": "2026-09-01T18:29:53.000Z"},
+            {"kind": "state", "turn": 16, "frame": 1, "utc": "2026-09-01T18:29:59.000Z"},
+            {"kind": "orders", "turn": 16, "frame": 0},  # unstamped: an old-style line
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text("".join(json.dumps(l) + "\n" for l in lines))
+            rows = live_turn_clock.turn_clock(path)
+        by_turn = {r["turn"]: r for r in rows}
+        self.assertEqual(by_turn[14]["dur"], 99.0)
+        self.assertEqual(by_turn[14]["wait"], 0.9)
+        self.assertEqual((by_turn[14]["polls"], by_turn[14]["frames"], by_turn[14]["popups"]),
+                         (1, 1, 1))
+        self.assertEqual((by_turn[15]["dur"], by_turn[15]["wait"], by_turn[15]["polls"]),
+                         (20.0, 19.5, 20))
+        self.assertNotIn("dur", by_turn[16])   # last board has no successor
+        self.assertNotIn("wait", by_turn[16])  # its orders line carried no stamp
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            self.assertEqual(live_turn_clock.main([str(path), "--slowest", "1"]), 0)
+        self.assertIn("turns 2", out.getvalue())
+        self.assertIn("  14  18:27:54   99.0", out.getvalue())
