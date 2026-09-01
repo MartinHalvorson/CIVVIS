@@ -1726,7 +1726,18 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
 # deadlock, not a replay of the first. Without a distinct third index the extra
 # attempt would reload the same save as the second.
-RESUME_STEPS: tuple[int, ...] = (0, 3, 8)
+#
+# ⚠⚠ AND THE STRIDES PAST THE THIRD MUST KEEP WALKING, because the budget is six
+# (#2861) and a deterministic park survives strides. Three of the seven parks on
+# 2026-08-31 (t88, t147, t40) were escaped only by the NINE-BACK stride after
+# one-back and four-back both replayed into the same deadlock. With only three
+# entries, resumes four to six all clamped to the last index and reloaded the
+# very board the third attempt had just failed on — the waste #2817 removed at
+# the front of the rotation, reintroduced at its tail. So every later entry
+# reaches strictly further back (16, 25 and 36 turns), and a stride past the
+# oldest autosave on disk clamps to the oldest rather than giving up: a short
+# list is still a different board from the one that parked.
+RESUME_STEPS: tuple[int, ...] = (0, 3, 8, 15, 24, 35)
 
 
 def _autosave_turn(save: Path) -> int | None:
@@ -1939,9 +1950,10 @@ def main() -> int:
     # civvis-20260831T140630Z parked FOUR times by t118 (t87, t112, t112,
     # t118), ran out of budget mid-recovery, and was killed while standing at
     # 0.589 of the leader — a game the abandon rule would have let play to its
-    # t150 verdict. Resumes past the third reuse the widest stride, so the
-    # extra budget costs only the ~13 minutes a genuinely dead park wastes per
-    # attempt, against losing a live game's whole remaining arc.
+    # t150 verdict. Each resume past the third walks further back still (see
+    # `RESUME_STEPS`), so the extra budget costs only the ~13 minutes a
+    # genuinely dead park wastes per attempt plus the turns it replays, against
+    # losing a live game's whole remaining arc.
     ap.add_argument("--max-resumes", type=int, default=6,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
