@@ -1,5 +1,7 @@
 # Openings: what each civilization actually plays
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 > **Scope note (2026-07-30).** This is a chronological experiment record.
 > “Deployment” and “strongest” below refer to each study's fixed profile and
 > source-profile search leader, not to today's rotating exhibition. No search
