@@ -23,7 +23,6 @@ import json
 import math
 import os
 import subprocess
-import textwrap
 import shutil
 import sys
 import tempfile
@@ -37,8 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import (gamelock, launcher, macos_capture, macos_input,
-                          macos_ocr, operator_retire, popup_clear, vision,
-                          watch)  # noqa: E402
+                          macos_ocr, macos_window, operator_retire,
+                          popup_clear, vision, watch)  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
                                  reset_orders_db)
 # The mod's sentinel for a readback it could not resolve, imported rather than
@@ -992,88 +991,21 @@ OPTIONS = {
 DROPDOWN_RETRY_DELAYS = (0.0, 2.0, 4.0)
 
 
-#: Seconds any single host probe may take before the loop gives up on it.
-#:
-#: ⚠⚠⚠ EVERY ONE OF THESE RUNS ON EVERY POLL OF THE LOOP THAT DRIVES THE GAME,
-#: and they were all unbounded. `watch.follow` calls `each_poll` (which is
-#: `keep_foreground` -> `focus_game` + `place_game`) and `pause_when` (which is
-#: `console_locked` -> `screen_locked`) once per iteration. `game_pids` was the
-#: fourth and #2700 bounded it.
-#:
-#: ⚠ #2700 and this comment originally said that call HUNG a game at turn 8, on
-#: the strength of a traceback ending there after a SIGINT. That was wrong: a
-#: later wedge on a build carrying the timeout produced the same traceback with
-#: zero timeout messages in its log, so the interrupt merely lands wherever the
-#: process is. See `civ6_env.game_pids`. The real cause was the end-turn
-#: deadlock (#2702, #2703). These bounds are worth having anyway — an unbounded
-#: subprocess in the driving loop is a hazard whether or not it has fired.
-#:
-#: These three are the same shape and worse-placed: `osascript` reaching System
-#: Events blocks on the Accessibility subsystem, which is exactly what a busy or
-#: half-wedged foreground app makes slow. Ten seconds is far beyond any healthy
-#: answer — the window query returns in milliseconds — and far inside the five
-#: minutes of no progress the wedge watchdog waits for.
-HOST_PROBE_TIMEOUT_S = 10.0
+HOST_PROBE_TIMEOUT_S = macos_window.HOST_PROBE_TIMEOUT_S
 
 
 def game_window() -> tuple[int, int, int, int] | None:
-    """Position and size of the game window in points, or None."""
-    script = ('tell application "System Events" to tell '
-              f'process "{GAME_PROCESS}" to '
-              'get {position, size} of window 1')
-    try:
-        out = subprocess.run(["osascript", "-e", script], capture_output=True,
-                             text=True, timeout=HOST_PROBE_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        # Every caller already handles None as "the window could not be read".
-        print(f"[window] System Events did not answer in "
-              f"{HOST_PROBE_TIMEOUT_S:g}s; treating the geometry as unknown",
-              flush=True)
-        return None
-    parts = [p.strip() for p in out.stdout.split(",") if p.strip()]
-    if len(parts) != 4 or not all(p.lstrip("-").isdigit() for p in parts):
-        return None
-    x, y, w, h = (int(p) for p in parts)
-    return (x, y, w, h) if w > 400 and h > 300 else None
+    """Compatibility boundary for the process-specific macOS probe."""
+    return macos_window.game_window(GAME_PROCESS)
 
 
 def screen_locked() -> bool:
-    """Return whether the active macOS console session is locked."""
-    try:
-        result = subprocess.run(
-            ["ioreg", "-n", "Root", "-d1"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=HOST_PROBE_TIMEOUT_S,
-        )
-    except subprocess.TimeoutExpired:
-        # ⚠ NOT True. `wait_for_unlocked_session` loops while this says locked,
-        # and `watch.follow` pauses the whole driving loop on it, so a probe
-        # that stops answering would park a healthy game forever. "We cannot
-        # tell" must keep the game being played; a genuinely locked screen is
-        # caught by the next poll that does answer.
-        print(f"[session] ioreg did not answer in {HOST_PROBE_TIMEOUT_S:g}s; "
-              "assuming the console is usable and continuing", flush=True)
-        return False
-    except OSError:
-        return False
-    return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
+    return macos_window.screen_locked()
 
 
 def wait_for_unlocked_session(poll_s: float = 2.0) -> None:
-    """Wait at the macOS authentication boundary instead of aborting the run.
-
-    GUI scripting cannot operate the protected lock screen.  Waiting here keeps
-    the requested run alive without trying to bypass that boundary, and lets a
-    launch requested while locked continue as soon as the operator unlocks.
-    """
-    if not screen_locked():
-        return
-    print("[session] macOS is locked; waiting to continue after unlock", flush=True)
-    while screen_locked():
-        time.sleep(poll_s)
-    print("[session] macOS unlocked; continuing", flush=True)
+    return macos_window.wait_for_unlocked_session(
+        is_locked=screen_locked, poll_s=poll_s)
 
 
 # Which half of the screen the game gets. Set from --window-side/--window-frac
@@ -1082,190 +1014,37 @@ def wait_for_unlocked_session(poll_s: float = 2.0) -> None:
 GAME_SIDE = "left"
 GAME_FRACTION = 0.5
 GAME_VFRACTION = 1.0
-# `swift -` starts an AppKit interpreter.  That is occasionally slow enough to
-# hold the launcher on the already-verified Create Game screen while every
-# subsequent OCR helper repeats the same measurement.  A harness process plays
-# exactly one game, so a valid answer is stable for the lifetime in which its
-# screen coordinates are used.  Do not cache `None`: a transient AppKit failure
-# must still be allowed to recover on the next read.
-_desktop_size_cache: tuple[int, int] | None = None
 
 
 def desktop_size() -> tuple[int, int] | None:
-    """Logical size of the MAIN display in points, or None if unreadable.
-
-    ⚠⚠ NOT the desktop's total area. This asked Finder for its desktop scroll
-    area, which spans EVERY attached display — and on 2026-08-04 an external
-    2560x1440 monitor was plugged in beside the built-in Retina. Finder then
-    reported **3225x2557**, the union. `place_game` halved that, placed Civ 6
-    1612 points wide at y=1333 (below a 1117-point screen), and the setup vision
-    could no longer read the difficulty dropdown:
-
-        [setup] difficulty: current value was not readable (attempt 1)
-        [setup] difficulty: refusing to click an unverified coordinate
-        NO GAME -- could not start a game from the main menu
-
-    Every attempt in the batch failed that way. The old docstring warned that
-    mixing coordinate spaces "would place the game off-screen"; the same hazard
-    arrived through a second display rather than through DPI.
-
-    `NSScreen` answers for one screen, which is the quantity `place_game` needs.
-    The screen at origin (0,0) is the one holding the menu bar; `NSScreen.main`
-    is the fallback and follows the key window, so it is second choice.
-    """
-    global _desktop_size_cache
-    if _desktop_size_cache is not None:
-        return _desktop_size_cache
-    swift = textwrap.dedent("""
-        import AppKit
-        if let s = NSScreen.screens.first(where: { $0.frame.origin == .zero })
-                    ?? NSScreen.main {
-            print("\\(Int(s.frame.width)),\\(Int(s.frame.height))")
-        }
-    """)
-    try:
-        out = subprocess.run(["swift", "-"], input=swift,
-                             capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    parts = [p.strip() for p in out.stdout.split(",") if p.strip()]
-    if len(parts) != 2 or not all(p.isdigit() for p in parts):
-        return None
-    width, height = (int(p) for p in parts)
-    # ⚠ Keep the sanity floor AND add a ceiling, as the last line of defence if
-    # the source ever reports a display UNION again. The bound is principled
-    # rather than arbitrary: the largest Apple display is a Pro Display XDR at
-    # 6016x3384 pixels, which is **3008x1692 POINTS**, and window geometry is in
-    # points. Anything taller than ~1700 points is therefore two screens stacked,
-    # not one screen — the observed union was 3225x2557.
-    if not (800 < width <= 4000 and 600 < height <= 2000):
-        return None
-    _desktop_size_cache = (width, height)
-    return _desktop_size_cache
+    """Return the macOS host display measurement for launcher callers."""
+    return macos_window.desktop_size()
 
 
 def place_game(side: str = "left", fraction: float = 0.5,
                vfraction: float = 1.0) -> None:
-    """Park the game on part of the screen so other windows can own the rest.
-
-    `fraction` is the share of screen WIDTH and `vfraction` the share of HEIGHT,
-    measured from the top. The default is a full-height half. `vfraction` exists
-    so the game can take a quadrant instead: CIVVIS itself now wants a half, and
-    the operator asked for the real game in the upper right with a terminal
-    beneath it.
-
-    The live loop checks the current frame before calling this function.  An
-    unchanged frame is left alone: repeating identical ``set size`` and
-    ``set position`` operations still creates WindowServer geometry traffic,
-    which can make unrelated Terminal windows reflow.
-    """
-    if side == "none":
-        return
-    size = desktop_size()
-    if size is None:
-        return
-    screen_w, screen_h = size
-    menu = 33  # the menu bar; a window placed at y=0 hides behind it
-    width = max(640, int(screen_w * fraction))
-    height = max(480, int((screen_h - menu) * max(0.1, min(1.0, vfraction))))
-    # "bottomright" anchors the window to the screen's bottom-right corner —
-    # the operator's 2026-08-01 layout: CIVVIS holds the upper left at 2/3 of
-    # the diagonal, the real game the LOWER right at the same, overlapping in
-    # the middle with the game in front where they cross. The top-anchored
-    # sides keep their old meaning exactly.
-    if side == "bottomright":
-        x, y = screen_w - width, screen_h - height
-    else:
-        x, y = (0 if side == "left" else screen_w - width), menu
-    desired = (x, y, width, height)
-    if game_window() == desired:
-        return
-    script = (
-        'tell application "System Events" to tell '
-        f'process "{GAME_PROCESS}" to tell window 1\n'
-        f'  set size to {{{width}, {height}}}\n'
-        # Aspyr constrains the existing origin while applying the smaller size.
-        # Position last or a requested upper quadrant lands at the bottom.
-        f'  set position to {{{x}, {y}}}\n'
-        'end tell')
-    _best_effort_osascript(script, "place")
-
-
-def _best_effort_osascript(script: str, what: str) -> None:
-    """Run a fire-and-forget System Events script without risking the loop.
-
-    Placing and focusing are retried on the next poll by construction, so a
-    slow Accessibility subsystem costs one skipped nudge rather than the game.
-    """
-    try:
-        subprocess.run(["osascript", "-e", script], capture_output=True,
-                       timeout=HOST_PROBE_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        print(f"[window] System Events did not answer in "
-              f"{HOST_PROBE_TIMEOUT_S:g}s; skipping this {what} and "
-              "retrying next poll", flush=True)
+    """Park the process-specific game window without duplicating host logic."""
+    return macos_window.place_game(
+        GAME_PROCESS,
+        side,
+        fraction,
+        vfraction,
+        get_desktop_size=desktop_size,
+        get_game_window=game_window,
+    )
 
 
 def focus_game(side: str = "left", fraction: float = 0.5) -> None:
-    """Raise the game. Deliberately does NOT move it.
-
-    ⚠ Placing the window here broke setup outright. `vision.py` reads the
-    Create Game submenu rows off the screen, and re-placing on every focus pass
-    resized the window between the read and the click — run
-    settler-20260729T233831Z never started a game at all, failing with
-    "no submenu (0 rows)" and "no game window yet" while events.jsonl stayed
-    empty at zero bytes. Menu navigation needs stable geometry; only the
-    in-game loop may move the window.
-    """
     del side, fraction  # kept for call-site compatibility
-    script = ('tell application "System Events" to set frontmost of '
-              f'process "{GAME_PROCESS}" to true')
-    _best_effort_osascript(script, "focus")
+    return macos_window.focus_game(GAME_PROCESS)
 
 
 def click_at(px: int, py: int) -> None:
-    # Move first, then click. Clicking without moving lands wherever the
-    # pointer already was, and cliclick's own move is not always processed by
-    # the game before the button event.
-    #
-    # ★★★★★ AND THE PRESS MUST BE HELD. `cliclick c:` sends down and up in the same
-    # instant and Civilization VI's leader-dialogue buttons do not act on it.
-    #
-    # Measured live at 04:29 on 2026-07-31, attempt 6 stalled at turn 66 on a
-    # three-option `DiplomacyActionView` from Pericles. Everything checkable checked
-    # out and the screen would not close: the window rect the harness read (864, 33,
-    # 864, 542) matches the screenshot exactly, the three buttons sit at fy 0.827,
-    # 0.869 and 0.913 which the 0.02-step sweep straddles within ~5 points, and
-    # `cliclick p` afterwards reported the pointer at the last swept position — so the
-    # move was delivered and Accessibility permission was granted. Three full passes,
-    # sixty clicks, nothing.
-    #
-    # One `dd:` / wait / `du:` on the same pixel, by hand, and the turn advanced
-    # immediately. Stalls have been the dominant way runs end in this project
-    # (t87, t95, t106, t142, t179, t199), and a zero-length click is why the rescue
-    # that "already works" so often did not.
-    #
-    # ⚠ n = 1, and the harness's own stall watchdog had not fired yet when the held
-    # press landed, so nothing else can account for the recovery. Worth re-checking on
-    # the next stuck screen before treating it as settled.
-    macos_input.move(px, py)
-    time.sleep(0.5)
-    macos_input.click(px, py, hold_s=0.12)
+    return macos_window.click_at(px, py)
 
 
 def park_setup_pointer(bounds: tuple[int, int, int, int]) -> None:
-    """Move the recorded pointer to inert artwork before setup OCR.
-
-    CoreGraphics records the macOS pointer in every setup screenshot.  On the
-    half-window Level-5 attempt at 2026-08-28T14:48Z, its arrow rested on the
-    first open speed choice and Vision read the plainly visible ``Online`` as
-    only ``On``.  That is not a reason to weaken label proof: move, without a
-    click, to the left-side artwork inside the known game window before reading
-    the menu.  The point is deliberately outside the narrow central setup
-    column and below its controls, so it cannot hover another setup action.
-    """
-    x, y, w, h = bounds
-    macos_input.move(int(x + w * 0.15), int(y + h * 0.85))
+    return macos_window.park_setup_pointer(bounds)
 
 
 def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
@@ -1278,124 +1057,18 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
     click_at(int(x + w * fx), int(y + h * fy))
 
 
-#: Waits between the setup screenshot's attempts. Escalating, because the
-#: failure it covers is a load spike: the flat 1.0 s retry it replaces sampled
-#: the same spike twice and lost two ladder attempts on 2026-08-19.  A live
-#: pre-authorized recording can also leave CoreGraphics empty through the
-#: original four captures; the fifth capture at nine seconds gives that safe,
-#: bounded recovery path one more chance before setup refuses to click blind.
-SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0, 4.0)
-CAPTURE_ACCESS_POLL_SECONDS = 10.0
-# Setup's screen readers already sit inside `_poll_screen` (and the enclosing
-# bootstrap attempt) which retries a missing frame over time.  Spending the
-# entire five-capture native retry schedule inside each of those polls made a
-# transient ScreenCaptureKit miss cost several minutes before the next safe OCR
-# attempt: six unreadable menu polls on civvis-20260831T152158Z took roughly
-# six minutes before the seventh frame arrived.  One native attempt per setup
-# poll keeps the same no-blind-click rule while letting the outer bounded poll
-# provide the recovery window.  Ordinary diagnostic/stall shots retain the
-# full schedule above.
-SETUP_SCREENSHOT_ATTEMPTS = 1
+SHOT_BACKOFF_SECONDS = macos_window.SHOT_BACKOFF_SECONDS
+CAPTURE_ACCESS_POLL_SECONDS = macos_window.CAPTURE_ACCESS_POLL_SECONDS
+SETUP_SCREENSHOT_ATTEMPTS = macos_window.SETUP_SCREENSHOT_ATTEMPTS
 
 
 def wait_for_safe_screen_capture(poll_s: float = CAPTURE_ACCESS_POLL_SECONDS) -> None:
-    """Wait for a non-interactive screen-capture path before touching Civ VI.
-
-    A missing Screen Recording grant is a macOS boundary, not a game popup.
-    A user-owned Cmd-Shift-5 session may coexist with an already-authorized
-    CoreGraphics capture, so its process alone is not a reason to hold a game
-    forever.  Do not click either one or call the utility that would request
-    permission: defer only until CoreGraphics' preflight says capture can
-    proceed without a system modal.
-    """
-    last_reason = None
-    while True:
-        recording_ui = popup_clear.native_recording_ui_active()
-        try:
-            if macos_capture.screen_capture_access_available():
-                if recording_ui:
-                    print("[capture] native macOS recording/capture UI is active; using "
-                          "pre-authorized CoreGraphics capture", flush=True)
-                elif last_reason is not None:
-                    print("[capture] safe screen capture is available; continuing", flush=True)
-                return
-            reason = "screen capture access is unavailable"
-            if recording_ui:
-                reason += " while a native macOS recording/capture UI is active"
-        except macos_capture.CaptureUnavailable as error:
-            reason = f"native screen capture is unavailable: {error}"
-        if reason != last_reason:
-            print(f"[capture] {reason}; waiting without opening a permission popup", flush=True)
-            last_reason = reason
-        time.sleep(poll_s)
+    return macos_window.wait_for_safe_screen_capture(poll_s)
 
 
 def screenshot(path: Path, *, attempts: int | None = None) -> bool:
-    """Keep a picture of the screen. A misclick is a visual failure and the
-    log cannot describe it; the shot is what says which row was hit.
-
-    ⚠ Screen capture can fail SILENTLY under machine load and write nothing —
-    three consecutive ladder attempts died on 2026-08-17 (17:46–18:29Z, a
-    window of heavy concurrent `cargo test` runs) because a missing shot
-    cascaded through a PIL `FileNotFoundError` into the native-OCR fallback,
-    which raised `OCRUnavailable` ("zero-dimensioned image") that no setup
-    caller catches. The capture is verified and retried once here, at the
-    source, so every caller inherits the cover; a shot that still fails is
-    reported loudly and the caller's own "not readable this attempt" retry
-    handles it as an ordinary unreadable poll.
-
-    ⚠ One retry was NOT enough. On 2026-08-19 the launches
-    `civvis-20260819T054539Z` and `civvis-20260819T054713Z` both died on that
-    same `OCRUnavailable`, inside the window where a 2252-test
-    `cargo test --lib` run saturated this host; `...T054901Z`, started after
-    the load fell away, set up normally. Two captures a second apart sample
-    one spike twice. The backoff below spreads five captures over nine
-    seconds instead of losing a ninety-minute attempt to a load transient,
-    and says so in the log when it needs more than one — a lane that reports
-    "the host is loaded" is a lane whose NO GAME can be read without guessing.
-
-    A visible Cmd-Shift-5 toolbar alone does not invalidate a setup frame.
-    ``capture_region`` preflights CoreGraphics without requesting permission,
-    so an authorized user recording may continue; a denied grant takes the
-    safe unreadable path below without opening a system modal.
-    """
-    size = desktop_size()
-    if size is None:
-        print(f"[shot] display geometry is unreadable for {path.name}; treating this poll as "
-              "unreadable", flush=True)
-        return False
-    if attempts is None:
-        attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
-    else:
-        try:
-            attempt_limit = max(1, int(attempts))
-        except (TypeError, ValueError):
-            attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
-        attempt_limit = min(attempt_limit, len(SHOT_BACKOFF_SECONDS) + 1)
-    for attempt in range(1, attempt_limit + 1):
-        path.unlink(missing_ok=True)
-        try:
-            macos_capture.capture_region((0, 0, *size), path)
-        except macos_capture.CapturePermissionUnavailable:
-            print(f"[shot] screen capture access is unavailable for {path.name}; refusing to "
-                  "open a permission popup", flush=True)
-            return False
-        except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
-            pass
-        try:
-            if path.stat().st_size > 0:
-                if attempt > 1:
-                    print(f"[shot] native capture needed {attempt} attempts for "
-                          f"{path.name}; the host is loaded", flush=True)
-                return True
-        except OSError:
-            pass
-        if attempt < attempt_limit:
-            time.sleep(SHOT_BACKOFF_SECONDS[attempt - 1])
-    print(f"[shot] native capture wrote nothing for {path.name} after "
-          f"{attempt_limit} attempts; treating this poll as "
-          "unreadable", flush=True)
-    return False
+    return macos_window.screenshot(
+        path, attempts=attempts, get_desktop_size=desktop_size)
 
 
 def option_strip(bounds: tuple[int, int, int, int], name: str) -> tuple[int, int, int, int]:
