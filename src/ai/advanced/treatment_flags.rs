@@ -3414,6 +3414,53 @@ impl AdvancedAi {
         self.settler_site_gate = false;
     }
 
+    /// `campus-through-expansion` (OptIn): a Science seat prices the Campus
+    /// and its buildings in the Science lane while its plan still reads
+    /// Expansion, and no city's first specialty district may be an
+    /// Entertainment Complex. Measured motive: live Emperor game
+    /// 20260901T175154Z held four cities and zero districts at turn 64 —
+    /// under Expansion the Campus had no strategic arm and a beaker weighed
+    /// 1.2, so the Plaza, walls, the repair project and an Arena-credited
+    /// Entertainment Complex took every queue.
+    pub fn enable_campus_through_expansion(&mut self) {
+        self.campus_through_expansion = true;
+    }
+
+    /// The twin of `enable_campus_through_expansion`.
+    pub fn disable_campus_through_expansion(&mut self) {
+        self.campus_through_expansion = false;
+    }
+
+    /// `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no
+    /// Hub stands) beside a standing Campus escapes the Science contract and
+    /// is priced as trade capacity; a Market or Lighthouse is worth the
+    /// route it adds. Measured motive: zero Commercial Hubs in the last 22
+    /// live runs and a trade capacity of one for the whole game — thirteen
+    /// cities on one Trade Route for 216 turns in 20260901T132005Z.
+    pub fn enable_trade_route_network(&mut self) {
+        self.trade_route_network = true;
+    }
+
+    /// The twin of `enable_trade_route_network`.
+    pub fn disable_trade_route_network(&mut self) {
+        self.trade_route_network = false;
+    }
+
+    /// `industrial-chain-debt` (OptIn): an Industrial Zone owes its
+    /// Workshop, Factory and plant the same flat debt a Campus owes its
+    /// Library, a regional building is worth the production it reaches, and
+    /// the Factory and plants join the buildings a repeatable project waits
+    /// behind. Measured motive: nine Industrial Zones, four Workshops, one
+    /// Factory and no plant at turn 216 of 20260901T132005Z.
+    pub fn enable_industrial_chain_debt(&mut self) {
+        self.industrial_chain_debt = true;
+    }
+
+    /// The twin of `enable_industrial_chain_debt`.
+    pub fn disable_industrial_chain_debt(&mut self) {
+        self.industrial_chain_debt = false;
+    }
+
     /// `settler-target-floor`: a Settler is never sent to a site not worth the
     /// walk. See `advanced/settler_target_floor.rs`.
     pub fn enable_settler_target_floor(&mut self) {
