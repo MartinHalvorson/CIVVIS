@@ -1403,6 +1403,15 @@
           "amenity-project-preemption-2": null
         }
       },
+      "boost-wait-research": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "boost-wait-research": null,
+          "boost-wait-research-2": null
+        }
+      },
       "border-parity": {
         "rule_on": [],
         "head": null,

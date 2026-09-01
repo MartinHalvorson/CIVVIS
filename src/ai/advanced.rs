@@ -4653,6 +4653,11 @@ pub struct AdvancedAi {
     /// land waits its turn. Opt-in gene `boost-wait-research`; see
     /// `advanced/boost_research.rs`.
     boost_wait_research: bool,
+    /// Version two waits only when the final trigger is already at the front
+    /// of an owned city queue and the node would finish inside a much shorter
+    /// window. Opt-in gene `boost-wait-research-2`; see
+    /// `advanced/boost_research.rs`.
+    boost_wait_research_2: bool,
     /// A node is worth the boosts it makes chaseable: the quarry Masonry wants
     /// needs Mining first. Opt-in gene `boost-unlock-research`; see
     /// `advanced/boost_research.rs`.
@@ -7147,6 +7152,7 @@ impl AdvancedAi {
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
             boost_wait_research: false,
+            boost_wait_research_2: false,
             boost_unlock_research: false,
             buy_what_cards_cannot_boost: false,
             build_what_cards_boost: false,

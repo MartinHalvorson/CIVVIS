@@ -1906,6 +1906,9 @@ pub const GENES: &[Gene] = &[
     // Repair only a persistent two-turn stall, accept only civilian work above
     // the hard veto, and ignore repeated observations of the same host turn.
     Gene { tag: "never-an-empty-queue-3", field: "never_an_empty_queue_3", kind: Kind::OptIn, enable: AdvancedAi::enable_never_an_empty_queue_3, disable: AdvancedAi::disable_never_an_empty_queue_3 },
+    // V2 waits for a Eureka only when its final trigger is already queued and
+    // the node is within two turns. The broad v1 remains measurable.
+    Gene { tag: "boost-wait-research-2", field: "boost_wait_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research_2, disable: AdvancedAi::disable_boost_wait_research_2 },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
