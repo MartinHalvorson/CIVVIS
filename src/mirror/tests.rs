@@ -1776,6 +1776,7 @@ fn the_real_export_shape_deserializes() {
 fn new_export_fields_are_reported_instead_of_silently_discarded() {
     let raw = r#"{
             "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":7,
+            "t":1788296253, "utc":"2026-09-01T20:57:33.415Z",
             "cities":[{
                 "id":1, "x":2, "y":3, "pantheon_active":"BELIEF_CITY_PATRON_GODDESS",
                 "producing_hash":123, "future_city_fact":9,
