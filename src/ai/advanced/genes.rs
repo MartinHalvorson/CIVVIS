@@ -1881,6 +1881,24 @@ pub const GENES: &[Gene] = &[
     // rival projected to claim the current Prophet soon. Appended so the
     // published positional genome is unchanged.
     Gene { tag: "skip-the-prophet-race-2", field: "skip_the_prophet_race_2", kind: Kind::OptIn, enable: AdvancedAi::enable_skip_the_prophet_race_2, disable: AdvancedAi::disable_skip_the_prophet_race_2 },
+    // `siege-preempts-the-queue` (2026-09-01): a raider within three tiles of a
+    // city is answered before anything else is built — a queue holding a
+    // Settler switches to the ring's unit answer, a city with no defender at
+    // all buys it, and a Scout is not a defender. Live run
+    // civvis-20260901T193130Z: one city at t49, two Settlers pinned on the
+    // capital tile for 14 and 7 turns by a Slinger adjacent to it, no military
+    // unit at all t29–t35, 155–198 Gold banked. OptIn like `settler-site-gate`:
+    // the operator arms it as a labelled live arm; the native screen prices
+    // it. See `advanced/siege_response.rs`.
+    Gene { tag: "siege-preempts-the-queue", field: "siege_preempts_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_preempts_the_queue, disable: AdvancedAi::disable_siege_preempts_the_queue },
+    // `guard-breaks-the-pin` (2026-09-01): the guard standing on its Settler's
+    // tile strikes the raider whose zone of control pins the pair when the
+    // trade is worth it, instead of fortifying beside it turn after turn (the
+    // same run: "Guard stands with its settler" t38–t45 while the Settler
+    // refused every step). HostOnly like `escort-patience-runs-out`: the path
+    // is gated by `live_formationless_settler_shadow`, so a native board never
+    // reaches it. See `advanced/siege_response.rs`.
+    Gene { tag: "guard-breaks-the-pin", field: "guard_breaks_the_pin", kind: Kind::HostOnly, enable: AdvancedAi::enable_guard_breaks_the_pin, disable: AdvancedAi::disable_guard_breaks_the_pin },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

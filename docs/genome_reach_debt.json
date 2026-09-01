@@ -85,6 +85,10 @@
       "group": "live-bridge-row",
       "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: do not found beyond Loyalty reach on unexplored ground. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
     },
+    "guard_breaks_the_pin": {
+      "group": "host-only",
+      "reason": "The whole strike branch sits inside `stacked_guard_step`, reached only for the host's formationless Settler shadow under `live_formationless_settler_shadow`. Native boards use real formations and never enter that path, so a native screen cannot make this toggle fire; the live ladder can withhold the `Kind::HostOnly` gene directly."
+    },
     "host_settler_pop": {
       "group": "host-only",
       "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Reacts to host production semantics (the pop-2 Settler start) that native CIVVIS does not have."
