@@ -6105,7 +6105,6 @@ use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 /// into it, stack with a summoned guard when they must. Opt-in gene
 /// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
 mod civilian_safety;
-mod wounded_out_of_reach;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
@@ -6306,6 +6305,11 @@ mod first_luxury;
 /// to its ending, with what became of it counted. Infrastructure, not a
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
+/// A unit the next blow could remove leaves the reach of whatever can
+/// strike it; a shooter or scout does not end the turn inside a raider's
+/// reach without a melee unit beside it. Opt-in gene `wounded-out-of-reach`.
+/// See `advanced/wounded_out_of_reach.rs`.
+mod wounded_out_of_reach;
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained

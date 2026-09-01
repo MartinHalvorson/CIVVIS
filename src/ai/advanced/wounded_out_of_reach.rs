@@ -204,7 +204,8 @@ impl AdvancedAi {
         shooter: bool,
     ) -> Refuge {
         let garrison = g.city_at(pos).is_some() || g.encampment_at(pos).is_some();
-        let incoming = BasicAi::incoming_damage(g, pid, uid, pos, envelopes).total * COMBAT_ROLL_MAX;
+        let incoming =
+            BasicAi::incoming_damage(g, pid, uid, pos, envelopes).total * COMBAT_ROLL_MAX;
         let clear = incoming <= 1e-9 && !raiders.covers(g, pos);
         let city_distance = g
             .cities

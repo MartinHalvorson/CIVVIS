@@ -42001,7 +42001,10 @@ fn a_unit_the_roll_could_kill_leaves_the_raiders_reach() {
         unreachable!();
     };
     g.units.get_mut(&ours).unwrap().hp = hp;
-    assert!(f64::from(hp) > mean, "the mean blow leaves it alive: {hp} vs {mean:.1}");
+    assert!(
+        f64::from(hp) > mean,
+        "the mean blow leaves it alive: {hp} vs {mean:.1}"
+    );
     assert!(
         f64::from(hp) <= mean * crate::ai::COMBAT_ROLL_MAX,
         "the top of the roll does not: {hp} vs {:.1}",
@@ -42010,9 +42013,15 @@ fn a_unit_the_roll_could_kill_leaves_the_raiders_reach() {
 
     // Off: the recovery reads the mean and leaves it standing.
     let mut untouched = g.clone();
-    assert_eq!(ai_off.wounded_out_of_reach_step(&mut untouched, 0, ours), None);
+    assert_eq!(
+        ai_off.wounded_out_of_reach_step(&mut untouched, 0, ours),
+        None
+    );
     assert_eq!(ai_off.base.retreat_step(&mut untouched, 0, ours), None);
-    assert_eq!(untouched.units[&ours].pos, front, "the shipped recovery left it in reach");
+    assert_eq!(
+        untouched.units[&ours].pos, front,
+        "the shipped recovery left it in reach"
+    );
 
     // On: it leaves the reach.
     let mut ai_on = AdvancedAi::new();
@@ -42052,7 +42061,10 @@ fn an_unscreened_shooter_steps_out_of_a_raiders_reach_and_a_screened_one_holds()
     }
     let ai_off = AdvancedAi::new();
     let mut untouched = g.clone();
-    assert_eq!(ai_off.wounded_out_of_reach_step(&mut untouched, 0, archer), None);
+    assert_eq!(
+        ai_off.wounded_out_of_reach_step(&mut untouched, 0, archer),
+        None
+    );
     assert_eq!(
         ai_off.base.retreat_step(&mut untouched, 0, archer),
         None,
@@ -42065,12 +42077,13 @@ fn an_unscreened_shooter_steps_out_of_a_raiders_reach_and_a_screened_one_holds()
 
     // Screened: a warrior on the tile between them, no farther from the
     // raider than the archer is.
-    let Some(between) = g
-        .nbrs(front)
-        .into_iter()
-        .find(|position| g.wdist(*position, lair) <= g.wdist(front, lair) && g.can_stop(archer, *position))
-    else {
-        assert!(fixture_holds(false, "a tile between the archer and the raider"));
+    let Some(between) = g.nbrs(front).into_iter().find(|position| {
+        g.wdist(*position, lair) <= g.wdist(front, lair) && g.can_stop(archer, *position)
+    }) else {
+        assert!(fixture_holds(
+            false,
+            "a tile between the archer and the raider"
+        ));
         return;
     };
     let mut screened = g.clone();
@@ -42083,7 +42096,10 @@ fn an_unscreened_shooter_steps_out_of_a_raiders_reach_and_a_screened_one_holds()
     );
 
     // Unscreened: it leaves the reach.
-    assert_eq!(ai_on.wounded_out_of_reach_step(&mut g, 0, archer), Some(true));
+    assert_eq!(
+        ai_on.wounded_out_of_reach_step(&mut g, 0, archer),
+        Some(true)
+    );
     let after = g.units[&archer].pos;
     assert_ne!(after, front);
     assert!(
@@ -42106,7 +42122,10 @@ fn a_wounded_unit_that_can_finish_its_only_threat_is_left_to_the_attack_scan() {
         .into_iter()
         .find(|position| g.wdist(*position, refuge) >= 2)
     else {
-        assert!(fixture_holds(false, "a neighbour of the front tile away from the city"));
+        assert!(fixture_holds(
+            false,
+            "a neighbour of the front tile away from the city"
+        ));
         return;
     };
     let ours = g.spawn_test_unit("warrior", 0, front);
