@@ -3350,6 +3350,21 @@ impl AdvancedAi {
         self.base.move_refusal_break = false;
     }
 
+    /// `spaceport-surplus-veto` (OptIn): the Science strategy's flat per-pad
+    /// district bonus stops paying once the empire already holds as many
+    /// Spaceports as the current race stage can use
+    /// (`science_drive_desired_pads`). Measured motive: live Emperor game
+    /// 20260901T132005Z built nine pads and was still ordering more at t213
+    /// with the race already unwinnable.
+    pub fn enable_spaceport_surplus_veto(&mut self) {
+        self.spaceport_surplus_veto = true;
+    }
+
+    /// The twin of `enable_spaceport_surplus_veto`.
+    pub fn disable_spaceport_surplus_veto(&mut self) {
+        self.spaceport_surplus_veto = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
