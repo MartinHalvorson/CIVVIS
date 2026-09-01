@@ -38,12 +38,14 @@ impl AdvancedAi {
             .flatten()
     }
 
-    /// A coastal Science seat may take the compact Harbor opening while the
-    /// next victory technology is still at least two world eras away. This is
-    /// deliberately a bounded exception to the beeline: it buys Sailing,
-    /// Astrology, and Celestial Navigation once, then returns to the first
-    /// unknown Science victory technology. Holy Sites are never part of this
-    /// support package; Astrology is only the prerequisite needed by Harbor.
+    /// A coastal Science seat may take Harbor infrastructure while the next
+    /// victory technology is still at least two world eras away. During the
+    /// development half this is a soft opening: more than one Harbor may be
+    /// worthwhile when the map and city count support it. Once specialization
+    /// begins, the research exception is bounded to the first Harbor and then
+    /// returns to the first unknown Science victory technology. Holy Sites are
+    /// never part of this support package; Astrology is only the prerequisite
+    /// needed by Harbor.
     pub(super) fn science_harbor_research_goal(
         g: &Game,
         pid: usize,
@@ -55,7 +57,7 @@ impl AdvancedAi {
         if objective != GrandStrategy::Science
             || g.world_era < MIN_WORLD_ERA
             || !crate::ai::BasicAi::empire_is_coastal(g, pid)
-            || Self::science_harbor_reserved(g, pid)
+            || (Self::victory_specialization_active(g) && Self::science_harbor_reserved(g, pid))
             || g.players[pid]
                 .techs
                 .contains(&crate::name!("celestial_navigation"))
@@ -331,7 +333,7 @@ mod tests {
     fn science_target_keeps_rocketry_ahead_of_an_unrelated_live_great_person_detour() {
         let mut game = Game::new_full(1, 24, 16, 91_001, 300, 0, false);
         found_capitals(&mut game);
-        game.turn = 140;
+        game.turn = game.max_turns / 2;
 
         let ai = AdvancedAi::targeting(VictoryTarget::Science);
         let techs: Vec<_> = game

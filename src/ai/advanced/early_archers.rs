@@ -425,6 +425,10 @@ mod tests {
         g.spawn_unit("scout", 0, (10, 10));
         g.spawn_unit("warrior", 0, (10, 10));
         g.spawn_unit("warrior", 0, (10, 10));
+        // Keep this unit-saturation fixture outside the new development half;
+        // the test is about the opt-in Archer exception, not the phase floor
+        // that asks a peaceful opening to hold two bodies per city.
+        g.turn = g.max_turns / 2;
         let archer = Item::Unit {
             unit: crate::name!("archer"),
         };
