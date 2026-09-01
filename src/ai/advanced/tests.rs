@@ -3917,7 +3917,7 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 }
 
 #[test]
-fn production_advanced_reflects_the_recorded_bounded_recovery_selection() {
+fn production_advanced_reflects_the_withheld_bounded_recovery_selection() {
     let bare = AdvancedAi::new();
     assert!(
         !bare.bounded_recovery,
@@ -3927,13 +3927,13 @@ fn production_advanced_reflects_the_recorded_bounded_recovery_selection() {
 
     let mut production = AdvancedAi::new();
     production.enable_engine_repairs();
-    assert!(production.bounded_recovery);
+    assert!(!production.bounded_recovery);
 
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        live_bridge.bounded_recovery,
-        "the explicit three-batch selection enables this qualifying arm"
+        !live_bridge.bounded_recovery,
+        "the explicit three-batch selection withholds this unqualified arm"
     );
 }
 
@@ -17408,8 +17408,8 @@ fn culture_building_debt_is_in_native_universe_and_ledger_decides_deployment() {
         "{tag}: deployment must follow the ledger"
     );
     assert!(
-        !deployed.culture_building_debt,
-        "culture-building-debt is withheld by the explicit deployment selection"
+        deployed.culture_building_debt,
+        "culture-building-debt is enabled by the explicit deployment selection"
     );
 }
 
@@ -21517,12 +21517,14 @@ fn live_capture_lessons_activate_guard_survival_when_the_screen_is_withheld() {
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
     live.disable_settler_guard_holds();
+    live.disable_settler_guard_holds_2();
     assert!(!live.settler_guard_holds);
     assert!(live.settler_guard_holds_on());
 
     let mut unsafe_controller = AdvancedAi::new();
     unsafe_controller.enable_live_bridge();
     unsafe_controller.disable_settler_guard_holds();
+    unsafe_controller.disable_settler_guard_holds_2();
     unsafe_controller.settlement_safety = false;
     assert!(!unsafe_controller.settler_guard_holds_on());
 }
@@ -23048,14 +23050,14 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
 }
 
 #[test]
-fn settler_threat_detour_is_a_native_opt_in_withheld_by_the_ledger() {
+fn settler_threat_detour_is_a_native_opt_in_enabled_by_the_ledger() {
     assert!(!AdvancedAi::new().settler_threat_detour);
     assert!(!AdvancedAi::legacy().settler_threat_detour);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        !deployed.settler_threat_detour,
-        "the explicit three-batch selection leaves this arm off"
+        deployed.settler_threat_detour,
+        "the explicit three-batch selection enables this qualifying arm"
     );
     let enable = GENES
         .iter()
@@ -23093,6 +23095,7 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     withheld.enable_live_bridge();
     withheld.disable_live_settler_capture_lessons();
     withheld.disable_settler_target_hysteresis_2();
+    withheld.disable_settler_threat_detour();
     assert!(!withheld.settler_routing_recovery_on());
     assert!(!withheld.settler_target_hysteresis_on());
     assert!(!withheld.settler_threat_detour_on());
@@ -34977,8 +34980,8 @@ fn the_religious_veto_defence_gene_is_a_registered_reversible_opt_in() {
     assert!(crate::ai::advanced::gene_ledger::screenable(tag));
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-        Some(true),
-        "the +0.93 pp displayed-Diff promotion reaches the deployment genome"
+        Some(false),
+        "the latest-three-batch selection withholds this unqualified arm"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.religious_veto_defence);
@@ -38184,8 +38187,8 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_after_explicit_withhold() {
         "the deployed seat uses the live shadow"
     );
     assert!(
-        ai.civilian_out_of_reach,
-        "the average-based deployment selection enables the broader civilian-safety opt-in"
+        !ai.civilian_out_of_reach,
+        "the average-based deployment selection keeps the broader civilian-safety opt-in off"
     );
     ai.disable_civilian_out_of_reach();
     assert!(
