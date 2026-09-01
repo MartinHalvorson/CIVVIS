@@ -2689,6 +2689,16 @@ pub struct StateRival {
     /// load-bearing: without it any older export fails to deserialize whole.
     #[serde(default)]
     pub science_projects: Option<Vec<String>>,
+    /// Civilization VI's exact World Rankings science-victory position and
+    /// current movement. These are not inferred from repeatable laser project
+    /// counts: a Terrestrial Laser Station only helps while it is powered.
+    /// `-1` is a refused host read; NaN means an older export omitted the key.
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_per_turn: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_needed: f64,
     /// The culture victory's own two numbers as the shipped screen shows them
     /// for every major: tourists visiting this rival, and its staycationers
     /// (which set the bar every other civilization must clear). `-1` when the
@@ -2985,6 +2995,17 @@ pub struct StateSnapshot {
     /// fact, while `Some([])` is an authoritative early-game answer.
     #[serde(default)]
     pub science_projects: Option<Vec<String>>,
+    /// Exact science-victory readings from Civilization VI's World Rankings:
+    /// current points, their active per-turn increase, and the target for this
+    /// game speed. These make the live tracker truthful after the Exoplanet
+    /// Expedition, including the actual effects of laser stations.
+    /// `-1` is a refused host read; NaN means an older export omitted the key.
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_per_turn: f64,
+    #[serde(default = "unknown_metric")]
+    pub science_victory_points_needed: f64,
     /// Civ 6 type names whose **boost is triggered but which are NOT yet
     /// researched** — the eureka discount waiting to be collected.
     ///
@@ -3637,6 +3658,16 @@ fn apply_rival_public_economy(
             .military_no_treasury
             .filter(|value| value.is_finite() && *value >= 0.0);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
+        // World Rankings owns the science-race distance, target, and current
+        // rate. Do not derive the rate from a laser-project count: repeatable
+        // Terrestrial stations contribute only while the host has them powered.
+        observed.science_victory_points =
+            known(rival.science_victory_points).then_some(rival.science_victory_points);
+        observed.science_victory_points_per_turn = known(rival.science_victory_points_per_turn)
+            .then_some(rival.science_victory_points_per_turn);
+        observed.science_victory_points_needed = (rival.science_victory_points_needed.is_finite()
+            && rival.science_victory_points_needed > 0.0)
+            .then_some(rival.science_victory_points_needed);
         if known(rival.tourism) {
             Arc::make_mut(&mut game.observed_tourism_per_turn).insert(owner, rival.tourism);
         } else {
@@ -5229,7 +5260,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     #[rustfmt::skip]
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "frame", "techs", "civics", "research",
-        "science_projects", "boosted_techs", "boosted_civics",
+        "science_projects", "science_victory_points", "science_victory_points_per_turn",
+        "science_victory_points_needed", "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
@@ -5392,6 +5424,9 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
         "science_projects",
+        "science_victory_points",
+        "science_victory_points_per_turn",
+        "science_victory_points_needed",
         "foreign_tourists",
         "domestic_tourists",
         // Both border fields: `open_borders` had crossed since the buy lane
@@ -9637,6 +9672,18 @@ fn apply_observed_host_metrics(
             .or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
+        // Match the local player's World Rankings science lane to the host
+        // instead of treating its reconstructed fifty-light-year trip as fact.
+        observed.science_victory_points = (state.science_victory_points.is_finite()
+            && state.science_victory_points >= 0.0)
+            .then_some(state.science_victory_points);
+        observed.science_victory_points_per_turn =
+            (state.science_victory_points_per_turn.is_finite()
+                && state.science_victory_points_per_turn >= 0.0)
+                .then_some(state.science_victory_points_per_turn);
+        observed.science_victory_points_needed = (state.science_victory_points_needed.is_finite()
+            && state.science_victory_points_needed > 0.0)
+            .then_some(state.science_victory_points_needed);
         observed.cities_following_religion = state
             .cities_following_religion
             .filter(|value| *value >= 0)

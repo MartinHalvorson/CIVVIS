@@ -23161,11 +23161,18 @@ function victoryMeter(victory, metric, progress) {
     const total = Math.max(1, +metric.tech_total || 0);
     const launches = +metric.project_target || 4;
     const done = +metric.projects || 0;
+    const distanceTarget = Math.max(1, +metric.distance_target || 50);
     const dots = Array.from({ length: launches },
       (_, i) => `<i${i < done ? ' class="on"' : ""}></i>`).join("");
+    // The launch dots are a useful checklist before the expedition leaves.
+    // Once it has, leaving all four lit makes an active race look frozen. The
+    // host's World Rankings points now give this half a real moving meter.
+    const race = done >= launches
+      ? `<span class="victory-half">${bar(100 * (+metric.distance || 0) / distanceTarget)}</span>`
+      : `<span class="victory-dots">${dots}</span>`;
     return `<div class="victory-meter split"><span class="victory-half">` +
       `${bar(100 * (+metric.techs || 0) / total)}</span>` +
-      `<span class="victory-dots">${dots}</span></div>`;
+      `${race}</div>`;
   }
   if (victory === "culture") {
     const total = Math.max(1, +metric.civic_total || 0);
@@ -23199,7 +23206,7 @@ function victoryValue(victory, metric) {
 }
 
 function victoryTrackerSubheading(victory) {
-  if (victory === "science") return `<span>Techs</span><span>Launches</span>`;
+  if (victory === "science") return `<span>Techs</span><span>Race</span>`;
   if (victory === "culture") return `<span>Civics</span><span>Tourism</span>`;
   if (victory === "religious") return `<span></span><span>Civs</span>`;
   if (victory === "diplomatic") return `<span></span><span>Score</span>`;
@@ -23225,9 +23232,14 @@ function victoryDescription(victory, metric) {
   if (victory === "science") {
     const tree = `${metric.techs || 0} of ${metric.tech_total || 0} technologies researched`;
     const launches = `${metric.projects || 0} of ${metric.project_target || 4} space-race missions launched`;
-    return metric.projects >= metric.project_target
-      ? `${tree} · ${compactStat(metric.distance)} of ${compactStat(metric.distance_target)} light-years travelled`
-      : `${tree} · ${launches}`;
+    if (metric.projects >= metric.project_target) {
+      const speed = Number(metric.speed);
+      const rate = Number.isFinite(speed)
+        ? ` · ${compactStat(Math.max(0, speed))} light-years per turn`
+        : "";
+      return `${tree} · ${compactStat(metric.distance)} of ${compactStat(metric.distance_target)} light-years travelled${rate}`;
+    }
+    return `${tree} · ${launches}`;
   }
   if (victory === "culture") {
     return `${metric.civics || 0} of ${metric.civic_total || 0} civics researched · ` +

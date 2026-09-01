@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::game::{
     City, Game, Item, RememberedCity, Unit, UnitMoveTrail, DIPLOMATIC_VICTORY_POINTS,
-    EXOPLANET_DESTINATION, EXOPLANET_TARGETS,
+    EXOPLANET_TARGETS,
 };
 use crate::name::Name;
 use crate::world::Tile;
@@ -715,7 +715,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "domestic_tourists": g.domestic_tourists(pid),
             "foreign_tourists": g.foreign_tourists(pid),
             "science_projects": p.science_projects,
-            "exoplanet_distance": round1(p.exoplanet_distance),
+            "exoplanet_distance": round1(g.science_victory_points(pid)),
             "exoplanet_speed": round1(g.exoplanet_speed(pid)),
             // Which world this expedition is aimed at, and how much of the
             // neighbourhood this civilization has found. Before the launch the
@@ -897,7 +897,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "domestic_tourists": g.domestic_tourists(o.id),
                 "foreign_tourists": g.foreign_tourists(o.id),
                 "science_projects": o.science_projects,
-                "exoplanet_distance": round1(o.exoplanet_distance),
+                "exoplanet_distance": round1(g.science_victory_points(o.id)),
                 "government": o.government,
                 "anarchy_turns": o.anarchy_turns,
                 "age": o.age,
@@ -1461,7 +1461,8 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
             "projects": r.science_projects,
             "project_target": r.science_project_target,
             "distance": round1(r.exoplanet_distance),
-            "distance_target": EXOPLANET_DESTINATION,
+            "distance_target": round1(r.exoplanet_distance_target),
+            "speed": round1(r.exoplanet_speed),
             "techs": r.techs,
             "tech_total": r.tech_total,
         },

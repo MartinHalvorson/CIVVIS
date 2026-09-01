@@ -7449,6 +7449,28 @@ local function exportState(player, pid, turn, frame)
 					end
 					return done;
 				end, nil),
+				-- The exact post-launch race, including the actual active effect of
+				-- Lagrange and Terrestrial Laser Stations. World Rankings' expansion
+				-- replacement reads points and points-per-turn from EACH player
+				-- (`WorldRankings_Expansion2.lua:587-588`), while its game-speed
+				-- target comes from the local player's stats (`:589`). Keep the
+				-- repeatable stations out of `science_projects`: a count cannot say
+				-- whether a terrestrial station is powered this turn.
+				science_victory_points = try(function()
+					local stats = other:GetStats();
+					if stats == nil then return -1; end
+					return stats:GetScienceVictoryPoints();
+				end, -1) or -1,
+				science_victory_points_per_turn = try(function()
+					local stats = other:GetStats();
+					if stats == nil then return -1; end
+					return stats:GetScienceVictoryPointsPerTurn();
+				end, -1) or -1,
+				science_victory_points_needed = try(function()
+					local stats = player:GetStats();
+					if stats == nil then return -1; end
+					return stats:GetScienceVictoryPointsTotalNeeded();
+				end, -1) or -1,
 				-- The culture victory's own two numbers: tourists visiting THEM,
 				-- and their staycationers (which set the bar every rival must
 				-- clear). -1 on failure, as everywhere here.
@@ -7765,6 +7787,22 @@ local function exportState(player, pid, turn, frame)
 			scienceProjects[#scienceProjects + 1] = projectType;
 		end
 	end
+	-- World Rankings' science lane calls its position and target accessors at
+	-- `WorldRankings_Expansion2.lua:373-374`, and the per-player rate at :588.
+	-- They are the host's real progress, target, and present rate, so laser
+	-- stations never have to be guessed from their repeatable completion counts.
+	local scienceVictoryPoints = try(function()
+		if playerStats == nil then return -1; end
+		return playerStats:GetScienceVictoryPoints();
+	end, -1) or -1;
+	local scienceVictoryPointsPerTurn = try(function()
+		if playerStats == nil then return -1; end
+		return playerStats:GetScienceVictoryPointsPerTurn();
+	end, -1) or -1;
+	local scienceVictoryPointsNeeded = try(function()
+		if playerStats == nil then return -1; end
+		return playerStats:GetScienceVictoryPointsTotalNeeded();
+	end, -1) or -1;
 
 	-- ★★★★★ BARBARIANS, WHICH THE RIVAL EXPORT STRUCTURALLY CANNOT SEE.
 	--
@@ -8139,6 +8177,11 @@ local function exportState(player, pid, turn, frame)
 		-- Completed one-time nuclear and space milestones. This stays separate
 		-- from the city's current production because completion is player-wide.
 		science_projects = scienceProjects,
+		-- The authoritative World Rankings race. The rate includes active
+		-- Lagrange and Terrestrial Laser Station effects this turn.
+		science_victory_points = scienceVictoryPoints,
+		science_victory_points_per_turn = scienceVictoryPointsPerTurn,
+		science_victory_points_needed = scienceVictoryPointsNeeded,
 		-- ⚠ Boosts on technologies and civics the empire does NOT yet hold. A
 		-- triggered boost on something already researched is spent and says
 		-- nothing about what to take next.
