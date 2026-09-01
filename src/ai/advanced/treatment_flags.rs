@@ -3156,7 +3156,7 @@ impl AdvancedAi {
         self.live_barbarian_scouts_capture = false;
     }
 
-    /// A lost settler retires its ground for every settler; fleeing prefers a friendly stack; guards stay near known camps.
+    /// A lost settler retires its ground for every settler; fleeing prefers a friendly stack; guards stay near known camps; early settlers stay within a six-tile capital corridor.
     ///
     /// Host-only `live-settler-capture-lessons`: what twenty-four live captures
     /// on 2026-08-28 taught. A settler that leaves the board with no city
@@ -3166,7 +3166,9 @@ impl AdvancedAi {
     /// of our units holds to the least exposed bare one and never holds beside
     /// a raider while a farther tile exists; the strongest guard that can reach
     /// the settler this turn is summoned, not the nearest; a guard is not
-    /// released while a known barbarian camp is within eight tiles. See
+    /// released while a known barbarian camp is within eight tiles; a Settler
+    /// first seen during the one-city opening stays within six tiles of its
+    /// capital and returns if an emergency flee pushes it farther. See
     /// `advanced/civilian_safety.rs`.
     pub fn enable_live_settler_capture_lessons(&mut self) {
         self.live_settler_capture_lessons = true;

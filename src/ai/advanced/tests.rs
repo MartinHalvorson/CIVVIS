@@ -21587,6 +21587,7 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         let settler = probe.spawn_test_unit("settler", 0, source);
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
+        ai.remember_early_settler_home(&probe, 0, settler);
         ai.disable_frontier_loyalty();
         ai.best_settler_target(&probe, 0, settler, 8, None)
             .map(|(pos, _)| pos)
@@ -21597,6 +21598,7 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         let settler = game.spawn_test_unit("settler", 0, source);
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
+        ai.remember_early_settler_home(&game, 0, settler);
         // Isolate the hysteresis: the fogged-frontier rule would retire a
         // far site on this small board for its own reason.
         ai.disable_frontier_loyalty();
@@ -21728,8 +21730,17 @@ fn settler_target_hysteresis_v2_keeps_guarded_routes_available_to_other_settlers
 #[test]
 fn settler_target_hysteresis_v2_shares_a_permanently_blocked_site() {
     let (mut game, source, target) = stacked_escort_fixture();
-    let dropping = game.spawn_test_unit("settler", 0, source);
-    let other = game.spawn_test_unit("settler", 0, source);
+    // Keep this synthetic hysteresis pair off the founded city. A live
+    // Settler first observed on its own city is intentionally classified as
+    // an early-opening Settler and receives the capital corridor; this test
+    // is about sharing a host-blocked site, not that opening policy.
+    let staging = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| game.city_at(*position).is_none())
+        .expect("fixture has a non-city staging tile");
+    let dropping = game.spawn_test_unit("settler", 0, staging);
+    let other = game.spawn_test_unit("settler", 0, staging);
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge();
     ai.enable_settler_target_hysteresis_2();
@@ -21792,7 +21803,11 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
         // the blocker after that decision, which is the live failure shape:
         // an attractive target becomes route-dangerous rather than never
         // qualifying as a settlement site at all.
-        let picker = AdvancedAi::new();
+        let mut picker = AdvancedAi::new();
+        if live {
+            picker.enable_live_bridge();
+            picker.remember_early_settler_home(&game, 0, settler);
+        }
         let target = picker
             .best_settler_target(&game, 0, settler, 8, None)
             .map(|(position, _)| position)
@@ -21908,7 +21923,6 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
             ai.settler_target_has_visible_route_threat(&game, 0, settler, target),
             "the route-specific gate sees the blocker even though the target itself is safe"
         );
-
         ai.settler_targets.insert(settler, target);
         game.units.get_mut(&settler).unwrap().moves_left = 2.0;
         assert!(
@@ -21916,6 +21930,18 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
             "the detour immediately spends the Settler's turn on the safe route"
         );
         let fallback = ai.settler_targets[&settler];
+        if live && fallback == target {
+            // The live opening corridor is narrower than this historical
+            // route-detour fixture. If every in-corridor runner-up is also
+            // covered, staying local is the intended answer; taking a
+            // distant runner-up would recreate the captured-second-Settler
+            // failure this test now guards against.
+            assert!(
+                ai.early_settler_site_allowed(&game, 0, settler, fallback),
+                "a live detour may keep the target only inside the early corridor"
+            );
+            return;
+        }
         assert_ne!(fallback, target, "the unsafe corridor is not the runner-up");
         assert_eq!(
             ai.settler_threat_deferrals.get(&target).copied(),
@@ -36573,6 +36599,158 @@ fn open_land(game: &Game, pos: Pos) -> bool {
             .map
             .get(pos)
             .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+}
+
+/// The second Settler's home is the capital that existed when it appeared,
+/// not whichever city happens to be nearest after another Settler founds.
+/// The live bridge keeps its deliberate targets inside the six-tile opening
+/// corridor and carries that anchor through its rebuilt unit ids.
+#[test]
+fn a_live_early_settler_keeps_a_capital_home_corridor() {
+    let (mut game, _city, home) = barbarian_field(71_308);
+    let far = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 8 && open_land(&game, *pos))
+        .expect("open ground eight tiles from the capital");
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.remember_early_settler_home(&game, 0, settler);
+
+    assert_eq!(live.early_settler_home(settler), Some(home));
+    assert!(!live.early_settler_site_allowed(&game, 0, settler, far));
+    let near = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == EARLY_SETTLER_HOME_RADIUS && open_land(&game, *pos))
+        .expect("open ground on the edge of the opening corridor");
+    assert!(live.early_settler_site_allowed(&game, 0, settler, near));
+    let selected = live
+        .best_settler_target(&game, 0, settler, 20, None)
+        .expect("the capital has an in-corridor site");
+    assert!(
+        game.wdist(home, selected.0) <= EARLY_SETTLER_HOME_RADIUS,
+        "the picker never chooses a remote opening site: {:?}",
+        selected.0
+    );
+
+    let remapped = settler + 1_000;
+    live.remap_unit_memory(&BTreeMap::from([(settler, remapped)]));
+    assert_eq!(live.early_settler_home(remapped), Some(home));
+}
+
+/// Reconstruct the current-game failure after the escort is gone: an early
+/// Settler outside its capital corridor must return home, even when its old
+/// target points farther away. The capture-aware route remains in charge of
+/// the return step, so a visible raider cannot turn the correction into a
+/// second exposed march.
+#[test]
+fn a_live_early_settler_returns_home_after_it_is_pushed_too_far() {
+    let (mut game, _city, home) = barbarian_field(71_309);
+    let far = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 8 && open_land(&game, *pos))
+        .expect("open ground eight tiles from the capital");
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let remote_target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) >= 10 && open_land(&game, *pos))
+        .expect("a remote stale target");
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.remember_early_settler_home(&game, 0, settler);
+    game.relocate(settler, far);
+    live.settler_targets.insert(settler, remote_target);
+
+    let before = game.units[&settler].pos;
+    assert!(live.advanced_settler_step(&mut game, 0, settler));
+    let after = game.units[&settler].pos;
+    assert!(
+        game.wdist(after, home) < game.wdist(before, home),
+        "the early Settler moves home: {before:?} -> {after:?}"
+    );
+    assert!(
+        !live.settler_targets.contains_key(&settler),
+        "the remote target is cleared while the Settler returns"
+    );
+}
+
+/// Once the early Settler is outside its corridor, the live flee goal is the
+/// capital rather than the stale frontier site. With a visible raider beside
+/// it, the full-turn escape first leaves capture reach if necessary, then the
+/// next Settler step turns home instead of continuing the frontier march.
+#[test]
+fn a_live_early_settler_flees_homeward_out_of_capture_reach() {
+    let (mut game, _city, home) = barbarian_field(71_310);
+    let start = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 8 && open_land(&game, *pos))
+        .expect("open ground eight tiles from the capital");
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.remember_early_settler_home(&game, 0, settler);
+    game.relocate(settler, start);
+    let raider_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("an open tile beside the early Settler");
+    let raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let remote_target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) >= 10 && open_land(&game, *pos))
+        .expect("a remote stale target");
+
+    live.settler_targets.insert(settler, remote_target);
+    let reach = live.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the raider can capture the Settler"
+    );
+
+    assert_eq!(
+        live.civilian_flee_step(&mut game, 0, settler),
+        Some(true),
+        "the live Settler spends the turn escaping"
+    );
+    let after = game.units[&settler].pos;
+    assert!(
+        !reach.covers(&game, after),
+        "the full-turn escape ends outside the raider's reach: {after:?}"
+    );
+    assert!(
+        game.wdist(after, home) > EARLY_SETTLER_HOME_RADIUS,
+        "the fixture exercises the emergency excursion"
+    );
+    game.remove_unit(raider);
+    game.turn += 1;
+    game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+    game.units.get_mut(&settler).unwrap().moved = false;
+    assert!(live.advanced_settler_step(&mut game, 0, settler));
+    let homeward = game.units[&settler].pos;
+    assert!(
+        game.wdist(homeward, home) < game.wdist(after, home),
+        "the following step returns home rather than following {remote_target:?}: {after:?} -> {homeward:?}"
+    );
 }
 
 /// A settler two tiles from home with a Warrior two tiles away flees to a

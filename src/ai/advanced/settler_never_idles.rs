@@ -284,6 +284,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|(pos, _)| {
                 !g.blocked_city_sites.contains(pos)
+                    && self.early_settler_site_allowed(g, pid, uid, *pos)
                     && !self.settler_site_is_dead(uid, *pos)
                     && Some(*pos) != avoided
                     && (!self.settler_threat_detour_on()
@@ -333,6 +334,7 @@ impl AdvancedAi {
             .filter(|pos| {
                 self.base.valid_settle_site(g, pid, *pos)
                     && !g.blocked_city_sites.contains(pos)
+                    && self.early_settler_site_allowed(g, pid, uid, *pos)
                     && !self.settler_site_is_dead(uid, *pos)
                     && Some(*pos) != avoided
                     && (!self.settler_threat_detour_on()
@@ -444,11 +446,15 @@ impl AdvancedAi {
     /// would hold, else say so. Never silent.
     pub(super) fn settler_stranded(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let here = g.units[&uid].pos;
+        if let Some(home) = self.early_settler_homeward_target(g, uid) {
+            return self.return_early_settler_home(g, pid, uid, home);
+        }
         let science_targeted = self.science_targeted(g);
         self.settler_targets.remove(&uid);
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
-        if g.can_found_city(uid)
+        if self.early_settler_site_allowed(g, pid, uid, here)
+            && g.can_found_city(uid)
             && self.exhaustion_site_unpriceable(g, here).is_none()
             && !((self.exhaustion_loyalty_guard || science_targeted)
                 && Self::inside_rival_sphere(g, pid, here))
@@ -559,8 +565,12 @@ impl AdvancedAi {
         if g.units[&uid].moves_left <= 0.0 {
             return false;
         }
+        if let Some(home) = self.early_settler_homeward_target(g, uid) {
+            return self.return_early_settler_home(g, pid, uid, home);
+        }
         let cached = self.settler_targets.get(&uid).copied().filter(|target| {
-            !self.settler_site_is_dead(uid, *target)
+            self.early_settler_site_allowed(g, pid, uid, *target)
+                && !self.settler_site_is_dead(uid, *target)
                 && (!self.settler_threat_detour_on()
                     || !self.settler_threat_deferrals.contains_key(target))
                 && !self.settler_target_reserved_by_other(g, pid, uid, *target)
@@ -584,6 +594,12 @@ impl AdvancedAi {
             },
         };
         if target == current {
+            if !self.early_settler_site_allowed(g, pid, uid, current) {
+                let home = self
+                    .early_settler_homeward_target(g, uid)
+                    .expect("an out-of-corridor watchdog target has an early home");
+                return self.return_early_settler_home(g, pid, uid, home);
+            }
             if self.science_targeted(g) {
                 if let Some(why) = self.settle_site_loyalty_verdict(g, pid, current) {
                     think!(self.journal(), Expansion, Detail,

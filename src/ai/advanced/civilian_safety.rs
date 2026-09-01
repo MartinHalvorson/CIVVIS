@@ -1,5 +1,6 @@
 //! `civilian-out-of-reach`: settlers and builders stay out of a barbarian's
-//! reach, flee it, and are stacked with a guard when they cannot.
+//! reach, flee it, and are stacked with a guard when they cannot. The live
+//! bridge also keeps early Settlers close to the capital that launched them.
 //!
 //! Opt-in (`Kind::OptIn` in `genes.rs`), ships off, priced by `gene_screen`
 //! beside every other gene — see `docs/CIVILIAN_SAFETY.md`. Its own file
@@ -77,7 +78,9 @@
 //!   warrior and died on the settler's tile); (4) a guard is not released
 //!   while a known barbarian camp is within `SETTLER_ESCORT_THREAT_RADIUS`
 //!   — "no visible hostile within 8 tiles" preceded six captures by one
-//!   turn.
+//!   turn. (5) early Settlers remember their one-city capital and do not
+//!   deliberately target beyond its six-tile opening corridor; an emergency
+//!   flee that carries one farther out switches to a homeward return.
 
 use super::{
     AdvancedAi, SETTLER_CAPTURE_SCAR_RADIUS, SETTLER_DEAD_SITE_AVOID_TURNS,
@@ -412,6 +415,15 @@ impl AdvancedAi {
     /// nearest of our cities.
     fn civilian_goal(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         let unit = &g.units[&uid];
+        if unit.kind == "settler" {
+            // A threat response must not flee an early Settler farther from
+            // the capital just because its cached settlement site is remote.
+            // The home corridor is the emergency goal once the unit has
+            // already been pushed beyond it.
+            if let Some(home) = self.early_settler_homeward_target(g, uid) {
+                return Some(home);
+            }
+        }
         let planned = match unit.kind.as_str() {
             "settler" => self.settler_targets.get(&uid).copied(),
             "builder" => self.builder_targets.get(&uid).copied(),
@@ -455,7 +467,21 @@ impl AdvancedAi {
         }
         let goal = self.civilian_goal(g, pid, uid);
         if self.live_settler_capture_lessons {
-            return Some(self.flee_under_lessons(g, pid, uid, &reach, goal));
+            let fled = self.flee_under_lessons(g, pid, uid, &reach, goal);
+            if fled {
+                return Some(true);
+            }
+            // `flee_under_lessons` deliberately refuses an equal-risk move.
+            // For an early Settler that is already outside its home corridor,
+            // holding is not an acceptable second choice: hand the turn to
+            // the capture-aware homeward route instead of leaving it beside
+            // the raider while the hostile phase is next.
+            if kind == "settler" {
+                if let Some(home) = self.early_settler_homeward_target(g, uid) {
+                    return Some(self.return_early_settler_home(g, pid, uid, home));
+                }
+            }
+            return Some(false);
         }
         let here_covering = reach.raiders_covering(g, current);
         let here_nearest = reach.nearest(g, current);
