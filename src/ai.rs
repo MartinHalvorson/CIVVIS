@@ -2878,6 +2878,12 @@ pub struct BasicAi {
     /// Entrant `live_without_barbarian_ranged_answer`; treatment
     /// `barbarian-ranged-answer`.
     pub(crate) barbarian_ranged_answer: bool,
+    /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
+    /// with a body before anything else is built, bought when no defender
+    /// exists, and a recon unit is not a defender. Read by
+    /// `barbarian_local_defenders_for_controller` here and by
+    /// `AdvancedAi::siege_preemption_item` (`advanced/siege_response.rs`).
+    pub(crate) siege_preempts_the_queue: bool,
     pub(crate) adjacent_camp_clear: bool,
     /// Leave a barbarian camp standing when it is a neighbour's problem
     /// more than ours: a living major we are not allied with has a city
@@ -4078,7 +4084,7 @@ impl BasicAi {
         g.barb_scout_homes.contains_key(&uid)
     }
 
-    fn is_barbarian_raider(g: &Game, unit: &crate::game::Unit) -> bool {
+    pub(crate) fn is_barbarian_raider(g: &Game, unit: &crate::game::Unit) -> bool {
         Some(unit.owner) == g.barb_pid
             && g.rules.units[unit.kind].class == "military"
             && !g.barb_camp_guards.values().any(|guard| *guard == unit.id)
@@ -4820,6 +4826,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
@@ -4974,6 +4981,17 @@ impl BasicAi {
 
     pub fn disable_barbarian_ranged_answer(&mut self) {
         self.barbarian_ranged_answer = false;
+    }
+
+    /// A raider on the doorstep is answered before anything else is built,
+    /// bought when no defender exists, and a Scout is not a defender. See
+    /// `siege_preempts_the_queue` and `advanced/siege_response.rs`.
+    pub fn enable_siege_preempts_the_queue(&mut self) {
+        self.siege_preempts_the_queue = true;
+    }
+
+    pub fn disable_siege_preempts_the_queue(&mut self) {
+        self.siege_preempts_the_queue = false;
     }
 
     /// Price a raider's life below a major's. See `barbarian_bargain`.
@@ -5268,6 +5286,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
@@ -10670,7 +10689,41 @@ impl BasicAi {
             .filter(|unit| self.barbarian_raider_counts_as_threat(g, pid, unit))
             .count();
         let wanted: usize = if raiders >= 2 { 2 } else { 1 };
-        wanted.saturating_sub(Self::barbarian_local_defenders(g, pid, city))
+        wanted.saturating_sub(self.barbarian_local_defenders_for_controller(g, pid, cid))
+    }
+
+    /// The local defenders `barbarian_defense_gap` credits. Under
+    /// `siege-preempts-the-queue` a recon unit is not one of them: a Scout
+    /// is class `military` and was counted, so on live run
+    /// civvis-20260901T193130Z t36 a Scout bought two turns earlier made the
+    /// gap read zero with a barbarian Slinger adjacent to the capital, and
+    /// the city started a Government Plaza.
+    pub(crate) fn barbarian_local_defenders_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> usize {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return 0;
+        };
+        let defenders = Self::barbarian_local_defenders(g, pid, city);
+        if !self.siege_preempts_the_queue {
+            return defenders;
+        }
+        let recon = g
+            .units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && spec.promotion_class == "recon"
+                    && matches!(spec.domain.as_deref(), None | Some("land"))
+                    && g.wdist(unit.pos, city.pos) <= BARBARIAN_LOCAL_DEFENDER_RADIUS
+            })
+            .count();
+        defenders.saturating_sub(recon)
     }
 
     /// Production answer for an active barbarian ring. The city first gets a
