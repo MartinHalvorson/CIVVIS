@@ -310,6 +310,15 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
                     o["map"]["planet"] = geometry;
                 }
             }
+            // The reasoning journal rides the same delta contract as on a
+            // socket: a page that names its cursor gets what has been
+            // recorded since, and a read that names nothing is not reading
+            // the log. Left unmirrored, the strategy panel's decision
+            // factors were permanently empty on civvis.ai while working
+            // everywhere the feature was developed.
+            if let Some(cursor) = query_value(target, "think") {
+                o["ai_reasoning"] = session.reasoning_json(cursor.parse::<u64>().unwrap_or(0));
+            }
             decorate_browser(&mut o);
             // What the frame in this answer costs on the wall clock; the shim
             // spends it, because a wasm module cannot sleep.
