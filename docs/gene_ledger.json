@@ -1381,6 +1381,17 @@
     ],
     "versions": "every version's batch-rule reading remains recorded on its own row; this reporting-only rotation retains the already selected version, one per family, while a family still holds at most 3 versions and a fourth requires a cull of the third-best",
     "family_heads": {
+      "air-surge": {
+        "rule_on": [
+          "air-surge"
+        ],
+        "head": "air-surge",
+        "ships": "air-surge",
+        "versions": {
+          "air-surge": 1.868162,
+          "air-surge-2": null
+        }
+      },
       "amenity-project-preemption": {
         "rule_on": [
           "amenity-project-preemption"

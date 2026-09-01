@@ -33861,6 +33861,162 @@ fn the_corps_enhancers_outrank_the_lane_pick_only_with_the_gene() {
 }
 
 // ---------------------------------------------------------------------------
+// The air surge, version two: the science–domination loop. See
+// `advanced/air_surge.rs`, gene `air-surge-2`.
+// ---------------------------------------------------------------------------
+
+/// One version of the family plays: enabling v2 turns v1 off (the
+/// `science_victory_drive_2` convention), the surge machinery runs for
+/// either version through `air_surge_enabled`, and a plain seat feels
+/// nothing.
+#[test]
+fn the_v2_surge_replaces_v1_and_a_plain_seat_feels_nothing() {
+    let (game, _, _) = air_surge_fixture(941_150);
+    let mut ai = air_surge_ai();
+    ai.enable_air_surge_2();
+    assert!(
+        !ai.air_surge && ai.air_surge_2,
+        "one version of the family plays"
+    );
+    assert!(ai.air_surge_enabled());
+
+    ai.maintain_air_surge(&game, 0);
+    assert!(
+        ai.air_surge_active(),
+        "the surge machinery appoints under version two"
+    );
+
+    // The twin stands the whole family down.
+    ai.disable_air_surge_2();
+    assert!(!ai.air_surge_enabled());
+    ai.maintain_air_surge(&game, 0);
+    assert!(!ai.air_surge_active());
+
+    // Defaults: off for the stock and frozen controllers.
+    assert!(!AdvancedAi::new().air_surge_2);
+    assert!(!AdvancedAi::legacy().air_surge_2);
+}
+
+/// The Formal-War clock runs through the buildout. A lane seat assesses no
+/// rival, so `advanced_diplomacy` needs the surge to hand it a target while
+/// the wing arms — v1 never does, v2 does, and a counter appointed into a
+/// running war still borrows no decision it was not given.
+#[test]
+fn the_buildout_denounce_needs_no_assessed_target() {
+    let (game, _, _) = air_surge_fixture(941_152);
+
+    let mut v1 = air_surge_ai();
+    v1.maintain_air_surge(&game, 0);
+    assert!(v1.air_surge_active());
+    assert_eq!(
+        v1.air_surge_diplomacy_target(),
+        None,
+        "version one leaves the diplomacy pass exactly as it was"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_air_surge_2();
+    v2.maintain_air_surge(&game, 0);
+    let surge_target = v2.air_surge_plan.as_ref().expect("appointed").target_player;
+    assert_eq!(v2.air_surge_diplomacy_target(), Some(surge_target));
+
+    // Appointed into a war already running there is nothing to open.
+    v2.air_surge_plan.as_mut().expect("appointed").opened_at_war = true;
+    assert_eq!(v2.air_surge_diplomacy_target(), None);
+
+    // And with no appointment at all, nothing is offered.
+    v2.air_surge_plan = None;
+    assert_eq!(v2.air_surge_diplomacy_target(), None);
+}
+
+/// The loop's second surge is nearly free, and only v2 knows it: with the
+/// airfield standing and a Bomber alive, v1 re-prices the whole package from
+/// scratch and the endgame clock refuses a follow-up that v2 admits.
+#[test]
+fn a_standing_wing_makes_the_follow_up_surge_affordable() {
+    let (mut game, _, _) = air_surge_fixture(941_151);
+    air_surge_arm(&mut game);
+
+    let v1 = air_surge_ai();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_air_surge_2();
+
+    // With nothing standing the two versions price the launch identically.
+    assert_eq!(
+        v1.air_surge_launch_estimate(&game, 0),
+        v2.air_surge_launch_estimate(&game, 0),
+        "the first appointment costs the same under either version"
+    );
+
+    // The airfield stands and one Bomber flies.
+    let first = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, first, "aerodrome");
+    game.spawn_test_unit("bomber", 0, game.cities[&first].pos);
+    let (v1_research, v1_production) = v1.air_surge_launch_estimate(&game, 0);
+    let (v2_research, v2_production) = v2.air_surge_launch_estimate(&game, 0);
+    assert_eq!(v1_research, v2_research, "the research half is untouched");
+    assert!(
+        v2_production < v1_production,
+        "v2 prices only the missing package: {v2_production} vs {v1_production}"
+    );
+
+    // Squeeze the clock between the two estimates: the follow-up fits only
+    // when the standing package is subtracted.
+    let reserve = game.standard_duration(air_surge::AIR_SURGE_ENDGAME_RESERVE);
+    game.max_turns = game.turn + v2_research + v2_production + reserve + 1;
+    assert!(v2.air_surge_affordable(&game, 0));
+    assert!(
+        !v1.air_surge_affordable(&game, 0),
+        "version one still prices a whole new wing and refuses the follow-up"
+    );
+}
+
+/// Conquest keeps the labs: under version two a Conquest plan prices the
+/// Campus (below the Encampment, so war infrastructure keeps first claim),
+/// and under version one it does not.
+#[test]
+fn conquest_prices_the_campus_only_under_v2() {
+    let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("writing"));
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: game.cities[&city].pos,
+    };
+
+    let mut looped = AdvancedAi::new();
+    looped.enable_air_surge_2();
+    looped.refresh_research_weight(&game);
+    let mut plain = AdvancedAi::new();
+    plain.refresh_research_weight(&game);
+    let counts = looped.counts(&game, 0);
+
+    let with_loop = looped.production_value(&game, 0, city, &campus, &plan, &counts);
+    let without = plain.production_value(&game, 0, city, &campus, &plan, &counts);
+    assert!(
+        with_loop > without,
+        "the loop's Conquest window still pays for science: {with_loop} vs {without}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // District planning. See `advanced/district_planning.rs`.
 // ---------------------------------------------------------------------------
 
