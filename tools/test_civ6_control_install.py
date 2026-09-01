@@ -1893,6 +1893,19 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertLess(taken, forfeit)
         self.assertLess(forfeit, forced)
 
+    def test_a_dedication_residual_forces_the_turn_in_the_same_pass(self) -> None:
+        """A real dedication answer must not leave the native blocker wedged."""
+        marker = 'name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE"'
+        special = self.escalation.index(marker)
+        forced = self.escalation.index('REASON = "UserForced"', special)
+        forfeit = self.escalation.index(
+            "if (not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then"
+        )
+        self.assertLess(special, forced)
+        self.assertLess(forced, forfeit)
+        self.assertIn("same_pass_forced = true;", self.escalation[special:forced])
+        self.assertIn("residual = true", self.escalation[special:forced])
+
     def test_a_blocker_change_ticks_without_the_publish_divider(self) -> None:
         """A board sitting on a blocker publishes almost nothing.
 

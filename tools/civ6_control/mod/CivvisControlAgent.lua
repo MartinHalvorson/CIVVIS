@@ -17491,6 +17491,23 @@ local function tick()
 						                           residuals = seen.residuals });
 						attempts = 0;
 						residual_taken = true;
+						-- A dedication answer can leave the native commemoration blocker
+						-- standing until another publish. That publish never arrives while
+						-- the seat is waiting to end the turn, so flush this hard blocker
+						-- in the same pass, just like the quiet-board units repair above.
+						if name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then
+							local dropped = dismissBlocker(pid, blocker);
+							emit("dismissed", { turn = turn, blocker = name,
+							                    dismissed = dropped, attempts = attempts,
+							                    answered = residual_pick, parked = 0,
+							                    forfeit = 0, forced = true, same_pass = true,
+							                    residual = true });
+							same_pass_forced = true;
+							pcall(function()
+								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								                 { REASON = "UserForced" });
+							end);
+						end
 					end
 					-- ⚠⚠⚠ A UNITS BLOCKER FORFEITS IN THE SAME PASS AS ITS RESIDUAL
 					-- ANSWER, because a quiet board never ticks again. Run
