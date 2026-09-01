@@ -714,6 +714,23 @@ fn pillaged_district_disables_its_building_yields_points_and_route_capacity() {
 
     let commercial = ring[0];
     game.map.tiles.get_mut(&commercial).unwrap().pillaged = false;
+    game.map.tiles.get_mut(&commercial).unwrap().district = Some(crate::name!("harbor"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("harbor"), commercial);
+    game.players[0].civics.insert(crate::name!("foreign_trade"));
+    assert_eq!(
+        game.trade_capacity(0),
+        1,
+        "a Harbor unlocks Lighthouse but does not itself add a route slot"
+    );
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .remove(crate::name!("harbor"));
     game.map.tiles.get_mut(&commercial).unwrap().district = Some(crate::name!("commercial_hub"));
     game.cities
         .get_mut(&city)
@@ -725,9 +742,9 @@ fn pillaged_district_disables_its_building_yields_points_and_route_capacity() {
         .unwrap()
         .buildings
         .push(crate::name!("market"));
-    game.players[0].civics.insert(crate::name!("foreign_trade"));
-    // Foreign Trade, the Commercial Hub itself, and the Market it hosts.
-    assert_eq!(game.trade_capacity(0), 3);
+    // Foreign Trade and the Market it hosts. The Commercial Hub only unlocks
+    // the building; it has no route-capacity modifier in the shipped rules.
+    assert_eq!(game.trade_capacity(0), 2);
     assert_eq!(game.route_yields(city, false).gold, 6.0);
     game.map.tiles.get_mut(&commercial).unwrap().pillaged = true;
     assert_eq!(game.trade_capacity(0), 1);

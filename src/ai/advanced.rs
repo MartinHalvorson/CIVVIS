@@ -2001,7 +2001,8 @@ pub struct AdvancedAi {
     /// Off by default; evaluator arm `advanced_settler_founds_when_stalled`.
     pub settler_founds_when_stalled: bool,
 
-    /// Apply the call-local Builder floor in `delegated_cities`.
+    /// Apply the production Builder floor in `delegated_cities` and explicit
+    /// victory-target production.
     ///
     /// **On in production**, which is why the arm withholds rather than adds.
     /// Evaluator arm `advanced_without_builder_floor`.
@@ -4684,14 +4685,11 @@ pub struct AdvancedAi {
     /// Keep one Builder per city while there is still land to improve, and
     /// price it where it can win the queue.
     ///
-    /// ★★★★ THE FLOOR THAT BINDS IS NOT THE FLOOR THAT WAS MEASURED. There are
-    /// two Builder quotas. `production_builder_floor` raises the genome's
-    /// 0.5-per-city to 0.75 — but only inside `delegated_cities`, the baseline
-    /// governor, which the strategic path reaches for a city only after
-    /// `advanced_production` has already left it empty. The quota that decides
-    /// almost every Builder is the one hardcoded in `production_value`'s own
-    /// arm, `city_count.div_ceil(2)`, which is 0.5 per city and has never been
-    /// screened at all.
+    /// ★★★★ TWO BUILDER QUOTAS SERVE DIFFERENT PRODUCTION POLICIES. The normal
+    /// `production_builder_floor` raises the genome's 0.5-per-city to 0.75 in
+    /// both `delegated_cities` and explicit victory targeting's strategic
+    /// scorer. This opt-in raises the strategic quota further, to one Builder
+    /// per city while there is work remaining.
     ///
     /// Its price is the other half. The arm pays `260 + 35` per missing
     /// Builder, against a monument's flat 240 on top of its yields, a
@@ -24698,15 +24696,26 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "builder" => {
-                // See `builder_supply_floor`: one Builder per two cities is
-                // the quota, and it is a constant that never asks whether
-                // there is any land left to improve.
-                let (desired, base) =
-                    if self.builder_supply_floor && BasicAi::has_builder_work(g, pid) {
-                        (city_count.max(1), BUILDER_SUPPLY_FLOOR_BASE)
-                    } else {
-                        (city_count.div_ceil(2).max(1), 260.0)
-                    };
+                // Explicit victory targets use this strategic scorer instead
+                // of `delegated_cities`, so carry the production controller's
+                // 0.75-Builder floor here as well. The stronger opt-in still
+                // owns its one-per-city quota and its higher bid.
+                let targeted = self.active_victory_target(g).is_some();
+                let has_work = (self.builder_supply_floor
+                    || (self.production_builder_floor && targeted))
+                    && BasicAi::has_builder_work(g, pid);
+                let (desired, base) = if self.builder_supply_floor && has_work {
+                    (city_count.max(1), BUILDER_SUPPLY_FLOOR_BASE)
+                } else if self.production_builder_floor && targeted && has_work {
+                    (
+                        (PRODUCTION_BUILDERS_PER_CITY * city_count as f64)
+                            .ceil()
+                            .max(1.0) as usize,
+                        260.0,
+                    )
+                } else {
+                    (city_count.div_ceil(2).max(1), 260.0)
+                };
                 if counts.builders < desired {
                     base + 35.0 * (desired - counts.builders) as f64
                 } else {
