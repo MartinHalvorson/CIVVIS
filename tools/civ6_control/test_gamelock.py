@@ -233,15 +233,23 @@ class VerificationIntent(unittest.TestCase):
         self.tmp = TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.intent = self.root / "operator-intent"
+        self.lock = self.root / "game.lock"
+        self._real_lock = gamelock.LOCK
         self._real = gamelock.OPERATOR_INTENT
         self._real_halt = gamelock.OPERATOR_HALT
         self._real_foreign = gamelock.foreign_run
+        # This class owns its intent fixture, so it must own its lock fixture
+        # too.  The real lock is legitimately held while the owner-controlled
+        # verification game runs; consulting it here makes this unit test
+        # fail merely because the host is doing the work it is testing.
+        gamelock.LOCK = self.lock
         gamelock.OPERATOR_INTENT = self.intent
         gamelock.OPERATOR_HALT = self.root / "operator-halt.json"
         gamelock.foreign_run = lambda tag: None
         self.addCleanup(self.cleanup)
 
     def cleanup(self) -> None:
+        gamelock.LOCK = self._real_lock
         gamelock.OPERATOR_INTENT = self._real
         gamelock.OPERATOR_HALT = self._real_halt
         gamelock.foreign_run = self._real_foreign
