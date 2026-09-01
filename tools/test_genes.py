@@ -926,9 +926,9 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
             batches, gene_ledger.screenable_tags()))
         self.assertEqual(set(rules["deployment_genome"]), eligible)
-        self.assertEqual(len(eligible), 60)
-        self.assertIn("amenity-project-preemption-2", eligible)
-        self.assertNotIn("amenity-project-preemption", eligible)
+        self.assertEqual(len(eligible), 62)
+        self.assertIn("amenity-project-preemption", eligible)
+        self.assertNotIn("amenity-project-preemption-2", eligible)
 
     def test_retained_selection_averages_only_available_batch_readings(self):
         self.assertEqual(gene_ledger.retained_selection_average([5, None, None]), 5)
