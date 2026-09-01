@@ -5167,12 +5167,12 @@ fn tagma_replaces_knights_buffs_its_formation_and_is_the_hippodrome_reward() {
             unit: crate::name!("tagma"),
         },
     ));
-    // The shipped Units row (220 Production, 4 Gold) and UnitUpgrades row
-    // (Cuirassier), audited by civ6_fidelity.py.
+    // The shipped Units row (180 Production, 3 Gold) and UnitUpgrades row
+    // (Tank), audited by civ6_fidelity.py.
     let tagma = &game.rules.units["tagma"];
-    assert_eq!(tagma.cost, 220.0);
-    assert_eq!(tagma.maintenance, 4.0);
-    assert_eq!(tagma.upgrade_to.as_deref(), Some("cuirassier"));
+    assert_eq!(tagma.cost, 180.0);
+    assert_eq!(tagma.maintenance, 3.0);
+    assert_eq!(tagma.upgrade_to.as_deref(), Some("tank"));
 
     let warrior = game
         .player_unit_ids(0)
