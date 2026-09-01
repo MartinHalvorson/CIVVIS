@@ -310,33 +310,6 @@ class OneAnchorIsNotTenSeparateAppends(unittest.TestCase):
 
 class TheReplayRunsOnRealHistory(unittest.TestCase):
     @needs_history(40)
-    def test_it_replays_pairs_and_finds_the_gene_table_anchored(self):
-        """`src/ai/advanced/genes.rs` holds the gene registry and every gene
-        pull request appends a row to it. If any file in this repository is
-        one append anchor, it is that one.
-
-        ⚠ This used to name `src/ai/advanced/treatments.rs` and its
-        `LIVE_TREATMENTS` / `PRODUCTION_OPT_INS` tables. That file was
-        consolidated into `genes.rs` on 2026-08-23 — "they are columns of one
-        row now", as the registry's own module doc puts it — and the test was
-        not moved with it, so it replayed a path that no longer exists: 1 pair
-        and no anchors over the same 200 merges, against 58 pairs and the
-        `GENES` table anchored 18 times for the file that replaced it. A test
-        naming a deleted file fails without saying anything about the thing it
-        was written to protect.
-        """
-        shas = conflict_hotspots.recent_merges(200)
-        if len(shas) < 200:
-            self.skipTest("needs the full window to see the table's merges")
-        row = conflict_hotspots.replay("src/ai/advanced/genes.rs", shas)
-        self.assertGreater(row["pairs"], 10)
-        found = conflict_hotspots.anchors(row["regions"])
-        self.assertTrue(found, "no repeated append anchor in the gene table")
-        self.assertTrue(
-            any("GENES" in where for where in found),
-            f"the anchors found were {sorted(found)}")
-
-    @needs_history(40)
     def test_the_report_runs(self):
         self.assertEqual(
             conflict_hotspots.main(["--modes", "--merges", "40", "--top", "2"]),

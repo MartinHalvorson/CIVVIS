@@ -21650,6 +21650,103 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
     assert!(!AdvancedAi::legacy().settler_target_hysteresis);
 }
 
+/// A cached destination can fail safety for an unguarded Settler even while a
+/// second Settler's bound guard makes that same site safe. Version-2
+/// hysteresis used to copy the first unit's transient risk drop into the
+/// second unit's dead-site memory, leaving all available Settlers unable to
+/// use the guarded route.
+#[test]
+fn settler_target_hysteresis_v2_keeps_guarded_routes_available_to_other_settlers() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    let unguarded = game.spawn_test_unit("settler", 0, source);
+    let guarded = game.spawn_test_unit("settler", 0, source);
+    let guard = game.spawn_test_unit("warrior", 0, source);
+    let raider_at =
+        game.nbrs(target)
+            .into_iter()
+            .find(|position| {
+                game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a visible raider post beside the settle site");
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let observer_at =
+        game.nbrs(raider_at)
+            .into_iter()
+            .find(|position| {
+                *position != target
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a clear observation post beside the raider");
+    let _observer = game.spawn_test_unit("scout", 0, observer_at);
+    game.players[0].explored.insert(raider_at);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.enable_settler_guard_holds();
+    ai.enable_settler_target_hysteresis_2();
+    ai.settler_targets.insert(unguarded, target);
+    ai.settler_targets.insert(guarded, target);
+    ai.settler_guards.insert(guarded, guard);
+
+    let visible = ai.battlefront_visibility(&game, 0);
+    assert!(game.sees(&visible, raider_at), "the raider is visible");
+    let unguarded_risk = ai.settlement_tile_risk(&game, 0, Some(unguarded), target, &visible);
+    let guarded_risk = ai.settlement_tile_risk(&game, 0, Some(guarded), target, &visible);
+    assert!(
+        unguarded_risk > SETTLER_STEP_RISK_LIMIT,
+        "the unguarded Settler must reject the threatened site ({unguarded_risk})"
+    );
+    assert!(
+        guarded_risk <= SETTLER_STEP_RISK_LIMIT,
+        "the bound guard must make the same site safe ({guarded_risk})"
+    );
+
+    let _ = ai.advanced_settler_step(&mut game, 0, unguarded);
+    assert_eq!(
+        ai.settler_avoid
+            .get(&unguarded)
+            .map(|(position, _)| *position),
+        Some(target),
+        "ordinary hysteresis still sets the unsafe route aside for its mover"
+    );
+    assert!(
+        !ai.settler_dead_sites
+            .get(&guarded)
+            .is_some_and(|sites| sites.contains_key(&target)),
+        "a guarded Settler must not inherit another Settler's transient risk drop"
+    );
+}
+
+/// Version-2 hysteresis still shares a site that is intrinsically unavailable.
+/// This is deliberately distinct from a risk rejection: the host's block is
+/// true for every Settler, so keeping it out of all their picks avoids a
+/// redundant march without suppressing a route another guard can protect.
+#[test]
+fn settler_target_hysteresis_v2_shares_a_permanently_blocked_site() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    let dropping = game.spawn_test_unit("settler", 0, source);
+    let other = game.spawn_test_unit("settler", 0, source);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.enable_settler_target_hysteresis_2();
+    ai.settler_targets.insert(dropping, target);
+    std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(target);
+
+    let _ = ai.advanced_settler_step(&mut game, 0, dropping);
+    assert!(
+        ai.settler_dead_sites
+            .get(&other)
+            .is_some_and(|sites| sites.contains_key(&target)),
+        "a host-blocked destination is invalid for every Settler"
+    );
+}
+
 /// The target can remain a fine city site while a visible raider makes only
 /// its first route step unsafe. Waiting for the three-stall retirement loses
 /// turns and lets another settler choose the same corridor. The opt-in sends
