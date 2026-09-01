@@ -43,6 +43,28 @@ use crate::Pos;
 /// the site contributes less than a fifth of the Settler's base value.
 pub(super) const SETTLER_SITE_GATE_FLOOR: f64 = 40.0;
 
+/// The floor while the empire is still small. The first live game on the gate
+/// (run `civvis-20260901T201841Z`) held Rome's third Settler at t16–t18 with the
+/// best free seat worth 29.9 — a seat the ordinary walker would have taken and
+/// that an empire of two cities cannot afford to wait on: the early cities are
+/// the ones that build everything after them. Under [`SETTLER_SITE_GATE_SMALL_EMPIRE`]
+/// cities the floor is half the late one.
+pub(super) const SETTLER_SITE_GATE_EARLY_FLOOR: f64 = 20.0;
+
+/// Below this many cities the early floor applies.
+pub(super) const SETTLER_SITE_GATE_SMALL_EMPIRE: usize = 4;
+
+impl AdvancedAi {
+    /// The floor for an empire of `cities` cities.
+    pub(super) fn settler_site_gate_floor(cities: usize) -> f64 {
+        if cities < SETTLER_SITE_GATE_SMALL_EMPIRE {
+            SETTLER_SITE_GATE_EARLY_FLOOR
+        } else {
+            SETTLER_SITE_GATE_FLOOR
+        }
+    }
+}
+
 /// Why a city was not allowed to start a Settler.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum SettlerSiteGateHold {
@@ -51,7 +73,7 @@ pub(super) enum SettlerSiteGateHold {
     /// Every acceptable seat is spoken for by a Settler already alive.
     AllClaimed { seats: usize, unseated: usize },
     /// The best free seat is not worth a Settler.
-    BelowFloor { worth: f64 },
+    BelowFloor { worth: f64, floor: f64 },
 }
 
 impl SettlerSiteGateHold {
@@ -62,9 +84,9 @@ impl SettlerSiteGateHold {
                 "{seats} free seat(s) for {unseated} settler(s) still without one; a new \
                  settler would have nowhere to go"
             ),
-            Self::BelowFloor { worth } => format!(
-                "the best free seat is worth {worth:.1}, under the {SETTLER_SITE_GATE_FLOOR:.0} \
-                 floor; founded sites on this rung are worth 96–140"
+            Self::BelowFloor { worth, floor } => format!(
+                "the best free seat is worth {worth:.1}, under the {floor:.0} floor; founded \
+                 sites on this rung are worth 96–140"
             ),
         }
     }
@@ -73,12 +95,14 @@ impl SettlerSiteGateHold {
 impl AdvancedAi {
     /// The pure verdict: `sites` best-first as `settle_sites` returns them,
     /// `claimed` the targets live Settlers already hold, `settlers` how many
-    /// Settlers are alive (claimed ones included).
+    /// Settlers are alive (claimed ones included), `floor` the least the best
+    /// free seat may be worth (`settler_site_gate_floor`).
     pub(super) fn settler_site_gate_verdict(
         g: &Game,
         sites: &[(Pos, f64)],
         claimed: &[Pos],
         settlers: usize,
+        floor: f64,
     ) -> Result<(Pos, f64), SettlerSiteGateHold> {
         if sites.is_empty() {
             return Err(SettlerSiteGateHold::NoSite);
@@ -103,8 +127,8 @@ impl AdvancedAi {
             });
         }
         let best = seats[unseated];
-        if best.1 < SETTLER_SITE_GATE_FLOOR {
-            return Err(SettlerSiteGateHold::BelowFloor { worth: best.1 });
+        if best.1 < floor {
+            return Err(SettlerSiteGateHold::BelowFloor { worth: best.1, floor });
         }
         Ok(best)
     }
@@ -137,6 +161,7 @@ impl AdvancedAi {
             })
             .map(|(_, target)| *target)
             .collect();
-        Self::settler_site_gate_verdict(g, &sites, &claimed, settlers)
+        let floor = Self::settler_site_gate_floor(g.player_city_ids(pid).len());
+        Self::settler_site_gate_verdict(g, &sites, &claimed, settlers, floor)
     }
 }

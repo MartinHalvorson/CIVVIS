@@ -41892,23 +41892,28 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
 
 #[test]
 fn settler_site_gate_verdict_needs_a_free_seat_worth_the_floor() {
-    use super::settler_site_gate::{SettlerSiteGateHold as Hold, SETTLER_SITE_GATE_FLOOR as FLOOR};
+    use super::settler_site_gate::{
+        SettlerSiteGateHold as Hold, SETTLER_SITE_GATE_EARLY_FLOOR as EARLY,
+        SETTLER_SITE_GATE_FLOOR as FLOOR, SETTLER_SITE_GATE_SMALL_EMPIRE as SMALL,
+    };
     let g = Game::new_full(2, 16, 12, 7, 50, 1, false);
     let (a, near_a, b) = ((2, 2), (3, 2), (10, 2));
-    let verdict = AdvancedAi::settler_site_gate_verdict;
-    assert_eq!(verdict(&g, &[], &[], 0), Err(Hold::NoSite));
+    let verdict = |sites: &[(Pos, f64)], claimed: &[Pos], settlers: usize| {
+        AdvancedAi::settler_site_gate_verdict(&g, sites, claimed, settlers, FLOOR)
+    };
+    assert_eq!(verdict(&[], &[], 0), Err(Hold::NoSite));
     // The best free seat goes to the Settler this city would start.
-    assert_eq!(verdict(&g, &[(a, 90.0), (b, 60.0)], &[], 0), Ok((a, 90.0)));
+    assert_eq!(verdict(&[(a, 90.0), (b, 60.0)], &[], 0), Ok((a, 90.0)));
     // A claimed seat is taken, and so is every plot within settlement
     // spacing of it: two candidate plots one tile apart are one seat.
     assert_eq!(
-        verdict(&g, &[(a, 90.0), (near_a, 85.0), (b, 60.0)], &[a], 1),
+        verdict(&[(a, 90.0), (near_a, 85.0), (b, 60.0)], &[a], 1),
         Ok((b, 60.0))
     );
     // A Settler alive without a target queues ahead of a new one.
-    assert_eq!(verdict(&g, &[(a, 90.0), (b, 60.0)], &[], 1), Ok((b, 60.0)));
+    assert_eq!(verdict(&[(a, 90.0), (b, 60.0)], &[], 1), Ok((b, 60.0)));
     assert_eq!(
-        verdict(&g, &[(a, 90.0), (b, 60.0)], &[a], 2),
+        verdict(&[(a, 90.0), (b, 60.0)], &[a], 2),
         Err(Hold::AllClaimed {
             seats: 1,
             unseated: 1
@@ -41918,11 +41923,28 @@ fn settler_site_gate_verdict_needs_a_free_seat_worth_the_floor() {
     // sites 96–140. The floor sits between them, and a seat under it is
     // not a seat worth a Settler.
     assert_eq!(
-        verdict(&g, &[(a, 18.9)], &[], 0),
-        Err(Hold::BelowFloor { worth: 18.9 })
+        verdict(&[(a, 18.9)], &[], 0),
+        Err(Hold::BelowFloor {
+            worth: 18.9,
+            floor: FLOOR
+        })
     );
-    assert_eq!(verdict(&g, &[(a, FLOOR)], &[], 0), Ok((a, FLOOR)));
-    assert!(Hold::BelowFloor { worth: 18.9 }.describe().contains("18.9"));
+    assert_eq!(verdict(&[(a, FLOOR)], &[], 0), Ok((a, FLOOR)));
+    assert!(Hold::BelowFloor {
+        worth: 18.9,
+        floor: FLOOR
+    }
+    .describe()
+    .contains("18.9"));
+    // A small empire takes the seat run 201841Z's Rome was held off at t16:
+    // worth 29.9 clears the early floor and not the late one.
+    assert!(EARLY < 29.9 && 29.9 < FLOOR);
+    assert_eq!(AdvancedAi::settler_site_gate_floor(SMALL - 1), EARLY);
+    assert_eq!(AdvancedAi::settler_site_gate_floor(SMALL), FLOOR);
+    assert_eq!(
+        AdvancedAi::settler_site_gate_verdict(&g, &[(a, 29.9)], &[], 0, EARLY),
+        Ok((a, 29.9))
+    );
 }
 
 #[test]
@@ -41959,7 +41981,13 @@ fn settler_site_gate_is_off_by_default_and_reads_the_live_board() {
         .collect();
     assert_eq!(
         ai.settler_site_gate(&game, 0, capital, 0),
-        AdvancedAi::settler_site_gate_verdict(&game, &sites, &[], 0)
+        AdvancedAi::settler_site_gate_verdict(
+            &game,
+            &sites,
+            &[],
+            0,
+            AdvancedAi::settler_site_gate_floor(game.player_city_ids(0).len())
+        )
     );
     // More Settlers alive than the map has seats: the city holds.
     assert!(matches!(
