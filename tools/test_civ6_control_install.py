@@ -119,6 +119,16 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("local scienceProjects = {};", exporter)
         self.assertIn("playerStats:GetNumProjectsAdvanced(project.Index)", exporter)
         self.assertIn("science_projects = scienceProjects,", exporter)
+        self.assertIn("playerStats:GetScienceVictoryPoints();", exporter)
+        self.assertIn("playerStats:GetScienceVictoryPointsPerTurn();", exporter)
+        self.assertIn("playerStats:GetScienceVictoryPointsTotalNeeded();", exporter)
+        self.assertIn("science_victory_points = scienceVictoryPoints,", exporter)
+        self.assertIn(
+            "science_victory_points_per_turn = scienceVictoryPointsPerTurn,", exporter
+        )
+        self.assertIn(
+            "science_victory_points_needed = scienceVictoryPointsNeeded,", exporter
+        )
         for project in (
             "PROJECT_MANHATTAN_PROJECT",
             "PROJECT_OPERATION_IVY",
@@ -950,6 +960,15 @@ class ProtectedInstallTest(unittest.TestCase):
         # Manhattan and Ivy are strategic programs, not public victory rows.
         self.assertNotIn("PROJECT_MANHATTAN_PROJECT", block)
         self.assertNotIn("PROJECT_OPERATION_IVY", block)
+        # World Rankings reports the real post-launch position and acceleration
+        # per rival, rather than treating repeatable laser completion counts as
+        # a proxy for whether a station is active this turn.
+        self.assertIn("science_victory_points = try(function()", block)
+        self.assertIn("stats:GetScienceVictoryPoints();", block)
+        self.assertIn("science_victory_points_per_turn = try(function()", block)
+        self.assertIn("stats:GetScienceVictoryPointsPerTurn();", block)
+        self.assertIn("science_victory_points_needed = try(function()", block)
+        self.assertIn("stats:GetScienceVictoryPointsTotalNeeded();", block)
         self.assertIn("foreign_tourists = try(function()", block)
         self.assertIn("other:GetCulture():GetTouristsTo();", block)
         self.assertIn("domestic_tourists = try(function()", block)

@@ -429,6 +429,115 @@ fn completed_strategic_projects_cross_the_live_bridge_without_false_mars_progres
         .contains("launch_mars_colony"));
 }
 
+/// The four one-time launches only say that the expedition exists. Civilization
+/// VI's World Rankings owns the race after that point: its points, target, and
+/// current rate include the real effect of Lagrange and Terrestrial Laser
+/// Stations, including a terrestrial station being unpowered.
+#[test]
+fn science_victory_points_cross_the_live_bridge_for_every_race() {
+    let raw = r#"{
+            "turn": 205,
+            "science_projects": [
+                "PROJECT_LAUNCH_EARTH_SATELLITE",
+                "PROJECT_LAUNCH_MOON_LANDING",
+                "PROJECT_LAUNCH_MARS_BASE",
+                "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+            ],
+            "science_victory_points": 23,
+            "science_victory_points_per_turn": 4,
+            "science_victory_points_needed": 30,
+            "rivals": [{
+                "player": 3,
+                "science_projects": [
+                    "PROJECT_LAUNCH_EARTH_SATELLITE",
+                    "PROJECT_LAUNCH_MOON_LANDING",
+                    "PROJECT_LAUNCH_MARS_BASE",
+                    "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+                ],
+                "science_victory_points": 18,
+                "science_victory_points_per_turn": 3,
+                "science_victory_points_needed": 30
+            }]
+        }"#;
+    let mut state = state_from_json(raw).expect("science-victory readings parse");
+    assert!(
+        state.schema_gaps.is_empty(),
+        "the host's science-race readings are recognized: {:?}",
+        state.schema_gaps
+    );
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 205,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![host_grass(3, 3)],
+    }]);
+
+    let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+    let ours = rebuilt.game.victory_races(0, 0);
+    assert_eq!(ours.exoplanet_distance, 23.0);
+    assert_eq!(ours.exoplanet_distance_target, 30.0);
+    assert_eq!(ours.exoplanet_speed, 4.0);
+    assert!(
+        (ours.science - (75.0 + 25.0 * 23.0 / 30.0)).abs() < 1e-9,
+        "the progress percentage must use the host target, not the native 50"
+    );
+    let observation = crate::obs::observation(&rebuilt.game, 0);
+    assert_eq!(
+        observation["me"]["exoplanet_distance"],
+        serde_json::json!(23.0)
+    );
+    assert_eq!(
+        observation["players"][0]["victories"]["science"]["distance_target"],
+        serde_json::json!(30.0)
+    );
+    assert_eq!(
+        observation["players"][0]["victories"]["science"]["speed"],
+        serde_json::json!(4.0)
+    );
+    let rival = rebuilt.game.victory_races(1, 0);
+    assert_eq!(rival.exoplanet_distance, 18.0);
+    assert_eq!(rival.exoplanet_distance_target, 30.0);
+    assert_eq!(rival.exoplanet_speed, 3.0);
+
+    // Both rebuild and the persistent live path expose the host's changing
+    // reading. A later stale/older export must clear the observed fact rather
+    // than retaining a no-longer-authoritative travel measurement.
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    state.turn += 1;
+    state.science_victory_points = 27.0;
+    state.science_victory_points_per_turn = 5.0;
+    state.rivals[0].science_victory_points = 21.0;
+    state.rivals[0].science_victory_points_per_turn = 4.0;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.victory_races(0, 0).exoplanet_distance, 27.0);
+    assert_eq!(mirror.game.victory_races(0, 0).exoplanet_speed, 5.0);
+    assert_eq!(mirror.game.victory_races(1, 0).exoplanet_distance, 21.0);
+    assert_eq!(mirror.game.victory_races(1, 0).exoplanet_speed, 4.0);
+
+    state.turn += 1;
+    state.science_victory_points = f64::NAN;
+    state.science_victory_points_per_turn = -1.0;
+    state.science_victory_points_needed = 0.0;
+    state.rivals[0].science_victory_points = f64::NAN;
+    state.rivals[0].science_victory_points_per_turn = -1.0;
+    state.rivals[0].science_victory_points_needed = 0.0;
+    mirror.sync(&snapshot, &state, 0);
+    let observed = mirror.game.observed_public_empire_stats.get(&0).unwrap();
+    assert_eq!(observed.science_victory_points, None);
+    assert_eq!(observed.science_victory_points_per_turn, None);
+    assert_eq!(observed.science_victory_points_needed, None);
+    let fallback = mirror.game.victory_races(0, 0);
+    assert_eq!(
+        fallback.exoplanet_distance_target,
+        crate::game::EXOPLANET_DESTINATION
+    );
+    assert_eq!(
+        fallback.exoplanet_speed, 1.0,
+        "the native laser model remains the fallback"
+    );
+}
+
 #[test]
 fn housing_reaches_the_planner_from_the_host() {
     let raw = r#"{"id": 1, "x": 3, "y": 4, "pop": 12,

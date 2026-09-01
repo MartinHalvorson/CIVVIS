@@ -696,7 +696,17 @@ pub struct VictoryRaces {
     pub science: f64,
     pub science_projects: usize,
     pub science_project_target: usize,
+    /// Current progress of an active Exoplanet Expedition. On a mirrored
+    /// Civilization VI board this is the host's Science Victory Points, which
+    /// are the real distance shown by World Rankings rather than a simulation.
     pub exoplanet_distance: f64,
+    /// Science Victory Points required on this game's speed. Native games use
+    /// the model's fifty-light-year destination; a mirrored host can require a
+    /// different total.
+    pub exoplanet_distance_target: f64,
+    /// The host-reported Science Victory Points gained per turn when available,
+    /// including the current effects of Lagrange and Terrestrial Laser Stations.
+    pub exoplanet_speed: f64,
     pub techs: usize,
     pub tech_total: usize,
     pub culture: f64,
@@ -4363,6 +4373,19 @@ pub struct ObservedPublicEmpireStats {
     pub cities_following_religion: Option<usize>,
     #[serde(default)]
     pub military_no_treasury: Option<f64>,
+    /// Civilization VI's authoritative Science Victory Points from World
+    /// Rankings. This is intentionally separate from `Player`'s native-game
+    /// travel simulation: a live host can use a nonstandard victory target.
+    #[serde(default)]
+    pub science_victory_points: Option<f64>,
+    /// Current science-victory movement per turn as Firaxis counts it. In
+    /// particular this reflects which repeatable laser stations are active,
+    /// including whether a Terrestrial Laser Station is powered.
+    #[serde(default)]
+    pub science_victory_points_per_turn: Option<f64>,
+    /// The host's total Science Victory Points required for its game speed.
+    #[serde(default)]
+    pub science_victory_points_needed: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -29957,7 +29980,32 @@ impl Game {
             })
     }
 
-    pub fn exoplanet_speed(&self, pid: usize) -> f64 {
+    /// The exact Science Victory Points the host reports for `pid`, or the
+    /// native game's simulated expedition distance when this is not a live
+    /// mirror (or an older control mod did not carry the reading yet).
+    pub fn science_victory_points(&self, pid: usize) -> f64 {
+        self.observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.science_victory_points)
+            .filter(|points| points.is_finite() && *points >= 0.0)
+            .unwrap_or(self.players[pid].exoplanet_distance)
+    }
+
+    /// The Science Victory Points required in this game. Civilization VI's
+    /// game-speed setting owns this number on a mirrored board, while the
+    /// native simulator retains its fixed destination.
+    pub fn science_victory_points_needed(&self, pid: usize) -> f64 {
+        self.observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.science_victory_points_needed)
+            .filter(|points| points.is_finite() && *points > 0.0)
+            .unwrap_or(EXOPLANET_DESTINATION)
+    }
+
+    /// The native simulator's laser-station model. It remains separate from
+    /// the host reading below because advancing a speculative game must never
+    /// mutate it using a snapshot's real-world measurement.
+    fn modeled_exoplanet_speed(&self, pid: usize) -> f64 {
         let p = &self.players[pid];
         if !p.science_projects.contains("exoplanet_expedition") {
             return 0.0;
@@ -29973,6 +30021,23 @@ impl Game {
                 .unwrap_or(0) as f64
     }
 
+    /// Science-victory movement per turn. A live host's World Rankings value
+    /// wins here so Lagrange and Terrestrial Laser Stations reflect their
+    /// actual current effect; native and older-mod boards use the model.
+    pub fn exoplanet_speed(&self, pid: usize) -> f64 {
+        if !self.players[pid]
+            .science_projects
+            .contains("exoplanet_expedition")
+        {
+            return 0.0;
+        }
+        self.observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.science_victory_points_per_turn)
+            .filter(|speed| speed.is_finite() && *speed >= 0.0)
+            .unwrap_or_else(|| self.modeled_exoplanet_speed(pid))
+    }
+
     fn advance_exoplanet(&mut self, pid: usize) {
         if !self.victory_eligible(pid)
             || !self.players[pid]
@@ -29982,7 +30047,7 @@ impl Game {
             return;
         }
         self.players[pid].exoplanet_distance = (self.players[pid].exoplanet_distance
-            + self.exoplanet_speed(pid))
+            + self.modeled_exoplanet_speed(pid))
         .min(EXOPLANET_DESTINATION);
         if self.players[pid].exoplanet_distance >= EXOPLANET_DESTINATION {
             self.set_winner(pid, "science");
@@ -34400,8 +34465,11 @@ impl Game {
             .iter()
             .filter(|project| player.science_projects.contains(**project))
             .count();
+        let exoplanet_distance = self.science_victory_points(pid);
+        let exoplanet_distance_target = self.science_victory_points_needed(pid);
+        let exoplanet_speed = self.exoplanet_speed(pid);
         let science = if player.science_projects.contains("exoplanet_expedition") {
-            75.0 + 25.0 * player.exoplanet_distance / EXOPLANET_DESTINATION
+            75.0 + 25.0 * exoplanet_distance / exoplanet_distance_target
         } else {
             match completed_projects {
                 0 => 0.0,
@@ -34521,7 +34589,9 @@ impl Game {
             science,
             science_projects: completed_projects,
             science_project_target: science_projects.len(),
-            exoplanet_distance: player.exoplanet_distance,
+            exoplanet_distance,
+            exoplanet_distance_target,
+            exoplanet_speed,
             techs: observed
                 .and_then(|stats| stats.techs)
                 .unwrap_or(player.techs.len()),
