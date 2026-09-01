@@ -5081,17 +5081,21 @@ local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	-- race this return exists to prevent cannot happen, and the ladder answer is
 	-- counted in `residualAnswers` below like every other residual decision.
 	--
-	-- Do it in this callback for research and civics.  These are hard blockers,
-	-- and after Firaxis raises one it can stop publishing Game Core ticks before
-	-- the ordinary "second sighting" escalation below gets a chance to run.  That
-	-- was the turn-230 Conservation wedge: the safe residual choice was made only
-	-- after a later event happened to arrive, then the game sat at Please Wait.
+	-- Do it in this callback for research, civics, and commemoration. These are
+	-- hard blockers, and after Firaxis raises one it can stop publishing Game
+	-- Core ticks before the ordinary "second sighting" escalation below gets a
+	-- chance to run. That was the turn-230 Conservation wedge: the safe residual
+	-- choice was made only after a later event happened to arrive, then the game
+	-- sat at Please Wait. A live host that has not exported its dedication
+	-- allowance gives CIVVIS no dedication order to apply; once its completed
+	-- reply leaves the prompt standing, the native chooser is the safe bridge.
 	-- Re-entering with `residual_ok` retains the normal spend cap and accounting;
 	-- it merely avoids relying on a tick that the blocked engine need not emit.
 	-- CIVVIS receives a fresh board next turn and may override this bridge pick.
 	if not residual_ok and cfg.CivvisDecides and CIVVIS_OWNED_BLOCKERS[name]
 			and (awaiting.source == "civvis" or awaiting.source == "civvis_stale") then
-		if name == "ENDTURN_BLOCKING_RESEARCH" or name == "ENDTURN_BLOCKING_CIVIC" then
+		if name == "ENDTURN_BLOCKING_RESEARCH" or name == "ENDTURN_BLOCKING_CIVIC"
+				or name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then
 			return answerBlocker(player, pid, blocker, turn, true);
 		end
 		return "civvis_complete";
@@ -8343,7 +8347,7 @@ local function exportState(player, pid, turn, frame)
 		--
 		-- CIVVIS models Gathering Storm's age system in full (`docs/AGES.md`):
 		-- `Player::era_score`, `era_score_baseline`, `normal_age_threshold`,
-		-- `golden_age_threshold`, `dedications`. None of it crossed, so on every
+		-- `golden_age_threshold`, `dedications`, `dedication_choices`. None of it crossed, so on every
 		-- reconstructed live board era score was 0 against the *defaults* left by
 		-- `Player::default` -- a civilization permanently reading as headed for a
 		-- Dark Age it might not be in, or out of one it is.
@@ -8352,7 +8356,7 @@ local function exportState(player, pid, turn, frame)
 		-- against fiction in every live game:
 		--   * `ai::choose_dedications` picks a Dedication from
 		--     `available_dedications`, which is gated on `dedication_choices`;
-		--     live that is 0, so a Dedication was NEVER chosen.
+		--     carry the native allowance so an era-boundary board can choose one.
 		--   * `advanced.rs` filters `rules.policies[card].dark_age`, so a real
 		--     Dark Age's wildcard cards were never slotted -- the same shape as
 		--     the housing and loyalty cards that are never slotted.
@@ -8400,6 +8404,13 @@ local function exportState(player, pid, turn, frame)
 			end
 			return names;
 		end, nil),
+		-- A real zero says the current era has no pending dedication; -1 is the
+		-- distinct "this host could not answer" value. Without this count the
+		-- mirror leaves `Player::dedication_choices` at its default zero, so the
+		-- CIVVIS dedication order is never emitted and an owned prompt stands.
+		dedication_choices = try(function()
+			return Game.GetEras():GetPlayerNumAllowedCommemorations(pid);
+		end, -1),
 		-- ★★★★ THE WORLD CONGRESS RESOLUTIONS IN EFFECT, every turn. The
 		-- `wc_outcome` event says what the last session decided; this says what
 		-- is binding NOW, in the shape the mirror maps onto its own

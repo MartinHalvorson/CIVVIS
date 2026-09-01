@@ -3305,8 +3305,8 @@ pub struct StateSnapshot {
     /// was in.
     ///
     /// Two decisions read exactly these fields, so both ran on fiction live:
-    /// `ai::choose_dedications` is gated on `dedication_choices` (0 live, so a
-    /// Dedication was never once chosen), and `ai/advanced.rs` filters
+    /// `ai::choose_dedications` is gated on `dedication_choices` (which must
+    /// cross from the host at an era boundary), and `ai/advanced.rs` filters
     /// `rules.policies[card].dark_age`, so a real Dark Age's wildcard cards were
     /// never slotted — the same shape as the housing and loyalty cards that are
     /// never slotted.
@@ -3340,6 +3340,10 @@ pub struct StateSnapshot {
     /// older export; an empty list is a seat with none.
     #[serde(default)]
     pub dedications: Option<Vec<String>>,
+    /// How many dedication choices the host currently permits. `None` means an
+    /// older export; a real zero means the seat has no pending era choice.
+    #[serde(default)]
+    pub dedication_choices: Option<i64>,
     /// The World Congress resolutions binding this turn (`GetResolutions`),
     /// mapped onto the model's own `active_congress_effects`. `None` on an
     /// older export leaves the model's Congress alone; `Some([])` is a world
@@ -5336,7 +5340,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
         "golden_age_threshold", "world_era", "dark_age", "golden_age",
-        "heroic_golden_age", "dedications", "resolutions", "congress_turns_left",
+        "heroic_golden_age", "dedications", "dedication_choices", "resolutions",
+        "congress_turns_left",
         // The host's climate and its trade-route projections (2026-08-26).
         "climate", "route_options",
         "emergencies",
@@ -8292,6 +8297,9 @@ fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
                 player.dedications.insert(dedication.to_string());
             }
         }
+    }
+    if let Some(choices) = state.dedication_choices.filter(|value| *value >= 0) {
+        player.dedication_choices = choices as usize;
     }
     if let Some(era) = state.world_era.filter(|value| *value >= 0) {
         // `ERA_NAMES` bounds the model's era ladder; a build that reports an era
