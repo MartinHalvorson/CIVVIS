@@ -41733,3 +41733,350 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
         "the destination goes through the dead-site machinery, not into the void"
     );
 }
+
+/// See `campus_through_expansion`. A Science seat whose plan still reads
+/// Expansion priced its Campus as a generic Expansion district — no
+/// strategic arm, a beaker at 1.2 instead of 4.2 — and lost every queue to
+/// the Plaza, walls and an Arena-credited Entertainment Complex (live
+/// Emperor game 20260901T175154Z: four cities, zero districts at turn 64).
+/// Treated, the Campus and its Library carry the Science lane's price while
+/// the plan reads Expansion, an Entertainment Complex may not be a city's
+/// first specialty district, and a seat on any other lane feels nothing.
+#[test]
+fn the_campus_keeps_its_science_price_through_the_expansion_phase() {
+    let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.cities.get_mut(&city).unwrap().pop = 3;
+    game.turn = 40;
+    game.max_turns = 250;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 15,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: game.cities[&city].pos,
+    };
+    let complex = Item::District {
+        district: crate::name!("entertainment_complex"),
+        pos: game.cities[&city].pos,
+    };
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_live_bridge_universe();
+    treated.enable_campus_through_expansion();
+    treated.victory_target = Some(VictoryTarget::Science);
+    treated.refresh_research_weight(&game);
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge_universe();
+    withheld.disable_campus_through_expansion();
+    withheld.victory_target = Some(VictoryTarget::Science);
+    withheld.refresh_research_weight(&game);
+    let counts = treated.counts(&game, 0);
+
+    let lifted = treated.production_value(&game, 0, city, &campus, &plan, &counts);
+    let stock = withheld.production_value(&game, 0, city, &campus, &plan, &counts);
+    assert!(
+        lifted > stock,
+        "the Campus carries the Science lane's price through the Expansion plan: \
+         {lifted} treated vs {stock} withheld"
+    );
+    assert_eq!(
+        treated.production_value(&game, 0, city, &complex, &plan, &counts),
+        -10_000.0,
+        "an Entertainment Complex may not be a city's first specialty district"
+    );
+    assert!(
+        withheld.production_value(&game, 0, city, &complex, &plan, &counts) > -10_000.0,
+        "withheld, the Entertainment Complex is priced as before"
+    );
+
+    // Every other lane keeps the plan's price exactly.
+    let mut culture = AdvancedAi::new();
+    culture.enable_live_bridge_universe();
+    culture.enable_campus_through_expansion();
+    culture.victory_target = Some(VictoryTarget::Culture);
+    culture.refresh_research_weight(&game);
+    let mut culture_off = AdvancedAi::new();
+    culture_off.enable_live_bridge_universe();
+    culture_off.disable_campus_through_expansion();
+    culture_off.victory_target = Some(VictoryTarget::Culture);
+    culture_off.refresh_research_weight(&game);
+    assert_eq!(
+        culture.production_value(&game, 0, city, &campus, &plan, &counts),
+        culture_off.production_value(&game, 0, city, &campus, &plan, &counts),
+        "a Culture seat's Campus is priced exactly as before"
+    );
+
+    // Once the Campus stands, its Library keeps the Science beaker weight and
+    // the Entertainment Complex is a legal second district again.
+    install_ai_test_district(&mut game, city, "campus");
+    let counts = treated.counts(&game, 0);
+    assert!(
+        treated.production_value(&game, 0, city, &library, &plan, &counts)
+            > withheld.production_value(&game, 0, city, &library, &plan, &counts),
+        "the Library carries the Science lane's beaker weight through the Expansion plan"
+    );
+    assert!(
+        treated.production_value(&game, 0, city, &complex, &plan, &counts) > -10_000.0,
+        "with a specialty district standing the Entertainment Complex is priced again"
+    );
+
+    // Defaults: off for the stock and frozen controllers.
+    assert!(!AdvancedAi::new().campus_through_expansion);
+    assert!(!AdvancedAi::legacy().campus_through_expansion);
+}
+
+/// See `trade_route_network`. The Science contract priced every Commercial
+/// Hub at −10,000 and the Science district table had no Hub arm, so 22 live
+/// runs built none and ran the whole game on one Trade Route. Treated, a Hub
+/// beside a standing Campus is priced as trade capacity (and still refused
+/// in a city without one), a Market is worth the route it adds unless a
+/// Lighthouse already adds it, and the Conquest plan pays for a Hub.
+#[test]
+fn a_hub_beside_a_campus_joins_the_science_lanes_trade_network() {
+    let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("currency"));
+    game.cities.get_mut(&city).unwrap().pop = 5;
+    game.turn = 80;
+    game.max_turns = 250;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 8,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let hub = Item::District {
+        district: crate::name!("commercial_hub"),
+        pos: game.cities[&city].pos,
+    };
+    let market = Item::Building {
+        building: crate::name!("market"),
+    };
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_live_bridge_universe();
+    treated.enable_trade_route_network();
+    treated.victory_target = Some(VictoryTarget::Science);
+    treated.refresh_research_weight(&game);
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge_universe();
+    withheld.disable_trade_route_network();
+    withheld.victory_target = Some(VictoryTarget::Science);
+    withheld.refresh_research_weight(&game);
+    let counts = treated.counts(&game, 0);
+
+    assert_eq!(
+        treated.production_value(&game, 0, city, &hub, &plan, &counts),
+        -10_000.0,
+        "the Campus keeps first claim: no Hub in a city without one"
+    );
+
+    install_ai_test_district(&mut game, city, "campus");
+    let counts = treated.counts(&game, 0);
+    let priced = treated.production_value(&game, 0, city, &hub, &plan, &counts);
+    assert_eq!(
+        withheld.production_value(&game, 0, city, &hub, &plan, &counts),
+        -10_000.0,
+        "withheld, the Science contract still refuses every Hub"
+    );
+    assert!(
+        priced > 0.0,
+        "beside a standing Campus the Hub is priced as trade capacity: {priced}"
+    );
+
+    let route = treated.production_value(&game, 0, city, &market, &plan, &counts)
+        - withheld.production_value(&game, 0, city, &market, &plan, &counts);
+    // The building score is normalised by its build time after the sum, so
+    // the route shows as a strictly positive uplift, not the raw constant.
+    assert!(
+        route > 0.0,
+        "a Market is worth the Trade Route it adds: {route}"
+    );
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("lighthouse"));
+    assert_eq!(
+        treated.production_value(&game, 0, city, &market, &plan, &counts),
+        withheld.production_value(&game, 0, city, &market, &plan, &counts),
+        "a Lighthouse already adds this city's route, so the Market's is void"
+    );
+
+    let conquest = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        ..plan
+    };
+    let mut war = AdvancedAi::new();
+    war.enable_live_bridge_universe();
+    war.enable_trade_route_network();
+    war.refresh_research_weight(&game);
+    let mut war_off = AdvancedAi::new();
+    war_off.enable_live_bridge_universe();
+    war_off.disable_trade_route_network();
+    war_off.refresh_research_weight(&game);
+    let war_hub = war.production_value(&game, 0, city, &hub, &conquest, &counts)
+        - war_off.production_value(&game, 0, city, &hub, &conquest, &counts);
+    assert!(
+        war_hub > 0.0,
+        "the Conquest plan pays for the Hub: {war_hub}"
+    );
+
+    // Defaults: off for the stock and frozen controllers.
+    assert!(!AdvancedAi::new().trade_route_network);
+    assert!(!AdvancedAi::legacy().trade_route_network);
+}
+
+/// See `industrial_chain_debt`. Nine Industrial Zones stood with one
+/// Factory in the best Emperor game because the production chain, unlike
+/// the research chain, was owed nothing. Treated, a Workshop in a city that
+/// holds an Industrial Zone is owed the flat debt, a Factory is additionally
+/// worth the own cities within its range, and a city without the district
+/// prices both exactly as before.
+#[test]
+fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
+    let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let first = game.player_city_ids(0)[0];
+    let second = found_test_city(&mut game, 0);
+    game.players[0].techs.insert(crate::name!("industrialization"));
+    game.cities.get_mut(&first).unwrap().pop = 6;
+    game.turn = 120;
+    game.max_turns = 250;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 8,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let workshop = Item::Building {
+        building: crate::name!("workshop"),
+    };
+    let factory = Item::Building {
+        building: crate::name!("factory"),
+    };
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_live_bridge_universe();
+    treated.enable_industrial_chain_debt();
+    treated.victory_target = Some(VictoryTarget::Science);
+    treated.refresh_research_weight(&game);
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge_universe();
+    withheld.disable_industrial_chain_debt();
+    withheld.victory_target = Some(VictoryTarget::Science);
+    withheld.refresh_research_weight(&game);
+    let counts = treated.counts(&game, 0);
+
+    assert_eq!(
+        treated.production_value(&game, 0, first, &workshop, &plan, &counts),
+        withheld.production_value(&game, 0, first, &workshop, &plan, &counts),
+        "without an Industrial Zone nothing is owed"
+    );
+
+    install_ai_test_district(&mut game, first, "industrial_zone");
+    let counts = treated.counts(&game, 0);
+    let owed = treated.production_value(&game, 0, first, &workshop, &plan, &counts)
+        - withheld.production_value(&game, 0, first, &workshop, &plan, &counts);
+    // The building score is normalised by its build time after the sum, so
+    // the debt shows as a strictly positive uplift, not the raw constant.
+    assert!(
+        owed > 0.0,
+        "a standing Industrial Zone owes its Workshop the flat debt: {owed}"
+    );
+
+    game.cities
+        .get_mut(&first)
+        .unwrap()
+        .buildings
+        .push(crate::name!("workshop"));
+    let factory_uplift = treated.production_value(&game, 0, first, &factory, &plan, &counts)
+        - withheld.production_value(&game, 0, first, &factory, &plan, &counts);
+    assert!(
+        factory_uplift > 0.0,
+        "a Factory in a city holding the district is owed too: {factory_uplift}"
+    );
+    let factory_name = crate::name!("factory");
+    let spec = &game.rules.buildings[&factory_name];
+    let neighbours =
+        game.wdist(game.cities[&first].pos, game.cities[&second].pos) <= spec.regional_range;
+    let reach = treated.regional_production_reach(
+        &game,
+        0,
+        &game.cities[&first],
+        &factory_name,
+        spec,
+        plan.strategy,
+    );
+    if neighbours {
+        assert!(
+            reach > 0.0,
+            "a Factory is worth the own city inside its range: {reach}"
+        );
+        // A standing copy that already reaches the neighbour makes a second
+        // Factory's reach void.
+        game.cities
+            .get_mut(&second)
+            .unwrap()
+            .buildings
+            .push(factory_name.clone());
+        assert_eq!(
+            treated.regional_production_reach(
+                &game,
+                0,
+                &game.cities[&first],
+                &factory_name,
+                spec,
+                plan.strategy,
+            ),
+            0.0,
+            "a neighbour a standing Factory already reaches gains nothing from a second"
+        );
+    } else {
+        assert_eq!(reach, 0.0, "with no city in range there is nothing to reach");
+    }
+
+    // Defaults: off for the stock and frozen controllers.
+    assert!(!AdvancedAi::new().industrial_chain_debt);
+    assert!(!AdvancedAi::legacy().industrial_chain_debt);
+}
