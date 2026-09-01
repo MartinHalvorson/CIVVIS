@@ -5974,6 +5974,11 @@ const EARLY_PROJECT_RESTRAINT_STANDARD_TURNS: u32 = 90;
 /// A restrained opening project remains legal for a city with nothing better
 /// to do, but loses to ordinary units, districts, and first buildings.
 const EARLY_GPP_PROJECT_FALLBACK_CAP: f64 = 100.0;
+/// A Science victory needs only a small number of launch sites. One carries
+/// the sequential opening, a second can prepare for the late race, and a
+/// third is the useful ceiling for parallel laser projects. More pads consume
+/// whole city queues without making another launch possible.
+const SCIENCE_SPACEPORT_CAP: usize = 3;
 /// The buildings a district project waits behind. See
 /// `buildings_before_projects`.
 const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research_lab", "workshop"];
@@ -11806,6 +11811,63 @@ impl AdvancedAi {
             + yields.faith * faith
     }
 
+    /// Science does not need every Great Person whose class happens to be
+    /// adjacent to research. The live host names the individual on offer, so
+    /// use that fact to reserve Campus Research Grants and Industrial Zone
+    /// Logistics for people who actually accelerate research or the Space
+    /// Race. `None` deliberately means an older/native board supplied no name
+    /// and retains the historical class-level policy.
+    fn science_live_great_person_affinity(g: &Game, pid: usize, kind: &str) -> Option<f64> {
+        let individual = g.live_great_person_offer_individual(pid, kind)?;
+        Some(match (kind, individual) {
+            // Direct late-game Space Race production. These are the rare
+            // named Engineer/Scientist races worth disrupting a mature city's
+            // ordinary work to finish.
+            ("scientist", "carl_sagan" | "stephanie_kwolek")
+            | ("engineer", "sergei_korolev" | "wernher_von_braun") => 3.8,
+            // Rocketry plus Space Race production is still an exceptional
+            // prize, even before a project is already under construction.
+            ("engineer", "robert_goddard") => 3.3,
+            // Permanent science infrastructure pays back across the remaining
+            // empire, so it is the next best class of named Science person.
+            ("scientist", "hypatia" | "isaac_newton" | "albert_einstein" | "erwin_schrodinger") => {
+                3.1
+            }
+            // Concrete Eurekas, free research infrastructure, and useful
+            // science-on-tile effects remain worthwhile but should not outrun
+            // an imminent Space Race person.
+            (
+                "scientist",
+                "aryabhata" | "euclid" | "omar_khayyam" | "galileo_galilei" | "emilie_du_chatelet"
+                | "james_young" | "charles_darwin" | "dmitri_mendeleev" | "alan_turing"
+                | "alfred_nobel" | "janaki_ammal" | "abdus_salam",
+            ) => 2.3,
+            // These Engineers can add a durable production/technology benefit
+            // to the small set of Spaceport cities, but are not a reason to
+            // race every Industrial Zone project.
+            ("engineer", "james_watt" | "nikola_tesla") => 1.8,
+            ("engineer", "ada_lovelace" | "leonardo_da_vinci") => 1.3,
+            ("scientist", "hildegard_of_bingen") => 1.2,
+            // Explicitly poor Science-victory fits on the live board. Charles
+            // Correa supplies appeal and Jamsetji Tata Campus tourism; neither
+            // is worth turning an otherwise productive city into a GPP pump.
+            (
+                "engineer",
+                "charles_correa" | "alvar_aalto" | "jane_drew" | "john_a_roebling"
+                | "joseph_paxton" | "mimar_sinan",
+            )
+            | ("merchant", "jamsetji_tata")
+            | ("scientist", "mary_leakey") => 0.15,
+            // An individually named but unknown offer must not inherit the
+            // class's old high Science bonus. Its ordinary yield conversion
+            // can still win locally after infrastructure is complete.
+            ("scientist", _) => 0.85,
+            ("engineer", _) => 0.35,
+            ("merchant", _) => 0.25,
+            _ => 0.85,
+        })
+    }
+
     /// Whether an opening Great-Person project is one of the few forcing
     /// cases worth production before ordinary infrastructure is in place.
     fn early_project_race_exception(g: &Game, pid: usize, awards: &BTreeMap<String, f64>) -> bool {
@@ -11837,30 +11899,35 @@ impl AdvancedAi {
         {
             return false;
         }
-        let Some((_, scientist)) = g.current_great_person("scientist") else {
-            return false;
-        };
         // An early Scientist is worth an opening diversion only when their
         // effect compounds broadly (free/scaled science infrastructure) or
         // supplies at least three Eureka boosts. This admits the Aryabhata /
         // Hypatia class without spending a project merely to clutch Euclid.
-        let high_impact = [
-            "free_library",
-            "free_university",
-            "libraries_science",
-            "universities_science",
-            "research_labs_science",
-        ]
-        .into_iter()
-        .any(|effect| {
-            scientist
-                .effects
-                .get(effect)
-                .is_some_and(|value| *value > 0.0)
-        }) || scientist
-            .effects
-            .get("tech_boosts")
-            .is_some_and(|boosts| *boosts >= 3.0);
+        let high_impact =
+            if let Some(affinity) = Self::science_live_great_person_affinity(g, pid, "scientist") {
+                affinity >= 2.3
+            } else {
+                let Some((_, scientist)) = g.current_great_person("scientist") else {
+                    return false;
+                };
+                [
+                    "free_library",
+                    "free_university",
+                    "libraries_science",
+                    "universities_science",
+                    "research_labs_science",
+                ]
+                .into_iter()
+                .any(|effect| {
+                    scientist
+                        .effects
+                        .get(effect)
+                        .is_some_and(|value| *value > 0.0)
+                }) || scientist
+                    .effects
+                    .get("tech_boosts")
+                    .is_some_and(|boosts| *boosts >= 3.0)
+            };
         if !high_impact {
             return false;
         }
@@ -11954,7 +12021,7 @@ impl AdvancedAi {
             if g.live_great_person_offer_blocker(pid, &kind).is_some() {
                 continue;
             }
-            let mut affinity: f64 = match (great_person_lane, kind.as_str()) {
+            let class_affinity: f64 = match (great_person_lane, kind.as_str()) {
                 (GrandStrategy::Science, "scientist") => 2.5,
                 (GrandStrategy::Culture, "writer" | "artist" | "musician") => 2.6,
                 (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 2.8,
@@ -11966,6 +12033,11 @@ impl AdvancedAi {
                 (GrandStrategy::Science | GrandStrategy::Culture, "engineer") => 1.6,
                 (_, "prophet") if g.players[pid].religion.is_some() => 0.15,
                 _ => 0.85,
+            };
+            let mut affinity = if great_person_lane == GrandStrategy::Science {
+                Self::science_live_great_person_affinity(g, pid, &kind).unwrap_or(class_affinity)
+            } else {
+                class_affinity
             };
             let work = match kind.as_str() {
                 "writer" => Some("writing"),
@@ -17252,13 +17324,24 @@ impl AdvancedAi {
             {
                 continue;
             }
+            let live_science_affinity = (strategy == GrandStrategy::Science)
+                .then(|| Self::science_live_great_person_affinity(g, pid, kind))
+                .flatten();
+            // A fully named host offer lets a Science seat make this a real
+            // choice rather than a generic “Great Person = good” spend. Keep
+            // the bank for a direct research/Space Race person instead of
+            // patronizing Charles Correa, Jamsetji Tata, or an unknown effect
+            // simply because idle Faith relaxes the normal closeness limit.
+            if live_science_affinity.is_some_and(|affinity| affinity < 1.0) {
+                continue;
+            }
             let points = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
             let cost = g.gp_cost(pid, kind);
             let missing = (cost - points).max(0.0);
             if missing <= f64::EPSILON {
                 continue;
             }
-            let affinity = match (strategy, kind) {
+            let class_affinity = match (strategy, kind) {
                 (GrandStrategy::Science, "scientist")
                 | (GrandStrategy::Culture, "writer" | "artist" | "musician")
                 | (GrandStrategy::Diplomacy, "merchant")
@@ -17276,6 +17359,13 @@ impl AdvancedAi {
                 }
                 (_, "prophet") if g.players[pid].religion.is_some() => -1_000.0,
                 _ => 100.0,
+            };
+            let affinity = if strategy == GrandStrategy::Science {
+                live_science_affinity
+                    .map(|value| value * 200.0)
+                    .unwrap_or(class_affinity)
+            } else {
+                class_affinity
             };
             let close_fraction = missing / cost.max(1.0);
             // See `tally_great_people`: on the tally seat any Great Person the
@@ -20113,10 +20203,229 @@ impl AdvancedAi {
         }
     }
 
+    /// The number of Spaceports the current Science plan is allowed to keep
+    /// building. The milestones deliberately stage the investment; the hard
+    /// cap is a guard for the generic production governor as well as the
+    /// dedicated space-race pass.
+    fn science_spaceport_target(&self, g: &Game, pid: usize) -> usize {
+        let city_count = g.player_city_ids(pid).len();
+        if city_count == 0 {
+            return 0;
+        }
+        // A pad whose launch chain cannot fit is not a useful fallback
+        // district. Any already-finished Spaceport remains, but an unfinished
+        // one should release its city back to ordinary development.
+        if self.score_horizon && !self.space_race_can_finish(g, pid) {
+            return 0;
+        }
+        let completed = &g.players[pid].science_projects;
+        let desired = if self.science_drive_active() {
+            // The drive starts its second pad as soon as the Earth Satellite
+            // is up, so it is ready for the later parallel laser phase.
+            Self::science_drive_desired_pads(completed)
+        } else if self.space_race_lane(g, pid)
+            || self.raced_target() == Some(VictoryTarget::Science)
+        {
+            if completed.contains("launch_mars_colony") {
+                3
+            } else if completed.contains("launch_moon_landing") {
+                2
+            } else {
+                1
+            }
+        } else {
+            1
+        };
+        desired.min(SCIENCE_SPACEPORT_CAP).min(city_count)
+    }
+
+    /// Cities that can carry the still-unfilled Spaceport slots, in production
+    /// order. A queued pad counts as a candidate so an already-good
+    /// commitment is retained; a completed pad is permanent and therefore
+    /// outside this list.
+    fn science_spaceport_candidates(&self, g: &Game, pid: usize) -> Vec<u32> {
+        let pad = crate::name!("spaceport");
+        let mut candidates: Vec<u32> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                let city = &g.cities[cid];
+                !city.districts.contains_key(pad)
+                    && (city.queue.iter().any(|item| {
+                        matches!(item, Item::District { district, .. }
+                            if g.district_family(*district) == pad)
+                    }) || !g.district_sites(*cid, pad).is_empty())
+            })
+            .collect();
+        candidates.sort_by(|left, right| {
+            g.city_yields(*right)
+                .production
+                .total_cmp(&g.city_yields(*left).production)
+                .then_with(|| left.cmp(right))
+        });
+        candidates
+    }
+
+    /// The unfinished launch-site cities the plan should retain. Completed
+    /// pads cannot be moved, so a legacy run that already has three simply
+    /// stops every additional queue rather than trying to undo them.
+    fn science_spaceport_retained_cities(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
+        let pad = crate::name!("spaceport");
+        let completed = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| g.cities[cid].districts.contains_key(pad))
+            .count();
+        let target = self
+            .science_spaceport_target(g, pid)
+            .max(completed)
+            .min(SCIENCE_SPACEPORT_CAP);
+        self.science_spaceport_candidates(g, pid)
+            .into_iter()
+            .take(target.saturating_sub(completed))
+            .collect()
+    }
+
+    /// Whether this city is one of the highest-production cities still needed
+    /// for a Science Spaceport. This is consulted by the generic production
+    /// scorer, which otherwise sees each city in isolation and can start a
+    /// fourth (or seventh) pad after the dedicated pass has done its work.
+    fn science_spaceport_city_is_admitted(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        self.science_spaceport_retained_cities(g, pid)
+            .contains(&cid)
+    }
+
+    /// Replace surplus or slower in-progress Spaceports with the best useful
+    /// local work. `Action::Produce` banks the paused district progress, so a
+    /// future genuine need can resume it; meanwhile the city can finish its
+    /// research/production infrastructure or, once that is exhausted, run a
+    /// deliberately valued district project.
+    fn rebalance_science_spaceport_queues(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let pad = crate::name!("spaceport");
+        let retained = self.science_spaceport_retained_cities(g, pid);
+        let completed = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| g.cities[cid].districts.contains_key(pad))
+            .count();
+        let target = self
+            .science_spaceport_target(g, pid)
+            .max(completed)
+            .min(SCIENCE_SPACEPORT_CAP);
+        let excess: Vec<u32> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                !retained.contains(cid)
+                    && matches!(
+                        g.cities[cid].queue.first(),
+                        Some(Item::District { district, .. })
+                            if g.district_family(*district) == pad
+                    )
+            })
+            .collect();
+        if excess.is_empty() {
+            return;
+        }
+
+        let mut counts = self.counts(g, pid);
+        for cid in excess {
+            let replacement = {
+                let _memo = g.query_memo();
+                let items: Vec<Item> = g
+                    .producible_items(pid, cid)
+                    .into_iter()
+                    .filter(|item| {
+                        !matches!(item, Item::District { district, .. }
+                            if g.district_family(*district) == pad)
+                    })
+                    .collect();
+                let normally_valued = items
+                    .iter()
+                    .cloned()
+                    .map(|item| {
+                        let value = self.card_boosted_value(
+                            g,
+                            pid,
+                            cid,
+                            &item,
+                            self.production_value(g, pid, cid, &item, plan, &counts),
+                        );
+                        (value, format!("{item:?}"), item)
+                    })
+                    .filter(|(value, _, _)| *value > -1_000.0)
+                    .max_by(|left, right| {
+                        left.0
+                            .total_cmp(&right.0)
+                            .then_with(|| right.1.cmp(&left.1))
+                    });
+                // A score-horizon guard can correctly make every ordinary
+                // production score negative late in a game. It must not leave
+                // an already-illegal fourth Spaceport running, though. In
+                // that exceptional case reclaim the queue for a concrete
+                // repair/building, a Builder, or finally a Science/Industrial
+                // project. The ordinary scorer above remains the route used
+                // whenever it has a viable local choice.
+                normally_valued.or_else(|| {
+                    items
+                        .into_iter()
+                        .filter_map(|item| {
+                            let fallback_rank = match &item {
+                                Item::Repair { .. } => 4,
+                                Item::Building { .. } => 3,
+                                Item::Unit { unit } if *unit == "builder" => 2,
+                                Item::Project { project }
+                                    if g.rules.projects.get(project).is_some_and(|spec| {
+                                        spec.district.is_some_and(|district| {
+                                            matches!(
+                                                g.district_family(district).as_str(),
+                                                "campus" | "industrial_zone"
+                                            )
+                                        })
+                                    }) =>
+                                {
+                                    1
+                                }
+                                _ => return None,
+                            };
+                            Some((fallback_rank, format!("{item:?}"), item))
+                        })
+                        .max_by(|left, right| {
+                            left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1))
+                        })
+                        .map(|(_, description, item)| (0.0, description, item))
+                })
+            };
+            let Some((score, _, item)) = replacement else {
+                continue;
+            };
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: item.clone(),
+                },
+            )
+            .is_err()
+            {
+                continue;
+            }
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let city_name = g.cities[&cid].name.clone();
+                think!(self.journal(), Cities, Decision,
+                       "{} replaces an excess Spaceport", city_name;
+                       "the Science plan keeps at most {target} launch sites; {} is worth {score:.0}",
+                       Self::plain_item(&item));
+            }
+            counts.add_item(g, &item);
+        }
+    }
+
     /// The science lane's production pass, behind the turn-limit horizon:
     /// `science_production` when the race can still finish, a journaled skip
     /// when it cannot. See `score_horizon`.
-    fn space_race_production(&self, g: &mut Game, pid: usize) {
+    fn space_race_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        self.rebalance_science_spaceport_queues(g, pid, plan);
         if !self.score_horizon || self.space_race_can_finish(g, pid) {
             self.science_production(g, pid);
         } else {
@@ -20212,32 +20521,16 @@ impl AdvancedAi {
         let queued_spaceports = city_ids
             .iter()
             .filter(|cid| {
-                matches!(
-                    g.cities[cid].queue.first(),
-                    Some(Item::District { district, .. }) if district == "spaceport"
-                )
+                g.cities[cid].queue.iter().any(|item| {
+                    matches!(item, Item::District { district, .. } if district == "spaceport")
+                })
             })
             .count();
         // One launch site is enough for the sequential opening missions. A
         // second can prepare Mars while the first launches, and up to three
         // let the post-Exoplanet laser race run in parallel. Separate cities
         // matter; duplicate Spaceports in one production queue do not.
-        let desired_spaceports = if self.science_drive_active() {
-            // `science_victory_drive`: the second pad by the Earth
-            // Satellite, so it stands when the expedition launches.
-            Self::science_drive_desired_pads(&completed)
-        } else if races_science || self.raced_target() == Some(VictoryTarget::Science) {
-            if completed.contains("launch_mars_colony") {
-                3
-            } else if completed.contains("launch_moon_landing") {
-                2
-            } else {
-                1
-            }
-        } else {
-            1
-        }
-        .min(city_ids.len());
+        let desired_spaceports = self.science_spaceport_target(g, pid);
         if built_spaceports + queued_spaceports >= desired_spaceports {
             return;
         }
@@ -20251,6 +20544,9 @@ impl AdvancedAi {
                     Some(Item::District { district, .. }) if district == "spaceport"
                 )
             {
+                continue;
+            }
+            if !self.science_spaceport_city_is_admitted(g, pid, cid) {
                 continue;
             }
             if !races_science
@@ -24564,6 +24860,19 @@ impl AdvancedAi {
                     // Multiple Spaceports are rules-legal, but one city can
                     // execute only one project at a time. Put additional
                     // launch sites in other cities for actual parallelism.
+                    return -10_000.0;
+                }
+                if family == "spaceport"
+                    && (plan.strategy == GrandStrategy::Science
+                        || self.space_race_lane(g, pid)
+                        || self.raced_target() == Some(VictoryTarget::Science))
+                    && !self.science_spaceport_city_is_admitted(g, pid, cid)
+                {
+                    // `science_production` already counts completed and
+                    // queued pads, but the generic governor evaluates every
+                    // idle city afterwards. Keep its independent score from
+                    // opening a fourth site (or resuming one of several old
+                    // foundations) outside the two-to-three city launch plan.
                     return -10_000.0;
                 }
                 let district_count = g
@@ -36691,7 +37000,7 @@ impl AdvancedAi {
                     || self.space_race_lane_opens(g, pid, &plan)
                     || self.science_drive_opens(plan.strategy))
             {
-                self.space_race_production(g, pid);
+                self.space_race_production(g, pid, &plan);
             }
             // See `lane_culture_spending`: the Naturalist and the touring
             // Rock Bands are the Culture lane's only Faith purchases, and a
