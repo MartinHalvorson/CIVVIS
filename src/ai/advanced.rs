@@ -4941,10 +4941,12 @@ pub struct AdvancedAi {
     ///
     /// Behind that, `take_turn_inner` sets `pursue_religion` false for any
     /// explicit non-Religion target, so even a seat that stumbled into a Holy
-    /// Site would discard the prize. Four things therefore move together,
-    /// because the entry fee and the prize are separate gates
-    /// (`BasicAi::skip_prophet_race`) and paying one without the other is
-    /// strictly worse than either pure choice:
+    /// Site would discard the prize. The secondary race remains available to
+    /// adaptive and non-Science lanes, but an explicit Science lane keeps its
+    /// research and production contract intact. For the lanes that enter it,
+    /// four things move together because the entry fee and the prize are
+    /// separate gates (`BasicAi::skip_prophet_race`) and paying one without
+    /// the other is strictly worse than either pure choice:
     /// 1. `advanced_research` takes Astrology once the first
     ///    `PROPHET_RACE_OPENING_TECHS` techs are in, while a Prophet slot is
     ///    still open for this seat (`prophet_race_open_for`). The lane's own
@@ -4957,8 +4959,7 @@ pub struct AdvancedAi {
     ///    within 40 % is taken instead of waiting at 15 %.
     /// 4. `pursue_religion` is true while the race is open for this seat and
     ///    again once it holds a religion, so the belief pick, the Prophet
-    ///    claim and the Missionary buy run on a Diplomacy, Culture or Science
-    ///    seat.
+    ///    claim and the Missionary buy run on the eligible seat.
     ///
     /// `religion-race-is-closed` (pinned on) still wins once every slot is
     /// taken: `prophet_race_open_for` is false the moment the race closes.
@@ -12527,7 +12528,7 @@ impl AdvancedAi {
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
                 // is still open for this seat.
-                _ if self.enter_the_prophet_race
+                _ if self.prophet_race_enabled_for(self.victory_target)
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
                     && !g.players[pid].techs.contains(&crate::name!("astrology"))
                     && self.prophet_race_open_for(g, pid) =>
@@ -13147,6 +13148,15 @@ impl AdvancedAi {
                 .filter(|candidate| candidate.prophet_pending)
                 .count();
         claimed < g.max_religions() && g.turn * 2 <= g.max_turns.max(1)
+    }
+
+    /// Whether the optional secondary Prophet race is compatible with the
+    /// seat's explicit lane. Science has a long, dead-end-free beeline and the
+    /// 2026-09-01 deployment screen showed the race cutting its Science wins
+    /// from 12/16 to 3/16 when it pulled that lane into Astrology, Holy Sites,
+    /// and Prophet patronage.
+    fn prophet_race_enabled_for(&self, target: Option<VictoryTarget>) -> bool {
+        self.enter_the_prophet_race && target != Some(VictoryTarget::Science)
     }
 
     /// Whether the assigned victory lane can still be won. See
@@ -17225,7 +17235,8 @@ impl AdvancedAi {
                 // `enter-the-prophet-race`: the Prophet is this seat's lane
                 // great person while a slot is still open for it.
                 (_, "prophet")
-                    if self.enter_the_prophet_race && self.prophet_race_open_for(g, pid) =>
+                    if self.prophet_race_enabled_for(self.victory_target)
+                        && self.prophet_race_open_for(g, pid) =>
                 {
                     650.0
                 }
@@ -36104,9 +36115,10 @@ impl AdvancedAi {
         // while a slot is still open for this seat — and the prize again once
         // it holds a religion. The closed case above still wins, because
         // `prophet_race_open_for` is false by then.
-        let prophet_race_open = self.enter_the_prophet_race && self.prophet_race_open_for(g, pid);
+        let prophet_race_enabled = self.prophet_race_enabled_for(active_victory_target);
+        let prophet_race_open = prophet_race_enabled && self.prophet_race_open_for(g, pid);
         self.base.enter_prophet_race = prophet_race_open;
-        if prophet_race_open || (self.enter_the_prophet_race && g.players[pid].religion.is_some()) {
+        if prophet_race_open || (prophet_race_enabled && g.players[pid].religion.is_some()) {
             self.base.pursue_religion = true;
         }
         // An explicit Science target is a production contract, not only a

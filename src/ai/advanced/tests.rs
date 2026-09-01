@@ -10712,6 +10712,42 @@ fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
 }
 
 #[test]
+fn an_explicit_science_seat_stays_out_of_the_prophet_race() {
+    let mut game = Game::new_full(4, 30, 18, 76_106, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    game.players[0].research = None;
+    game.players[0].techs.clear();
+    for tech in ["animal_husbandry", "mining"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+
+    let mut treated = AdvancedAi::targeting(VictoryTarget::Science);
+    treated.enable_enter_the_prophet_race();
+
+    assert!(!treated.prophet_race_enabled_for(Some(VictoryTarget::Science)));
+    treated.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "an explicit Science lane must not take the Prophet dead end"
+    );
+}
+
+#[test]
 fn religious_production_builds_prophet_infrastructure_then_runs_prayers() {
     let mut game = Game::new_full(1, 20, 14, 76_103, 120, 0, false);
     let settler = game
