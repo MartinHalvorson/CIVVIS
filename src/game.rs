@@ -4536,6 +4536,12 @@ pub struct Player {
     /// recruited this turn.
     #[serde(default)]
     pub live_great_person_offers: Option<BTreeSet<String>>,
+    /// The exact named individual Firaxis is offering for each class. A
+    /// mirrored controller uses this to distinguish a Space Race Engineer
+    /// from an otherwise-valid Engineer whose effect belongs to another
+    /// victory plan. Empty on native boards and older exports.
+    #[serde(default)]
+    pub live_great_person_offer_individuals: BTreeMap<String, String>,
     /// Hard activation prerequisites of the *live* named offer, keyed by
     /// Great Person class. Headless games leave this empty; the Firaxis mirror
     /// fills it only when an offered individual names a completed district the
@@ -4807,6 +4813,7 @@ impl Player {
             envoys_free: 0,
             gpp: BTreeMap::new(),
             live_great_person_offers: None,
+            live_great_person_offer_individuals: BTreeMap::new(),
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
             live_great_person_exhausted: None,
@@ -15823,6 +15830,17 @@ impl Game {
             .map(String::as_str)
     }
 
+    /// The normalized named individual presently offered by the host for a
+    /// Great Person class. Unlike [`Self::current_great_person`], this is
+    /// host authority rather than CIVVIS's native roster, so an AI can value
+    /// the actual effect before deciding whether a project race is worthwhile.
+    pub fn live_great_person_offer_individual(&self, pid: usize, kind: &str) -> Option<&str> {
+        self.players[pid]
+            .live_great_person_offer_individuals
+            .get(kind)
+            .map(String::as_str)
+    }
+
     /// Whether this class is presently recruitable on the host's Great People
     /// screen. The live set is intentionally narrower than
     /// [`Self::great_person_class_earnable`]: a class can have someone later
@@ -15854,10 +15872,20 @@ impl Game {
         if let Some(blocker) = self.live_great_person_offer_blocker(pid, kind) {
             return Err(blocker.to_string());
         }
-        if kind == "scientist" && !self.has_great_person_district(pid, crate::name!("campus")) {
+        // The live named offer is authoritative. Its exported blocker above
+        // carries the host's actual district requirement; applying CIVVIS's
+        // locally-current *different* person afterward can invent a false
+        // Wonder, Campus, or Industrial Zone gate. Native/older boards keep
+        // the complete local activation model.
+        let live_named_offer = self.live_great_person_offer_individual(pid, kind).is_some();
+        if !live_named_offer
+            && kind == "scientist"
+            && !self.has_great_person_district(pid, crate::name!("campus"))
+        {
             return Err("this Great Scientist requires an active Campus".into());
         }
-        if kind == "engineer"
+        if !live_named_offer
+            && kind == "engineer"
             && !spec.effects.contains_key("wonder_production")
             && !self.has_great_person_district(pid, crate::name!("industrial_zone"))
         {
@@ -15884,14 +15912,18 @@ impl Game {
                 return Err("this Great Prophet requires an active Holy Site or Stonehenge".into());
             }
         }
-        if spec.effects.contains_key("wonder_production") && !self.has_queued_wonder(pid) {
+        if !live_named_offer
+            && spec.effects.contains_key("wonder_production")
+            && !self.has_queued_wonder(pid)
+        {
             return Err("this Great Engineer requires a Wonder under construction".into());
         }
-        if (spec.effects.contains_key("free_trader")
-            || spec.effects.contains_key("destination_foreign_trade_gold")
-            || spec.effects.contains_key("free_quadrireme")
-            || spec.effects.contains_key("free_lighthouse")
-            || spec.effects.contains_key("free_shipyard"))
+        if !live_named_offer
+            && (spec.effects.contains_key("free_trader")
+                || spec.effects.contains_key("destination_foreign_trade_gold")
+                || spec.effects.contains_key("free_quadrireme")
+                || spec.effects.contains_key("free_lighthouse")
+                || spec.effects.contains_key("free_shipyard"))
             && self.great_person_trade_city(pid, kind).is_none()
         {
             return Err(format!(
@@ -15908,36 +15940,41 @@ impl Game {
                 }
             ));
         }
-        if spec.effects.contains_key("land_unit_promotion_level")
+        if !live_named_offer
+            && spec.effects.contains_key("land_unit_promotion_level")
             && self.great_person_promotion_unit(pid).is_none()
         {
             return Err("this Great General requires a promotable military land unit".into());
         }
-        for (effect, domain, title) in [
-            ("land_unit_formation", "land", "General"),
-            ("naval_unit_formation", "sea", "Admiral"),
-        ] {
-            if let Some(formation) = spec.effects.get(effect) {
-                if self
-                    .great_person_formation_unit(pid, *formation as u8, domain)
-                    .is_none()
-                {
-                    return Err(format!(
-                        "this Great {title} requires a military {domain} unit"
-                    ));
+        if !live_named_offer {
+            for (effect, domain, title) in [
+                ("land_unit_formation", "land", "General"),
+                ("naval_unit_formation", "sea", "Admiral"),
+            ] {
+                if let Some(formation) = spec.effects.get(effect) {
+                    if self
+                        .great_person_formation_unit(pid, *formation as u8, domain)
+                        .is_none()
+                    {
+                        return Err(format!(
+                            "this Great {title} requires a military {domain} unit"
+                        ));
+                    }
                 }
             }
         }
-        for (effect, work) in [
-            ("great_work_writing", "writing"),
-            ("great_work_art", "art"),
-            ("great_work_music", "music"),
-        ] {
-            let count = spec.effects.get(effect).copied().unwrap_or(0.0).round() as usize;
-            if count > 0 && !self.can_house_great_works(pid, work, count) {
-                return Err(format!(
-                    "this Great Person requires {count} open {work} Great Work slots"
-                ));
+        if !live_named_offer {
+            for (effect, work) in [
+                ("great_work_writing", "writing"),
+                ("great_work_art", "art"),
+                ("great_work_music", "music"),
+            ] {
+                let count = spec.effects.get(effect).copied().unwrap_or(0.0).round() as usize;
+                if count > 0 && !self.can_house_great_works(pid, work, count) {
+                    return Err(format!(
+                        "this Great Person requires {count} open {work} Great Work slots"
+                    ));
+                }
             }
         }
         Ok(())
