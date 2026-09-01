@@ -4222,12 +4222,29 @@ impl Game {
                 ys.add(rys);
             }
         }
-        let incoming_routes = self.routes.iter().filter(|route| route.dest == cid).count() as f64;
-        let incoming_foreign_routes = self
+        let derived_incoming_routes =
+            self.routes.iter().filter(|route| route.dest == cid).count() as f64;
+        let derived_incoming_foreign_routes = self
             .routes
             .iter()
             .filter(|route| route.dest == cid && route.owner != city.owner)
             .count() as f64;
+        // A mirrored host can report that a foreign route enters this city
+        // while its origin city remains outside our visibility. Such a route
+        // cannot be materialized in `self.routes`, so prefer the host's
+        // aggregate `(foreign, domestic)` count whenever one is available.
+        // Native games leave the observation empty and keep the derived path.
+        let (incoming_routes, incoming_foreign_routes) = self
+            .observed_incoming_route_deltas
+            .get(&cid)
+            .map(|(foreign_delta, domestic_delta)| {
+                let foreign = (derived_incoming_foreign_routes + *foreign_delta as f64).max(0.0);
+                let domestic = (derived_incoming_routes - derived_incoming_foreign_routes
+                    + *domestic_delta as f64)
+                    .max(0.0);
+                (foreign + domestic, foreign)
+            })
+            .unwrap_or((derived_incoming_routes, derived_incoming_foreign_routes));
         // What this city earns as a destination from incoming routes.
         let mut iys = Yields::default();
         for route in self.routes.iter().filter(|route| route.dest == cid) {

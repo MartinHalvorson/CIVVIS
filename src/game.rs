@@ -6218,6 +6218,13 @@ pub struct Game {
     /// in for the model's route yield where present; empty on a native game.
     #[serde(default)]
     pub observed_route_yields: Arc<BTreeMap<(u32, u32), crate::rules::Yields>>,
+    /// Host-to-model incoming-route count deltas, keyed by destination city
+    /// and stored as `(foreign, domestic)`. A foreign route whose origin city
+    /// is still behind fog cannot be represented in `Game::routes`; this
+    /// correction preserves the host's destination-side count while keeping
+    /// counterfactual route additions/removals modeled. Empty on a native game.
+    #[serde(default)]
+    pub observed_incoming_route_deltas: Arc<BTreeMap<u32, (i64, i64)>>,
     #[serde(default)]
     pub observed_city_worked_tiles: Arc<BTreeMap<u32, Vec<Pos>>>,
     #[serde(default)]
@@ -6901,6 +6908,8 @@ struct GameSer {
     #[serde(default)]
     observed_route_yields: Vec<((u32, u32), crate::rules::Yields)>,
     #[serde(default)]
+    observed_incoming_route_deltas: BTreeMap<u32, (i64, i64)>,
+    #[serde(default)]
     observed_route_options: Vec<((u32, u32), crate::rules::Yields)>,
     #[serde(default)]
     observed_appeal: Vec<(Pos, i32)>,
@@ -7110,6 +7119,7 @@ impl From<GameSer> for Game {
             observed_route_posts: Arc::new(s.observed_route_posts.into_iter().collect()),
             observed_great_work_housing: s.observed_great_work_housing.map(Arc::new),
             observed_route_yields: Arc::new(s.observed_route_yields.into_iter().collect()),
+            observed_incoming_route_deltas: Arc::new(s.observed_incoming_route_deltas),
             observed_route_options: Arc::new(s.observed_route_options.into_iter().collect()),
             observed_appeal: Arc::new(s.observed_appeal.into_iter().collect()),
             observed_fresh_water: Arc::new(s.observed_fresh_water.into_iter().collect()),
@@ -7346,6 +7356,7 @@ impl From<Game> for GameSer {
             observed_route_yields: Arc::unwrap_or_clone(g.observed_route_yields)
                 .into_iter()
                 .collect(),
+            observed_incoming_route_deltas: Arc::unwrap_or_clone(g.observed_incoming_route_deltas),
             observed_route_options: Arc::unwrap_or_clone(g.observed_route_options)
                 .into_iter()
                 .collect(),
@@ -7448,6 +7459,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_route_posts).clear();
         self.observed_great_work_housing = None;
         Arc::make_mut(&mut self.observed_route_yields).clear();
+        Arc::make_mut(&mut self.observed_incoming_route_deltas).clear();
         Arc::make_mut(&mut self.observed_route_options).clear();
         Arc::make_mut(&mut self.observed_city_worked_tiles).clear();
         Arc::make_mut(&mut self.observed_city_specialists).clear();
@@ -7802,6 +7814,7 @@ impl Game {
             observed_route_posts: Arc::new(BTreeMap::new()),
             observed_great_work_housing: None.map(Arc::new),
             observed_route_yields: Arc::new(BTreeMap::new()),
+            observed_incoming_route_deltas: Arc::new(BTreeMap::new()),
             observed_city_worked_tiles: Arc::new(BTreeMap::new()),
             observed_city_specialists: Arc::new(BTreeMap::new()),
             observed_city_loyalty_per_turn: Arc::new(BTreeMap::new()),
