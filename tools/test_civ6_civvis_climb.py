@@ -2090,12 +2090,14 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
         def kill(self):
             pass
 
-    def _run(self, die_on, step=60.0, frozen_s=900.0):
+    def _run(self, die_on, step=60.0, frozen_s=900.0, handoff=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "run").mkdir()
             (root / "run" / "events.jsonl").write_text(
                 json.dumps({"kind": "turn", "turn": 102}) + "\n")
+            if handoff is not None:
+                (root / "run" / climb.WEDGE_HANDOFF_MARKER).write_text(handoff)
             original = climb.RUN_ROOT
             climb.RUN_ROOT = root
             clock = {"t": 0.0}
@@ -2124,6 +2126,52 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
         so its signal is what arrives, and above a normal end."""
         self.assertLess(climb.EXIT_WHILE_STALE_S, 5 * 60)
         self.assertGreaterEqual(climb.EXIT_WHILE_STALE_S, 3 * 60)
+
+    def test_a_written_handoff_is_frozen_however_fresh_the_turn(self):
+        """⚠⚠ THE WATCHDOG'S OTHER TRIGGER DOES NOT WAIT FOR THE CLOCK.
+
+        A unit blocker repeated on one turn hands the run over after six
+        sightings, and the mod re-raises it every few seconds. Run
+        `civvis-20260831T085324Z-cont1` reloaded AutoSave_0119, re-wedged at
+        t120 on ENDTURN_BLOCKING_UNITS and was handed to the climb at 09:44:13,
+        two minutes after its first turn: the stale test read "exited", the
+        game was filed as killed at t120, and two of three resumes went unused.
+        The marker the watchdog now writes before signalling is the handoff.
+        """
+        marker = json.dumps({"tag": "run", "turn": 120,
+                             "reason": "repeating unit blocker "
+                                       "ENDTURN_BLOCKING_UNITS at t120 "
+                                       "(19 sightings)"})
+        # Stale for only 60 s — the exact case the clock alone files as exited.
+        self.assertEqual(self._run(die_on=2, handoff=marker), "frozen")
+
+    def test_an_unreadable_handoff_still_hands_the_run_over(self):
+        """Existence is the signal; the body is for the log. The watchdog only
+        ever writes the file on its reload branch, so a torn or odd body must
+        not turn a handoff back into a discarded game."""
+        self.assertEqual(self._run(die_on=2, handoff="not json"), "frozen")
+        self.assertEqual(self._run(die_on=2, handoff="[1, 2]"), "frozen")
+
+    def test_without_a_handoff_the_clock_still_decides(self):
+        """An older watchdog writes nothing; the stale-turn rule stays."""
+        self.assertEqual(self._run(die_on=2), "exited")
+        self.assertEqual(self._run(die_on=6), "frozen")
+
+    def test_the_handoff_is_read_from_the_runs_own_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a").mkdir()
+            (root / "a" / climb.WEDGE_HANDOFF_MARKER).write_text(
+                json.dumps({"turn": 88, "reason": "NO GAME PROGRESS"}))
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            try:
+                self.assertEqual(climb.wedge_handoff("a"),
+                                 {"turn": 88, "reason": "NO GAME PROGRESS"})
+                self.assertIsNone(climb.wedge_handoff("a-cont1"),
+                                  "a continuation is a new run with no handoff")
+            finally:
+                climb.RUN_ROOT = original
 
 
 class AbandonedGamesAreNotReloaded(unittest.TestCase):
