@@ -1866,6 +1866,11 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "campus-through-expansion", field: "campus_through_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_through_expansion, disable: AdvancedAi::disable_campus_through_expansion },
     Gene { tag: "trade-route-network", field: "trade_route_network", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_route_network, disable: AdvancedAi::disable_trade_route_network },
     Gene { tag: "industrial-chain-debt", field: "industrial_chain_debt", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_chain_debt, disable: AdvancedAi::disable_industrial_chain_debt },
+    // Version 2 replaces v1's unconditional withdrawal with an observed,
+    // last-call forecast: every remaining religion slot must have an active
+    // rival projected to claim the current Prophet soon. Appended so the
+    // published positional genome is unchanged.
+    Gene { tag: "skip-the-prophet-race-2", field: "skip_the_prophet_race_2", kind: Kind::OptIn, enable: AdvancedAi::enable_skip_the_prophet_race_2, disable: AdvancedAi::disable_skip_the_prophet_race_2 },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
