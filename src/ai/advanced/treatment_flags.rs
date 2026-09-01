@@ -3401,6 +3401,8 @@ impl AdvancedAi {
     /// The twin of `enable_air_surge_2`.
     pub fn disable_air_surge_2(&mut self) {
         self.air_surge_2 = false;
+    }
+
     /// `campus-through-expansion` (OptIn): a Science seat prices the Campus
     /// and its buildings in the Science lane while its plan still reads
     /// Expansion, and no city's first specialty district may be an
