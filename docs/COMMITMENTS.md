@@ -400,6 +400,16 @@ the wait the gene leaves on purpose: the next step is inside a hostile's
 reach (782 + 1,684 of the 2,693). The capture kind is untouched by the gene
 (done 4 → 13 is trajectory noise).
 
+What the gene did on those maps, its own counters pooled over every major
+(`commitment_census` now prints every `commit:` counter the census itself
+does not export): settle — 32 route steps, 1 founding, 536 holds (the next
+step inside a hostile's reach or over the settler risk limit), 283 releases;
+improve — 633 route steps, 93 improvements laid, 184 holds, 304 releases.
+A settler the unit pass leaves standing is almost always one the step-risk
+guard refused, so the gene's settle work is the explicit resolution — a
+release, or a hold with its reason in the journal; the Builder work is
+actuation, 726 orders the pass never issued.
+
 ### Still open
 
 - **The assault that never starts** (above): 169 of 244 failed conquests
