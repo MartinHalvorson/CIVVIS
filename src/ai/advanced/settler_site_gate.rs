@@ -128,7 +128,10 @@ impl AdvancedAi {
         }
         let best = seats[unseated];
         if best.1 < floor {
-            return Err(SettlerSiteGateHold::BelowFloor { worth: best.1, floor });
+            return Err(SettlerSiteGateHold::BelowFloor {
+                worth: best.1,
+                floor,
+            });
         }
         Ok(best)
     }

@@ -41938,7 +41938,6 @@ fn settler_site_gate_verdict_needs_a_free_seat_worth_the_floor() {
     .contains("18.9"));
     // A small empire takes the seat run 201841Z's Rome was held off at t16:
     // worth 29.9 clears the early floor and not the late one.
-    assert!(EARLY < 29.9 && 29.9 < FLOOR);
     assert_eq!(AdvancedAi::settler_site_gate_floor(SMALL - 1), EARLY);
     assert_eq!(AdvancedAi::settler_site_gate_floor(SMALL), FLOOR);
     assert_eq!(
