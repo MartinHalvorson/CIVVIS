@@ -22139,8 +22139,8 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     assert!(live.settlement_safety);
     assert!(live.settler_routing_recovery_on());
     assert!(
-        live.settler_target_hysteresis_2,
-        "the average-based deployment selection now enables the selected version"
+        !live.settler_target_hysteresis_2,
+        "the average-based deployment selection keeps the hysteresis arm off"
     );
     live.disable_settler_target_hysteresis_2();
     assert!(!live.settler_target_hysteresis_2);
@@ -36958,8 +36958,8 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_with_the_opt_in_withheld() 
         "the deployed seat uses the live shadow"
     );
     assert!(
-        ai.civilian_out_of_reach,
-        "the average-based deployment selection enables the broader civilian-safety opt-in"
+        !ai.civilian_out_of_reach,
+        "the average-based deployment selection keeps the broader civilian-safety opt-in off"
     );
     ai.disable_civilian_out_of_reach();
     assert!(
@@ -40325,6 +40325,9 @@ fn the_science_lane_widens_while_a_city_can_still_mature() {
     let mut on = AdvancedAi::new();
     on.enable_live_bridge();
     on.enable_science_expansion_phase();
+    // `city-target-meets-the-map` is separately selected and clamps this
+    // fixture to its reachable sites; withhold it to isolate this ceiling.
+    on.disable_city_target_meets_the_map();
     on.victory_target = Some(VictoryTarget::Science);
     game.turn = until - 1;
     assert_eq!(
