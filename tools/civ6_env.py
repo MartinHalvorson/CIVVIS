@@ -271,13 +271,16 @@ def quit_game(timeout_s: float = 20.0) -> bool:
         if not game_pids():
             return True
         time.sleep(0.5)
-    for pid in game_pids():
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    time.sleep(2.0)
-    return not game_pids()
+    # A live Civilization VI process owns the player's save files.  Escalating
+    # a normal termination request to SIGKILL can leave those files half-written
+    # and turns a recoverable wedge into lost progress.  Report the refusal so
+    # the caller can leave the game visible or use its normal UI, rather than
+    # forcibly tearing down the process behind the operator's back.
+    remaining = game_pids()
+    if remaining:
+        print(f"[env] Civilization VI did not exit after SIGTERM: {remaining}",
+              file=sys.stderr, flush=True)
+    return not remaining
 
 
 def launch_game() -> None:

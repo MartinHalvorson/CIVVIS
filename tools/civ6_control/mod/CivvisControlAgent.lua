@@ -5076,13 +5076,24 @@ local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	-- still requires. Runs civvis-20260814T215409Z (t181) and ...T223051Z (t208)
 	-- both walked the whole forfeit ladder into a `wedged` report this way, every
 	-- time research or a civic completed mid-turn late in the game. The forfeit
-	-- arm therefore retries ONCE with `residual_ok`, which skips only this return:
+	-- arm therefore needs one residual answer, which skips only this return:
 	-- by then the CIVVIS reply is landed and applied (source == civvis), so the
 	-- race this return exists to prevent cannot happen, and the ladder answer is
 	-- counted in `residualAnswers` below like every other residual decision.
-	-- CIVVIS re-decides from the next export and may override the pick.
+	--
+	-- Do it in this callback for research and civics.  These are hard blockers,
+	-- and after Firaxis raises one it can stop publishing Game Core ticks before
+	-- the ordinary "second sighting" escalation below gets a chance to run.  That
+	-- was the turn-230 Conservation wedge: the safe residual choice was made only
+	-- after a later event happened to arrive, then the game sat at Please Wait.
+	-- Re-entering with `residual_ok` retains the normal spend cap and accounting;
+	-- it merely avoids relying on a tick that the blocked engine need not emit.
+	-- CIVVIS receives a fresh board next turn and may override this bridge pick.
 	if not residual_ok and cfg.CivvisDecides and CIVVIS_OWNED_BLOCKERS[name]
 			and (awaiting.source == "civvis" or awaiting.source == "civvis_stale") then
+		if name == "ENDTURN_BLOCKING_RESEARCH" or name == "ENDTURN_BLOCKING_CIVIC" then
+			return answerBlocker(player, pid, blocker, turn, true);
+		end
 		return "civvis_complete";
 	end
 
