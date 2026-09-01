@@ -355,6 +355,67 @@ class HowTheArmyFought(LedgerCase):
             "no combat event is unknown, which is not the claim that nothing fought",
         )
 
+    def test_boost_totals_count_the_tree_researched_with_a_boost_in_hand(self):
+        # A boost is reported only while outstanding: Archery is boosted on
+        # turn 3, researched by turn 100 and gone from the list — the union
+        # over frames is what keeps it counted.
+        events = self._events([
+            {"kind": "seat", "local_player": 0},
+            {"kind": "state", "turn": 3, "frame": 0,
+             "techs": ["TECH_MINING"], "civics": ["CIVIC_CODE_OF_LAWS"],
+             "boosted_techs": ["TECH_ARCHERY"], "boosted_civics": ["CIVIC_CRAFTSMANSHIP"]},
+            {"kind": "state", "turn": 100, "frame": 0,
+             "techs": ["TECH_MINING", "TECH_ARCHERY", "TECH_POTTERY"],
+             "civics": ["CIVIC_CODE_OF_LAWS", "CIVIC_CRAFTSMANSHIP"],
+             "boosted_techs": ["TECH_MASONRY"], "boosted_civics": []},
+            {"kind": "state", "turn": 100, "frame": 1,
+             "techs": ["TECH_MINING", "TECH_ARCHERY", "TECH_POTTERY", "TECH_MASONRY"],
+             "civics": ["CIVIC_CODE_OF_LAWS", "CIVIC_CRAFTSMANSHIP"],
+             "boosted_techs": [], "boosted_civics": []},
+            {"kind": "state", "turn": 160, "frame": 0,
+             "techs": ["TECH_MINING", "TECH_ARCHERY", "TECH_POTTERY", "TECH_MASONRY",
+                       "TECH_WRITING"],
+             "civics": ["CIVIC_CODE_OF_LAWS", "CIVIC_CRAFTSMANSHIP", "CIVIC_FOREIGN_TRADE"],
+             "boosted_techs": [], "boosted_civics": []},
+        ])
+        totals = civ6_ladder.boost_totals(events)
+        self.assertEqual(totals["techs_researched"], 5)
+        self.assertEqual(totals["techs_boosted"], 2, "Archery and Masonry were boosted")
+        self.assertEqual(totals["civics_adopted"], 3)
+        self.assertEqual(totals["civics_inspired"], 1)
+        self.assertEqual(totals["techs_boosted_share"], 0.4)
+        self.assertEqual(totals["civics_inspired_share"], round(1 / 3, 4))
+        # The turn-100 mark is the FIRST frame at or past 100: Masonry is
+        # boosted but not yet researched there.
+        self.assertEqual(totals["at_t100"]["techs_researched"], 3)
+        self.assertEqual(totals["at_t100"]["techs_boosted"], 1)
+        self.assertEqual(totals["at_t100"]["civics_inspired"], 1)
+        # The turn-150 mark comes from the first frame past 150.
+        self.assertEqual(totals["at_t150"]["techs_researched"], 5)
+        self.assertEqual(totals["at_t150"]["techs_boosted"], 2)
+
+    def test_boost_totals_are_silence_without_a_state_frame(self):
+        events = self._events([
+            {"kind": "turn", "ctx": "agent", "turn": 1,
+             "orders_seen": 4, "orders_applied": 4},
+            {"kind": "state", "turn": 2, "frame": 0, "score": 10},
+        ])
+        self.assertIsNone(
+            civ6_ladder.boost_totals(events),
+            "no techs list is unknown, which is not the claim that nothing was researched",
+        )
+
+    def test_boost_totals_read_a_short_run_with_no_marks(self):
+        events = self._events([
+            {"kind": "state", "turn": 20, "frame": 0, "techs": ["TECH_MINING"],
+             "civics": [], "boosted_techs": ["TECH_MINING"], "boosted_civics": []},
+        ])
+        totals = civ6_ladder.boost_totals(events)
+        self.assertEqual(totals["techs_boosted"], 1)
+        self.assertIsNone(totals["civics_inspired_share"])
+        self.assertIsNone(totals["at_t100"])
+        self.assertIsNone(totals["at_t150"])
+
     def test_the_row_carries_the_combat_block_and_the_arm_it_seated(self):
         fought = dict(summary("live-combat"))
         fought["combat"] = {"kills": 7, "losses": 4, "kills_per_loss": 1.75,

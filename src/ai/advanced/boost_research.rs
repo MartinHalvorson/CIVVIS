@@ -148,7 +148,11 @@ impl AdvancedAi {
     /// `1 / (1 - frac).sqrt()`. One with the gene off, and one for a node
     /// whose boost is not in hand — so nothing else in the tree moves.
     pub(super) fn boost_in_hand_scale(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
-        if !self.boost_first_research || !Self::boost_in_hand(g, pid, node, techs) {
+        // `chase-every-boost` carries this scale as part of its union; see
+        // `advanced/chase_every_boost.rs`.
+        if !(self.boost_first_research || self.chase_every_boost)
+            || !Self::boost_in_hand(g, pid, node, techs)
+        {
             return 1.0;
         }
         let frac = Self::boost_frac(g, node, techs).clamp(0.0, 0.99);
@@ -156,7 +160,7 @@ impl AdvancedAi {
     }
 
     /// Is this node's boost already banked?
-    fn boost_in_hand(g: &Game, pid: usize, node: &str, techs: bool) -> bool {
+    pub(super) fn boost_in_hand(g: &Game, pid: usize, node: &str, techs: bool) -> bool {
         let player = &g.players[pid];
         let name = Name::new(node);
         if techs {
@@ -170,7 +174,7 @@ impl AdvancedAi {
     /// `Game::node_boost_frac` reads it: the row's own percentage, or the
     /// shipped 40 for a node with no boost row that was granted one anyway (a
     /// goody hut, a Great Scientist, a stolen boost).
-    fn boost_frac(g: &Game, node: &str, techs: bool) -> f64 {
+    pub(super) fn boost_frac(g: &Game, node: &str, techs: bool) -> f64 {
         let percent = if techs {
             g.rules.techs[node].boost.as_ref().and_then(|b| b.percent)
         } else {
@@ -184,7 +188,7 @@ impl AdvancedAi {
     /// lands. Zero with the gene off, for a node nothing buildable can boost,
     /// and for one far enough out that the mid-research credit will reach it.
     fn boost_wait_penalty(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
-        if !self.boost_wait_research {
+        if !(self.boost_wait_research || self.chase_every_boost) {
             return 0.0;
         }
         // ⚠ THE RISK TEST COMES FIRST, AND IT IS THE CHEAP ONE. How likely the
@@ -213,6 +217,14 @@ impl AdvancedAi {
         else {
             return 0.0;
         };
+        // `chase-every-boost` alone waits only for a boost one actionable step
+        // away: the thing its trigger names can be done now, and one step
+        // finishes it. A trigger three builds out, or one only growth or a
+        // contact advances, is not worth holding a node for. See
+        // `advanced/chase_every_boost.rs`.
+        if !self.boost_wait_research && !self.chase_one_action_away(g, pid, chase) {
+            return 0.0;
+        }
         let turns = (chase.research / rate).min(BOOST_TURNS_CAP);
         turns * BOOST_TURN_VALUE * BOOST_WAIT_FACTOR * risk
     }
@@ -222,9 +234,16 @@ impl AdvancedAi {
     /// a node in this tree that the empire does not hold and `node` is on the
     /// way to it. Zero with the gene off.
     fn boost_unlock_credit(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
-        if !self.boost_unlock_research {
+        if !(self.boost_unlock_research || self.chase_every_boost) {
             return 0.0;
         }
+        // Under `chase-every-boost` alone the credit is capped at a third of
+        // the standalone gene's ceiling; see `CHASE_UNLOCK_TURNS_CAP`.
+        let turns_cap = if self.boost_unlock_research {
+            BOOST_UNLOCK_TURNS_CAP
+        } else {
+            super::chase_every_boost::CHASE_UNLOCK_TURNS_CAP
+        };
         // Both rates once: this runs for every candidate node in the argmax,
         // and every chase inside each of those.
         let science = Self::research_rate(g, pid, true);
@@ -247,7 +266,7 @@ impl AdvancedAi {
             .enumerate()
             .map(|(rank, turns)| turns * BOOST_UNLOCK_RANK_DECAY.powi(rank as i32))
             .sum();
-        (turns * BOOST_UNLOCK_FACTOR).min(BOOST_UNLOCK_TURNS_CAP) * BOOST_TURN_VALUE
+        (turns * BOOST_UNLOCK_FACTOR).min(turns_cap) * BOOST_TURN_VALUE
     }
 
     /// Is `node` on the way to a permission this trigger needs and the empire
@@ -299,7 +318,7 @@ impl AdvancedAi {
         g.rules.techs.contains_key(&chase.node)
     }
 
-    fn node_known(g: &Game, pid: usize, node: &str, techs: bool) -> bool {
+    pub(super) fn node_known(g: &Game, pid: usize, node: &str, techs: bool) -> bool {
         let player = &g.players[pid];
         let name = Name::new(node);
         if techs {
@@ -313,7 +332,7 @@ impl AdvancedAi {
     /// technology (`true`) or a civic (`false`). Only the triggers
     /// `eureka_trigger_progress` can count reach here, so every one of them
     /// names something the rules gate on a node.
-    fn trigger_gates(g: &Game, trigger: &str) -> Vec<(Name, bool)> {
+    pub(super) fn trigger_gates(g: &Game, trigger: &str) -> Vec<(Name, bool)> {
         let improvement_gates = |improvement: &str| -> Vec<(Name, bool)> {
             g.rules
                 .improvements

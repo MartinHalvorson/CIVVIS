@@ -2278,6 +2278,23 @@ impl AdvancedAi {
         self.boost_first_research = false;
     }
 
+    /// Hunt every Eureka and Inspiration: the chase table reads every trigger
+    /// the engine can judge (`Game::boost_progress`), a boost in hand scales
+    /// the node, a boost one actionable step away is waited for, the
+    /// beeline walks the goal's prerequisites by their boosted cost, and
+    /// production, builders and kills are paid the research a trigger earns.
+    /// See `advanced/chase_every_boost.rs`. Opt-in gene `chase-every-boost`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_chase_every_boost(&mut self) {
+        self.chase_every_boost = true;
+    }
+
+    /// The twin of `enable_chase_every_boost`.
+    pub fn disable_chase_every_boost(&mut self) {
+        self.chase_every_boost = false;
+    }
+
     /// Take a node the empire would finish before its own eureka lands after
     /// that eureka, not before it. The engine credits a boost mid-research
     /// onto a node still being worked, and never onto one already finished, so

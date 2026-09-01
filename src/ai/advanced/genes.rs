@@ -1859,6 +1859,7 @@ pub const GENES: &[Gene] = &[
     // claim by constructing and merging two synthetic Gene-row pull requests.
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
