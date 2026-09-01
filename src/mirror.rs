@@ -9453,6 +9453,57 @@ fn apply_observed_city_economy(
     }
 }
 
+/// Apply city facts that affect `city_yields_model` before deriving the
+/// host-to-model correction. A fresh reconstruction initially marks the first
+/// planted city as the capital; the host can have moved its Palace elsewhere.
+/// Population, loyalty and pillage state also affect the modeled total.
+fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot) {
+    // Which seats the export names a capital for. A record that flags none
+    // (an older export, or a fixture) keeps `place_city`'s own choice rather
+    // than clearing every flag and leaving the seat capital-less.
+    let flagged_capitals: std::collections::BTreeSet<usize> = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
+        .filter(|observed| observed.capital)
+        .filter_map(|observed| {
+            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
+                .map(|cid| game.cities[&cid].owner)
+        })
+        .collect();
+    let cities = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
+    for observed in cities {
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else {
+            continue;
+        };
+        // Population drives Loyalty pressure in a nine-tile radius. Rival and
+        // city-state cities are planted at population one, so this has to land
+        // before any yield or pressure correction is measured.
+        if observed.pop > 0 {
+            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
+        }
+        // `city_has_palace` reads this positional fact; do not leave the
+        // reconstruction's first planted city capital after a Palace move.
+        if flagged_capitals.contains(&game.cities[&cid].owner) {
+            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
+        }
+        apply_city_health(game, cid, observed);
+        if observed.loyalty_per_turn.is_finite() {
+            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
+                .insert(cid, observed.loyalty_per_turn);
+        }
+        if observed.defense.is_finite() && observed.defense >= 0.0 {
+            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
+        }
+    }
+}
+
 fn apply_observed_host_metrics(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -9497,6 +9548,9 @@ fn apply_observed_host_metrics(
             .map(|value| value as usize);
     }
 
+    // These fields participate in the model itself, so settle them before
+    // measuring the host-to-model city correction.
+    apply_observed_city_facts(game, state);
     apply_observed_city_economy(game, state, snapshot, unmapped);
 
     let mut derived = crate::rules::Yields::default();
@@ -9547,63 +9601,6 @@ fn apply_observed_host_metrics(
     {
         Arc::make_mut(&mut game.observed_yield_adjustments).insert(0, adjustment);
     }
-    // Which seats the export names a capital for. A record that flags none
-    // (an older export, or a fixture) keeps `place_city`'s own choice rather
-    // than clearing every flag and leaving the seat capital-less.
-    let flagged_capitals: std::collections::BTreeSet<usize> = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
-        .filter(|observed| observed.capital)
-        .filter_map(|observed| {
-            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
-                .map(|cid| game.cities[&cid].owner)
-        })
-        .collect();
-    let cities = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()));
-    for observed in cities {
-        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
-        let Some(cid) = game.city_at(pos) else {
-            continue;
-        };
-        // Population drives Loyalty pressure in a nine-tile radius. The own-city
-        // rebuild copied it earlier, but visible rival and city-state cities stayed
-        // at `place_city`'s population-one default. In the live Cumae failure that
-        // made population-six Stirling exert one sixth of the pressure Firaxis was
-        // applying, so a forecast built on this otherwise exact board was safe only
-        // because the most important input had been dropped.
-        if observed.pop > 0 {
-            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
-        }
-        // ★★★★ WHERE THE PALACE IS. `place_city` flags the first city it seats
-        // for a player as the capital, so a seat that lost its founding city
-        // kept its Palace on whichever city the export happened to list first.
-        // Measured on run civvis-20260816T040537Z: Rome fell at t79, the host
-        // moved the Palace to Aquileia (`capital: true`), and the model paid it
-        // in Antium instead — Aquileia short 5 Gold, 2 Production, 2 Science
-        // and 1 Culture every turn to the end of the game while Antium was
-        // over by the same, the single largest persistent gap of the run. The
-        // host's `IsCapital` is the current capital, exactly what
-        // `city_has_palace` reads; every mirrored city takes it, rivals and
-        // city-states included, so their Palaces sit where the host's do.
-        if flagged_capitals.contains(&game.cities[&cid].owner) {
-            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
-        }
-        apply_city_health(game, cid, observed);
-        if observed.loyalty_per_turn.is_finite() {
-            Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
-                .insert(cid, observed.loyalty_per_turn);
-        }
-        if observed.defense.is_finite() && observed.defense >= 0.0 {
-            Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
-        }
-    }
-
     // ★★★★★ THE RIVALS' SEATS LAST, AFTER THEIR CITIES ARE FINISHED.
     //
     // A correction is `host − model`, and the model of a rival city moves
@@ -10234,6 +10231,10 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
             ("player_ages", BOTH, step_player_ages),
             ("host_congress", BOTH, step_host_congress),
+            // Climate changes the yields of flooded plots. It must be applied
+            // before host-to-model city and empire calibration below, or a
+            // later flood invalidates the correction measured on the old map.
+            ("host_climate", BOTH, step_host_climate),
             ("observed_host_metrics", BOTH, step_observed_host_metrics),
             ("loyalty_doomed_sites", BOTH, step_loyalty_doomed_sites),
         ],
@@ -10242,7 +10243,6 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
         HostPhase::Finish,
         &[
             ("player_ages", BOTH, step_player_ages),
-            ("host_climate", BOTH, step_host_climate),
             ("record_host_observed", BOTH, step_record_host_observed),
         ],
     ),
