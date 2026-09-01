@@ -1,7 +1,7 @@
 # `civilian-out-of-reach`: settlers and builders stay out of a barbarian's reach
 
 One opt-in gene (`Kind::OptIn`, off until the screen prices it) with one
-rule and three consequences.
+rule and four consequences.
 
 **The rule.** Every turn, the seat draws the **barbarian reach**: the set of
 tiles every known barbarian military unit could end its next move on — a
@@ -34,6 +34,14 @@ before it moves again. So:
    (the city stands before the raider moves), and otherwise it waits one
    tile out or enters with its guard.
 
+4. **The early second Settler stays local.** While the live empire is still
+   opening its first city, each Settler first seen in that one-city opening
+   remembers the capital as its home. Deliberate settlement targets stay
+   within six tiles of that anchor. If a threat response pushes it beyond
+   six, it drops the remote target and returns home through the same
+   capture-aware route; another city founding does not move the anchor
+   underneath it.
+
 **Visibility.** The reach is drawn from the raiders inside the turn-start
 vision frame, as every other civilian-risk path reads the board — never
 through fog. The live bridge only ever exports what the seat sees, so this is
@@ -54,7 +62,10 @@ finding that runs which lose settlers end with half the cities.
 
 The reach is the fact the operator named: *we know where the barbarians
 are*. This gene turns that knowledge into a hard constraint on where a
-civilian may stand, instead of a soft term it can be outbid on.
+civilian may stand, instead of a soft term it can be outbid on. The early
+home corridor is the companion constraint for the other half of the failure:
+when an escort disappears, the second Settler must have a short route back to
+the capital rather than a target that keeps pulling it into the frontier.
 
 ## Vocabulary
 
@@ -65,7 +76,9 @@ other gene (`docs/GENE_SCREEN.md`).
 
 ## What it does not do
 
-- It does not change site selection or the settler's target.
+- It does not change normal site selection after the opening corridor; the
+  live early-opening rule only rejects deliberate targets beyond its capital
+  anchor and clears a stale remote target while returning.
 - It does not send military units hunting barbarians (`barbarian-hunt`,
   `camp-party` own that).
 - Off, every touched path is unchanged.
@@ -100,3 +113,23 @@ Tests: `a_barbarian_scout_is_a_capture_threat_on_the_live_seat`,
 `a_settler_with_no_safe_tile_flees_onto_a_friendly_stack_under_the_lessons`,
 `a_lost_settler_retires_the_ground_around_it_for_every_settler`,
 `the_strongest_guard_that_can_reach_the_settler_is_summoned_under_the_lessons`.
+
+## Current-game reconstruction: the second Settler was driven out of rescue range
+
+In `civvis-20260831T232003Z`, the second Settler (unit `262144`) began at
+Rome `(16,17)` and initially chose a nearby target. Its Warrior escort died in
+combat on turn 20. From there the live safety code correctly refused exposed
+route steps, but its best available flee tiles repeatedly moved it away from
+Rome: `(18,22)` on t20, `(17,24)` on t26, `(16,25)` on t28–t32. The known
+Barbarian Scout then moved to `(16,24)`; the Settler held at `(16,25)` and was
+captured in the turn-32 hostile phase. The `settler_scout_capture_hold` event
+was therefore a correct warning, but a hold inside the capture envelope was
+still a loss because no escort or safe tile remained.
+
+The fix addresses the cause earlier in the chain: early Settlers now retain
+their capital anchor across live ID remaps, may deliberately target only the
+six-tile opening corridor, and switch to a homeward objective as soon as an
+emergency flee carries them outside it. The return still uses the exact reach
+guard, so distance discipline cannot authorize an exposed step. Regression
+coverage is in `a_live_early_settler_keeps_a_capital_home_corridor` and
+`a_live_early_settler_returns_home_after_it_is_pushed_too_far`.
