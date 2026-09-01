@@ -1930,3 +1930,24 @@ This is a fidelity-tool correction plus a shared-rules re-pin, not a controller
 treatment. The `advanced_v1` anchor returns to **18,508 decisions and
 `0x66d9_754b_9443_6085`**; the shipped ruleset fingerprint returns to
 `fnv1a64:7c1bacacca3d4120`.
+
+## v32 (2026-09-01) — district buildings do not grant a trade route
+
+The fallback `Game::trade_capacity` model was granting one route slot to every
+Commercial Hub and Harbor, with an additional Royal Navy Dockyard branch. The
+installed `DebugGameplay.sqlite` shows no trade-capacity modifier on either
+district family: the capacity modifiers attach to the Market and Lighthouse
+buildings. The host bridge already reports Firaxis's authoritative outgoing
+capacity in live games, but native simulation and offline planning used the
+incorrect district bonus whenever an observed capacity was unavailable.
+
+The fallback now follows the shipped modifiers: Foreign Trade supplies the
+base slot, Market or Lighthouse supplies the building tier, and the existing
+explicit modifiers and Gilded Vault exception remain intact. This is a shared
+world-rule correction, not a controller treatment that can be hidden behind a
+gene, so the frozen anchor is deliberately re-pinned after the CI behavior
+guard caught the change.
+
+The anchor keeps **18,508 decisions** and moves from v31's
+`0x66d9_754b_9443_6085` to **`0xb880_bcae_d9b0_9877`**. Live observed capacity
+is unchanged; only native/offline fallback behavior is corrected.
