@@ -76,6 +76,11 @@ class BranchTests(unittest.TestCase):
     def test_ambiguous_legacy_branch_is_rejected(self):
         self.assertIsNone(collab.BRANCH_RE.fullmatch("agent/government-cleanup"))
 
+    def test_data_branches_cover_the_push_guard_ledger(self):
+        ledger = push_guard.LEDGER_REF.removeprefix("refs/heads/")
+        self.assertIn(ledger, collab.DATA_BRANCHES)
+        self.assertIsNone(collab.BRANCH_RE.fullmatch(ledger))
+
     def test_remote_heads_are_parsed_without_symbolic_refs(self):
         raw = (
             "abc123\trefs/heads/main\n"
