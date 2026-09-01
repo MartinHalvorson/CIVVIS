@@ -15279,6 +15279,31 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 		return found;
 	end
 
+	-- `reachesThisTurn` is the strongest proof, but Civ VI can return no path
+	-- for a civilian destination occupied by one of our own units even though
+	-- the subsequent MOVE_TO request is accepted.  The live t32 Builder loss
+	-- had exactly that shape: the Builder, Warrior, and Settler shared the
+	-- origin/destination envelope, the Slinger was visible, and the host moved
+	-- the Builder after the path probe returned unknown.  Once the requested
+	-- leg is within the Builder's geometric movement allowance, use that
+	-- conservative fallback.  A false positive holds one turn; a false
+	-- negative loses the civilian before the next export.
+	local function builderReachesThisTurn(builder, fromX, fromY, x, y)
+		local reaches, why = CivvisBoard.reachesThisTurn(builder, x, y);
+		if reaches then return true, "path"; end
+		local baseMoves = tonumber(try(function()
+			local definition = GameInfo.Units[builder:GetUnitType()];
+			return definition ~= nil and definition.BaseMoves;
+		end, nil)) or 2;
+		local distance = tonumber(try(function()
+			return Map.GetPlotDistance(fromX, fromY, x, y);
+		end, -1)) or -1;
+		if distance >= 0 and distance <= baseMoves then
+			return true, "distance_fallback";
+		end
+		return false, why;
+	end
+
 	-- A Builder can travel with a combat unit.  Preserve that explicit escort
 	-- contract, but require the host to prove both the co-location and the
 	-- exact same-turn destination before allowing the exposed civilian leg.
@@ -15318,8 +15343,10 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 				if fromX ~= nil and fromY ~= nil and capped ~= false then
 					local sentX, sentY = wantX, wantY;
 					if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
+					local builderReaches, builderReachKind = builderReachesThisTurn(
+						builder, fromX, fromY, sentX, sentY);
 					if (sentX ~= fromX or sentY ~= fromY)
-							and CivvisBoard.reachesThisTurn(builder, sentX, sentY)
+							and builderReaches
 							and not guardedLeg(builderId, fromX, fromY, sentX, sentY) then
 						for _, threat in ipairs(threats) do
 							local reaches, reachKind = threatReaches(threat, sentX, sentY);
@@ -15328,7 +15355,7 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 									builder = builderId, fromX = fromX, fromY = fromY,
 									wantX = wantX, wantY = wantY,
 									sentX = sentX, sentY = sentY, threat = threat,
-									reachKind = reachKind, row = row,
+									reachKind = reachKind, builderReachKind = builderReachKind, row = row,
 								};
 								break;
 							end
@@ -15397,6 +15424,7 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 			hostile = heldLeg.threat.id, hostile_type = heldLeg.threat.name,
 			hostile_pos = { heldLeg.threat.x, heldLeg.threat.y },
 			hostile_reach = heldLeg.reachKind,
+			builder_reach = heldLeg.builderReachKind,
 		});
 	end
 end;
