@@ -24,6 +24,11 @@
 //! - the same for **score share** (a seat's score over all majors' scores), a
 //!   continuous outcome that resolves an edge at a fraction of the seats a
 //!   win/loss count needs;
+//! - ⭐ the same for **science pace** (2026-09-01): techs known at the
+//!   Standard-turn-150 mark on the batch's own clock (`techs_150`, turn 99
+//!   at Online speed — `SCIENCE_PACE_STANDARD_TURN`), the end-of-game tech
+//!   count and the end science yield, so a science gene is priced by research
+//!   speed and not only by the win share a 250-turn clock can see;
 //! - an OLS-adjusted Δ that regresses the seat outcome on every screened
 //!   gene at once (plus an intercept), so a gene is not credited with the
 //!   chance imbalance of its neighbours (printed once the seat count can
@@ -98,7 +103,7 @@
 //! says `foldover` or `prior`) still analyse: their rows are seats with a
 //! genome and an outcome like any other, and the estimator here never needed
 //! the pairing. Only the sampling changed.
-use civvis::ai::{run_game, AdvancedAi, VictoryTarget};
+use civvis::ai::{run_game_observed, AdvancedAi, VictoryTarget};
 use civvis::game::{Game, GameOptions, DIPLOMATIC_VICTORY_POINTS};
 use civvis::rng::Rng;
 use civvis::setup::{GameSpeed, MapScript};
@@ -621,6 +626,26 @@ fn rival_seat(kind: &str, seed: u64, genes: &[Gene], random_genome: &[bool]) -> 
     }
 }
 
+/// ⭐ THE SCIENCE-PACE MARK, in Standard-speed turns (2026-09-01).
+///
+/// `techs_150` on a row is the seat's tech count at the start of this
+/// batch's own turn equivalent to Standard turn 150 — `Game::standard_duration`,
+/// the same `GameSpeed::scale_turns` conversion `science-expansion-phase` uses
+/// for its Standard turn 188 (~t125 Online) — so the standard screen at Online
+/// speed reads it at turn 99, and a Standard-speed probe at turn 150 itself.
+///
+/// Why a mid-game count at all: the screen prices every gene by the win share
+/// of a six-player game on a 250-turn Online clock, and 52% of those games end
+/// on score at the clock, where research speed is invisible. The science-pace
+/// genes (`science-building-first`, `first-research-building-reserve`,
+/// `science-expansion-phase`, `campus-adjacency-threshold`, the `boost-*`
+/// family, `research-tier-premium`, `power-the-laboratory`) sat at ranks
+/// 24–193 straddling zero while the live King seat ended every deep game
+/// 12–33 techs behind. Standard turn 150 is the middle game: late enough for
+/// a Campus-first opening to have compounded, early enough that no lane has
+/// been decided.
+const SCIENCE_PACE_STANDARD_TURN: u32 = 150;
+
 /// One seat of one screened game, written to the JSONL file and read back by
 /// `--analyze`. A game yields one row per major seat.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -683,6 +708,19 @@ struct Row {
     inquisition: bool,
     #[serde(default)]
     techs: usize,
+    /// ⭐ SCIENCE PACE (2026-09-01): techs known at the start of the turn
+    /// equivalent to Standard turn `SCIENCE_PACE_STANDARD_TURN` on this
+    /// batch's clock, or the final count when the game ended before it (no
+    /// research happens after the end). `techs` above is the end-of-game
+    /// count. `None` in every file written before the field existed, and not
+    /// written then, so `--analyze` reports `science_pace` as null for such
+    /// a file rather than a Δ of zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    techs_150: Option<usize>,
+    /// Science per turn over this seat's cities at the end of the game
+    /// (`Game::city_yields`, the read `victory_eval` prints). `None` as above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    science_end: Option<f64>,
     /// ★ Wonders standing in this seat's cities at the end. `Game::score_parts`
     /// awards **15 points a wonder** — the densest line of a score tally that
     /// decides three quarters of the games this screen plays — and the
@@ -1781,7 +1819,17 @@ fn play_game(
             }
         })
         .collect();
-    run_game(&mut world, &mut ais);
+    // ⭐ THE SCIENCE-PACE READ: every seat's tech count at the start of the
+    // turn equivalent to Standard turn `SCIENCE_PACE_STANDARD_TURN` on this
+    // batch's clock. A game that ends before it leaves this `None`, and the
+    // row then carries the final count, which is what the seat knew then.
+    let pace_turn = world.standard_duration(SCIENCE_PACE_STANDARD_TURN);
+    let mut techs_at_pace: Option<Vec<usize>> = None;
+    run_game_observed(&mut world, &mut ais, |g| {
+        if techs_at_pace.is_none() && g.turn >= pace_turn {
+            techs_at_pace = Some(g.players.iter().map(|p| p.techs.len()).collect());
+        }
+    });
     let secs = started.elapsed().as_secs_f64();
     majors
         .iter()
@@ -1803,6 +1851,11 @@ fn play_game(
             );
             row.victories_off = closed.clone();
             row.difficulty = difficulty.clone();
+            row.techs_150 = Some(
+                techs_at_pace
+                    .as_ref()
+                    .map_or(world.players[seat].techs.len(), |counts| counts[seat]),
+            );
             match this_rival {
                 Some((_, kind)) => {
                     // ⭐ NOT a measured seat: `kind` is what every estimator
@@ -1893,6 +1946,12 @@ fn row_for_seat(
             .get("inquisition")
             .is_some_and(|launched| *launched > 0),
         techs: game.players[seat].techs.len(),
+        science_end: Some(
+            game.player_city_ids(seat)
+                .iter()
+                .map(|&cid| game.city_yields(cid).science)
+                .sum(),
+        ),
         wonders: game
             .player_city_ids(seat)
             .iter()
@@ -1927,7 +1986,9 @@ fn row_for_seat(
         tourists: game.foreign_tourists(seat),
         rival_tourists: rival(&|pid| game.foreign_tourists(pid)),
         domestic: game.domestic_tourists(seat),
-        // Filled in by `play_game`, which knows the game's mask and rung.
+        // Filled in by `play_game`, which knows the game's mask and rung, and
+        // took the mid-game science-pace read.
+        techs_150: None,
         victories_off: Vec::new(),
         difficulty: String::new(),
         rival_mix: String::new(),
@@ -2103,6 +2164,13 @@ struct Seats<'a> {
     /// owner had movement and did not act. Zero for a seat that made none.
     done: Vec<f64>,
     forgotten: Vec<f64>,
+    /// ⭐ Science pace: `techs_150`, the end-of-game `techs` and
+    /// `science_end`, each `Some` only when every screened row carries it,
+    /// so a file written before the fields existed reads as no measurement
+    /// rather than as a Δ of zero.
+    techs_150: Option<Vec<f64>>,
+    techs_end: Option<Vec<f64>>,
+    science_end: Option<Vec<f64>>,
 }
 
 impl<'a> Seats<'a> {
@@ -2145,6 +2213,20 @@ impl<'a> Seats<'a> {
             .iter()
             .map(|row| ratio(row.commit_forgotten_turns, row.commit_open_turns))
             .collect();
+        let every = |value: &dyn Fn(&Row) -> Option<f64>| -> Option<Vec<f64>> {
+            rows.iter()
+                .map(|row| value(row))
+                .collect::<Option<Vec<f64>>>()
+                .filter(|values| !values.is_empty())
+        };
+        let techs_150 = every(&|row| row.techs_150.map(|n| n as f64));
+        let science_end = every(&|row| row.science_end);
+        // `techs` has been on every row since the census fields landed; a
+        // file older than that reads all zeros, which is no measurement.
+        let techs_end = rows
+            .iter()
+            .any(|row| row.techs > 0)
+            .then(|| rows.iter().map(|row| row.techs as f64).collect());
         Seats {
             rows,
             columns,
@@ -2154,6 +2236,9 @@ impl<'a> Seats<'a> {
             shares,
             done,
             forgotten,
+            techs_150,
+            techs_end,
+            science_end,
         }
     }
 
@@ -2319,6 +2404,13 @@ struct GeneEstimate {
     done_se: f64,
     forgotten_delta: f64,
     forgotten_se: f64,
+    /// ⭐ Science pace: on−off Δ of techs known at the Standard-turn-150
+    /// mark, of techs at the end, and of end science per turn, each with its
+    /// clustered error from the same contrast the win column uses. `None`
+    /// when the rows predate the field.
+    techs_150: Option<(f64, f64)>,
+    techs_end: Option<(f64, f64)>,
+    science_end: Option<(f64, f64)>,
 }
 
 impl GeneEstimate {
@@ -2383,6 +2475,11 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
             let (share_delta, share_se) = seats.contrast(column, &seats.shares);
             let (done_delta, done_se) = seats.contrast(column, &seats.done);
             let (forgotten_delta, forgotten_se) = seats.contrast(column, &seats.forgotten);
+            let pace = |outcome: &Option<Vec<f64>>| {
+                outcome
+                    .as_ref()
+                    .map(|values| seats.contrast(column, values))
+            };
             let rate = |wins: usize, n: usize| if n > 0 { wins as f64 / n as f64 } else { 0.0 };
             GeneEstimate {
                 tag: header.genes[index].clone(),
@@ -2399,6 +2496,9 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
                 done_se,
                 forgotten_delta,
                 forgotten_se,
+                techs_150: pace(&seats.techs_150),
+                techs_end: pace(&seats.techs_end),
+                science_end: pace(&seats.science_end),
             }
         })
         .collect();
@@ -3477,6 +3577,35 @@ fn print_table(header: &Header, rows: &[Row]) {
             );
         }
     }
+    // ⭐ Science pace, only for rows that carry it: the genes that most
+    // change how many techs a seat knows at the Standard-turn-150 mark, with
+    // the end-of-game tech count and science per turn beside them.
+    if genes.iter().any(|e| e.techs_150.is_some()) {
+        println!(
+            "\n{:<28} {:>14} {:>7}  {:>14} {:>7}  {:>14} {:>7}",
+            "science pace", "techs@150Δ", "z", "techs@endΔ", "z", "science/turnΔ", "z"
+        );
+        let mut by_pace: Vec<&GeneEstimate> = genes.iter().collect();
+        by_pace.sort_by(|a, b| {
+            pace_abs_z(a.techs_150)
+                .total_cmp(&pace_abs_z(b.techs_150))
+                .reverse()
+        });
+        for e in by_pace {
+            println!(
+                "{:<28} {}  {}  {}",
+                e.tag,
+                pace_cell(e.techs_150),
+                pace_cell(e.techs_end),
+                pace_cell(e.science_end)
+            );
+        }
+        println!(
+            "science pace cells are seats-on minus seats-off in techs (or science per turn) ± one \
+             clustered standard error, then z; techs@150 is the count at the Standard-turn-150 \
+             mark on this batch's clock (`SCIENCE_PACE_STANDARD_TURN`)"
+        );
+    }
     println!(
         "\n`*` = |z|≥2 (a screen flag, ~1 in 22 by chance); `**` = past the family-wise bar; the read \
          column names the win Δ first and the score-share Δ when it says more. `~` = unresolved at \
@@ -3679,6 +3808,45 @@ fn resolving_power(standard_error: f64) -> Option<f64> {
         .then_some(POWER_FACTOR * standard_error)
 }
 
+/// A science-pace z: zero when the error is missing or infinite, so the row
+/// reads as unresolved rather than as exact.
+fn pace_z(diff: f64, se: f64) -> f64 {
+    if se > 0.0 && se.is_finite() {
+        diff / se
+    } else {
+        0.0
+    }
+}
+
+fn pace_abs_z(estimate: Option<(f64, f64)>) -> f64 {
+    estimate.map_or(0.0, |(diff, se)| pace_z(diff, se).abs())
+}
+
+/// One printed science-pace cell: `Δ±se z`, or dashes for rows without it.
+fn pace_cell(estimate: Option<(f64, f64)>) -> String {
+    match estimate {
+        Some((diff, se)) => format!("{:>+7.2}±{:<6.2} {:>+7.2}", diff, se, pace_z(diff, se)),
+        None => format!("{:>14} {:>7}", "-", "-"),
+    }
+}
+
+/// One science-pace contrast as the analysis JSON carries it
+/// (`science_pace`, `techs_end`, `science_end`): `null` for a file whose rows
+/// predate the field, else the on−off Δ, its clustered standard error, z, and
+/// the two arms behind it — the same seats the win column counts.
+fn pace_json(estimate: Option<(f64, f64)>, n_on: usize, n_off: usize) -> serde_json::Value {
+    match estimate {
+        Some((diff, se)) => serde_json::json!({
+            "diff": diff,
+            "se": se,
+            "z": pace_z(diff, se),
+            "n_on": n_on,
+            "n_off": n_off,
+        }),
+        None => serde_json::Value::Null,
+    }
+}
+
 /// The median standard error across the screened genes, which is what the
 /// printed `resolution:` line reports for the run as a whole.
 fn median_win_se(genes: &[GeneEstimate]) -> f64 {
@@ -3754,6 +3922,12 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 "done_se_pp": 100.0 * e.done_se,
                 "forgotten_delta_pp": 100.0 * e.forgotten_delta,
                 "forgotten_se_pp": 100.0 * e.forgotten_se,
+                // ⭐ Science pace: on − off Δ in techs (or science per
+                // turn), errors clustered by game; null for a file whose rows
+                // predate the field, never a Δ of zero.
+                "science_pace": pace_json(e.techs_150, e.n_on, e.n_off),
+                "techs_end": pace_json(e.techs_end, e.n_on, e.n_off),
+                "science_end": pace_json(e.science_end, e.n_on, e.n_off),
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
@@ -5932,6 +6106,8 @@ mod tests {
             faith: 0.0,
             inquisition: false,
             techs: 0,
+            techs_150: None,
+            science_end: None,
             wonders: 0,
             military: 0.0,
             civ: String::new(),
@@ -6376,6 +6552,106 @@ mod tests {
             estimate_costs(&header, &rows).is_empty(),
             "secs are 0.0 in test rows"
         );
+    }
+
+    #[test]
+    fn science_pace_fields_are_absent_on_an_old_row_and_null_in_its_analysis() {
+        // A row written before 2026-09-01: no `techs_150`, no `science_end`.
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.techs_150, None);
+        assert_eq!(old.science_end, None);
+        assert_eq!(old.techs, 41);
+        let text = serde_json::to_string(&old).unwrap();
+        assert!(
+            !text.contains("techs_150") && !text.contains("science_end"),
+            "an old row stays byte for byte what it was: {text}"
+        );
+        // A new row carries both and reads them back.
+        let mut row = test_row(0, 0, "10", true);
+        row.techs_150 = Some(23);
+        row.science_end = Some(88.5);
+        let text = serde_json::to_string(&row).unwrap();
+        assert!(text.contains("\"techs_150\":23"), "{text}");
+        let back: Row = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.techs_150, Some(23));
+        assert_eq!(back.science_end, Some(88.5));
+        // A file without the field analyses, and says so: no estimate, and
+        // `null` in the JSON rather than a Δ of zero.
+        let header = test_header(&["a", "b"]);
+        let rows: Vec<Row> = (0..4)
+            .flat_map(|game| {
+                ["10", "01", "11"]
+                    .iter()
+                    .enumerate()
+                    .map(move |(seat, genome)| test_row(game, seat, genome, seat == 0))
+            })
+            .collect();
+        let estimates = estimate(&header, &rows);
+        assert_eq!(estimates.genes.len(), 2);
+        for e in &estimates.genes {
+            assert_eq!(e.techs_150, None);
+            assert_eq!(
+                e.techs_end, None,
+                "every fixture row has techs 0: no measurement"
+            );
+            assert_eq!(e.science_end, None);
+            assert_eq!(
+                pace_json(e.techs_150, e.n_on, e.n_off),
+                serde_json::Value::Null
+            );
+        }
+        // One row lacking the field is enough: the file is read as predating it.
+        let mut mixed = rows.clone();
+        for row in mixed.iter_mut().skip(1) {
+            row.techs_150 = Some(20);
+        }
+        let seats = Seats::of(&header, &mixed);
+        assert!(seats.techs_150.is_none());
+    }
+
+    /// `science_pace` is the on − off Δ of `techs_150` from the same
+    /// clustered contrast the win column uses: seats with the gene on knowing
+    /// four more techs at the mark read +4.00, on the same arms the win
+    /// column counts, and the JSON block carries exactly that.
+    #[test]
+    fn science_pace_is_the_on_minus_off_techs_at_the_standard_turn_mark() {
+        let header = test_header(&["a"]);
+        let mut rows = Vec::new();
+        for game in 0..12 {
+            for seat in 0..3 {
+                let on = (game + seat) % 2 == 0;
+                let mut row = test_row(game, seat, if on { "1" } else { "0" }, false);
+                row.techs = if on { 40 } else { 35 };
+                row.techs_150 = Some(if on { 24 } else { 20 });
+                row.science_end = Some(if on { 90.0 } else { 70.0 });
+                rows.push(row);
+            }
+        }
+        let estimates = estimate(&header, &rows);
+        let e = &estimates.genes[0];
+        assert_eq!((e.n_on, e.n_off), (18, 18));
+        let (diff, se) = e.techs_150.expect("every row carries the field");
+        assert!((diff - 4.0).abs() < 1e-9, "Δ techs@150 {diff}");
+        assert!(se >= 0.0 && se.is_finite(), "se {se}");
+        let (end, _) = e.techs_end.expect("every row carries techs");
+        assert!((end - 5.0).abs() < 1e-9, "Δ techs at the end {end}");
+        let (science, _) = e.science_end.expect("every row carries science_end");
+        assert!(
+            (science - 20.0).abs() < 1e-9,
+            "Δ science per turn {science}"
+        );
+        let json = pace_json(e.techs_150, e.n_on, e.n_off);
+        assert_eq!(json["n_on"], 18);
+        assert_eq!(json["n_off"], 18);
+        assert!((json["diff"].as_f64().unwrap() - 4.0).abs() < 1e-9);
+        assert_eq!(json["z"], pace_z(diff, se));
+        // The printed cell and the sort key agree with the block.
+        assert!(pace_cell(e.techs_150).starts_with("  +4.00±"));
+        assert_eq!(pace_cell(None), format!("{:>14} {:>7}", "-", "-"));
+        assert_eq!(pace_abs_z(None), 0.0);
     }
 
     #[test]
@@ -7963,6 +8239,9 @@ mod tests {
         // The median is what the run-level figure reports, so a single
         // un-resolvable row cannot drag the whole run's number to infinity.
         let se = |win: f64| GeneEstimate {
+            techs_150: None,
+            techs_end: None,
+            science_end: None,
             tag: "t".into(),
             n_on: 1,
             n_off: 1,

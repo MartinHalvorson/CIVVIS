@@ -566,7 +566,8 @@ their rows) still read: the two games of one seed are told apart by arm.
 
 Beside the outcome, every row carries an end-of-game census — the religion
 fields, `techs`, `military`, the war counters, and `wonders`, the wonders
-standing in that seat's cities. Each exists because a claim about the agent
+standing in that seat's cities — and, since 2026-09-01, the two science-pace
+reads `techs_150` and `science_end` (see *Science pace* below). Each exists because a claim about the agent
 was being argued from prose instead of read out of a batch, and `--analyze`
 prints a census line per family whenever the rows carry it. `wonders` is the
 newest: `Game::score_parts` pays 15 points a wonder, the densest line of the
@@ -615,6 +616,66 @@ cities flying somebody else's faith at the end), `faith` still banked,
 table prints a **religion census** from them, because conversion decided two
 thirds of games on the Pangaea instrument (28% at the screen's shape) and the
 rows could not say one thing about how the losing seat stood in that race.
+
+## ⭐ Science pace: `techs_150`, `science_end` and the `Δ techs@150` column (2026-09-01)
+
+The screen prices every gene by win share, and 52% of its games end on score
+at the 250-turn Online clock — a world in which research speed is invisible.
+The operator's goal is a science victory at King, the live seat ends every
+deep game 12–33 techs behind, and the science-pace genes
+(`science-building-first`, `first-research-building-reserve`,
+`science-expansion-phase`, `campus-adjacency-threshold`, the `boost-*`
+family, `research-tier-premium`, `power-the-laboratory`) sat at ranks 24–193
+straddling zero: the instrument could not see what they change. So every row
+now carries a research-speed read beside the outcome, and the ranking prints
+it.
+
+**The rows.** Two fields, both `None` (and not written) in every file older
+than the field, so an old file is byte for byte what it was:
+
+| field | what |
+|---|---|
+| `techs_150` | techs the seat knew at the **start of the turn equivalent to Standard turn 150 on the batch's clock** — `Game::standard_duration(SCIENCE_PACE_STANDARD_TURN)`, the same `GameSpeed::scale_turns` conversion `science-expansion-phase` uses for its Standard turn 188 (~t125 Online) — so the standard screen reads it at **Online turn 99**, a Standard-speed probe at turn 150 itself. A game that ended before the mark records the seat's final count, which is what it knew then. Taken by the turn visitor of `ai::run_game_observed`; `run_game` is that loop with a visitor that does nothing |
+| `science_end` | science per turn over the seat's cities at the end (`Game::city_yields`, the read `victory_eval` prints) |
+
+`techs` (already on every row) is the end-of-game count.
+
+**The analysis.** Per gene, `--analyze` reports the seats-on minus seats-off
+Δ of each read from the **same clustered contrast the win column uses**
+(`Seats::contrast`: the regression on `[1, sign]`, errors clustered by game)
+— no new estimator. The JSON carries three blocks per gene, each
+`{diff, se, z, n_on, n_off}` on the same arms the win column counts:
+`science_pace` (`techs_150`), `techs_end` (`techs`) and `science_end`. A file
+whose rows lack a field reads **`null`** there, never a Δ of zero; one row
+without it is enough. The printed table adds a `science pace` block after the
+decisiveness block, sorted by |z| of `techs@150Δ`, only when the rows carry it.
+
+**The ranking.** `GENE_HEURISTIC_RANKING.md` gains one column, **`Δ techs@150
+(last batch)`**, immediately after the three batch columns: the last batch's
+`science_pace` as `+1.23 (z +2.47)`, an en dash for a batch played before the
+screen recorded it. It is evidence beside the sort key and the batch rule and
+enters neither; `tools/genes.py write` regenerates it and `tools/test_genes.py`
+holds the header, the placement and every cell. The column stays blank for the
+three committed batches until a batch played by a screen that records
+`techs_150` enters.
+
+**A science regime is a recipe, not a mode.** Regimes here are flags; the
+retired war regime was `--victories domination,score` on four players. The
+science equivalent keeps the standard six-player shape and closes every lane
+but science and score:
+
+```sh
+target/ci/gene_screen --games 2400 --jobs 12 --difficulty emperor \
+    --victories science,score --start-seed 26090100 --out target/science-regime.jsonl
+target/ci/gene_screen --analyze target/science-regime.jsonl --json target/science-regime.json
+```
+
+⚠ A `--victories` restriction is a **probe**: `shape_of` reads it as a second
+regime and `tools/genes.py` refuses it as a ledger source, exactly as the war
+regime was refused. Its `science_pace` block is the reading to take from it —
+a science gene's research-speed Δ in a world where the other lanes cannot end
+the game early — and it never enters a default. The standard screen's own
+`science_pace` is what the ranking column prints.
 
 ## History
 
