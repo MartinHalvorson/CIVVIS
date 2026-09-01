@@ -3466,6 +3466,19 @@ impl AdvancedAi {
         self.industrial_chain_debt = false;
     }
 
+    /// Version 2 of `skip-the-prophet-race`: retain version 1's published
+    /// behavior, but screen the narrower last-call decision independently.
+    /// One version per family is active in a screen.
+    pub fn enable_skip_the_prophet_race_2(&mut self) {
+        self.skip_the_prophet_race = false;
+        self.skip_the_prophet_race_2 = true;
+    }
+
+    /// The twin of `enable_skip_the_prophet_race_2`.
+    pub fn disable_skip_the_prophet_race_2(&mut self) {
+        self.skip_the_prophet_race_2 = false;
+    }
+
     /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
     /// with a body before anything else is built, bought when no defender
     /// exists, and a recon unit is not a defender. A `BasicAi` flag; see
@@ -3545,7 +3558,6 @@ impl AdvancedAi {
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
-
     // ---- append: t-z ------------------------------------------------
 }
 

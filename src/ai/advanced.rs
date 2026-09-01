@@ -5761,6 +5761,13 @@ pub struct AdvancedAi {
     /// ordering more after the race was lost. Opt-in gene
     /// `spaceport-surplus-veto`.
     spaceport_surplus_veto: bool,
+    /// Version 2 of `skip_the_prophet_race`: leave the Prophet race only
+    /// after every still-open religion slot has a rival forecast to reach the
+    /// current Prophet inside the short last-call window. A seat with active
+    /// Prophet income, a pending Prophet, Taxis, or an explicit Religion lane
+    /// keeps racing. Version 1 remains unchanged; enabling this version turns
+    /// version 1 off. Opt-in gene `skip-the-prophet-race-2`.
+    skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
     /// `trade-route-network`: a Commercial Hub (or a Harbor on a coast with
@@ -5902,6 +5909,13 @@ pub struct AdvancedAi {
 /// (Animal Husbandry and Mining on every live opening), so the Builder's work
 /// is not delayed and Astrology still lands by about turn 15.
 pub(crate) const PROPHET_RACE_OPENING_TECHS: usize = 2;
+
+/// The short forecast horizon for `skip-the-prophet-race-2`.
+///
+/// The v2 gate is deliberately a late-race decision: it fires only when a
+/// distinct active rival is inside this window for every remaining religion
+/// slot. The regression test pins both this boundary and the open-slot case.
+pub(crate) const PROPHET_RACE_LAST_CALL_TURNS: f64 = 12.0;
 
 /// What `holy_lane_parity` pays a Religion empire for its own Holy Site.
 ///
@@ -7276,6 +7290,7 @@ impl AdvancedAi {
             settler_target_hysteresis_2: false,
             siege_is_progress_2: false,
             spaceport_surplus_veto: false,
+            skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
             trade_route_network: false,
@@ -12841,10 +12856,9 @@ impl AdvancedAi {
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
                 // is still open for this seat.
-                _ if self.prophet_race_enabled_for(self.victory_target)
+                _ if self.prophet_race_enterable_for(g, pid, self.victory_target)
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
-                    && !g.players[pid].techs.contains(&crate::name!("astrology"))
-                    && self.prophet_race_open_for(g, pid) =>
+                    && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
                     Some("astrology")
                 }
@@ -13463,6 +13477,69 @@ impl AdvancedAi {
         claimed < g.max_religions() && g.turn * 2 <= g.max_turns.max(1)
     }
 
+    /// Whether v2 has reached the last call for a Prophet race this empire
+    /// has not yet begun. An observed rival only fills a slot when it earns
+    /// Prophet points now and can reach the currently offered Prophet inside
+    /// the bounded horizon; pending Prophets already consume their slots.
+    fn skip_prophet_race_2_for(&self, g: &Game, pid: usize, target: Option<VictoryTarget>) -> bool {
+        let player = &g.players[pid];
+        if !self.skip_the_prophet_race_2
+            || target == Some(VictoryTarget::Religion)
+            || g.has_ability(pid, "taxis")
+            || player.religion.is_some()
+            || player.prophet_pending
+            || !self.prophet_race_open_for(g, pid)
+        {
+            return false;
+        }
+
+        // Do not cancel a race this empire has already paid to enter.
+        if g.great_person_points_per_turn(pid)
+            .get("prophet")
+            .copied()
+            .unwrap_or(0.0)
+            > f64::EPSILON
+        {
+            return false;
+        }
+
+        let claimed = g.religions_founded()
+            + g.players
+                .iter()
+                .filter(|candidate| candidate.prophet_pending)
+                .count();
+        let open_slots = g.max_religions().saturating_sub(claimed);
+        if open_slots == 0 {
+            return false;
+        }
+
+        let rivals_at_last_call = g
+            .players
+            .iter()
+            .filter(|candidate| {
+                candidate.id != pid
+                    && candidate.alive
+                    && !candidate.is_minor
+                    && !candidate.is_barbarian
+                    && candidate.religion.is_none()
+                    && !candidate.prophet_pending
+            })
+            .filter(|candidate| {
+                let rate = g
+                    .great_person_points_per_turn(candidate.id)
+                    .get("prophet")
+                    .copied()
+                    .unwrap_or(0.0);
+                rate > f64::EPSILON
+                    && (g.gp_cost(candidate.id, "prophet")
+                        - candidate.gpp.get("prophet").copied().unwrap_or(0.0))
+                    .max(0.0)
+                        <= rate * PROPHET_RACE_LAST_CALL_TURNS
+            })
+            .count();
+        rivals_at_last_call >= open_slots
+    }
+
     /// Whether the optional secondary Prophet race is compatible with the
     /// seat's explicit lane. Science has a long, dead-end-free beeline and the
     /// 2026-09-01 deployment screen showed the race cutting its Science wins
@@ -13470,6 +13547,20 @@ impl AdvancedAi {
     /// and Prophet patronage.
     fn prophet_race_enabled_for(&self, target: Option<VictoryTarget>) -> bool {
         self.enter_the_prophet_race && target != Some(VictoryTarget::Science)
+    }
+
+    /// The secondary Prophet-race package has to agree on one admission gate:
+    /// research, district reservation, and Prophet affinity all use this
+    /// rather than reopening the race after v2 withdrew from it.
+    fn prophet_race_enterable_for(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+    ) -> bool {
+        self.prophet_race_enabled_for(target)
+            && self.prophet_race_open_for(g, pid)
+            && !self.skip_prophet_race_2_for(g, pid, target)
     }
 
     /// Whether the assigned victory lane can still be won. See
@@ -17566,10 +17657,7 @@ impl AdvancedAi {
                 | (GrandStrategy::Science | GrandStrategy::Culture, "engineer") => 300.0,
                 // `enter-the-prophet-race`: the Prophet is this seat's lane
                 // great person while a slot is still open for it.
-                (_, "prophet")
-                    if self.prophet_race_enabled_for(self.victory_target)
-                        && self.prophet_race_open_for(g, pid) =>
-                {
+                (_, "prophet") if self.prophet_race_enterable_for(g, pid, self.victory_target) => {
                     650.0
                 }
                 (_, "prophet") if g.players[pid].religion.is_some() => -1_000.0,
@@ -37192,9 +37280,11 @@ impl AdvancedAi {
         // recruits can found one. Kongo is exempt -- Taxis pays it for
         // everyone else's religion, so its faith economy is unconditional.
         let religion_race_closed = self.religion_race_closed_for(g, pid);
+        let skip_prophet_race_v2 = self.skip_prophet_race_2_for(g, pid, active_victory_target);
+        let skip_prophet_race = self.skip_the_prophet_race || skip_prophet_race_v2;
         self.base.pursue_religion = (g.has_ability(pid, "taxis")
             || active_victory_target == Some(VictoryTarget::Religion)
-            || (active_victory_target.is_none() && !self.skip_the_prophet_race))
+            || (active_victory_target.is_none() && !skip_prophet_race))
             && !religion_race_closed;
         // The prize and the entry fee are two different gates. Clearing
         // `pursue_religion` alone discards the winnings while still paying for
@@ -37202,7 +37292,7 @@ impl AdvancedAi {
         // reservation as well — but never against a seat whose own lane is
         // Religion, and never for Kongo, whose Taxis ability makes the faith
         // economy unconditional.
-        self.base.skip_prophet_race = (self.skip_the_prophet_race || religion_race_closed)
+        self.base.skip_prophet_race = (skip_prophet_race || religion_race_closed)
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
         // `enter-the-prophet-race`: the entry fee AND the prize, together,
@@ -37210,7 +37300,7 @@ impl AdvancedAi {
         // it holds a religion. The closed case above still wins, because
         // `prophet_race_open_for` is false by then.
         let prophet_race_enabled = self.prophet_race_enabled_for(active_victory_target);
-        let prophet_race_open = prophet_race_enabled && self.prophet_race_open_for(g, pid);
+        let prophet_race_open = self.prophet_race_enterable_for(g, pid, active_victory_target);
         self.base.enter_prophet_race = prophet_race_open;
         if prophet_race_open || (prophet_race_enabled && g.players[pid].religion.is_some()) {
             self.base.pursue_religion = true;
