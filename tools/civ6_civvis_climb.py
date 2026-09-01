@@ -1325,6 +1325,28 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
             # Seven `-contN` runs exist, all from 08-17..19; NONE since the
             # watchdog began signalling, which is exactly the window in which
             # parked cores became the dominant way a run dies.
+            # ⚠⚠ AND THE WATCHDOG SAYS SO IN WRITING, BECAUSE ITS CLOCK IS NOT
+            # THIS ONE. The stale-turn test below assumes the handoff arrives
+            # after five one-minute no-progress samples. Its OTHER trigger — a
+            # unit blocker repeated on one turn — needs no such wait: the mod
+            # re-raises the blocker every few seconds, so six sightings arrive
+            # inside two minutes. Run `civvis-20260831T085324Z-cont1` reloaded
+            # AutoSave_0119, re-wedged at t120 on ENDTURN_BLOCKING_UNITS, and
+            # was handed over at 09:44:13 — two minutes after its first turn.
+            # The turn was stale for well under 240 s, this read "exited", and
+            # the game was filed as killed at t120 with two resumes unspent.
+            # The watchdog writes `WEDGE_HANDOFF_MARKER` into the run before it
+            # signals the player, whichever trigger fired; that is the signal,
+            # and the clock is only the fallback for a watchdog too old to
+            # write it.
+            handoff = wedge_handoff(tag)
+            if handoff is not None:
+                print(f"[watchdog] the wedge watchdog handed {tag} over at turn "
+                      f"{handoff.get('turn', last_turn)} "
+                      f"({handoff.get('reason') or 'no reason recorded'}); "
+                      f"treating the attempt as frozen so its autosave can be "
+                      f"reloaded", flush=True)
+                return "frozen"
             if (last_turn is not None
                     and time.time() - last_turn_at > EXIT_WHILE_STALE_S):
                 print(f"[watchdog] the player exited with turn {last_turn} "
@@ -1416,6 +1438,31 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 # over five one-minute samples, so anything past four minutes of no new turn is
 # its signal arriving, not a game ending on its own.
 EXIT_WHILE_STALE_S = 240.0
+
+#: The file `civvis-agent-wedge-watchdog.sh` writes into a run's directory the
+#: moment it hands that run to the climb for an autosave reload — BEFORE it
+#: signals the player, so the climb finds it however quickly the player exits.
+#: The name is pinned on both sides by `test_ops_wedge_watchdog.py`.
+WEDGE_HANDOFF_MARKER = "wedge-handoff.json"
+
+
+def wedge_handoff(tag: str) -> dict | None:
+    """What the wedge watchdog wrote when it handed this run over, or None.
+
+    Existence is the signal. The body — turn, reason, time — is for the log and
+    the forensics; a marker this cannot parse still hands the run over, because
+    the watchdog only ever writes it on the reload branch.
+    """
+    marker = RUN_ROOT / tag / WEDGE_HANDOFF_MARKER
+    try:
+        raw = marker.read_text()
+    except OSError:
+        return None
+    try:
+        detail = json.loads(raw)
+    except ValueError:
+        return {}
+    return detail if isinstance(detail, dict) else {}
 
 
 # A game frozen before this turn is redone from scratch faster than it is
@@ -1679,7 +1726,18 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
 # deadlock, not a replay of the first. Without a distinct third index the extra
 # attempt would reload the same save as the second.
-RESUME_STEPS: tuple[int, ...] = (0, 3, 8)
+#
+# ⚠⚠ AND THE STRIDES PAST THE THIRD MUST KEEP WALKING, because the budget is six
+# (#2861) and a deterministic park survives strides. Three of the seven parks on
+# 2026-08-31 (t88, t147, t40) were escaped only by the NINE-BACK stride after
+# one-back and four-back both replayed into the same deadlock. With only three
+# entries, resumes four to six all clamped to the last index and reloaded the
+# very board the third attempt had just failed on — the waste #2817 removed at
+# the front of the rotation, reintroduced at its tail. So every later entry
+# reaches strictly further back (16, 25 and 36 turns), and a stride past the
+# oldest autosave on disk clamps to the oldest rather than giving up: a short
+# list is still a different board from the one that parked.
+RESUME_STEPS: tuple[int, ...] = (0, 3, 8, 15, 24, 35)
 
 
 def _autosave_turn(save: Path) -> int | None:
@@ -1892,9 +1950,10 @@ def main() -> int:
     # civvis-20260831T140630Z parked FOUR times by t118 (t87, t112, t112,
     # t118), ran out of budget mid-recovery, and was killed while standing at
     # 0.589 of the leader — a game the abandon rule would have let play to its
-    # t150 verdict. Resumes past the third reuse the widest stride, so the
-    # extra budget costs only the ~13 minutes a genuinely dead park wastes per
-    # attempt, against losing a live game's whole remaining arc.
+    # t150 verdict. Each resume past the third walks further back still (see
+    # `RESUME_STEPS`), so the extra budget costs only the ~13 minutes a
+    # genuinely dead park wastes per attempt plus the turns it replays, against
+    # losing a live game's whole remaining arc.
     ap.add_argument("--max-resumes", type=int, default=6,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
