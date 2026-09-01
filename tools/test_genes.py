@@ -1015,6 +1015,99 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
             self.assertIn(f'    ("{tag}", [{cells}]),', rust)
 
 
+#: A four-row registry, one of each kind, in the exact shape `genes_from_text`
+#: scrapes: the live arm rules are read off `kind` alone.
+ARM_REGISTRY = """
+pub const GENES: &[Gene] = &[
+    Gene { tag: "repair-row", field: "repair_row", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_repair_row, disable: AdvancedAi::disable_repair_row },
+    Gene { tag: "host-row", field: "host_row", kind: Kind::HostOnly, enable: AdvancedAi::enable_host_row, disable: AdvancedAi::disable_host_row },
+    Gene { tag: "opt-row", field: "opt_row", kind: Kind::OptIn, enable: AdvancedAi::enable_opt_row, disable: AdvancedAi::disable_opt_row },
+    Gene { tag: "other-opt-row", field: "other_opt_row", kind: Kind::OptIn, enable: AdvancedAi::enable_other_opt_row, disable: AdvancedAi::disable_other_opt_row },
+    Gene { tag: "production-row", field: "production_row", kind: Kind::Production, enable: AdvancedAi::enable_production_row, disable: AdvancedAi::disable_production_row },
+];
+"""
+
+
+class TheLiveArm(unittest.TestCase):
+    """`live_arm` mirrors `gene_ledger.rs` and `civvis_orders.rs`: the seat's
+    default and the one flag that forms the other arm, per kind."""
+
+    def setUp(self):
+        self.registry = gene_ledger.genes_from_text(ARM_REGISTRY)
+        # The ledger turns `opt-row` on, holds `repair-row` off, and says
+        # nothing about the host-only row (it cannot: no screen prices it).
+        self.ledger = {"rules": {"deployment_genome": ["opt-row", "production-row"]}}
+
+    def arm(self, tag):
+        return gene_ledger.live_arm(tag, self.ledger, self.registry)
+
+    def test_a_host_only_row_ships_on_and_without_is_its_arm(self):
+        self.assertIsNone(gene_ledger.ledger_default_on("host-row", self.ledger, self.registry))
+        info = self.arm("host-row")
+        self.assertEqual((info["live_default"], info["arm_flag"]),
+                         ("on", gene_ledger.WITHOUT_FLAG))
+        self.assertIn("host-row", gene_ledger.deployment_treatments(self.ledger, self.registry))
+
+    def test_a_held_repair_is_off_and_with_restores_it(self):
+        self.assertTrue(gene_ledger.ledger_held_live_treatment("repair-row", self.ledger, self.registry))
+        info = self.arm("repair-row")
+        self.assertEqual((info["live_default"], info["arm_flag"]),
+                         ("off", gene_ledger.WITH_FLAG))
+        self.assertNotIn("repair-row", gene_ledger.deployment_treatments(self.ledger, self.registry))
+
+    def test_an_opt_in_follows_the_deployment_genome_both_ways(self):
+        on = self.arm("opt-row")
+        self.assertEqual((on["live_default"], on["arm_flag"]), ("on", gene_ledger.WITHOUT_FLAG))
+        off = self.arm("other-opt-row")
+        self.assertEqual((off["live_default"], off["arm_flag"]), ("off", gene_ledger.WITH_FLAG))
+        self.assertTrue(gene_ledger.ledger_held_opt_in("other-opt-row", self.ledger, self.registry))
+        self.assertFalse(gene_ledger.ledger_held_opt_in("opt-row", self.ledger, self.registry))
+        self.assertEqual(gene_ledger.deployment_treatments(self.ledger, self.registry),
+                         ["host-row", "opt-row"])
+
+    def test_a_production_gene_has_a_default_but_no_arm(self):
+        info = self.arm("production-row")
+        self.assertEqual(info["live_default"], "on")
+        self.assertIsNone(info["arm_flag"])
+        with self.assertRaises(ValueError):
+            gene_ledger.screen_arm_flag("production-row", "off", self.ledger, self.registry)
+
+    def test_an_unknown_tag_has_neither(self):
+        info = self.arm("no-such-row")
+        self.assertIsNone(info["live_default"])
+        self.assertIsNone(info["arm_flag"])
+
+    def test_the_arm_equal_to_the_default_is_unarmed(self):
+        flag = gene_ledger.screen_arm_flag
+        self.assertEqual(flag("host-row", "on", self.ledger, self.registry), [])
+        self.assertEqual(flag("host-row", "off", self.ledger, self.registry),
+                         [gene_ledger.WITHOUT_FLAG, "host-row"])
+        self.assertEqual(flag("repair-row", "on", self.ledger, self.registry),
+                         [gene_ledger.WITH_FLAG, "repair-row"])
+        self.assertEqual(flag("repair-row", "off", self.ledger, self.registry), [])
+        with self.assertRaises(ValueError):
+            flag("repair-row", "sideways", self.ledger, self.registry)
+
+    def test_the_real_registry_gives_every_live_gene_an_arm(self):
+        """On the real ledger every `live()` row has an arm (the repairs and
+        host-only adapters ship on unless held off, and either way one flag
+        moves them), and `list` and `arm` agree on every opt-in."""
+        ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        selected = set(ledger["rules"]["deployment_genome"])
+        for row in gene_ledger.genes():
+            info = gene_ledger.live_arm(row.tag, ledger)
+            if row.live:
+                self.assertIsNotNone(info["arm_flag"], row.tag)
+                self.assertEqual(info["live_default"],
+                                 "off" if (row.screenable and row.tag not in selected) else "on",
+                                 row.tag)
+            elif row.opt_in:
+                self.assertEqual(info["live_default"], "on" if row.tag in selected else "off", row.tag)
+                self.assertIsNotNone(info["arm_flag"], row.tag)
+            else:
+                self.assertIsNone(info["arm_flag"], row.tag)
+
+
 class KnownTags(unittest.TestCase):
     def test_the_registry_is_read_and_a_removed_gene_is_dropped(self):
         known = gene_ledger.known_tags()
@@ -2320,6 +2413,28 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
             if tag in recorded:
                 self.assertEqual(recorded[tag]["default_on"], tag in selected,
                                  cell(cells, "Gene"))
+
+    def test_a_host_only_gene_never_lists_as_off(self):
+        """`list` reads a screenable row's state from the deployment genome. A
+        `Kind::HostOnly` row is never in that genome — no native screen can
+        price one — yet it is on in every live seat, and printing the genome's
+        answer read as `off` (believed from 2026-08-30 to 09-01)."""
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(ranking.main(["list"]), 0)
+        states = {}
+        for line in output.getvalue().splitlines():
+            tag, kind, state = line.split()[:3]
+            states[tag] = (kind, state)
+        host_only = [gene for gene in ranking.genes() if gene.host_only]
+        self.assertTrue(host_only, "the registry carries host-only genes")
+        for gene in host_only:
+            self.assertEqual(states[gene.tag], ("Kind::HostOnly", "on(live)"), gene.tag)
+        selected = set(self.ledger["rules"]["deployment_genome"])
+        for gene in ranking.genes():
+            if not gene.host_only:
+                self.assertEqual(states[gene.tag][1],
+                                 "on" if gene.tag in selected else "off", gene.tag)
 
     def test_a_gene_only_the_batches_priced_ships_on_in_the_ranking_and_the_list(self):
         """An authoritative row is optional; the batch rule's answer is not."""

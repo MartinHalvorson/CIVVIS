@@ -1713,6 +1713,21 @@ class TheSummaryNamesTheObjective(unittest.TestCase):
         self.assertIn('"victory_target": args.civvis_victory if args.civvis_decides',
                       source)
 
+    def test_the_summary_records_the_dealt_arm_of_a_live_screen(self):
+        """`withheld`/`forced` say which words reached the decider; they cannot
+        say that an unarmed run was the default arm of a screened gene. The
+        climb passes `--screen-gene`/`--screen-arm` beside the arm's word and
+        the summary keeps both, plus the PLAYED treatment lists lifted from the
+        decider's genome line (docs/LIVE_SCREEN.md)."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('"screen_gene": args.screen_gene if args.civvis_decides else None', source)
+        self.assertIn('"screen_arm": args.screen_arm if args.civvis_decides else None', source)
+        self.assertIn('ap.add_argument("--screen-arm", default=None, choices=("on", "off")', source)
+        self.assertIn('summary["genome_treatments"] = {', source)
+        for key in ("treatments", "ledger_withheld", "forced"):
+            self.assertIn(f'"{key}"', source[source.index('summary["genome_treatments"]'):
+                                             source.index('summary["genome"] = genome')])
+
     def test_a_run_that_is_not_civvis_deciding_claims_no_lane(self):
         """The flag names what the CIVVIS worker plays for. A run the worker did
         not decide has no lane to report, and reporting one would file a Firaxis

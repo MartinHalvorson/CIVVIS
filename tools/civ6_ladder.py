@@ -789,6 +789,14 @@ def decider_genome(why_log: Path) -> dict | None:
                     "lane": record.get("lane"),
                     "civ": record.get("civ"),
                     "strength_bound": record.get("strength_bound"),
+                    # The played treatment lists (`civvis_orders.rs`, the
+                    # `genome` line): what the ledger left on plus any forced
+                    # row, what it held off, and what `--with` restored. None
+                    # on a decider that predates the lists. `civ6_play` lifts
+                    # these three onto `summary["genome_treatments"]`.
+                    "treatments": record.get("treatments"),
+                    "ledger_withheld": record.get("ledger_withheld"),
+                    "forced": record.get("forced"),
                 }
     except OSError:
         return None
