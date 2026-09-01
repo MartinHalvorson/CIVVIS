@@ -3338,6 +3338,14 @@ def _play(args: argparse.Namespace) -> int:
     atexit.register(_partial_summary_if_stopped)
 
     def record(event: dict) -> None:
+        # ★ RECEIPT TIME — the run's only wall-clock. `Automation.log` carries no
+        # clock, so events.jsonl could say an opening board waited 20 polls but
+        # never whether the 90 s between two screens went to the game, the log
+        # tail or the brain. Stamped once, the moment the line reaches this
+        # process; `civ6_brain` measures its answer against it (`brain.log`) and
+        # `tools/live_turn_clock.py` reads the per-turn profile from it.
+        event.setdefault("utc", datetime.now(timezone.utc)
+                         .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
@@ -3913,6 +3921,14 @@ def _play(args: argparse.Namespace) -> int:
         # Keep the exact named arm with the summary even if no binary event was
         # retained, so a force-on run never resembles deployment afterwards.
         "forced": sorted(args.civvis_with) if args.civvis_decides else None,
+        # ★★★ THE DEALT ARM OF A LIVE SCREEN. `withheld`/`forced` above say
+        # what words reached the decider; they cannot say that an unarmed run
+        # was the default arm of a screened gene rather than an ordinary
+        # deployment row. `screen_gene` names the gene and `screen_arm` the
+        # arm the tag dealt (`civ6_civvis_climb.screen_arm`), so the ledger
+        # can split a screen's games without a rota to consult.
+        "screen_gene": args.screen_gene if args.civvis_decides else None,
+        "screen_arm": args.screen_arm if args.civvis_decides else None,
         # And the MOD side of the same question. The fallback ladder decides a
         # real share of production, so an arm is only fully described when both
         # halves are recorded. Add a switch here when it becomes A/B-able —
@@ -4006,6 +4022,15 @@ def _play(args: argparse.Namespace) -> int:
         # be compared on the ledger instead of in a log excavation.
         genome = civ6_ladder.decider_genome(run_dir / "why.log")
         if genome is not None:
+            # The played genome: `treatments` is what the ledger left on plus
+            # any forced row, `ledger_withheld` what it held off. `why.log`
+            # never reaches the ledger branch, so without this the pulled
+            # cache can only say what was ASKED (`withheld`/`forced`), never
+            # what PLAYED — and a stale binary plays a shorter list.
+            summary["genome_treatments"] = {
+                key: genome.pop(key, None)
+                for key in ("treatments", "ledger_withheld", "forced")
+            }
             summary["genome"] = genome
             requested = (args.civvis_strategy or "").strip()
             summary["strategy_requested"] = requested or None
@@ -4291,6 +4316,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="restore one ledger-held live treatment for a labeled "
                          "verification arm, repeatable; the decision worker "
                          "validates the name and keeps deployment unchanged by default")
+    ap.add_argument("--screen-gene", default=None, metavar="TAG",
+                    help="the gene a live screen deals this run an arm of; "
+                         "recorded beside --screen-arm so the ledger can split "
+                         "the screen's games (docs/LIVE_SCREEN.md)")
+    ap.add_argument("--screen-arm", default=None, choices=("on", "off"),
+                    help="the dealt arm of --screen-gene: `on` or `off`, as "
+                         "realised by the --civvis-with/--civvis-without word "
+                         "the climb passed beside it, or by no word when the "
+                         "arm is the gene's live default")
     ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
                     help="forwarded to the decision worker as "
                          "--github-refresh-seconds; 0 freezes the decider on its "

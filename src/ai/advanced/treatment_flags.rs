@@ -3403,6 +3403,17 @@ impl AdvancedAi {
         self.air_surge_2 = false;
     }
 
+    /// `settler-site-gate`: a city starts a Settler only while an acceptable,
+    /// unclaimed site worth founding exists. See `advanced/settler_site_gate.rs`.
+    pub fn enable_settler_site_gate(&mut self) {
+        self.settler_site_gate = true;
+    }
+
+    /// The twin of `enable_settler_site_gate`.
+    pub fn disable_settler_site_gate(&mut self) {
+        self.settler_site_gate = false;
+    }
+
     /// `campus-through-expansion` (OptIn): a Science seat prices the Campus
     /// and its buildings in the Science lane while its plan still reads
     /// Expansion, and no city's first specialty district may be an
