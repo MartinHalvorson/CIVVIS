@@ -8121,7 +8121,9 @@ mod tests {
             withhold_live_treatment(&mut ai, tag)
                 .expect("an opt-in the ledger turns on is a withholdable arm");
             assert!(
-                withholdable_treatments().split(", ").any(|name| name == tag),
+                withholdable_treatments()
+                    .split(", ")
+                    .any(|name| name == tag),
                 "the usage line must list the arm it accepts"
             );
         }

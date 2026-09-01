@@ -1051,9 +1051,16 @@ mod tests {
         for gene in super::super::GENES.iter() {
             let tag = gene.tag;
             if gene.host_only() {
-                assert_eq!(ledger_default_on(tag), None, "{tag}: no screen prices a host-only row");
+                assert_eq!(
+                    ledger_default_on(tag),
+                    None,
+                    "{tag}: no screen prices a host-only row"
+                );
                 assert!(deployed.contains(&tag), "{tag}: a host-only row ships on");
-                assert!(!ledger_held_live_treatment(tag), "{tag}: nothing holds it off");
+                assert!(
+                    !ledger_held_live_treatment(tag),
+                    "{tag}: nothing holds it off"
+                );
             }
             if gene.live() {
                 assert_eq!(
@@ -1073,7 +1080,10 @@ mod tests {
                     "{tag}: a held opt-in is exactly one the ledger does not turn on"
                 );
             } else {
-                assert!(!deployed.contains(&tag), "{tag}: a production gene is not a treatment");
+                assert!(
+                    !deployed.contains(&tag),
+                    "{tag}: a production gene is not a treatment"
+                );
             }
         }
     }
