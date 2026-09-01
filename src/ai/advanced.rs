@@ -5125,6 +5125,10 @@ pub struct AdvancedAi {
     /// it is still walking. Unit-keyed and remapped with the live bridge.
     early_settler_homes: BTreeMap<u32, Pos>,
     // ---- append: g-k ------------------------------------------------
+    /// `guard-breaks-the-pin`: a Settler's stacked guard strikes the raider
+    /// whose zone of control pins the pair when the trade is worth it.
+    /// Host-only; see `advanced/siege_response.rs`.
+    guard_breaks_the_pin: bool,
     /// `hostile-memory`: the civilian capture envelope counts every at-war
     /// owner (barbarians, Free Cities and a major at war alike) and keeps
     /// pricing a hostile the seat has actually seen for
@@ -6296,6 +6300,10 @@ mod settler_never_idles;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
+/// A barbarian ring on a city's doorstep is answered before anything else
+/// is built, and a Settler's guard cuts down the raider pinning it. Two
+/// genes; see `advanced/siege_response.rs`.
+mod siege_response;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -7057,6 +7065,7 @@ impl AdvancedAi {
             early_settler_homes: BTreeMap::new(),
 
             // ---- append: g-k ----------------------------------------
+            guard_breaks_the_pin: false,
             hostile_memory: false,
             hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
@@ -22485,6 +22494,48 @@ impl AdvancedAi {
             // queues. Preserve that contract even when an experimental
             // preemption margin is active: a banked unit can finish, but no
             // fresh upkeep-bearing commitment starts while the treasury heals.
+            // `siege-preempts-the-queue`: see `advanced/siege_response.rs`. A
+            // raider within `SIEGE_RADIUS` of a city with no defender at all is
+            // bought out of the treasury first; a queue holding anything but a
+            // soldier then switches to the ring's unit answer. Both run ahead
+            // of the `committed` early-out below, which is what kept the
+            // shipped barbarian branch from ever seeing a city that was busy
+            // building the Settler the ring was pinning (live run
+            // civvis-20260901T193130Z, t26–t40).
+            if self.base.siege_preempts_the_queue {
+                if let Some(bought) = self.siege_defender_purchase(g, pid, cid) {
+                    counts.add_item(g, &bought);
+                }
+                if let Some((current, current_item)) = committed.as_ref() {
+                    if let Some((item, raiders)) =
+                        self.siege_preemption_item(g, pid, cid, current_item)
+                    {
+                        if g.apply(
+                            pid,
+                            &Action::Produce {
+                                city: cid,
+                                item: item.clone(),
+                            },
+                        )
+                        .is_ok()
+                        {
+                            if self.journal().wants(crate::reasoning::Level::Decision) {
+                                let city_name = g.cities[&cid].name.clone();
+                                think!(self.journal(), Military, Decision,
+                                    "{} switches to {} to break a barbarian siege",
+                                    city_name, Self::plain_item(&item);
+                                    "{raiders} raider(s) within {} tiles and a defender short; \
+                                     {} (worth {current:.0}) is banked by name and resumes once \
+                                     the ring is answered",
+                                    siege_response::SIEGE_RADIUS, Self::plain_item(current_item));
+                            }
+                            counts.add_item(g, &item);
+                            self.clear_idle_production_streak(cid);
+                            continue;
+                        }
+                    }
+                }
+            }
             if committed.is_some() && (self.preempt_margin <= 1.0 || economic_recovery) {
                 continue;
             }
@@ -34063,6 +34114,13 @@ impl AdvancedAi {
             return None;
         }
         if unit.pos == settler_pos {
+            // `guard-breaks-the-pin`: the raider whose zone of control holds
+            // the Settler on this tile is cut down when the trade is worth
+            // it, instead of the pair fortifying beside it turn after turn.
+            // See `advanced/siege_response.rs`.
+            if self.guard_breaks_the_pin(g, pid, uid, settler_pos) {
+                return Some(true);
+            }
             think!(self.journal(), Expansion, Detail, "Guard stands with its settler";
                    "sharing the tile blocks capture outright"; settler_pos);
             return Some(self.base.fortify_or_stop(g, pid, uid));
