@@ -362,19 +362,31 @@ def restart_reading(records: Iterable[dict], ratio: float, closing: dict) -> dic
     of that game with a *different* game whose result is unrecorded. What it
     can say exactly is the **risk**: how many stopped games later climbed back
     over the score line, and how many were won.
+
+    Explicitly targeted Science summaries are exempt from the score stop for
+    the same reason as the live harness: score can lag a Science race until
+    Rocketry and launch projects complete. Keeping this replay lane-aware is
+    necessary; otherwise the census would disagree with the run it claims to
+    reproduce.
     """
     state: dict[str, Any] = {}
     verdict = None
     last_turn = 0
     recovered_after = False
     best_ratio_after = 0.0
+    victory_target = closing.get("victory_target")
+    score_stop_allowed = civ6_play.leader_score_stop_allowed(
+        civvis_decides=victory_target is not None,
+        victory_target=victory_target,
+    )
     for record in records:
         kind = record.get("kind")
         if kind == "turn" and record.get("ctx") == "agent":
             turn = record.get("turn")
             if isinstance(turn, int) and not isinstance(turn, bool):
                 last_turn = max(last_turn, turn)
-        fired = below_leader_score_reading(state, record, ratio)
+        fired = (below_leader_score_reading(state, record, ratio)
+                 if score_stop_allowed else None)
         if fired is not None and verdict is None:
             verdict = fired
         if verdict is not None and kind == "turn" and record.get("ctx") == "agent":
@@ -389,6 +401,7 @@ def restart_reading(records: Iterable[dict], ratio: float, closing: dict) -> dic
     final_score = _number(closing.get("last_score"))
     final_rival = _number(closing.get("rival_best"))
     return {
+        "score_stop_allowed": score_stop_allowed,
         "fired": verdict is not None,
         "fire_turn": verdict.get("turn") if verdict else None,
         "fire_score_ratio": verdict.get("score_ratio") if verdict else None,

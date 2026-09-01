@@ -681,13 +681,19 @@ What remains is one rule, carried by `civ6_play.py` itself as a default
 (`--restart-below-leader-ratio 0.60`; the supervisor and the climb forward
 `CIVVIS_RESTART_BELOW_LEADER_RATIO` verbatim when it is set, and `0` plays
 every game out): at or after turn 150, a score under 60 % of the leader's for
-any readable agent turn immediately abandons the game. "The leader" is the
+any readable agent turn immediately abandons the game. Explicitly targeted
+Science runs are the deliberate exception: their score can trail while
+Rocketry, Spaceports, and launch projects are converting research into the
+victory condition, so a score gap is not evidence that the lane is lost. They
+finish on an actual victory/defeat or the turn limit. "The leader" is the
 best-scoring rival the seat has met — `rival_best` in the mod's turn record —
 so a rival still unmet at turn 150 is invisible to the rule, which errs toward
 playing on. A turn without a standing is not a termination reading. An
 abandoned run is filed with `reason: "abandoned"` and the verdict (`rule:
 below_leader_score`, turn, standing, ratio, line) in its summary and ledger row
-— its own ending, never a stall, a wedge or a defeat.
+— its own ending, never a stall, a wedge or a defeat. The replay census reads
+`victory_target` from that summary so its counterfactual restart report uses
+the same Science exception as the live harness.
 
 ### The run always tests the latest code
 

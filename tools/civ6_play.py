@@ -177,7 +177,10 @@ def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
 
 # ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
 # policy: play verification games out in full, except at or after turn 150
-# when our score is under 60 % of the leader's score.
+# when our score is under 60 % of the leader's score. An explicitly targeted
+# Science race is exempt from that score stop: Science can trail score while it
+# converts Rocketry and Space Race projects into a win, so score is not a valid
+# loss certificate for that lane.
 #
 # ⚠ THE NUMBER HERE WAS 0.40 AND EVERY PROSE STATEMENT OF THE POLICY SAID 60 %.
 # `docs/CIV6_COMPUTER_CONTROL.md` ("under 60 % of the leader after turn 150 is
@@ -197,9 +200,10 @@ def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
 # the measured win-rate table behind the old abandon floor (#2174; off). All
 # four are gone. What remains is the operator's one rule, and it is a default
 # of the harness itself, not of a launcher: at or after turn 150, a readable
-# score under 60 % of the leader's immediately abandons the game. A seat still
-# within reach of the field — two thirds of the leader's score at turn 150 —
-# stays in play to finish its game.
+# score under 60 % of the leader's immediately abandons the game, unless the
+# run is explicitly targeted at Science. A seat still within reach of the field
+# — two thirds of the leader's score at turn 150 — stays in play to finish its
+# game.
 #
 # "The leader" is the best-scoring rival the seat has met — `rival_best` in
 # the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
@@ -211,6 +215,20 @@ def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
 # verdict), never as a stall, a wedge or a defeat.
 LEADER_SCORE_MIN_TURN = 150
 DEFAULT_LEADER_SCORE_RATIO = 0.60
+
+
+def leader_score_stop_allowed(*, civvis_decides: bool,
+                              victory_target: str | None) -> bool:
+    """Whether the generic score-abandon rule may end this live run.
+
+    A targeted Science run can be materially behind on score after turn 150
+    and still be on the only useful path to a Science victory: its score often
+    catches up only after Rocketry, Spaceports, and launch projects complete.
+    The turn limit and the actual victory/defeat events remain the termination
+    criteria for that lane. Adaptive CIVVIS runs keep the standing rule because
+    they have not committed to Science.
+    """
+    return not (civvis_decides and victory_target == "science")
 
 
 def _nonnegative_metric(value: object) -> float | int | None:
@@ -3516,11 +3534,15 @@ def _play(args: argparse.Namespace) -> int:
             # host request, not an inferred game exit or a generic stop.
             return True
         # And OUR decision that the game is lost — the operator's one rule:
-        # under 40 % of the leader's score on a readable turn at or after 150.
-        # See `below_leader_score_reading`.
+        # under the configured share of the leader's score on a readable turn
+        # at or after 150. An explicitly targeted Science lane is intentionally
+        # exempt; see `leader_score_stop_allowed`.
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
-        )
+        ) if leader_score_stop_allowed(
+            civvis_decides=args.civvis_decides,
+            victory_target=args.civvis_victory,
+        ) else None
         if verdict is not None:
             state["abandoned"] = verdict
             print(f"[abandon] turn {verdict['turn']}: score {verdict['score']} "
@@ -4100,7 +4122,8 @@ def main(argv: list[str] | None = None) -> int:
                          "share of the leader's (best met rival); 0 plays every "
                          "game out. Current operator policy: 0.60 (less than "
                          "60%% of the leader's score), and no "
-                         "other early stop")
+                         "other early stop; explicitly targeted Science runs "
+                         "are exempt because score lags that victory path")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="accepted for compatibility; live games always select "
