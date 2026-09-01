@@ -5260,8 +5260,8 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     let targeted_value =
         targeted.district_project_value(&game, 0, city, "commercial_hub_investment", &science_plan);
     assert!(
-        targeted_value <= PROJECT_BEHIND_BUILDINGS_CAP,
-        "the Science target must cap the repeatable project without a genome override: \
+        targeted_value <= -9_999.0,
+        "the explicit Science target must refuse Commercial Hub Investment outright: \
          {targeted_value}"
     );
 

@@ -12067,6 +12067,18 @@ impl AdvancedAi {
         project: &str,
         plan: &StrategicPlan,
     ) -> f64 {
+        // An explicit Science lane is a production contract, not merely a
+        // preference. Commercial Hub Investment converts the queue into Gold
+        // and can reappear after the research-building debt is paid; that is
+        // still the wrong use of a Science city's queue while the Space Race
+        // is open. Keep the lane's refusal hard at the shared project scorer
+        // so it also covers cities with no remaining Library/University/Lab
+        // or Workshop debt.
+        if self.active_victory_target(g) == Some(VictoryTarget::Science)
+            && project == "commercial_hub_investment"
+        {
+            return -10_000.0;
+        }
         let spec = &g.rules.projects[project];
         let city = &g.cities[&cid];
         let production = g.city_yields(cid).production.max(1.0);
