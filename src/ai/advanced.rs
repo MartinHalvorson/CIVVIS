@@ -26152,8 +26152,7 @@ impl AdvancedAi {
                             // See `settler_guard_holds`: the guard mirrors the
                             // settler's step from its tile, or already stands
                             // on the destination and holds there.
-                            && ((guard.pos == settler_pos
-                                && (pos == settler_pos || g.reachable(guard.id).contains(&pos)))
+                            && (guard.pos == settler_pos
                                 || (self.settler_guard_holds_on() && guard.pos == pos))
                             && guard.hp >= STACKED_GUARD_MIN_HP
                             && g.rules.units[guard.kind].class == "military"
