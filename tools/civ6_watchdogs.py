@@ -1,16 +1,16 @@
-"""Detectors for the two failures that ran for a whole night without being noticed.
+"""Detectors for failures that ran for a whole night without being noticed.
 
     python3 tools/civ6_watchdogs.py                 # newest run
     python3 tools/civ6_watchdogs.py --run TAG
     python3 tools/civ6_watchdogs.py --all --json out.jsonl
 
-⚠ THIS FILE EXISTS BECAUSE BOTH FAILURES BELOW ARE INVISIBLE IN EVERY EXISTING
+⚠ THIS FILE EXISTS BECAUSE THE FAILURES BELOW ARE INVISIBLE IN EVERY EXISTING
 REPORT. `civ6_civvis_status.py` reads green on both: `orders_source: civvis` on
 every turn, `applied` in the 90s, `residual: none` — while the army stands in the
 capital and the mirror describes a different map than the one on screen. A summary
 that cannot go red for a failure is not a check for it.
 
-Both detectors report a NUMERATOR AND A DENOMINATOR, never a boolean, for the reason
+The detectors report a NUMERATOR AND A DENOMINATOR, never a boolean, for the reason
 this project has now learned four times: a mechanism that works and a mechanism that
 destroys itself both read "connected".
 
@@ -53,6 +53,15 @@ OFFSET coordinates. Given both, the check is tile for tile:
 
 A run with `missing_in_mirror` above zero is not a valid measurement of CIVVIS's
 judgement: it answered a different map.
+
+## 3. civilian losses — Settlers and Builders disappearing without a verdict
+
+The engine emits `unit_lost` both when a Settler founds a city and when a hostile
+takes it. The precise `unit_captured` callback is preferred; a non-terminal Settler
+loss without a matching `found` is retained as the older capture heuristic. Builder
+losses have no founding counterpart, so they are reported as unresolved instead of
+being guessed. This makes hidden-fog captures and other automation mistakes loud
+while the adjacent state and order frames are still available.
 """
 
 from __future__ import annotations
@@ -573,6 +582,216 @@ def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict
         "military_builds_late_war": late_war_military,
         "prod_blocks_after_t100": prod_late,
         "prod_blocks_after_t100_unanswered": prod_late_unanswered,
+    }
+
+
+CIVILIAN_UNIT_KINDS = {"UNIT_SETTLER", "UNIT_BUILDER"}
+
+
+def _event_turn(event: dict) -> int | None:
+    try:
+        return int(event.get("turn"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _terminal_turn(events: list[dict]) -> int | None:
+    """Return the first turn at which the local empire was actually over."""
+    turns = []
+    for event in events:
+        kind = event.get("kind")
+        # The stream also records rivals' defeats.  Only the local defeat is a
+        # terminal disposal of our remaining units.
+        if kind == "defeat" and event.get("ours") is not True:
+            continue
+        if kind not in {"victory", "gameover", "defeat"}:
+            continue
+        turn = _event_turn(event)
+        if turn is not None:
+            turns.append(turn)
+    return min(turns) if turns else None
+
+
+def civilian_losses(events: list[dict]) -> dict:
+    """Make Settler/Builder removals visible instead of silently losing them.
+
+    Civ6 removes a Settler both when it founds a city and when a hostile takes it;
+    both paths emit ``unit_lost``.  The precise ``unit_captured`` event names the
+    latter when the installed mod provides it.  Older runs have no such event, so
+    a non-terminal Settler removal without a matching ``found`` remains the
+    project's established capture heuristic.  Builders have no analogous
+    founding event, but a last-charge improvement is an expected consumption. Any
+    other unpaired Builder removal is deliberately called unresolved rather than
+    guessed to be combat or capture.
+
+    This is a detector, not a claim that every unresolved Builder was captured.
+    Its job is to make the loss loud enough that the adjacent state/order frames
+    can be investigated while the run is still useful.
+    """
+    if not events:
+        return {
+            "checked": False,
+            "unit_lost_events": 0,
+            "founding_losses": 0,
+            "non_founding_losses": 0,
+            "expected_builder_consumptions": 0,
+            "explicit_captures": 0,
+            "inferred_settler_captures": 0,
+            "unresolved_losses": 0,
+            "terminal_disposals": 0,
+            "by_kind": {},
+            "by_reason": {},
+            "examples": [],
+            "builder_consumption_examples": [],
+        }
+
+    # The kind can be absent from a capture callback if the unit's last export
+    # was already gone; pair it with the kind from its removal witness first.
+    kind_by_unit: dict[str, str] = {}
+    for event in events:
+        if event.get("kind") != "unit_lost" or event.get("unit") is None:
+            continue
+        kind = event.get("unit_kind")
+        if kind in CIVILIAN_UNIT_KINDS:
+            kind_by_unit[str(event["unit"])] = kind
+
+    found_units = {
+        str(event["unit"])
+        for event in events
+        if event.get("kind") == "found" and event.get("unit") is not None
+    }
+    captured_by_unit: dict[str, dict] = {}
+    for event in events:
+        if event.get("kind") != "unit_captured" or event.get("unit") is None:
+            continue
+        kind = event.get("unit_kind") or kind_by_unit.get(str(event["unit"]))
+        if kind in CIVILIAN_UNIT_KINDS:
+            captured_by_unit.setdefault(str(event["unit"]), event)
+
+    terminal = _terminal_turn(events)
+    # A Builder with one charge remaining disappears after a verified improvement;
+    # this is normal Civ6 behavior, not a hostile loss.  Keep the last exported
+    # charge count per unit/turn so the classification does not depend on event
+    # ordering between the state frame and the asynchronous order verification.
+    builder_charges: dict[str, list[tuple[int, int, int]]] = defaultdict(list)
+    for index, event in enumerate(events):
+        if event.get("kind") != "state":
+            continue
+        turn = _event_turn(event)
+        if turn is None:
+            continue
+        for unit in event.get("units") or []:
+            if (unit.get("kind") == "UNIT_BUILDER"
+                    and unit.get("id") is not None
+                    and unit.get("build_charges") is not None):
+                try:
+                    charges = int(unit["build_charges"])
+                except (TypeError, ValueError):
+                    continue
+                builder_charges[str(unit["id"])].append((turn, index, charges))
+
+    verified_improvements = {
+        (str(event.get("subject")), _event_turn(event))
+        for event in events
+        if event.get("kind") == "order_verified"
+        and str(event.get("verb") or "").startswith("IMPROVE:")
+        and event.get("subject") is not None
+    }
+
+    def builder_was_consumed(unit_key: str, turn: int | None) -> bool:
+        if turn is None or (unit_key, turn) not in verified_improvements:
+            return False
+        samples = [sample for sample in builder_charges.get(unit_key, [])
+                   if sample[0] <= turn]
+        return bool(samples) and max(samples, key=lambda sample: (sample[0], sample[1]))[2] == 1
+
+    losses = []
+    founding_losses = 0
+    expected_builder_consumptions = []
+    terminal_disposals = 0
+    unit_lost_events = 0
+    for event in events:
+        if event.get("kind") != "unit_lost":
+            continue
+        kind = event.get("unit_kind")
+        if kind not in CIVILIAN_UNIT_KINDS or event.get("unit") is None:
+            continue
+        unit_lost_events += 1
+        unit_key = str(event["unit"])
+        turn = _event_turn(event)
+        if terminal is not None and turn is not None and turn >= terminal:
+            terminal_disposals += 1
+            continue
+        if unit_key in found_units:
+            founding_losses += 1
+            continue
+        if unit_key in captured_by_unit:
+            reason = "unit_captured"
+        elif kind == "UNIT_SETTLER":
+            reason = "settler_loss_without_found"
+        elif builder_was_consumed(unit_key, turn):
+            expected_builder_consumptions.append({
+                "turn": turn,
+                "unit": event.get("unit"),
+                "unit_kind": kind,
+                "reason": "builder_last_charge",
+            })
+            continue
+        else:
+            reason = "unresolved_loss"
+        capture = captured_by_unit.get(unit_key)
+        record = {
+            "turn": turn,
+            "unit": event.get("unit"),
+            "unit_kind": kind,
+            "reason": reason,
+        }
+        if event.get("cause") is not None:
+            record["cause"] = event["cause"]
+        if capture is not None:
+            for key in ("captor", "captor_is_barbarian"):
+                if capture.get(key) is not None:
+                    record[key] = capture[key]
+        losses.append(record)
+
+    # A precise callback is useful even if a broken/old host omitted the paired
+    # removal witness.  It must still make the verdict loud.
+    loss_units = {str(record["unit"]) for record in losses}
+    for unit_key, capture in captured_by_unit.items():
+        if unit_key in loss_units or unit_key in found_units:
+            continue
+        kind = capture.get("unit_kind") or kind_by_unit.get(unit_key)
+        losses.append({
+            "turn": _event_turn(capture),
+            "unit": capture.get("unit"),
+            "unit_kind": kind,
+            "reason": "unit_captured_without_loss_witness",
+            **{
+                key: capture[key]
+                for key in ("captor", "captor_is_barbarian")
+                if capture.get(key) is not None
+            },
+        })
+
+    by_kind = Counter(record.get("unit_kind") or "?" for record in losses)
+    by_reason = Counter(record["reason"] for record in losses)
+    inferred = sum(record["reason"] == "settler_loss_without_found" for record in losses)
+    unresolved = sum(record["reason"] == "unresolved_loss" for record in losses)
+    explicit = len(captured_by_unit)
+    return {
+        "checked": True,
+        "unit_lost_events": unit_lost_events,
+        "founding_losses": founding_losses,
+        "non_founding_losses": len(losses),
+        "expected_builder_consumptions": len(expected_builder_consumptions),
+        "explicit_captures": explicit,
+        "inferred_settler_captures": inferred,
+        "unresolved_losses": unresolved,
+        "terminal_disposals": terminal_disposals,
+        "by_kind": dict(by_kind.most_common()),
+        "by_reason": dict(by_reason.most_common()),
+        "examples": losses[:12],
+        "builder_consumption_examples": expected_builder_consumptions[:12],
     }
 
 
@@ -1171,6 +1390,19 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"{prod['war_midpoint']} — the second half of a {prod['war_turns']}-turn "
             f"war — and NOT ONE was a military unit. An army that cannot replace its "
             f"losses loses the war it is in.")
+    civilian = report.get("civilian_losses") or {}
+    if (civilian.get("non_founding_losses")
+            or civilian.get("explicit_captures")):
+        out.append(
+            f"CIVILIAN LOSSES: {civilian.get('non_founding_losses', 0)} non-founding "
+            f"loss(es), {civilian.get('explicit_captures', 0)} explicit capture(s), "
+            f"{civilian.get('inferred_settler_captures', 0)} inferred Settler capture(s), "
+            f"{civilian.get('unresolved_losses', 0)} unresolved; by kind "
+            f"{civilian.get('by_kind', {})}. Founding removals excluded: "
+            f"{civilian.get('founding_losses', 0)}; expected last-charge Builder "
+            f"consumptions excluded: {civilian.get('expected_builder_consumptions', 0)}. "
+            f"Examples: "
+            f"{civilian.get('examples', [])[:4]}")
     mirror = report.get("mirror") or {}
     if mirror.get("error"):
         out.append(f"MIRROR NOT CHECKED: {mirror['error']}")
@@ -1258,6 +1490,7 @@ def main() -> int:
             "events_bytes": (run / "events.jsonl").stat().st_size,
             "idle_stack": idle_stack(events, args.frozen_turns),
             "production_health": production_health(events),
+            "civilian_losses": civilian_losses(events),
         }
         if not args.no_mirror:
             report["mirror"] = mirror_agreement(run, events, Path(args.orders_bin))
@@ -1283,6 +1516,13 @@ def main() -> int:
               f"  late-war military {prod['military_builds_late_war']}/{prod['builds_late_war']}"
               f"  late blocks unanswered {prod['prod_blocks_after_t100_unanswered']}"
               f"/{prod['prod_blocks_after_t100']}")
+        civilian = report["civilian_losses"]
+        print(f"  civilian: {civilian['non_founding_losses']} non-founding loss(es)"
+              f"  explicit captures {civilian['explicit_captures']}"
+              f"  inferred Settler captures {civilian['inferred_settler_captures']}"
+              f"  unresolved {civilian['unresolved_losses']}"
+              f"  founding removals {civilian['founding_losses']}"
+              f"  expected Builder consumptions {civilian['expected_builder_consumptions']}")
         managed_people = max(
             report["dropped_units"].get(
                 "bridge_managed_great_person_observations", 0
