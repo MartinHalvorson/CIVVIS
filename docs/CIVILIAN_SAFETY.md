@@ -42,6 +42,32 @@ before it moves again. So:
    capture-aware route; another city founding does not move the anchor
    underneath it.
 
+## Long expedition escorts on the live bridge
+
+The formationless live escort keeps the ordinary threat rule for a short,
+local walk. A route that first measures at least four tiles from the Settler's
+home is instead an **expedition**: its destination is remembered, and its land
+guard stays assigned through quiet ground rather than being returned to the
+army after the first safe step.
+
+An expedition uses the movement layer that can protect the leg it is on:
+
+- On land, a healthy land military unit shadows the Settler. If it can embark,
+  that same unit remains the landing guard.
+- While the Settler is on water, a nearby healthy naval military unit may join
+  in a second binding. A civilian, embarked land unit, and naval unit occupy
+  legal separate stack layers, so both guards can travel with the same
+  Settler.
+- At a shoreline step, the naval guard stays in the water and is released by
+  its own ordinary turn. The land guard is pulled ashore with the Settler when
+  it can make that move. It then covers the hostile turn until the Settler
+  founds the new city on its next turn.
+
+This is intentionally best effort. Guards are selected within the existing
+escort search radius; a missing or delayed unit never freezes an expansion
+forever. No `LinkUnits` formation is issued, because that Civilization VI
+channel is the host behavior that stalls settled expeditions.
+
 **Visibility.** The reach is drawn from the raiders inside the turn-start
 vision frame, as every other civilian-risk path reads the board — never
 through fog. The live bridge only ever exports what the seat sees, so this is
