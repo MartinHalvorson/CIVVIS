@@ -56,7 +56,7 @@ impl AdvancedAi {
         site: Pos,
         worth: f64,
     ) -> bool {
-        !self.settler_target_floor
+        !(self.settler_target_floor || self.rapid_city_expansion_2)
             || Self::settler_target_worth_after_travel(g, from, site, worth)
                 >= SETTLER_TARGET_WORTH_FLOOR
     }

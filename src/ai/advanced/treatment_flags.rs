@@ -1335,6 +1335,7 @@ impl AdvancedAi {
     /// then a conquest posture only after the practical frontier is exhausted.
     /// See [`AdvancedAi::rapid_city_expansion`].
     pub fn enable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion_2 = false;
         self.rapid_city_expansion = true;
         self.base.enable_rapid_city_expansion();
     }
@@ -3470,6 +3471,23 @@ impl AdvancedAi {
     /// The twin of `enable_settler_target_floor`.
     pub fn disable_settler_target_floor(&mut self) {
         self.settler_target_floor = false;
+    }
+
+    /// Version two of `rapid-city-expansion`: aim at the measured five-city
+    /// opening band without version one's immediate fifteen-city order,
+    /// non-empty queue preemption, closest-site override, founding-pantheon
+    /// override, or automatic conquest pivot. One family member plays, so
+    /// enabling this version turns version one off.
+    pub fn enable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion = false;
+        self.rapid_city_expansion_2 = true;
+        self.base.enable_rapid_city_expansion_2();
+    }
+
+    /// The twin of `enable_rapid_city_expansion_2`.
+    pub fn disable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion_2 = false;
+        self.base.disable_rapid_city_expansion_2();
     }
 
     // ---- append: a-b ------------------------------------------------
