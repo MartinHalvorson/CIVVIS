@@ -138,7 +138,11 @@ impl AdvancedAi {
                 .cities
                 .values()
                 .filter(|city| city.owner == pid)
-                .any(|city| city.queue.iter().any(|item| matches!(item, Item::Wonder { .. })));
+                .any(|city| {
+                    city.queue
+                        .iter()
+                        .any(|item| matches!(item, Item::Wonder { .. }))
+                });
         }
         let gates = Self::trigger_gates(g, trigger);
         if gates.is_empty() {
@@ -178,7 +182,13 @@ impl AdvancedAi {
     /// The production premium `production_value` adds for `item` in city
     /// `cid`: the old `eureka-chasing-production` rate when only that gene is
     /// on, this gene's chase-aware version when it is on. Zero with both off.
-    pub(super) fn production_boost_premium(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+    pub(super) fn production_boost_premium(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> f64 {
         if self.chase_every_boost {
             self.chase_production_premium(g, pid, cid, item)
         } else {
@@ -205,7 +215,13 @@ impl AdvancedAi {
     /// empire has already queued for the same trigger. A chase needing three
     /// Archers with two already queued elsewhere pays this city for the
     /// third and nothing for a fourth.
-    pub(super) fn chase_production_premium(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+    pub(super) fn chase_production_premium(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> f64 {
         let Some(key) = Self::item_trigger_key(g, item) else {
             return 0.0;
         };
@@ -350,7 +366,11 @@ mod tests {
                     .filter_map(|(n, s)| s.boost.clone().map(|b| (n.to_string(), b))),
             )
             .collect();
-        assert!(rows.len() > 100, "both trees carry boost rows: {}", rows.len());
+        assert!(
+            rows.len() > 100,
+            "both trees carry boost rows: {}",
+            rows.len()
+        );
         for (node, boost) in rows {
             let (have, need) = game.boost_progress(0, &boost);
             assert!(need >= 1, "{node}: need {need}");
@@ -370,20 +390,28 @@ mod tests {
         let (have, need) = game.boost_progress(0, &spec(&game, "early_empire", false));
         assert_eq!((have, need), (1, 6));
         // Guilds: two Markets, none standing.
-        assert_eq!(game.boost_progress(0, &spec(&game, "guilds", false)), (0, 2));
+        assert_eq!(
+            game.boost_progress(0, &spec(&game, "guilds", false)),
+            (0, 2)
+        );
         // Political Philosophy: three city-states met, none on a lone board.
         assert_eq!(
             game.boost_progress(0, &spec(&game, "political_philosophy", false)),
             (0, 3)
         );
         // Archery: a Slinger kill the counters have not recorded.
-        assert_eq!(game.boost_progress(0, &spec(&game, "archery", true)), (0, 1));
+        assert_eq!(
+            game.boost_progress(0, &spec(&game, "archery", true)),
+            (0, 1)
+        );
         // A yes/no trigger is (0 or 1, 1): Sailing wants a coastal city.
         let (have, need) = game.boost_progress(0, &spec(&game, "sailing", true));
         assert_eq!(need, 1);
         assert!(have == 0 || have == 1);
         // Bronze Working: three barbarians, and the counter moves the count.
-        game.players[0].counters.insert("barbs_killed".to_string(), 2);
+        game.players[0]
+            .counters
+            .insert("barbs_killed".to_string(), 2);
         assert_eq!(
             game.boost_progress(0, &spec(&game, "bronze_working", true)),
             (2, 3)
@@ -404,7 +432,9 @@ mod tests {
                 || t.starts_with("district:")
         }));
         assert!(!chases.iter().any(|chase| chase.node == name!("archery")));
-        assert!(!chases.iter().any(|chase| chase.node == name!("political_philosophy")));
+        assert!(!chases
+            .iter()
+            .any(|chase| chase.node == name!("political_philosophy")));
     }
 
     #[test]
@@ -440,7 +470,9 @@ mod tests {
         game.players[0].boosted_civics.insert(name!("drama_poetry"));
         game.players[0].boosted_techs.insert(name!("archery"));
         let chases = armed().eureka_chases(&game, 0);
-        assert!(!chases.iter().any(|chase| chase.node == name!("drama_poetry")));
+        assert!(!chases
+            .iter()
+            .any(|chase| chase.node == name!("drama_poetry")));
         assert!(!chases.iter().any(|chase| chase.node == name!("archery")));
     }
 
@@ -448,13 +480,20 @@ mod tests {
     fn a_kill_trigger_is_actionable_only_with_the_named_unit_in_hand() {
         let mut game = capital_board(57_006);
         let ai = armed();
-        let archery = ai.chase_for(&game, 0, "archery").expect("archery is chased");
-        assert!(!ai.chase_one_action_away(&game, 0, &archery), "no Slinger, no action");
+        let archery = ai
+            .chase_for(&game, 0, "archery")
+            .expect("archery is chased");
+        assert!(
+            !ai.chase_one_action_away(&game, 0, &archery),
+            "no Slinger, no action"
+        );
         let capital = game.cities[&game.player_city_ids(0)[0]].pos;
         game.spawn_unit("slinger", 0, capital);
         assert!(ai.chase_one_action_away(&game, 0, &archery));
         // Growth is not an action: Early Empire is never "one step away".
-        let early = ai.chase_for(&game, 0, "early_empire").expect("early empire is chased");
+        let early = ai
+            .chase_for(&game, 0, "early_empire")
+            .expect("early empire is chased");
         assert!(!ai.chase_actionable(&game, 0, &early));
     }
 
@@ -477,7 +516,10 @@ mod tests {
         let civic = game.rules.civics["drama_poetry"].cost;
         game.players[0].boosted_civics.insert(name!("drama_poetry"));
         assert!((ai.beeline_step_cost(&game, 0, "drama_poetry", false) - civic * 0.6).abs() < 1e-9);
-        assert_eq!(plain.beeline_step_cost(&game, 0, "drama_poetry", false), civic);
+        assert_eq!(
+            plain.beeline_step_cost(&game, 0, "drama_poetry", false),
+            civic
+        );
     }
 
     #[test]
@@ -518,8 +560,16 @@ mod tests {
         );
         // A second city with two Markets queued exhausts the two-Market chase.
         let second = second_city(&mut game);
-        game.cities.get_mut(&second).unwrap().queue.push(market.clone());
-        game.cities.get_mut(&second).unwrap().queue.push(market.clone());
+        game.cities
+            .get_mut(&second)
+            .unwrap()
+            .queue
+            .push(market.clone());
+        game.cities
+            .get_mut(&second)
+            .unwrap()
+            .queue
+            .push(market.clone());
         assert_eq!(ai.chase_production_premium(&game, 0, cid, &market), 0.0);
         // With one queued elsewhere, this city is paid for the second, at
         // the full step (nothing left after it).
@@ -527,7 +577,10 @@ mod tests {
         let one_left = ai.chase_production_premium(&game, 0, cid, &market);
         game.cities.get_mut(&second).unwrap().queue.clear();
         let two_left = ai.chase_production_premium(&game, 0, cid, &market);
-        assert!(one_left > two_left, "{one_left} > {two_left}: the further step is discounted");
+        assert!(
+            one_left > two_left,
+            "{one_left} > {two_left}: the further step is discounted"
+        );
     }
 
     #[test]
@@ -540,7 +593,10 @@ mod tests {
             pos: game.cities[&cid].pos,
         };
         assert!(ai.chase_production_premium(&game, 0, cid, &wonder) > 0.0);
-        assert_eq!(AdvancedAi::new().production_boost_premium(&game, 0, cid, &wonder), 0.0);
+        assert_eq!(
+            AdvancedAi::new().production_boost_premium(&game, 0, cid, &wonder),
+            0.0
+        );
     }
 
     #[test]
@@ -566,10 +622,19 @@ mod tests {
         game.spawn_unit("warrior", barbarian, camp);
         let slinger_pays = ai.chase_kill_premium(&game, 0, slinger, camp);
         let warrior_pays = ai.chase_kill_premium(&game, 0, warrior, camp);
-        assert!(slinger_pays > warrior_pays, "{slinger_pays} > {warrior_pays}");
-        assert!(warrior_pays > 0.0, "Bronze Working's three barbarians pay any kill");
+        assert!(
+            slinger_pays > warrior_pays,
+            "{slinger_pays} > {warrior_pays}"
+        );
+        assert!(
+            warrior_pays > 0.0,
+            "Bronze Working's three barbarians pay any kill"
+        );
         assert!(slinger_pays <= CHASE_KILL_VALUE_CAP);
-        assert_eq!(AdvancedAi::new().chase_kill_premium(&game, 0, slinger, camp), 0.0);
+        assert_eq!(
+            AdvancedAi::new().chase_kill_premium(&game, 0, slinger, camp),
+            0.0
+        );
         // Archery banked: the Slinger's edge is gone. A fresh controller, because
         // the chase table is memoised per turn and the board changed under it.
         game.players[0].boosted_techs.insert(name!("archery"));
@@ -582,11 +647,18 @@ mod tests {
     fn the_research_hooks_read_the_gene_as_the_union_of_the_old_family() {
         let mut game = capital_board(57_012);
         game.players[0].boosted_techs.insert(name!("masonry"));
-        game.players[0].boosted_civics.insert(name!("craftsmanship"));
+        game.players[0]
+            .boosted_civics
+            .insert(name!("craftsmanship"));
         let plain = AdvancedAi::new();
         let ai = armed();
         assert_eq!(plain.boost_in_hand_scale(&game, 0, "masonry", true), 1.0);
-        assert!((ai.boost_in_hand_scale(&game, 0, "masonry", true) - 1.0 / 0.6f64.sqrt()).abs() < 1e-9);
-        assert!((ai.boost_in_hand_scale(&game, 0, "craftsmanship", false) - 1.0 / 0.6f64.sqrt()).abs() < 1e-9);
+        assert!(
+            (ai.boost_in_hand_scale(&game, 0, "masonry", true) - 1.0 / 0.6f64.sqrt()).abs() < 1e-9
+        );
+        assert!(
+            (ai.boost_in_hand_scale(&game, 0, "craftsmanship", false) - 1.0 / 0.6f64.sqrt()).abs()
+                < 1e-9
+        );
     }
 }

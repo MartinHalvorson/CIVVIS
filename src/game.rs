@@ -32129,7 +32129,10 @@ impl Game {
             | "casus_belli" | "national_park" | "great_people" => (counter(trig), n),
             "artifacts" => (counter("great_work:artifact"), n),
             "cities" => (cities.len() as i64, n),
-            "districts" => (cities.iter().map(|c| c.districts.len() as i64).sum::<i64>(), n),
+            "districts" => (
+                cities.iter().map(|c| c.districts.len() as i64).sum::<i64>(),
+                n,
+            ),
             "specialty_districts" => (
                 cities
                     .iter()
@@ -32230,7 +32233,10 @@ impl Game {
                     .count() as i64,
                 n,
             ),
-            "wonders" => (cities.iter().map(|c| c.wonders.len() as i64).sum::<i64>(), n),
+            "wonders" => (
+                cities.iter().map(|c| c.wonders.len() as i64).sum::<i64>(),
+                n,
+            ),
             "wonder_era" => (
                 cities
                     .iter()
@@ -32243,7 +32249,7 @@ impl Game {
             "government_slots" => {
                 let slots = self.gov_slots(pid);
                 (
-                    (slots.military + slots.economic + slots.diplomatic + slots.wildcard) as i64,
+                    slots.military + slots.economic + slots.diplomatic + slots.wildcard,
                     n,
                 )
             }
@@ -32345,11 +32351,9 @@ impl Game {
                             tile.resource.as_deref() == Some(r)
                                 && tile.improvement.as_deref().is_some_and(|imp| {
                                     self.rules.resources[r].improvement == imp
-                                        || self
-                                            .rules
-                                            .improvements
-                                            .get(imp)
-                                            .is_some_and(|spec| spec.resources.iter().any(|c| c == r))
+                                        || self.rules.improvements.get(imp).is_some_and(|spec| {
+                                            spec.resources.iter().any(|c| c == r)
+                                        })
                                 })
                         }),
                         1,
