@@ -2414,6 +2414,28 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
                 self.assertEqual(recorded[tag]["default_on"], tag in selected,
                                  cell(cells, "Gene"))
 
+    def test_a_host_only_gene_never_lists_as_off(self):
+        """`list` reads a screenable row's state from the deployment genome. A
+        `Kind::HostOnly` row is never in that genome — no native screen can
+        price one — yet it is on in every live seat, and printing the genome's
+        answer read as `off` (believed from 2026-08-30 to 09-01)."""
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(ranking.main(["list"]), 0)
+        states = {}
+        for line in output.getvalue().splitlines():
+            tag, kind, state = line.split()[:3]
+            states[tag] = (kind, state)
+        host_only = [gene for gene in ranking.genes() if gene.host_only]
+        self.assertTrue(host_only, "the registry carries host-only genes")
+        for gene in host_only:
+            self.assertEqual(states[gene.tag], ("Kind::HostOnly", "on(live)"), gene.tag)
+        selected = set(self.ledger["rules"]["deployment_genome"])
+        for gene in ranking.genes():
+            if not gene.host_only:
+                self.assertEqual(states[gene.tag][1],
+                                 "on" if gene.tag in selected else "off", gene.tag)
+
     def test_a_gene_only_the_batches_priced_ships_on_in_the_ranking_and_the_list(self):
         """An authoritative row is optional; the batch rule's answer is not."""
         recorded = {g["tag"] for g in self.ledger["genes"]}

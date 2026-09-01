@@ -3525,7 +3525,12 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "2026-08-25). Everything the ranking used to print under its table is here: the "
         "posterior evidence, the two shapes, the boundary set, the lane genes, the genes "
         "awaiting measurement, the genes removed from the code, the reference and the "
-        "follow-ups. `tools/genes.py check` holds every line to the ledger's sources.",
+        "follow-ups. `tools/genes.py check` holds every line to the ledger's sources. "
+        "`Kind::HostOnly` genes appear in none of these tables: no native screen can "
+        "price one, and each is on in every live seat (`enable_live_bridge_universe` "
+        "turns on every `live()` gene and the ledger never withholds an unscreened "
+        "row), so `python3 tools/genes.py list` prints them `on(live)` and only "
+        "`civvis_orders --without <tag>` withholds one.",
     ]
     # Evidence analysis stays tied to authoritative ledger sources; the
     # display batches are what decide the default, and are read separately.
@@ -3719,6 +3724,24 @@ def _add_source_args(ap: argparse.ArgumentParser) -> None:
                     help="record a source whose build cannot be verified, with the reason")
 
 
+def list_state(gene: Gene, selected: set[str]) -> str:
+    """The deployment state `genes.py list` prints beside one registry row.
+
+    A screenable row is on exactly when the deployment genome selects it. A
+    `Kind::HostOnly` row is never in that genome — no native screen can price
+    one — but it is on in every live seat: `enable_live_bridge_universe` turns
+    on every `live()` gene and `apply_gene_ledger` withholds only a tag the
+    ledger reads as off, which an unscreened row never is. Printing the
+    genome's answer for such a row read as `off`, and that reading put
+    host-only tags into `~/.civvis-live-force-on` twice (2026-08-30, 09-01);
+    `on(live)` is the truthful state, and `civvis_orders --without <tag>` is
+    what withholds one.
+    """
+    if gene.host_only:
+        return "on(live)"
+    return "on " if gene.tag in selected else "off"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     sub = ap.add_subparsers(dest="command", required=True)
@@ -3754,7 +3777,7 @@ def main(argv=None) -> int:
         selected = set(ledger.get("rules", {}).get("deployment_genome", ()))
         for row in genes():
             verdict = ledger_rows.get(row.tag, {})
-            print(f"{row.tag:<32} {row.kind:<26} {'on ' if row.tag in selected else 'off'}  "
+            print(f"{row.tag:<32} {row.kind:<26} {list_state(row, selected)}  "
                   f"{verdict.get('verdict', 'unmeasured')}")
         return 0
     if args.command == "table":

@@ -3288,15 +3288,43 @@ fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String
     if selected.is_empty() && !already_deployed.is_empty() {
         return Err(format!(
             "--with treatment(s) {} already ship in the deployment genome; name at least one \
-             ledger-held live treatment or held-off opt-in to form a distinct arm",
+             ledger-held live treatment or held-off opt-in to form a distinct arm{}",
             already_deployed
                 .iter()
                 .map(|tag| format!("{tag:?}"))
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", "),
+            host_only_already_on(&already_deployed)
         ));
     }
     Ok(selected)
+}
+
+/// The clause a refused `--with` carries when a named row is host-only.
+///
+/// A `Kind::HostOnly` gene is on in every live seat: `enable_live_bridge_universe`
+/// turns on every `live()` gene, and `apply_gene_ledger` withholds only a tag
+/// the ledger reads as off, which an unscreened row never is. `genes.py list`
+/// printed such rows as `off` (the deployment genome holds only screenable
+/// tags), and that reading put host-only tags into `~/.civvis-live-force-on`
+/// twice (2026-08-30, 09-01). Say what the seat already plays and which flag
+/// moves it. Empty when no named row is host-only.
+fn host_only_already_on(tags: &[&str]) -> String {
+    let host_only: Vec<String> = tags
+        .iter()
+        .filter(|tag| civvis::ai::gene(tag).is_some_and(|gene| gene.host_only()))
+        .map(|tag| format!("{tag:?}"))
+        .collect();
+    if host_only.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; {} {} host-only and already on in every live seat (the live bridge turns on \
+         every host-only gene and no screen row can hold one off) — `--without <tag>` \
+         is what withholds one",
+        host_only.join(", "),
+        if host_only.len() == 1 { "is" } else { "are" }
+    )
 }
 
 /// Every name a live `--with` arm can seat, in canonical registry order.
@@ -8469,6 +8497,21 @@ mod tests {
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
             .expect_err("a treatment already in the live genome cannot form a force-on arm");
         assert!(host_only.contains("deployment genome"), "{host_only}");
+        assert!(
+            host_only.contains("host-only") && host_only.contains("--without"),
+            "a host-only row says the seat already plays it and what withholds it: {host_only}"
+        );
+        let deployed_screenable = civvis::ai::GENES
+            .iter()
+            .find(|gene| !gene.host_only() && civvis::ai::ledger_default_on(gene.tag) == Some(true))
+            .map(|gene| gene.tag)
+            .expect("the deployment genome selects a screenable gene");
+        let refused = super::forced_live_treatments(&[deployed_screenable.to_string()])
+            .expect_err("a deployed screenable gene cannot form a force-on arm either");
+        assert!(
+            refused.contains("deployment genome") && !refused.contains("host-only"),
+            "{refused}"
+        );
 
         let mixed = super::forced_live_treatments(&[
             "science-victory-drive".to_string(),
