@@ -22150,12 +22150,9 @@ impl AdvancedAi {
             // visited, so parallel governors cannot all answer the same debt.
             let reserve_a_trade_slot = self.base.solvency_first_trade_slot
                 && counts.traders == 0
-                && self.base.should_add_trader_in_city_for_controller(
-                    g,
-                    pid,
-                    cid,
-                    counts.traders,
-                );
+                && self
+                    .base
+                    .should_add_trader_in_city_for_controller(g, pid, cid, counts.traders);
             // The same sentence for the other two assets the argmax
             // chronically under-buys. See `first_builder_reserve` and
             // `first_research_building_reserve`: `solvency_first_trade_slot`
