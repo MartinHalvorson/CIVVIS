@@ -11,27 +11,28 @@
 --   2. a two-turn path is sent as its first turn's leg, the row is rewritten
 --      so the queue expects the capped plot, and `move_capped` is emitted;
 --   3. a path whose first step is already next turn is refused by name;
---   4. a melee ATTACK is never capped;
---   5. an explicit opt-out leaves the two capped paths alone;
---   6. a matching explicit guard keeps pace with the setter;
---   7. a missing guard row is synthesized before a one-step setter move;
---   8. an unreachable or differently-targeted guard remains untouched;
---   9. queued paths: combat units are cancelled, civilians are not, and the
+--   4. a one-entry no-route path is refused instead of being sent to the host;
+--   5. a melee ATTACK is never capped;
+--   6. an explicit opt-out leaves the two capped paths alone;
+--   7. a matching explicit guard keeps pace with the setter;
+--   8. a missing guard row is synthesized before a one-step setter move;
+--   9. an unreachable or differently-targeted guard remains untouched;
+--  10. queued paths: combat units are cancelled, civilians are not, and the
 --      count is reported;
---  10. a refused settler move cannot draw its guard into a synthetic move;
---  11. the `orders` event carries the cap and shadow counters.
---  12. a rows-less asynchronous watch releases when the host lands the unit
+--  11. a refused settler move cannot draw its guard into a synthetic move;
+--  12. the `orders` event carries the cap and shadow counters.
+--  13. a rows-less asynchronous watch releases when the host lands the unit
 --      on a different plot, so the brain can re-plan from the actual board.
---  13. an unguarded settler will not step into the measured two-plot reach of
+--  14. an unguarded settler will not step into the measured two-plot reach of
 --      a visible barbarian scout; any settler leg reachable by a visible
 --      barbarian combat unit is held even with a synchronized single escort,
 --      while invisible, distant, and proven-scout-escort cases retain ordinary
 --      movement.
---  14. A co-located combat escort queued in an earlier frame stays with an
+--  15. A co-located combat escort queued in an earlier frame stays with an
 --      exposed Settler until the later Settler safety row is actuated.
---  15. An exposed Settler can retreat two host-reachable hexes when every
+--  16. An exposed Settler can retreat two host-reachable hexes when every
 --      adjacent escape is covered.
---  16. A Builder cannot enter visible barbarian capture reach without a
+--  17. A Builder cannot enter visible barbarian capture reach without a
 --      proven escort; an exposed travelling Builder gets the same bounded
 --      escape treatment, and a safe escort preserves the move.
 --
@@ -268,7 +269,19 @@ check("no-reach move issues nothing", ops(12), "")
 check("refused as move_no_moves_this_turn", has(lastEvent("orders"), "move_no_moves_this_turn"), true)
 check("orders event counts no_reach", has(lastEvent("orders"), '"move_no_reach":1'), true)
 
--- 4. A melee ATTACK is never capped, whatever the path says.
+-- 4. A present one-entry path is the host's explicit no-route result. It must
+-- be refused rather than sent, otherwise Civ VI accepts the request and spins
+-- on its no-path sentinel forever.
+reset()
+host.units[26] = { id = 26, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.paths["26:" .. plotIndex(8, 8)] = {
+	plots = { plotIndex(1, 1) }, turns = { 0 } }
+applyOrders(player, PID, 7, { row(26, "MOVE_TO", 8, 8) })
+check("one-entry no-route issues nothing", ops(26), "")
+check("one-entry no-route is named", has(lastEvent("orders"), "move_no_path"), true)
+check("one-entry no-route increments no_reach", has(lastEvent("orders"), '"move_no_reach":1'), true)
+
+-- 5. A melee ATTACK is never capped, whatever the path says.
 reset()
 host.units[13] = { id = 13, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.paths["13:" .. plotIndex(4, 1)] = { plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1) }, turns = { 0, 1, 2, 2 } }

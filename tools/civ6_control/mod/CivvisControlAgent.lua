@@ -14451,7 +14451,13 @@ CivvisBoard.capToTurn = function(unit, x, y)
 	if path == nil or path.plots == nil or path.turns == nil then return nil; end
 	local n = 0;
 	for _ in pairs(path.plots) do n = n + 1; end
-	if n <= 1 then return nil; end
+	-- A path object with only the unit's current plot is Civ VI's explicit
+	-- no-route/no-progress answer. Treating it as an unknown API result sends
+	-- the original MOVE_TO anyway; the host accepts that request and its path
+	-- worker retries forever with Distance: 2147483647. A missing path object
+	-- above remains compatibility-unknown, but a present one-entry path is a
+	-- proven refusal and must be surfaced to the order ledger.
+	if n <= 1 then return false, "no_path"; end
 	local last = tonumber(path.turns[n]);
 	if last == nil or last <= 1 then return nil; end
 	local reach = nil;
