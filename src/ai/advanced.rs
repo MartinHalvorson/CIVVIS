@@ -19653,6 +19653,118 @@ impl AdvancedAi {
         production_turns.max(research_turns) + travel_turns <= remaining_turns
     }
 
+    /// The number of launch sites the current science race can use. The
+    /// dedicated race pass and the generic production scorer share this
+    /// pacing: one pad opens the sequential missions, a second joins after
+    /// the Moon mission outside the drive (the Earth Satellite inside it),
+    /// and a third joins after Mars for the laser flight.
+    fn science_spaceport_target(&self, g: &Game, pid: usize) -> usize {
+        let completed = &g.players[pid].science_projects;
+        let desired = if self.science_drive_active() {
+            // The drive deliberately brings the second pad forward so it is
+            // ready for the expedition rather than competing with it.
+            Self::science_drive_desired_pads(completed)
+        } else if self.space_race_lane(g, pid)
+            || self.raced_target() == Some(VictoryTarget::Science)
+        {
+            if completed.contains("launch_mars_colony") {
+                3
+            } else if completed.contains("launch_moon_landing") {
+                2
+            } else {
+                1
+            }
+        } else {
+            1
+        };
+        desired.min(g.player_city_ids(pid).len())
+    }
+
+    /// A standing Spaceport keeps a city busy with one project at a time;
+    /// another one there cannot create useful parallelism.
+    fn city_has_spaceport(g: &Game, cid: u32) -> bool {
+        let pad = crate::name!("spaceport");
+        g.cities[&cid]
+            .districts
+            .keys()
+            .any(|district| g.district_family(*district) == pad)
+    }
+
+    /// A queued Spaceport is a real future launch site even when another item
+    /// precedes it in the city queue.
+    fn city_queues_spaceport(g: &Game, cid: u32) -> bool {
+        let pad = crate::name!("spaceport");
+        g.cities[&cid].queue.iter().any(|item| {
+            matches!(item, Item::District { district, .. }
+                if g.district_family(*district) == pad)
+        })
+    }
+
+    /// Count every standing and queued Spaceport. Queue depth matters: a pad
+    /// behind a project still consumes one of the race's deliberately small
+    /// launch-site budget.
+    fn science_spaceport_commitments(g: &Game, pid: usize) -> usize {
+        let pad = crate::name!("spaceport");
+        g.player_city_ids(pid)
+            .into_iter()
+            .map(|cid| {
+                let city = &g.cities[&cid];
+                city.districts
+                    .keys()
+                    .filter(|district| g.district_family(**district) == pad)
+                    .count()
+                    + city
+                        .queue
+                        .iter()
+                        .filter(|item| {
+                            matches!(item, Item::District { district, .. }
+                                if g.district_family(*district) == pad)
+                        })
+                        .count()
+            })
+            .sum()
+    }
+
+    /// Whether `cid` is one of the few cities allowed to begin another
+    /// Spaceport now. Select from legal sites in production order so the
+    /// generic scorer cannot recreate the dedicated pass's opening pad in
+    /// every mature city during the same production sweep.
+    fn science_spaceport_city_is_admitted(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if Self::city_has_spaceport(g, cid) || Self::city_queues_spaceport(g, cid) {
+            return false;
+        }
+        let target = self.science_spaceport_target(g, pid);
+        let commitments = Self::science_spaceport_commitments(g, pid);
+        if commitments >= target {
+            return false;
+        }
+        let pad = crate::name!("spaceport");
+        let _memo = g.query_memo();
+        let mut candidates: Vec<u32> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|candidate| {
+                !Self::city_has_spaceport(g, *candidate)
+                    && !Self::city_queues_spaceport(g, *candidate)
+            })
+            .filter(|candidate| {
+                g.district_sites(*candidate, pad).into_iter().any(|pos| {
+                    g.can_produce(pid, *candidate, &Item::District { district: pad, pos })
+                })
+            })
+            .collect();
+        candidates.sort_by(|left, right| {
+            g.city_yields(*right)
+                .production
+                .total_cmp(&g.city_yields(*left).production)
+                .then_with(|| left.cmp(right))
+        });
+        candidates
+            .into_iter()
+            .take(target.saturating_sub(commitments))
+            .any(|candidate| candidate == cid)
+    }
+
     /// The one city that may claim the 3,000-point first-pad rung: the
     /// empire's best-production city with no Spaceport, and only while no
     /// other city of ours already has one standing or in its queue. `None`
@@ -20210,56 +20322,12 @@ impl AdvancedAi {
         }
 
         let city_ids = g.player_city_ids(pid);
-        let built_spaceports = city_ids
-            .iter()
-            .filter(|cid| {
-                g.cities[cid]
-                    .districts
-                    .contains_key(crate::name!("spaceport"))
-            })
-            .count();
-        let queued_spaceports = city_ids
-            .iter()
-            .filter(|cid| {
-                matches!(
-                    g.cities[cid].queue.first(),
-                    Some(Item::District { district, .. }) if district == "spaceport"
-                )
-            })
-            .count();
-        // One launch site is enough for the sequential opening missions. A
-        // second can prepare Mars while the first launches, and up to three
-        // let the post-Exoplanet laser race run in parallel. Separate cities
-        // matter; duplicate Spaceports in one production queue do not.
-        let desired_spaceports = if self.science_drive_active() {
-            // `science_victory_drive`: the second pad by the Earth
-            // Satellite, so it stands when the expedition launches.
-            Self::science_drive_desired_pads(&completed)
-        } else if races_science || self.raced_target() == Some(VictoryTarget::Science) {
-            if completed.contains("launch_mars_colony") {
-                3
-            } else if completed.contains("launch_moon_landing") {
-                2
-            } else {
-                1
-            }
-        } else {
-            1
-        }
-        .min(city_ids.len());
-        if built_spaceports + queued_spaceports >= desired_spaceports {
+        if Self::science_spaceport_commitments(g, pid) >= self.science_spaceport_target(g, pid) {
             return;
         }
         let mut best: Option<(f64, u32, Pos)> = None;
         for cid in city_ids {
-            if g.cities[&cid]
-                .districts
-                .contains_key(crate::name!("spaceport"))
-                || matches!(
-                    g.cities[&cid].queue.first(),
-                    Some(Item::District { district, .. }) if district == "spaceport"
-                )
-            {
+            if !self.science_spaceport_city_is_admitted(g, pid, cid) {
                 continue;
             }
             if !races_science
@@ -20272,7 +20340,7 @@ impl AdvancedAi {
                 let Item::District { district, pos } = item else {
                     continue;
                 };
-                if district != "spaceport" {
+                if g.district_family(district) != "spaceport" {
                     continue;
                 }
                 let production = g.city_yields(cid).production;
@@ -24569,11 +24637,34 @@ impl AdvancedAi {
                 {
                     return -10_000.0;
                 }
-                if family == "spaceport" && city.districts.contains_key(crate::name!("spaceport")) {
-                    // Multiple Spaceports are rules-legal, but one city can
-                    // execute only one project at a time. Put additional
-                    // launch sites in other cities for actual parallelism.
-                    return -10_000.0;
+                if family == "spaceport" {
+                    if Self::city_has_spaceport(g, cid) {
+                        // Multiple Spaceports are rules-legal, but one city
+                        // can execute only one project at a time. Put
+                        // additional launch sites in other cities for actual
+                        // parallelism.
+                        return -10_000.0;
+                    }
+                    let races_science = plan.strategy == GrandStrategy::Science
+                        || self.science_drive_active()
+                        || self.space_race_lane(g, pid)
+                        || self.raced_target() == Some(VictoryTarget::Science);
+                    let current_queued_spaceport = city.queue.first().is_some_and(|queued| {
+                        queued == item
+                            && matches!(queued, Item::District { district, .. }
+                                if g.district_family(*district) == "spaceport")
+                    });
+                    if races_science
+                        && !current_queued_spaceport
+                        && !self.science_spaceport_city_is_admitted(g, pid, cid)
+                    {
+                        // The generic sweep visits every city. Without this
+                        // hard gate each later city can still spend its queue
+                        // on the ordinary 250-point Spaceport fallback after
+                        // the race has already reserved its current
+                        // launch-site budget.
+                        return -10_000.0;
+                    }
                 }
                 let district_count = g
                     .cities
