@@ -210,6 +210,7 @@ class InfrastructureMirrorTest(unittest.TestCase):
                 "districts": [{"type": "DISTRICT_THEATER", "x": 63, "y": 16,
                                "complete": True}],
                 "specialists": ["DISTRICT_THEATER"],
+                "producing": "UNIT_WARRIOR",
                 "production_progress": 12.5,
                 "great_works": [{"object": "GREATWORKOBJECT_WRITING"}],
             }],
@@ -236,6 +237,56 @@ class InfrastructureMirrorTest(unittest.TestCase):
         self.assertEqual(report["empire_agree"], 2)
         self.assertEqual(report["disagree_by_field"], {})
         self.assertEqual(report["max_model_yield_drift"], 2.0)
+
+    def test_idle_production_sentinel_is_not_a_city_economy_mismatch(self) -> None:
+        events = [{
+            "kind": "state", "turn": 91,
+            "cities": [{
+                "x": 62, "y": 16,
+                "yields": {"food": 2, "production": 1, "gold": 0,
+                           "science": 0, "culture": 1, "faith": 0},
+                "producing": None,
+                "production_progress": -1,
+            }],
+        }]
+        dump = {
+            "cities": [{
+                "x": 62, "y": 16,
+                "yields": {"food": 2, "production": 1, "gold": 0,
+                           "science": 0, "culture": 1, "faith": 0},
+                "production_progress": 0.0,
+            }],
+        }
+
+        report = civ6_watchdogs.city_economy_agreement(events, dump)
+
+        self.assertEqual(report["agree"], 1)
+        self.assertEqual(report["disagree_by_field"], {})
+
+    def test_active_production_progress_still_has_to_match(self) -> None:
+        events = [{
+            "kind": "state", "turn": 91,
+            "cities": [{
+                "x": 62, "y": 16,
+                "yields": {"food": 2, "production": 1, "gold": 0,
+                           "science": 0, "culture": 1, "faith": 0},
+                "producing": "UNIT_WARRIOR",
+                "production_progress": 12.5,
+            }],
+        }]
+        dump = {
+            "cities": [{
+                "x": 62, "y": 16,
+                "yields": {"food": 2, "production": 1, "gold": 0,
+                           "science": 0, "culture": 1, "faith": 0},
+                "production_progress": 11.5,
+            }],
+        }
+
+        report = civ6_watchdogs.city_economy_agreement(events, dump)
+
+        self.assertEqual(report["agree"], 0)
+        self.assertEqual(report["disagree_by_field"], {"production_progress": 1})
 
     def test_city_economy_disagreement_is_a_loud_verdict(self) -> None:
         report = {
