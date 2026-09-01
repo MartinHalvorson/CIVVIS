@@ -4912,11 +4912,6 @@ pub struct AdvancedAi {
     /// default; opt-in gene `civilian-out-of-reach`. See
     /// `advanced/civilian_safety.rs`.
     civilian_out_of_reach: bool,
-    /// A unit the next blow could remove leaves the reach of whatever can
-    /// strike it, and a shooter or scout does not end the turn inside a
-    /// raider's reach without a melee unit beside it. See
-    /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
-    wounded_out_of_reach: bool,
 
     /// A settle site is worth more when the ground its own borders will
     /// cover holds a mountain pass, an isthmus neck or a strait. Opt-in gene
@@ -5690,6 +5685,11 @@ pub struct AdvancedAi {
     /// cost 219 pre-first-district city-turns, every one with a district
     /// placeable. See `advanced_production`.
     walls_after_districts: bool,
+    /// A unit the next blow could remove leaves the reach of whatever can
+    /// strike it, and a shooter or scout does not end the turn inside a
+    /// raider's reach without a melee unit beside it. See
+    /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
+    wounded_out_of_reach: bool,
     /// `threatened-city-reserve`: while a city of ours is threatened
     /// (`plan.threatened_city`) or bleeding (`native_city_emergency`), every
     /// ordinary Gold purchase — the strategic buyer here and the baseline
@@ -7024,7 +7024,6 @@ impl AdvancedAi {
 
             district_planning: false,
             civilian_out_of_reach: false,
-            wounded_out_of_reach: false,
 
             chokepoint_siting: false,
             canal_city: false,
@@ -7137,6 +7136,7 @@ impl AdvancedAi {
             upgrade_the_garrison: false,
             wonder_adjacent_sites: false,
             wonder_adjacent_sites_2: false,
+            wounded_out_of_reach: false,
         }
     }
 
