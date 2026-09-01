@@ -732,8 +732,13 @@ def city_economy_agreement(events: list[dict], dump: dict) -> dict:
                 b = Counter(got.get("specialists") or [])
                 if a != b:
                     bad.append("specialists")
+            # Civ6 exports -1 for an empty queue while CIVVIS represents that
+            # same state with zero progress and no current item. Progress is
+            # only comparable when the host says a city is actively producing;
+            # otherwise this sentinel is a representation mismatch, not a
+            # gameplay/data mismatch.
             progress = want.get("production_progress")
-            if progress is not None and (
+            if want.get("producing") and progress is not None and (
                 got.get("production_progress") is None
                 or abs(float(progress) - float(got["production_progress"])) > 1e-6
             ):
