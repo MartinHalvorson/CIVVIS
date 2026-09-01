@@ -1826,6 +1826,7 @@ def expected_columns() -> str:
     return (
         "| Rank | Gene | Description | Best version \\| Total versions | Default | P(>0) | "
         + reporting
+        + f" | {ranking.SCIENCE_PACE_COLUMN}"
         + " | Total (on) Win rate | Total (off) Win rate | Diff | "
         "cost (compute) | cost (time) |"
     )
@@ -2074,6 +2075,63 @@ class TheTableIsDerived(unittest.TestCase):
                 expected = ranking.reporting_batch_cell(batches[back], tag)
                 self.assertEqual(cell(cells, column), expected, f"{tag}: {column}")
                 self.assertNotIn("n=", cell(cells, column), f"{tag}: {column}")
+
+    def test_the_science_pace_column_reads_the_last_batch_or_is_blank(self):
+        """One column right after the three batch columns (2026-09-01): the
+        last batch's on−off Δ of techs known at the Standard-turn-150 mark,
+        with its clustered z. Blank for a batch the screen played before it
+        recorded `techs_150`, and never an input to the sort or the rule.
+        """
+        self.assertEqual(
+            list(COLUMN)[COLUMN[ranking.SCIENCE_PACE_COLUMN] - 1],
+            ranking.reporting_batch_header(
+                ranking.REPORTING_BATCH_LABELS[-1],
+                ranking.load_reporting_batches(
+                    json.loads(ranking.LEDGER_JSON.read_text()))[-1]),
+            "the column sits immediately after the third batch column",
+        )
+        self.assertEqual(
+            list(COLUMN)[COLUMN[ranking.SCIENCE_PACE_COLUMN] + 1], "Total (on) Win rate")
+        self.assertTrue(any("Δ techs@150" in line for line in ranking.RANKING_HEADING),
+                        "the heading's column legend names the column")
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        batches = ranking.load_reporting_batches(ledger)
+        for cells in self._ranked_rows():
+            tag = cell(cells, "Gene").strip("`")
+            self.assertEqual(
+                cell(cells, ranking.SCIENCE_PACE_COLUMN),
+                ranking.science_pace_cell(batches[0], tag), tag)
+        self.assertEqual(ranking.science_pace_cell(None, "anything"), ranking.EN_DASH)
+        batch = {"meta": {}, "rows": {
+            "campus-first": {"science_pace": {
+                "diff": 1.234, "se": 0.5, "z": 2.468, "n_on": 10, "n_off": 12}},
+            "older": {"science_pace": None},
+        }}
+        self.assertEqual(ranking.science_pace_cell(batch, "campus-first"), "+1.23 (z +2.47)")
+        self.assertEqual(ranking.science_pace_cell(batch, "older"), ranking.EN_DASH)
+        self.assertEqual(ranking.science_pace_cell(batch, "unpriced"), ranking.EN_DASH)
+
+    def test_source_rows_carry_the_science_pace_block_or_none(self):
+        """`measurements_from_source` passes the analyzer's block through and
+        reads a source without it — or with the analyzer's `null` — as None."""
+        gene = {
+            "tag": "paced", "win_on": 0.2, "win_off": 0.16, "n_on": 30, "n_off": 30,
+            "win_z": 1.0, "share_z": 0.0, "win_delta_pp": 4.0, "win_se_pp": 4.0,
+            "share_delta_pp": 0.0,
+        }
+        paced = dict(gene, science_pace={
+            "diff": -0.75, "se": 0.25, "z": -3.0, "n_on": 30, "n_off": 30})
+        nulled = dict(gene, tag="nulled", science_pace=None)
+        rows = ranking.measurements_from_source(
+            {"profile": {"players": 6}, "genes": [paced, nulled, dict(gene, tag="old")]},
+            "s.json", "standard")
+        self.assertEqual(rows["paced"]["science_pace"],
+                         {"diff": -0.75, "se": 0.25, "z": -3.0, "n_on": 30, "n_off": 30})
+        self.assertIsNone(rows["nulled"]["science_pace"])
+        self.assertIsNone(rows["old"]["science_pace"])
+        batch = {"meta": {}, "rows": rows}
+        self.assertEqual(ranking.science_pace_cell(batch, "paced"), "-0.75 (z -3.00)")
+        self.assertEqual(ranking.science_pace_cell(batch, "old"), ranking.EN_DASH)
 
     def test_batch_win_cell_does_not_repeat_its_sample_size(self):
         history = [{
