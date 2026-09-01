@@ -98,12 +98,12 @@ end
 
 check("only owned highlights cross", #targets, 2)
 check("owned compatible district crosses", find(1, 1) ~= nil, true)
-check("owned compatible district keeps slot truth", find(1, 1).slot_open, true)
-check("owned target keeps host distance", find(1, 1).distance, 1)
+check("owned compatible district keeps slot truth", (find(1, 1) or {}).slot_open, true)
+check("owned target keeps host distance", (find(1, 1) or {}).distance, 1)
 check("foreign highlight is discarded", find(2, 2), nil)
 check("owner-read failure is discarded", find(3, 3), nil)
 check("owned slotless district crosses", find(4, 4) ~= nil, true)
-check("owned slotless district is marked closed", find(4, 4).slot_open, false)
+check("owned slotless district is marked closed", (find(4, 4) or {}).slot_open, false)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
