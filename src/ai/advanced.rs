@@ -5547,6 +5547,9 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `settler-target-floor`: a Settler is never sent to a site not worth the
+    /// walk. Opt-in gene; see `advanced/settler_target_floor.rs`.
+    settler_target_floor: bool,
     /// While a founded city can still mature, the science lane's land grab
     /// widens to [`SCIENCE_EXPANSION_CITY_CEILING`] and the Science
     /// contract's `SCIENCE_CITY_TARGET_CAP` is deferred; both revert when the
@@ -6289,6 +6292,9 @@ mod early_archers;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// A Settler is never sent to a site not worth the walk. One opt-in gene;
+/// see `advanced/settler_target_floor.rs`.
+mod settler_target_floor;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -7094,6 +7100,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_target_floor: false,
             science_expansion_phase: false,
             science_opening_band: false,
             settler_backlog_brake: false,
@@ -27643,13 +27650,15 @@ impl AdvancedAi {
                 Some(score_cache),
             )
             .into_iter()
-            .filter(|(position, _)| {
+            .filter(|(position, value)| {
                 Some(*position) != avoid
                     && self.early_settler_site_allowed(g, pid, uid, *position)
                     && !self.settler_site_is_dead(uid, *position)
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(position))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *position)
+                    // `settler-target-floor`: not worth the walk is not a target.
+                    && self.settler_target_clears_floor(g, from, *position, *value)
             })
             .collect::<Vec<_>>();
         // See `settle_sooner`: the walk is priced in TURNS as well as tiles,

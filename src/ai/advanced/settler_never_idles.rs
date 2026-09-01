@@ -288,7 +288,7 @@ impl AdvancedAi {
                 Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
             )
             .into_iter()
-            .filter(|(pos, _)| {
+            .filter(|(pos, value)| {
                 !g.blocked_city_sites.contains(pos)
                     && self.early_settler_site_allowed(g, pid, uid, *pos)
                     && !self.settler_site_is_dead(uid, *pos)
@@ -296,6 +296,8 @@ impl AdvancedAi {
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
+                    // `settler-target-floor`: exhaustion asks wider, not worse.
+                    && self.settler_target_clears_floor(g, from, *pos, *value)
             })
             .collect();
         self.set_aside_unpriceable_sites(g, pid, &mut ranked);
