@@ -90,6 +90,111 @@ pub fn rules(session: &Session, include_civ6: bool) -> Value {
     out
 }
 
+/// `GET /gene-program` — the heuristic gene program a CIVVIS seat plays:
+/// every gene that can steer a deployment game, with the ledger's standing
+/// verdict and measured effect for it.
+///
+/// The strategy panel reads this once per page to say which published
+/// heuristics are actually on, and which of those carry the most measured
+/// weight. `armed` names ledger-held tags an operator's live verification arm
+/// forces back on (`--with`, or the force file the game supervisor resolves);
+/// the shared answer vouches only for tags the ledger could legally seat, so
+/// an armed chip always means what `civvis_orders --with` would accept. The
+/// simulator's own seats always play the plain ledger program — an armed tag
+/// reaches only the live Civilization VI seat.
+/// The tag → description column of the committed gene ranking, read from the
+/// build's own embedded copy. `tools/genes.py write` regenerates the table
+/// and CI holds it current, so the first prose a human reads about a gene in
+/// the strategy panel is the same sentence the ranking derived from the
+/// gene's own doc comment — one writing, not a viewer-side paraphrase. Rows
+/// are recognised by their backticked tag cell; a gene the ranking has not
+/// priced simply has no entry.
+fn gene_descriptions() -> &'static std::collections::HashMap<&'static str, String> {
+    static DESCRIPTIONS: std::sync::OnceLock<std::collections::HashMap<&'static str, String>> =
+        std::sync::OnceLock::new();
+    DESCRIPTIONS.get_or_init(|| {
+        const RANKING: &str = include_str!("../GENE_HEURISTIC_RANKING.md");
+        let mut out = std::collections::HashMap::new();
+        for line in RANKING.lines() {
+            // Markdown escapes a literal pipe inside a cell (the version
+            // column is "1 \| 2"); hold those together across the split.
+            let cells: Vec<String> = line
+                .replace("\\|", "\u{0}")
+                .split('|')
+                .map(|cell| cell.trim().replace('\u{0}', "|"))
+                .collect();
+            if cells.len() < 5 {
+                continue;
+            }
+            let tag_cell = &cells[2];
+            if tag_cell.len() < 3 || !tag_cell.starts_with('`') || !tag_cell.ends_with('`') {
+                continue;
+            }
+            let tag = &tag_cell[1..tag_cell.len() - 1];
+            let description = cells[3].clone();
+            if let Some(gene) = crate::ai::gene(tag) {
+                if !description.is_empty() {
+                    out.insert(gene.tag, description);
+                }
+            }
+        }
+        out
+    })
+}
+
+pub fn gene_program(armed: &[String]) -> Value {
+    use crate::ai::{gene_ledger, Axis, Kind, GENES};
+    let armed: Vec<&str> = armed
+        .iter()
+        .map(String::as_str)
+        .filter(|tag| {
+            gene_ledger::ledger_held_live_treatment(tag) || gene_ledger::ledger_held_opt_in(tag)
+        })
+        .collect();
+    let deployed = gene_ledger::deployment_treatments();
+    // The rows a viewer can reason about: the live bundle (repairs and
+    // host-only flags, deployed or ledger-held), the stock production
+    // behaviours, and any opt-in the ledger or the arm actually seats. The
+    // remaining opt-ins are off everywhere and would only bury the program.
+    let genes: Vec<Value> = GENES
+        .iter()
+        .filter(|gene| {
+            gene.live()
+                || gene.production()
+                || deployed.contains(&gene.tag)
+                || armed.contains(&gene.tag)
+        })
+        .map(|gene| {
+            let kind = match gene.kind {
+                Kind::Repair(Axis::War) => "repair-war",
+                Kind::Repair(Axis::Economy) => "repair-economy",
+                Kind::HostOnly => "host-only",
+                Kind::Production => "production",
+                Kind::OptIn => "opt-in",
+            };
+            let verdict = crate::ai::ledger_verdict(gene.tag);
+            json!({
+                "tag": gene.tag,
+                "kind": kind,
+                "description": gene_descriptions().get(gene.tag),
+                "on": deployed.contains(&gene.tag),
+                "armed": armed.contains(&gene.tag),
+                "default_on": crate::ai::ledger_default_on(gene.tag),
+                "verdict": verdict.map(|row| row.verdict.as_str()),
+                "posterior_pp": verdict.and_then(|row| row.posterior_pp),
+                "posterior_se_pp": verdict.and_then(|row| row.posterior_se_pp),
+                "win_diff_pp": verdict.and_then(|row| row.win_diff_pp),
+                "wins_last_10k": verdict.and_then(|row| row.wins_last_10k),
+            })
+        })
+        .collect();
+    json!({
+        "policy": gene_ledger::deployment_policy(),
+        "armed": armed,
+        "genes": genes,
+    })
+}
+
 /// `GET /pedia` — generated reference material for the ruleset in play.
 pub fn pedia(session: &Session) -> Value {
     json!({"entries": crate::pedia::entries(&session.game.rules)})

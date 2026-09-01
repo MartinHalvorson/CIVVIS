@@ -33,7 +33,7 @@
   // Everything the engine answers. A path not in here is a real file, such as
   // a strategic map sprite atlas, and goes to the network untouched.
   const ENGINE_ROUTES = new Set([
-    "/state", "/status", "/runtime", "/rules", "/pedia", "/save", "/saves",
+    "/state", "/status", "/runtime", "/rules", "/gene-program", "/pedia", "/save", "/saves",
     "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
     "/intel", "/spectator-status", "/next-game-settings", "/new",
     "/supervisor-new", "/pace", "/next-game",

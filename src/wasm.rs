@@ -361,6 +361,11 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
 
         ("GET", "/rules") => with_session(|session| crate::routes::rules(session, false)),
 
+        // The browser build has no operator force file to read, so nothing is
+        // ever armed here; the shared handler still answers with the ledger's
+        // own program.
+        ("GET", "/gene-program") => with_session(|_session| crate::routes::gene_program(&[])),
+
         ("GET", "/pedia") => with_session(|session| crate::routes::pedia(session)),
 
         // A save is handed straight to the page, which owns the storage this
