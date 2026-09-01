@@ -1,4 +1,4 @@
-//! `civilian-out-of-reach`: settlers and builders stay out of a barbarian's
+//! `civilian-out-of-reach`: settlers and builders stay out of a hostile
 //! reach, flee it, and are stacked with a guard when they cannot. The live
 //! bridge also keeps early Settlers close to the capital that launched them.
 //!
@@ -86,7 +86,7 @@
 
 use super::{
     AdvancedAi, SETTLER_CAPTURE_SCAR_RADIUS, SETTLER_DEAD_SITE_AVOID_TURNS,
-    SETTLER_ESCORT_THREAT_RADIUS, STACKED_GUARD_MIN_HP,
+    SETTLER_ESCORT_THREAT_RADIUS, SETTLER_RETREAT_LIMIT, STACKED_GUARD_MIN_HP,
 };
 use crate::game::{Action, Game};
 use crate::reasoning::plain;
@@ -133,7 +133,7 @@ struct Raider {
     reach: Vec<Pos>,
 }
 
-/// Everything a known barbarian raider could take next turn, around one
+/// Everything a known hostile raider could take next turn, around one
 /// civilian.
 pub(super) struct BarbarianReach {
     raiders: Vec<Raider>,
@@ -179,15 +179,21 @@ impl BarbarianReach {
 }
 
 impl AdvancedAi {
-    /// The reach of every visible barbarian raider that could matter to a
+    /// The reach of every visible hostile military unit that could capture a
     /// civilian at `around`: raiders within `radius`, each flooded with its
-    /// full allowance through blockers (`threat_reach`). Recon units are
-    /// engine-managed scouts, not raiders — see `barbarian_scouts_are_scouts`
-    /// — except on the live seat, whose scouts capture
-    /// (`live_barbarian_scouts_capture`).
+    /// full allowance through blockers (`threat_reach`). Native/evaluator
+    /// boards retain the historical barbarian-only envelope. The live seat's
+    /// capture lessons widen the current-frame envelope to every at-war owner,
+    /// because `resolve_entered_units` gives a civilian to whichever hostile
+    /// military unit steps onto it — a major's Horseman or a Free City's
+    /// Warrior is not special to the engine. Recon units are engine-managed
+    /// scouts, not raiders — see `barbarian_scouts_are_scouts` — except on the
+    /// live seat, whose scouts capture (`live_barbarian_scouts_capture`).
     ///
     /// ⭐ `hostile-memory` (opt-in, off) widens exactly two things about the
-    /// set, and nothing else:
+    /// native set, and nothing else. The live capture lessons already widen
+    /// the *current* visible set to every at-war owner; this gene adds that
+    /// owner rule to native/evaluator boards and remembers stale sightings.
     ///
     /// 1. **Every owner the seat is at war with**, not the Barbarian player
     ///    alone. `resolve_entered_units` hands a Settler to whichever hostile
@@ -216,19 +222,15 @@ impl AdvancedAi {
         radius: i32,
     ) -> BarbarianReach {
         let mut raiders = Vec::new();
-        // Off, the Barbarian player is the whole of the question and its
-        // absence (or a peace with it) is the whole of the answer.
-        if !self.hostile_memory {
-            let Some(barbarian) = g.barb_pid else {
-                return BarbarianReach { raiders };
-            };
-            if !g.is_at_war(pid, barbarian) {
-                return BarbarianReach { raiders };
-            }
-        }
+        // Native/evaluator boards preserve their screened barbarian-only
+        // answer. The live host has proved that the same capture rule applies
+        // to any visible owner at war with the seat, even when no Barbarian
+        // player is present in the mirrored unit table.
+        let current_frame_includes_all_hostiles =
+            self.hostile_memory || self.live_settler_capture_lessons;
         let visible = self.battlefront_visibility(g, pid);
         for unit in g.units.values() {
-            if self.hostile_memory {
+            if current_frame_includes_all_hostiles {
                 if unit.owner == pid || !g.is_at_war(pid, unit.owner) {
                     continue;
                 }
@@ -259,12 +261,12 @@ impl AdvancedAi {
             let domain = spec.domain.as_deref();
             // A recon unit is an engine-managed scout for the BARBARIAN seat;
             // a major's or a Free City's Scout captures a civilian like
-            // anything else, which is why `observe_turn_start_hostiles` has
-            // always qualified this exclusion by owner. Off, `hostile_memory`
-            // is false and the clause reads exactly as it did.
+            // anything else. The owner qualification keeps the native
+            // barbarian-scout exemption while the live/current-hostile frame
+            // can still price a major or Free City Scout.
             let engine_managed_scout = spec.promotion_class == "recon"
                 && !self.live_barbarian_scouts_capture
-                && (!self.hostile_memory || g.players[unit.owner].is_barbarian);
+                && (!current_frame_includes_all_hostiles || g.players[unit.owner].is_barbarian);
             if spec.class != "military" || domain == Some("air") || engine_managed_scout {
                 continue;
             }
@@ -477,19 +479,23 @@ impl AdvancedAi {
         if self.live_settler_capture_lessons {
             let fled = self.flee_under_lessons(g, pid, uid, &reach, goal);
             if fled {
+                if kind == "settler" {
+                    self.note_capture_retreat(g, uid);
+                }
                 return Some(true);
             }
             // `flee_under_lessons` deliberately refuses an equal-risk move.
-            // For an early Settler that is already outside its home corridor,
-            // holding is not an acceptable second choice: hand the turn to
-            // the capture-aware homeward route instead of leaving it beside
-            // the raider while the hostile phase is next.
+            // Let the formationless settlement-safety fallback below try a
+            // one-step risk-reducing retreat when the full-turn escape has no
+            // strictly better destination; returning `Some(false)` here
+            // would short-circuit that fallback and leave a visible hostile
+            // Galley or Horseman free to take the Settler.
             if kind == "settler" {
                 if let Some(home) = self.early_settler_homeward_target(g, uid) {
                     return Some(self.return_early_settler_home(g, pid, uid, home));
                 }
             }
-            return Some(false);
+            return None;
         }
         let here_covering = reach.raiders_covering(g, current);
         let here_nearest = reach.nearest(g, current);
@@ -528,7 +534,7 @@ impl AdvancedAi {
                 break;
             }
             if self.base.path_move(g, pid, uid, pos) {
-                think!(self.journal(), Expansion, Detail, "{} flees a barbarian's reach", plain(&kind);
+                think!(self.journal(), Expansion, Detail, "{} retreats from a hostile's reach", plain(&kind);
                        "{} raider(s) could take {current:?} next turn; {pos:?} is {}",
                        here_covering,
                        if safe { "out of reach" } else { "the least exposed tile it can reach" }; pos);
@@ -968,6 +974,36 @@ impl AdvancedAi {
             .max_by_key(|uid| (g.unit_strength(&g.units[uid], false) as i32, *uid))
     }
 
+    /// Keep the existing live target-retirement contract when the capture
+    /// lessons take the escape branch before the formationless settlement
+    /// safety pass. A hostile reach escape spends the same approach attempt
+    /// as the older one-step retreat, even when the full-turn escape happens
+    /// to make progress toward the target.
+    fn note_capture_retreat(&mut self, g: &Game, uid: u32) {
+        let Some(target) = self.settler_targets.get(&uid).copied() else {
+            return;
+        };
+        let count = match self.settler_retreats.get(&uid) {
+            Some((committed, count)) if *committed == target => count + 1,
+            _ => 1,
+        };
+        self.settler_retreats.insert(uid, (target, count));
+        if count < SETTLER_RETREAT_LIMIT {
+            return;
+        }
+        think!(self.journal(), Expansion, Detail, "Settler gives up on {target:?}";
+               "retreated {count} times while walking there; the approach is not clearing, so the \
+                site is retired for {SETTLER_DEAD_SITE_AVOID_TURNS} standard turns"; target);
+        self.settler_dead_sites.entry(uid).or_default().insert(
+            target,
+            g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+        );
+        self.settler_targets.remove(&uid);
+        self.settler_stalls.remove(&uid);
+        self.settler_blocked_turns.remove(&uid);
+        self.settler_retreats.remove(&uid);
+    }
+
     /// Rule 1 under `live_settler_capture_lessons`, for a civilian standing
     /// inside the reach with nothing protecting its tile. Options rank: out
     /// of reach (nearest the goal), then a tile holding a bindable friendly
@@ -1044,7 +1080,12 @@ impl AdvancedAi {
                         self.pull_guard_along(g, pid, uid, current, now);
                     }
                 }
-                think!(self.journal(), Expansion, Detail, "{} flees a barbarian's reach", plain(&kind);
+                let noun = if kind == "settler" {
+                    "Settler"
+                } else {
+                    "Builder"
+                };
+                think!(self.journal(), Expansion, Detail, "{noun} retreats from a hostile's reach";
                        "{} raider(s) could take {current:?} next turn; {pos:?} is {}",
                        here_covering,
                        if safe {
@@ -1105,5 +1146,90 @@ impl AdvancedAi {
                     {SETTLER_DEAD_SITE_AVOID_TURNS} standard turns for every settler — the ground \
                     that took one settler takes the next"; pos);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::Action;
+
+    fn open_land(g: &Game, pos: Pos) -> bool {
+        g.city_at(pos).is_none()
+            && g.unit_ids_at(pos).is_empty()
+            && g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    }
+
+    /// The live game can hand a Settler to any hostile military owner, not
+    /// only the Barbarian seat. Keep the native/evaluator envelope frozen, but
+    /// make the host lessons model the same `resolve_entered_units` rule.
+    #[test]
+    fn live_capture_reach_includes_an_at_war_major_without_barbarians() {
+        let mut game = Game::new_full(2, 20, 14, 91_401, 60, 0, false);
+        game.current = 0;
+        let founding_settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("player 0 has a starting Settler");
+        game.apply(
+            0,
+            &Action::FoundCity {
+                unit: founding_settler,
+            },
+        )
+        .expect("the starting Settler founds the capital");
+        let home = game
+            .cities
+            .values()
+            .find(|city| city.owner == 0)
+            .expect("player 0 has a capital")
+            .pos;
+        let start = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| open_land(&game, *pos))
+            .expect("open land beside the capital");
+        let hostile_pos = game
+            .nbrs(start)
+            .into_iter()
+            .find(|pos| open_land(&game, *pos))
+            .expect("open land beside the Settler");
+        let settler = game.spawn_test_unit("settler", 0, start);
+        let hostile = game.spawn_test_unit("warrior", 1, hostile_pos);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+
+        let mut native = AdvancedAi::new();
+        native.enable_civilian_out_of_reach();
+        assert!(
+            !native
+                .barbarian_reach(&game, 0, start, REACH_SCAN_RADIUS)
+                .covers(&game, start),
+            "native screens retain the barbarian-only envelope"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_settler_capture_lessons();
+        let reach = live.barbarian_reach(&game, 0, start, REACH_SCAN_RADIUS);
+        assert!(
+            reach.covers(&game, start),
+            "the visible at-war major's Warrior can capture the Settler"
+        );
+        assert!(
+            reach.raiders.iter().any(|raider| raider.pos == hostile_pos),
+            "the major's unit is represented in the live reach"
+        );
+
+        game.at_war.clear();
+        assert!(
+            live.barbarian_reach(&game, 0, start, REACH_SCAN_RADIUS)
+                .is_empty(),
+            "a peaceful rival is not a capture threat"
+        );
+        let _ = settler;
+        let _ = hostile;
     }
 }

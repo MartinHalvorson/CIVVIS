@@ -1709,14 +1709,15 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
         self.assertEqual([r["from_turn"] for r in row["resumes"]],
                          [102, 140, 151, 158, 159, 160])
-        # One back, four back, nine back — RESUME_STEPS = (0, 3, 8) against the
-        # list with the parked turn's own save removed; every resume past the
-        # third keeps the widest stride. Each of the first three attempts
-        # reaches a board the last one did not.
+        # One, four, nine, sixteen, twenty-five and thirty-six back —
+        # RESUME_STEPS = (0, 3, 8, 15, 24, 35) against the list with the parked
+        # turn's own save removed. Every attempt reaches a board the last one
+        # did not, and the sixth, whose stride runs past the thirty saves on
+        # disk, clamps to the oldest (t131) rather than replaying the fifth's.
         self.assertEqual([r["save"] for r in row["resumes"]],
                          ["AutoSave_0160.Civ6Save", "AutoSave_0157.Civ6Save",
-                          "AutoSave_0152.Civ6Save", "AutoSave_0151.Civ6Save",
-                          "AutoSave_0151.Civ6Save", "AutoSave_0151.Civ6Save"])
+                          "AutoSave_0152.Civ6Save", "AutoSave_0144.Civ6Save",
+                          "AutoSave_0135.Civ6Save", "AutoSave_0131.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont6"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
@@ -1880,6 +1881,54 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             "--restart-below-leader-ratio",
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_a_screened_gene_is_dealt_one_arm_per_game_from_its_tag(self):
+        """The arm is a function of the game's tag alone, so a `-contN`
+        continuation inherits it and the ledger can re-derive it; the arm equal
+        to the gene's live default is unarmed and the other is the gene's one
+        flag; the labels reach civ6_play either way."""
+        import genes
+        host_only = next(row.tag for row in genes.genes() if row.host_only)
+        held_opt_in = next(row.tag for row in genes.genes()
+                           if row.opt_in and genes.live_arm(row.tag)["live_default"] == "off")
+        for gene, on_words, off_words in (
+            (host_only, [], ["--civvis-without", host_only]),
+            (held_opt_in, ["--civvis-with", held_opt_in], []),
+        ):
+            arms = {climb.screen_arm(f"civvis-2026090{i}T000000Z", gene, "DIFFICULTY_KING",
+                                     "science") for i in range(1, 40)}
+            self.assertEqual(arms, {"on", "off"}, "forty tags must deal both arms")
+            tag = "civvis-20260901T132005Z"
+            arm = climb.screen_arm(tag, gene, "DIFFICULTY_KING", "science")
+            self.assertEqual(climb.screen_arm(tag + "-cont3", gene, "DIFFICULTY_KING",
+                                              "science"), arm)
+            self.assertEqual(climb.screen_stem(tag + "-cont12"), tag)
+            args = self._play_args(screen_gene=gene, difficulty="DIFFICULTY_KING")
+            for segment in (tag, tag + "-cont1"):
+                cmd = climb.play_command(args, segment, Path("db"), Path("bin"))
+                expected = on_words if arm == "on" else off_words
+                arm_words = cmd[:cmd.index("--screen-gene")]
+                self.assertEqual([w for w in arm_words
+                                  if w in ("--civvis-with", "--civvis-without", gene)],
+                                 expected, segment)
+                self.assertEqual(cmd[cmd.index("--screen-gene") + 1], gene)
+                self.assertEqual(cmd[cmd.index("--screen-arm") + 1], arm)
+        # Unscreened batches are byte-identical to before.
+        cmd = climb.play_command(self._play_args(), "t", Path("db"), Path("bin"))
+        self.assertNotIn("--screen-gene", cmd)
+
+    def test_a_screen_with_no_live_arm_is_refused_but_the_batch_is_not(self):
+        import genes
+        production = next(row.tag for row in genes.genes() if row.production)
+        host_only = next(row.tag for row in genes.genes() if row.host_only)
+        self.assertIsNone(climb.screen_refusal(self._play_args()))
+        self.assertIsNone(climb.screen_refusal(self._play_args(screen_gene=host_only)))
+        self.assertIn("cannot be screened", climb.screen_refusal(
+            self._play_args(screen_gene=production)))
+        self.assertIn("unknown tag", climb.screen_refusal(
+            self._play_args(screen_gene="no-such-gene")))
+        self.assertIn("batch's own arm", climb.screen_refusal(
+            self._play_args(screen_gene=host_only, without=[host_only])))
 
     def test_the_play_command_always_selects_rome(self):
         """Even a direct caller cannot pass another leader through the climb."""
@@ -2417,6 +2466,62 @@ class TheThirdResumeSamplesSomewhereNew(unittest.TestCase):
         self.assertIsNone(climb.resume_from_autosave(
             {"last_turn": 93}, "frozen", 3, self._args(), 0.0,
             recent=lambda newer_than=None: list(self.SAVES)))
+
+
+class ResumesPastTheThirdKeepWalkingBack(unittest.TestCase):
+    """⚠⚠ A DETERMINISTIC PARK SURVIVES STRIDES, AND THE BUDGET IS SIX.
+
+    On 2026-08-31 three of seven parks (t88, t147, t40) replayed into the same
+    deadlock from one back AND four back, and were escaped only by the nine-back
+    stride. With three stride entries and a six-resume budget (#2861), resumes
+    four to six all clamped to the last index and reloaded the very board the
+    third attempt had just failed on — the front-of-rotation waste #2817 removed,
+    back at the tail. Each later attempt now reaches strictly further back.
+    """
+
+    def _args(self, budget=6):
+        import argparse
+        return argparse.Namespace(max_resumes=budget,
+                                  resume_min_turn=climb.RESUME_MIN_TURN)
+
+    # A game that parked at t88 with an autosave for every turn since t40.
+    SAVES = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(88, 39, -1)]
+
+    def _pick(self, attempt, saves=None):
+        return climb.resume_from_autosave(
+            {"last_turn": 88}, "frozen", attempt, self._args(), 0.0,
+            recent=lambda newer_than=None: list(saves or self.SAVES))
+
+    def test_the_fourth_resume_is_strictly_older_than_the_third(self):
+        third, fourth = self._pick(2), self._pick(3)
+        self.assertEqual(third, Path("AutoSave_0079.Civ6Save"))
+        self.assertLess(climb._autosave_turn(fourth), climb._autosave_turn(third),
+                        f"the fourth attempt replayed the third's board: {fourth}")
+        self.assertEqual(fourth, Path("AutoSave_0072.Civ6Save"))
+
+    def test_every_attempt_in_the_budget_reaches_a_strictly_older_board(self):
+        turns = [climb._autosave_turn(self._pick(i)) for i in range(6)]
+        self.assertEqual(turns, [87, 84, 79, 72, 63, 52])
+        self.assertEqual(turns, sorted(turns, reverse=True))
+        self.assertEqual(len(set(turns)), 6)
+
+    def test_a_stride_past_the_oldest_autosave_clamps_to_the_oldest(self):
+        """A short list is still a different board from the one that parked;
+        running out of stride must not turn into running out of resumes."""
+        short = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(88, 76, -1)]
+        # Eleven candidates once t88's own save is dropped: indexes 15, 24 and
+        # 35 are all past the end and every one takes the oldest, t77.
+        for attempt in (3, 4, 5):
+            with self.subTest(attempt=attempt):
+                self.assertEqual(self._pick(attempt, short),
+                                 Path("AutoSave_0077.Civ6Save"))
+        # The strides inside the list are untouched by the clamp.
+        self.assertEqual(self._pick(2, short), Path("AutoSave_0079.Civ6Save"))
+
+    def test_the_budget_still_ends_the_rotation(self):
+        self.assertIsNone(self._pick(6))
+        self.assertEqual(len(climb.RESUME_STEPS), 6,
+                         "one distinct stride per resume in the default budget")
 
 
 class TheOperatorsLaneOutlivesAStaleEnvironment(unittest.TestCase):

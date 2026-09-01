@@ -409,7 +409,11 @@ varies every `screenable()` row in registry order:
   `bank-envoys`, `fog-land-capacity`, …): inert headless, so **never
   screened** — screening them would measure noise and report it as noise.
   Pricing the deployment bundle in the host regime is a different
-  instrument (`civvis_orders --without`, the ladder).
+  instrument (`civvis_orders --without`, the ladder). Every one of them ships
+  **on** in every live seat — `enable_live_bridge_universe` turns on every
+  `live()` gene and the ledger never withholds an unscreened row — so
+  `genes.py list` prints a host-only row `on(live)` and `--with` refuses one
+  as already shipping.
 
 A gene added to the registry reaches the genome, the ledger, the ranking and
 the manifest without touching any of them: `tools/genes.py` is the one

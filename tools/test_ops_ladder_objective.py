@@ -427,6 +427,73 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                         words = [word for word in done.stdout.split("\n") if word]
                         self.assertEqual(words, expected)
 
+    def test_the_installed_supervisor_deals_a_screen_gene_and_refuses_only_the_screen(self):
+        """A live screen names ONE gene per batch and every game is dealt an arm
+        of it from its tag (`civ6_civvis_climb.screen_arm`). The switch reads
+        exactly like the force-on file — one line, no whitespace, per batch —
+        but a bad screen must lose the screen and never the batch: an undealt
+        screen is deployment, and a typo must not stop an unattended ladder.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("FORCED_ENV=${CIVVIS_WITH:-}")
+        end = source.index("# Attempts per cycle.", start)
+        gate = source[start:end]
+        self.assertIn("resolve_screen_gene", gate)
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${SCREEN_ARGS[@]}"', source[invocation_start:invocation_end])
+        self.assertLess(source.index("if ! resolve_forced_arm;"),
+                        source.index("  resolve_screen_gene\n"),
+                        "the screen defers to the batch's own arm, so it resolves after it")
+        script = (
+            "say() { :; }\n" + gate
+            + '\nresolve_forced_arm || exit $?\nresolve_screen_gene || exit $?\n'
+            + 'for word in "${SCREEN_ARGS[@]}"; do print -r -- "$word"; done\n'
+        )
+        for env_gene, file_gene, forced, expected in (
+            (None, None, None, []),
+            (None, "", None, []),
+            ("live-move-refusal-break", None, None,
+             ["--screen-gene", "live-move-refusal-break"]),
+            (None, "live-move-refusal-break", None,
+             ["--screen-gene", "live-move-refusal-break"]),
+            # Whitespace, a bundle, a conflict: the screen is dropped, the
+            # batch (exit 0) is not.
+            # (a trailing newline is stripped by `$(<file)`, exactly as the
+            # force-on file's is; interior whitespace is a second token)
+            (None, "live-move-refusal-break extra", None, []),
+            (None, "a-gene,b-gene", None, []),
+            ("a-gene", "b-gene", None, []),
+            (None, "amenity-project-preemption", "amenity-project-preemption", []),
+        ):
+            with self.subTest(env_gene=env_gene, file_gene=file_gene, forced=forced):
+                with tempfile.TemporaryDirectory() as directory:
+                    screen_file = Path(directory) / "screen-gene"
+                    if file_gene is not None:
+                        screen_file.write_text(file_gene)
+                    env = {key: value for key, value in os.environ.items()
+                           if not key.startswith("CIVVIS_")}
+                    env["CIVVIS_SCREEN_GENE_FILE"] = str(screen_file)
+                    env["CIVVIS_WITH_FILE"] = str(Path(directory) / "absent-force-on")
+                    if env_gene is not None:
+                        env["CIVVIS_SCREEN_GENE"] = env_gene
+                    if forced is not None:
+                        env["CIVVIS_WITH"] = forced
+                    done = subprocess.run(["zsh", "-c", script], env=env,
+                                          capture_output=True, text=True)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    words = [word for word in done.stdout.split("\n") if word]
+                    self.assertEqual(words, expected)
+
+    def test_the_launcher_honours_the_screen_gene_policy_key(self):
+        source = (OPS / "civvis-verified-head-launcher.sh").read_text()
+        self.assertIn("CIVVIS_SCREEN_GENE)", source)
+        self.assertIn("CIVVIS_SCREEN_GENE", source[source.index("unset CIVVIS_WITH"):
+                                                   source.index("export CIVVIS_HEAD_REPO=")],
+                      "an inherited screen must be dropped like an inherited arm")
+
     def test_the_installed_supervisor_uses_the_evidence_gated_rung(self):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("civ6_ladder_policy.py", source)
