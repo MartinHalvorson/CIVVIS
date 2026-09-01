@@ -21888,6 +21888,57 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
     assert!(!AdvancedAi::legacy().settler_target_hysteresis);
 }
 
+/// `route_step` is a multi-turn geometric answer and can still return a
+/// first tile the unit cannot enter with its remaining movement. The live
+/// non-commit path used to remove that target without writing hysteresis, so
+/// the next frame selected the same site again.
+#[test]
+fn a_settler_does_not_repick_a_route_it_cannot_enter_this_turn() {
+    let (mut game, source, target) = stacked_escort_fixture();
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let first = game
+        .route_step(settler, target, 0)
+        .expect("the fixture has a geometric route to the target");
+    game.units
+        .get_mut(&settler)
+        .expect("the test Settler")
+        .moves_left = 0.5;
+    assert!(
+        game.route_step(settler, target, 0).is_some(),
+        "the geometric route remains available"
+    );
+    assert!(
+        !game.can_move(settler, first),
+        "the first route step cannot be paid this turn"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge();
+    ai.enable_settler_never_idles();
+    assert!(
+        ai.settler_target_hysteresis_on(),
+        "the live bridge's route recovery owns hysteresis"
+    );
+    ai.settler_targets.insert(settler, target);
+
+    assert!(
+        !ai.advanced_settler_step(&mut game, 0, settler),
+        "an unpayable first step is not reported as movement"
+    );
+    assert_eq!(
+        ai.settler_avoid
+            .get(&settler)
+            .map(|(position, _)| *position),
+        Some(target),
+        "the locally blocked route receives the normal hysteresis cooldown"
+    );
+    assert_ne!(
+        ai.settler_targets.get(&settler),
+        Some(&target),
+        "the same unmovable target is not immediately retained"
+    );
+}
+
 /// A cached destination can fail safety for an unguarded Settler even while a
 /// second Settler's bound guard makes that same site safe. Version-2
 /// hysteresis used to copy the first unit's transient risk drop into the
