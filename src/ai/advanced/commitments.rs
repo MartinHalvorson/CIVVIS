@@ -23,12 +23,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::game::Game;
+use crate::game::{Action, Game};
 use crate::name::Name;
+use crate::reasoning::plain;
 use crate::think;
 use crate::Pos;
 
-use super::{AdvancedAi, GrandStrategy, WarPhase};
+use super::{civilian_safety, AdvancedAi, GrandStrategy, WarPhase};
 
 /// Turns without a better progress reading before an open commitment counts
 /// as stalled. Three is `SETTLER_STALL_LIMIT`'s value, so the two readings
@@ -381,9 +382,20 @@ impl CommitmentLedger {
     /// `commitment-patience`: a commitment the gene gave up on. Ends as
     /// `retired`, counted with the abandoned.
     pub(super) fn retire(&mut self, key: (Kind, Owner), turn: u32) -> bool {
+        self.end_open(key, "retired", turn)
+    }
+
+    /// `commitment-owner-acts`: a commitment the gene released because its
+    /// next step was illegal or its owner stood inside a hostile's reach.
+    /// Ends as `released`, counted with the abandoned.
+    pub(super) fn release(&mut self, key: (Kind, Owner), turn: u32) -> bool {
+        self.end_open(key, "released", turn)
+    }
+
+    fn end_open(&mut self, key: (Kind, Owner), how: &'static str, turn: u32) -> bool {
         match self.open.remove(&key) {
             Some(c) => {
-                self.end(c, "retired", turn);
+                self.end(c, how, turn);
                 true
             }
             None => false,
@@ -657,6 +669,21 @@ struct UnitContext<'a> {
     price: &'a dyn Fn(u32, Pos, i32) -> u32,
 }
 
+/// What `commitment-owner-acts` did for one owner the unit pass left
+/// standing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum OwnerAct {
+    /// The completing action was applied: a city founded, an improvement laid.
+    Completed,
+    /// One safe route step toward the target.
+    Stepped(Pos),
+    /// Held where it stands, for the named reason.
+    Held(&'static str),
+    /// The decision was released — target dropped, site parked — for the
+    /// named reason.
+    Released(&'static str),
+}
+
 /// The war plan as the ledger reads it.
 struct CaptureReading {
     city: u32,
@@ -928,6 +955,268 @@ impl AdvancedAi {
                 .capture_stood_down
                 .get(&city)
                 .is_some_and(|until| g.turn < *until)
+    }
+
+    /// `commitment-owner-acts`: the owners the unit pass left standing act
+    /// on their decisions now.
+    ///
+    /// Runs once per acting turn, after `advanced_units` and before the
+    /// ledger's reading, so it sees exactly what the ledger would have called
+    /// forgotten: a settle or improve decision open, its owner alive with
+    /// movement to spend and no order issued. Each such owner gets the
+    /// decision's own next step — the city founded or the improvement laid
+    /// when it stands on the target, else one route step toward it when no
+    /// hostile can reach that step — or the decision is released with its
+    /// reason: the step is illegal (no route, a refused order, a site that
+    /// cannot be founded, a tile nothing fits), or the owner itself stands
+    /// inside a hostile's reach, where the civilian-safety flee keeps
+    /// priority and a decision must not pull the unit deeper in. A released
+    /// site is parked for the hysteresis window, the way `commitment-patience`
+    /// parks a retired one, so the next pick is a different one. The one hold
+    /// it leaves standing is the step that is itself inside a hostile's reach
+    /// or over the settler step-risk limit: a passing raider is a wait, not a
+    /// new decision, and `commitment-patience` prices how long.
+    ///
+    /// Exact no-op while the gene is off.
+    pub(super) fn commitment_owners_act(&mut self, g: &mut Game, pid: usize) {
+        if !self.commitment_owner_acts {
+            return;
+        }
+        let idle = |g: &Game, uid: u32| {
+            g.units
+                .get(&uid)
+                .is_some_and(|unit| unit.owner == pid && !unit.acted && unit.moves_left > 0.0)
+        };
+        let mut owners: Vec<(Kind, u32, Pos)> = Vec::new();
+        for (&uid, &site) in &self.settler_targets {
+            // A settler waiting for the guard it summoned holds on purpose.
+            if idle(g, uid) && !self.guard_wait.contains_key(&uid) {
+                owners.push((Kind::Settle, uid, site));
+            }
+        }
+        for (&uid, &site) in &self.builder_targets {
+            if idle(g, uid) {
+                owners.push((Kind::Improve, uid, site));
+            }
+        }
+        for (kind, uid, site) in owners {
+            let streak = self
+                .commitments
+                .open_for(kind, Owner::Unit(uid))
+                .filter(|c| c.target == Target::Tile(site))
+                .map_or(0, |c| c.forgotten_streak);
+            let unit_kind = g.units[&uid].kind;
+            let act = self.commitment_owner_act(g, pid, kind, uid, site);
+            let field = match act {
+                OwnerAct::Completed => "owner_completed",
+                OwnerAct::Stepped(_) => "owner_stepped",
+                OwnerAct::Held(_) => "owner_held",
+                OwnerAct::Released(_) => "owner_released",
+            };
+            *g.players[pid]
+                .counters
+                .entry(format!("commit:{}:{field}", kind.as_str()))
+                .or_insert(0) += 1;
+            let what = plain(&unit_kind);
+            match act {
+                OwnerAct::Completed => {
+                    think!(self.journal(), Expansion, Detail, "{what} completes the decision the unit pass left standing";
+                           "{uid} stood on {site:?} with movement and no order ({streak} forgotten turns before this one); the {} is done now",
+                           kind.as_str(); site);
+                }
+                OwnerAct::Stepped(next) => {
+                    think!(self.journal(), Expansion, Detail, "{what} acts on the decision the unit pass left standing";
+                           "{uid} had movement and no order ({streak} forgotten turns before this one); it steps to {next:?}, {} hexes from {site:?}",
+                           g.wdist(next, site); next);
+                }
+                OwnerAct::Held(why) => {
+                    think!(self.journal(), Expansion, Detail, "{what} holds its decision for a turn";
+                           "{uid} keeps {site:?} but does not step: {why}"; site);
+                }
+                OwnerAct::Released(why) => {
+                    think!(self.journal(), Expansion, Detail, "{what} releases the decision it was not acting on";
+                           "{uid} drops {site:?} ({streak} forgotten turns before this one): {why}; the {} is set aside for {} standard turns",
+                           kind.as_str(), super::SETTLER_TARGET_HYSTERESIS_TURNS; site);
+                }
+            }
+        }
+    }
+
+    /// One owner's act. The unit is alive, ours, unacted and has movement.
+    fn commitment_owner_act(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        kind: Kind,
+        uid: u32,
+        site: Pos,
+    ) -> OwnerAct {
+        let current = g.units[&uid].pos;
+        // A linked civilian has no move of its own; the formation carrying
+        // it is what did not move.
+        if g.units[&uid].linked_to.is_some() {
+            return OwnerAct::Held("it is linked to an escort formation that did not move");
+        }
+        let reach = self.barbarian_reach(g, pid, current, civilian_safety::REACH_SCAN_RADIUS);
+        // The flee keeps priority. A civilian standing inside a hostile's
+        // reach had the flee's say in the unit pass (or holds because no
+        // reachable tile is better); the decision it carries is released
+        // rather than pushed, so the next pick is made from safer ground.
+        if !self.civilian_safe_at(g, pid, uid, current, &reach) {
+            self.release_commitment(g, pid, kind, uid, site);
+            return OwnerAct::Released(
+                "it stands inside a hostile's reach, where the civilian-safety flee owns its turn",
+            );
+        }
+        if current == site {
+            return match kind {
+                Kind::Settle => self.commitment_owner_founds(g, pid, uid, site),
+                Kind::Improve => self.commitment_owner_improves(g, pid, uid, site),
+                Kind::Capture => OwnerAct::Held("a capture has no unit owner"),
+            };
+        }
+        let Some(next) = g
+            .route_step(uid, site, 0)
+            .filter(|next| g.can_move(uid, *next))
+        else {
+            self.release_commitment(g, pid, kind, uid, site);
+            return OwnerAct::Released("no legal route step toward it this turn");
+        };
+        if !self.civilian_safe_at(g, pid, uid, next, &reach) {
+            return OwnerAct::Held("the next step is inside a hostile's reach");
+        }
+        if kind == Kind::Settle && self.settlement_safety {
+            let visible = self.battlefront_visibility(g, pid);
+            if self.settlement_tile_risk(g, pid, Some(uid), next, &visible)
+                > super::SETTLER_STEP_RISK_LIMIT
+            {
+                return OwnerAct::Held("the next step is over the settler step-risk limit");
+            }
+        }
+        if self.base.path_move(g, pid, uid, next) {
+            OwnerAct::Stepped(next)
+        } else {
+            self.release_commitment(g, pid, kind, uid, site);
+            OwnerAct::Released("the route step toward it was refused")
+        }
+    }
+
+    /// A settler standing on its site with movement and no order founds the
+    /// city, under the same safety and loyalty bars the unit pass applies.
+    fn commitment_owner_founds(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        site: Pos,
+    ) -> OwnerAct {
+        if !g.can_found_city(uid) {
+            self.release_commitment(g, pid, Kind::Settle, uid, site);
+            return OwnerAct::Released(
+                "it stands on the site and the city cannot be founded there",
+            );
+        }
+        if self.settlement_safety {
+            let visible = self.battlefront_visibility(g, pid);
+            if self.settlement_tile_risk(g, pid, Some(uid), site, &visible)
+                > super::SETTLER_STEP_RISK_LIMIT
+            {
+                return OwnerAct::Held("the site is over the settler step-risk limit this turn");
+            }
+        }
+        let science_targeted = self.active_victory_target(g) == Some(super::VictoryTarget::Science);
+        let verdict = if self.base.loyalty_rate_alarm || science_targeted {
+            self.settle_site_loyalty_verdict(g, pid, site)
+        } else {
+            self.settle_site_frontier_loyalty_verdict(g, pid, site)
+        };
+        if verdict.is_some() {
+            self.release_commitment(g, pid, Kind::Settle, uid, site);
+            return OwnerAct::Released("the loyalty forecast refuses the site");
+        }
+        let worth = self.settle_value(g, pid, site);
+        self.settler_targets.remove(&uid);
+        self.settler_stalls.remove(&uid);
+        self.settler_closest.remove(&uid);
+        if g.apply(pid, &Action::FoundCity { unit: uid }).is_ok() {
+            think!(self.journal(), Expansion, Decision, "Founding a city at {site:?} for a decision the unit pass left standing";
+                   "the site is worth {worth:.1}"; site);
+            OwnerAct::Completed
+        } else {
+            self.release_commitment(g, pid, Kind::Settle, uid, site);
+            OwnerAct::Released("the engine refused the founding")
+        }
+    }
+
+    /// A Builder standing on its tile with movement and no order lays the
+    /// best improvement that fits it, or releases a tile nothing fits.
+    fn commitment_owner_improves(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        site: Pos,
+    ) -> OwnerAct {
+        let Some(strategy) = self.plan.as_ref().map(|plan| plan.strategy) else {
+            return OwnerAct::Held("no strategic plan prices the tile this turn");
+        };
+        let Some(improvement) = self
+            .worthwhile_improvements(g, pid, site, strategy)
+            .into_iter()
+            .next()
+        else {
+            self.release_commitment(g, pid, Kind::Improve, uid, site);
+            return OwnerAct::Released("it stands on the tile and no improvement fits it");
+        };
+        self.builder_targets.remove(&uid);
+        if g.apply(
+            pid,
+            &Action::Improve {
+                unit: uid,
+                improvement,
+            },
+        )
+        .is_ok()
+        {
+            OwnerAct::Completed
+        } else {
+            self.release_commitment(g, pid, Kind::Improve, uid, site);
+            OwnerAct::Released("the engine refused the improvement")
+        }
+    }
+
+    /// Drop the target, park the site for the hysteresis window, and end the
+    /// open commitment as `released`.
+    fn release_commitment(&mut self, g: &mut Game, pid: usize, kind: Kind, uid: u32, site: Pos) {
+        let until = g.turn + g.standard_duration(super::SETTLER_TARGET_HYSTERESIS_TURNS);
+        match kind {
+            Kind::Settle => {
+                self.settler_targets.remove(&uid);
+                self.settler_stalls.remove(&uid);
+                self.settler_closest.remove(&uid);
+                self.settler_dead_sites
+                    .entry(uid)
+                    .or_default()
+                    .insert(site, until);
+            }
+            Kind::Improve => {
+                self.builder_targets.remove(&uid);
+                self.builder_avoid.insert(uid, (site, until));
+            }
+            Kind::Capture => return,
+        }
+        let key = (kind, Owner::Unit(uid));
+        if self
+            .commitments
+            .open_for(kind, Owner::Unit(uid))
+            .is_some_and(|c| c.target == Target::Tile(site))
+        {
+            self.commitments.release(key, g.turn);
+        }
+        *g.players[pid]
+            .counters
+            .entry(format!("commit:{}:released", kind.as_str()))
+            .or_insert(0) += 1;
     }
 
     /// What became of this seat's decisions so far.
