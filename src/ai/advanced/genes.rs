@@ -1846,6 +1846,7 @@ pub const GENES: &[Gene] = &[
     // improves the live universe. Appended at the END to preserve any
     // running screen's positional genome.
     Gene { tag: "early-project-restraint", field: "early_project_restraint", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint, disable: AdvancedAi::disable_early_project_restraint },
+    Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
