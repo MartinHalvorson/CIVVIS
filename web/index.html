@@ -500,7 +500,8 @@
      the world has no other history worth a section. The study tracks go with
      them; an arena side's research reads inline in its battle plan. */
   body.watching-tactics #warsec, body.watching-tactics #eventsec,
-  body.watching-tactics #researchtrack, body.watching-tactics #civicstrack { display: none; }
+  body.watching-tactics #researchtrack, body.watching-tactics #civicstrack,
+  body.watching-tactics #geneprogramtrack { display: none; }
   /* A battlefield has no empire to open screens on and nobody to deal with:
      the Empire tabs, Diplomacy, Quick Deals and the world hooks (Espionage,
      City-States, Trade routes, Era progress, Reports) are a world's buttons.
@@ -1310,6 +1311,20 @@
   .force-chip.advance { background: #7a5f2740; color: #e9c07c; }
   .force-chip.muster { background: #2a4a6b3d; color: #9fc7e6; }
   .force-chip.recover { background: #3d3a5c40; color: #c0b6e8; }
+  /* The gene program: one chip per heuristic gene steering the seats, most
+     influential first. An armed chip is a ledger-held gene the operator's
+     live arm forces on — the current experiment, dressed in the plan track's
+     gold so the bet reads apart from the settled defaults, whose tint is the
+     ledger's own verdict. The small figure is the measured effect in win
+     percentage points per seat. */
+  .gene-chip { display: inline-block; margin: 2px 3px 0 0; padding: 1px 5px; border-radius: 5px; background: #ffffff10; color: #d5e0da; font-size: var(--type-small); font-weight: 750; }
+  .gene-chip small { margin-left: 3px; color: #93a79f; font-size: 92%; font-variant-numeric: tabular-nums; }
+  .gene-chip.helps { background: #2b53383d; color: #a9dcb9; }
+  .gene-chip.helps small { color: #7fae8e; }
+  .gene-chip.hurts { background: #7a30293d; color: #f2a09b; }
+  .gene-chip.armed { background: #7a5f2740; color: #e9c07c; box-shadow: inset 0 0 0 1px #d7b66a55; }
+  .gene-chip.armed small { color: #bd9a5a; }
+  .strategy-track.gene-track .strategy-heading span::before { background: var(--green); box-shadow: 0 0 9px #76c89377; }
   /* AI Tactics: one block per battlefield side, in standings order, each a
      dossier of that side's doctrine, objective, force groups and condition.
      The picked side (the one whose decision factors are open below) carries
@@ -5485,6 +5500,10 @@
         <div class="strategy-track strategy-plan-track" id="strategyplantrack">
           <div class="strategy-heading"><span id="strategyplanheading">Grand strategy</span></div>
           <div id="strategyplan"></div>
+        </div>
+        <div class="strategy-track gene-track" id="geneprogramtrack" hidden>
+          <div class="strategy-heading"><span>Gene program</span><small id="geneprogramsum" class="strategy-reasoning-meta"></small></div>
+          <div id="geneprogram"></div>
         </div>
         <div class="strategy-track" id="researchtrack">
           <div class="strategy-heading"><span>Research</span><span><button class="mini" onclick='openPedia()'>Pedia</button> <button class="mini" onclick='openTree("techs")'>Tree</button></span></div>
