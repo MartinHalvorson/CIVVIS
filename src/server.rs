@@ -4109,6 +4109,40 @@ fn decorate(o: &mut Value, sh: &Shared) {
     o["next_game_settings"] = sh.staged_next_game_settings();
 }
 
+/// The ledger-held gene tags an operator's live verification arm forces on,
+/// for `/gene-program`'s `armed` list: `CIVVIS_WITH` when exported — the same
+/// deliberate override the game supervisor honours — otherwise the force
+/// file the supervisor resolves before every batch. Display-grade on purpose:
+/// the panel reports what the live seat is armed with on this machine, while
+/// the supervisor remains the validator of the batch it actually launches,
+/// and `routes::gene_program` drops any tag the ledger could not legally
+/// seat. The browser build has no machine to read, so its list is empty.
+fn armed_live_treatments() -> Vec<String> {
+    let exported = std::env::var("CIVVIS_WITH")
+        .ok()
+        .filter(|list| !list.trim().is_empty());
+    let raw = exported.or_else(|| {
+        let path = std::env::var("CIVVIS_WITH_FILE")
+            .ok()
+            .filter(|path| !path.trim().is_empty())
+            .unwrap_or_else(|| {
+                format!(
+                    "{}/.civvis-live-force-on",
+                    std::env::var("HOME").unwrap_or_default()
+                )
+            });
+        std::fs::read_to_string(path).ok()
+    });
+    raw.map(|list| {
+        list.split(',')
+            .map(str::trim)
+            .filter(|tag| !tag.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
 fn handle(stream: &mut TcpStream, sh: &Shared) {
     // A duplicated socket handle can fail under fd exhaustion or a raced
     // shutdown; the connection is not worth serving without a reader, and
@@ -4587,6 +4621,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/rules") => {
             let session = lock_or_recover(&sh.session);
             let answer = crate::routes::rules(&session, true);
+            respond_json(stream, &answer);
+        }
+        ("GET", "/gene-program") => {
+            let answer = crate::routes::gene_program(&armed_live_treatments());
             respond_json(stream, &answer);
         }
         // Hand your seat to one of our agents for a stretch of turns. `turns`

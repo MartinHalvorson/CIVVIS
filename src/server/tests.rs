@@ -2982,9 +2982,9 @@ fn browser_reads_a_battlefield_deck_as_ai_tactics() {
     assert!(
         EMBEDDED_INDEX.contains("body.watching-tactics #warsec, body.watching-tactics #eventsec,")
     );
-    assert!(EMBEDDED_INDEX.contains(
-        "body.watching-tactics #researchtrack, body.watching-tactics #civicstrack { display: none; }"
-    ));
+    assert!(EMBEDDED_INDEX
+        .contains("body.watching-tactics #researchtrack, body.watching-tactics #civicstrack,"));
+    assert!(EMBEDDED_INDEX.contains("body.watching-tactics #geneprogramtrack { display: none; }"));
     // … and the class is the watched world's, never the setup drawer's:
     // `playing-tactics` describes what the drawer is configuring, which
     // may be the other game entirely.
@@ -5054,6 +5054,91 @@ fn browser_standings_city_count_opens_that_empires_cities_under_its_row() {
 }
 
 #[test]
+fn the_gene_program_route_reports_the_ledger_and_vouches_for_armed_tags() {
+    use crate::ai::gene_ledger;
+    // A ledger-held tag is the one thing an arm may legally force on; the
+    // handler must echo it and drop a name the ledger could not seat, so an
+    // armed chip in the panel always means what `civvis_orders --with` would
+    // accept. The forceable set is read from the generated ledger rather than
+    // pinned, so the test survives every regeneration.
+    let forceable = gene_ledger::forceable_treatments();
+    let mut armed: Vec<String> = vec!["not-a-gene".into()];
+    if let Some(tag) = forceable.first() {
+        armed.push((*tag).to_string());
+    }
+    let answer = crate::routes::gene_program(&armed);
+    assert_eq!(
+        answer["policy"].as_str(),
+        Some(gene_ledger::deployment_policy())
+    );
+    let echoed: Vec<&str> = answer["armed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tag| tag.as_str().unwrap())
+        .collect();
+    assert!(!echoed.contains(&"not-a-gene"));
+    if let Some(tag) = forceable.first() {
+        assert!(echoed.contains(tag));
+    }
+    let genes = answer["genes"].as_array().unwrap();
+    assert!(!genes.is_empty());
+    for gene in genes {
+        let tag = gene["tag"].as_str().unwrap();
+        assert!(crate::ai::gene(tag).is_some(), "unknown tag {tag}");
+        // The verdict block travels whole or not at all: a priced gene
+        // carries the ledger's word, an unpriced one answers null.
+        assert_eq!(
+            gene["verdict"].is_string(),
+            crate::ai::ledger_verdict(tag).is_some()
+        );
+    }
+    // The ranking's description column reaches the panel: every priced gene
+    // is a row of the committed ranking table, so a priced program row with
+    // no prose means the embedded-table parse has drifted from the format
+    // `tools/genes.py write` emits.
+    let priced: Vec<&Value> = genes
+        .iter()
+        .filter(|gene| gene["verdict"].is_string())
+        .collect();
+    assert!(!priced.is_empty());
+    for gene in &priced {
+        let description = gene["description"].as_str().unwrap_or_default();
+        assert!(
+            description.len() > 15,
+            "no ranking description for priced gene {}",
+            gene["tag"]
+        );
+        assert!(
+            !description.contains('`') && !description.contains('|'),
+            "ranking cells bled into the description of {}",
+            gene["tag"]
+        );
+    }
+    // Every deployed treatment reads as on, and an armed tag is on nowhere
+    // else: armed means the ledger itself still holds it out of deployment.
+    let on_tags: Vec<&str> = genes
+        .iter()
+        .filter(|gene| gene["on"].as_bool() == Some(true))
+        .map(|gene| gene["tag"].as_str().unwrap())
+        .collect();
+    for tag in gene_ledger::deployment_treatments() {
+        assert!(
+            on_tags.contains(&tag),
+            "deployed {tag} missing from the program"
+        );
+    }
+    for tag in &echoed {
+        let row = genes
+            .iter()
+            .find(|gene| gene["tag"].as_str() == Some(tag))
+            .unwrap();
+        assert_eq!(row["armed"].as_bool(), Some(true));
+        assert_eq!(row["on"].as_bool(), Some(false));
+    }
+}
+
+#[test]
 fn browser_orders_controls_interface_setup_and_logs() {
     // Readability is a shared interface contract, not a collection of
     // one-off enlargements. Panels inherit one system stack and a named
@@ -6985,6 +7070,14 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
     assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
     assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
+    // The gene program track: the strategy panel names the heuristic genes
+    // steering the seats, fetched once from `/gene-program` beside the rules.
+    assert!(EMBEDDED_INDEX.contains("function drawGeneProgram()"));
+    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/gene-program\")"));
+    assert!(EMBEDDED_INDEX.contains("id=\"geneprogramtrack\""));
+    assert!(EMBEDDED_INDEX.contains(".gene-chip {"));
+    // On a battlefield the track retires with the other study tracks.
+    assert!(EMBEDDED_INDEX.contains("body.watching-tactics #geneprogramtrack"));
     // The AI strategy dossier speaks for one civilization at a time, and which
     // civilizations it may speak for is the observation's answer, not the
     // panel's: `view_player` names a seat in a played game and in Watch as,
@@ -12854,6 +12947,28 @@ fn every_viewer_engine_request_is_served_by_both_runtimes_and_the_shim() {
             "the shared viewer requests {path}, but the browser shim sends it to the network"
         );
     }
+}
+
+/// The reasoning journal reaches both builds. `ai_reasoning` is attached in
+/// each lane's own `/state` arm, outside `decorate`, so the parity test
+/// below cannot see it drift — and it did drift: the strategy panel's
+/// decision factors were permanently empty on civvis.ai for as long as the
+/// feature existed, in exactly the silent #1301 shape, because only the
+/// socket lane ever parsed `&think=`.
+#[test]
+fn the_reasoning_feed_reaches_the_browser_build() {
+    let native = include_str!("../server.rs");
+    let browser = include_str!("../wasm.rs");
+    for source in [native, browser] {
+        assert!(
+            source.contains("query_value(") && source.contains("\"think\""),
+            "a /state lane no longer parses the reasoning cursor"
+        );
+    }
+    assert!(native.contains("observed[\"ai_reasoning\"] = session.reasoning_json(cursor);"));
+    assert!(browser.contains(
+        "o[\"ai_reasoning\"] = session.reasoning_json(cursor.parse::<u64>().unwrap_or(0));"
+    ));
 }
 
 /// Every field `decorate` attaches to `/state` is either mirrored by the
