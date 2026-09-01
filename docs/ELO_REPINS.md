@@ -1904,3 +1904,28 @@ be hidden behind a gene: every simulated seat uses the same assignment logic.
 The anchor therefore moves from v28's 18,515 decisions and
 `0x04f5_da2a_c86b_099c` to **18,508 and `0x66d9_754b_9443_6085`** across its
 five profiles. The shipped ruleset fingerprint does not move.
+
+## v30 (2026-09-01) — the installed Gathering Storm rows win over the stale cache
+
+The v27/v28 rules-data reversal above was audited against the machine's
+compiled `DebugGameplay.sqlite`. That cache was Vanilla: it is missing the
+Gathering Storm-only `TECH_BUTTRESS`, `TECH_REFINING`, `TECH_SEASTEADS`,
+`CIVIC_ENVIRONMENTALISM`, and `UNIT_SUPPLY_CONVOY` rows. A zero-divergence
+cache check was therefore not evidence for the expansion values.
+
+The complete installed Gathering Storm load order, read from the Civilization
+VI installation with `tools/civ6_fidelity.py --civ6 <Assets>`, is authoritative
+for this model. It reports nine previously unwaived fields and resolves them to
+Pike and Shot upkeep 3; Tagma 180 Production, 3 upkeep, and Tank upgrade;
+Prasat 4 Faith with two Relic slots; Sukiennice 3 Gold; Tlachtli 1 Culture;
+and Eyjafjallajökull adjacent Food 2. CIVVIS now carries those values in its
+data and in the Tagma mechanics assertions. The direct install audit is again
+**0 divergent fields across 29 tables**, while the cache-only guard continues
+to refuse the Vanilla database rather than silently comparing the wrong game.
+
+These are shared rules corrections, so the frozen `advanced_v1` behavior must
+move: the five profiles go from v29's 18,508 decisions and
+`0x66d9_754b_9443_6085` to **18,510 and `0xbc5b_7297_d273_3cf1`**. The shipped
+ruleset fingerprint moves from `fnv1a64:7c1bacacca3d4120` to
+`fnv1a64:04695321be221feb`. This is a deliberate ruleset re-pin, not a
+controller treatment or an unverified constant update.

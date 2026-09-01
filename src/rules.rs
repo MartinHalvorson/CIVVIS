@@ -3350,13 +3350,13 @@ mod tests {
         // was touched, since matching the raw column would have doubled every one.
         //
         // Moved again by the installed Gathering Storm load order: Pike and
-        // Shot maintenance is 4, Tagma costs 220 with 4 maintenance and upgrades
-        // to Cuirassier, Prasat is Faith 6 with one Relic slot, Sukiennice
-        // is Gold 2, Tlachtli is Culture 2, Eyjafjallajökull gives adjacent Food
-        // 1, and Armagh's Monastery permits Hills. Mine accepts Hills, a valid
-        // resource, or Volcanic Soil; Terrace Farm and Rock-Hewn Church accept
-        // Hills or Volcanic Soil. The historical XML snippets that suggested
-        // the opposite values are not the effective ruleset.
+        // Shot maintenance is 3, Tagma costs 180 with 3 maintenance and upgrades
+        // to Tank, Prasat is Faith 4 with two Relic slots, Sukiennice is Gold 3,
+        // Tlachtli is Culture 1, and Eyjafjallajökull gives adjacent Food 2.
+        // Armagh's Monastery permits Hills. Mine accepts Hills, a valid resource,
+        // or Volcanic Soil; Terrace Farm and Rock-Hewn Church accept Hills or
+        // Volcanic Soil. These are the effective rows after the complete
+        // Gathering Storm load order, rather than historical base-game snippets.
         //
         // Rock-Hewn Church's Hills and Volcanic Soil alternatives are carried
         // as one semantic field (`hills_or_feature`) in both the ruleset and
@@ -3588,14 +3588,9 @@ mod tests {
         // on `GreatPeople`, not a balance change.
         // Moved again by wiring `tools/civ6_fidelity.py --check --max 0` into
         // CI, whose first run found ten divergences nothing had reported
-        // because nothing ran it: the Tagma cost 180 and upgraded to a Tank
-        // (shipped: 220, Cuirassier, 4 Gold upkeep), the Pike and Shot paid 3
-        // upkeep (4), the Prasat held two Relics at +4 Faith (one, +6), the
-        // Sukiennice paid +3 Gold (+2), the Tlachtli +1 Culture (+2), and
-        // Eyjafjallajökull's neighbours took +2 Food (+1). The new
-        // `Difficulties` projection added the human's camp Gold above Prince,
-        // which `BARBARIAN_CAMP_GOLD_SCALING` runs to -20 at Deity and the
-        // data had stopped transcribing at Warlord's +5.
+        // because nothing ran it. The direct install audit later resolved the
+        // effective Gathering Storm rows above; the old cache-only audit had
+        // loaded a Vanilla database and was not evidence for these values.
         // Moved again by reading the disasters' fertility table instead of
         // guessing it. `RandomEvent_Yields` in
         // `DLC/Expansion2/Data/Expansion2_RandomEvents.xml` rates each YIELD
@@ -3630,7 +3625,7 @@ mod tests {
         // the weaker generic Galley.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:7c1bacacca3d4120"
+            "fnv1a64:04695321be221feb"
         );
     }
 
@@ -3638,21 +3633,21 @@ mod tests {
     fn gathering_storm_unique_rows_match_the_installed_database() {
         let rules = Rules::shipped();
         let pike_and_shot = &rules.units["pike_and_shot"];
-        assert_eq!(pike_and_shot.maintenance, 4.0);
+        assert_eq!(pike_and_shot.maintenance, 3.0);
 
         let tagma = &rules.units["tagma"];
-        assert_eq!(tagma.cost, 220.0);
-        assert_eq!(tagma.maintenance, 4.0);
-        assert_eq!(tagma.upgrade_to.as_deref(), Some("cuirassier"));
+        assert_eq!(tagma.cost, 180.0);
+        assert_eq!(tagma.maintenance, 3.0);
+        assert_eq!(tagma.upgrade_to.as_deref(), Some("tank"));
 
         let prasat = &rules.buildings["prasat"];
-        assert_eq!(prasat.yields.faith, 6.0);
-        assert_eq!(prasat.great_work_slots["relic"], 1);
-        assert_eq!(rules.buildings["sukiennice"].yields.gold, 2.0);
-        assert_eq!(rules.buildings["tlachtli"].yields.culture, 2.0);
+        assert_eq!(prasat.yields.faith, 4.0);
+        assert_eq!(prasat.great_work_slots["relic"], 2);
+        assert_eq!(rules.buildings["sukiennice"].yields.gold, 3.0);
+        assert_eq!(rules.buildings["tlachtli"].yields.culture, 1.0);
 
         let eyjafjallajokull = &rules.features["eyjafjallajokull"];
-        assert_eq!(eyjafjallajokull.adjacent_yields.food, 1.0);
+        assert_eq!(eyjafjallajokull.adjacent_yields.food, 2.0);
     }
 
     #[test]
@@ -4212,7 +4207,7 @@ mod tests {
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
-            ("tagma", "cuirassier"),
+            ("tagma", "tank"),
             ("cuirassier", "tank"),
             ("tank", "modern_armor"),
             ("catapult", "trebuchet"),
