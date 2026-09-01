@@ -3403,6 +3403,17 @@ impl AdvancedAi {
         self.air_surge_2 = false;
     }
 
+    /// `settler-site-gate`: a city starts a Settler only while an acceptable,
+    /// unclaimed site worth founding exists. See `advanced/settler_site_gate.rs`.
+    pub fn enable_settler_site_gate(&mut self) {
+        self.settler_site_gate = true;
+    }
+
+    /// The twin of `enable_settler_site_gate`.
+    pub fn disable_settler_site_gate(&mut self) {
+        self.settler_site_gate = false;
+    }
+
     /// `settler-target-floor`: a Settler is never sent to a site not worth the
     /// walk. See `advanced/settler_target_floor.rs`.
     pub fn enable_settler_target_floor(&mut self) {

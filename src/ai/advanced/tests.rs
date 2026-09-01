@@ -41891,6 +41891,84 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
 }
 
 #[test]
+fn settler_site_gate_verdict_needs_a_free_seat_worth_the_floor() {
+    use super::settler_site_gate::{SettlerSiteGateHold as Hold, SETTLER_SITE_GATE_FLOOR as FLOOR};
+    let g = Game::new_full(2, 16, 12, 7, 50, 1, false);
+    let (a, near_a, b) = ((2, 2), (3, 2), (10, 2));
+    let verdict = AdvancedAi::settler_site_gate_verdict;
+    assert_eq!(verdict(&g, &[], &[], 0), Err(Hold::NoSite));
+    // The best free seat goes to the Settler this city would start.
+    assert_eq!(verdict(&g, &[(a, 90.0), (b, 60.0)], &[], 0), Ok((a, 90.0)));
+    // A claimed seat is taken, and so is every plot within settlement
+    // spacing of it: two candidate plots one tile apart are one seat.
+    assert_eq!(
+        verdict(&g, &[(a, 90.0), (near_a, 85.0), (b, 60.0)], &[a], 1),
+        Ok((b, 60.0))
+    );
+    // A Settler alive without a target queues ahead of a new one.
+    assert_eq!(verdict(&g, &[(a, 90.0), (b, 60.0)], &[], 1), Ok((b, 60.0)));
+    assert_eq!(
+        verdict(&g, &[(a, 90.0), (b, 60.0)], &[a], 2),
+        Err(Hold::AllClaimed {
+            seats: 1,
+            unseated: 1
+        })
+    );
+    // Run 182050Z's wandering targets were worth 13.8–24.1; its founded
+    // sites 96–140. The floor sits between them, and a seat under it is
+    // not a seat worth a Settler.
+    assert_eq!(
+        verdict(&g, &[(a, 18.9)], &[], 0),
+        Err(Hold::BelowFloor { worth: 18.9 })
+    );
+    assert_eq!(verdict(&g, &[(a, FLOOR)], &[], 0), Ok((a, FLOOR)));
+    assert!(Hold::BelowFloor { worth: 18.9 }.describe().contains("18.9"));
+}
+
+#[test]
+fn settler_site_gate_is_off_by_default_and_reads_the_live_board() {
+    use super::settler_site_gate::SettlerSiteGateHold as Hold;
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.settler_site_gate, "an OptIn gene ships off");
+    ai.enable_settler_site_gate();
+    assert!(ai.settler_site_gate);
+    ai.disable_settler_site_gate();
+    assert!(!ai.settler_site_gate);
+
+    let mut game = Game::new_full(4, 24, 16, 470_001, 200, 1, false);
+    let mut ais: Vec<AdvancedAi> = (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+    while game.player_city_ids(0).is_empty() && game.turn < 40 && game.winner.is_none() {
+        let pid = game.current;
+        ais[pid].take_turn(&mut game, pid);
+        if game.winner.is_none() && game.current == pid {
+            let _ = game.apply(pid, &crate::game::Action::EndTurn);
+        }
+    }
+    let cid = game.player_city_ids(0)[0];
+    let capital = game.cities[&cid].pos;
+    ai.enable_settler_site_gate();
+    // With no Settler alive the gate is the pure verdict over the capital's
+    // acceptable sites — the walker's own refusals applied, nothing claimed.
+    let sites: Vec<(Pos, f64)> = ai
+        .settle_sites(&game, 0, capital, 11)
+        .into_iter()
+        .filter(|(site, _)| {
+            ai.exhaustion_site_unpriceable(&game, *site).is_none()
+                && !AdvancedAi::inside_rival_sphere(&game, 0, *site)
+        })
+        .collect();
+    assert_eq!(
+        ai.settler_site_gate(&game, 0, capital, 0),
+        AdvancedAi::settler_site_gate_verdict(&game, &sites, &[], 0)
+    );
+    // More Settlers alive than the map has seats: the city holds.
+    assert!(matches!(
+        ai.settler_site_gate(&game, 0, capital, 99),
+        Err(Hold::AllClaimed { .. }) | Err(Hold::NoSite)
+    ));
+}
+
+#[test]
 fn settler_target_floor_charges_the_walk_and_holds_a_floor() {
     use super::settler_target_floor::{SETTLER_TARGET_FREE_TILES, SETTLER_TARGET_WORTH_FLOOR};
     let g = Game::new_full(2, 40, 20, 11, 50, 1, false);

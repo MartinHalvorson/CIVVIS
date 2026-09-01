@@ -5547,6 +5547,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `settler-site-gate`: a city starts a Settler only while an acceptable,
+    /// unclaimed site worth founding exists for it. Opt-in gene; see
+    /// `advanced/settler_site_gate.rs`.
+    settler_site_gate: bool,
     /// `settler-target-floor`: a Settler is never sent to a site not worth the
     /// walk. Opt-in gene; see `advanced/settler_target_floor.rs`.
     settler_target_floor: bool,
@@ -6292,6 +6296,9 @@ mod early_archers;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// A Settler is started only while an acceptable, unclaimed site exists for
+/// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
+mod settler_site_gate;
 /// A Settler is never sent to a site not worth the walk. One opt-in gene;
 /// see `advanced/settler_target_floor.rs`.
 mod settler_target_floor;
@@ -7100,6 +7107,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_site_gate: false,
             settler_target_floor: false,
             science_expansion_phase: false,
             science_opening_band: false,
@@ -21774,8 +21782,15 @@ impl AdvancedAi {
 
         let city_ids = g.player_city_ids(pid);
         let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
+        let counts = self.counts(g, pid);
         let has_practical_site = city_ids.iter().any(|city| {
             let origin = g.cities[city].pos;
+            if self.settler_site_gate {
+                // `settler-site-gate`: the wave fills seats, not queues.
+                return self
+                    .settler_site_gate(g, pid, origin, counts.settlers)
+                    .is_ok();
+            }
             self.settle_site_exists(g, pid, origin, 10)
                 || (shipbuilding
                     && self.settle_site_exists(g, pid, origin, g.map.width + g.map.height))
@@ -21784,7 +21799,6 @@ impl AdvancedAi {
             return;
         }
         let city_count = city_ids.len();
-        let counts = self.counts(g, pid);
         let desired = plan.desired_cities;
         if city_count + counts.settlers >= desired {
             return;
@@ -24254,7 +24268,20 @@ impl AdvancedAi {
                     && (!self.settlement_safety
                         || Self::settler_queue_loyalty_risk(g, cid, turns).is_none())
                 {
-                    let site = if self.settler_factory_coordination {
+                    let site = if self.settler_site_gate {
+                        // `settler-site-gate`: the walker's refusals and the
+                        // seats live Settlers already hold, asked before the
+                        // Settler exists. See `advanced/settler_site_gate.rs`.
+                        match self.settler_site_gate(g, pid, city.pos, counts.settlers) {
+                            Ok(site) => Some(site),
+                            Err(hold) => {
+                                think!(self.journal(), Economy, Detail,
+                                       "{} holds its settler", city.name;
+                                       "{}", hold.describe());
+                                None
+                            }
+                        }
+                    } else if self.settler_factory_coordination {
                         self.coordinated_settler_site(g, pid, cid)
                     } else {
                         self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
