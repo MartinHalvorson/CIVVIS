@@ -33501,6 +33501,7 @@ impl AdvancedAi {
             let frames = vision_frames
                 .get_or_insert_with(|| (g.player_vision_frame(pid), g.visibility_viewers(pid)));
             if spec.has_ranged_attack()
+                && !g.is_embarked(&unit)
                 && distance <= g.unit_attack_range(uid)
                 && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
                 && g.unit_has_line_of_sight(uid, pos)
