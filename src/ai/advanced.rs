@@ -28050,9 +28050,7 @@ impl AdvancedAi {
         } else {
             self.settler_guards.get(&uid).copied()
         };
-        let Some(guard) = guard else {
-            return None;
-        };
+        let guard = guard?;
         if g.units[&guard].pos == current {
             self.guard_wait.remove(&uid);
             return None;
