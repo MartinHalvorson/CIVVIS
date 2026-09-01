@@ -12575,6 +12575,42 @@ fn envoy_priority_reaches_adaptive_production_and_obeys_safety_gates() {
         Some(Item::District { district, .. }) if district == "diplomatic_quarter"
     ));
 
+    // A named Science lane must establish its first Campus/Library chain
+    // before the ancillary Envoy reservation can consume an empty queue. The
+    // ordinary adaptive controller above remains unchanged: this gate belongs
+    // only to an explicit Science target.
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut science_before_foundation = game.clone();
+    science_before_foundation.record_contact(0, minor);
+    assert!(!science.prioritize_envoy_infrastructure(&mut science_before_foundation, 0, &plan));
+    assert!(science_before_foundation.cities[&city].queue.is_empty());
+
+    let mut science_bare_campus = game.clone();
+    science_bare_campus.record_contact(0, minor);
+    science_bare_campus.cities.get_mut(&city).unwrap().pop = 4;
+    install_ai_test_district(&mut science_bare_campus, city, "campus");
+    assert!(!science.prioritize_envoy_infrastructure(&mut science_bare_campus, 0, &plan));
+    assert!(science_bare_campus.cities[&city].queue.is_empty());
+
+    let mut science_after_foundation = game.clone();
+    science_after_foundation.record_contact(0, minor);
+    // The fixture's freshly founded city is still at the one-specialty
+    // district cap. Give it a second slot so the post-foundation assertion
+    // can exercise the envoy choice rather than a population refusal.
+    science_after_foundation.cities.get_mut(&city).unwrap().pop = 4;
+    install_ai_test_district(&mut science_after_foundation, city, "campus");
+    science_after_foundation
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    assert!(science.prioritize_envoy_infrastructure(&mut science_after_foundation, 0, &plan));
+    assert!(matches!(
+        science_after_foundation.cities[&city].queue.first(),
+        Some(Item::District { district, .. }) if district == "diplomatic_quarter"
+    ));
+
     // Pin the routing boundary as well as the helper. Once the opening
     // book is complete, an ordinary adaptive turn must reach this prepass
     // before `BasicAi::cities` fills the empty queue.
