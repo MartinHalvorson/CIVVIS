@@ -8357,7 +8357,8 @@ mod tests {
     }
 
     /// And the usage line is the same list, so a name the binary accepts is
-    /// never one the error message hides.
+    /// never one the error message hides: every live gene, and every opt-in
+    /// the ledger turns on (`withholdable`), in registry order.
     #[test]
     fn the_usage_line_names_every_treatment_the_binary_accepts() {
         let listed: Vec<String> = super::withholdable_treatments()
@@ -8366,10 +8367,17 @@ mod tests {
             .collect();
         let registered: Vec<String> = civvis::ai::GENES
             .iter()
-            .filter(|gene| gene.live())
+            .filter(|gene| {
+                gene.live()
+                    || (gene.opt_in()
+                        && civvis::ai::gene_ledger::ledger_default_on(gene.tag) == Some(true))
+            })
             .map(|gene| gene.tag.to_string())
             .collect();
         assert_eq!(listed, registered);
+        for gene in civvis::ai::GENES.iter().filter(|gene| gene.live()) {
+            assert!(listed.contains(&gene.tag.to_string()), "{} is live and unlisted", gene.tag);
+        }
     }
 
     /// The ledger's best genome remains the default, but a verification arm
