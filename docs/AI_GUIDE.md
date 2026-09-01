@@ -228,6 +228,40 @@ cargo run --release --features developer-tools --bin victory_eval -- --target al
 limits reflect the length of each race; `--turns` overrides them for bounded
 diagnostics. Map dimensions can be overridden with `--width` and `--height`.
 
+### Targeted-denial control
+
+`--denial-pair DEFENDER:RIVAL` is the control for the live-only
+`deny-while-targeted` treatment. It pins major seat zero to `DEFENDER`, pins
+every other major to `RIVAL`, and runs each seed twice from the deployment
+bridge: once with the defender's treatment enabled and once with only that
+flag withheld. It reports the defender's win/loss outcome and each actionable
+denial selection. A defender loss is data rather than a command failure; the
+tool exits nonzero only when the control unexpectedly selects denial or the
+enabled arm never selects one, which prevents a no-op comparison from being
+read as a null.
+
+```bash
+cargo run --features developer-tools --profile ci --bin victory_eval -- \
+  --denial-pair science:religion --games 1 --start-seed 940000 \
+  --players 2 --width 24 --height 16 --turns 200 --speed online
+```
+
+That smoke is intentionally small and verifies exposure (the enabled arm
+selects a response while the withheld control cannot). A deployment-size read
+uses a disjoint seed range and treats the output as a paired measurement, not
+as a one-map verdict:
+
+```bash
+cargo run --features developer-tools --profile ci --bin victory_eval -- \
+  --denial-pair science:diplomatic --games 60 --start-seed 37000000 \
+  --players 2 --width 74 --height 46 --turns 250 --speed online
+```
+
+The lanes must differ. `science:diplomatic` is a named threat profile, not a
+claim that it will settle the treatment's value in sixty seeds; the printed
+selection count says whether the arm was exposed before the paired outcomes
+are interpreted.
+
 ### Validated regression baseline (2026-07-22)
 
 The current engine passes exact, unassisted full-game victories for every

@@ -340,12 +340,22 @@ priced by any native run that exists.**
   them would produce the harness's own *"nothing differed"* warning rather
   than a null.
 
-  Pricing it natively needs an arm seated on a lane-assigned agent —
-  `live_target_diplomatic` minus `deny-while-targeted` — which does not exist.
-  That is three coordinated entries in `src/elo.rs` (`EVAL_ONLY_AIS`, an
-  `ArmKind`, a `build_arm` case) plus a manifest regeneration, in a file two
-  open pull requests claim today. **Recorded as the next round's
-  prerequisite**, not attempted inside this one.
+  At this revision, pricing it natively needed an arm seated on a
+  lane-assigned agent — `live_target_diplomatic` minus
+  `deny-while-targeted` — which did not exist. That was three coordinated
+  entries in the then-current `src/elo.rs` (`EVAL_ONLY_AIS`, an `ArmKind`, a
+  `build_arm` case) plus a manifest regeneration, in a file two open pull
+  requests claimed. **Recorded as the next round's prerequisite**, not
+  attempted inside this one.
+
+  **Update 2026-08-31 (#2905).** The old evaluator-arm registry was later
+  retired rather than restored. `victory_eval --denial-pair DEFENDER:RIVAL`
+  is its direct matched successor: seat zero is a deployment-bridge controller
+  pinned to `DEFENDER`, every rival is pinned to `RIVAL`, and each seed runs
+  once with `deny-while-targeted` and once with only that flag withheld. The
+  command reports the exact actionable selections and exits nonzero if the
+  enabled arm never selects one, so it cannot publish the old structural
+  no-op as a null.
 
 - **`stock-denial-lead-time` is measurable and was not measured, for budget.**
   Unlike the above it has a path that does not require an assigned lane:
@@ -374,10 +384,10 @@ here were ~4 CPU-hours together and took about 50 minutes of wall clock at
   ≈ 7.9 CPU-hours** per arm per board. For an arm that broke 2 of 60 maps that
   buys a tighter interval around a treatment that barely acts, which is the
   wrong purchase.
-- The purchase worth making instead is **an arm that can fire**: a lane-pinned
-  withholding control (`live_target_diplomatic` minus `deny-while-targeted`)
-  costs the same 2.0 CPU-hours to read at 60 pairs and would be the first
-  measurement of that treatment that is not structurally a no-op.
+- The purchase worth making instead is **an arm that can fire**: the
+  lane-pinned withholding control described above costs the same 2.0 CPU-hours
+  to read at 60 pairs and would be the first measurement of that treatment
+  that is not structurally a no-op.
 - And the cheapest useful run of all is a **replication of §5 on a disjoint
   seed prefix** — 60 pairs fieldless plus 60 contested at seed 37000000,
   ≈4 CPU-hours — because §5's diplomatic 2 → 8 across map scripts is `p = 0.10`
