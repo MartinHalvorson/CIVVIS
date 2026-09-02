@@ -2124,6 +2124,49 @@ class SwapVerbIsWiredTest(unittest.TestCase):
         self.assertNotIn("\nlocal function swap", source)
 
 
+class PreviewOrderAnswersWithoutExecutingTest(unittest.TestCase):
+    """A `preview` order is priced by the host and never fought.
+
+    The decider could read the host's price of a blow only after committing
+    to it: `CivvisLedger.preview` (the shipped `UnitPanel.lua:3924`
+    `CombatManager.SimulateAttackInto` call) ran only inside
+    `CivvisLedger.strike`, at issue time. The `preview` kind asks the same
+    question on its own and answers with a `preview` event; nothing may be
+    requested on that branch, and an unanswerable ask is a named refusal.
+    """
+
+    def _branch(self) -> str:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split("local function applyOrder", 1)[1]
+        block = handler.split('if kind == "preview" then', 1)[1]
+        return block.split("\n\tend\n", 1)[0]
+
+    def test_the_preview_kind_calls_the_ledger_preview_and_emits_it(self) -> None:
+        block = self._branch()
+        self.assertIn("local unit = liveUnit(pid, subject);", block)
+        self.assertIn('if verb ~= "ATTACK" and verb ~= "RANGE_ATTACK" then', block)
+        self.assertIn('if x == nil or y == nil then return false, "preview_no_target"; end', block)
+        self.assertIn("local preview = CivvisLedger.preview(unit, verb, x, y);", block)
+        self.assertIn('if preview == nil then return false, "preview_unavailable"; end', block)
+        self.assertIn('emit("preview", {', block)
+        for field in ("turn = turn", "frame = ", "unit = subject", "verb = verb",
+                      "x = x, y = y", "preview = preview"):
+            self.assertIn(field, block)
+        self.assertIn('return true, "PREVIEW";', block)
+
+    def test_the_preview_kind_requests_nothing(self) -> None:
+        block = self._branch()
+        for forbidden in ("operate(", "RequestOperation", "RequestCommand",
+                          "CivvisLedger.strike(", "refuseWarStarter", "commandUnit("):
+            self.assertNotIn(forbidden, block)
+
+    def test_the_branch_costs_no_main_chunk_local(self) -> None:
+        """See `AgentChunkLocalLimitTest`: the file has no slots to spend."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertNotIn("\nlocal preview", source)
+        self.assertNotIn("\nlocal function preview", source)
+
+
 class AgentChunkLocalLimitTest(unittest.TestCase):
     """The agent's main chunk must stay inside Lua's 200-local ceiling.
 

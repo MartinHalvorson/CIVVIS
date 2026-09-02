@@ -5944,6 +5944,18 @@ pub enum PlanningRole {
     Seat,
 }
 
+/// One host combat simulation, as the mod's `preview` event reports it:
+/// `CombatManager.SimulateAttackInto`'s `COMBAT_STRENGTH` and `DAMAGE_TO` for
+/// both sides, and the defender's `DEFENSE_DAMAGE_TO` (wall damage).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HostStrikePreview {
+    pub attacker_strength: f64,
+    pub defender_strength: f64,
+    pub damage_to_attacker: i32,
+    pub damage_to_defender: i32,
+    pub defender_wall_damage: i32,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
@@ -6358,6 +6370,15 @@ pub struct Game {
     /// refused the same way the picker is.
     #[serde(default)]
     pub blocked_strikes: Arc<BTreeSet<(u32, Pos)>>,
+    /// ★★★ THE HOST'S OWN PRICE OF A STRIKE, asked for this turn and answered
+    /// without fighting it. Keyed `(attacker, target, ranged)` in CIVVIS unit
+    /// ids and axial tiles; the value is Civilization VI's
+    /// `CombatManager.SimulateAttackInto` result as the mod's `preview` event
+    /// carries it (`CivvisLedger.preview`, answering a `preview` order). Per
+    /// turn, from the run's events; native games leave it empty. Read through
+    /// [`Game::host_preview`]; nothing else consumes it yet.
+    #[serde(default)]
+    pub host_previews: Arc<BTreeMap<(u32, Pos, bool), HostStrikePreview>>,
     /// Origin/destination pairs a host engine rejected for a trade route.
     /// Native games leave this empty; a live mirror learns it from Firaxis so an
     /// unreachable city is not offered again every turn on geometric range alone.
@@ -7186,6 +7207,7 @@ impl From<GameSer> for Game {
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
+            host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
             blocked_pantheons: Arc::new(BTreeSet::new()),
@@ -7880,6 +7902,7 @@ impl Game {
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
+            host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
             blocked_pantheons: Arc::new(BTreeSet::new()),
