@@ -43083,6 +43083,8 @@ fn settler_target_floor_never_picks_a_site_under_it() {
         }
     }
     assert!(checked > 0, "the fixture never offered a settler a target");
+}
+
 // ── settler-walk-deadline ────────────────────────────────────────────────
 //
 // See `advanced/settler_walk_deadline.rs`: an opening Settler out of a city
