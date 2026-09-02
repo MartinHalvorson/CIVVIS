@@ -6697,9 +6697,8 @@ fn recovery_reads_the_war_v2_is_a_reversible_exclusive_opt_in() {
 }
 
 #[test]
-fn recovery_v2_reads_the_reachable_hostile_side_not_one_major() {
-    let game = recovery_hostile_side_fixture();
-    let home = game.player_city_ids(0)[0];
+fn recovery_v2_does_not_sum_weak_fronts_into_extra_recovery() {
+    let mut game = recovery_hostile_side_fixture();
     assert!(
         AdvancedAi::new().threatened_city(&game, 0).is_none(),
         "the power comparison must be the only Recovery trigger"
@@ -6717,19 +6716,30 @@ fn recovery_v2_reads_the_reachable_hostile_side_not_one_major() {
     assert_ne!(
         v1.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "version one sees only the 70-power major and drops the local city-state"
+        "version one reads only the 70-power major"
     );
 
     let mut v2 = AdvancedAi::new();
     v2.enable_recovery_reads_the_war_2();
     assert!(v2.rival_is_in_campaign_reach(&game, 0, 1));
     assert!(v2.rival_is_in_campaign_reach(&game, 0, 2));
-    assert_eq!(game.military_power(0), 100.0);
-    assert_eq!(game.military_power(1) + game.military_power(2), 140.0);
-    let recovery = v2.assess(&game, 0);
-    assert_eq!(recovery.strategy, GrandStrategy::Recovery);
-    assert_eq!(recovery.threatened_city, None);
-    assert_eq!(game.cities[&home].owner, 0);
+    assert_ne!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "two individually weaker armies must not be summed into extra Recovery"
+    );
+
+    std::sync::Arc::make_mut(&mut game.observed_military_power).insert(1, 140.0);
+    assert_eq!(
+        v1.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "version one still answers a real gap against the major opponent"
+    );
+    assert_eq!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "version two preserves v1 for a reachable major opponent"
+    );
 }
 
 #[test]

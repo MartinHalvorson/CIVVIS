@@ -5823,12 +5823,12 @@ pub struct AdvancedAi {
 
     // ---- append: p-r ------------------------------------------------
     /// Version two of `recovery_reads_the_war`: compare our army with the
-    /// combined military power of every current hostile whose cities are
-    /// within the campaign planner's existing reach. This keeps a remote war
-    /// from imposing an empire-wide defensive posture before it reaches home,
-    /// but counts a local coalition and its city-state armies as the one
-    /// hostile side they form. An immediate city threat still triggers
-    /// Recovery independently. One family version plays at a time. Opt-in
+    /// strongest current major opponent whose cities are within the campaign
+    /// planner's existing reach. This keeps a remote war from imposing an
+    /// empire-wide defensive posture before it reaches home, without summing
+    /// several individually weaker armies into extra Recovery. An immediate
+    /// city threat still triggers Recovery independently, including city-state
+    /// and multi-front pressure. One family version plays at a time. Opt-in
     /// gene `recovery-reads-the-war-2`.
     recovery_reads_the_war_2: bool,
     /// The Objective Board's shortfall reaches production and the treasury:
@@ -10882,18 +10882,20 @@ impl AdvancedAi {
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
         // ⚠ `recovery_reads_the_war`: version one reads the strongest major
-        // we are fighting. Version two reads the whole hostile side that is
-        // close enough for the campaign planner to reach: current majors and
-        // city-states are additive because their units can arrive together,
-        // while a remote war does not seize the empire-wide Recovery plan
-        // before it reaches home. Off, preserve the historical board-wide
-        // maximum. The separate `threatened_city` arm below remains immediate.
+        // we are fighting. Version two keeps that successful comparison but
+        // requires the opponent's cities to be inside the campaign planner's
+        // existing reach. It deliberately does not sum several weaker armies:
+        // the first screened attempt did, and across 48 games it cost 2.93 end
+        // techs and 36 science/turn versus off while trailing v1 by a full
+        // score-share point. Off, preserve the historical board-wide maximum.
+        // The separate `threatened_city` arm below remains immediate and reads
+        // any local major, city-state, or multi-front pressure.
         let recovery_opponent_power = if self.recovery_reads_the_war_2 {
-            wartime_rivals
+            wartime_majors
                 .iter()
                 .filter(|rival| self.rival_is_in_campaign_reach(g, pid, **rival))
                 .map(|rival| g.military_power(*rival))
-                .sum()
+                .fold(0.0_f64, f64::max)
         } else if self.recovery_reads_the_war {
             wartime_majors
                 .iter()

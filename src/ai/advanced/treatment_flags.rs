@@ -996,9 +996,9 @@ impl AdvancedAi {
         self.recovery_reads_the_war = false;
     }
 
-    /// Measure Recovery against the combined hostile side that is within the
-    /// campaign planner's reach. Enabling version two turns version one off;
-    /// immediate city threats remain a separate trigger. See
+    /// Measure Recovery against the strongest current major opponent within
+    /// the campaign planner's reach. Enabling version two turns version one
+    /// off; immediate city threats remain a separate trigger. See
     /// [`Self::recovery_reads_the_war_2`].
     pub fn enable_recovery_reads_the_war_2(&mut self) {
         self.recovery_reads_the_war = false;
