@@ -6188,6 +6188,10 @@ fn civvis_node_name<T>(
             "museum_artifact" => Some("archaeological_museum"),
             "fossil_fuel_power_plant" => Some("oil_power_plant"),
             "power_plant" => Some("nuclear_power_plant"),
+            // Expansion2's Congress popup uses the localized
+            // `LOC_BUILDING_POWER_PLANT_EXPANSION2_NAME` key, while the
+            // building row itself remains `BUILDING_POWER_PLANT`.
+            "power_plant_expansion2" => Some("nuclear_power_plant"),
             "halicarnassus_mausoleum" => Some("mausoleum_at_halicarnassus"),
             "statue_liberty" => Some("statue_of_liberty"),
             "university_sankore" => Some("university_of_sankore"),
