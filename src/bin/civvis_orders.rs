@@ -1677,17 +1677,162 @@ fn border_buy_ceiling(
 // the rival's exported war/borders state. The Lua arm asks the rival's own
 // price with EQUALIZE and closes only at or under the ceiling carried in `x`.
 //
-// One ask per cadence window, aimed at the seat sealing the most ground; the
-// mod's own cooldowns (`TradeRetryTurns`) meter re-asks after a refusal, and
-// the export's `open_borders` flag retires the trigger the moment the grant
+// One ask per cadence window, aimed at the border an actual Scout or naval
+// explorer can use to push into remaining fog. A large, distant border is not
+// a reason to spend Gold while our explorers are working another frontier.
+// The mod's own cooldowns (`TradeRetryTurns`) meter re-asks after a refusal,
+// and the export's `open_borders` flag retires the trigger the moment the grant
 // exists — the mirror stops sealing that rival, `sealed_border_owners` drops
-// them, and this lane moves to the next-worst seal or goes quiet.
+// them, and this lane moves to the next useful passage or goes quiet.
 const BORDER_BUY_MIN_SEALED: u32 = 6;
 const BORDER_BUY_GOLD_RESERVE: i64 = 60;
 const BORDER_BUY_CEILING_MIN: i32 = 30;
 const BORDER_BUY_CEILING_MAX: i32 = 180;
 const BORDER_BUY_CADENCE: u32 = 6;
 const BORDER_BUY_PHASE: u32 = 1;
+const BORDER_BUY_EXPLORER_APPROACH: i32 = 4;
+const BORDER_BUY_FRONTIER_RADIUS: i32 = 5;
+
+/// The evidence that one rival's closed border is a useful exploration gate.
+/// `explorers` wins first: a passage an existing eye can use now is more useful
+/// than a larger but remote seal. `frontier_tiles` then distinguishes the two
+/// routes available to that eye without inspecting hidden terrain.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct BorderExplorationPriority {
+    explorers: usize,
+    frontier_tiles: usize,
+}
+
+/// Whether the host's known board still has a discovery job. The map reading
+/// is enough for older exports; current seat metadata additionally names the
+/// two things a Scout is trying to find: uncontacted major civilizations and
+/// city-states.
+fn exploration_still_matters(
+    snapshot: &civvis::mirror::Snapshot,
+    state: &civvis::mirror::StateSnapshot,
+) -> bool {
+    let map_tiles = i64::from(snapshot.width.max(0)) * i64::from(snapshot.height.max(0));
+    let world_unexplored = map_tiles > 0 && (snapshot.revealed_count() as i64) < map_tiles;
+    let unmet_major =
+        state.seat.players > 0 && state.rivals.len().saturating_add(1) < state.seat.players;
+    let met_city_states = state
+        .minors
+        .iter()
+        .filter(|minor| minor.is_city_state())
+        .count();
+    let unmet_city_state = state.seat.city_states > met_city_states;
+    world_unexplored || unmet_major || unmet_city_state
+}
+
+/// Scouts and naval military units are the bodies that turn a bought passage
+/// into map knowledge. A warrior marching with an army is deliberately not an
+/// exploration signal: buying its way through a neutral rival's land belongs
+/// to a military plan, not this peacetime scouting lane.
+fn is_border_explorer(game: &civvis::game::Game, uid: u32) -> bool {
+    let Some(unit) = game.units.get(&uid) else {
+        return false;
+    };
+    let spec = &game.rules.units[unit.kind];
+    unit.owner == 0
+        && spec.class == "military"
+        && spec.domain.as_deref() != Some("air")
+        && (spec.promotion_class == "recon" || spec.domain.as_deref() == Some("sea"))
+}
+
+/// Is this revealed border close enough to a still-unknown part of the actual
+/// host map to be a credible route of discovery? This consults only the
+/// snapshot's revealed set, never the reconstruction's invented fog terrain.
+fn border_leads_to_fog(
+    snapshot: &civvis::mirror::Snapshot,
+    game: &civvis::game::Game,
+    border: civvis::Pos,
+) -> bool {
+    game.wdisk(border, BORDER_BUY_FRONTIER_RADIUS)
+        .into_iter()
+        .any(|pos| {
+            let (x, y) = civvis::hex::axial_to_offset(pos.0, pos.1);
+            x >= 0
+                && x < snapshot.width
+                && y >= 0
+                && y < snapshot.height
+                && !snapshot.is_revealed((x, y))
+        })
+}
+
+/// Score the sealed major borders an actual explorer can reach. The snapshot
+/// owns player ids, while `sealed_by` owns mirror seats, so resolve each once
+/// through the same rival ordering used by the live mirror.
+fn border_buy_exploration_targets(
+    snapshot: &civvis::mirror::Snapshot,
+    state: &civvis::mirror::StateSnapshot,
+    game: &civvis::game::Game,
+    sealed_by: &std::collections::BTreeMap<usize, u32>,
+) -> std::collections::BTreeMap<usize, BorderExplorationPriority> {
+    if !exploration_still_matters(snapshot, state) {
+        return Default::default();
+    }
+    let explorers: Vec<u32> = game
+        .units
+        .iter()
+        .filter_map(|(uid, _)| is_border_explorer(game, *uid).then_some(*uid))
+        .collect();
+    if explorers.is_empty() {
+        return Default::default();
+    }
+    let seats_by_host: std::collections::BTreeMap<usize, usize> = state
+        .rivals
+        .iter()
+        .enumerate()
+        .map(|(index, rival)| (rival.player, index + 1))
+        .collect();
+    let mut targets: std::collections::BTreeMap<
+        usize,
+        (
+            std::collections::BTreeSet<u32>,
+            std::collections::BTreeSet<civvis::Pos>,
+        ),
+    > = Default::default();
+    for (x, y) in snapshot.revealed_positions() {
+        let Some(plot) = snapshot.plot((x, y)) else {
+            continue;
+        };
+        let Ok(owner) = usize::try_from(plot.o) else {
+            continue;
+        };
+        let Some(&seat) = seats_by_host.get(&owner) else {
+            continue;
+        };
+        if sealed_by.get(&seat).copied().unwrap_or_default() < BORDER_BUY_MIN_SEALED {
+            continue;
+        }
+        let border = civvis::hex::offset_to_axial(x, y);
+        if !border_leads_to_fog(snapshot, game, border) {
+            continue;
+        }
+        for uid in &explorers {
+            let unit = &game.units[uid];
+            if game.wdist(unit.pos, border) <= BORDER_BUY_EXPLORER_APPROACH
+                && game.unit_can_traverse(*uid, border)
+            {
+                let (eyes, frontier) = targets.entry(seat).or_default();
+                eyes.insert(*uid);
+                frontier.insert(border);
+            }
+        }
+    }
+    targets
+        .into_iter()
+        .map(|(seat, (eyes, frontier))| {
+            (
+                seat,
+                BorderExplorationPriority {
+                    explorers: eyes.len(),
+                    frontier_tiles: frontier.len(),
+                },
+            )
+        })
+        .collect()
+}
 
 /// Why no passage-purchase order was appended this turn, for the note;
 /// `None` when one was. `sealed_by` is the mirrored board's
@@ -1696,23 +1841,43 @@ const BORDER_BUY_PHASE: u32 = 1;
 /// `host_player_target` uses).
 fn append_border_buy_order(
     sealed_by: &std::collections::BTreeMap<usize, u32>,
+    exploration: &std::collections::BTreeMap<usize, BorderExplorationPriority>,
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
     passage_value: &dyn Fn(usize) -> f64,
 ) -> Option<&'static str> {
+    let has_sealable_border = sealed_by.iter().any(|(seat, count)| {
+        *count >= BORDER_BUY_MIN_SEALED
+            && state
+                .rivals
+                .get(seat.saturating_sub(1))
+                .is_some_and(|rival| !rival.at_war && rival.open_borders != Some(true))
+    });
     let worst = sealed_by
         .iter()
         .filter(|(_, count)| **count >= BORDER_BUY_MIN_SEALED)
         .filter_map(|(seat, count)| {
-            state
-                .rivals
-                .get(seat.saturating_sub(1))
-                .map(|rival| (*seat, rival, *count))
+            state.rivals.get(seat.saturating_sub(1)).and_then(|rival| {
+                exploration
+                    .get(seat)
+                    .map(|priority| (*seat, rival, *count, *priority))
+            })
         })
-        .filter(|(_, rival, _)| !rival.at_war && rival.open_borders != Some(true))
-        .max_by_key(|(_, rival, count)| (*count, std::cmp::Reverse(rival.player)));
-    let Some((seat, rival, _)) = worst else {
-        return Some("border_buy_hold:no_seal");
+        .filter(|(_, rival, _, _)| !rival.at_war && rival.open_borders != Some(true))
+        .max_by_key(|(_, rival, count, priority)| {
+            (
+                priority.explorers,
+                priority.frontier_tiles,
+                *count,
+                std::cmp::Reverse(rival.player),
+            )
+        });
+    let Some((seat, rival, _, _)) = worst else {
+        return Some(if has_sealable_border {
+            "border_buy_hold:no_exploration_need"
+        } else {
+            "border_buy_hold:no_seal"
+        });
     };
     if state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE {
         return Some("border_buy_hold:cadence");
@@ -3706,8 +3871,15 @@ fn decide(
         }
     }
     let passage_value = |_seat: usize| mirror_state.game.passage_gold_value(0);
+    let exploration_targets = border_buy_exploration_targets(
+        snapshot,
+        state,
+        &mirror_state.game,
+        &mirror_state.game.sealed_border_owners,
+    );
     match append_border_buy_order(
         &mirror_state.game.sealed_border_owners,
+        &exploration_targets,
         state,
         &mut orders,
         &passage_value,
@@ -13430,9 +13602,10 @@ mod tests {
     }
 
     #[test]
-    fn border_buys_aim_at_the_worst_seal() {
-        // The Kongo run's shape: two majors sealing ground, one of them worse,
-        // a third at war whose ground war already opens.
+    fn border_buys_rank_usable_seals() {
+        // Two peaceful borders are sealed, and the third is at war (which opens
+        // its ground by itself). The second peaceful border has more explorer
+        // pressure, so it wins before raw sealed-tile count.
         let state = StateSnapshot {
             turn: 91, // 91 % 6 == 1, the lane's phase
             gold: 200,
@@ -13459,16 +13632,34 @@ mod tests {
         };
         let sealed_by: std::collections::BTreeMap<usize, u32> =
             [(1, 7), (2, 21), (3, 40)].into_iter().collect();
+        let exploration: std::collections::BTreeMap<usize, BorderExplorationPriority> = [
+            (
+                1,
+                BorderExplorationPriority {
+                    explorers: 1,
+                    frontier_tiles: 2,
+                },
+            ),
+            (
+                2,
+                BorderExplorationPriority {
+                    explorers: 2,
+                    frontier_tiles: 1,
+                },
+            ),
+        ]
+        .into_iter()
+        .collect();
 
         let mut orders = Vec::new();
         assert_eq!(
-            append_border_buy_order(&sealed_by, &state, &mut orders, &|_| 40.0),
+            append_border_buy_order(&sealed_by, &exploration, &state, &mut orders, &|_| 40.0),
             None
         );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "buy");
-        // Seat 3 seals the most but is at war — war opens that ground by
-        // itself. Seat 2 (host player 4) is the worst peaceful seal.
+        // Seat 3 seals the most but is at war. Seat 2 (host player 4) is the
+        // useful passage: two explorers can reach its frontier.
         assert_eq!(orders[0].subject, Some(4));
         assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
         // The engine's book for this passage (40 here) under the treasury's
@@ -13481,7 +13672,7 @@ mod tests {
         granted.rivals[1].open_borders = Some(true);
         let mut next = Vec::new();
         assert_eq!(
-            append_border_buy_order(&sealed_by, &granted, &mut next, &|_| 40.0),
+            append_border_buy_order(&sealed_by, &exploration, &granted, &mut next, &|_| 40.0),
             None
         );
         assert_eq!(next[0].subject, Some(2));
@@ -13491,12 +13682,24 @@ mod tests {
             [(1, BORDER_BUY_MIN_SEALED - 1)].into_iter().collect();
         let mut held = Vec::new();
         assert_eq!(
-            append_border_buy_order(&trivial, &state, &mut held, &|_| 40.0),
+            append_border_buy_order(&trivial, &exploration, &state, &mut held, &|_| 40.0),
             Some("border_buy_hold:no_seal")
         );
         assert_eq!(
-            append_border_buy_order(&Default::default(), &state, &mut held, &|_| 40.0),
+            append_border_buy_order(
+                &Default::default(),
+                &exploration,
+                &state,
+                &mut held,
+                &|_| 40.0,
+            ),
             Some("border_buy_hold:no_seal")
+        );
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &Default::default(), &state, &mut held, &|_| {
+                40.0
+            },),
+            Some("border_buy_hold:no_exploration_need")
         );
 
         // Off the cadence, without the civic, or too poor to meet a minimum
@@ -13504,19 +13707,19 @@ mod tests {
         let mut off_cadence = state.clone();
         off_cadence.turn = 92;
         assert_eq!(
-            append_border_buy_order(&sealed_by, &off_cadence, &mut held, &|_| 40.0),
+            append_border_buy_order(&sealed_by, &exploration, &off_cadence, &mut held, &|_| 40.0,),
             Some("border_buy_hold:cadence")
         );
         let mut no_civic = state.clone();
         no_civic.civics = vec!["CIVIC_CODE_OF_LAWS".to_string()];
         assert_eq!(
-            append_border_buy_order(&sealed_by, &no_civic, &mut held, &|_| 40.0),
+            append_border_buy_order(&sealed_by, &exploration, &no_civic, &mut held, &|_| 40.0,),
             Some("border_buy_hold:no_civic")
         );
         let mut poor = state.clone();
         poor.gold = 89; // 89 − 60 reserve = 29, one short of the minimum
         assert_eq!(
-            append_border_buy_order(&sealed_by, &poor, &mut held, &|_| 40.0),
+            append_border_buy_order(&sealed_by, &exploration, &poor, &mut held, &|_| 40.0,),
             Some("border_buy_hold:treasury")
         );
         assert!(held.is_empty());
@@ -13530,10 +13733,155 @@ mod tests {
             pos: Some((10, 0)),
         }];
         assert_eq!(
-            append_border_buy_order(&sealed_by, &state, &mut in_flight, &|_| 40.0),
+            append_border_buy_order(&sealed_by, &exploration, &state, &mut in_flight, &|_| 40.0,),
             Some("border_buy_hold:deal_in_flight")
         );
         assert_eq!(in_flight.len(), 1);
+    }
+
+    #[test]
+    fn border_buys_follow_a_scout_toward_fog_and_unmet_contacts() {
+        // Two peaceful majors have enough sealed ground to sell passage. The
+        // larger French seal is remote; our Scout is one step from Kongo's
+        // border, which is itself beside unknown ground and the lobby still
+        // has an uncontacted major and city-states.
+        let mut kongo_border = grass(4, 3);
+        kongo_border.o = 2;
+        let mut france_border = grass(10, 5);
+        france_border.o = 4;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 91,
+            width: 12,
+            height: 8,
+            chunk: 1,
+            plots: vec![grass(3, 3), kongo_border, france_border],
+        }]);
+        let state = StateSnapshot {
+            turn: 91,
+            gold: 200,
+            civics: vec!["CIVIC_EARLY_EMPIRE".to_string()],
+            seat: civvis::mirror::Seat {
+                players: 4,
+                city_states: 3,
+                ..civvis::mirror::Seat::default()
+            },
+            units: vec![StateUnit {
+                id: 91,
+                kind: "UNIT_SCOUT".to_string(),
+                x: 3,
+                y: 3,
+                hp: 100.0,
+                ..StateUnit::default()
+            }],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    civ: "CIVILIZATION_KONGO".to_string(),
+                    enforces_borders: Some(true),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    civ: "CIVILIZATION_FRANCE".to_string(),
+                    enforces_borders: Some(true),
+                    ..StateRival::default()
+                },
+            ],
+            minors: vec![StateMinor {
+                player: 7,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 3, 250, 0);
+        assert!(
+            mirror.uid_of.contains_key(&91),
+            "fixture precondition: the Scout reaches the mirrored board"
+        );
+        let sealed_by: std::collections::BTreeMap<usize, u32> =
+            [(1, 7), (2, 21)].into_iter().collect();
+        let exploration =
+            border_buy_exploration_targets(&snapshot, &state, &mirror.game, &sealed_by);
+        let kongo = exploration
+            .get(&1)
+            .expect("the nearby Scout can use Kongo's frontier");
+        assert_eq!(kongo.explorers, 1);
+        assert!(kongo.frontier_tiles > 0);
+        assert!(
+            !exploration.contains_key(&2),
+            "a larger seal outside the Scout's approach is not an exploration purchase"
+        );
+
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &exploration, &state, &mut orders, &|_| 40.0),
+            None
+        );
+        assert_eq!(orders[0].subject, Some(2));
+        assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
+    }
+
+    #[test]
+    fn passage_exploration_stops_when_the_map_and_contacts_are_complete() {
+        let complete = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 2,
+            height: 2,
+            chunk: 1,
+            plots: (0..2)
+                .flat_map(|x| (0..2).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            seat: civvis::mirror::Seat {
+                players: 3,
+                city_states: 2,
+                ..civvis::mirror::Seat::default()
+            },
+            rivals: vec![
+                StateRival {
+                    player: 1,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 2,
+                    ..StateRival::default()
+                },
+            ],
+            minors: vec![
+                StateMinor {
+                    player: 3,
+                    civ: "CIVILIZATION_GENEVA".to_string(),
+                    ..StateMinor::default()
+                },
+                StateMinor {
+                    player: 4,
+                    civ: "CIVILIZATION_KABUL".to_string(),
+                    ..StateMinor::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        assert!(
+            !exploration_still_matters(&complete, &state),
+            "there is no discovery job after every map tile and configured contact is known"
+        );
+        state.minors.pop();
+        assert!(
+            exploration_still_matters(&complete, &state),
+            "an uncontacted city-state keeps the exploration objective live"
+        );
+        state.minors.push(StateMinor {
+            player: 4,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            ..StateMinor::default()
+        });
+        state.rivals.pop();
+        assert!(
+            exploration_still_matters(&complete, &state),
+            "an uncontacted major does too"
+        );
     }
 
     #[test]
