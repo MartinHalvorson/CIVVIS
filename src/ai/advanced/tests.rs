@@ -36447,11 +36447,12 @@ fn diplomatic_lane_forecast_still_has_to_be_earned() {
 }
 
 /// V2 keeps the calendar arithmetic, but a bank of Favor by itself is no
-/// longer permission to switch the whole plan to Diplomacy.  A point actually
+/// longer permission to switch the whole plan to Diplomacy. A point actually
 /// earned from Congress or a city-state already under our suzerainty is the
-/// concrete foothold that turns the projection back on.
+/// concrete foothold that turns the projection back on, and its speculative
+/// reading stays below realised lane progress.
 #[test]
-fn diplomatic_lane_forecast_two_waits_for_a_concrete_foothold() {
+fn diplomatic_lane_forecast_two_requires_earned_traction_and_caps_a_projection() {
     let mut v1 = AdvancedAi::new();
     v1.enable_diplomatic_lane_forecast();
     let mut v2 = AdvancedAi::new();
@@ -36470,10 +36471,16 @@ fn diplomatic_lane_forecast_two_waits_for_a_concrete_foothold() {
     );
 
     game.players[0].dvp = 1;
-    assert_eq!(
-        v2.lane_progress_table(&game, 0)[3],
-        v1.lane_progress_table(&game, 0)[3],
-        "an earned point restores the same Congress projection"
+    let earned_v1 = v1.lane_progress_table(&game, 0)[3];
+    let earned_v2 = v2.lane_progress_table(&game, 0)[3];
+    assert!(
+        earned_v1 > DIPLOMATIC_FORECAST_OPENING_CAP,
+        "fixture makes v1's projection able to outrank a real opening ({earned_v1})"
+    );
+    assert!(
+        earned_v2 > shipped.lane_progress_table(&game, 0)[3]
+            && earned_v2 <= DIPLOMATIC_FORECAST_OPENING_CAP,
+        "an earned point restores v2 only as a bounded candidate ({earned_v2})"
     );
 
     let mut suzerain = game.clone();
@@ -36486,10 +36493,24 @@ fn diplomatic_lane_forecast_two_waits_for_a_concrete_foothold() {
         .id;
     suzerain.players[0].envoys = vec![(minor, 3)];
     assert_eq!(suzerain.suzerain_of(minor), Some(0));
+    let suzerain_v1 = v1.lane_progress_table(&suzerain, 0)[3];
+    let suzerain_v2 = v2.lane_progress_table(&suzerain, 0)[3];
+    assert!(
+        suzerain_v1 > DIPLOMATIC_FORECAST_OPENING_CAP,
+        "fixture makes v1's suzerain projection able to outrank a real opening ({suzerain_v1})"
+    );
+    assert!(
+        suzerain_v2 > shipped.lane_progress_table(&suzerain, 0)[3]
+            && suzerain_v2 <= DIPLOMATIC_FORECAST_OPENING_CAP,
+        "a current suzerainty restores v2 only as a bounded candidate ({suzerain_v2})"
+    );
+
+    let mut progressed = game.clone();
+    progressed.players[0].dvp = 10;
     assert_eq!(
-        v2.lane_progress_table(&suzerain, 0)[3],
-        v1.lane_progress_table(&suzerain, 0)[3],
-        "a current suzerainty is a durable Favor source and also restores v2"
+        v2.lane_progress_table(&progressed, 0)[3],
+        50,
+        "ten earned DVP outrank the cap through the lane's actual tally"
     );
 }
 

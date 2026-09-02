@@ -252,6 +252,11 @@ const STRATEGIC_WONDER_TOURISM_RATE: f64 = 95.0;
 /// way is the same envoy. `ENVOY_PRODUCTION_VALUE` is the other lanes' price.
 const DIPLOMATIC_ENVOY_PRODUCTION_VALUE: f64 = 300.0;
 
+/// A speculative Congress runway can nominate Diplomacy, but cannot outrank
+/// Religion's realised opening floor (46). Earned DVP and suzerainties still
+/// raise the baseline score past this cap normally.
+const DIPLOMATIC_FORECAST_OPENING_CAP: i32 = 45;
+
 /// Rings around a settle site inside which a rival major's owned tiles read as
 /// a provocation. See `AdvancedAi::foreign_border_pressure`.
 const FOREIGN_BORDER_RADIUS: i32 = 3;
@@ -4464,9 +4469,10 @@ pub struct AdvancedAi {
     /// Congress, banks the same Favor and awards the same points.
     pub diplomatic_lane_forecast: bool,
     /// Version 2 of [`Self::diplomatic_lane_forecast`]: a Favor balance alone
-    /// is not a diplomatic race.  Project the Congress calendar only after an
+    /// is not a diplomatic race. Project the Congress calendar only after an
     /// actual Diplomatic Victory Point or a current suzerainty proves the
-    /// empire has a foothold in the lane.
+    /// empire has a foothold in the lane, and cap that projection below
+    /// realised lane progress.
     ///
     /// **Off by default.** Screenable.
     pub diplomatic_lane_forecast_2: bool,
@@ -9273,7 +9279,15 @@ impl AdvancedAi {
         let carry = blind + (1.0 - blind) * share;
 
         let forecast = f64::from(sessions) * per_session * carry;
-        ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32
+        let score =
+            ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32;
+        if self.diplomatic_lane_forecast_2 {
+            // The calendar is a candidate signal, not unearned progress: the
+            // lane table's actual DVP/suzerain tally may still grow beyond it.
+            score.min(DIPLOMATIC_FORECAST_OPENING_CAP)
+        } else {
+            score
+        }
     }
 
     /// How much of the Culture bar this empire will have cleared when the
