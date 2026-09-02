@@ -776,6 +776,22 @@ pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
+/// A newly founded city is not a useful member of a victory economy until it
+/// can finish ordinary infrastructure in a credible number of turns. Eight
+/// production is deliberately a foundation rather than a late-game target:
+/// it reaches the t121 live run's 5.0, 2.7 and 1.8-production cities without
+/// asking a healthy 10+-production core to chase an arbitrary ceiling.
+const PRODUCTION_CITY_FOUNDATION_FLOOR: f64 = 8.0;
+
+/// A Builder's ordinary tile score prices the yield on the tile but is blind
+/// to whether its city is producing two hammers or twelve. This multiplier
+/// makes a productive improvement in a city below
+/// `PRODUCTION_CITY_FOUNDATION_FLOOR` win nearby ordinary work, but remains
+/// below a first luxury's empire-wide Amenity value and a strategic resource's
+/// supply value. It is used only by an explicit victory target; adaptive
+/// controllers retain their evaluated ranking.
+const PRODUCTION_FOUNDATION_IMPROVEMENT_MULTIPLIER: f64 = 6.0;
+
 /// A direct Barbarian-capture envelope starts at the same price the Settler
 /// route guard treats as unsafe. A Builder has no reason to spend a finite
 /// charge where a visible raider can take it next turn, even when a nearby
@@ -5552,7 +5568,9 @@ pub struct AdvancedAi {
     /// chain horizon, plus `regional_production_reach` for the own cities
     /// its range covers that no standing copy already reaches; the Factory
     /// and the plants join the buildings a repeatable project waits behind
-    /// (`buildings_before_projects`). Zero with the gene off. Opt-in gene
+    /// (`buildings_before_projects`). An explicit victory target carries the
+    /// same production-foundation contract; the opt-in remains available to
+    /// measure that policy for adaptive seats. Opt-in gene
     /// `industrial-chain-debt`.
     industrial_chain_debt: bool,
     /// `guard-breaks-the-pin`: a Settler's stacked guard strikes the raider
@@ -6704,9 +6722,11 @@ const SCIENCE_SPACEPORT_CAP: usize = 3;
 /// `buildings_before_projects`.
 const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research_lab", "workshop"];
 /// See `industrial_chain_debt`: the Industrial Zone's own chain, appended to
-/// `BUILDINGS_BEFORE_PROJECTS` under the gene and kept out of it so #1811
-/// stays exactly the treatment it was measured as.
-const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 4] = [
+/// `BUILDINGS_BEFORE_PROJECTS` under the opt-in or an explicit victory
+/// target's production-foundation contract. It stays out of the base list so
+/// #1811 remains exactly the treatment it was measured as.
+const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 5] = [
+    "workshop",
     "factory",
     "coal_power_plant",
     "oil_power_plant",
@@ -13364,24 +13384,41 @@ impl AdvancedAi {
         // A named Science seat must not let a cheap Commercial Hub Investment
         // (or any other repeatable project) outrank an available Library,
         // University, Research Lab or Workshop merely because the deployment
-        // ledger withheld this independently screenable treatment. The
-        // treatment remains configurable for other lanes; Science gets the
-        // same invariant from its target contract.
-        if (self.buildings_before_projects
-            || self.active_victory_target(g) == Some(VictoryTarget::Science))
-            && spec.repeatable
-        {
+        // ledger withheld this independently screenable treatment. Every
+        // named lane likewise holds a Factory or plant behind the productive
+        // city's own Industrial Zone before it spends the queue on a
+        // repeatable project. Adaptive seats retain the independently
+        // screenable opt-ins.
+        let research_project_guard = self.buildings_before_projects
+            || self.active_victory_target(g) == Some(VictoryTarget::Science);
+        // `industrial-chain-debt` historically joined this guard only when
+        // `buildings-before-projects` had opened it, so retain that adaptive
+        // experiment unchanged. A named victory target is different: its
+        // Workshop/Factory/power chain is a production contract in its own
+        // right, even in Culture, Religion, Diplomacy, Domination, or Score.
+        let industrial_project_guard = self.active_victory_target(g).is_some()
+            || (self.industrial_chain_debt && research_project_guard);
+        if (research_project_guard || industrial_project_guard) && spec.repeatable {
             let waiting_for = BUILDINGS_BEFORE_PROJECTS
                 .iter()
-                .chain(
-                    CULTURE_BUILDINGS_BEFORE_PROJECTS
-                        .iter()
-                        .take(if self.culture_building_debt { 4 } else { 0 }),
-                )
+                .take(if research_project_guard {
+                    BUILDINGS_BEFORE_PROJECTS.len()
+                } else {
+                    0
+                })
+                .chain(CULTURE_BUILDINGS_BEFORE_PROJECTS.iter().take(
+                    if research_project_guard && self.culture_building_debt {
+                        CULTURE_BUILDINGS_BEFORE_PROJECTS.len()
+                    } else {
+                        0
+                    },
+                ))
                 // See `industrial_chain_debt`: the Factory and the plant wait
-                // in the same line as the Workshop.
+                // in the same line as the Workshop. Every named lane has the
+                // production-foundation contract even if the ledger withholds
+                // the adaptive opt-in.
                 .chain(INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS.iter().take(
-                    if self.industrial_chain_debt {
+                    if industrial_project_guard {
                         INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS.len()
                     } else {
                         0
@@ -21486,6 +21523,16 @@ impl AdvancedAi {
         }
     }
 
+    /// Production is the shared foundation of every named victory route: a
+    /// Workshop compounds the city that owns its Industrial Zone, while a
+    /// Factory or power plant raises every own city in range. The direct live
+    /// launcher pins a target (Science by default), so this keeps all of
+    /// those cities productive even when the evidence ledger correctly keeps
+    /// the separately screenable adaptive gene off.
+    fn industrial_production_foundation(&self, g: &Game) -> bool {
+        self.industrial_chain_debt || self.active_victory_target(g).is_some()
+    }
+
     /// Whether `city` holds a standing district of `family`.
     fn city_holds_district_family(g: &Game, city: &crate::game::City, family: &str) -> bool {
         city.districts
@@ -26701,8 +26748,9 @@ impl AdvancedAi {
                     };
                     // See `industrial_chain_debt`: the same sentence as
                     // `research_debt` for the production chain, plus the
-                    // cities a Factory or plant reaches.
-                    let industrial_debt = if self.industrial_chain_debt
+                    // cities a Factory or plant reaches. An explicit victory
+                    // target carries this production foundation too.
+                    let industrial_debt = if self.industrial_production_foundation(g)
                         && building_family
                             .as_ref()
                             .is_some_and(|family| family.as_str() == "industrial_zone")
@@ -32256,6 +32304,78 @@ impl AdvancedAi {
             + self.quest_boost_builder_premium(g, pos, improvement, strategy)
     }
 
+    /// How far this own city remains from the output that lets it construct
+    /// the infrastructure every victory lane depends on. The direct launcher
+    /// deliberately names a victory target (Science by default), so this is
+    /// a target contract rather than another default-on adaptive gene.
+    fn city_production_foundation_shortfall(&self, g: &Game, pid: usize, cid: u32) -> f64 {
+        if self.active_victory_target(g).is_none()
+            || !g.cities.get(&cid).is_some_and(|city| city.owner == pid)
+        {
+            return 0.0;
+        }
+        ((PRODUCTION_CITY_FOUNDATION_FLOOR - g.city_yields(cid).production.max(0.0))
+            / PRODUCTION_CITY_FOUNDATION_FLOOR)
+            .clamp(0.0, 1.0)
+    }
+
+    /// The extra value of an improvement that raises production in a city
+    /// still below its foundation. We price the improvement's *net* printed
+    /// production over the standing improvement, so replacing a Mine with a
+    /// Farm never earns a production rescue bonus. Ruleset and tree bonuses
+    /// only make this conservative base gain larger in play.
+    fn production_foundation_improvement_bonus(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+        city_shortfall: f64,
+    ) -> f64 {
+        if city_shortfall <= 0.0 {
+            return 0.0;
+        }
+        let standing_production = g.map.tiles[&pos]
+            .improvement
+            .as_ref()
+            .map(|standing| g.rules.improvements[standing].yields.production)
+            .unwrap_or(0.0);
+        let added_production =
+            (g.rules.improvements[improvement].yields.production - standing_production).max(0.0);
+        self.yield_value(
+            Yields {
+                production: added_production,
+                ..Yields::default()
+            },
+            strategy,
+        ) * city_shortfall
+            * PRODUCTION_FOUNDATION_IMPROVEMENT_MULTIPLIER
+    }
+
+    /// The Builder's normal improvement score, plus a bounded local
+    /// production-foundation premium for a named victory lane. Keeping this
+    /// wrapper at each routing site means a Builder standing in a weak city,
+    /// the empire-wide target sweep, and the reachable-job fallback all make
+    /// the same decision.
+    fn production_foundation_improvement_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+        city_shortfall: f64,
+    ) -> f64 {
+        self.improvement_value_for(g, pid, pos, improvement, strategy)
+            + self.production_foundation_improvement_bonus(
+                g,
+                pos,
+                improvement,
+                strategy,
+                city_shortfall,
+            )
+    }
+
     /// The few military unique improvements are not Builder choices, so their
     /// most important effects are not ordinary tile yields. A Feitoria pays
     /// every foreign route, while a Roman Fort or Maori Pa pays when it makes
@@ -32756,7 +32876,34 @@ impl AdvancedAi {
                 .apply(pid, &Action::RepairImprovement { unit: uid })
                 .is_ok();
         }
-        let here = self.worthwhile_improvements(g, pid, current, strategy);
+        let mut here = self.worthwhile_improvements(g, pid, current, strategy);
+        let here_shortfall = g
+            .map
+            .get(current)
+            .and_then(|tile| tile.owner_city)
+            .map(|cid| self.city_production_foundation_shortfall(g, pid, cid))
+            .unwrap_or(0.0);
+        if here_shortfall > 0.0 {
+            here.sort_by(|left, right| {
+                self.production_foundation_improvement_value(
+                    g,
+                    pid,
+                    current,
+                    right,
+                    strategy,
+                    here_shortfall,
+                )
+                .total_cmp(&self.production_foundation_improvement_value(
+                    g,
+                    pid,
+                    current,
+                    left,
+                    strategy,
+                    here_shortfall,
+                ))
+                .then_with(|| left.cmp(right))
+            });
+        }
         // `chop_into_the_queue`: a chop on this tile outbids the best
         // improvement it could host when the owning city's queue front wants
         // the lump. See `advanced/deity_habits.rs`.
@@ -32770,7 +32917,14 @@ impl AdvancedAi {
                 self.chop_into_the_queue_value(g, pid, current, strategy, worked)
             {
                 let best_here = here.first().map_or(f64::MIN, |improvement| {
-                    self.improvement_value_for(g, pid, current, improvement, strategy)
+                    self.production_foundation_improvement_value(
+                        g,
+                        pid,
+                        current,
+                        improvement,
+                        strategy,
+                        here_shortfall,
+                    )
                 });
                 if value > best_here {
                     self.builder_targets.remove(&uid);
@@ -32800,7 +32954,14 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail,
                        "Building a {} at {current:?}", plain(improvement);
                        "worth {:.1} to the {} plan, best of {} that fit this tile",
-                       self.improvement_value_for(g, pid, current, improvement, strategy),
+                       self.production_foundation_improvement_value(
+                           g,
+                           pid,
+                           current,
+                           improvement,
+                           strategy,
+                           here_shortfall,
+                       ),
                        strategy.as_str(), here.len(); current);
                 if g.apply(
                     pid,
@@ -32868,6 +33029,7 @@ impl AdvancedAi {
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
+                        let city_shortfall = self.city_production_foundation_shortfall(g, pid, cid);
                         // Computing the citizen plan can inspect every tile in a
                         // city. Read it once per city, rather than once for every
                         // candidate improvement in the target sweep.
@@ -32882,12 +33044,13 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.improvement_value_for(
+                                let score = self.production_foundation_improvement_value(
                                     g,
                                     pid,
                                     *pos,
                                     &improvement,
                                     strategy,
+                                    city_shortfall,
                                 ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
@@ -32953,14 +33116,21 @@ impl AdvancedAi {
         let _memo = g.query_memo();
         let mut scored: Vec<(f64, Pos)> = Vec::new();
         for cid in g.player_city_ids(pid) {
+            let city_shortfall = self.city_production_foundation_shortfall(g, pid, cid);
             for pos in &g.cities[&cid].owned_tiles {
                 if reserved.contains(pos) {
                     continue;
                 }
                 let mut here: Option<f64> = None;
                 for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                    let score = self.improvement_value_for(g, pid, *pos, &improvement, strategy)
-                        - g.wdist(current, *pos) as f64 * 0.7;
+                    let score = self.production_foundation_improvement_value(
+                        g,
+                        pid,
+                        *pos,
+                        &improvement,
+                        strategy,
+                        city_shortfall,
+                    ) - g.wdist(current, *pos) as f64 * 0.7;
                     if here.is_none_or(|old| score > old) {
                         here = Some(score);
                     }
