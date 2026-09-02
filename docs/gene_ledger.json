@@ -1544,7 +1544,8 @@
         "ships": "district-planning",
         "versions": {
           "district-planning": 0.244584,
-          "district-planning-2": null
+          "district-planning-2": null,
+          "district-planning-3": null
         }
       },
       "early-project-restraint": {

@@ -1803,6 +1803,8 @@ impl AdvancedAi {
     /// append-point check reads a line's first identifier, which for any `pub
     /// fn` is `pub`.)
     pub fn enable_district_planning(&mut self) {
+        self.district_planning_2 = false;
+        self.district_planning_3 = false;
         self.district_planning = true;
     }
 
@@ -3555,12 +3557,30 @@ impl AdvancedAi {
     /// rule refused it, while three cities placed campuses at adjacency ≤ 1
     /// beside that ground.
     pub fn enable_district_planning_2(&mut self) {
+        self.district_planning = false;
+        self.district_planning_3 = false;
         self.district_planning_2 = true;
     }
 
     /// The twin of `enable_district_planning_2`.
     pub fn disable_district_planning_2(&mut self) {
         self.district_planning_2 = false;
+    }
+
+    /// `district-planning-3`: retain the joint district-site plan, but make
+    /// a Gold purchase only for its highest-value unowned site when that city
+    /// is idle and can start the district next. The full working reserve stays
+    /// intact, and version 2's speculative high-Science and bridge purchases
+    /// are deliberately absent. One family version plays at a time.
+    pub fn enable_district_planning_3(&mut self) {
+        self.district_planning = false;
+        self.district_planning_2 = false;
+        self.district_planning_3 = true;
+    }
+
+    /// The twin of `enable_district_planning_3`.
+    pub fn disable_district_planning_3(&mut self) {
+        self.district_planning_3 = false;
     }
 
     /// Version 2 of `air_surge`: the science–domination loop. The original

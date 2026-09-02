@@ -4907,6 +4907,12 @@ pub struct AdvancedAi {
     /// placed campuses at adjacency 1 or lower beside that ground. Version
     /// 2 of `district-planning`; shared behaviour reads `district_planning_on`.
     district_planning_2: bool,
+    /// Version 3 of `district-planning`: retain the joint site plan, but buy
+    /// only its highest-value unowned site when the city can start that
+    /// district immediately, out of Gold above the full reserve. It does not
+    /// chase independent exceptional-yield tiles or bridge plots. Opt-in gene
+    /// `district-planning-3`.
+    district_planning_3: bool,
     /// `cheapest-wonder-first`: a wonder this city can finish within
     /// `CHEAPEST_WONDER_TURNS` turns, in one of the empire's strongest
     /// cities, opens the live wonder race without the three-city and
@@ -7460,6 +7466,7 @@ impl AdvancedAi {
             coalition_before_war_2: false,
             campus_through_expansion: false,
             district_planning_2: false,
+            district_planning_3: false,
             cheapest_wonder_first: false,
             connect_the_luxury: false,
             commitment_patience: false,
@@ -18906,11 +18913,14 @@ impl AdvancedAi {
                     // very plot for a very valuable district site. That buy
                     // competes as a strategic purchase, not a surplus one —
                     // and under `district-planning-2` it may spend into the
-                    // reserve, though never below half of it: no recorded
-                    // live treasury ever held the 200 Gold of surplus the
-                    // rule below demands, so version 1's buys never fired.
+                    // reserve, though never below half of it. Version 3 keeps
+                    // the whole reserve, but removes version 1's extra
+                    // 200-Gold surplus requirement when the idle city can
+                    // actually start the plan's head next.
                     let affordable_to_the_plan = if self.district_planning_2 {
                         bank + f64::EPSILON >= reserve * 0.5 + cost
+                    } else if self.district_planning_3 {
+                        bank + f64::EPSILON >= reserve + cost
                     } else {
                         bank + f64::EPSILON >= reserve + 200.0 + cost
                     };
@@ -27730,7 +27740,7 @@ impl AdvancedAi {
     }
 
     pub(super) fn district_planning_on(&self) -> bool {
-        self.district_planning || self.district_planning_2
+        self.district_planning || self.district_planning_2 || self.district_planning_3
     }
 
     fn power_the_laboratory_on(&self) -> bool {

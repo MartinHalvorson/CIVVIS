@@ -1877,6 +1877,7 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "settler-target-floor", field: "settler_target_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_target_floor, disable: AdvancedAi::disable_settler_target_floor },
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
     Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
+    Gene { tag: "district-planning-3", field: "district_planning_3", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_3, disable: AdvancedAi::disable_district_planning_3 },
     Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
     // `commitment-owner-acts` (operator, 2026-08-27, "decisions are slow to
     // be carried out or forgotten"; 2026-09-01): the commitment ledger's
