@@ -18,6 +18,8 @@
 --      location. A held unit with no order at all blocks the end of the turn;
 --   8b. an unmentioned civilian is told to skip for the same reason:
 --      exclusion is not a disposition.
+--   9. an asynchronous Governor assignment is submitted once per turn, not
+--      once per replan frame, while still retrying on the next turn.
 --
 -- Run: lua5.1 tools/civ6_control/mod/order_queue_test.lua
 
@@ -69,7 +71,7 @@ end })
 -- ---------------------------------------------------------------- fake host
 local host = { units = {}, ops = {}, commands = {}, allow_cancel = false,
 	defer_cancel = false,
-	refuse = {}, contacts = {} }
+	refuse = {}, contacts = {}, governor_requests = {}, cities = {} }
 local PID = 0
 local function unitObject(u)
 	return {
@@ -122,6 +124,29 @@ UnitManager = {
 		end
 	end,
 }
+PlayerOperations = {
+	PARAM_GOVERNOR_TYPE = "governor_type",
+	PARAM_PLAYER_ONE = "player_one",
+	PARAM_CITY_DEST = "city_dest",
+	ASSIGN_GOVERNOR = "assign_governor",
+}
+GameInfo.Governors = {
+	GOVERNOR_THE_MERCHANT = {
+		Hash = "GOVERNOR_THE_MERCHANT", Index = 17,
+	},
+}
+CityManager = {
+	GetCity = function(owner, id)
+		return host.cities[id] and { owner = owner, id = id } or nil
+	end,
+}
+UI = {
+	RequestPlayerOperation = function(pid, operation, params)
+		host.governor_requests[#host.governor_requests + 1] = {
+			pid = pid, operation = operation, params = params,
+		}
+	end,
+}
 function host.arrive(id)
 	local u = host.units[id]
 	if u.pendingX ~= nil then
@@ -144,6 +169,12 @@ local function members(list)
 	end
 end
 local player = setmetatable({
+	GetGovernors = function()
+		return {
+			HasGovernor = function(_, hash) return hash == "GOVERNOR_THE_MERCHANT" end,
+			GetGovernor = function() return nil end,
+		}
+	end,
 	GetUnits = function()
 		local objs = {}
 		for _, u in pairs(host.units) do
@@ -223,6 +254,7 @@ local function row(subject, verb, x, y)
 end
 local function reset()
 	host.units, host.ops, host.commands, host.refuse, host.contacts = {}, {}, {}, {}, {}
+	host.governor_requests, host.cities = {}, {}
 	host.allow_cancel, host.defer_cancel = false, false
 	queue.reset(7)
 end
@@ -398,6 +430,25 @@ applyOrders(player, PID, 7, {})
 check("idle settler is told to skip", ops(18), "UNITOPERATION_SKIP_TURN")
 check("idle builder is told to skip", ops(19), "UNITOPERATION_SKIP_TURN")
 check("the orders event counts both", field(lastEvent("orders"), "civilians_skipped"), 2)
+
+-- 9. Governor assignment is a player operation, not a synchronous mutation.
+-- Replan frames see the old roster until the host exports the next turn; the
+-- bridge must avoid stacking identical requests while preserving that retry.
+reset()
+host.cities[42] = true
+local applyOrder = rawget(_G, "CivvisApplyOrder")
+local governorRow = { kind = "governor_assign", subject = 42,
+	verb = "GOVERNOR_THE_MERCHANT", x = PID }
+local assigned, assignedWhy = applyOrder(player, PID, governorRow, 7)
+check("first governor assignment is submitted", assigned, true)
+check("first governor assignment has no refusal", assignedWhy, "GOVERNOR_THE_MERCHANT")
+local duplicate, duplicateWhy = applyOrder(player, PID, governorRow, 7)
+check("same-turn governor assignment is held", duplicate, false)
+check("same-turn governor refusal is named", duplicateWhy, "governor_assign_pending")
+check("same-turn governor request is submitted once", #host.governor_requests, 1)
+local retried = applyOrder(player, PID, governorRow, 8)
+check("unassigned governor retries next turn", retried, true)
+check("next-turn governor request is submitted", #host.governor_requests, 2)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
