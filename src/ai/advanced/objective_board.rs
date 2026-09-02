@@ -1546,7 +1546,64 @@ impl AdvancedAi {
                 force.aimed_at = row.at;
             }
         }
-        // Leftovers: the Reserve, per domain.
+        // On an arena nothing is coming: a force that cannot match what its
+        // row is measured against — the bill under the margin — would be fed
+        // to it a body at a time, so it joins the highest-ranked force of its
+        // domain instead, and so do the leftovers. `central_position` is the
+        // board that found it: two hostile bodies, two Destroy rows, and an
+        // army split three to one between them lost 184 a seed.
+        let arena = g.is_arena();
+        let top_force: BTreeMap<bool, usize> = if arena {
+            let mut order: Vec<usize> = (0..forces.len())
+                .filter(|index| !forces[*index].units.is_empty())
+                .collect();
+            order.sort_by_key(|index| {
+                (
+                    row_rank
+                        .get(&forces[*index].objective_key)
+                        .copied()
+                        .unwrap_or(usize::MAX),
+                    forces[*index].id,
+                )
+            });
+            let mut top = BTreeMap::new();
+            for index in order {
+                let sea = forces[index].domain == ForceDomain::Sea;
+                let Some(&leader) = top.get(&sea) else {
+                    top.insert(sea, index);
+                    continue;
+                };
+                let Some(row) = rows
+                    .iter()
+                    .find(|row| row.key == forces[index].objective_key)
+                else {
+                    continue;
+                };
+                let margin = match row.kind {
+                    ObjectiveKind::Siege => SIEGE_MARGIN,
+                    ObjectiveKind::Defend | ObjectiveKind::Relieve => DEFEND_MARGIN,
+                    ObjectiveKind::Destroy => DESTROY_MARGIN,
+                    ObjectiveKind::ClearCamp => CAMP_MARGIN,
+                    _ => 1.0,
+                };
+                let strength: f64 = forces[index]
+                    .units
+                    .iter()
+                    .map(|uid| facts[uid].strength)
+                    .sum();
+                if row.requirement.strength > 0.0 && strength < row.requirement.strength / margin {
+                    let moved = std::mem::take(&mut forces[index].units);
+                    for uid in &moved {
+                        assignment.insert(*uid, leader);
+                    }
+                    forces[leader].units.extend(moved);
+                }
+            }
+            top
+        } else {
+            BTreeMap::new()
+        };
+        // Leftovers: the Reserve, per domain — on an arena, the top force.
         let reserve_at = self.reserve_tile(g, pid, &rows);
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
             let leftovers: Vec<u32> = pool
@@ -1554,6 +1611,13 @@ impl AdvancedAi {
                 .copied()
                 .filter(|uid| facts[uid].domain == domain && !assignment.contains_key(uid))
                 .collect();
+            if let Some(&leader) = top_force.get(&(domain == ForceDomain::Sea)) {
+                for uid in &leftovers {
+                    assignment.insert(*uid, leader);
+                }
+                forces[leader].units.extend(leftovers);
+                continue;
+            }
             let existing = forces.iter().position(|force| {
                 force.objective_key == ObjectiveKey::Reserve && force.domain == domain
             });
