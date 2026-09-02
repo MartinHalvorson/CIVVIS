@@ -42,6 +42,11 @@ still spends one real attempt every `RESCUE_INTERVAL_SECONDS`, and every ask in
 between is declined for 0.02 s.  A stuck screen therefore costs 23.5 s a minute
 instead of 23.5 s per ask, and a screen that is merely phantom -- up to the
 context, invisible to the pixels, gone on its own in a moment -- costs nothing.
+
+And the prediction never outranks the evidence: `record_attempt` clears a
+screen's schedule whenever an attempt came back inside `CHEAP_ATTEMPT_SECONDS`
+or landed a click, because a rescue that costs 70 ms is not worth rationing
+however loudly the preflight complains.
 """
 from __future__ import annotations
 
