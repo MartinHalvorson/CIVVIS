@@ -24,6 +24,12 @@ It reads a run directory (``events.jsonl`` and ``orders.sqlite``) and prints:
   them when last seen (a hostile within two tiles, an enemy city, nothing);
 * **hover** — military unit-turns 2–4 tiles from a visible hostile that neither
   moved nor struck (the ``strike_opening`` measurement, per run);
+* **engagement** — the doctrine KPIs, unit-vs-unit only and each printed with
+  its numerator and denominator: initiative, army kills per loss (city strikes
+  kept apart), killed when wounded, wounded exposed / healing, firepower
+  utilisation / idle healthy, focus (targets, multi-hit, left low), chip
+  share, suicidal strikes, cities lost undefended. See ``engagement_section``
+  for the junk-row rule it applies to the mod's ``combat`` rows;
 * **hall of fame** — with ``--hof``, the host's own kills/losses/captures for
   the local player of that game.
 
@@ -508,6 +514,359 @@ def hover_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str, 
     }
 
 
+# --------------------------------------------------------------- engagement
+#: A unit under this many hit points is WOUNDED for every engagement KPI:
+#: `killed_when_wounded_share` reads the defender's hp at the start of the
+#: combat against it, `wounded_exposed_share` / `wounded_healing_share` read
+#: the frame-0 export, and `idle_healthy_share` is its complement.
+ENGAGEMENT_WOUNDED_HP = 50
+#: A target whose LAST hit of the turn leaves it alive at or below this was
+#: left low: one more strike would have taken it.
+LEFT_LOW_HP = 30
+#: An attack that does less than this to its defender is a chip.
+CHIP_DAMAGE = 15
+#: Kinds that reach two tiles whatever the export's `ranged` field says.
+SIEGE_KIND_MARKERS = ("CATAPULT", "TREBUCHET", "BOMBARD", "ARTILLERY")
+#: Activities in which a wounded unit that stands still is healing on purpose.
+HEALING_ACTIVITIES = frozenset({"heal", "healing", "fortified", "fortify", "sleep"})
+
+
+def _is_junk_combat(event: dict[str, Any]) -> bool:
+    """⚠ THE DISTRICT-VS-DISTRICT ID −1 ROW. The mod emits a `combat` row in
+    which attacker AND defender are `{"type": "district", "id": -1, "player": -1,
+    "gone": true}` with `attacker_killed` and `defender_killed` both true —
+    65 of the 446 rows in run civvis-20260901T132005Z, 776 across the 37
+    ledger runs since 2026-08-29.
+    They are a `CombatVisEnd` with no combatant the export could resolve, not a
+    fight, and every kill/loss total that reads the `_killed` flags without
+    this filter is inflated by them."""
+    attacker = event.get("attacker") or {}
+    defender = event.get("defender") or {}
+    return (
+        attacker.get("type") == "district"
+        and defender.get("type") == "district"
+        and attacker.get("id") == -1
+        and defender.get("id") == -1
+    )
+
+
+def _combat_sides(event: dict[str, Any], local_player: int | None) -> tuple[bool, bool]:
+    """`(we attacked, we were attacked)` — the mod's `ours` / `against_us`
+    flags, or the players when a row predates the flags."""
+    ours = event.get("ours")
+    against = event.get("against_us")
+    if ours is None and against is None:
+        if local_player is None:
+            return False, False
+        attacker = event.get("attacker") or {}
+        defender = event.get("defender") or {}
+        return attacker.get("player") == local_player, defender.get("player") == local_player
+    return bool(ours), bool(against)
+
+
+def _frame0_states(events: Iterable[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """The frame-0 `state` of each turn — the board before any order of the
+    turn moved a unit. A state without a `frame` field (an export that
+    predates mid-turn frames) is taken first-per-turn, as `_states` does."""
+    states: dict[int, dict[str, Any]] = {}
+    for event in events:
+        if event.get("kind") != "state" or not isinstance(event.get("turn"), int):
+            continue
+        if event.get("frame") in (None, 0):
+            states.setdefault(event["turn"], event)
+    return states
+
+
+def _hostile_unit_plots(state: dict[str, Any]) -> list[tuple[int, int]]:
+    """Visible hostile COMBAT units (combat or ranged > 0) as offset plots:
+    `hostiles` (barbarians, Free Cities) plus the units of every at-war rival
+    and minor. Cities are deliberately not here — a city is a target of a
+    city strike, which the engagement KPIs keep apart."""
+    plots: list[tuple[int, int]] = []
+    groups: list[Iterable[dict[str, Any]]] = [state.get("hostiles") or []]
+    for actor_group in ("rivals", "minors"):
+        for actor in state.get(actor_group) or []:
+            if actor.get("at_war"):
+                groups.append(actor.get("units") or [])
+    for group in groups:
+        for unit in group:
+            if _is_military(unit) and isinstance(unit.get("x"), int) and isinstance(unit.get("y"), int):
+                plots.append((unit["x"], unit["y"]))
+    return plots
+
+
+def _attack_range(unit: dict[str, Any]) -> int:
+    kind = str(unit.get("kind") or "").upper()
+    if (unit.get("ranged") or 0) > 0 or any(marker in kind for marker in SIEGE_KIND_MARKERS):
+        return 2
+    return 1
+
+
+def _ratio(numerator: int, denominator: int) -> dict[str, Any]:
+    return {
+        "numerator": numerator,
+        "denominator": denominator,
+        "share": round(numerator / denominator, 3) if denominator else None,
+    }
+
+
+def _city_name_key(name: Any) -> str:
+    text = str(name or "").strip().upper()
+    if text.startswith("LOC_CITY_NAME_"):
+        text = text[len("LOC_CITY_NAME_"):]
+    return text
+
+
+def engagement_section(
+    events: list[dict[str, Any]], local_player: int | None
+) -> dict[str, Any] | None:
+    """The doctrine KPIs of one run, each with its numerator and denominator.
+
+    UNIT-VS-UNIT ONLY. Two rules are applied to the mod's `combat` rows before
+    anything is counted, and both are printed in the section header:
+
+    1. `_is_junk_combat` rows — attacker and defender both `district` with
+       id −1 — are dropped outright.
+    2. A row whose attacker is not a `unit` is dropped from every
+       attacker-side statistic. A district attacker carries
+       `attacker_killed=true` whenever the district is `gone`, so read as a
+       loss it would charge us a unit for every city strike we made. Our own
+       city strikes on units are reported separately as `city_strikes` /
+       `city_strike_kills`.
+
+    A unit attacking a city or district, and a combat we were on neither side
+    of, are counted in `rows` and used nowhere else.
+
+    * `initiative_share`: our unit-vs-unit attacks / (ours + the ones on us).
+    * `army_kills_per_loss`: (our unit attacks that killed + enemy unit
+      attackers killed attacking our units) / (our units killed defending +
+      our attackers killed).
+    * `killed_when_wounded_share`: of our units killed defending, the share
+      that began that combat under `ENGAGEMENT_WOUNDED_HP`.
+    * `wounded_exposed_share`: over frame-0 states, military unit-turns under
+      `ENGAGEMENT_WOUNDED_HP` standing within two hexes of a hostile combat
+      unit / all such wounded unit-turns; `wounded_healing_share`: the ones
+      fortified or in a `HEALING_ACTIVITIES` activity.
+    * `firepower_utilisation`: unit-turns with a hostile combat unit within
+      the unit's attack range (2 for a ranged or siege kind, else 1; embarked
+      units cannot strike and are skipped) that issued a `strike` that turn /
+      all such unit-turns; `idle_healthy_share`: the in-range unit-turns of a
+      unit at or above `ENGAGEMENT_WOUNDED_HP` that did not strike, over the
+      same denominator, so firepower + idle healthy + `idle_wounded` is the
+      whole.
+    * `focus`: our unit attacks grouped by (turn, defender): `targets`,
+      `multi_hit_share` (more than one attack), `left_low_share` (the last
+      attack left the defender alive at or below `LEFT_LOW_HP`).
+    * `chip_share`: our unit attacks that did less than `CHIP_DAMAGE`.
+    * `suicidal_attacks`: `strike` events whose preview `damage_to_attacker`
+      is at least the striking unit's `hp` on the strike event.
+    * `cities_lost_undefended`: `city_lost` events whose last frame-0 state
+      (the city still in `cities[]`, matched by id then name) had no military
+      unit of ours within one hex of the city; `unresolved` when no such state
+      exists.
+
+    `None` when the run carries neither a `combat` nor a `strike` event: a
+    recording mod that predates them, which is not a run without fighting.
+    """
+    combats = [event for event in events if event.get("kind") == "combat"]
+    strikes = [event for event in events if event.get("kind") == "strike"]
+    if not combats and not strikes:
+        return None
+
+    rows: collections.Counter = collections.Counter()
+    our_attacks: list[dict[str, Any]] = []
+    attacks_on_us: list[dict[str, Any]] = []
+    city_strikes = city_strike_kills = 0
+    for event in combats:
+        rows["combat_events"] += 1
+        if _is_junk_combat(event):
+            rows["junk_district_pairs"] += 1
+            continue
+        attacker = event.get("attacker") or {}
+        defender = event.get("defender") or {}
+        we_attack, we_defend = _combat_sides(event, local_player)
+        if attacker.get("type") != "unit":
+            rows["non_unit_attackers"] += 1
+            if we_attack and defender.get("type") == "unit":
+                city_strikes += 1
+                if event.get("defender_killed"):
+                    city_strike_kills += 1
+            continue
+        if defender.get("type") != "unit":
+            rows["unit_vs_city"] += 1
+            continue
+        if we_attack:
+            rows["ours"] += 1
+            our_attacks.append(event)
+        elif we_defend:
+            rows["against_us"] += 1
+            attacks_on_us.append(event)
+        else:
+            rows["third_party"] += 1
+
+    kills_attacking = sum(1 for event in our_attacks if event.get("defender_killed"))
+    kills_defending = sum(1 for event in attacks_on_us if event.get("attacker_killed"))
+    losses_defending = sum(1 for event in attacks_on_us if event.get("defender_killed"))
+    losses_attacking = sum(1 for event in our_attacks if event.get("attacker_killed"))
+    kills = kills_attacking + kills_defending
+    losses = losses_defending + losses_attacking
+
+    wounded_kills = judged_kills = hp_unknown = 0
+    for event in attacks_on_us:
+        if not event.get("defender_killed"):
+            continue
+        hp = (event.get("defender") or {}).get("hp")
+        if isinstance(hp, (int, float)):
+            judged_kills += 1
+            if hp < ENGAGEMENT_WOUNDED_HP:
+                wounded_kills += 1
+        else:
+            hp_unknown += 1
+
+    strikes_by_unit_turn = {
+        (event["turn"], event["unit"])
+        for event in strikes
+        if isinstance(event.get("turn"), int) and isinstance(event.get("unit"), int)
+    }
+    states = _frame0_states(events)
+    wounded_turns = exposed = healing = 0
+    in_range = fired = idle_healthy = idle_wounded = 0
+    for turn, state in states.items():
+        hostiles = _hostile_unit_plots(state)
+        for uid, unit in _own_units(state).items():
+            if not _is_military(unit) or not isinstance(unit.get("x"), int) or not isinstance(unit.get("y"), int):
+                continue
+            pos = (unit["x"], unit["y"])
+            hp = unit.get("hp")
+            hp = float(hp) if isinstance(hp, (int, float)) else 100.0
+            dist = min((hex_distance(pos, plot) for plot in hostiles), default=None)
+            if hp < ENGAGEMENT_WOUNDED_HP:
+                wounded_turns += 1
+                if dist is not None and dist <= 2:
+                    exposed += 1
+                activity = str(unit.get("activity") or "").lower()
+                if unit.get("fortified") or activity in HEALING_ACTIVITIES:
+                    healing += 1
+            if unit.get("embarked"):
+                continue
+            if dist is not None and dist <= _attack_range(unit):
+                in_range += 1
+                if (turn, uid) in strikes_by_unit_turn:
+                    fired += 1
+                elif hp >= ENGAGEMENT_WOUNDED_HP:
+                    idle_healthy += 1
+                else:
+                    idle_wounded += 1
+
+    groups: dict[tuple[int, int], list[dict[str, Any]]] = collections.OrderedDict()
+    for event in our_attacks:
+        target = (event.get("defender") or {}).get("id")
+        if isinstance(event.get("turn"), int) and isinstance(target, int):
+            groups.setdefault((event["turn"], target), []).append(event)
+    multi_hit = left_low = 0
+    for hits in groups.values():
+        if len(hits) > 1:
+            multi_hit += 1
+        last = hits[-1]
+        if last.get("defender_killed"):
+            continue
+        hp_end = last.get("defender_hp_end")
+        if not isinstance(hp_end, (int, float)):
+            hp_start = (last.get("defender") or {}).get("hp")
+            dealt = last.get("damage_to_defender")
+            if isinstance(hp_start, (int, float)) and isinstance(dealt, (int, float)):
+                hp_end = hp_start - dealt
+        if isinstance(hp_end, (int, float)) and hp_end <= LEFT_LOW_HP:
+            left_low += 1
+
+    damaging = [
+        event for event in our_attacks if isinstance(event.get("damage_to_defender"), (int, float))
+    ]
+    chips = sum(1 for event in damaging if event["damage_to_defender"] < CHIP_DAMAGE)
+
+    suicidal = previewed = 0
+    for event in strikes:
+        hp = event.get("hp")
+        predicted = (event.get("preview") or {}).get("damage_to_attacker")
+        if isinstance(hp, (int, float)) and isinstance(predicted, (int, float)):
+            previewed += 1
+            if predicted >= hp:
+                suicidal += 1
+
+    turns_desc = sorted(states, reverse=True)
+    lost = undefended = defended = unresolved = 0
+    for event in events:
+        if event.get("kind") != "city_lost":
+            continue
+        lost += 1
+        loss_turn = event.get("turn")
+        city_id = event.get("city")
+        name_key = _city_name_key(event.get("name"))
+        found: tuple[dict[str, Any], dict[str, Any]] | None = None
+        for turn in turns_desc:
+            if isinstance(loss_turn, int) and turn > loss_turn:
+                continue
+            for city in states[turn].get("cities") or []:
+                by_id = city_id is not None and city.get("id") == city_id
+                by_name = bool(name_key) and _city_name_key(city.get("name")) == name_key
+                if by_id or by_name:
+                    found = (states[turn], city)
+                    break
+            if found:
+                break
+        if found is None or not isinstance(found[1].get("x"), int) or not isinstance(found[1].get("y"), int):
+            unresolved += 1
+            continue
+        board, city = found
+        plot = (city["x"], city["y"])
+        guarded = any(
+            _is_military(unit)
+            and isinstance(unit.get("x"), int)
+            and isinstance(unit.get("y"), int)
+            and hex_distance((unit["x"], unit["y"]), plot) <= 1
+            for unit in board.get("units") or []
+        )
+        if guarded:
+            defended += 1
+        else:
+            undefended += 1
+
+    return {
+        "rows": dict(rows),
+        "initiative_share": _ratio(len(our_attacks), len(our_attacks) + len(attacks_on_us)),
+        "army_kills_per_loss": {
+            "kills": kills,
+            "kills_attacking": kills_attacking,
+            "kills_defending": kills_defending,
+            "losses": losses,
+            "losses_defending": losses_defending,
+            "losses_attacking": losses_attacking,
+            "value": round(kills / losses, 2) if losses else None,
+        },
+        "city_strikes": city_strikes,
+        "city_strike_kills": city_strike_kills,
+        "killed_when_wounded_share": {**_ratio(wounded_kills, judged_kills), "hp_unknown": hp_unknown},
+        "wounded_exposed_share": _ratio(exposed, wounded_turns),
+        "wounded_healing_share": _ratio(healing, wounded_turns),
+        "firepower_utilisation": _ratio(fired, in_range),
+        "idle_healthy_share": _ratio(idle_healthy, in_range),
+        "idle_wounded": idle_wounded,
+        "focus": {
+            "targets": len(groups),
+            "multi_hit_share": _ratio(multi_hit, len(groups)),
+            "left_low_share": _ratio(left_low, len(groups)),
+        },
+        "chip_share": _ratio(chips, len(damaging)),
+        "suicidal_attacks": _ratio(suicidal, previewed),
+        "cities_lost_undefended": {
+            "cities_lost": lost,
+            "undefended": undefended,
+            "defended": defended,
+            "unresolved": unresolved,
+        },
+    }
+
+
 def hall_of_fame_section(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
@@ -584,6 +943,7 @@ def ledger(run_dir: Path, hof: Path | None = None) -> dict[str, Any]:
         "combat": combat_section(events, local_player),
         "roster": roster_section(events),
         "hover": hover_section(events, unit_orders),
+        "engagement": engagement_section(events, local_player),
     }
     if hof is not None:
         report["hall_of_fame"] = hall_of_fame_section(hof)
@@ -592,6 +952,52 @@ def ledger(run_dir: Path, hof: Path | None = None) -> dict[str, Any]:
 
 def _fmt_share(value: float | None) -> str:
     return "n/a" if value is None else f"{100 * value:.1f}%"
+
+
+def _fmt_ratio(ratio: dict[str, Any]) -> str:
+    """``numerator/denominator (share)`` — every engagement KPI is printed this
+    way so a reader can tell 1/2 from 350/700."""
+    return f"{ratio['numerator']}/{ratio['denominator']} ({_fmt_share(ratio['share'])})"
+
+
+def _render_engagement(engagement: dict[str, Any] | None) -> list[str]:
+    if engagement is None:
+        return ["  engagement (mod predates the ledger: no combat or strike events)"]
+    rows = engagement["rows"]
+    kl = engagement["army_kills_per_loss"]
+    focus = engagement["focus"]
+    cities = engagement["cities_lost_undefended"]
+    return [
+        f"  engagement (unit-vs-unit; dropped {rows.get('junk_district_pairs', 0)} district-vs-district "
+        f"id -1 rows and {rows.get('non_unit_attackers', 0)} non-unit attackers of "
+        f"{rows.get('combat_events', 0)} combat rows; {rows.get('unit_vs_city', 0)} unit-vs-city, "
+        f"{rows.get('third_party', 0)} third-party unused)",
+        f"           initiative {_fmt_ratio(engagement['initiative_share'])} our unit attacks over "
+        f"every unit-vs-unit combat we were in",
+        f"           army kills/loss {kl['value'] if kl['value'] is not None else 'n/a'}: "
+        f"kills {kl['kills']} ({kl['kills_attacking']} attacking, {kl['kills_defending']} defending) / "
+        f"losses {kl['losses']} ({kl['losses_defending']} defending, {kl['losses_attacking']} attacking); "
+        f"city strikes {engagement['city_strikes']}, city-strike kills {engagement['city_strike_kills']}",
+        f"           killed when wounded {_fmt_ratio(engagement['killed_when_wounded_share'])} of our "
+        f"units killed defending began the fight under {ENGAGEMENT_WOUNDED_HP} hp"
+        + (
+            f" ({engagement['killed_when_wounded_share']['hp_unknown']} with no hp recorded)"
+            if engagement["killed_when_wounded_share"]["hp_unknown"]
+            else ""
+        ),
+        f"           wounded exposed {_fmt_ratio(engagement['wounded_exposed_share'])} hp<{ENGAGEMENT_WOUNDED_HP} "
+        f"military unit-turns within 2 of a hostile; healing {_fmt_ratio(engagement['wounded_healing_share'])}",
+        f"           firepower {_fmt_ratio(engagement['firepower_utilisation'])} unit-turns with a hostile in "
+        f"range that struck; idle healthy {_fmt_ratio(engagement['idle_healthy_share'])}, "
+        f"idle wounded {engagement['idle_wounded']}",
+        f"           focus {focus['targets']} targets: multi-hit {_fmt_ratio(focus['multi_hit_share'])}, "
+        f"left low (alive at <= {LEFT_LOW_HP} hp) {_fmt_ratio(focus['left_low_share'])}",
+        f"           chip {_fmt_ratio(engagement['chip_share'])} of our unit attacks did under {CHIP_DAMAGE} damage",
+        f"           suicidal {_fmt_ratio(engagement['suicidal_attacks'])} previewed strikes expected "
+        f"damage_to_attacker >= the striker's hp",
+        f"           cities lost {cities['cities_lost']}: undefended {cities['undefended']}, "
+        f"defended {cities['defended']}, unresolved {cities['unresolved']}",
+    ]
 
 
 def render(report: dict[str, Any]) -> str:
@@ -677,6 +1083,7 @@ def render(report: dict[str, Any]) -> str:
         f"{hover['hovering_unexplained']} unexplained); "
         f"{hover['military_unit_turns']} military unit-turns"
     )
+    lines.extend(_render_engagement(report.get("engagement")))
     hof = report.get("hall_of_fame")
     if "hall_of_fame" in report:
         if hof is None:
