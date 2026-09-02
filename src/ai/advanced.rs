@@ -13660,7 +13660,7 @@ impl AdvancedAi {
             .map(VictoryTarget::strategy)
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
-            let available = BasicAi::era_completion_techs(g, pid);
+            let available = BasicAi::era_window_techs(g, pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);

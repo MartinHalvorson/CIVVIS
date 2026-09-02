@@ -70,6 +70,51 @@ def turn_clock(events_path: Path) -> list[dict]:
     return rows
 
 
+def rescue_stalls(events_path: Path) -> dict:
+    """What the desktop rescue cost this run, in wall clock.
+
+    ★ THE ONE NUMBER THIS TOOL WAS MISSING. The per-turn table above hides it:
+    an `autoclose` event carries no turn, so a stall lands inside whichever
+    turn spans it and reads as a slow turn. Measured directly it was 25.8 min
+    of run civvis-20260902T095330Z's 68.6 (37.6 %) and 9.5 of
+    civvis-20260902T162829Z's 31.3 (30.4 %) -- two doomed native captures per
+    ask, 23.5 s each, before #3089.
+
+    So: the gap from every `autoclose_desktop`/`autoclose_stuck` to whatever
+    the run said next. That is exactly the time the game waited for an answer.
+    """
+    stamped = []
+    with events_path.open("r", errors="replace") as handle:
+        for raw in handle:
+            try:
+                event = json.loads(raw)
+            except ValueError:
+                continue
+            at = parse_stamp(event.get("utc"))
+            if at is not None:
+                stamped.append((at, event.get("kind"), event.get("screen")))
+    stamped.sort(key=lambda row: row[0])
+    if len(stamped) < 2:
+        return {"asks": 0, "seconds": 0.0, "span": 0.0, "worst": 0.0, "screens": {}}
+    span = (stamped[-1][0] - stamped[0][0]).total_seconds()
+    asks = 0
+    seconds = 0.0
+    worst = 0.0
+    screens: dict[str, float] = {}
+    for (at, kind, screen), (nxt, _, _) in zip(stamped, stamped[1:]):
+        if kind not in ("autoclose_desktop", "autoclose_stuck"):
+            continue
+        gap = (nxt - at).total_seconds()
+        if gap < 0 or gap > 600:
+            continue
+        asks += 1
+        seconds += gap
+        worst = max(worst, gap)
+        screens[str(screen)] = screens.get(str(screen), 0.0) + gap
+    return {"asks": asks, "seconds": seconds, "span": span, "worst": worst,
+            "screens": screens}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run", type=Path, help="run directory or its events.jsonl")
@@ -79,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     path = args.run / "events.jsonl" if args.run.is_dir() else args.run
     rows = turn_clock(path)
     if args.json:
-        print(json.dumps(rows))
+        print(json.dumps({"turns": rows, "rescue": rescue_stalls(path)}))
         return 0
     timed = [r for r in rows if "dur" in r]
     if not timed:
@@ -89,6 +134,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"turns {len(timed)}  median {statistics.median(durations):.1f}s  "
           f"total {sum(durations) / 60:.1f} min  "
           f"waits>=10s {sum(1 for r in timed if r.get('wait', 0) >= 10)}")
+    rescue = rescue_stalls(path)
+    if rescue["asks"]:
+        share = 100 * rescue["seconds"] / rescue["span"] if rescue["span"] else 0.0
+        busiest = max(rescue["screens"].items(), key=lambda item: item[1])
+        print(f"desktop rescue: {rescue['asks']} asks cost "
+              f"{rescue['seconds'] / 60:.2f} min = {share:.1f}% of the run "
+              f"(worst {rescue['worst']:.1f}s, most on {busiest[0]})")
+    else:
+        print("desktop rescue: no asks")
     print("turn  board     dur   wait polls frames popups stuck")
     for r in sorted(timed, key=lambda r: -r["dur"])[:args.slowest]:
         print(f"{r['turn']:>4}  {r['board_at']}  {r['dur']:>5}  {r.get('wait', '-'):>5} "
