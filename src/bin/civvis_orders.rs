@@ -982,7 +982,12 @@ impl HostMoveRefusals {
             let Some(verb) = order.verb.as_deref() else {
                 return true;
             };
-            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY" | "SWAP") {
+            if order.kind == "unit"
+                && matches!(
+                    verb,
+                    "MOVE_TO" | "CAPTURE" | "FORTIFY" | "SWAP" | "REBASE" | "PATROL"
+                )
+            {
                 let key = HostUnitOrderKey {
                     verb: verb.to_string(),
                     pos: order.pos,
@@ -3776,6 +3781,9 @@ fn decide(
                     Action::Attack { unit, .. }
                     | Action::Ranged { unit, .. }
                     | Action::Swap { unit, .. }
+                    | Action::AirStrike { unit, .. }
+                    | Action::AirRebase { unit, .. }
+                    | Action::AirPatrol { unit, .. }
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
                     | Action::Improve { unit, .. }
@@ -3787,6 +3795,9 @@ fn decide(
                         }
                     }
                     Action::Produce { .. } => "produce_not_mapped",
+                    Action::KeepCity { .. }
+                    | Action::RazeCity { .. }
+                    | Action::LiberateCity { .. } => "city_not_mapped",
                     _ => "",
                 };
                 // ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest
@@ -4469,6 +4480,44 @@ fn translate(
                 pos: Some(civvis::hex::axial_to_offset(partner.0, partner.1)),
             })
         }),
+        // ★★★ THE AIR VERBS. `Action::AirStrike`, `Action::AirRebase` and
+        // `Action::AirPatrol` — legal and tested in the engine since
+        // `do_air_strike` / `do_air_rebase` / `do_air_patrol` — fell through
+        // this match's `_ => None` and were counted `unit_action_untranslated`,
+        // so no aircraft the live seat ever built could fly a sortie, change
+        // base or intercept. Civilization VI has one operation for each, read
+        // off the installed game (`Base/Assets/Gameplay/Data/UnitOperations.xml`
+        // rows `UNITOPERATION_AIR_ATTACK`, `UNITOPERATION_REBASE`,
+        // `UNITOPERATION_DEPLOY`; there is no `AIR_PATROL` row — a fighter's
+        // patrol is the shipped "Deploy": it flies to a plot within range and
+        // intercepts from there). The shipped UI requests all three with the
+        // plot as the ordinary positional pair, `WorldInput.lua:2077-2078`
+        // (`UnitAirAttack`), `:2418-2419` (`AirUnitDeploy`), `:2486-2487`
+        // (`AirUnitReBase`):
+        //
+        //   if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, nil, tParameters)) then
+        //       UnitManager.RequestOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, tParameters);
+        //
+        // so `pos` is the target plot for `AIR_ATTACK`, the base plot for
+        // `REBASE` and the patrol plot for `PATROL`.
+        Action::AirStrike { unit, target } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("AIR_ATTACK".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+        }),
+        Action::AirRebase { unit, to } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("REBASE".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
+        }),
+        Action::AirPatrol { unit, to } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("PATROL".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
+        }),
         // ⚠ There is NO attack operation on this build; the resolved list is only
         // MOVE_TO and RANGE_ATTACK, so a melee strike IS a move onto the defended
         // plot. That is how Civilization VI resolves it, not a hack.
@@ -5077,6 +5126,44 @@ fn translate(
                 verb: None,
                 pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
             }),
+        // ★★★ THE CAPTURED CITY'S DISPOSITION. `KeepCity` / `RazeCity` /
+        // `LiberateCity` are mandatory and exclusive on the board
+        // (`pending_city_capture_actions`: nothing else is legal until one is
+        // chosen) and fell through this match's `_ => None`, so the host's own
+        // default — the `CONSIDER_RAZE_CITY` blocker the mod lists as soft,
+        // i.e. keep — decided every capture. Civilization VI has ONE command
+        // for all three, `CityCommandTypes.DESTROY`, told apart by a directive
+        // flag; the shipped `Base/Assets/UI/Popups/RazeCity.lua` buttons:
+        //
+        //   :39  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.KEEP;
+        //   :48  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.RAZE;
+        //   :17  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.LIBERATE_FOUNDER;
+        //   :18  if (CityManager.CanStartCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters)) then
+        //   :20      CityManager.RequestCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters);
+        //
+        // so the order is kind `city`, `subject` = the host city id, the verb
+        // names the directive, and `pos` carries the city plot so the verdict
+        // can ask who holds it next frame. The engine's `do_liberate_city`
+        // returns the city to `original_owner`, the founder — the
+        // LIBERATE_FOUNDER button, not the owner-before-occupation one.
+        Action::KeepCity { city } | Action::RazeCity { city } | Action::LiberateCity { city } => {
+            let verb = match action {
+                Action::KeepCity { .. } => "KEEP",
+                Action::RazeCity { .. } => "RAZE",
+                _ => "LIBERATE",
+            };
+            let pos = mirror_state.game.cities.get(city)?.pos;
+            mirror_state
+                .cid_of
+                .iter()
+                .find(|(_, cid)| **cid == *city)
+                .map(|(civ6, _)| Order {
+                    kind: "city",
+                    subject: Some(*civ6),
+                    verb: Some(verb.to_string()),
+                    pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
+                })
+        }
         // Delegations and embassies buy diplomatic visibility (a combat bonus
         // against that rival) and a relationship modifier for pocket change,
         // and both were untranslatable: 16 SendDelegation and 7 SendEmbassy
@@ -5337,6 +5424,14 @@ const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
     (
         "SPY_*",
         "espionage missions run for many turns and the frame carries none",
+    ),
+    // A fighter's patrol is the shipped `UNITOPERATION_DEPLOY`: the aircraft
+    // flies to the plot and intercepts from there, and the frame exports no
+    // patrol state — neither the plot it watches nor whether the host has
+    // recalled it to base by the next turn's opening frame.
+    (
+        "PATROL",
+        "the frame carries no patrol state; where a deployed fighter stands next frame is the host's",
     ),
 ];
 
@@ -5615,6 +5710,83 @@ fn foreign_city_at(
         .flat_map(|r| r.cities.iter())
         .chain(state.minors.iter().flat_map(|m| m.cities.iter()))
         .find(|c| (c.x, c.y) == pos)
+}
+
+/// Who holds a foreign city on `pos`: the Firaxis player id of the rival or
+/// city-state whose `cities[]` lists it.
+fn foreign_city_owner_at(state: &civvis::mirror::StateSnapshot, pos: (i32, i32)) -> Option<i64> {
+    let holds = |cities: &[civvis::mirror::StateCity]| cities.iter().any(|c| (c.x, c.y) == pos);
+    state
+        .rivals
+        .iter()
+        .find(|r| holds(&r.cities))
+        .map(|r| r.player as i64)
+        .or_else(|| {
+            state
+                .minors
+                .iter()
+                .find(|m| holds(&m.cities))
+                .map(|m| m.player as i64)
+        })
+}
+
+/// The captured city's disposition, judged by who holds the city on the next
+/// frame. KEEP: still ours and the host no longer waits on a decision for it
+/// (`captured_from` clear), else `not_kept`. RAZE: Civilization VI burns a
+/// razed city down one citizen a turn and it stays ours while it burns, so
+/// the next turn shows it gone or smaller; on a same-turn replan frame the
+/// only trace is the decision consumed — the flag clear before any citizen
+/// has left — which is accepted there and only there; else `not_razed`.
+/// LIBERATE: not ours, and the founder the decision frame named
+/// (`original_owner`) holds the plot, else `liberated_to_another` /
+/// `not_liberated`.
+fn verify_city_disposition(
+    order: &IssuedOrder,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+) -> Verdict {
+    let failed = |why: &str| Verdict::Failed(why.to_string());
+    let Some(id) = order.subject else {
+        return failed("no_subject");
+    };
+    let verb = order.verb.as_deref().unwrap_or("");
+    let was = own_city(before, id);
+    let plot = order.pos.or_else(|| was.map(|c| (c.x, c.y)));
+    let now = own_city(after, id).or_else(|| plot.and_then(|p| own_city_at(after, p)));
+    match verb {
+        "KEEP" => match now {
+            Some(city) if city.captured_from.is_none() => Verdict::Verified,
+            Some(_) => failed("not_kept"),
+            None => failed("city_gone"),
+        },
+        "RAZE" => match now {
+            None => Verdict::Verified,
+            Some(city) if was.is_some_and(|w| city.pop < w.pop) => Verdict::Verified,
+            Some(city)
+                if after.turn == before.turn
+                    && city.captured_from.is_none()
+                    && was.is_some_and(|w| w.captured_from.is_some()) =>
+            {
+                Verdict::Verified
+            }
+            Some(_) => failed("not_razed"),
+        },
+        "LIBERATE" => {
+            let Some(plot) = plot else {
+                return failed("no_plot");
+            };
+            if now.is_some() {
+                return failed("not_liberated");
+            }
+            let founder = was.and_then(|w| w.original_owner);
+            match foreign_city_owner_at(after, plot) {
+                Some(owner) if founder.is_none_or(|f| f == owner) => Verdict::Verified,
+                Some(_) => failed("liberated_to_another"),
+                None => failed("not_liberated"),
+            }
+        }
+        _ => Verdict::Failed(format!("unknown_city_verb_{verb}")),
+    }
 }
 
 fn at_war_with(state: &civvis::mirror::StateSnapshot, player: i64) -> Option<bool> {
@@ -6003,7 +6175,9 @@ fn verify_unit_order(
                 Verdict::Failed("no_city".to_string())
             }
         }
-        "ATTACK" | "RANGE_ATTACK" => {
+        // An air strike is a ranged strike flown from the base: the target
+        // plot harmed on the next frame, or a combat on the ledger, proves it.
+        "ATTACK" | "RANGE_ATTACK" | "AIR_ATTACK" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
             if harmed || combat_evidence(evidence, turn, id) {
                 Verdict::Verified
@@ -6014,6 +6188,20 @@ fn verify_unit_order(
                     strike_refusal_reason(evidence, turn, id, order.pos)
                         .unwrap_or_else(|| "target_unharmed".to_string()),
                 )
+            }
+        }
+        // A rebase lands the aircraft on the new base plot at once (the
+        // shipped `UNITOPERATION_REBASE` is a teleport that spends the turn),
+        // so the aircraft standing there on the next frame is the whole
+        // postcondition.
+        "REBASE" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            match now {
+                Some(now) if (now.x, now.y) == want => Verdict::Verified,
+                None => gone(),
+                Some(_) => Verdict::Failed("not_rebased".to_string()),
             }
         }
         "FORTIFY" => {
@@ -6404,6 +6592,7 @@ fn verify_order_with_context(
                 failed("no_great_person".to_string())
             }
         }
+        "city" => verify_city_disposition(order, before, after),
         "city_strike" | "encampment_strike" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
             if harmed
@@ -10979,6 +11168,150 @@ mod tests {
         ));
     }
 
+    /// The three air actions cross as their own verbs, aimed at the plot the
+    /// shipped `WorldInput.lua` hands each operation — the target for
+    /// `AIR_ATTACK` (`:2077`), the new base for `REBASE` (`:2486`), the patrol
+    /// plot for `PATROL` (`:2418`, the shipped Deploy) — instead of falling
+    /// through to `unit_action_untranslated`.
+    #[test]
+    fn the_air_actions_cross_as_air_attack_rebase_and_patrol() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let slinger = mirror
+            .civ6_of
+            .iter()
+            .find_map(|(unit, civ6)| (*civ6 == 100).then_some(*unit))
+            .unwrap();
+        let plot = |x, y| civvis::hex::offset_to_axial(x, y);
+        let crossed = |action: Action| {
+            let order = translate(&action, &mirror, &state).expect("the air action crosses");
+            (order.kind, order.subject, order.verb, order.pos)
+        };
+        assert_eq!(
+            crossed(Action::AirStrike {
+                unit: slinger,
+                target: plot(5, 4),
+            }),
+            (
+                "unit",
+                Some(100),
+                Some("AIR_ATTACK".to_string()),
+                Some((5, 4))
+            ),
+            "the target plot, in host offsets"
+        );
+        assert_eq!(
+            crossed(Action::AirRebase {
+                unit: slinger,
+                to: plot(4, 4),
+            }),
+            ("unit", Some(100), Some("REBASE".to_string()), Some((4, 4))),
+            "the new base plot"
+        );
+        assert_eq!(
+            crossed(Action::AirPatrol {
+                unit: slinger,
+                to: plot(7, 7),
+            }),
+            ("unit", Some(100), Some("PATROL".to_string()), Some((7, 7))),
+            "the plot to fly to and intercept from"
+        );
+        // An aircraft the mirror cannot map has no host id to order.
+        assert!(translate(
+            &Action::AirStrike {
+                unit: u32::MAX,
+                target: plot(5, 4),
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+    }
+
+    /// An air strike verifies like a ranged one: the target plot harmed on
+    /// the next frame — hp down, or the unit gone — is the sortie; an
+    /// untouched target is `target_unharmed`.
+    #[test]
+    fn an_air_attack_is_verified_by_the_harmed_target() {
+        let (tiles, before) = local_barbarian_defense_board();
+        // Slinger 100 stands in for the aircraft; the barbarian at (5,4) is
+        // the target.
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(100),
+            verb: Some("AIR_ATTACK".to_string()),
+            pos: Some((5, 4)),
+        };
+        let verdict = |after: &StateSnapshot| {
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                after,
+                &tiles,
+                &[],
+                LaterFrames::default(),
+            )
+        };
+        let mut harmed = before.clone();
+        harmed.hostiles[0].hp = 30.0;
+        assert!(matches!(verdict(&harmed), Verdict::Verified));
+        let mut destroyed = before.clone();
+        destroyed.hostiles.clear();
+        assert!(matches!(verdict(&destroyed), Verdict::Verified));
+        assert!(matches!(
+            verdict(&before),
+            Verdict::Failed(reason) if reason == "target_unharmed"
+        ));
+    }
+
+    /// A rebase is the aircraft standing on the base plot next frame — the
+    /// shipped REBASE is a teleport that spends the turn — else `not_rebased`;
+    /// a patrol (the shipped Deploy) is declared unverifiable because the
+    /// frame carries no patrol state.
+    #[test]
+    fn a_rebase_is_verified_on_the_base_plot_and_a_patrol_is_unverifiable() {
+        let (tiles, before) = local_barbarian_defense_board();
+        let rebase = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(100),
+            verb: Some("REBASE".to_string()),
+            pos: Some((4, 4)),
+        };
+        let verdict = |order: &IssuedOrder, after: &StateSnapshot| {
+            verify_unit_order(
+                order,
+                30,
+                &before,
+                after,
+                &tiles,
+                &[],
+                LaterFrames::default(),
+            )
+        };
+        let mut rebased = before.clone();
+        let aircraft = rebased.units.iter_mut().find(|u| u.id == 100).unwrap();
+        (aircraft.x, aircraft.y) = (4, 4);
+        assert!(matches!(verdict(&rebase, &rebased), Verdict::Verified));
+        assert!(matches!(
+            verdict(&rebase, &before),
+            Verdict::Failed(reason) if reason == "not_rebased"
+        ));
+        let mut gone = before.clone();
+        gone.units.retain(|u| u.id != 100);
+        assert!(matches!(
+            verdict(&rebase, &gone),
+            Verdict::Failed(reason) if reason == "unit_gone"
+        ));
+
+        let patrol = IssuedOrder {
+            verb: Some("PATROL".to_string()),
+            ..rebase.clone()
+        };
+        assert_eq!(verdict(&patrol, &before), Verdict::Unverifiable);
+        assert!(unverifiable_unit_verb("PATROL"));
+    }
+
     #[test]
     fn great_people_activate_or_move_to_the_nearest_firaxis_valid_plot() {
         let state = StateSnapshot {
@@ -12764,6 +13097,31 @@ mod tests {
         assert_eq!(encampment.kind, "encampment_strike");
         assert_eq!(encampment.subject, Some(65_536));
         assert_eq!(encampment.pos, Some(civvis::hex::axial_to_offset(7, 5)));
+    }
+
+    /// The captured city's three dispositions cross as kind `city` — subject
+    /// = the host city id, verb = the `CityDestroyDirectives` name the shipped
+    /// `RazeCity.lua` buttons set, pos = the city plot — instead of falling
+    /// through to the host's default.
+    #[test]
+    fn a_captured_citys_disposition_crosses_as_keep_raze_or_liberate() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let rome = mirror.game.player_city_ids(0)[0];
+        for (action, verb) in [
+            (Action::KeepCity { city: rome }, "KEEP"),
+            (Action::RazeCity { city: rome }, "RAZE"),
+            (Action::LiberateCity { city: rome }, "LIBERATE"),
+        ] {
+            let order = translate(&action, &mirror, &state).expect("the disposition crosses");
+            assert_eq!(
+                (order.kind, order.subject, order.verb.as_deref(), order.pos),
+                ("city", Some(7), Some(verb), Some((4, 4))),
+                "{verb}: host city 7 on its plot, in host offsets"
+            );
+        }
+        // A city the mirror cannot map has no host id to decide for.
+        assert!(translate(&Action::KeepCity { city: u32::MAX }, &mirror, &state).is_none());
     }
 
     #[test]
@@ -16377,6 +16735,103 @@ mod order_postcondition_tests {
         for (verb, why) in UNVERIFIABLE_UNIT_VERBS {
             assert!(!why.is_empty(), "{verb} needs a reason");
         }
+    }
+
+    /// KEEP is the city still ours with the host no longer waiting on the
+    /// decision; RAZE is the city gone or a citizen smaller next turn (or, on
+    /// a same-turn frame, the decision consumed); LIBERATE is the founder the
+    /// decision frame named holding the plot.
+    #[test]
+    fn a_city_disposition_is_verified_by_who_holds_the_city_next_frame() {
+        let mut before = frame(30);
+        before.cities = vec![StateCity {
+            id: 7,
+            name: "Antium".to_string(),
+            x: 4,
+            y: 4,
+            pop: 4,
+            // Taken from Firaxis player 3; founded by player 5.
+            captured_from: Some(3),
+            original_owner: Some(5),
+            ..StateCity::default()
+        }];
+        let order = |verb: &str| IssuedOrder {
+            kind: "city".to_string(),
+            subject: Some(7),
+            verb: Some(verb.to_string()),
+            pos: Some((4, 4)),
+        };
+        let mut kept = frame(31);
+        kept.cities = before.cities.clone();
+        kept.cities[0].captured_from = None;
+        let gone = frame(31);
+
+        assert_eq!(
+            check(&order("KEEP"), &before, &kept, &[]),
+            Verdict::Verified
+        );
+        // Still pending: the host did not take the directive.
+        assert_eq!(
+            check(&order("KEEP"), &before, &before, &[]),
+            failed("not_kept")
+        );
+        assert_eq!(
+            check(&order("KEEP"), &before, &gone, &[]),
+            failed("city_gone")
+        );
+
+        assert_eq!(
+            check(&order("RAZE"), &before, &gone, &[]),
+            Verdict::Verified
+        );
+        let mut burning = kept.clone();
+        burning.cities[0].pop = 3;
+        assert_eq!(
+            check(&order("RAZE"), &before, &burning, &[]),
+            Verdict::Verified
+        );
+        let mut same_turn = kept.clone();
+        same_turn.turn = 30;
+        same_turn.frame = 1;
+        assert_eq!(
+            check(&order("RAZE"), &before, &same_turn, &[]),
+            Verdict::Verified
+        );
+        assert_eq!(
+            check(&order("RAZE"), &before, &kept, &[]),
+            failed("not_razed")
+        );
+
+        let foreign = |player: usize| {
+            let mut after = frame(31);
+            after.rivals.push(StateRival {
+                player,
+                cities: vec![StateCity {
+                    id: 7,
+                    x: 4,
+                    y: 4,
+                    ..StateCity::default()
+                }],
+                ..StateRival::default()
+            });
+            after
+        };
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &foreign(5), &[]),
+            Verdict::Verified
+        );
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &foreign(3), &[]),
+            failed("liberated_to_another")
+        );
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &kept, &[]),
+            failed("not_liberated")
+        );
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &gone, &[]),
+            failed("not_liberated")
+        );
     }
 
     #[test]
