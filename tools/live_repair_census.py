@@ -48,8 +48,8 @@ against a game that is still being played.
 ## ⚠ Where the numbers come from
 
 The harness's early stop is not re-implemented here: `below_leader_score_reading`
-(the one remaining rule — under 60 % of the leader's score after
-turn 150; it replaced #2319's three-axis reading) is imported from
+(the one remaining rule — after turn 50, strictly below half of the leader's
+score; it replaced #2319's three-axis reading) is imported from
 `tools/civ6_play.py` and fed the recorded events in file order, which is
 exactly what the live loop does. That section is a **check**.
 
@@ -344,7 +344,7 @@ def trade_reading(records: Iterable[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------
-# The early stop (below the leader's score after turn 150), replayed through
+# The early stop (below half of the leader's score after turn 50), replayed through
 # the harness's own function
 # --------------------------------------------------------------------------
 
@@ -363,11 +363,9 @@ def restart_reading(records: Iterable[dict], ratio: float, closing: dict) -> dic
     can say exactly is the **risk**: how many stopped games later climbed back
     over the score line, and how many were won.
 
-    Explicitly targeted Science summaries are exempt from the score stop for
-    the same reason as the live harness: score can lag a Science race until
-    Rocketry and launch projects complete. Keeping this replay lane-aware is
-    necessary; otherwise the census would disagree with the run it claims to
-    reproduce.
+    The standing score call applies to every victory target, including Science.
+    Keeping this replay tied to the live policy is necessary; otherwise the
+    census would disagree with the run it claims to reproduce.
     """
     state: dict[str, Any] = {}
     verdict = None

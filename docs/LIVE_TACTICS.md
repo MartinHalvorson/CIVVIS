@@ -1491,3 +1491,119 @@ move. A `preview` order is a question the mod answers with an event and
 `UNVERIFIABLE_ORDER_KINDS` already lists it, so the verdicts do not chase
 it. The wanted list is the last plan's; a replan frame within the turn
 reads the answers, the first frame of a turn asks.
+
+## 28. Where the army's units die, and the reach the danger field did not read (2026-09-02, opt-in gene `strike-reach`)
+
+**The reading that opened this.** The first seven live games with the
+planner on (`civvis-20260902T040909Z` battle-planner; `051414Z` version two;
+`055200Z` + siege-train, anvil; `075737Z`, `082617Z` + objective-board;
+`095330Z`, `111146Z` + requisitions; base segment plus the one continuation
+that played on, de-duplicated by turn) read, unit-vs-unit on the ledger's
+`engagement` block, army kills per loss **0.96, 0.77, 0.75, 1.44, 0.56, 0.90,
+1.58 — pooled 143:137 = 1.04** against the 33-run baseline's 1.2. Killed
+when wounded 50–78 % a game, wounded units within two of a hostile 40–80 %,
+healing 3–19 %. The rotation was firing — 108 "holds and fortifies" and 61
+"rotates out" lines in `095330Z` alone, 3 kill plans — and the units it
+moved were dying where it put them.
+
+**The taxonomy** (every military unit of ours killed by a unit, 145 over the
+seven games; `scratchpad/loss_taxonomy.py` joins the fatal `combat` row to
+the frame-0 state of the turn, the why.log `Battle plan:` line for that unit
+by axial position, its `orders.sqlite` rows and its refusal events):
+
+| class | n | share |
+|---|---|---|
+| a3 killed under 50 hp, no rotation line for it | 38 | 26 % |
+| b2 killed from ≥ 50 hp by one attacker | 32 | 22 % |
+| a2 rotated to a tile the field read as zero, killed there | 26 | 18 % |
+| a1 held on a tile the field read as zero, killed there | 14 | 10 % |
+| b killed from ≥ 50 hp by two or more attackers | 10 | 7 % |
+| g naval or embarked | 7 | 5 % |
+| e city or Encampment strike | 6 | 4 % |
+| i isolated, no friend within two | 6 | 4 % |
+| h a refused move or strike the turn before | 5 | 3 % |
+| d killed attacking (return damage) | 1 | 1 % |
+
+Across the 145: killer barbarian 79 %; wounded (< 50 hp) at the fatal blow
+62 %; the killer not in the frame-0 hostile list 27 % (33 of those 39 never
+seen in the seven turns before — a memory would not have helped); two or
+more attackers in the fatal turn 27 %; a strength gap of 15 or more between
+killer and victim 71 of the 118 with both strengths known (Warriors under
+Swordsmen and Men-at-Arms at t50–80, Pikemen under Field Cannons, Crossbowmen
+under Line Infantry); twelve of the a3 deaths were a ladder attack by a unit
+the planner had not ordered, which then stood beside its target.
+
+**The mechanism.** Of the 58 losses where the planner had stood the unit on
+a tile it read as zero (`rotates out … -0 where it stands`, or `holds`), 36
+killers were in the frame-0 hostile list; **34 of those 36 were within one
+move and a blow** of the tile (`scratchpad/reach_check.py`: hex distance ≤
+`max_moves` for melee, ≤ `max_moves − 1 + range` for ranged), **17 of them
+melee units at exactly two tiles**, nine already adjacent or in range. The
+danger field read a hostile's reach off `Game::attack_reach`, and the
+movement flood behind it (`flow_past`) writes zero movement into a tile that
+enters our zone of control — right for "can it move on", wrong for "can it
+still strike": the engine's own `approach_reach` says so, and a unit that
+stops in a zone of control keeps its movement for the blow (`do_attack`).
+So a melee unit two tiles off could not close and hit, a shooter one step
+out of range could not step and shoot, and every tile only such a unit could
+reach read as safe. The live host resolves the blow, and that is the shape
+of the a1/a2 rows.
+
+**`strike-reach`** (`src/ai/advanced/battle_planner.rs`, opt-in, off;
+separate from the version family so any version carries it). With it on,
+`DangerField` stands each visible hostile at the start of its own turn on the
+probe — full movement, no zone-of-control memory — reads `approach_reach` for
+the tiles it can end on with the movement it keeps there, and counts a melee
+blow on every neighbour of a stand with movement left and a ranged blow on
+every tile in range of one (a siege unit only from its own tile unless it may
+attack after moving). On the mirrored board — `MIRRORED_SEAT` with
+`Game::host_observed` filled, which no arena or screen board is — the ranged
+blow also drops the per-unit line-of-sight test: a Civilization VI ranged
+attack needs the target visible to the player, not a line from the unit, and
+the barbarian's other units see for it. Native boards keep the test. The kill
+plan, the rotation and the positions plan read the same field, so all three
+move with it. Census `strike_reach_widened` counts the hostiles whose strike
+reach held a tile the flood did not; one Detail line per plan when it fires.
+
+**The gate (§13), ci binaries of this branch, every number
+`advanced+battle-planner-2+strike-reach` less `advanced+battle-planner-2`.**
+
+- `battle_bench` control `advanced` v `advanced`, 60 seeds: +0.00 ± 0.00,
+  0 diverging. Treatment, 100 seeds × 2 seatings: default band **+56.7 ±
+  45.0 a seed (t 1.26; 53/46/1)**, exchange 1.05 v 0.95; four archers and
+  two warriors **+52.0 ± 36.5 (t 1.43; 55/42/3)**, 1.09 v 0.92; four
+  warriors and two spearmen **+38.3 ± 22.9 (t 1.67, p 0.094; 57/41/2)**,
+  1.12 v 0.89. Fires 100/100 in every cell.
+- `doctrine_arena` control, 12 seeds: +0.0, no divergence on any board.
+  Curriculum, 40 seeds × 2 roles: central_position **+61.5 ± 25.9 (t 2.38,
+  23/12)**, the_relief +61.8 ± 58.2, the_river_line +60.2 ± 78.1,
+  the_golden_bridge +15.5 ± 16.9, the_breakthrough +10.8, double_envelopment
+  +9.8, the_defile +7.0; oblique_order −16.8, the_storming −35.5 ± 106.3
+  (cities **+9/−5 v +5/−9**), the_reserve −34.8 ± 92.1, hammer_and_anvil
+  −38.5 ± 83.6, the_ridge −97.5 ± 95.0, lake_trasimene −114.5 ± 65.4.
+  Pooled −8.5 ± 18.0, kills per loss 0.99 v 1.01: a null on the posed
+  boards, where the enemy is the same engine and the flood's read is nearer
+  the truth.
+- The captured 60-engagement file (§20's, the boards the live seat actually
+  fought), 40 seeds × 2 roles — the row that is the number: healing on
+  **+29.8 ± 2.9 a seed (t 10.42; 1117 better / 687 worse)**, kills per loss
+  **1.10 against 0.91**; healing off **+26.0 ± 2.9 (t 8.89; 1086/630)**,
+  1.06 against 0.94. Cities on that file went the other way, +438/−513
+  against +513/−438 with healing on: a force that reads the garrison's true
+  reach assaults less, which is the trade the gene makes and the siege lane's
+  to answer.
+- Fires (`gene_screen --games 6 --jobs 3 --genes strike-reach --start-seed
+  97600100`, `docs/gene_screens/fires/strike-reach.json`): the gene fires;
+  six games say nothing more.
+
+**What this does not say.** The a3 row — a wounded unit the rotation logged
+nothing for — is next: the rotation skips a unit with no zero-danger tile in
+reach in silence (`safe.first()` is `None`, and the ladder plays it, which
+twelve times meant an attack), and the a3 sub-census reads 19 of 38 healthy
+at frame 0 and felled in one enemy turn, 12 ladder attacks, 11 turns the
+planner logged nothing at all. The strength-gap row is the largest single
+fact in the table and is not tactical: the export carries `upgrade_to` and
+`upgrade_cost` per unit, 375 unit-turns in `095330Z` had an offer, 213 with
+the Gold to cover it, and about seven were taken, because `upgrade_units`
+runs after the unit loop and `unit_gold_upgrade_offer` refuses a unit that
+has acted. Both are the next sections' work. Live reading: after the arm.
