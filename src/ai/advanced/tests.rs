@@ -42652,6 +42652,284 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
     );
 }
 
+// ── `commitment-owner-acts` ─────────────────────────────────────────────
+
+/// The nearest land tile exactly `distance` hexes from `home`, by position
+/// order, that a unit at `from` has a route step toward.
+fn owner_acts_site(game: &Game, from_unit: u32, home: Pos, distance: i32) -> Pos {
+    let mut candidates: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            game.wdist(**pos, home) == distance
+                && !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && game.units_at(**pos).is_empty()
+                && game.route_step(from_unit, **pos, 0).is_some()
+        })
+        .map(|(pos, _)| *pos)
+        .collect();
+    candidates.sort_unstable();
+    *candidates
+        .first()
+        .unwrap_or_else(|| panic!("no routable land tile sits {distance} hexes from the capital"))
+}
+
+/// A settler and a Builder the unit pass left standing — movement in hand,
+/// no order, a target each — walk their route step with the gene on, and
+/// stand exactly where they were with it off.
+#[test]
+fn a_forgotten_owner_walks_its_route_step_and_off_it_stands_still() {
+    use super::commitments::{Kind, Owner};
+
+    let (game, _capital, home) = empire_with_a_capital(71_201);
+    let fixture = || {
+        let mut game = game.clone();
+        let start = anchor_at(&game, home, 1);
+        let settler = game.spawn_test_unit("settler", 0, start);
+        let builder = game.spawn_test_unit("builder", 0, start);
+        let far = owner_acts_site(&game, settler, home, 6);
+        let near = owner_acts_site(&game, builder, home, 3);
+        (game, settler, builder, far, near, start)
+    };
+
+    let (mut game, settler, builder, far, near, start) = fixture();
+    let mut ai = AdvancedAi::new();
+    ai.enable_commitment_owner_acts();
+    ai.settler_targets.insert(settler, far);
+    ai.builder_targets.insert(builder, near);
+    // Register both decisions, then read one forgotten turn so the journal
+    // line carries a streak.
+    ai.reconcile_commitments(&mut game, 0);
+    game.turn += 1;
+    ai.reconcile_commitments(&mut game, 0);
+    assert_eq!(
+        ai.commitments()
+            .open_for(Kind::Settle, Owner::Unit(settler))
+            .map(|c| c.forgotten_streak),
+        Some(1)
+    );
+    let settler_before = game.wdist(game.units[&settler].pos, far);
+    let builder_before = game.wdist(game.units[&builder].pos, near);
+    assert!(!game.units[&settler].acted && game.units[&settler].moves_left > 0.0);
+    ai.commitment_owners_act(&mut game, 0);
+    assert!(game.units[&settler].acted, "the settler was ordered");
+    assert!(
+        game.wdist(game.units[&settler].pos, far) < settler_before,
+        "the settler stepped toward its site"
+    );
+    assert!(game.units[&builder].acted, "the Builder was ordered");
+    assert!(
+        game.units[&builder].pos != start
+            && game.wdist(game.units[&builder].pos, near) <= builder_before,
+        "the Builder stepped along its route: {:?} -> {:?} for {near:?}",
+        start,
+        game.units[&builder].pos
+    );
+    assert_eq!(
+        ai.settler_targets.get(&settler),
+        Some(&far),
+        "the decision stands"
+    );
+    assert_eq!(ai.builder_targets.get(&builder), Some(&near));
+    assert_eq!(
+        game.players[0].counters.get("commit:settle:owner_stepped"),
+        Some(&1)
+    );
+    assert_eq!(
+        game.players[0].counters.get("commit:improve:owner_stepped"),
+        Some(&1)
+    );
+    // The ledger's reading at the boundary: acted, so not forgotten.
+    ai.reconcile_commitments(&mut game, 0);
+    assert_eq!(
+        ai.commitments()
+            .open_for(Kind::Settle, Owner::Unit(settler))
+            .map(|c| c.forgotten_streak),
+        Some(0)
+    );
+
+    let (mut game, settler, builder, far, near, _start) = fixture();
+    let mut off = AdvancedAi::new();
+    off.settler_targets.insert(settler, far);
+    off.builder_targets.insert(builder, near);
+    let settler_at = game.units[&settler].pos;
+    off.commitment_owners_act(&mut game, 0);
+    assert_eq!(game.units[&settler].pos, settler_at, "off: nothing moves");
+    assert!(!game.units[&settler].acted && !game.units[&builder].acted);
+    assert!(game.players[0]
+        .counters
+        .keys()
+        .all(|key| !key.contains("owner_")));
+    assert_eq!(off.settler_targets.get(&settler), Some(&far));
+}
+
+/// A decision whose next step is illegal is released, not held: the target
+/// leaves the map, the site is parked for the hysteresis window, and the
+/// ledger ends it as `released`. A Builder pinned to a tile nothing fits —
+/// the city centre — is released the same way.
+#[test]
+fn an_owner_with_no_legal_step_releases_the_decision_and_parks_the_site() {
+    use super::commitments::{Kind, Owner};
+
+    let (mut game, _capital, home) = empire_with_a_capital(71_202);
+    let start = anchor_at(&game, home, 1);
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let builder = game.spawn_test_unit("builder", 0, home);
+    let unroutable = {
+        let mut tiles: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.wdist(*pos, start) >= 3 && game.route_step(settler, *pos, 0).is_none()
+            })
+            .collect();
+        tiles.sort_unstable();
+        *tiles
+            .first()
+            .expect("a tile the settler has no route step toward")
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_commitment_owner_acts();
+    ai.plan = Some(StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    });
+    ai.settler_targets.insert(settler, unroutable);
+    ai.builder_targets.insert(builder, home);
+    ai.reconcile_commitments(&mut game, 0);
+    game.turn += 1;
+    ai.commitment_owners_act(&mut game, 0);
+    assert!(
+        !ai.settler_targets.contains_key(&settler),
+        "the unroutable site is released"
+    );
+    assert!(
+        ai.settler_site_is_dead(settler, unroutable),
+        "and parked for this settler"
+    );
+    assert!(!game.units[&settler].acted, "released, not walked");
+    assert!(
+        !ai.builder_targets.contains_key(&builder),
+        "the city centre nothing fits is released"
+    );
+    assert_eq!(
+        ai.builder_avoid.get(&builder).map(|(tile, _)| *tile),
+        Some(home)
+    );
+    assert_eq!(
+        ai.commitments().endings.get(&(Kind::Settle, "released")),
+        Some(&1)
+    );
+    assert_eq!(
+        ai.commitments().endings.get(&(Kind::Improve, "released")),
+        Some(&1)
+    );
+    assert!(ai
+        .commitments()
+        .open_for(Kind::Settle, Owner::Unit(settler))
+        .is_none());
+    assert_eq!(ai.commitment_census().settle.abandoned, 1);
+    assert_eq!(
+        game.players[0].counters.get("commit:settle:owner_released"),
+        Some(&1)
+    );
+    assert_eq!(
+        game.players[0].counters.get("commit:improve:released"),
+        Some(&1)
+    );
+}
+
+/// The civilian-safety flee keeps priority. A settler standing inside a
+/// barbarian's reach is never pushed toward its site by the gene: with the
+/// flee off, the decision is released where it stands; with the flee on, the
+/// flee has already moved the settler and the gene leaves that order alone.
+#[test]
+fn the_flee_keeps_priority_over_the_owner_step() {
+    use super::commitments::{Kind, Owner};
+
+    let (game0, _capital, home) = empire_with_a_capital(71_203);
+    let fixture = || {
+        let mut game = game0.clone();
+        game.players[1].is_barbarian = true;
+        game.barb_pid = Some(1);
+        let post = anchor_at(&game, home, 4);
+        let settler = game.spawn_test_unit("settler", 0, post);
+        let beside = game
+            .nbrs(post)
+            .into_iter()
+            .filter(|pos| {
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            })
+            .min()
+            .expect("a land tile beside the settler");
+        let raider = game.spawn_test_unit("warrior", 1, beside);
+        let site = owner_acts_site(&game, settler, home, 8);
+        (game, settler, raider, site)
+    };
+
+    // Flee off: the gene releases the decision and does not move the unit.
+    let (mut game, settler, _raider, site) = fixture();
+    let mut ai = AdvancedAi::new();
+    ai.enable_commitment_owner_acts();
+    ai.settler_targets.insert(settler, site);
+    ai.reconcile_commitments(&mut game, 0);
+    game.turn += 1;
+    let at = game.units[&settler].pos;
+    ai.commitment_owners_act(&mut game, 0);
+    assert_eq!(game.units[&settler].pos, at, "not pushed toward the site");
+    assert!(!game.units[&settler].acted);
+    assert!(!ai.settler_targets.contains_key(&settler), "released");
+    assert!(ai.settler_site_is_dead(settler, site));
+    assert_eq!(
+        ai.commitments().endings.get(&(Kind::Settle, "released")),
+        Some(&1)
+    );
+    assert_eq!(
+        game.players[0].counters.get("commit:settle:owner_released"),
+        Some(&1)
+    );
+
+    // Flee on: the flee moves the settler first, and the gene neither
+    // re-orders it nor releases the decision it is still walking.
+    let (mut game, settler, _raider, site) = fixture();
+    let mut both = AdvancedAi::new();
+    both.enable_civilian_out_of_reach();
+    both.enable_commitment_owner_acts();
+    both.settler_targets.insert(settler, site);
+    both.reconcile_commitments(&mut game, 0);
+    game.turn += 1;
+    let at = game.units[&settler].pos;
+    let fled = both.civilian_flee_step(&mut game, 0, settler);
+    assert_eq!(fled, Some(true), "the flee decides the settler's turn");
+    let fled_to = game.units[&settler].pos;
+    assert_ne!(fled_to, at);
+    both.commitment_owners_act(&mut game, 0);
+    assert_eq!(game.units[&settler].pos, fled_to, "the flee's order stands");
+    assert_eq!(
+        both.settler_targets.get(&settler),
+        Some(&site),
+        "the decision stands"
+    );
+    assert!(game.players[0]
+        .counters
+        .keys()
+        .all(|key| !key.contains("owner_")));
+    assert!(both
+        .commitments()
+        .open_for(Kind::Settle, Owner::Unit(settler))
+        .is_some());
+}
 // ═══ wounded-out-of-reach ═══════════════════════════════════════════════════
 
 /// `wounded-out-of-reach` is a native opt-in, off in both controllers, with
@@ -43455,4 +43733,282 @@ fn settler_target_floor_never_picks_a_site_under_it() {
         }
     }
     assert!(checked > 0, "the fixture never offered a settler a target");
+}
+
+// ── settler-walk-deadline ────────────────────────────────────────────────
+//
+// See `advanced/settler_walk_deadline.rs`: an opening Settler out of a city
+// past the deadline founds the best legal site within reach.
+
+use super::settler_walk_deadline::{
+    SETTLER_WALK_DEADLINE_RADIUS, SETTLER_WALK_DEADLINE_STEP_MARGIN,
+    SETTLER_WALK_DEADLINE_VALUE_SHARE,
+};
+
+/// A board with two settled capitals and a lone Settler on open ground far
+/// enough from both that the tiles around it are legal city sites.
+fn walk_deadline_board(seed: u64) -> (Game, u32) {
+    let (mut game, home) = camp_bounty_board(seed);
+    let far = open_ground_at(&game, home, 7);
+    let settler = game.spawn_test_unit("settler", 0, far);
+    (game, settler)
+}
+
+/// A walk clock that began on turn one and has run `out` turns.
+fn walk_out(ai: &mut AdvancedAi, game: &Game, settler: u32, out: u32) {
+    ai.settler_walk_clock.insert(settler, (1, game.turn, out));
+}
+
+#[test]
+fn settler_walk_deadline_is_off_by_default_and_toggles() {
+    assert!(
+        !AdvancedAi::new().settler_walk_deadline,
+        "an opt-in ships off"
+    );
+    assert!(!AdvancedAi::legacy().settler_walk_deadline);
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    assert!(ai.settler_walk_deadline);
+    ai.disable_settler_walk_deadline();
+    assert!(!ai.settler_walk_deadline);
+    assert!(
+        GENES
+            .iter()
+            .any(|gene| gene.tag == "settler-walk-deadline" && gene.opt_in()),
+        "registered as an opt-in"
+    );
+}
+
+#[test]
+fn the_walk_clock_counts_turns_out_of_a_city_and_follows_the_unit() {
+    let (mut game, home) = camp_bounty_board(93_200);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    // On the city tile: the clock starts but a turn at home is not a turn out.
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (game.turn, 0));
+    game.turn += 1;
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (game.turn - 1, 0));
+    // Out on open ground: one turn out per turn, noted once however often
+    // the step runs in a turn.
+    let began = game.turn - 1;
+    game.units.get_mut(&settler).unwrap().pos = open_ground_at(&game, home, 5);
+    game.turn += 1;
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (began, 1));
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (began, 1));
+    game.turn += 1;
+    assert_eq!(ai.note_settler_walk(&game, 0, settler), (began, 2));
+    assert_eq!(ai.settler_turns_out(settler), 2);
+    // Settler memory: it follows a live-bridge id remap and dies with the unit.
+    let mut map = BTreeMap::new();
+    map.insert(settler, settler + 1000);
+    ai.remap_unit_memory(&map);
+    assert_eq!(ai.settler_turns_out(settler + 1000), 2);
+    assert_eq!(ai.settler_turns_out(settler), 0);
+    ai.forget_unit_memory();
+    assert!(ai.settler_walk_clock.is_empty());
+}
+
+#[test]
+fn a_settler_inside_its_deadline_is_left_to_the_ordinary_step() {
+    let (mut game, settler) = walk_deadline_board(93_201);
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    let cities = game.cities.len();
+    // No clock yet: the first step starts it at zero turns out.
+    assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
+    assert_eq!(ai.settler_turns_out(settler), 0);
+    // A clock one turn short of the deadline is still inside it.
+    let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
+    assert!(
+        deadline >= 2,
+        "the deadline is turns, not a moment: {deadline}"
+    );
+    game.turn += 1;
+    walk_out(&mut ai, &game, settler, deadline - 1);
+    assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
+    assert_eq!(
+        game.cities.len(),
+        cities,
+        "nothing founded inside the deadline"
+    );
+    assert!(game.units.contains_key(&settler));
+    // A walk that began after the band turn is the ordinary search's, however
+    // long it runs: the gene is about the opening.
+    game.turn += 1;
+    ai.settler_walk_clock.insert(
+        settler,
+        (
+            AdvancedAi::expansion_band_turn(&game) + 1,
+            game.turn,
+            deadline + 5,
+        ),
+    );
+    assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
+    assert_eq!(game.cities.len(), cities);
+}
+
+#[test]
+fn the_deadline_pick_is_the_best_legal_site_within_reach() {
+    let (game, settler) = walk_deadline_board(93_202);
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    let here = game.units[&settler].pos;
+    // Independently: every legal, reachable tile within the radius, the
+    // tile underfoot free and every other charged the step margin.
+    let expected = game
+        .wdisk(here, SETTLER_WALK_DEADLINE_RADIUS)
+        .into_iter()
+        .filter(|pos| {
+            ai.base.valid_settle_site(&game, 0, *pos)
+                && (*pos == here || game.route_step(settler, *pos, 0).is_some())
+        })
+        .map(|pos| {
+            let margin = if pos == here {
+                0.0
+            } else {
+                SETTLER_WALK_DEADLINE_STEP_MARGIN
+            };
+            (pos, ai.settle_value(&game, 0, pos) - margin)
+        })
+        .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+        .expect("open ground seven tiles from the capital has a legal site within two");
+    let picked = ai
+        .settler_walk_deadline_site(&game, 0, settler)
+        .expect("the deadline finds a site");
+    assert_eq!(
+        picked.0, expected.0,
+        "the pick is the argmax: {picked:?} vs {expected:?}"
+    );
+    assert!((picked.1 - expected.1).abs() < 1e-9);
+    assert!(
+        game.wdist(picked.0, here) <= SETTLER_WALK_DEADLINE_RADIUS,
+        "never farther than the radius"
+    );
+    // The site the Settler was walking to sets a floor: a plan worth far
+    // more than anything within reach is not traded for a wasteland.
+    let mut game = game;
+    let rich = open_ground_at(&game, here, 6);
+    let rich_value = ai.settle_value(&game, 0, rich);
+    if rich_value * SETTLER_WALK_DEADLINE_VALUE_SHARE > picked.1 {
+        ai.settler_targets.insert(settler, rich);
+        assert_eq!(
+            ai.settler_walk_deadline_site(&game, 0, settler),
+            None,
+            "nothing within reach clears half of {rich_value:.1}"
+        );
+        ai.settler_targets.remove(&settler);
+    }
+    // A tile another own Settler already owns is not taken from it.
+    let other = game.spawn_test_unit("settler", 0, open_ground_at(&game, here, 5));
+    ai.settler_targets.insert(other, picked.0);
+    let again = ai.settler_walk_deadline_site(&game, 0, settler);
+    assert_ne!(
+        again.map(|(pos, _)| pos),
+        Some(picked.0),
+        "a reserved site is skipped"
+    );
+}
+
+#[test]
+fn a_settler_past_its_deadline_founds_within_reach_and_says_so() {
+    let (mut game, settler) = walk_deadline_board(93_203);
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    let journal = crate::reasoning::Journal::recording();
+    ai.attach_journal(journal.handle());
+    let here = game.units[&settler].pos;
+    let cities = game.cities.len();
+    let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
+    game.turn += deadline;
+    walk_out(&mut ai, &game, settler, deadline);
+    let (site, _) = ai
+        .settler_walk_deadline_site(&game, 0, settler)
+        .expect("a site within reach");
+    // Up to three turns: found underfoot at once, or a safe step or two
+    // over whatever ground lies between, then found.
+    let mut founded_at = None;
+    for _ in 0..3 {
+        if let Some(unit) = game.units.get_mut(&settler) {
+            unit.moves_left = 2.0;
+            unit.acted = false;
+        }
+        let acted = ai.advanced_settler_step(&mut game, 0, settler);
+        assert!(acted, "the deadline acts every turn it holds");
+        if game.cities.len() > cities {
+            founded_at = Some(site);
+            break;
+        }
+        assert_eq!(
+            ai.settler_targets.get(&settler),
+            Some(&site),
+            "the step marches on the deadline's site"
+        );
+        game.turn += 1;
+    }
+    let journal: Vec<String> = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|thought| format!("{} | {}", thought.headline, thought.detail))
+        .collect();
+    let founded_at = founded_at.unwrap_or_else(|| {
+        panic!(
+            "founded within three turns of the deadline; settler at {:?}, site {site:?}, \
+             journal:\n{}",
+            game.units.get(&settler).map(|unit| unit.pos),
+            journal.join("\n")
+        )
+    });
+    assert_eq!(game.cities.len(), cities + 1);
+    assert!(
+        game.wdist(founded_at, here) <= SETTLER_WALK_DEADLINE_RADIUS,
+        "the city stands within reach of where the walk ended"
+    );
+    assert!(
+        game.city_at(founded_at).is_some(),
+        "the city is on the chosen site"
+    );
+    assert!(
+        !game.units.contains_key(&settler),
+        "the Settler became the city"
+    );
+    assert!(
+        journal
+            .iter()
+            .any(|line| line.contains("at the walk deadline")),
+        "the founding names the deadline; journal:\n{}",
+        journal.join("\n")
+    );
+}
+
+#[test]
+fn the_walk_deadline_off_leaves_the_clock_and_the_step_alone() {
+    let (mut game, settler) = walk_deadline_board(93_204);
+    let mut ai = AdvancedAi::new();
+    let journal = crate::reasoning::Journal::recording();
+    ai.attach_journal(journal.handle());
+    let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
+    game.turn += deadline;
+    ai.advanced_settler_step(&mut game, 0, settler);
+    assert!(
+        ai.settler_walk_clock.is_empty(),
+        "without the gene the walk clock is never kept"
+    );
+    // Even with a clock past the deadline, the gene off is inert.
+    walk_out(&mut ai, &game, settler, deadline + 3);
+    if let Some(unit) = game.units.get_mut(&settler) {
+        unit.moves_left = 2.0;
+        unit.acted = false;
+    }
+    assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
+    ai.advanced_settler_step(&mut game, 0, settler);
+    assert!(
+        !journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.headline.contains("walk deadline")),
+        "the deadline never speaks while the gene is off"
+    );
 }
