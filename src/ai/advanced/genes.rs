@@ -1903,7 +1903,10 @@ pub const GENES: &[Gene] = &[
     // `siege-preempts-the-queue` (2026-09-01): a raider within three tiles of a
     // city is answered before anything else is built — a queue holding a
     // Settler switches to the ring's unit answer, a city with no defender at
-    // all buys it, and a Scout is not a defender. Live run
+    // all buys it, and a Scout is not a defender. The live bridge also uses
+    // this operator-armed flag to expose the existing major-war city handoff
+    // for a named battlefront threat; the handoff runs before same-turn peace
+    // can clear the planning clone's war state. Live run
     // civvis-20260901T193130Z: one city at t49, two Settlers pinned on the
     // capital tile for 14 and 7 turns by a Slinger adjacent to it, no military
     // unit at all t29–t35, 155–198 Gold banked. OptIn like `settler-site-gate`:

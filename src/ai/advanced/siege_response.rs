@@ -65,6 +65,14 @@
 //! adjacent to the Settler — the one whose zone of control holds it — is
 //! preferred.
 //!
+//! The same operator-armed `siege-preempts-the-queue` treatment also exposes
+//! the existing major-war city handoff to the live bridge when the current
+//! battlefront names a threatened city. A visible hostile with a legal
+//! City-Center attack makes a local melee defender outrank Walls; otherwise
+//! the ordinary wall-first major-war answer remains. The handoff runs before
+//! diplomacy can accept a same-turn peace offer, because that offer clears the
+//! planning clone's war state immediately.
+//!
 //! Off (the defaults) nothing here runs.
 use super::civilian_safety::REACH_SCAN_RADIUS;
 use super::AdvancedAi;

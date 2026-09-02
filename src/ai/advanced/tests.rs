@@ -719,6 +719,84 @@ fn major_war_threat_preempts_an_undamaged_settler_queue() {
 }
 
 #[test]
+fn armed_siege_preempts_an_imminent_major_war_queue_with_a_defender() {
+    // A named city can be full-health and still be one legal attack away from
+    // falling. The live arm already carries `siege-preempts-the-queue`; that
+    // gate must reach the existing major-war handoff before damage is exported.
+    let (mut game, city, _) = empire_with_a_capital(71_146);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.turn = 90;
+    game.at_war.insert((0, 1));
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&city).expect("capital exists").pop = 2;
+
+    let city_pos = game.cities[&city].pos;
+    let attack_tile =
+        game.nbrs(city_pos)
+            .into_iter()
+            .find(|position| {
+                *position != city_pos
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the city needs an accessible attack tile");
+    let horseman = game.spawn_test_unit("horseman", 1, attack_tile);
+    assert!(game.player_can_see(0, attack_tile));
+    assert!(game.attack_reach(horseman).contains(&city_pos));
+
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    assert!(game.can_produce(0, city, &settler));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: settler.clone(),
+        },
+    )
+    .expect("queue the unsafe expansion commitment");
+
+    let mut pipeline = game.clone();
+    let mut pipeline_ai = AdvancedAi::new();
+    pipeline_ai.enable_siege_preempts_the_queue();
+    pipeline_ai.take_turn(&mut pipeline, 0);
+    assert!(
+        matches!(pipeline.cities[&city].queue.first(), Some(Item::Unit { unit }) if pipeline.rules.units[unit].is_melee_capable()),
+        "the full turn pipeline must defend before diplomacy can clear the war: {:?}",
+        pipeline.cities[&city].queue.first()
+    );
+
+    let mut unobserved = AdvancedAi::new();
+    unobserved.enable_siege_preempts_the_queue();
+    unobserved.battlefront_observation = false;
+    unobserved.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&settler),
+        "the armed treatment must not bypass the live battlefront gate"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_siege_preempts_the_queue();
+    live.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+    let Some(Item::Unit { unit }) = game.cities[&city].queue.first().cloned() else {
+        panic!("an imminent major-war city must reclaim its queue for a defender");
+    };
+    assert_ne!(unit, crate::name!("settler"));
+    assert!(
+        game.rules.units[&unit].is_melee_capable(),
+        "the imminent defense must be locally holdable, not {unit}"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy
