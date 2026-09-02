@@ -186,7 +186,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `anvil` | off (unmeasured) | The land group nearest a threatened city of ours holds it as a formation — a shooter on the centre, melee on the front tiles that face the enemy, the rest within two, the wounded rotated into the city — in place of the relief hold point. | 1 \| 1 |
-| `battle-planner-2` | off (unmeasured) | Version two of `battle_planner`: the positions plan — slots laid against the enemy contact and the objective, a minimum-cost assignment with reservations, moves front to rear, pacing on the approach — joins the kill plan and the heal rotation. | 1 \| 2 |
+| `battle-planner-2` | off (unmeasured) | Version two of `battle_planner`: the positions plan — slots laid against the enemy contact and the objective, a minimum-cost assignment with reservations, moves front to rear, pacing on the approach — joins the kill plan and the heal rotation. | 1 \| 3 |
+| `battle-planner-3` | off (unmeasured) | `battle-planner-3`: version three of `battle_planner` — the siege's taker left to the siege, the host's strike preview over the closed form, and the previews asked for. | 1 \| 3 |
 | `boosted-bargain-first-2` | off (unmeasured) | Let a one-turn boosted technology break a close ordinary fallback decision after every forced lane goal stands down. | 1 \| 2 |
 | `border-parity-3` | off (unmeasured) | Version three of `border-parity`: fill one local garrison debt only when two visible non-recon land bodies from the same peaceful major are staged beside the city. | 1 \| 3 |
 | `conversion-majority-alarm-2` | off (unmeasured) | Read each rival civilization's progress toward its own majority, then use the least-converted holdout as the conjunctive victory clock. | 1 \| 2 |
