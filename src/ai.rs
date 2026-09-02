@@ -78,11 +78,25 @@ const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
 /// afresh, if it is not reached, revealed or written off first. See
 /// `BasicAi::explore_commit`.
 const EXPLORE_COMMIT_TURNS: u32 = 20;
-/// How many rings past the first fogged one a committed explorer looks when it
-/// picks a goal — twice the stock lookahead, because a goal within a scout's
-/// own sight of the fringe is revealed by the walk toward it and re-chosen
-/// next turn, which is the pacing this replaces. See `BasicAi::explore_commit`.
+/// How many rings past the first fogged one a committed explorer normally
+/// looks when it picks a goal — twice the stock lookahead, because a goal
+/// within a scout's own sight of the fringe is revealed by the walk toward it
+/// and re-chosen next turn, which is the pacing this replaces. See
+/// `BasicAi::explore_commit`.
 const EXPLORE_COMMIT_LOOKAHEAD: i32 = 8;
+/// An empire that still has city-states to meet needs one genuine expedition,
+/// not another pass around its nearest fogged ring. This is about seven Scout
+/// turns on open land — enough to cross a normal continent or use a coastal
+/// passage — while the twenty-turn commitment still leaves room to respond to
+/// a revealed danger. See `BasicAi::exploration_goal`.
+const EXPLORE_CONTACT_SWEEP_LOOKAHEAD: i32 = 20;
+/// The number of highest-value long-range contact targets whose actual routes
+/// are checked before retaining one. A known closed border can make the
+/// geometrically best horizon unreachable to a Scout; trying a bounded set
+/// keeps that fact from turning a live expedition into a blind twenty-turn
+/// commitment. If they are all blocked, the ordinary local commitment takes
+/// over.
+const EXPLORE_CONTACT_SWEEP_ROUTE_PROBES: usize = 24;
 /// Another explorer's committed goal keeps this one out of the ground around
 /// it, so two scouts fan out instead of shaving the same fringe. See
 /// `BasicAi::explore_commit`.
@@ -2718,11 +2732,15 @@ pub struct BasicAi {
     /// With this on, a chosen goal is held (`explore_goal`) until it is
     /// reached, revealed, written off (`explore_dead_targets`), within
     /// `EXPLORE_COMMIT_THREAT_RADIUS` of a visible hostile, or twenty turns
-    /// old; a fresh one is picked from eight rings past the first fogged one,
-    /// the most revealing first and, among those, the one FARTHEST FROM HOME —
-    /// so the walk sweeps outward and along the frontier instead of hugging
-    /// it; ground around a visible hostile is not a goal; and ground within
-    /// four tiles of another own explorer's held goal is left to that explorer.
+    /// old; a fresh one is picked from eight rings past the first fogged one.
+    /// In a live verification game, a recon unit with city-states still unmet
+    /// instead gets twenty rings: the most revealing first and, among those,
+    /// the one FARTHEST FROM HOME — so the walk sweeps outward and along the
+    /// frontier instead of hugging it. The long contact horizon is checked
+    /// against a real route before it is held: a Scout does not spend twenty
+    /// turns trying to cross known closed borders. Ground around a visible
+    /// hostile is not a goal; and ground within four tiles of another own
+    /// explorer's held goal is left to that explorer.
     ///
     /// Measured (`explore_commit_sweeps_more_ground`, 16 six-seat Continents
     /// boards at the live size, seat 0 the bridge controller, everyone else
@@ -2731,9 +2749,12 @@ pub struct BasicAi {
     /// majors met level. Commitment alone measured level with stock
     /// (178/277/387) and commitment + depth + outward without the threat rule
     /// 180/289/419: the box is the flee-and-return loop as much as the churn.
-    /// On for production Advanced (`promoted_policy_envoy`) and the
-    /// Civilization VI bridge (`AdvancedAi::enable_explore_commit`); Basic
-    /// and the frozen `advanced_v1` anchor keep the stock nearest-fog rule.
+    /// Commitment is on for production Advanced (`promoted_policy_envoy`) and
+    /// the Civilization VI bridge (`AdvancedAi::enable_explore_commit`); the
+    /// extra contact expedition additionally requires the bridge's
+    /// `explore_dead_targets` guard, so native screens retain their established
+    /// cost profile. Basic and the frozen `advanced_v1` anchor keep the stock
+    /// nearest-fog rule.
     pub(crate) explore_commit: bool,
     /// Per unit: the committed exploration goal and the turn it was chosen.
     /// See `explore_commit`.
@@ -14756,6 +14777,20 @@ impl BasicAi {
             .collect()
     }
 
+    /// Whether first-contact Envoys are still on the map. The controller knows
+    /// how many minor powers joined the game, but not where their cities are;
+    /// this only changes the depth of a fog-first search and never reads a
+    /// hidden city, unit, or tile memory.
+    fn city_state_contacts_remain(g: &Game, pid: usize) -> bool {
+        g.players.iter().any(|player| {
+            player.alive
+                && player.is_minor
+                && !player.is_barbarian
+                && !player.is_free_city
+                && !g.has_met(pid, player.id)
+        })
+    }
+
     /// Choose an unexplored target for a reconnaissance unit.
     ///
     /// The frozen controllers keep the historical nearest-fog rule.  The
@@ -14854,7 +14889,20 @@ impl BasicAi {
             }
         }
         let reserved = self.reserved_explore_goals(g, pid, uid);
-        let lookahead = if self.explore_commit || island_home.is_some() {
+        // The ordinary committed sweep stops eight rings beyond the first
+        // fog, which is right once the table is known. A live Civ VI host can
+        // accept a fog order yet leave the unit unmoved, and carries the target
+        // retirement guard that proves that case. While that live bridge still
+        // has city-states to meet, send one Scout on a continent-crossing
+        // search. The destination is route-checked below, so a foreign border
+        // cannot consume the whole commitment.
+        let contact_sweep = self.explore_commit
+            && self.explore_dead_targets
+            && g.rules.units[g.units[&uid].kind].promotion_class == "recon"
+            && Self::city_state_contacts_remain(g, pid);
+        let lookahead = if contact_sweep {
+            EXPLORE_CONTACT_SWEEP_LOOKAHEAD
+        } else if self.explore_commit || island_home.is_some() {
             EXPLORE_COMMIT_LOOKAHEAD
         } else {
             EXPLORATION_FRONTIER_LOOKAHEAD
@@ -14913,7 +14961,43 @@ impl BasicAi {
             }
             radius += 1;
         }
-        let chosen = if let Some(home_landmass) = island_home.as_ref() {
+        let chosen = if contact_sweep {
+            // Rank exactly as the committed sweep would, but keep trying the
+            // best horizons until one has a route through territory the unit
+            // may actually enter. `route_step` keeps a Scout on its side of a
+            // known closed border without inspecting hidden actors.
+            candidates.sort_by_key(|target| {
+                std::cmp::Reverse((
+                    island_home.as_ref().map_or(0, |home_landmass| {
+                        self.island_landfall_value(g, pid, uid, *target, home_landmass)
+                    }),
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    home.map_or(0, |home| g.wdist(home, *target)),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                ))
+            });
+            candidates
+                .iter()
+                .take(EXPLORE_CONTACT_SWEEP_ROUTE_PROBES)
+                .find(|target| g.route_step(uid, **target, 0).is_some())
+                .copied()
+                // If the sampled long horizons are barred, return to the
+                // ordinary local commitment rather than holding a known-bad
+                // far destination for twenty turns. The candidates are still
+                // in rank order, so this is the same preference the regular
+                // committed sweep uses inside its normal horizon.
+                .or_else(|| {
+                    first_candidate_ring.and_then(|first| {
+                        candidates
+                            .iter()
+                            .find(|target| {
+                                g.wdist(origin, **target) <= first + EXPLORE_COMMIT_LOOKAHEAD
+                            })
+                            .copied()
+                    })
+                })
+        } else if let Some(home_landmass) = island_home.as_ref() {
             // Once home is nearly full, a visible foreign landfall outranks an
             // equally revealing patch of empty water. If none is visible, the
             // normal frontier term still sends the ship into fresh water.
@@ -20544,6 +20628,191 @@ mod tests {
         );
         carried.forget_unit_memory();
         assert!(carried.explore_goal.borrow().is_empty());
+    }
+
+    /// An unmet city-state is enough reason to cross the continent, but not
+    /// enough information to know which direction it lies. This deliberately
+    /// leaves only one long fog corridor: the destination selector can see
+    /// terrain and its own fog, while the contact remains hidden until the
+    /// Scout's sight reaches it.
+    #[test]
+    fn an_unmet_city_state_sends_a_scout_on_a_long_contact_sweep() {
+        const CONTACT_DISTANCE: i32 = 20;
+        let mut game = Game::new_full(
+            1,
+            74,
+            46,
+            crate::rng::fixture_seed("CONTACTSWEEP", 91_782),
+            250,
+            1,
+            false,
+        );
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("fixture has one city-state");
+        let minor_city = game.player_city_ids(minor)[0];
+        let ray_from = |origin: Pos| {
+            let mut current = origin;
+            let mut ray = Vec::new();
+            for distance in 1..=CONTACT_DISTANCE {
+                current = game.nbrs(current).into_iter().find(|position| {
+                    game.map.tiles.contains_key(position)
+                        && game.wdist(origin, *position) == distance
+                })?;
+                ray.push(current);
+            }
+            Some(ray)
+        };
+        let (home, ray) = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find_map(|position| ray_from(position).map(|ray| (position, ray)))
+            .expect("the standard board has a twenty-tile land corridor");
+
+        // A flat continent makes the movement question deterministic. The
+        // city-state itself is placed at the far end only after the map is
+        // made, and stays in fog until the Scout sees it.
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.cliff_edges = [false; 6];
+        }
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("the major opens with a Settler");
+        game.relocate(settler, home);
+        game.current = 0;
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the clear home tile is a legal capital");
+        let contact = *ray.last().expect("twenty-tile ray");
+        game.cities.get_mut(&minor_city).unwrap().pos = contact;
+        game.map.tiles.get_mut(&contact).unwrap().owner_city = Some(minor_city);
+        for player in game.players.iter_mut() {
+            player.met.clear();
+        }
+
+        let scout = game.spawn_test_unit("scout", 0, home);
+        let charted: std::collections::BTreeSet<Pos> = game.map.tiles.keys().copied().collect();
+        game.players[0].explored = charted;
+        for position in &ray {
+            game.players[0].explored.remove(position);
+        }
+        assert!(
+            !game.has_met(0, minor),
+            "the city-state must stay unknown until the Scout's own sight finds it"
+        );
+
+        let mut ai = BasicAi::new();
+        ai.enable_explore_commit();
+        ai.enable_explore_dead_targets();
+        let goal = ai
+            .exploration_goal(&game, 0, scout, true)
+            .expect("the fog corridor has a destination");
+        assert!(
+            game.wdist(home, goal) > EXPLORE_COMMIT_LOOKAHEAD + 1,
+            "an unmet city-state warrants a continent-scale goal, got {goal:?} at {}",
+            game.wdist(home, goal)
+        );
+        assert!(
+            game.route_step(scout, goal, 0).is_some(),
+            "the held long horizon has an actual route"
+        );
+
+        // The continent sweep is an expedition assignment for a recon unit,
+        // not a map-wide pathfinding policy for every unit that happens to
+        // fall through to generic exploration.
+        let mut non_recon = game.clone();
+        let warrior = non_recon.spawn_test_unit("warrior", 0, home);
+        let mut ordinary_ai = BasicAi::new();
+        ordinary_ai.enable_explore_commit();
+        ordinary_ai.enable_explore_dead_targets();
+        let ordinary_goal = ordinary_ai
+            .exploration_goal(&non_recon, 0, warrior, true)
+            .expect("the ordinary explorer has a local frontier");
+        let first_local_frontier = non_recon
+            .map
+            .tiles
+            .keys()
+            .filter(|position| !non_recon.players[0].explored.contains(position))
+            .filter(|position| {
+                non_recon.map.get(**position).is_some_and(|tile| {
+                    non_recon.rules.is_passable(tile) && !non_recon.rules.is_water(tile)
+                })
+            })
+            .map(|position| non_recon.wdist(home, *position))
+            .min()
+            .expect("the fog corridor has a first local frontier");
+        assert!(
+            non_recon.wdist(home, ordinary_goal)
+                <= first_local_frontier + EXPLORE_COMMIT_LOOKAHEAD,
+            "only a recon unit gets the continent sweep, got {ordinary_goal:?} at {} from a first frontier at {first_local_frontier}",
+            non_recon.wdist(home, ordinary_goal),
+        );
+
+        // The expensive long appointment is deliberately for the Civ VI
+        // verification bridge, whose target-retirement guard is on. Native
+        // tournament controllers retain the established local commitment.
+        let mut native_ai = BasicAi::new();
+        native_ai.enable_explore_commit();
+        let native_goal = native_ai
+            .exploration_goal(&game, 0, scout, true)
+            .expect("the native Scout has a local frontier");
+        assert!(
+            game.wdist(home, native_goal) <= first_local_frontier + EXPLORE_COMMIT_LOOKAHEAD,
+            "without the bridge guard a Scout stays local, got {native_goal:?} at {} from a first frontier at {first_local_frontier}",
+            game.wdist(home, native_goal),
+        );
+
+        // Once every city-state is known the same fog uses the ordinary,
+        // short committed horizon again.
+        let mut known = game.clone();
+        known.record_contact(0, minor);
+        let mut known_ai = BasicAi::new();
+        known_ai.enable_explore_commit();
+        known_ai.enable_explore_dead_targets();
+        let local_goal = known_ai
+            .exploration_goal(&known, 0, scout, true)
+            .expect("the local fog still has a destination");
+        assert!(
+            known.wdist(home, local_goal) <= EXPLORE_COMMIT_LOOKAHEAD + 1,
+            "once contact is complete the Scout returns to the local horizon: {local_goal:?}"
+        );
+
+        // Seven clear Scout turns are enough to reach the far side of the
+        // corridor. A short-horizon picker wastes its first commitment on the
+        // near section; this one opens the city-state before that second
+        // appointment is necessary.
+        for _ in 0..7 {
+            let moves = game.unit_max_moves(scout);
+            game.units.get_mut(&scout).unwrap().moves_left = moves;
+            ai.begin_movement_turn(&game, 0);
+            for _ in 0..8 {
+                if game.units[&scout].moves_left <= 0.0 || !ai.explore_step(&mut game, 0, scout) {
+                    break;
+                }
+            }
+            if game.has_met(0, minor) {
+                break;
+            }
+            game.turn += 1;
+        }
+        assert!(
+            game.has_met(0, minor),
+            "the long sweep discovers the city-state at the far end of its own fog"
+        );
     }
 
     /// The frozen `advanced_v1` anchor and every native tournament game keep

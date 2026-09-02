@@ -1854,12 +1854,32 @@ impl AdvancedAi {
     /// `missionary-last-charge-explores`. (Filed here rather than under a
     /// marker: the append-point check reads a line's first identifier.)
     pub fn enable_missionary_last_charge_explores(&mut self) {
+        self.missionary_last_charge_explores_2 = false;
         self.missionary_last_charge_explores = true;
+        self.missionary_explore.borrow_mut().clear();
     }
 
     /// The twin of `enable_missionary_last_charge_explores`.
     pub fn disable_missionary_last_charge_explores(&mut self) {
         self.missionary_last_charge_explores = false;
+    }
+
+    /// Send a last-charge Missionary on a long, routeable expedition before it
+    /// spends the charge: up to thirty-six tiles, through borders religious
+    /// units may cross, while still yielding to an endangered own city or an
+    /// untouched city beside it. This is version two of the local ten-tile
+    /// policy, so it is mutually exclusive with it. Opt-in gene
+    /// `missionary-last-charge-explores-2`; see
+    /// [`AdvancedAi::missionary_last_charge_explores_2`].
+    pub fn enable_missionary_last_charge_explores_2(&mut self) {
+        self.missionary_last_charge_explores = false;
+        self.missionary_last_charge_explores_2 = true;
+        self.missionary_explore.borrow_mut().clear();
+    }
+
+    /// The twin of `enable_missionary_last_charge_explores_2`.
+    pub fn disable_missionary_last_charge_explores_2(&mut self) {
+        self.missionary_last_charge_explores_2 = false;
     }
 
     /// Keep religious units out of every tile a visible barbarian raider can

@@ -37022,6 +37022,10 @@ fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
             "missionary_last_charge_explores",
             "missionary-last-charge-explores",
         ),
+        (
+            "missionary_last_charge_explores_2",
+            "missionary-last-charge-explores-2",
+        ),
         ("missionary_evades_raiders", "missionary-evades-raiders"),
     ] {
         assert!(
@@ -37040,16 +37044,31 @@ fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
         );
     }
     let mut ai = AdvancedAi::new();
-    assert!(!ai.missionary_last_charge_explores && !ai.missionary_evades_raiders);
+    assert!(
+        !ai.missionary_last_charge_explores
+            && !ai.missionary_last_charge_explores_2
+            && !ai.missionary_evades_raiders
+    );
     ai.enable_missionary_last_charge_explores();
+    assert!(ai.missionary_last_charge_explores);
+    assert!(!ai.missionary_last_charge_explores_2);
+    ai.enable_missionary_last_charge_explores_2();
+    assert!(!ai.missionary_last_charge_explores);
+    assert!(ai.missionary_last_charge_explores_2);
     ai.enable_missionary_evades_raiders();
-    assert!(ai.missionary_last_charge_explores && ai.missionary_evades_raiders);
-    ai.disable_missionary_last_charge_explores();
+    assert!(ai.missionary_last_charge_explores_2 && ai.missionary_evades_raiders);
+    ai.disable_missionary_last_charge_explores_2();
     ai.disable_missionary_evades_raiders();
-    assert!(!ai.missionary_last_charge_explores && !ai.missionary_evades_raiders);
+    assert!(
+        !ai.missionary_last_charge_explores
+            && !ai.missionary_last_charge_explores_2
+            && !ai.missionary_evades_raiders
+    );
     let legacy = AdvancedAi::legacy();
     assert!(
-        !legacy.missionary_last_charge_explores && !legacy.missionary_evades_raiders,
+        !legacy.missionary_last_charge_explores
+            && !legacy.missionary_last_charge_explores_2
+            && !legacy.missionary_evades_raiders,
         "the frozen anchor plays the game it always did"
     );
 }
@@ -37190,6 +37209,122 @@ fn a_last_charge_missionary_explores_only_with_the_gene() {
         !untouched.units.contains_key(&missionary),
         "a city our faith has never touched takes the charge"
     );
+}
+
+/// Version two sends a last-charge Missionary along a route a Scout cannot
+/// use: its embarked path crosses a known foreign water border. The destination
+/// remains fog, so this proves the expedition comes from movement and
+/// exploration facts rather than from knowing a city beyond the ocean.
+#[test]
+fn a_last_charge_missionary_expedition_v2_crosses_an_ocean_and_closed_borders() {
+    use super::missionary_field::{MISSIONARY_EXPEDITION_RADIUS, MISSIONARY_EXPLORE_RADIUS};
+
+    let mut game = Game::new_full(2, 74, 46, 4_403, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("the expedition owner opens with a Settler");
+    let source = game.units[&settler].pos;
+    let target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| {
+            let distance = game.wdist(source, *position);
+            distance > MISSIONARY_EXPLORE_RADIUS && distance <= MISSIONARY_EXPEDITION_RADIUS
+        })
+        .max_by_key(|position| (game.wdist(source, *position), *position))
+        .expect("the standard map has a distant but explorable shore");
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.owner_city = None;
+        tile.cliff_edges = [false; 6];
+    }
+    game.map.tiles.get_mut(&source).unwrap().terrain = crate::name!("plains");
+    game.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("grassland");
+    game.current = 0;
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("the source shore founds our capital");
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+    let foreign_shore = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| *position != source)
+        .expect("the remote shore has a neighbouring tile");
+    game.map.tiles.get_mut(&foreign_shore).unwrap().terrain = crate::name!("plains");
+    let foreign_city = game.found_city_for(1, foreign_shore, Some("Border Port".to_string()));
+    for tile in game.map.tiles.values_mut() {
+        if tile.terrain == "coast" {
+            tile.owner_city = Some(foreign_city);
+        }
+    }
+    game.players[1].borders_enforced = Some(true);
+    game.record_contact(0, 1);
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    game.players[0].religion = Some("Our Faith".to_string());
+    let home = game.player_city_ids(0)[0];
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 1_000.0);
+    game.players[0].explored.clear();
+    let home_sight = game.wdisk(source, 2);
+    game.players[0].explored.extend(home_sight);
+    game.players[0].explored.insert(foreign_shore);
+    assert!(
+        !game.players[0].explored.contains(&target),
+        "the remote shore must be fogged"
+    );
+
+    let scout = game.spawn_test_unit("scout", 0, source);
+    let missionary = game.spawn_test_unit("missionary", 0, source);
+    let unit = game.units.get_mut(&missionary).unwrap();
+    unit.religion = Some("Our Faith".to_string());
+    unit.charges = 1;
+    assert!(
+        game.route_step(missionary, target, 0).is_some(),
+        "religious units retain their closed-border route"
+    );
+    assert!(
+        game.route_step(scout, target, 0).is_none(),
+        "the same foreign water border shuts a Scout out"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_missionary_last_charge_explores_2();
+    assert!(ai.advanced_missionary_step(&mut game, 0, missionary, false));
+    let (goal, turns) = ai
+        .missionary_explore_memory(missionary)
+        .expect("the expedition keeps a destination");
+    assert_eq!(goal, Some(target), "the only reachable remote shore wins");
+    assert!(
+        game.wdist(source, target) > MISSIONARY_EXPLORE_RADIUS,
+        "the expedition reaches beyond version one's local horizon"
+    );
+    assert_eq!(
+        turns, 1,
+        "the whole multi-step turn costs one expedition turn"
+    );
+    assert!(
+        game.map
+            .get(game.units[&missionary].pos)
+            .is_some_and(|tile| game.rules.is_water(tile)),
+        "the first move embarks across the ocean instead of spending the charge"
+    );
+    assert_eq!(game.units[&missionary].charges, 1);
 }
 
 #[test]
