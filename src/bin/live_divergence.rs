@@ -32,7 +32,7 @@
 //!      "subsystems": {<name>: {"unit", "pairs": [{"turn", "key", "live", "sim"}],
 //!                              "note"}}}
 
-use civvis::game::{expected_damage, Action, Game, PlanningRole};
+use civvis::game::{expected_damage, Action, Game, PlanningRole, Unit};
 use civvis::mirror::{self, LiveMirror, Snapshot, StateSnapshot, TilesChunk};
 use civvis::rules::Yields;
 use std::collections::BTreeMap;
@@ -228,7 +228,21 @@ pub struct LedgerCombat {
     pub damage_to_defender: Option<f64>,
     pub attacker_kind: String,
     pub defender_kind: String,
+    /// Where each side stood when the combat opened (`CivvisLedger.describe`,
+    /// offset coordinates); `None` where the ledger could not read the plot.
+    /// Adjacent or not is what separates a shot from a melee exchange when
+    /// no `strike` verb was joined — see [`combat_pairs`].
+    pub attacker_pos: Option<(i32, i32)>,
+    pub defender_pos: Option<(i32, i32)>,
+    /// Whether the `strike` the mod emitted for this attacker on this turn
+    /// carried the verb `RANGE_ATTACK`. Joined by the reader from the
+    /// `strike` events, never inferred from the unit kinds.
+    pub ranged_verb: bool,
 }
+
+/// One side of a ledger `combat`: its Civilization VI id, unit kind and the
+/// plot it stood on when the combat opened (`None` when unreadable).
+type CombatSide = (i64, String, Option<(i32, i32)>);
 
 /// Parse a `combat` event. Only unit-versus-unit fights with a known defender
 /// damage are priced; district fights (walls, garrisons) are not modelled here.
@@ -236,21 +250,33 @@ pub fn parse_combat(value: &serde_json::Value) -> Option<LedgerCombat> {
     if value.get("kind").and_then(|k| k.as_str()) != Some("combat") {
         return None;
     }
-    let side = |name: &str| -> Option<(i64, String)> {
+    let side = |name: &str| -> Option<CombatSide> {
         let side = value.get(name)?;
         if side.get("type").and_then(|t| t.as_str()) != Some("unit") {
             return None;
         }
+        // `describe` writes -1 for a coordinate it could not read.
+        let coord = |key: &str| {
+            side.get(key)
+                .and_then(|v| v.as_i64())
+                .filter(|v| *v >= 0)
+                .map(|v| v as i32)
+        };
+        let pos = match (coord("x"), coord("y")) {
+            (Some(x), Some(y)) => Some((x, y)),
+            _ => None,
+        };
         Some((
             side.get("id")?.as_i64()?,
             side.get("kind")
                 .and_then(|k| k.as_str())
                 .unwrap_or("?")
                 .to_string(),
+            pos,
         ))
     };
-    let (attacker, attacker_kind) = side("attacker")?;
-    let (defender, defender_kind) = side("defender")?;
+    let (attacker, attacker_kind, attacker_pos) = side("attacker")?;
+    let (defender, defender_kind, defender_pos) = side("defender")?;
     Some(LedgerCombat {
         turn: value.get("turn")?.as_u64()? as u32,
         attacker,
@@ -258,11 +284,29 @@ pub fn parse_combat(value: &serde_json::Value) -> Option<LedgerCombat> {
         damage_to_defender: value.get("damage_to_defender").and_then(|d| d.as_f64()),
         attacker_kind,
         defender_kind,
+        attacker_pos,
+        defender_pos,
+        ranged_verb: false,
     })
 }
 
 /// Pair the ledger's defender damage against the engine's expected damage for
 /// the same two units on the mirrored board at the start of the turn.
+///
+/// ★★★ THE ENGINE'S OWN PAIR, NOT A STRENGTH-ONLY ESTIMATE. This used to
+/// price every fight as `expected_damage(unit_strength(att, false),
+/// unit_strength(def, true))`, which omits exactly the terms `do_attack` and
+/// `do_ranged` add on top of the two strengths — matchup, flanking, adjacent
+/// support, the tile's defence, the river and amphibious penalties, the
+/// ranged-versus-unit malus — so a divergence row could blame the model for
+/// a bonus the engine itself would have paid. The row is now
+/// `expected_damage` of [`Game::melee_exchange_strengths`] or, for a shot,
+/// [`Game::ranged_strike_strengths`] at the defender's tile. A fight is a
+/// shot when the mod's joined `strike` verb was `RANGE_ATTACK`, or when the
+/// attacker has ranged strength and did not stand adjacent — by the
+/// ledger's positions when the combat opened, by the board's when the
+/// ledger has none. The bare formula remains only where the exact pair is
+/// `None`, which on a board that holds both units it is not.
 pub fn combat_pairs(combats: &[LedgerCombat], mirror: &LiveMirror) -> Vec<Pair> {
     let game = &mirror.game;
     combats
@@ -278,12 +322,17 @@ pub fn combat_pairs(combats: &[LedgerCombat], mirror: &LiveMirror) -> Vec<Pair> 
                     .or_else(|| mirror.foreign_uid_of.get(civ6))
                     .copied()
             };
-            let attacker = game.units.get(&board_id(&combat.attacker)?)?;
-            let defender = game.units.get(&board_id(&combat.defender)?)?;
-            let sim = expected_damage(
-                game.unit_strength(attacker, false),
-                game.unit_strength(defender, true),
-            );
+            let uid = board_id(&combat.attacker)?;
+            let did = board_id(&combat.defender)?;
+            let attacker = game.units.get(&uid)?;
+            let defender = game.units.get(&did)?;
+            let sim = match exact_strengths(game, combat, uid, did) {
+                Some((att, def)) => expected_damage(att, def),
+                None => expected_damage(
+                    game.unit_strength(attacker, false),
+                    game.unit_strength(defender, true),
+                ),
+            };
             Some(Pair {
                 turn: combat.turn,
                 key: format!("{} -> {}", combat.attacker_kind, combat.defender_kind),
@@ -292,6 +341,39 @@ pub fn combat_pairs(combats: &[LedgerCombat], mirror: &LiveMirror) -> Vec<Pair> 
             })
         })
         .collect()
+}
+
+/// Whether the ledger's fight was a shot rather than a melee exchange — see
+/// [`combat_pairs`] for the rule and its order.
+fn was_ranged_strike(game: &Game, combat: &LedgerCombat, attacker: &Unit, defender: &Unit) -> bool {
+    if combat.ranged_verb {
+        return true;
+    }
+    if game.unit_ranged_strength(attacker) <= 0.0 {
+        return false;
+    }
+    let (from, to) = match (combat.attacker_pos, combat.defender_pos) {
+        (Some(a), Some(d)) => (
+            civvis::hex::offset_to_axial(a.0, a.1),
+            civvis::hex::offset_to_axial(d.0, d.1),
+        ),
+        _ => (attacker.pos, defender.pos),
+    };
+    civvis::hex::distance(from, to) > 1
+}
+
+/// The two strengths the engine itself would resolve this fight with:
+/// [`Game::ranged_strike_strengths`] at the defender's tile for a shot,
+/// [`Game::melee_exchange_strengths`] otherwise. `None` when either unit is
+/// not on the board.
+fn exact_strengths(game: &Game, combat: &LedgerCombat, uid: u32, did: u32) -> Option<(f64, f64)> {
+    let attacker = game.units.get(&uid)?;
+    let defender = game.units.get(&did)?;
+    if was_ranged_strike(game, combat, attacker, defender) {
+        game.ranged_strike_strengths(uid, did, defender.pos)
+    } else {
+        game.melee_exchange_strengths(uid, did)
+    }
 }
 
 /// Read the engine's view of the seat after the passive turn, keyed by the
@@ -415,7 +497,7 @@ fn main() {
         ("empire_favor_delta", "favor", "diplomatic favor change t -> t+1; needs `favor` in both frames"),
         ("city_loyalty", "loyalty", "per-city loyalty at t+1"),
         ("city_religion", "agreement", "majority religion at t+1; MAE is the disagreement rate"),
-        ("combat_damage", "hp", "ledger `combat` defender damage vs engine expected damage on the t board; needs the tactical ledger"),
+        ("combat_damage", "hp", "ledger `combat` defender damage vs `expected_damage` of the engine's own pair (`melee_exchange_strengths`, or `ranged_strike_strengths` for a shot) on the t board; needs the tactical ledger"),
     ];
     for (name, unit, note) in describe {
         report.subsystems.insert(
@@ -448,6 +530,10 @@ fn main() {
     let mut snapshot = Snapshot::default();
     let mut pending: Option<(StateSnapshot, Snapshot)> = None;
     let mut pending_combats: Vec<LedgerCombat> = Vec::new();
+    // `(turn, unit)` of every `strike` the mod emitted with the verb
+    // `RANGE_ATTACK`; a `combat` by that attacker on that turn is a shot.
+    let mut ranged_strikes: std::collections::BTreeSet<(u32, i64)> =
+        std::collections::BTreeSet::new();
     let mut deal_events = 0usize;
     let in_range = |turn: u32| range.is_none_or(|(a, b)| turn >= a && turn <= b);
 
@@ -483,8 +569,22 @@ fn main() {
                     snapshot.set_improvement((x as i32, y as i32), im);
                 }
             }
+            Some("strike") => {
+                if value.get("verb").and_then(|v| v.as_str()) == Some("RANGE_ATTACK") {
+                    let unit = value.get("unit").and_then(|u| {
+                        u.as_i64()
+                            .or_else(|| u.as_str().and_then(|s| s.parse::<i64>().ok()))
+                    });
+                    if let (Some(turn), Some(unit)) =
+                        (value.get("turn").and_then(|t| t.as_u64()), unit)
+                    {
+                        ranged_strikes.insert((turn as u32, unit));
+                    }
+                }
+            }
             Some("combat") => {
-                if let Some(combat) = parse_combat(&value) {
+                if let Some(mut combat) = parse_combat(&value) {
+                    combat.ranged_verb = ranged_strikes.contains(&(combat.turn, combat.attacker));
                     pending_combats.push(combat);
                 }
             }
@@ -527,6 +627,7 @@ fn main() {
                     }
                 }
                 pending_combats.clear();
+                ranged_strikes.retain(|(turn, _)| *turn + 1 >= state.turn);
                 if in_range(state.turn) && snapshot.revealed_count() > 0 {
                     pending = Some((state, snapshot.clone()));
                 }
@@ -762,8 +863,8 @@ mod tests {
     fn combat_events_parse_units_only() {
         let event = serde_json::json!({
             "kind": "combat", "turn": 40,
-            "attacker": {"type": "unit", "id": 65536, "player": 0, "kind": "UNIT_WARRIOR", "hp": 100},
-            "defender": {"type": "unit", "id": 131072, "player": 3, "kind": "UNIT_SCOUT", "hp": 100},
+            "attacker": {"type": "unit", "id": 65536, "player": 0, "kind": "UNIT_WARRIOR", "hp": 100, "x": 10, "y": 4},
+            "defender": {"type": "unit", "id": 131072, "player": 3, "kind": "UNIT_SCOUT", "hp": 100, "x": -1, "y": 4},
             "damage_to_defender": 37, "damage_to_attacker": 22,
         });
         let combat = parse_combat(&event).expect("unit fight parses");
@@ -772,12 +873,142 @@ mod tests {
             (40, 65536, 131072)
         );
         assert_eq!(combat.damage_to_defender, Some(37.0));
+        assert_eq!(
+            combat.attacker_pos,
+            Some((10, 4)),
+            "where the attacker stood"
+        );
+        assert_eq!(
+            combat.defender_pos, None,
+            "-1 is the ledger's unreadable plot, not a coordinate"
+        );
+        assert!(!combat.ranged_verb, "no strike joined yet");
         let mut walls = event.clone();
         walls["defender"] =
             serde_json::json!({"type": "district", "id": 1, "player": 3, "hp": 200});
         assert!(
             parse_combat(&walls).is_none(),
             "district fights are not priced"
+        );
+    }
+
+    /// An 8x8 grass board with one hill under the defender, so the exact pair
+    /// carries a term (`tile_defense_bonus`) the bare formula never did.
+    fn fight(attacker_kind: &str, attacker_at: (i32, i32), defender_at: (i32, i32)) -> LiveMirror {
+        let plots = (0..8)
+            .flat_map(|x| {
+                (0..8).map(move |y| {
+                    let terrain = if (x, y) == defender_at {
+                        "TERRAIN_GRASS_HILLS"
+                    } else {
+                        "TERRAIN_GRASS"
+                    };
+                    serde_json::from_value::<mirror::Plot>(
+                        serde_json::json!({"x": x, "y": y, "t": terrain}),
+                    )
+                    .expect("a plot parses")
+                })
+            })
+            .collect();
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots,
+        }]);
+        let state = mirror::state_from_json(
+            &serde_json::json!({
+                "kind": "state", "turn": 8, "gold": 0, "faith": 0,
+                "science": 1.0, "culture": 1.0, "cities": [], "rivals": [],
+                "units": [{"id": 65536, "kind": attacker_kind,
+                           "x": attacker_at.0, "y": attacker_at.1, "moves": 2.0, "hp": 100}],
+                "hostiles": [{"id": 131072, "type": "UNIT_WARRIOR",
+                              "x": defender_at.0, "y": defender_at.1, "hp": 100}],
+            })
+            .to_string(),
+        )
+        .expect("frame parses");
+        LiveMirror::new(&snapshot, &state, 4, 1, 250, 0)
+    }
+
+    fn ledger(damage: f64) -> LedgerCombat {
+        LedgerCombat {
+            turn: 8,
+            attacker: 65536,
+            defender: 131072,
+            damage_to_defender: Some(damage),
+            attacker_kind: "UNIT_WARRIOR".into(),
+            defender_kind: "UNIT_WARRIOR".into(),
+            attacker_pos: None,
+            defender_pos: None,
+            ranged_verb: false,
+        }
+    }
+
+    #[test]
+    fn a_melee_row_is_expected_damage_of_the_engines_own_exchange() {
+        let mirror = fight("UNIT_WARRIOR", (3, 3), (4, 3));
+        let game = &mirror.game;
+        let (uid, did) = (mirror.uid_of[&65536], mirror.foreign_uid_of[&131072]);
+        let (att, def) = game
+            .melee_exchange_strengths(uid, did)
+            .expect("both units are on the board");
+        let pairs = combat_pairs(&[ledger(31.0)], &mirror);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!((pairs[0].live, pairs[0].turn), (31.0, 8));
+        assert_eq!(
+            pairs[0].sim,
+            expected_damage(att, def),
+            "the row is the engine's own melee exchange"
+        );
+        let bare = expected_damage(
+            game.unit_strength(&game.units[&uid], false),
+            game.unit_strength(&game.units[&did], true),
+        );
+        assert_ne!(
+            pairs[0].sim, bare,
+            "the hill under the defender is a term the bare formula never carried"
+        );
+    }
+
+    #[test]
+    fn a_shot_prices_through_the_ranged_pair_by_distance_or_by_verb() {
+        let mirror = fight("UNIT_ARCHER", (3, 3), (5, 3));
+        let game = &mirror.game;
+        let (uid, did) = (mirror.uid_of[&65536], mirror.foreign_uid_of[&131072]);
+        let target = game.units[&did].pos;
+        let (att, def) = game
+            .ranged_strike_strengths(uid, did, target)
+            .expect("both units are on the board");
+        let shot = expected_damage(att, def);
+        let (melee_att, melee_def) = game
+            .melee_exchange_strengths(uid, did)
+            .expect("the melee pair exists for the same two units");
+        assert_ne!(
+            shot,
+            expected_damage(melee_att, melee_def),
+            "the two pairs price differently, so the route matters"
+        );
+        // No verb joined and no ledger positions: the archer has ranged
+        // strength and stands two tiles off on the board, so it is a shot.
+        let by_distance = combat_pairs(&[ledger(20.0)], &mirror);
+        assert_eq!(by_distance[0].sim, shot, "by distance on the board");
+        // The ledger saw it adjacent when the combat opened (it moved first),
+        // but the joined strike verb says RANGE_ATTACK — the verb wins.
+        let mut by_verb = ledger(20.0);
+        by_verb.ranged_verb = true;
+        by_verb.attacker_pos = Some((4, 3));
+        by_verb.defender_pos = Some((5, 3));
+        assert_eq!(combat_pairs(&[by_verb], &mirror)[0].sim, shot, "by verb");
+        // The ledger's own positions, two apart, decide before the board's.
+        let mut by_ledger = ledger(20.0);
+        by_ledger.attacker_pos = Some((2, 3));
+        by_ledger.defender_pos = Some((5, 3));
+        assert_eq!(
+            combat_pairs(&[by_ledger], &mirror)[0].sim,
+            shot,
+            "by ledger positions"
         );
     }
 
