@@ -807,6 +807,13 @@ def build_config(args: argparse.Namespace) -> dict:
         # A diplomacy screen is a blocker. Keep its in-game timer explicit and
         # bounded so old launchers cannot silently restore a multi-second close.
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
+        # Outgoing deal sessions open `DiplomacyActionView`.  That view can require
+        # an answer rather than a close action, so an unattended verification run
+        # can remain blocked even after the popup ladder and desktop backstop have
+        # both acted.  The direct-send lane retains the trade request without
+        # opening a modal; make it the verification default and leave sessions as
+        # an explicit diagnostic opt-in.
+        "DealSessions": bool(getattr(args, "deal_sessions", False)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -4461,6 +4468,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--dialogue-seconds", type=float, default=0.25,
                     help="maximum in-game diplomacy close delay (capped at 2s)")
+    ap.add_argument("--deal-sessions", action="store_true",
+                    help="use interactive diplomacy deal sessions (diagnostic only; "
+                         "verification runs use direct sends to avoid modal screens)")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
     # fast because something is waiting behind it; nothing is waiting behind this
     # one, because the game is over. The operator's standing brief asks for ten
