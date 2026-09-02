@@ -633,6 +633,15 @@ machine has held its live games since 2026-08-02); the swap verb is still
 untranslated on the bridge, and `Action::Swap` — implemented, tested and
 refused correctly in the engine since `do_swap` — is still chosen by no
 controller (`docs/MOVEMENT.md` names the `swap-rotation` gene that would).
+
+**Update (2026-09-02): the swap verb is translated.** `Action::Swap` crosses
+as unit verb `SWAP` with `pos` = the partner's tile; the mod resolves
+`UNITOPERATION_SWAP_UNITS` and requests it exactly as the shipped
+`Civ6Common.lua:160-161` does (`CanStartOperation(unit, SWAP_UNITS, nil,
+{PARAM_X, PARAM_Y})`, then `RequestOperation` with the same table), naming a
+decline `cannot_swap`. The verdict is either half of the exchange on the next
+frame — the unit on the partner's former tile or the partner on ours — else
+`not_swapped`. What §18's `swap-rotation` decides can now reach the live seat.
 ## 17. Price it like the engine — and the null it measured (2026-08-26)
 
 Two opt-in genes (`src/ai/advanced/engine_pricing.rs`) replace the

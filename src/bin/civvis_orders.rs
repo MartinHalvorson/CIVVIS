@@ -957,8 +957,9 @@ impl HostMoveRefusals {
     /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
     /// again; the host records that as `from == destination` / `move_refused`.
     /// Waiting for the next turn is the only useful retry because this frame has
-    /// no newer authoritative position. FORTIFY and civilian CAPTURE have the
-    /// same stale-state failure mode. The diplomacy arm has the same shape:
+    /// no newer authoritative position. FORTIFY, civilian CAPTURE and SWAP have
+    /// the same stale-state failure mode (a swap re-derived from the old frame
+    /// is aimed at the tile the unit has already taken). The diplomacy arm has the same shape:
     /// its pending/cooldown guards mean a repeated deal order can only be
     /// refused again. Attack orders are deliberately excluded: a fresh combat
     /// frame may legitimately finish the same target.
@@ -981,7 +982,7 @@ impl HostMoveRefusals {
             let Some(verb) = order.verb.as_deref() else {
                 return true;
             };
-            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
+            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY" | "SWAP") {
                 let key = HostUnitOrderKey {
                     verb: verb.to_string(),
                     pos: order.pos,
@@ -3585,6 +3586,7 @@ fn decide(
                     }
                     Action::Attack { unit, .. }
                     | Action::Ranged { unit, .. }
+                    | Action::Swap { unit, .. }
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
                     | Action::Improve { unit, .. }
@@ -4242,6 +4244,34 @@ fn translate(
                 pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
             })
         }
+        // ★★★ THE SWAP VERB. `Action::Swap` — legal, tested and correctly refused
+        // in the engine since `do_swap`, and chosen by `swap-rotation`
+        // (`src/ai/advanced/swap_rotation.rs`) — fell through this match's
+        // `_ => None` and was counted `unit_action_untranslated`, so a rotation
+        // the arena priced positive on every instrument (docs/LIVE_TACTICS.md
+        // §18) could never reach the live board.
+        //
+        // Civilization VI has a dedicated operation for it, read off the
+        // installed game: `Base/Assets/Gameplay/Data/UnitOperations.xml:56`
+        // (`UNITOPERATION_SWAP_UNITS`, `VisibleInUI="false"`). The shipped UI
+        // requests it with the PARTNER'S plot as the ordinary positional pair —
+        // `Base/Assets/UI/Civ6Common.lua:160-161`, inside `RequestMoveOperation`:
+        //
+        //   if (UnitManager.CanStartOperation( kUnit, UnitOperationTypes.SWAP_UNITS, nil, tParameters) ) then
+        //       UnitManager.RequestOperation(kUnit, UnitOperationTypes.SWAP_UNITS, tParameters);
+        //
+        // so the order is `SWAP` with `pos` = where the partner stands. The
+        // partner is read off the mirrored board, not the action: the mod needs
+        // a plot, and a partner this bridge cannot see has no plot to name.
+        Action::Swap { unit, other } => civ6_of.get(unit).and_then(|civ6| {
+            let partner = mirror_state.game.units.get(other)?.pos;
+            Some(Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some("SWAP".to_string()),
+                pos: Some(civvis::hex::axial_to_offset(partner.0, partner.1)),
+            })
+        }),
         // ⚠ There is NO attack operation on this build; the resolved list is only
         // MOVE_TO and RANGE_ATTACK, so a melee strike IS a move onto the defended
         // plot. That is how Civilization VI resolves it, not a hack.
@@ -5609,6 +5639,29 @@ fn verify_unit_order(
                 _ if target_harmed(before, after, want) => Verdict::Verified,
                 None => gone(),
                 Some(_) => Verdict::Failed("not_captured".to_string()),
+            }
+        }
+        // A swap is two units trading hexes, so either half proves it: this
+        // unit standing on the partner's former tile, or the partner standing
+        // on ours. Only a unit that was on the decision frame can be judged
+        // (there is no "our tile" for a unit first seen afterwards).
+        "SWAP" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            let partner_took_our_tile = was.is_some_and(|was| {
+                after.units.iter().any(|u| {
+                    u.id != id
+                        && (u.x, u.y) == (was.x, was.y)
+                        && own_unit(before, u.id).is_some_and(|p| (p.x, p.y) == want)
+                })
+            });
+            match now {
+                Some(now) if (now.x, now.y) == want => Verdict::Verified,
+                _ if partner_took_our_tile => Verdict::Verified,
+                None => gone(),
+                Some(_) if was.is_none() => Verdict::Unverifiable,
+                Some(_) => Verdict::Failed("not_swapped".to_string()),
             }
         }
         "FOUND_CITY" => {
@@ -10312,6 +10365,109 @@ mod tests {
         assert!(matches!(
             verify_unit_order(&order, 30, &before, &stood, &tiles, &[], LaterFrames::default()),
             Verdict::Failed(reason) if reason == "not_captured"
+        ));
+    }
+
+    /// `Action::Swap` crosses as `SWAP` aimed at the PARTNER'S tile — the
+    /// positional pair the shipped `Civ6Common.lua:160-161` hands
+    /// `UNITOPERATION_SWAP_UNITS` — instead of falling through to
+    /// `unit_action_untranslated`.
+    #[test]
+    fn a_swap_crosses_as_the_swap_verb_aimed_at_the_partners_tile() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let by_host = |host: i64| {
+            mirror
+                .civ6_of
+                .iter()
+                .find_map(|(unit, civ6)| (*civ6 == host).then_some(*unit))
+                .unwrap()
+        };
+        let warrior = by_host(101);
+        let slinger = by_host(100);
+        assert_eq!(
+            mirror.game.wdist(
+                mirror.game.units[&warrior].pos,
+                mirror.game.units[&slinger].pos
+            ),
+            1,
+            "the board's two friendly units are adjacent, as a swap requires"
+        );
+
+        let swap = translate(
+            &Action::Swap {
+                unit: warrior,
+                other: slinger,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the swap crosses");
+        assert_eq!(swap.kind, "unit");
+        assert_eq!(swap.subject, Some(101));
+        assert_eq!(swap.verb.as_deref(), Some("SWAP"));
+        assert_eq!(swap.pos, Some((4, 5)), "the partner's plot, in host offsets");
+
+        // A partner the mirror cannot see has no plot to name.
+        assert!(translate(
+            &Action::Swap {
+                unit: warrior,
+                other: u32::MAX,
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+    }
+
+    /// Either half of the exchange verifies a swap: this unit on the partner's
+    /// former tile, or the partner on ours. Both still where they stood is
+    /// `not_swapped`.
+    #[test]
+    fn a_swap_is_verified_by_either_unit_standing_on_the_others_tile() {
+        let (tiles, before) = local_barbarian_defense_board();
+        // Warrior 101 at (5,5) swaps with Slinger 100 at (4,5).
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("SWAP".to_string()),
+            pos: Some((4, 5)),
+        };
+        let verdict = |after: &StateSnapshot| {
+            verify_unit_order(&order, 30, &before, after, &tiles, &[], LaterFrames::default())
+        };
+
+        let mut swapped = before.clone();
+        for unit in swapped.units.iter_mut() {
+            match unit.id {
+                101 => (unit.x, unit.y) = (4, 5),
+                100 => (unit.x, unit.y) = (5, 5),
+                _ => {}
+            }
+        }
+        assert!(matches!(verdict(&swapped), Verdict::Verified));
+
+        // The partner's half alone is enough evidence.
+        let mut partner_only = before.clone();
+        let slinger = partner_only
+            .units
+            .iter_mut()
+            .find(|unit| unit.id == 100)
+            .unwrap();
+        (slinger.x, slinger.y) = (5, 5);
+        assert!(matches!(verdict(&partner_only), Verdict::Verified));
+
+        let stood = before.clone();
+        assert!(matches!(
+            verdict(&stood),
+            Verdict::Failed(reason) if reason == "not_swapped"
+        ));
+
+        let mut gone = before.clone();
+        gone.units.retain(|unit| unit.id != 101);
+        assert!(matches!(
+            verdict(&gone),
+            Verdict::Failed(reason) if reason == "unit_gone"
         ));
     }
 
