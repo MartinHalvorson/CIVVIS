@@ -15551,11 +15551,16 @@ mod order_postcondition_tests {
         );
         assert!(EVIDENCE_KINDS.contains(&"policy_deck_deferred"));
         assert_eq!(
-            policy_deck_deferred_reason(&[deferred.clone()], 64, &earlier).as_deref(),
+            policy_deck_deferred_reason(std::slice::from_ref(&deferred), 64, &earlier).as_deref(),
             Some("deferred_same_turn_transaction_in_flight")
         );
         assert_eq!(
-            check(&earlier, &pending.before, &after, &[deferred]),
+            check(
+                &earlier,
+                &pending.before,
+                &after,
+                std::slice::from_ref(&deferred)
+            ),
             failed("deferred_same_turn_transaction_in_flight"),
             "the host's deferred transaction reason is more precise than a missing-card diff"
         );
