@@ -5823,13 +5823,13 @@ pub struct AdvancedAi {
 
     // ---- append: p-r ------------------------------------------------
     /// Version two of `recovery_reads_the_war`: keep version one's successful
-    /// comparison against the strongest current major opponent, then protect
-    /// a live victory lane from a war another empire declared. A power gap in
-    /// that defensive war is still read, but it no longer gives the rival the
-    /// whole economy while no city is threatened; once an attacker reaches a
-    /// city, Recovery remains unconditional. Wars we declared and empires
-    /// without a live lane retain version one's posture. One family version
-    /// plays at a time. Opt-in gene `recovery-reads-the-war-2`.
+    /// comparison against the strongest current major opponent and repair the
+    /// posture it selects. Recovery keeps its defensive production, food and
+    /// gold priorities, but values research and civics at the same floor as
+    /// Conquest so a long defense can unlock its own upgrades, governments and
+    /// economic cards. The trigger and immediate-city override are otherwise
+    /// exactly version one's. One family version plays at a time. Opt-in gene
+    /// `recovery-reads-the-war-2`.
     recovery_reads_the_war_2: bool,
     /// The Objective Board's shortfall reaches production and the treasury:
     /// an idle city starts the unit a short row asks for (the best worth per
@@ -10000,7 +10000,7 @@ impl AdvancedAi {
     }
 
     fn unchosen_war_holds_the_lane(&self, g: &Game, pid: usize) -> bool {
-        (self.unchosen_war_keeps_the_lane || self.recovery_reads_the_war_2)
+        self.unchosen_war_keeps_the_lane
             && self.every_major_war_was_declared_on_us(g, pid)
             && self.victory_focus(g, pid).progress >= LIVE_LANE_FLOOR
     }
@@ -10887,9 +10887,8 @@ impl AdvancedAi {
         // cost 2.93 end techs and 36 science/turn versus off across 48 games;
         // filtering by campaign reach trailed v1 by 8.2 win points and 1.60
         // score-share points in its 24-game directional block. Off, preserve
-        // the historical board-wide maximum. V2 differs below in what an
-        // unthreatened defender with a live victory lane does with that reading,
-        // not in whom the war reading sees.
+        // the historical board-wide maximum. V2 differs in Recovery's economic
+        // weights, not in whom the war reading sees or when the posture starts.
         let recovery_opponent_power =
             if self.recovery_reads_the_war || self.recovery_reads_the_war_2 {
                 wartime_majors
@@ -11178,34 +11177,14 @@ impl AdvancedAi {
         // posture. The comparison is useful for an adaptive seat, but a
         // targeted seat can remain below a wartime rival for the whole race;
         // only a city-level threat should interrupt its research lane.
-        // V1 correctly narrowed the comparison to the current major opponent,
-        // but still lets a rival take the whole economy off a live victory lane
-        // merely by declaring while stronger. V2 composes that reading with
-        // the same declaration ownership and `LIVE_LANE_FLOOR` gate used by
-        // `unchosen_war_keeps_the_lane`, the one related war-planning gene with
-        // persistent positive signal. This is not a military stand-down: a
-        // threatened city wins the branch above it, and a war we chose or an
-        // empire without a live lane still takes Recovery exactly as v1 does.
-        let recovery_yields_to_live_lane = self.recovery_reads_the_war_2
-            && threatened_city.is_none()
-            && my_power * 1.25 < recovery_opponent_power
-            && !raid_only_war
-            && !science_targeted
-            && self.unchosen_war_holds_the_lane(g, pid);
         let (strategy, because) = if at_war
             && (threatened_city.is_some()
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
                     && !raid_only_war
-                    && !science_targeted
-                    && !recovery_yields_to_live_lane))
+                    && !science_targeted))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
-        } else if recovery_yields_to_live_lane {
-            (
-                victory.strategy,
-                "outmatched in a defensive war, but its victory lane is live",
-            )
         } else if impossible_denial {
             (
                 GrandStrategy::Recovery,
@@ -12667,8 +12646,23 @@ impl AdvancedAi {
                 // but retain a real research/civic floor so a long campaign can unlock
                 // upgrades, governments, and economic cards.
                 GrandStrategy::Conquest if self.victory_planning => (1.2, 2.8, 1.4, 1.9, 1.2, 0.3),
+                // `recovery_reads_the_war_2` leaves v1's successful trigger
+                // alone and repairs the posture's economy. A defender needs
+                // the same research/civic floor as an attacker: both are
+                // trying to unlock upgrades, governments and economic cards.
+                // The first three weights remain Recovery's, so this is still
+                // a defensive production posture rather than Conquest under a
+                // second name.
+                GrandStrategy::Recovery
+                    if self.recovery_reads_the_war_2 && self.victory_planning =>
+                {
+                    (1.6, 3.2, 1.5, 1.9, 1.2, 0.3)
+                }
                 GrandStrategy::Recovery if self.victory_planning => (1.6, 3.2, 1.5, 1.2, 1.1, 0.3),
                 GrandStrategy::Conquest => (1.2, 2.8, 1.4, 1.7, 0.8, 0.3),
+                GrandStrategy::Recovery if self.recovery_reads_the_war_2 => {
+                    (1.6, 3.2, 1.5, 1.7, 0.8, 0.3)
+                }
                 GrandStrategy::Recovery => (1.6, 3.2, 1.5, 1.0, 0.8, 0.3),
             };
         // The anchor above is the *lane's* opinion of a beaker and is left

@@ -6739,51 +6739,32 @@ fn recovery_v2_does_not_sum_weak_fronts_into_extra_recovery() {
 }
 
 #[test]
-fn recovery_v2_keeps_a_live_lane_in_a_defensive_war_until_a_city_is_threatened() {
-    let (mut game, _) = outgunned_at_war_fixture();
-    game.turn = 100;
-    game.players[0].dvp = 10;
-    install_surprise_war(&mut game, 1, 0, 70);
-    game.current = 0;
-
+fn recovery_v2_keeps_v1s_posture_and_raises_its_research_floor() {
+    let (game, _) = outgunned_at_war_fixture();
     let mut v1 = AdvancedAi::new();
     v1.enable_recovery_reads_the_war();
     assert_eq!(
         v1.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "version one lets the defensive power gap take the whole strategy"
+        "the fixture must enter v1's current-opponent Recovery posture"
     );
 
     let mut v2 = AdvancedAi::new();
     v2.enable_recovery_reads_the_war_2();
     assert_eq!(
         v2.assess(&game, 0).strategy,
-        GrandStrategy::Diplomacy,
-        "v2 keeps an established lane while a rival's war remains away from home"
+        GrandStrategy::Recovery,
+        "v2 must preserve v1's trigger rather than suppressing Recovery"
     );
 
-    let mut ours = game.clone();
-    ours.wars.clear();
-    install_surprise_war(&mut ours, 0, 1, 70);
-    ours.current = 0;
-    assert_eq!(
-        v2.assess(&ours, 0).strategy,
-        GrandStrategy::Recovery,
-        "a war we declared keeps version one's Recovery response"
-    );
-
-    let home = game.cities[&game.player_city_ids(0)[0]].pos;
-    let attacker = game
-        .nbrs(home)
-        .into_iter()
-        .find(|position| game.unit_ids_at(*position).is_empty())
-        .expect("the capital has an open attack ring");
-    game.spawn_test_unit("modern_armor", 1, attacker);
-    assert!(v2.threatened_city(&game, 0).is_some());
-    assert_eq!(
-        v2.assess(&game, 0).strategy,
-        GrandStrategy::Recovery,
-        "immediate city danger overrides lane preservation"
+    let beaker = Yields {
+        science: 1.0,
+        ..Yields::default()
+    };
+    assert!(
+        v2.yield_value(beaker, GrandStrategy::Recovery)
+            > v1.yield_value(beaker, GrandStrategy::Recovery),
+        "v2 must value the research that unlocks defensive upgrades more than v1"
     );
 }
 
