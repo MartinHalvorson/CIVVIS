@@ -102,6 +102,10 @@ const UNIT_DANGER_MEMORY_TURNS: u32 = 3;
 /// gets two whole turns to create distance. The objective remains intact, so
 /// this is a pause to survive rather than a silent abandonment of the campaign.
 const UNIT_RETREAT_TURNS: u32 = 2;
+/// `veterans-withdraw-early`: hit points a unit keeps in hand per promotion.
+pub(crate) const VETERAN_HP_PER_PROMOTION: i32 = 10;
+/// `veterans-withdraw-early`: the most a veteran keeps in hand (three promotions).
+pub(crate) const VETERAN_HP_MARGIN_CAP: i32 = 30;
 
 /// `game::damage` rolls every blow at `uniform(0.8, 1.2)` around the centre
 /// this controller prices with, so the average is not the number a survival
@@ -2551,6 +2555,13 @@ pub struct BasicAi {
     /// frozen `advanced_v1` replay explicitly withholds it so its historical
     /// decision stream remains a stable control.
     precise_evacuation: bool,
+    /// `veterans-withdraw-early`: a promoted unit reads its hit points with
+    /// a margin in hand — `VETERAN_HP_PER_PROMOTION` per promotion, at most
+    /// `VETERAN_HP_MARGIN_CAP` — so the withdrawal line, the one-blow test
+    /// and the lethal-pool retreat all fire while it can still walk away.
+    /// Experience only compounds on a unit that survives; a green unit
+    /// reads its hit points as before. Set by `AdvancedAi`'s toggle.
+    pub(crate) veteran_retreat_margin: bool,
     /// A unit one enemy blow from death withdraws to safe healing ground, and
     /// leaves that ground again the moment an enemy can strike it.
     ///
@@ -4794,6 +4805,7 @@ impl BasicAi {
             legal_tactical_candidates: false,
             unit_objective_memory: false,
             precise_evacuation: true,
+            veteran_retreat_margin: false,
             one_shot_recovery: false,
             w: Weights::default(),
             book_pos: 0,
@@ -5255,6 +5267,7 @@ impl BasicAi {
             legal_tactical_candidates: false,
             unit_objective_memory: false,
             precise_evacuation: true,
+            veteran_retreat_margin: false,
             one_shot_recovery: false,
             w,
             book_pos: 0,
@@ -6489,7 +6502,10 @@ impl BasicAi {
             remembered.map(|d| d.position),
             &envelopes,
         )?;
-        let lethal = holding.incoming >= f64::from(hp);
+        // `veterans-withdraw-early`: the pool is lethal to a veteran once it
+        // would leave less than the margin the unit keeps in hand.
+        let lethal = holding.incoming > 0.0
+            && holding.incoming + f64::from(self.veteran_hp_margin(g, uid)) >= f64::from(hp);
         if remembered.is_none() && !lethal {
             return None;
         }
@@ -9407,6 +9423,32 @@ impl BasicAi {
         // reserve until the local quality gap closes.
         let barbarian_gap = Self::barbarian_military_gap(g, pid);
         let floor = if at_war || barbarian_gap { 30.0 } else { 120.0 };
+        Self::modernize_army(g, pid, floor, 0.0);
+        Self::use_opportunistic_unit_tools(g, pid);
+    }
+
+    /// Hit points a promoted unit keeps in hand before it withdraws, or 0
+    /// while `veteran_retreat_margin` is off. See that field.
+    pub(crate) fn veteran_hp_margin(&self, g: &Game, uid: u32) -> i32 {
+        if !self.veteran_retreat_margin {
+            return 0;
+        }
+        let promotions = g.units.get(&uid).map_or(0, |unit| unit.promotions.len()) as i32;
+        (promotions * VETERAN_HP_PER_PROMOTION).min(VETERAN_HP_MARGIN_CAP)
+    }
+
+    /// The upgrade loop itself: strongest gain per Gold first, never
+    /// spending below `floor`. `veteran_weight` is the extra value per
+    /// promotion (capped at four) a unit carries into its successor — a
+    /// promoted unit keeps its promotions, so the same Gold buys a better
+    /// unit; 0.0 ranks by strength alone. Returns the upgrades taken.
+    pub(crate) fn modernize_army(
+        g: &mut Game,
+        pid: usize,
+        floor: f64,
+        veteran_weight: f64,
+    ) -> usize {
+        let mut taken = 0;
         loop {
             let mut best: Option<(f64, f64, u32)> = None;
             for uid in g.player_unit_ids(pid) {
@@ -9430,7 +9472,8 @@ impl BasicAi {
                 if gain <= 0.0 {
                     continue;
                 }
-                let value = gain / gold.max(1.0);
+                let promotions = g.units[&uid].promotions.len().min(4) as f64;
+                let value = gain * (1.0 + veteran_weight * promotions) / gold.max(1.0);
                 let better = match &best {
                     None => true,
                     Some((top, top_gold, top_uid)) => {
@@ -9448,8 +9491,9 @@ impl BasicAi {
             if g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_err() {
                 break;
             }
+            taken += 1;
         }
-        Self::use_opportunistic_unit_tools(g, pid);
+        taken
     }
 
     /// Execute rare, unambiguously beneficial unit tools before ordinary
@@ -15371,6 +15415,11 @@ impl BasicAi {
         }
         let withdraw_at_hp = self.w.withdraw_hp.round() as i32;
         let return_at_hp = self.w.rejoin_hp.max(self.w.withdraw_hp + 5.0).round() as i32;
+        // `veterans-withdraw-early`: a promoted unit leaves the line with
+        // hit points in hand and rejoins only once it has them back.
+        let veteran_margin = self.veteran_hp_margin(g, uid);
+        let withdraw_at_hp = withdraw_at_hp + veteran_margin;
+        let return_at_hp = return_at_hp.max(withdraw_at_hp + 5);
 
         let hp = g.units[&uid].hp;
         // ★★★ `one_shot_recovery`: THE WITHDRAWAL LINE IS THE ENEMY'S TO SET.
@@ -15382,7 +15431,8 @@ impl BasicAi {
         // stands — rejoining at the static line walks it back under the same
         // gun on the same hit points.
         let killing_blow = self.one_shot_killing_blow(g, pid, uid);
-        let one_blow_from_death = f64::from(hp) <= killing_blow;
+        let one_blow_from_death =
+            killing_blow > 0.0 && f64::from(hp - veteran_margin) <= killing_blow;
         if hp >= return_at_hp && !one_blow_from_death {
             self.recovering_units.remove(&uid);
             return None;
@@ -17922,6 +17972,130 @@ mod tests {
             Some(crate::name!("lumber_mill"))
         );
         assert_eq!(BasicAi::best_improvement(&g, pos, &[]), None);
+    }
+
+    /// `veterans-withdraw-early`: a promoted unit leaves the line with hit
+    /// points in hand where a green unit of the same health fights on.
+    #[test]
+    fn a_veteran_withdraws_with_hit_points_in_hand() {
+        let (mut game, ours, front, _home) = a_warrior_under_one_archer();
+        {
+            let unit = game.units.get_mut(&ours).unwrap();
+            // Above the 45 withdrawal line, below it plus two promotions.
+            unit.hp = 60;
+            unit.promotions.insert(crate::name!("battlecry"));
+            unit.promotions.insert(crate::name!("tortoise"));
+        }
+        let mut control = game.clone();
+        let mut green = BasicAi::new();
+        assert_eq!(green.veteran_hp_margin(&control, ours), 0);
+        assert_eq!(
+            green.healing_step(&mut control, 0, ours),
+            None,
+            "60 hp is healthy for a controller that keeps no margin"
+        );
+        assert_eq!(control.units[&ours].pos, front);
+        assert!(!green.recovering_units.contains(&ours));
+
+        let mut ai = BasicAi::new();
+        ai.veteran_retreat_margin = true;
+        assert_eq!(
+            ai.veteran_hp_margin(&game, ours),
+            2 * VETERAN_HP_PER_PROMOTION
+        );
+        assert!(ai.healing_step(&mut game, 0, ours).is_some());
+        assert!(
+            ai.recovering_units.contains(&ours),
+            "the veteran is recovering"
+        );
+
+        let unit = game.units.get_mut(&ours).unwrap();
+        unit.promotions.insert(crate::name!("ambush"));
+        unit.promotions.insert(crate::name!("zweihander"));
+        assert_eq!(ai.veteran_hp_margin(&game, ours), VETERAN_HP_MARGIN_CAP);
+    }
+
+    /// `modernize-before-spending`: the same Gold goes to the promoted unit
+    /// first, and the floor holds against the second upgrade.
+    #[test]
+    fn modernize_army_upgrades_the_veteran_first_and_keeps_the_floor() {
+        let (mut g, source, _) = island_colony_game(1);
+        g.players[0].civ = "Egypt".to_string();
+        grant_tech_with_prerequisites(&mut g, 0, "iron_working");
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), 400.0);
+        for uid in g.player_unit_ids(0) {
+            if g.units[&uid].kind == "warrior" {
+                g.remove_unit(uid);
+            }
+        }
+        let green = g.spawn_test_unit("warrior", 0, source);
+        let veteran = g.spawn_test_unit("warrior", 0, source);
+        g.units
+            .get_mut(&veteran)
+            .unwrap()
+            .promotions
+            .insert(crate::name!("battlecry"));
+        // 110 Gold per upgrade: one clears a 120 floor, a second would not.
+        g.players[0].gold = 235.0;
+
+        let mut by_strength = g.clone();
+        assert_eq!(BasicAi::modernize_army(&mut by_strength, 0, 120.0, 0.0), 1);
+        assert_eq!(
+            by_strength.units[&green].kind, "swordsman",
+            "equal gain per Gold: the lower id goes first"
+        );
+        assert_eq!(by_strength.units[&veteran].kind, "warrior");
+
+        let weight = crate::ai::advanced::VETERAN_UPGRADE_WEIGHT;
+        assert_eq!(BasicAi::modernize_army(&mut g, 0, 120.0, weight), 1);
+        assert_eq!(
+            g.units[&veteran].kind, "swordsman",
+            "the promotion carries into the successor, so the veteran goes first"
+        );
+        assert_eq!(g.units[&green].kind, "warrior");
+        assert_eq!(g.players[0].gold, 125.0);
+    }
+
+    /// `modernize-before-spending`: a one-era breakthrough modernizes the
+    /// army before the purchase pass, keeping 100 + 25 per city for it; a
+    /// treasury that cannot clear that floor waits; withheld, nothing moves.
+    #[test]
+    fn a_breakthrough_modernizes_the_army_before_the_purchase_pass() {
+        let (mut g, source, _) = island_colony_game(1);
+        g.players[0].civ = "Egypt".to_string();
+        grant_tech_with_prerequisites(&mut g, 0, "iron_working");
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), 400.0);
+        for uid in g.player_unit_ids(0) {
+            if g.units[&uid].kind == "warrior" {
+                g.remove_unit(uid);
+            }
+        }
+        let warrior = g.spawn_test_unit("warrior", 0, source);
+        let floor = 100.0 + 25.0 * g.player_city_ids(0).len() as f64;
+        g.players[0].gold = floor + 110.0;
+
+        let mut withheld = g.clone();
+        let mut control = AdvancedAi::new();
+        control.disable_modernize_before_spending();
+        assert_eq!(
+            control.modernize_before_the_purchase_pass(&mut withheld, 0),
+            0
+        );
+        assert_eq!(withheld.units[&warrior].kind, "warrior");
+
+        let mut ai = AdvancedAi::new();
+        assert_eq!(ai.modernize_before_the_purchase_pass(&mut g, 0), 1);
+        assert_eq!(g.units[&warrior].kind, "swordsman");
+        assert_eq!(g.players[0].gold, floor);
+
+        // The next Warrior waits: at peace the purchase pass keeps its floor.
+        let straggler = g.spawn_test_unit("warrior", 0, source);
+        assert_eq!(ai.modernize_before_the_purchase_pass(&mut g, 0), 0);
+        assert_eq!(g.units[&straggler].kind, "warrior");
     }
 
     /// Production only ever replaces losses, so without this pass the units
