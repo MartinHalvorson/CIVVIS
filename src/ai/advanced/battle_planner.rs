@@ -3860,11 +3860,18 @@ mod tests {
         assert_eq!(ai.census.battle_plan_doomed, 1);
         assert!(ai.battle_planner_ordered.contains(&ours), "on, the plan's");
         let now = &g.units[&ours];
-        assert_eq!(now.pos, at(10, 4), "safe where it stands, it holds its ground");
+        assert_eq!(
+            now.pos,
+            at(10, 4),
+            "safe where it stands, it holds its ground"
+        );
         assert!(now.fortified, "and fortifies");
         assert_eq!(ai.census.battle_plan_rotations, 0);
         assert!(g.units.contains_key(&archer), "and struck nothing");
-        assert!(!ai.battle_planner_recovering.contains(&ours), "not a recovery");
+        assert!(
+            !ai.battle_planner_recovering.contains(&ours),
+            "not a recovery"
+        );
         // Wounded as well, the same unit is the rotation's and steps out of reach.
         let mut g2 = off_board.clone();
         wound(&mut g2, ours, 40);
@@ -3872,7 +3879,11 @@ mod tests {
         hurt.enable_doomed_blow_veto();
         hurt.plan_battle(&mut g2, 0, &plan);
         assert!(hurt.battle_planner_ordered.contains(&ours));
-        assert_ne!(g2.units[&ours].pos, at(10, 4), "wounded, it steps out of reach");
+        assert_ne!(
+            g2.units[&ours].pos,
+            at(10, 4),
+            "wounded, it steps out of reach"
+        );
         assert!(hurt.battle_planner_recovering.contains(&ours));
     }
 }
