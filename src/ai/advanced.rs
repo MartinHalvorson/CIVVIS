@@ -924,6 +924,10 @@ pub struct StrategyCensus {
     pub requisition_items: u32,
     pub requisition_purchases: u32,
     pub requisition_unserved: u32,
+    /// `war-policy-via-board`: declarations the board's Siege bill held,
+    /// and peace offers its term made. See `advanced/war_policy.rs`.
+    pub war_policy_declarations_held: u32,
+    pub war_policy_peace_offers: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -1015,6 +1019,8 @@ impl StrategyCensus {
         self.requisition_items += other.requisition_items;
         self.requisition_purchases += other.requisition_purchases;
         self.requisition_unserved += other.requisition_unserved;
+        self.war_policy_declarations_held += other.war_policy_declarations_held;
+        self.war_policy_peace_offers += other.war_policy_peace_offers;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -6038,6 +6044,18 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Who may be a target, when a war is declared and when peace is sued
+    /// for, read off the Objective Board's own requirements: a rival whose
+    /// nearest city's Siege bill is over the whole roster is no target, a
+    /// declaration waits for that bill staged on the objective's ring with
+    /// no other major war and every Defend row served, and the `0.62`
+    /// "outmatched" peace term becomes "no feasible siege AND the tide
+    /// against us (or an urgent Defend row unserved for three turns)".
+    /// Opt-in gene `war-policy-via-board`; see `advanced/war_policy.rs`.
+    war_policy_via_board: bool,
+    /// The gene's tides per rival and its unserved-Defend clocks. See
+    /// `war_policy_via_board`.
+    war_policy: war_policy::WarPolicy,
     /// `trade-route-network`: a Commercial Hub (or a Harbor on a coast with
     /// no Hub) beside a standing Campus is the Science lane's trade
     /// capacity, and a Market or Lighthouse is worth the Trade Route it
@@ -6629,6 +6647,9 @@ pub mod objective_board;
 /// The board's shortfall reaches production and the treasury. Opt-in gene
 /// `requisitions`.
 mod requisitions;
+/// Target feasibility, the declaration and the peace term read off the
+/// board's requirements. Opt-in gene `war-policy-via-board`.
+mod war_policy;
 
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
@@ -7635,6 +7656,8 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            war_policy_via_board: false,
+            war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,
             walls_after_districts: false,
             threatened_city_reserve: false,
@@ -8036,6 +8059,10 @@ impl AdvancedAi {
         // The front and its tide clock; exact no-op with the gene off. See
         // `advanced/one_war.rs`.
         self.one_war_observe(g, pid);
+        // `war-policy-via-board`: the tide with every major at war and the
+        // unserved-Defend clocks; exact no-op with the gene off. See
+        // `advanced/war_policy.rs`.
+        self.war_policy_observe(g, pid);
     }
 
     fn plan_stale(&self, g: &Game, pid: usize) -> bool {
@@ -11177,12 +11204,20 @@ impl AdvancedAi {
                         .map(|(rival, _)| rival)
                         // `city_campaign`: the plan's rival before the generic
                         // value sort. See `advanced/city_campaign.rs`.
-                        .or_else(|| self.campaign_target(g, pid))
+                        // `war-policy-via-board`: a rival whose nearest
+                        // city's Siege bill is over the whole roster is no
+                        // target (every rival passes with the gene off). See
+                        // `advanced/war_policy.rs`.
+                        .or_else(|| {
+                            self.campaign_target(g, pid)
+                                .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
+                        })
                         .or_else(|| {
                             let mut candidates: Vec<_> = major_rivals
                                 .iter()
                                 .copied()
                                 .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                                .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
                                 .collect();
                             if strategy == GrandStrategy::Conquest {
                                 candidates.extend(
@@ -11191,6 +11226,8 @@ impl AdvancedAi {
                                         .filter(|player| player.is_minor)
                                         .filter(|player| {
                                             self.campaign_target_legal(g, pid, player.id)
+                                                && self
+                                                    .war_policy_target_feasible(g, pid, player.id)
                                         })
                                         .map(|player| player.id),
                                 );
@@ -17558,6 +17595,17 @@ impl AdvancedAi {
             // `advanced/one_war.rs`.
             let one_war_peace = self.one_war_peace(g, pid, *other);
             let one_war_presses = self.one_war_presses(g, pid, *other);
+            // `war-policy-via-board`: the `0.62` "outmatched" term becomes
+            // "no Siege row against them is feasible AND the tide is
+            // against us (or an urgent Defend row is unserved for three
+            // turns)"; every other term stands. See
+            // `advanced/war_policy.rs`.
+            let policy_peace = self.war_policy_peace(g, pid, *other);
+            let outmatched = if self.war_policy_via_board {
+                policy_peace.is_some()
+            } else {
+                my_power < g.military_power(*other) * 0.62
+            };
             // An explicit Science seat has no offensive use for a war it did
             // not appoint. A losing proposal can still be refused by the
             // attacker, so make the direct-peace condition part of the outer
@@ -17573,7 +17621,7 @@ impl AdvancedAi {
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
                 && !peace_pending
-                && (my_power < g.military_power(*other) * 0.62
+                && (outmatched
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other))
                     || (self.religion_sues_peace
@@ -17598,9 +17646,13 @@ impl AdvancedAi {
                     || science_defensive_peace)
             {
                 self.peace_offers.insert(*other);
+                if policy_peace.is_some() {
+                    self.census.war_policy_peace_offers += 1;
+                }
                 // Only a rout licenses a live tribute; every other reason
                 // for the offer is white peace. See `AiReport::peace_routed`.
-                if my_power < g.military_power(*other) * 0.62
+                // The board's term claims none: its peace is white.
+                if (!self.war_policy_via_board && outmatched)
                     || matches!(one_war_peace, Some(one_war::OneWarPeace::Rout))
                 {
                     self.peace_routed.insert(*other);
@@ -17623,8 +17675,10 @@ impl AdvancedAi {
                             if needed == 1 { "" } else { "s" },
                             g.players[minor].civ
                         )
-                    } else if my_power < their_power * 0.62 {
-                        "outmatched".to_string()
+                    } else if outmatched {
+                        policy_peace
+                            .clone()
+                            .unwrap_or_else(|| "outmatched".to_string())
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace && plan.strategy == GrandStrategy::Religion {
@@ -17775,8 +17829,18 @@ impl AdvancedAi {
         // alone can outweigh the whole ratio. What decides an ancient siege is
         // not the empires' totals but how many takers are standing at the
         // objective, which is exactly what `early_rush_stack_ready` counts.
+        // `war-policy-via-board`: the board's Siege bill staged on the
+        // objective's ring, no other major war, every Defend row served —
+        // in place of the rush count, the campaign bill and the empire
+        // ratio. `None` with the gene off. See `advanced/war_policy.rs`.
+        let policy = self.war_policy_declaration(g, pid, target, plan);
+        if matches!(policy, Some(Err(_))) {
+            self.census.war_policy_declarations_held += 1;
+        }
         let ready = urgent_denial
-            || if rushing {
+            || if let Some(verdict) = &policy {
+                verdict.is_ok()
+            } else if rushing {
                 plan.target_city
                     .and_then(|city| g.cities.get(&city))
                     .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
@@ -17838,11 +17902,14 @@ impl AdvancedAi {
             // it any other way: an army that sits still for thirty turns looks
             // identical to one with no plan.
             let blocker = if !close_enough {
-                "no city of theirs is within 18 tiles of one of mine"
+                "no city of theirs is within 18 tiles of one of mine".to_string()
             } else if !ready {
-                "the army is not strong enough yet"
+                match &policy {
+                    Some(Err(reason)) => reason.clone(),
+                    _ => "the army is not strong enough yet".to_string(),
+                }
             } else {
-                "the army has not finished staging"
+                "the army has not finished staging".to_string()
             };
             think!(self.journal(), Military, Detail,
                    "Holding off war with {}", g.players[target].civ;

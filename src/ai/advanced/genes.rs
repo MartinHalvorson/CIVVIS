@@ -2057,6 +2057,19 @@ pub const GENES: &[Gene] = &[
     // under it. Inert without `objective-board` (no board to read). Whole-
     // game no-harm screen beside the board. See `advanced/requisitions.rs`.
     Gene { tag: "requisitions", field: "requisitions", kind: Kind::OptIn, enable: AdvancedAi::enable_requisitions, disable: AdvancedAi::disable_requisitions },
+    // Who may be a target, when a war is declared and when peace is sued
+    // for, read off the Objective Board's own requirements in place of
+    // empire-wide power ratios: a rival whose nearest city's Siege bill is
+    // over the whole roster is excluded from the target ranking; an
+    // elective or campaign declaration waits until that bill is staged on
+    // the objective's 3–5 ring with no other major war and every Defend row
+    // served; and the `my_power < theirs × 0.62` "outmatched" peace term
+    // becomes "no Siege row against them is feasible AND the tide ledger is
+    // negative over its window (or an urgent Defend row has gone unserved
+    // for three turns)" — a defensive war with a served Defend row is
+    // fought, not begged. Every other peace term stands. See
+    // `advanced/war_policy.rs`.
+    Gene { tag: "war-policy-via-board", field: "war_policy_via_board", kind: Kind::OptIn, enable: AdvancedAi::enable_war_policy_via_board, disable: AdvancedAi::disable_war_policy_via_board },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
