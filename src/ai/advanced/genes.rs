@@ -2007,6 +2007,16 @@ pub const GENES: &[Gene] = &[
     // Version 3 of `border-parity`: one local garrison against an actually
     // visible two-body staging group; buy it without touching production.
     Gene { tag: "border-parity-3", field: "border_parity_3", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_3, disable: AdvancedAi::disable_border_parity_3 },
+    // The generic upgrade pass runs after the purchase pass has spent the
+    // treasury, so the army never modernizes: ~3 UPGRADE orders per live
+    // game, Heavy Chariot the commonest unit at t150. Upgrade FIRST at the
+    // moments that matter (major war, threatened city, barbarian gap, or a
+    // one-era breakthrough), veterans first. Default on.
+    Gene { tag: "modernize-before-spending", field: "modernize_before_spending", kind: Kind::Production, enable: AdvancedAi::enable_modernize_before_spending, disable: AdvancedAi::disable_modernize_before_spending },
+    // A promoted unit withdraws with 10 hp per promotion (max 30) in hand:
+    // the withdrawal line, the one-blow test and the lethal-pool retreat all
+    // fire while it can still walk. 70% of live losses were already <50 hp.
+    Gene { tag: "veterans-withdraw-early", field: "veteran_retreat_margin", kind: Kind::Production, enable: AdvancedAi::enable_veteran_retreat_margin, disable: AdvancedAi::disable_veteran_retreat_margin },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
