@@ -2115,13 +2115,112 @@ class SwapVerbIsWiredTest(unittest.TestCase):
         source = self._agent_source()
         expect = source.split("CivvisQueue.expectFor = function(row)", 1)[1]
         expect = expect.split("end;", 1)[0]
-        self.assertIn('(verb == "MOVE_TO" or verb == "SWAP")', expect)
+        self.assertIn('(verb == "MOVE_TO" or verb == "SWAP" or verb == "REBASE")', expect)
 
     def test_the_branch_costs_no_main_chunk_local(self) -> None:
         """See `AgentChunkLocalLimitTest`: the file has no slots to spend."""
         source = self._agent_source()
         self.assertNotIn("\nlocal swap", source)
         self.assertNotIn("\nlocal function swap", source)
+
+
+class AirVerbsAreWiredTest(unittest.TestCase):
+    """`AIR_ATTACK`, `REBASE` and `PATROL` resolve the shipped air operations
+    and request each the way the shipped `WorldInput.lua` does.
+
+    `Action::AirStrike` / `AirRebase` / `AirPatrol` were legal in the engine
+    and the bridge dropped every one as `unit_action_untranslated`. Firaxis's
+    `WorldInput.lua:2077-2078` (`UnitAirAttack`), `:2418-2419`
+    (`AirUnitDeploy`) and `:2486-2487` (`AirUnitReBase`) request
+    `UNITOPERATION_AIR_ATTACK` / `DEPLOY` / `REBASE` with the plot as
+    PARAM_X/PARAM_Y after a four-argument `CanStartOperation(unit, OP, nil,
+    tParameters)`; there is no `AIR_PATROL` row in
+    `Base/Assets/Gameplay/Data/UnitOperations.xml`, so a fighter's patrol is
+    the shipped Deploy. The mod's `canOperate` is that call, so the check and
+    the request carry the same parameters and a decline is a named refusal.
+    """
+
+    def _agent_source(self) -> str:
+        return (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def _air_block(self) -> str:
+        source = self._agent_source()
+        handler = source.split("local function applyOrder", 1)[1]
+        block = handler.split(
+            'if verb == "AIR_ATTACK" or verb == "REBASE" or verb == "PATROL" then', 1
+        )[1]
+        return block.split("\n\t\tend\n", 1)[0]
+
+    def test_the_three_operations_are_resolved_once_in_resolve_actions(self) -> None:
+        source = self._agent_source()
+        resolver = source.split("local function resolveActions()", 1)[1]
+        resolver = resolver.split("local resolved, missing = {}, {};", 1)[0]
+        for operation in (
+            "UNITOPERATION_AIR_ATTACK",
+            "UNITOPERATION_REBASE",
+            "UNITOPERATION_DEPLOY",
+        ):
+            self.assertIn(f'"{operation}"', resolver)
+        # No invented row: the shipped table has no AIR_PATROL.
+        self.assertNotIn("UNITOPERATION_AIR_PATROL", source)
+
+    def test_each_verb_checks_then_requests_with_the_plot(self) -> None:
+        block = self._air_block()
+        self.assertIn('if x == nil or y == nil then return false, "no_dest"; end', block)
+        self.assertIn('local opName = "UNITOPERATION_AIR_ATTACK";', block)
+        self.assertIn('if verb == "REBASE" then opName = "UNITOPERATION_REBASE"; end', block)
+        self.assertIn('if verb == "PATROL" then opName = "UNITOPERATION_DEPLOY"; end', block)
+        self.assertIn('if hash == nil then return false, "unknown_op_" .. verb; end', block)
+        self.assertIn("params[UnitOperationTypes.PARAM_X] = x;", block)
+        self.assertIn("params[UnitOperationTypes.PARAM_Y] = y;", block)
+        # The gate and the request carry the same parameter table, and a
+        # decline is named `cannot_<verb>` rather than swallowed.
+        self.assertIn("if not canOperate(unit, hash, params) then", block)
+        self.assertIn('return false, "cannot_" .. string.lower(verb);', block)
+        self.assertIn("return operate(unit, hash, params), verb;", block)
+        # An air operation is one hop; nothing here is reach-capped.
+        self.assertNotIn("capToTurn", block)
+
+    def test_only_the_strike_is_a_war_starter_and_a_ledger_strike(self) -> None:
+        block = self._air_block()
+        self.assertIn(
+            "CivvisLedger.refuseWarStarter(unit, subject, verb, x, y, turn)", block
+        )
+        self.assertIn("CivvisLedger.strike(unit, subject, verb, x, y, turn);", block)
+        # Both ledger calls sit under an AIR_ATTACK guard: nothing before the
+        # first guard names either, so REBASE and PATROL — an aircraft moving
+        # between friendly plots — start no war and record no strike.
+        unguarded = block.split('if verb == "AIR_ATTACK" then', 1)[0]
+        self.assertNotIn("refuseWarStarter", unguarded)
+        self.assertNotIn("CivvisLedger.strike(", unguarded)
+        # The strike is recorded before the request, as RANGE_ATTACK's is, so
+        # the preview and the combat frame count follow the sortie.
+        self.assertLess(
+            block.index("CivvisLedger.strike("), block.index("return operate(unit, hash, params)")
+        )
+        # A refused strike files the same event RANGE_ATTACK does, so the
+        # decider's blocked_strikes keeps the pair off the next frame.
+        self.assertIn('emit("range_attack_refused", {', block)
+        self.assertIn("why = refusalReason(unit, hash, params),", block)
+
+    def test_the_queue_treats_an_air_attack_as_a_strike_and_expects_a_rebase(self) -> None:
+        source = self._agent_source()
+        strike = source.split("CivvisQueue.isStrike = function(row)", 1)[1].split("end;", 1)[0]
+        self.assertIn('verb == "AIR_ATTACK"', strike)
+        expect = source.split("CivvisQueue.expectFor = function(row)", 1)[1].split("end;", 1)[0]
+        self.assertIn('verb == "REBASE"', expect)
+
+    def test_the_own_unit_export_carries_the_live_range(self) -> None:
+        source = self._agent_source()
+        own_units = source.split("units[#units + 1] = {", 1)[1].split("\n\t\t};", 1)[0]
+        self.assertIn("range = try(function() return unit:GetRange(); end, nil),", own_units)
+
+    def test_the_branch_costs_no_main_chunk_local(self) -> None:
+        """See `AgentChunkLocalLimitTest`: the file has no slots to spend."""
+        source = self._agent_source()
+        for name in ("air", "rebase", "patrol", "opName"):
+            self.assertNotIn(f"\nlocal {name}", source)
+            self.assertNotIn(f"\nlocal function {name}", source)
 
 
 class PreviewOrderAnswersWithoutExecutingTest(unittest.TestCase):
